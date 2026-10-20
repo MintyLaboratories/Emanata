@@ -74,9 +74,14 @@ class TargetTest {
 
     @Test
     fun resultIsCappedAspectKept() {
-        val plan = Target(4000, 0).plan(100.0, 100_000.0)
-        assertTrue(plan.width.toLong() * plan.height <= Target.MAX_OUTPUT_PIXELS)
-        assertEquals(1000.0, plan.height.toDouble() / plan.width, 10.0)
+        // Too many pixels: both sides shrink by the same factor.
+        val wide = Target(10000, 0).plan(1000.0, 1500.0)
+        assertTrue(wide.width.toLong() * wide.height <= Target.MAX_OUTPUT_PIXELS)
+        assertEquals(1.5, wide.height.toDouble() / wide.width, 0.001)
+        // A tall strip page stops at the longest side a texture can have.
+        val tall = Target(1848, 0).plan(800.0, 30000.0)
+        assertTrue(tall.height in 16380..Target.MAX_OUTPUT_SIDE)
+        assertEquals(37.5, tall.height.toDouble() / tall.width, 0.1)
     }
 
     @Test

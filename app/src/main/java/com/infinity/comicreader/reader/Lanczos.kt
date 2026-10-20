@@ -101,7 +101,8 @@ object Lanczos {
 
     /**
      * Resamples [window] of a [srcW] x [srcH] image read through [reader] to [dstW] x [dstH],
-     * handing finished rows to [writer] in bands, on up to [threads] threads.
+     * handing finished rows to [writer] in bands, on up to [threads] threads. Blocks the
+     * calling thread until done, so it must not run on [Dispatchers.Default] itself.
      */
     fun resample(
         srcW: Int,

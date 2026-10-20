@@ -27,7 +27,7 @@ enum class Fit {
  *
  * [linear] filters in linear light. [capPixels] bounds the decoded source: a larger
  * image is first reduced by the decoder's own power-of-two sampling (see [Decoders]).
- * The result never exceeds [MAX_OUTPUT_PIXELS].
+ * The result never exceeds [MAX_OUTPUT_PIXELS], nor [MAX_OUTPUT_SIDE] on either side.
  *
  * A data class, so a page's target can key a cache of decoded bitmaps.
  */
@@ -59,7 +59,7 @@ data class Target(
             }
             else -> inside(srcW, srcH, left, top)
         }
-        return plan.capped(MAX_OUTPUT_PIXELS)
+        return plan.capped(MAX_OUTPUT_PIXELS, MAX_OUTPUT_SIDE)
     }
 
     /** [Fit.INSIDE] and [Fit.SHRINK]: the limiting axis lands exactly on the box. */
@@ -96,6 +96,9 @@ data class Target(
         /** Largest result: 120 MB of ARGB stays below the platform's limit on drawing one bitmap. */
         const val MAX_OUTPUT_PIXELS = 30_000_000L
 
+        /** Longest side of a result: the largest texture the GPU uploads in one piece. */
+        const val MAX_OUTPUT_SIDE = 16_384
+
         /** The source as it is. */
         val NATIVE = Target()
     }
@@ -111,11 +114,14 @@ data class Plan(val width: Int, val height: Int, val x: Double, val y: Double, v
     fun isCrop(): Boolean =
         width.toDouble() == spanW && height.toDouble() == spanH && x == Math.floor(x) && y == Math.floor(y)
 
-    /** Shrunk evenly, aspect kept, to at most [max] pixels. */
-    fun capped(max: Long): Plan {
+    /** Shrunk evenly, aspect kept, to at most [maxPixels] pixels and [maxSide] on either side. */
+    fun capped(maxPixels: Long, maxSide: Int): Plan {
         val pixels = width.toLong() * height
-        if (pixels <= max) return this
-        val f = sqrt(max.toDouble() / pixels)
+        val f = minOf(
+            if (pixels > maxPixels) sqrt(maxPixels.toDouble() / pixels) else 1.0,
+            maxSide.toDouble() / maxOf(width, height)
+        )
+        if (f >= 1.0) return this
         return copy(width = (width * f).toInt().coerceAtLeast(1), height = (height * f).toInt().coerceAtLeast(1))
     }
 }

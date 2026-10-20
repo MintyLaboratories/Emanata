@@ -60,7 +60,7 @@ class BookAdapter(
     var cellHeight: Int = 0
         private set
 
-    /** Sets the grid cell size; covers are requested at it, so a change rebinds the grid. */
+    /** Sets the grid cell size; a change rebinds the grid, whose covers follow the new view size. */
     fun setCellSize(width: Int, height: Int) {
         if (width == cellWidth && height == cellHeight) return
         cellWidth = width

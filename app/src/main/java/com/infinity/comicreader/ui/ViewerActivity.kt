@@ -739,6 +739,8 @@ class ViewerActivity : AppCompatActivity() {
 
         source = next
         file = nextFile
+        // Reopening or recreating the reader must load the chapter now shown.
+        intent.putExtra(EXTRA_PATH, nextFile.absolutePath)
         currentIndex = (first - boundary).coerceAtLeast(0)
         stripAhead = null
         stripAheadFile = null

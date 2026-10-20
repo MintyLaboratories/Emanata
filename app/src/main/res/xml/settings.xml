@@ -278,4 +278,10 @@
             app:title="@string/pref_reset" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/about">
+        <Preference
+            app:key="pref_about"
+            app:title="@string/about" />
+    </PreferenceCategory>
+
 </PreferenceScreen>

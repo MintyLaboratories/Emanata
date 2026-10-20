@@ -104,6 +104,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<Preference>("pref_about")?.apply {
+            val ctx = requireContext()
+            val version = runCatching {
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            }.getOrNull().orEmpty()
+            summary = getString(R.string.about_version_format, getString(R.string.app_name), version)
+            setOnPreferenceClickListener {
+                startActivity(android.content.Intent(requireContext(), AboutActivity::class.java))
+                true
+            }
+        }
+
         findPreference<Preference>("pref_stats")?.setOnPreferenceClickListener {
             val st = library.stats()
             AlertDialog.Builder(requireContext())

@@ -69,6 +69,8 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Robolectric bitmaps live on the test JVM's heap; the 512 MB default runs out.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     packaging {

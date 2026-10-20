@@ -25,7 +25,8 @@ import java.security.MessageDigest
  * with fewer pages than it has.
  *
  * Copying checks [cancelled] as it goes. Without [copy], only copies already cached
- * are used, which lets a prefetch open a book without writing anything.
+ * are used, which lets a prefetch open a book without writing anything. Skipped
+ * inner archives are reported to [warn].
  */
 class NestedArchives(
     private val dir: File,
@@ -33,7 +34,8 @@ class NestedArchives(
     private val maxBytes: Long = MAX_CACHE_BYTES,
     private val maxEntryBytes: Long = MAX_ENTRY_BYTES,
     private val cancelled: () -> Boolean = { false },
-    private val copy: Boolean = true
+    private val copy: Boolean = true,
+    private val warn: (String, Throwable) -> Unit = { message, t -> Log.w(TAG, message, t) }
 ) {
     /** An opened inner archive, its cached [file], and the identity its own inner archives are keyed by. */
     class Opened(val reader: ArchiveReader, val file: File, val key: String)
@@ -60,13 +62,13 @@ class NestedArchives(
         } catch (e: UnavailableException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Could not extract nested archive ${entry.path}", e)
+            warn("Could not extract nested archive ${entry.path}", e)
             null
         } ?: return null
         val reader = try {
             ArchiveReader.open(file, charsetName)
         } catch (e: Exception) {
-            Log.w(TAG, "Could not open nested archive ${entry.path}", e)
+            warn("Could not open nested archive ${entry.path}", e)
             null
         } ?: return null
         return Opened(reader, file, key)

@@ -25,8 +25,14 @@ class NestedArchivesTest {
 
     private val cache get() = File(tmp.root, "cache")
 
-    private fun nested(maxBytes: Long = NestedArchives.MAX_CACHE_BYTES, maxEntryBytes: Long = NestedArchives.MAX_ENTRY_BYTES) =
-        NestedArchives(cache, "UTF-8", maxBytes, maxEntryBytes)
+    private val warnings = ArrayList<String>()
+
+    private fun nested(
+        maxBytes: Long = NestedArchives.MAX_CACHE_BYTES,
+        maxEntryBytes: Long = NestedArchives.MAX_ENTRY_BYTES,
+        cancelled: () -> Boolean = { false },
+        copy: Boolean = true
+    ) = NestedArchives(cache, "UTF-8", maxBytes, maxEntryBytes, cancelled, copy) { message, _ -> warnings += message }
 
     private fun open(file: File, nested: NestedArchives = nested(), firstPageOnly: Boolean = false) =
         ArchiveSource(ZipReader(file, "UTF-8"), NestedArchives.keyOf(file), nested, firstPageOnly)
@@ -214,6 +220,7 @@ class NestedArchivesTest {
             entry("b.cbz", Fixtures.zipBytes(entry("01.jpg")))
         )
         open(f).use { assertEquals(listOf("b.cbz/01.jpg"), it.pagePaths) }
+        assertEquals(listOf("Could not open nested archive a.cbr"), warnings)
     }
 
     @Test(expected = NestedArchives.StorageException::class)
@@ -228,7 +235,7 @@ class NestedArchivesTest {
         val f = omnibus()
         // Cancelled after the first check, so mid-way through the first copy.
         var checks = 0
-        val nested = NestedArchives(cache, "UTF-8", cancelled = { checks++ > 0 })
+        val nested = nested(cancelled = { checks++ > 0 })
         try {
             open(f, nested).use { }
             throw AssertionError("expected UnavailableException")
@@ -259,13 +266,13 @@ class NestedArchivesTest {
     fun withoutCopyingOnlyCachedCopiesOpen() {
         val f = omnibus()
         try {
-            open(f, NestedArchives(cache, "UTF-8", copy = false)).use { }
+            open(f, nested(copy = false)).use { }
             throw AssertionError("expected UnavailableException")
         } catch (expected: NestedArchives.UnavailableException) {
         }
         assertEquals(0, cached().size)
         open(f).use { }
-        open(f, NestedArchives(cache, "UTF-8", copy = false)).use { assertEquals(5, it.pageCount) }
+        open(f, nested(copy = false)).use { assertEquals(5, it.pageCount) }
     }
 
     @Test(expected = NestedArchives.StorageException::class)

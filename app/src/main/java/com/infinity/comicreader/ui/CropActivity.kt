@@ -1,7 +1,6 @@
 package com.infinity.comicreader.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.Bundle
@@ -11,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.infinity.comicreader.R
+import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.util.AppDispatchers
 import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.launch
@@ -107,20 +107,8 @@ class CropActivity : AppCompatActivity() {
         file
     }.getOrNull()
 
-    private fun decodeCapped(path: String, maxDim: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) >= maxDim && bounds.outHeight / (sample * 2) >= maxDim) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        return BitmapFactory.decodeFile(path, opts)
-    }
+    private fun decodeCapped(path: String, maxDim: Int): Bitmap? =
+        runCatching { Decoders.decode(File(path), maxDim, maxDim, capPixels = Long.MAX_VALUE) }.getOrNull()
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 

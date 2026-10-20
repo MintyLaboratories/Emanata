@@ -135,8 +135,7 @@ class ArchiveSource(
         try {
             // Buffered under the reader's lock, decoded outside it.
             val bytes = readPage(index) { BitmapUtils.readCapped(it) }
-            return BitmapUtils.decodeBytes(bytes, reqWidth, reqHeight)
-                ?: throw IOException("Could not decode ${page.path}")
+            return Decoders.decode(bytes, reqWidth, reqHeight)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load archive entry ${page.path} (index $index)", t)
             throw t
@@ -146,7 +145,7 @@ class ArchiveSource(
     override fun pageSize(index: Int): IntArray? {
         if (index !in pages.indices) return null
         return runCatching {
-            BitmapUtils.boundsBytes(readPage(index) { BitmapUtils.readCapped(it) })
+            Decoders.size(readPage(index) { BitmapUtils.readCapped(it) })
         }.getOrNull()
     }
 

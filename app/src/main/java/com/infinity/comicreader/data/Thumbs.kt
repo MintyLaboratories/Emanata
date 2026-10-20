@@ -2,9 +2,8 @@ package com.infinity.comicreader.data
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.LruCache
-import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
@@ -88,7 +87,7 @@ object Thumbs {
     private fun generate(entry: BookEntry, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? = try {
         when {
             entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, reqW, reqH) }
-            entry.type == EntryType.IMAGE -> BitmapUtils.decodeFile(entry.path, reqW, reqH, THUMB_CAP_PIXELS)
+            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, reqW, reqH, THUMB_CAP_PIXELS)
             else -> coverOf(entry.file, charset, cacheDir, reqW, reqH)
         }
     } catch (t: Throwable) {
@@ -107,7 +106,7 @@ object Thumbs {
     private fun coverOf(file: File, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
-            return BitmapUtils.decodeFile(file.absolutePath, reqW, reqH, THUMB_CAP_PIXELS)
+            return Decoders.decode(file, reqW, reqH, THUMB_CAP_PIXELS)
         }
         val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
         return try {
@@ -133,15 +132,8 @@ object Thumbs {
         return null
     }
 
-    private fun decodeFile(file: File, boxW: Int, boxH: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0) return null
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = BitmapUtils.sampleSize(bounds.outWidth, bounds.outHeight, boxW, boxH, THUMB_CAP_PIXELS)
-        }
-        return BitmapFactory.decodeFile(file.absolutePath, opts)
-    }
+    private fun decodeFile(file: File, boxW: Int, boxH: Int): Bitmap? =
+        runCatching { Decoders.decode(file, boxW, boxH, THUMB_CAP_PIXELS) }.getOrNull()
 
     private fun diskFile(context: Context, key: String): File =
         File(File(context.cacheDir, DISK_DIR), sha256(key) + ".jpg")

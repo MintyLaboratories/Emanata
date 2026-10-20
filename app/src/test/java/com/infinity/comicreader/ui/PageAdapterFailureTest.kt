@@ -16,6 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicIntegerArray
 
@@ -102,6 +103,34 @@ class PageAdapterFailureTest {
         assertEquals(1, source.perPage.get(1))
         adapter.release()
     }
+
+    /** Fails its only page once with [error], then decodes it. */
+    private class FlakySource(private val error: Throwable) : PageSource {
+        val loads = AtomicInteger()
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+            if (loads.incrementAndGet() == 1) throw error
+            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+    }
+
+    private fun assertRetriedAfter(error: Throwable) {
+        val source = FlakySource(error)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        assertTrue(bindAndWait(adapter, 0).images[0].drawable is ErrorPageDrawable)
+        assertTrue(bindAndWait(adapter, 0).images[0].drawable is BitmapDrawable)
+        assertEquals(2, source.loads.get())
+        adapter.release()
+    }
+
+    @Test
+    fun readErrorIsRetriedOnNextBind() = assertRetriedAfter(IOException("Read timed out"))
+
+    @Test
+    fun lowMemoryIsRetriedOnNextBind() =
+        assertRetriedAfter(DecodeException("Not enough memory for this JPEG image", transient = true))
 
     @Test
     fun goodPageShowsItsBitmap() {

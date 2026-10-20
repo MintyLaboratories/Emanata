@@ -3,7 +3,6 @@ package com.infinity.comicreader.reader
 import android.graphics.Bitmap
 import android.graphics.Color
 import java.io.ByteArrayOutputStream
-import java.io.IOException
 import java.io.InputStream
 import kotlin.math.abs
 
@@ -21,7 +20,7 @@ object BitmapUtils {
             val n = input.read(buf)
             if (n < 0) break
             total += n
-            if (total > MAX_ENTRY_BYTES) throw IOException("Image entry is too large")
+            if (total > MAX_ENTRY_BYTES) throw DecodeException("Image entry is too large")
             out.write(buf, 0, n)
         }
         return out.toByteArray()

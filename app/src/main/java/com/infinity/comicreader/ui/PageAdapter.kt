@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.util.AppDispatchers
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -44,7 +46,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * the next [preload] pages are decoded ahead of time. With [autoCrop] blank borders
  * are trimmed (never in long-strip mode, where the gaps belong to the art). A page
  * that fails to decode shows an [ErrorPageDrawable] naming it and why, and is not
- * retried until the decode size changes.
+ * retried until the decode size changes; one that failed for lack of memory or a
+ * read error is tried again the next time it is shown.
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction or [autoCrop] changes.
@@ -103,8 +106,11 @@ class PageAdapter(
     }
     private val pending = HashMap<Int, Pending>()
 
-    /** Why a page could not be shown; [name] is null when its source has no page names. */
-    private class Failure(val index: Int, val name: String?, val reason: String)
+    /**
+     * Why a page could not be shown; [name] is null when its source has no page names.
+     * Only a [permanent] failure is shown again without another decode.
+     */
+    private class Failure(val index: Int, val name: String?, val reason: String, val permanent: Boolean)
 
     private val failures = ConcurrentHashMap<Int, Failure>()
     private val aspects = ConcurrentHashMap<Int, Float>()
@@ -307,7 +313,7 @@ class PageAdapter(
             applyBitmap(image, cached)
             return
         }
-        failures[pageIndex]?.let {
+        failures[pageIndex]?.takeIf { it.permanent }?.let {
             applyFailure(image, it)
             return
         }
@@ -382,8 +388,15 @@ class PageAdapter(
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
         val name = runCatching { source.pageName(index) }.getOrNull()
-        failures[pageIndex] = Failure(index, name, t.message ?: t.javaClass.simpleName)
+        failures[pageIndex] = Failure(index, name, t.message ?: t.javaClass.simpleName, isPermanent(t))
         null
+    }
+
+    /** Out-of-memory and read errors may pass on a later try; a page that does not decode will not. */
+    private fun isPermanent(t: Throwable): Boolean = when (t) {
+        is DecodeException -> !t.transient
+        is IOException, is OutOfMemoryError -> false
+        else -> true
     }
 
     /** Starts (or joins) the background decode of [pageIndex]. Main thread only. */
@@ -420,7 +433,7 @@ class PageAdapter(
         for (k in 1..ahead) {
             val p = lastShown + k
             if (p >= end) break
-            if (cache.get(p) != null || pending[p] != null || failures.containsKey(p)) continue
+            if (cache.get(p) != null || pending[p] != null || failures[p]?.permanent == true) continue
             val (reqW, reqH) = requestSize(p, lastItemW, lastItemH)
             request(p, reqW, reqH).prefetch = true
         }

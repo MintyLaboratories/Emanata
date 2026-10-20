@@ -14,8 +14,15 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 
-/** An image that could not be decoded; [message] says why, for the page placeholder. */
-class DecodeException(message: String, cause: Throwable? = null) : IOException(message, cause)
+/**
+ * An image that could not be decoded; [message] says why, for the page placeholder.
+ * A [transient] failure, such as running out of memory, may pass on a later try.
+ */
+class DecodeException(
+    message: String,
+    cause: Throwable? = null,
+    val transient: Boolean = false
+) : IOException(message, cause)
 
 /**
  * The one place encoded images become bitmaps: page sources, cover thumbnails, the
@@ -54,7 +61,7 @@ object Decoders {
         } catch (e: LinkageError) {
             throw DecodeException("No $label decoder on this device", e)
         } catch (e: OutOfMemoryError) {
-            throw DecodeException("Not enough memory for this $label image", e)
+            throw DecodeException("Not enough memory for this $label image", e, transient = true)
         } catch (e: Exception) {
             throw DecodeException("Could not decode this $label image", e)
         }

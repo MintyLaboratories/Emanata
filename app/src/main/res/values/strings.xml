@@ -217,6 +217,7 @@
     <string name="pref_thumbs">Show page thumbnails</string>
     <string name="pref_grid">Use grid view</string>
     <string name="pref_grid_columns">Grid columns</string>
+    <string name="pref_grid_rows">Grid rows</string>
     <string name="pref_sort">Sort entries by</string>
     <string name="pref_sort_dir">Sort direction</string>
     <string name="pref_show_filenames">Show file names</string>
@@ -390,6 +391,25 @@
     </string-array>
     <string-array name="columns_values">
         <item>0</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+    </string-array>
+
+    <string-array name="rows_entries">
+        <item>Auto</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+    </string-array>
+    <string-array name="rows_values">
+        <item>0</item>
+        <item>1</item>
         <item>2</item>
         <item>3</item>
         <item>4</item>

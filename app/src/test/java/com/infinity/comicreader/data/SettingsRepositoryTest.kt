@@ -42,10 +42,12 @@ class SettingsRepositoryTest {
     fun listChangesArePublished() {
         prefs.listGrid = true
         prefs.gridColumns = 4
+        prefs.gridRows = 3
         prefs.thumbnails = false
         val list = repo.list.value
         assertTrue(list.grid)
         assertEquals(4, list.gridColumns)
+        assertEquals(3, list.gridRows)
         assertFalse(list.thumbnails)
     }
 

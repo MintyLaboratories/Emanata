@@ -181,6 +181,13 @@
             app:title="@string/pref_grid_columns"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
+            app:defaultValue="0"
+            app:entries="@array/rows_entries"
+            app:entryValues="@array/rows_values"
+            app:key="pref_grid_rows"
+            app:title="@string/pref_grid_rows"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="name"
             app:entries="@array/sort_entries"
             app:entryValues="@array/sort_values"

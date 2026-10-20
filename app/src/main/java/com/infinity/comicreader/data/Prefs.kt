@@ -161,6 +161,11 @@ class Prefs(context: Context) {
         get() = str(KEY_COLUMNS, "0").toIntOrNull()?.coerceIn(0, 6) ?: 0
         set(v) = put(KEY_COLUMNS, v.toString())
 
+    /** Grid rows per screen height, 0 = auto (fixed cover height). */
+    var gridRows: Int
+        get() = str(KEY_ROWS, "0").toIntOrNull()?.coerceIn(0, 6) ?: 0
+        set(v) = put(KEY_ROWS, v.toString())
+
     var listSort: String
         get() = str(KEY_SORT, "name")
         set(v) = put(KEY_SORT, v)
@@ -261,6 +266,7 @@ class Prefs(context: Context) {
         private const val KEY_THUMBS = "pref_thumbs"
         private const val KEY_GRID = "pref_grid"
         private const val KEY_COLUMNS = "pref_grid_columns"
+        private const val KEY_ROWS = "pref_grid_rows"
         private const val KEY_SORT = "pref_sort"
         private const val KEY_SORT_DIR = "pref_sort_dir"
         private const val KEY_FILENAMES = "pref_show_filenames"
@@ -278,7 +284,7 @@ class Prefs(context: Context) {
             KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONES, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
-            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES
+            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS
         )
     }
 }

@@ -17,6 +17,7 @@
         android:padding="6dp">
 
         <FrameLayout
+            android:id="@+id/cover"
             android:layout_width="match_parent"
             android:layout_height="@dimen/grid_thumb_h"
             android:background="@drawable/bg_cover_placeholder">

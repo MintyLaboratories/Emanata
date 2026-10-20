@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -49,6 +50,14 @@ class BookAdapter(
             notifyDataSetChanged()
         }
 
+    /** Grid cell height from the "Grid rows" setting; 0 keeps the fixed cover height. */
+    var cellHeight: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            if (grid) notifyDataSetChanged()
+        }
+
     private val items = ArrayList<BookEntry>()
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
 
@@ -84,6 +93,7 @@ class BookAdapter(
 
     class BookHolder(view: View) : RecyclerView.ViewHolder(view) {
         val card: MaterialCardView? = view as? MaterialCardView
+        val cover: View? = view.findViewById(R.id.cover)
         val thumb: ShapeableImageView = view.findViewById(R.id.thumb)
         val placeholder: ImageView = view.findViewById(R.id.placeholder)
         val badge: TextView = view.findViewById(R.id.badge)
@@ -140,6 +150,7 @@ class BookAdapter(
         val subtitle = item.subtitle ?: subtitleFor(context, item)
         holder.subtitle.text = subtitle
         holder.subtitle.visibility = if (showName && subtitle.isNotEmpty()) View.VISIBLE else View.GONE
+        if (grid) sizeCell(holder, showName)
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }
@@ -159,7 +170,7 @@ class BookAdapter(
             val reqW: Int
             val reqH: Int
             if (grid) {
-                reqW = context.resources.getDimensionPixelSize(R.dimen.grid_thumb_h)
+                reqW = maxOf(context.resources.getDimensionPixelSize(R.dimen.grid_thumb_h), cellHeight)
                 reqH = reqW
             } else {
                 reqW = context.resources.getDimensionPixelSize(R.dimen.list_thumb_w)
@@ -196,6 +207,35 @@ class BookAdapter(
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * With a row count set, the card takes the cell height and the cover gets what
+     * the text below leaves; the text keeps its size. Otherwise the cover has its
+     * fixed height and the card wraps it.
+     */
+    private fun sizeCell(holder: BookHolder, showName: Boolean) {
+        val cover = holder.cover ?: return
+        val card = holder.itemView
+        val cardParams = card.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        val coverParams = cover.layoutParams as LinearLayout.LayoutParams
+        val body = cover.parent as View
+        val rows = cellHeight > 0
+        cardParams.height = if (rows) {
+            cellHeight - cardParams.topMargin - cardParams.bottomMargin
+        } else {
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        }
+        body.layoutParams.height =
+            if (rows) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
+        coverParams.height = if (rows) 0 else card.resources.getDimensionPixelSize(R.dimen.grid_thumb_h)
+        coverParams.weight = if (rows) 1f else 0f
+        // The same text height in every cell keeps the covers of a row equal.
+        holder.title.minLines = if (rows) holder.title.maxLines else 0
+        if (rows && showName && holder.subtitle.visibility == View.GONE) {
+            holder.subtitle.visibility = View.INVISIBLE
+        }
+        card.layoutParams = cardParams
+    }
 
     private fun applyHighlight(holder: BookHolder, item: BookEntry) {
         val card = holder.card ?: return

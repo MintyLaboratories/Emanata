@@ -123,6 +123,10 @@ class ListActivity : AppCompatActivity() {
         recycler.adapter = adapter
         applyLayoutManager()
         recycler.setHasFixedSize(false)
+        recycler.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            // Not from inside a layout pass: resizing cells rebinds them.
+            if (bottom - top != oldBottom - oldTop) recycler.post { updateCellHeight() }
+        }
 
         tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) = onTabChanged(tab.position)
@@ -182,9 +186,10 @@ class ListActivity : AppCompatActivity() {
         val old = applied
         if (old == s) return
         applied = s
-        if (s.grid != old.grid || s.gridColumns != old.gridColumns) {
+        if (s.grid != old.grid || s.gridColumns != old.gridColumns || s.gridRows != old.gridRows) {
             adapter.grid = s.grid
             applyLayoutManager()
+            updateCellHeight()
             updateFabIcon()
             invalidateOptionsMenu()
         }
@@ -681,9 +686,15 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun columnCount(): Int {
-        if (prefs.gridColumns > 0) return prefs.gridColumns
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
-        return (widthDp / 120f).toInt().coerceIn(2, 6)
+        return GridSizing.columns(prefs.gridColumns, widthDp)
+    }
+
+    /** Sizes grid cells so the chosen number of rows fills the list's visible height. */
+    private fun updateCellHeight() {
+        val available = recycler.height - recycler.paddingTop
+        val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
+        adapter.cellHeight = if (prefs.listGrid) GridSizing.cellHeight(available, prefs.gridRows, minPx) else 0
     }
 
     private fun toggleFavorite(path: String?) {
@@ -1145,5 +1156,8 @@ class ListActivity : AppCompatActivity() {
         private const val DEEP_SEARCH_DELAY_MS = 300L
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
+
+        /** Room for the name and details below a cover that is still recognizable. */
+        private const val MIN_CELL_DP = 120
     }
 }

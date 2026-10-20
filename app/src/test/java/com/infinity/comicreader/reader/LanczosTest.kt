@@ -188,6 +188,17 @@ class LanczosTest {
     }
 
     @Test
+    fun reusedBuffersGiveTheSameResult() {
+        val small = noise(31, 29, 4, opaque = false)
+        val large = noise(140, 90, 5, opaque = true)
+        val first = Lanczos.resample(small, 31, 29, Lanczos.Window.of(31, 29), 12, 40)
+        // Grows every pooled buffer, then fills it with other rows.
+        Lanczos.resample(large, 140, 90, Lanczos.Window.of(140, 90), 300, 10, linear = true)
+        Lanczos.resample(large, 140, 90, Lanczos.Window.of(140, 90), 9, 70)
+        assertArrayEquals(first, Lanczos.resample(small, 31, 29, Lanczos.Window.of(31, 29), 12, 40))
+    }
+
+    @Test
     fun shrinkingWidensTheKernel() {
         val enlarge = Lanczos.axis(100, 0.0, 100.0, 300)
         val shrink = Lanczos.axis(1000, 0.0, 1000.0, 100)

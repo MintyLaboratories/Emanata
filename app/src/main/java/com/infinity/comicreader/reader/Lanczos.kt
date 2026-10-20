@@ -3,6 +3,8 @@ package com.infinity.comicreader.reader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.lang.ref.SoftReference
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -24,10 +26,10 @@ import kotlin.math.sin
  *   negative lobes for the vertical one; only the final value is clamped.
  * - With `linear`, colors are filtered in linear light (sRGB decoded, then encoded).
  *
- * Output rows are split into bands filtered in parallel on [Dispatchers.Default].
- * Each band filters its source rows horizontally once, into a ring buffer as tall
- * as the vertical kernel and as wide as the output, so memory stays a few output
- * rows per band whatever the source size.
+ * Output rows are split into bands, which one worker per thread on [Dispatchers.Default]
+ * takes in turn. A worker filters its source rows horizontally once, into a ring buffer
+ * as tall as the vertical kernel and as wide as the output, so memory stays a few output
+ * rows per worker whatever the source size; its buffers are pooled between resamples.
  */
 object Lanczos {
     const val RADIUS = 3
@@ -101,7 +103,7 @@ object Lanczos {
 
     /**
      * Resamples [window] of a [srcW] x [srcH] image read through [reader] to [dstW] x [dstH],
-     * handing finished rows to [writer] in bands, on up to [threads] threads. Blocks the
+     * handing each finished row to [writer], on up to [threads] threads. Blocks the
      * calling thread until done, so it must not run on [Dispatchers.Default] itself.
      */
     fun resample(
@@ -120,15 +122,23 @@ object Lanczos {
         // A few bands per thread even out uneven progress; each band refilters only
         // the kernel's few rows it shares with the next.
         val bands = min(dstH, threads.coerceAtLeast(1) * BANDS_PER_THREAD)
-        if (bands <= 1 || threads <= 1) {
-            Band(srcW, ax, ay, linear, reader).run(0, dstH, writer)
+        val workers = min(threads, bands)
+        if (workers <= 1) {
+            withBand(srcW, ax, ay, linear, reader) { it.run(0, dstH, writer) }
             return
         }
+        val next = AtomicInteger()
         runBlocking(Dispatchers.Default) {
-            for (b in 0 until bands) {
-                val y0 = (dstH.toLong() * b / bands).toInt()
-                val y1 = (dstH.toLong() * (b + 1) / bands).toInt()
-                if (y1 > y0) launch { Band(srcW, ax, ay, linear, reader).run(y0, y1, writer) }
+            repeat(workers) {
+                launch {
+                    withBand(srcW, ax, ay, linear, reader) { band ->
+                        while (true) {
+                            val b = next.getAndIncrement()
+                            if (b >= bands) break
+                            band.run((dstH.toLong() * b / bands).toInt(), (dstH.toLong() * (b + 1) / bands).toInt(), writer)
+                        }
+                    }
+                }
             }
         }
     }
@@ -152,37 +162,72 @@ object Lanczos {
         return out
     }
 
+    /** Working arrays of one worker, kept between resamples and grown as sizes need. */
+    private class Buffers {
+        var raw = IntArray(0)
+        var converted = FloatArray(0)
+        var ring = FloatArray(0)
+        var ringRow = IntArray(0)
+        var sum = FloatArray(0)
+        var out = IntArray(0)
+    }
+
+    /** Buffers no worker is using; soft, so memory pressure can free them. */
+    private val pool = ArrayDeque<SoftReference<Buffers>>()
+
+    private val maxPooled = Runtime.getRuntime().availableProcessors()
+
+    /** Runs [block] with a [Band] on pooled buffers, returned to the pool after. */
+    private inline fun withBand(srcW: Int, ax: Axis, ay: Axis, linear: Boolean, reader: RowReader, block: (Band) -> Unit) {
+        val buffers = synchronized(pool) {
+            var found: Buffers? = null
+            while (found == null && pool.isNotEmpty()) found = pool.removeLast().get()
+            found
+        } ?: Buffers()
+        try {
+            block(Band(srcW, ax, ay, linear, reader, buffers))
+        } finally {
+            synchronized(pool) { if (pool.size < maxPooled) pool.addLast(SoftReference(buffers)) }
+        }
+    }
+
     /**
-     * One band's buffers: a ring of horizontally filtered source rows, as wide as the
-     * output, and the vertical sum for the current output row.
+     * One worker's view of its [Buffers]: a ring of horizontally filtered source rows,
+     * as wide as the output, the vertical sum for the current output row, and that row
+     * packed for the writer.
      */
     private class Band(
         srcW: Int,
         private val ax: Axis,
         private val ay: Axis,
         private val linear: Boolean,
-        private val reader: RowReader
+        private val reader: RowReader,
+        buffers: Buffers
     ) {
         private val dstW = ax.start.size
+        private val rowLen = dstW * 4
         private val x0 = ax.first
-        private val raw = IntArray(srcW)
-        private val converted = FloatArray((ax.end - ax.first) * 4)
-        private val ring = Array(ay.stride) { FloatArray(dstW * 4) }
-        private val ringRow = IntArray(ay.stride) { -1 }
-        private val sum = FloatArray(dstW * 4)
+        private val raw = buffers.raw.atLeast(srcW).also { buffers.raw = it }
+        private val converted = buffers.converted.atLeast((ax.end - ax.first) * 4).also { buffers.converted = it }
+        private val ring = buffers.ring.atLeast(ay.stride * rowLen).also { buffers.ring = it }
+        private val ringRow = buffers.ringRow.atLeast(ay.stride).also {
+            buffers.ringRow = it
+            it.fill(-1, 0, ay.stride)
+        }
+        private val sum = buffers.sum.atLeast(rowLen).also { buffers.sum = it }
+        private val out = buffers.out.atLeast(dstW).also { buffers.out = it }
 
+        /** Filters output rows [y0] until [y1], writing each as it is done. */
         fun run(y0: Int, y1: Int, writer: RowWriter) {
-            val out = IntArray((y1 - y0) * dstW)
             for (y in y0 until y1) {
                 vertical(y)
-                val offset = (y - y0) * dstW
                 var o = 0
                 for (x in 0 until dstW) {
-                    out[offset + x] = pack(sum[o], sum[o + 1], sum[o + 2], sum[o + 3], linear)
+                    out[x] = pack(sum[o], sum[o + 1], sum[o + 2], sum[o + 3], linear)
                     o += 4
                 }
+                writer.write(y, 1, out)
             }
-            writer.write(y0, y1 - y0, out)
         }
 
         private fun vertical(y: Int) {
@@ -191,19 +236,22 @@ object Lanczos {
             val wBase = y * ay.stride
             val first = row(s)
             val w0 = ay.weights[wBase]
-            for (j in sum.indices) sum[j] = w0 * first[j]
+            for (j in 0 until rowLen) sum[j] = w0 * ring[first + j]
             for (t in 1 until n) {
                 val src = row(s + t)
                 val w = ay.weights[wBase + t]
-                for (j in sum.indices) sum[j] += w * src[j]
+                for (j in 0 until rowLen) sum[j] += w * ring[src + j]
             }
         }
 
-        /** Source row [sy] filtered horizontally, premultiplied 0..1 channels; from the ring or made now. */
-        private fun row(sy: Int): FloatArray {
-            val slot = sy % ring.size
-            val buf = ring[slot]
-            if (ringRow[slot] == sy) return buf
+        /**
+         * Offset in [ring] of source row [sy] filtered horizontally, premultiplied 0..1
+         * channels; kept from earlier or made now.
+         */
+        private fun row(sy: Int): Int {
+            val slot = sy % ay.stride
+            val base = slot * rowLen
+            if (ringRow[slot] == sy) return base
             reader.read(sy, raw)
             convert()
             for (x in 0 until dstW) {
@@ -222,14 +270,14 @@ object Lanczos {
                     a += w * converted[o + 3]
                     o += 4
                 }
-                val d = x * 4
-                buf[d] = r
-                buf[d + 1] = g
-                buf[d + 2] = b
-                buf[d + 3] = a
+                val d = base + x * 4
+                ring[d] = r
+                ring[d + 1] = g
+                ring[d + 2] = b
+                ring[d + 3] = a
             }
             ringRow[slot] = sy
-            return buf
+            return base
         }
 
         /** The columns the horizontal taps read, from the row in [raw], as premultiplied 0..1 floats. */
@@ -255,6 +303,10 @@ object Lanczos {
             }
         }
     }
+
+    private fun IntArray.atLeast(n: Int): IntArray = if (size >= n) this else IntArray(n)
+
+    private fun FloatArray.atLeast(n: Int): FloatArray = if (size >= n) this else FloatArray(n)
 
     /** Premultiplied 0..1 channels back to one non-premultiplied ARGB pixel. */
     private fun pack(r: Float, g: Float, b: Float, a: Float, linear: Boolean): Int {

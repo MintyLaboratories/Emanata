@@ -301,9 +301,12 @@ class ViewerActivity : AppCompatActivity() {
         open()
     }
 
-    /** Opens the current chapter again at the current page. */
+    /**
+     * Opens the current chapter again: at the current page, or while it is still
+     * opening, at the page it was asked for.
+     */
     private fun reopen() {
-        intent.putExtra(EXTRA_PAGE, currentIndex)
+        if (source != null) intent.putExtra(EXTRA_PAGE, currentIndex)
         stopAutoScroll()
         flushStats()
         saveHistory()
@@ -441,7 +444,7 @@ class ViewerActivity : AppCompatActivity() {
         ) {
             if (reloadLayout()) rebuild = true
         }
-        if (s.charset != old.charset && source != null) {
+        if (s.charset != old.charset && (source != null || openJob?.isActive == true)) {
             // Entry names, and with them the page order, depend on the charset.
             reopen()
         } else {

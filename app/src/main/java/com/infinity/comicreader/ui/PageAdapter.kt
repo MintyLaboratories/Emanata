@@ -473,7 +473,9 @@ class PageAdapter(
 
     /** Starts (or joins) the background decode for [key]. Main thread only. */
     private fun request(key: PageKey): Pending {
-        pending[key]?.let { return it }
+        // Only a running decode is joined: a finished one is merely not forgotten yet, and
+        // a transient failure must run again.
+        pending[key]?.takeIf { it.deferred.isActive }?.let { return it }
         val pageIndex = key.page
         val chapter = strip.chapterOf(pageIndex)
         val seg = chapter.value

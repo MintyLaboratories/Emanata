@@ -179,6 +179,9 @@ class PageAdapter(
         if (spread) {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
+                // Slots are screen order, already flipped for RTL: do not inherit the
+                // pager's RTL direction, which would mirror the row a second time.
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
                 layoutParams = RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT

@@ -23,7 +23,7 @@
     <string name="menu_exit">Exit</string>
     <string name="menu_add_favorite">Add to favorites</string>
     <string name="menu_remove_favorite">Remove from favorites</string>
-    <string name="menu_set_home">Set as home folder</string>
+    <string name="menu_set_startup">Set as startup folder</string>
     <string name="menu_open_location">Open file location</string>
     <string name="menu_rename">Rename</string>
     <string name="menu_refresh">Refresh</string>
@@ -84,7 +84,7 @@
     <string name="rename_failed">Could not rename</string>
     <string name="new_folder_hint">Folder name</string>
     <string name="folder_created">Folder created</string>
-    <string name="home_set">Home folder updated</string>
+    <string name="startup_folder_set">Startup folder set</string>
     <string name="open_location_failed">The file is no longer there</string>
     <string name="recent">Recent</string>
     <string name="recent_desc">Go to the folder of the last chapter you read</string>

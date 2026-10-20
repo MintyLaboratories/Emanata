@@ -765,9 +765,9 @@ class ListActivity : AppCompatActivity() {
             }
             add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
             if (entry.isDir) {
-                add(getString(R.string.menu_set_home)) {
+                add(getString(R.string.menu_set_startup)) {
                     prefs.setStartupFolder(path)
-                    toast(R.string.home_set)
+                    toast(R.string.startup_folder_set)
                 }
             }
             if (entry.file.exists()) {

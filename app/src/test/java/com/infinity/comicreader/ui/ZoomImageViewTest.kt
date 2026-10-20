@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import android.app.Activity
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -10,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Region
 import org.junit.Assert.assertEquals
@@ -19,6 +21,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -186,6 +189,33 @@ class ZoomImageViewTest {
         detail.deliver()
         v.setImageBitmap(Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888))
         assertNull(v.detailShown)
+    }
+
+    @Test
+    fun zoomedViewReattachedFromACacheRendersItsDetailAgain() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val frame = FrameLayout(activity)
+        activity.setContentView(frame)
+        val v = ZoomImageView(activity)
+        frame.addView(v, FrameLayout.LayoutParams(300, 400))
+        pass(0)
+        v.setImageBitmap(Bitmap.createBitmap(300, 360, Bitmap.Config.ARGB_8888))
+        pass(0)
+        val detail = RecordingDetail()
+        v.detailSource = detail
+        v.zoomTo(2f, 150f, 200f)
+        pass(160)
+        detail.deliver()
+        assertNotNull(v.detailShown)
+
+        // Detaching drops the detail; the cache gives the view back zoomed as it was.
+        frame.removeView(v)
+        assertNull(v.detailShown)
+        frame.addView(v, FrameLayout.LayoutParams(300, 400))
+        pass(160)
+        assertEquals(2, detail.requests.size)
+        val shown = detail.deliver()
+        assertTrue(v.detailShown === shown)
     }
 
     /** Draws [v] as the screen would, through the shaders, which the host runs in its own AGSL dialect. */

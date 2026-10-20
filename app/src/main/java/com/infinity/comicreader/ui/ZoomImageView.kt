@@ -317,6 +317,19 @@ class ZoomImageView @JvmOverloads constructor(
         post { fit(fitMode) }
     }
 
+    /** A zoomed view coming back from a list's cache, which keeps its zoom, renders its detail again. */
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        resettle()
+    }
+
+    /** Waits for the view to settle again, if it is zoomed, to render its detail. */
+    private fun resettle() {
+        if (!zoomed || detailSource == null) return
+        settler.removeCallbacks(settle)
+        settler.postDelayed(settle, SETTLE_MS)
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         dropDetail()

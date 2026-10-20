@@ -5,6 +5,10 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.awxkee.jxlcoder.JxlCoder
+import com.awxkee.jxlcoder.JxlResizeFilter
+import com.awxkee.jxlcoder.PreferredColorConfig
+import com.awxkee.jxlcoder.ScaleMode
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -23,11 +27,12 @@ class DecodeException(message: String, cause: Throwable? = null) : IOException(m
  * 1 or less leaves that axis free. The result is never smaller than the target on a
  * constrained axis unless [capPixels] forces it, and may be up to twice as large:
  * downscaling is still a power-of-two sample size ([sampleSize]) applied inside the
- * decoder. Exact-size resampling replaces that in one place, [decodePlatform] and
- * [decodeLegacy]: decode at sample size 1, then resample to the target.
+ * decoder. Exact-size resampling replaces that in one place, [decodeJxl],
+ * [decodePlatform] and [decodeLegacy]: decode at sample size 1, then resample to
+ * the target.
  *
- * Platform formats use [ImageDecoder] on API 28+ (AVIF from API 31), with
- * [BitmapFactory] as the fallback below that.
+ * JPEG XL decodes with jxl-coder on every API level. Other formats use
+ * [ImageDecoder] on API 28+ (AVIF from API 31), with [BitmapFactory] below that.
  */
 object Decoders {
     const val DEFAULT_CAP_PIXELS = 12_000_000L
@@ -36,16 +41,22 @@ object Decoders {
     private const val MAX_DIM = 4096
 
     fun decode(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap {
-        val kind = ImageKind.sniff(bytes)?.name ?: "unrecognized"
+        val kind = ImageKind.sniff(bytes)
+        val label = kind?.name ?: "unrecognized"
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) decodePlatform(bytes, reqW, reqH, capPixels)
-            else decodeLegacy(bytes, reqW, reqH, capPixels)
+            when {
+                kind == ImageKind.JXL -> decodeJxl(bytes, reqW, reqH, capPixels)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> decodePlatform(bytes, reqW, reqH, capPixels)
+                else -> decodeLegacy(bytes, reqW, reqH, capPixels)
+            }
         } catch (e: DecodeException) {
             throw e
+        } catch (e: LinkageError) {
+            throw DecodeException("No $label decoder on this device", e)
         } catch (e: OutOfMemoryError) {
-            throw DecodeException("Not enough memory for this $kind image", e)
+            throw DecodeException("Not enough memory for this $label image", e)
         } catch (e: Exception) {
-            throw DecodeException("Could not decode this $kind image", e)
+            throw DecodeException("Could not decode this $label image", e)
         }
     }
 
@@ -58,6 +69,7 @@ object Decoders {
     /** Intrinsic `[width, height]` as a decode would return it at full size, without decoding pixels; null if unknown. */
     fun size(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
         ImageKind.PNG -> ImageHeaders.pngSize(bytes)
+        ImageKind.JXL -> jxlSize(bytes)
         else -> platformSize(bytes)
     }
 
@@ -78,6 +90,33 @@ object Decoders {
         while (w.toLong() * h.toLong() / (sample.toLong() * sample.toLong()) > capPixels) sample *= 2
         return sample
     }
+
+    // ------------------------------------------------------------------ JPEG XL
+
+    /** Downscales inside jxl-coder (Mitchell) to the power-of-two size the other formats get. */
+    private fun decodeJxl(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
+        val size = jxlSize(bytes) ?: throw DecodeException("Not a valid JXL image")
+        val sample = sampleSize(size[0], size[1], reqW, reqH, capPixels)
+        if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
+        return JxlCoder.decodeSampled(
+            bytes,
+            (size[0] / sample).coerceAtLeast(1),
+            (size[1] / sample).coerceAtLeast(1),
+            PreferredColorConfig.RGBA_8888,
+            ScaleMode.FIT,
+            JxlResizeFilter.MITCHELL_NETRAVALI
+        )
+    }
+
+    /** Header size, or the library's own reading for layouts [ImageHeaders.jxlSize] does not follow. */
+    private fun jxlSize(bytes: ByteArray): IntArray? =
+        ImageHeaders.jxlSize(bytes) ?: try {
+            JxlCoder.getSize(bytes)?.let { intArrayOf(it.width, it.height) }?.takeIf { it[0] > 0 && it[1] > 0 }
+        } catch (e: Exception) {
+            null
+        } catch (e: LinkageError) {
+            null
+        }
 
     // ------------------------------------------------------------------ platform
 

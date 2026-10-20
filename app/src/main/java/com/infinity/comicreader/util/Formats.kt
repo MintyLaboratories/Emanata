@@ -3,12 +3,12 @@ package com.infinity.comicreader.util
 import com.infinity.comicreader.data.EntryType
 
 /**
- * Recognised formats. Mirrors the format set used by the reference application:
- * images (jpg/jpeg/png/gif/bmp/webp/avif) and the archives zip/cbz, rar/cbr,
- * 7z/cb7, plus pdf.
+ * Recognised formats: images (jpg/jpeg/png/gif/bmp/webp/avif/heic/heif/jxl), the
+ * archives zip/cbz, rar/cbr, 7z/cb7, plus pdf. Extensions only pick what to list;
+ * the bytes decide how a file is read ([com.infinity.comicreader.reader.ImageKind]).
  */
 object Formats {
-    val IMAGE = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "avif", "heic", "heif")
+    val IMAGE = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "avif", "heic", "heif", "jxl")
     val ZIP = setOf("zip", "cbz")
     val RAR = setOf("rar", "cbr")
     val SEVEN_ZIP = setOf("7z", "cb7")

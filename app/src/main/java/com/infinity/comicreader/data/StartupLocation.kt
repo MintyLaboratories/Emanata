@@ -8,7 +8,8 @@ object StartupLocation {
     const val CUSTOM = "custom"
 
     /**
-     * The folder for [choice], or the last folder seen when that one is gone, or null.
+     * The folder for [choice], or the last folder seen when that one is gone, or null;
+     * only the lists [choice] needs are read.
      * - [LAST]: [last];
      * - [FIRST_FAVORITE]: the first folder of [shown], the favorites in Favorites tab order;
      * - [RECENT_FAVORITE]: the favorite folder holding the most recently read book,
@@ -20,15 +21,15 @@ object StartupLocation {
         custom: String?,
         last: String?,
         shown: () -> List<String>,
-        added: List<String>,
-        history: List<String>,
+        added: () -> List<String>,
+        history: () -> List<String>,
         isDir: (String) -> Boolean
     ): String? {
         val picked = when (choice) {
             FIRST_FAVORITE -> shown().firstOrNull(isDir)
             RECENT_FAVORITE -> {
-                val folders = added.filter(isDir)
-                history.firstNotNullOfOrNull { book ->
+                val folders = added().filter(isDir)
+                history().firstNotNullOfOrNull { book ->
                     folders.filter { isUnder(book, it) }.maxByOrNull { it.length }
                 } ?: folders.firstOrNull()
             }

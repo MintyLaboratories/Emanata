@@ -97,6 +97,7 @@ class ListActivity : AppCompatActivity() {
     private var mode = TAB_BROWSE
     private var query = ""
     private var resumedOnce = false
+    private var started = false
 
     /** The state to come back to after a recreate, until [startUp] uses it. */
     private var restored: Bundle? = null
@@ -225,7 +226,7 @@ class ListActivity : AppCompatActivity() {
         if (!resumedOnce) {
             // Right after onCreate's listing, or after access was granted to start up with.
             resumedOnce = true
-            if (currentDir == null) startUp()
+            if (!started) startUp()
             return
         }
         // Refresh so files added/removed outside the app (or from the viewer)
@@ -337,13 +338,20 @@ class ListActivity : AppCompatActivity() {
         val savedDir = state?.getString(STATE_DIR)?.let { File(it) }?.takeIf { it.isDirectory }
         val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
         startTab = null
-        val dir = savedDir ?: incomingDir ?: startDirectory()
+        started = true
+        val dir = savedDir ?: incomingDir
         incomingDir = null
         if (tab == TAB_BROWSE) {
-            loadDirectory(dir)
+            if (dir != null) loadDirectory(dir) else openStartDirectory()
             return
         }
         currentDir = dir
+        if (dir == null) {
+            lifecycleScope.launch {
+                val start = withContext(AppDispatchers.io) { startDirectory() }
+                if (currentDir == null) currentDir = start
+            }
+        }
         when (tab) {
             TAB_FAVORITES -> showFavorites()
             TAB_HISTORY -> showHistory()
@@ -358,21 +366,28 @@ class ListActivity : AppCompatActivity() {
         else -> TAB_BROWSE
     }
 
+    /** The startup location; checks folders, so not on the main thread. */
     private fun startDirectory(): File {
         val path = StartupLocation.resolve(
             choice = prefs.startupLocation,
             custom = prefs.startupPath,
             last = prefs.lastPath,
             shown = { LibraryOrder.favorites(this, prefs, roots).map { it.path } },
-            added = library.favorites(),
-            history = library.history().map { it.path },
+            added = { library.favorites() },
+            history = { library.history().map { it.path } },
             isDir = { File(it).isDirectory }
         )
         return path?.let { File(it) } ?: Environment.getExternalStorageDirectory()
     }
 
-    /** Browses the startup location. */
-    private fun openStartDirectory() = loadDirectory(startDirectory())
+    /** Browses the startup location, unless another listing starts while it is worked out. */
+    private fun openStartDirectory() {
+        showProgress(true)
+        launchListing {
+            val dir = withContext(AppDispatchers.io) { startDirectory() }
+            loadDirectory(dir)
+        }
+    }
 
     // ------------------------------------------------------------------ tabs
 

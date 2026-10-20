@@ -19,11 +19,17 @@ class StartupLocationTest {
         shown: List<String> = listOf("/r/book.cbz", "/r/b", "/r/a"),
         added: List<String> = listOf("/r/a", "/r/book.cbz", "/r/b", "/r/b/inner"),
         history: List<String> = emptyList()
-    ) = StartupLocation.resolve(choice, custom, last, { shown }, added, history) { it in dirs }
+    ) = StartupLocation.resolve(choice, custom, last, { shown }, { added }, { history }) { it in dirs }
 
     @Test
     fun lastSeen() {
         assertEquals("/r/last", resolve(LAST))
+    }
+
+    @Test
+    fun lastSeenReadsNoLists() {
+        val unread: () -> List<String> = { throw AssertionError("read") }
+        assertEquals("/r/last", StartupLocation.resolve(LAST, null, "/r/last", unread, unread, unread) { it in dirs })
     }
 
     @Test

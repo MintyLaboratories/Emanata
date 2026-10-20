@@ -39,7 +39,13 @@ class ListActivityCrumbsTest {
         Prefs(context).lastPath = File(root, "attic/Comics").absolutePath
     }
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+    private fun idle() {
+        // The startup location is worked out on the IO pool; let it land on the main thread.
+        repeat(10) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+    }
 
     private fun CrumbBar.row(): LinearLayout = (getChildAt(1) as HorizontalScrollView).getChildAt(0) as LinearLayout
 

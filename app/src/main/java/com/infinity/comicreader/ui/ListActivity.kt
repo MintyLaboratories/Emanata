@@ -13,6 +13,7 @@ import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -70,6 +71,9 @@ class ListActivity : AppCompatActivity() {
     private lateinit var tabs: TabLayout
     private lateinit var pathbar: TextView
     private lateinit var fab: FloatingActionButton
+
+    /** A detached "Recent" row, measured to size grid rows around the real one. */
+    private var headerProbe: View? = null
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -530,16 +534,16 @@ class ListActivity : AppCompatActivity() {
     private fun updateRecentHeader() {
         val show = mode == TAB_BROWSE && query.isBlank() && shown.isNotEmpty()
         val dir = if (show) library.history().firstOrNull()?.let { File(it.path).parentFile } else null
-        if (dir == null) {
-            adapter.header = null
-            return
+        adapter.header = dir?.let {
+            BookAdapter.Header(
+                title = getString(R.string.recent),
+                subtitle = relativePath(it).ifEmpty { it.absolutePath },
+                iconRes = R.drawable.ic_history,
+                onClick = { loadDirectory(it) }
+            )
         }
-        adapter.header = BookAdapter.Header(
-            title = getString(R.string.recent),
-            subtitle = relativePath(dir).ifEmpty { dir.absolutePath },
-            iconRes = R.drawable.ic_history,
-            onClick = { loadDirectory(dir) }
-        )
+        // Grid rows share the height the header leaves.
+        if (prefs.listGrid && prefs.gridRows > 0) updateCellSize()
     }
 
     private fun updateEmptyState() {
@@ -707,9 +711,29 @@ class ListActivity : AppCompatActivity() {
         }
         val inner = recycler.width - recycler.paddingLeft - recycler.paddingRight
         val width = inner.coerceAtLeast(0) / columnCount()
-        val available = recycler.height - recycler.paddingTop
+        val rows = prefs.gridRows
+        val header = if (rows > 0) headerHeight(inner) else 0
+        val available = GridSizing.rowSpace(recycler.height, recycler.paddingTop, recycler.paddingBottom, header)
         val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
-        adapter.setCellSize(width, GridSizing.cellHeight(available, prefs.gridRows, minPx))
+        adapter.setCellSize(width, GridSizing.cellHeight(available, rows, minPx))
+    }
+
+    /** Height of the "Recent" row with its margins at list width [width], measured from its layout; 0 without one. */
+    private fun headerHeight(width: Int): Int {
+        val h = adapter.header ?: return 0
+        if (width <= 0) return 0
+        val view = headerProbe ?: layoutInflater.inflate(R.layout.item_book_header, recycler, false).also { headerProbe = it }
+        view.findViewById<TextView>(R.id.title).text = h.title
+        view.findViewById<TextView>(R.id.subtitle).apply {
+            text = h.subtitle
+            visibility = if (h.subtitle.isEmpty()) View.GONE else View.VISIBLE
+        }
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val margins = view.layoutParams as? ViewGroup.MarginLayoutParams
+        return view.measuredHeight + (margins?.topMargin ?: 0) + (margins?.bottomMargin ?: 0)
     }
 
     private fun toggleFavorite(path: String?) {
@@ -1031,6 +1055,7 @@ class ListActivity : AppCompatActivity() {
         menu.findItem(R.id.menu_grid)?.title =
             getString(if (prefs.listGrid) R.string.menu_list_view else R.string.menu_grid)
         menu.findItem(R.id.menu_columns)?.isVisible = prefs.listGrid
+        menu.findItem(R.id.menu_rows)?.isVisible = prefs.listGrid
         menu.findItem(R.id.menu_show_hidden)?.apply {
             isChecked = prefs.showHidden
             title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
@@ -1062,6 +1087,7 @@ class ListActivity : AppCompatActivity() {
             R.id.menu_sort -> showSortDialog()
             R.id.menu_sort_dir -> toggleSortDirection()
             R.id.menu_columns -> showColumnsDialog()
+            R.id.menu_rows -> showRowsDialog()
             R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }
@@ -1114,6 +1140,19 @@ class ListActivity : AppCompatActivity() {
             .setTitle(R.string.menu_columns)
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.gridColumns = values[which].toIntOrNull() ?: 0
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    private fun showRowsDialog() {
+        val values = resources.getStringArray(R.array.rows_values)
+        val labels = resources.getStringArray(R.array.rows_entries)
+        val checked = values.indexOf(prefs.gridRows.toString()).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_grid_rows)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                prefs.gridRows = values[which].toIntOrNull() ?: 0
                 dialog.dismiss()
             }
             .show()

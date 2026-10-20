@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The library's overflow menu. Browsing and housekeeping actions stay at the top
-  level; the presentation knobs (sort, columns, hidden files) and the bulk tools
+  level; the presentation knobs (sort, columns, rows, hidden files) and the bulk tools
   live in two submenus so the list never needs a scroll.
 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
@@ -53,6 +53,9 @@
             <item
                 android:id="@+id/menu_columns"
                 android:title="@string/menu_columns" />
+            <item
+                android:id="@+id/menu_rows"
+                android:title="@string/pref_grid_rows" />
             <item
                 android:id="@+id/menu_show_hidden"
                 android:checkable="true"

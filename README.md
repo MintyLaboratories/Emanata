@@ -33,7 +33,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 ## Features
 
 ### File browser
-- Browse local storage by folder; list and grid layouts.
+- Browse local storage by folder; list and grid layouts. **Grid columns** and
+  **Grid rows** (menu → View, or Settings) size the cells; rows share the height
+  below the Recent row and above the floating button.
 - Covers are made at the exact size of their cell (cropped and Lanczos3-scaled,
   drawn 1:1) and cached losslessly.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.

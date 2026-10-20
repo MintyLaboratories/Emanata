@@ -21,4 +21,12 @@ object GridSizing {
         if (rows <= 0 || availablePx <= 0) return 0
         return maxOf(availablePx / rows, minPx)
     }
+
+    /**
+     * Height the grid rows share in a list [heightPx] tall: less its top padding, its
+     * bottom padding (which keeps the last row clear of the floating button) and the
+     * full-width [headerPx] row above the cells, if any.
+     */
+    fun rowSpace(heightPx: Int, paddingTop: Int, paddingBottom: Int, headerPx: Int): Int =
+        (heightPx - paddingTop - paddingBottom - headerPx).coerceAtLeast(0)
 }

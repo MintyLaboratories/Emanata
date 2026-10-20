@@ -3,11 +3,13 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.app.Application
 import android.os.Looper
+import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.google.android.material.appbar.MaterialToolbar
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 
 @RunWith(RobolectricTestRunner::class)
 // Before API 30 storage access is a runtime permission, which the test can grant.
@@ -101,5 +104,36 @@ class ListActivityLiveSettingsTest {
         list.start().resume()
         idle()
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp")
+    fun rowsFitAboveTheBottomPadding() {
+        prefs.listGrid = true
+        prefs.gridRows = 2
+        val list = launch()
+        idle()
+        val recycler = list.recycler()
+        val adapter = recycler.adapter as BookAdapter
+        assertTrue(adapter.cellHeight > 0)
+        // Both rows fit in the space the floating button's padding leaves.
+        assertTrue(2 * adapter.cellHeight <= recycler.height - recycler.paddingTop - recycler.paddingBottom)
+    }
+
+    @Test
+    fun gridRowsAreInTheMenu() {
+        prefs.listGrid = true
+        val list = launch()
+        val activity = list.get()
+        activity.invalidateOptionsMenu()
+        idle()
+        val item = activity.findViewById<MaterialToolbar>(R.id.toolbar).menu.findItem(R.id.menu_rows)
+        assertTrue(item.isVisible)
+        activity.onOptionsItemSelected(item)
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        // Entries are Auto, 1, 2, 3, ...
+        dialog.listView.performItemClick(null, 3, 3)
+        idle()
+        assertEquals(3, prefs.gridRows)
     }
 }

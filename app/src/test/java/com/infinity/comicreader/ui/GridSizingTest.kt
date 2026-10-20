@@ -50,4 +50,13 @@ class GridSizingTest {
         assertEquals(300, GridSizing.cellHeight(900, 6, minPx = 300))
         assertEquals(450, GridSizing.cellHeight(900, 2, minPx = 300))
     }
+
+    @Test
+    fun rowsShareWhatPaddingAndHeaderLeave() {
+        // 2400 px list, 8 px top, 192 px kept clear of the button, a 144 px "Recent" row.
+        assertEquals(2056, GridSizing.rowSpace(2400, 8, 192, 144))
+        assertEquals(2200, GridSizing.rowSpace(2400, 8, 192, 0))
+        assertEquals(0, GridSizing.rowSpace(100, 8, 192, 144))
+        assertEquals(685, GridSizing.cellHeight(GridSizing.rowSpace(2400, 8, 192, 144), 3))
+    }
 }

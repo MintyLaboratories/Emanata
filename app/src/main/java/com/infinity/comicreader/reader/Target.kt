@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -52,15 +53,24 @@ data class Target(
                 // The axis needing the larger scale is filled; the other is cropped evenly.
                 if (bw * srcH >= bh * srcW) {
                     val span = bh * srcW / bw
-                    Plan(bw, bh, left, top + (srcH - span) / 2, srcW, span)
+                    Plan(bw, bh, left, top + coverOffset(srcH, span, bh), srcW, span)
                 } else {
                     val span = bw * srcH / bh
-                    Plan(bw, bh, left + (srcW - span) / 2, top, span, srcH)
+                    Plan(bw, bh, left + coverOffset(srcW, span, bw), top, span, srcH)
                 }
             }
             else -> inside(srcW, srcH, left, top)
         }
         return plan.capped(MAX_OUTPUT_PIXELS, MAX_OUTPUT_SIDE)
+    }
+
+    /**
+     * Where a [span] of a [length]-long axis starts when cropped evenly from both sides;
+     * at scale 1 (the span is the [box]) on a whole pixel, so the result is a plain crop.
+     */
+    private fun coverOffset(length: Double, span: Double, box: Int): Double {
+        val offset = (length - span) / 2
+        return if (span == box.toDouble()) floor(offset) else offset
     }
 
     /** [Fit.INSIDE] and [Fit.SHRINK]: the limiting axis lands exactly on the box. */

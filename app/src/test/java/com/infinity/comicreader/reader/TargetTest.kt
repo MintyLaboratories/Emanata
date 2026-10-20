@@ -58,6 +58,16 @@ class TargetTest {
     }
 
     @Test
+    fun coverAtScaleOneCropsOnWholePixels() {
+        val tall = Target(576, 336, Fit.COVER).plan(576.0, 337.0)
+        assertEquals(0.0, tall.y, 0.0)
+        assertTrue(tall.isCrop())
+        val wide = Target(336, 576, Fit.COVER).plan(339.0, 576.0, left = 4.0)
+        assertEquals(5.0, wide.x, 0.0)
+        assertTrue(wide.isCrop())
+    }
+
+    @Test
     fun coverOfACropStaysInsideIt() {
         val plan = Target(100, 100, Fit.COVER).plan(400.0, 200.0, left = 50.0, top = 30.0)
         assertEquals(150.0, plan.x, 1e-9)

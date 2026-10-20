@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
 
 /** Pages are requested at their exact on-screen size, and a size change requests them again. */
 @RunWith(RobolectricTestRunner::class)
@@ -25,7 +25,7 @@ class PageAdapterTargetTest {
 
     /** Records every request; returns a bitmap of the size a fitted 2:3 page would have. */
     private class RecordingSource(override val pageCount: Int) : PageSource {
-        val requests: MutableList<Pair<Int, Target>> = Collections.synchronizedList(ArrayList())
+        val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()
         override fun loadPage(index: Int, target: Target): Bitmap {
             requests += index to target
             val plan = target.plan(2000.0, 3000.0)

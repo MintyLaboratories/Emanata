@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -412,7 +413,7 @@ class PageAdapter(
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
-            val job = details.render(key, detailKeys(holder), loader(), { it.render(region, width, height, linear) }, done)
+            val job = details.render(key, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done)
             return { job.cancel() }
         }
 
@@ -585,6 +586,7 @@ class PageAdapter(
             gate.withPermit {
                 val job = coroutineContext.job
                 val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target, gen) { job.isCancelled }
+                    ?.let { frozen(it) }
                 if (bitmap != null && bitmap.width > 0) {
                     synchronized(results) { if (gen == generation) cache.put(key, bitmap) }
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -691,5 +693,17 @@ class PageAdapter(
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2
+
+        /**
+         * [bitmap] as an immutable bitmap, copied if it is mutable (which it then recycles):
+         * the GPU keeps an immutable bitmap's texture between frames, where a mutable one
+         * drawn through a [PageShader] is uploaded again for every frame.
+         */
+        internal fun frozen(bitmap: Bitmap): Bitmap {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || !bitmap.isMutable) return bitmap
+            val copy = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false) ?: return bitmap
+            bitmap.recycle()
+            return copy
+        }
     }
 }

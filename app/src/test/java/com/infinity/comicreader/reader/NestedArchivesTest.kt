@@ -11,6 +11,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -169,6 +170,21 @@ class NestedArchivesTest {
             entry("b.cbz", Fixtures.zipBytes(entry("01.jpg")))
         )
         open(f).use { assertEquals(listOf("b.cbz/01.jpg"), it.pagePaths) }
+    }
+
+    @Test(expected = NestedArchives.StorageException::class)
+    fun unwritableCacheFailsTheOpen() {
+        val f = omnibus()
+        cache.writeText("a file where the cache folder belongs")
+        open(f).use { }
+    }
+
+    @Test(expected = NestedArchives.StorageException::class)
+    fun failedWriteIsStorageError() {
+        val broken = object : OutputStream() {
+            override fun write(b: Int) = throw IOException("disk full")
+        }
+        NestedArchives.copyBounded(ByteArrayInputStream(ByteArray(10)), broken, 10)
     }
 
     @Test

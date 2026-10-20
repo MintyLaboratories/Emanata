@@ -50,6 +50,7 @@ import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.AppDispatchers
@@ -555,21 +556,23 @@ class ViewerActivity : AppCompatActivity() {
         resolveLayout()
 
         openJob = lifecycleScope.launch {
-            val (src, siblings) = withContext(AppDispatchers.io) {
-                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir) }.getOrNull()
+            val (opened, siblings) = withContext(AppDispatchers.io) {
+                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {
                     // A newer open() replaced this one: do not leak the file handle.
-                    runCatching { s?.close() }
+                    runCatching { s.getOrNull()?.close() }
                     throw e
                 }
                 s to siblingChapters(target)
             }
             progress.visibility = View.GONE
             chapters = siblings
+            val src = opened.getOrNull()
             if (src == null) {
-                toast(R.string.error_open)
+                val storage = opened.exceptionOrNull() is NestedArchives.StorageException
+                toast(if (storage) R.string.error_open_storage else R.string.error_open)
                 finish()
                 return@launch
             }

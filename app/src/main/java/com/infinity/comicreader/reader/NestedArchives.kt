@@ -20,6 +20,9 @@ import java.security.MessageDigest
  * archive larger than [maxEntryBytes], a book needing more than [maxBytes] of copies
  * or more than [MAX_ARCHIVES] archives, and nesting deeper than [MAX_DEPTH] are skipped.
  * Copying stops at the declared size, so a forged header cannot fill the disk.
+ * These skips and unreadable inner archives are the same on every open; a copy that
+ * fails for lack of storage throws [StorageException] instead, so a book never opens
+ * with fewer pages than it has.
  */
 class NestedArchives(
     private val dir: File,
@@ -30,15 +33,23 @@ class NestedArchives(
     /** An opened inner archive and the identity its own inner archives are keyed by. */
     class Opened(val reader: ArchiveReader, val key: String)
 
+    /** An inner archive could not be copied for lack of free space or a failed write. */
+    class StorageException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
     private val held = ArrayList<File>()
     private var usedBytes = 0L
 
-    /** Opens [entry] of [outer], whose identity is [outerKey]; null when it is skipped or unreadable. */
+    /**
+     * Opens [entry] of [outer], whose identity is [outerKey]; null when it is skipped or
+     * unreadable. Throws [StorageException] when it cannot be copied right now.
+     */
     fun open(outer: ArchiveReader, outerKey: String, entry: ArchiveEntry): Opened? {
         if (held.size >= MAX_ARCHIVES) return null
         val key = "$outerKey\n${entry.path}\n${entry.size}"
         val file = try {
             extract(outer, entry, key)
+        } catch (e: StorageException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Could not extract nested archive ${entry.path}", e)
             null
@@ -64,16 +75,17 @@ class NestedArchives(
                     dir.mkdirs()
                     trim(dir, maxBytes - limit)
                     if (dir.usableSpace < limit + FREE_SPACE_RESERVE) {
-                        release(target)
-                        return null
+                        throw StorageException("No space to copy nested archive ${entry.path}")
                     }
-                    val part = File.createTempFile(target.name, PART_SUFFIX, dir)
+                    val part = storage { File.createTempFile(target.name, PART_SUFFIX, dir) }
                     try {
-                        val copied = outer.read(entry) { input -> part.outputStream().use { copyBounded(input, it, limit) } }
+                        val copied = outer.read(entry) { input ->
+                            storage { part.outputStream() }.use { copyBounded(input, it, limit) }
+                        }
                         if (entry.size >= 0 && copied != entry.size) throw IOException("Short nested archive")
                         if (!part.renameTo(target)) {
                             target.delete()
-                            if (!part.renameTo(target)) throw IOException("Could not store nested archive")
+                            if (!part.renameTo(target)) throw StorageException("Could not store nested archive")
                         }
                     } finally {
                         part.delete()
@@ -159,7 +171,10 @@ class NestedArchives(
             }
         }
 
-        /** Copies [input] to [output]; fails once more than [limit] bytes arrive. Returns the bytes copied. */
+        /**
+         * Copies [input] to [output]; fails once more than [limit] bytes arrive. Returns the
+         * bytes copied. A failed write throws [StorageException].
+         */
         internal fun copyBounded(input: InputStream, output: OutputStream, limit: Long): Long {
             val buf = ByteArray(64 * 1024)
             var total = 0L
@@ -168,8 +183,17 @@ class NestedArchives(
                 if (n < 0) return total
                 total += n
                 if (total > limit) throw IOException("Nested archive exceeds $limit bytes")
-                output.write(buf, 0, n)
+                storage { output.write(buf, 0, n) }
             }
+        }
+
+        /** Runs the cache write [block], reporting its I/O failure as a [StorageException]. */
+        private inline fun <T> storage(block: () -> T): T = try {
+            block()
+        } catch (e: StorageException) {
+            throw e
+        } catch (e: IOException) {
+            throw StorageException("Could not write nested archive copy", e)
         }
 
         private fun hash(value: String): String {

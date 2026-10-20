@@ -28,6 +28,7 @@
     <string name="menu_rename">Rename</string>
     <string name="menu_refresh">Refresh</string>
     <string name="menu_new_folder">New folder</string>
+    <string name="root_device">Device</string>
     <string name="menu_show_hidden">Show hidden files</string>
     <string name="menu_hide_hidden">Hide hidden files</string>
     <string name="menu_columns">Grid columns</string>

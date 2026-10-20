@@ -18,7 +18,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.infinity.comicreader"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.infinity.comicreader"

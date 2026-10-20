@@ -21,11 +21,11 @@ import androidx.annotation.RequiresApi
  *   point sampling would.
  *
  * The bitmap's own coordinates are the draw coordinates: draw a rectangle of its size
- * under the matrix that places it.
+ * under the matrix that places it. [source] replaces [SOURCE] only for tests.
  */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-class LanczosShader {
-    private val shader = RuntimeShader(SOURCE)
+class LanczosShader internal constructor(source: String = SOURCE) {
+    private val shader = RuntimeShader(source)
     private val paint = Paint().apply { shader = this@LanczosShader.shader }
     private var bitmap: Bitmap? = null
 
@@ -42,7 +42,7 @@ class LanczosShader {
         return paint
     }
 
-    private companion object {
+    internal companion object {
         // Source pixel i has its center at i + 0.5. A position p lies between the
         // pixels at base and base + 1 on each axis; the taps run from base - 2 to
         // base + 3, at offsets k - f for k = -2..3.

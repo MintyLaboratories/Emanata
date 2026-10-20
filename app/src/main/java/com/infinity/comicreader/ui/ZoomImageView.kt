@@ -4,16 +4,22 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.appcompat.widget.AppCompatImageView
+import com.infinity.comicreader.reader.Region
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
@@ -21,6 +27,7 @@ import kotlin.math.roundToInt
  * Uses [ScaleType.MATRIX] and manipulates the image matrix directly; at 1:1 the
  * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); at any other scale
  * through Lanczos3 on the GPU ([LanczosShader], API 33+), or bilinear below that.
+ * A zoom that settles is re-rendered from the full-detail page ([DetailSource]).
  *
  * [onTap] receives the tap position as a fraction of the view width so callers can
  * implement left/centre/right tap zones. [onVerticalDrag] receives the vertical
@@ -52,6 +59,11 @@ class ZoomImageView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                detailSource?.prepare()
+                return true
+            }
+
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 if (drawable == null) return false
                 val newScale = (currentScale * detector.scaleFactor).coerceIn(minScale, maxScale)
@@ -82,6 +94,7 @@ class ZoomImageView @JvmOverloads constructor(
                 if (currentScale > minScale * 1.1f) {
                     fit(fitMode)
                 } else {
+                    detailSource?.prepare()
                     zoomTo(minScale * 3f, e.x, e.y)
                 }
                 return true
@@ -91,11 +104,6 @@ class ZoomImageView @JvmOverloads constructor(
 
     init {
         scaleType = ScaleType.MATRIX
-    }
-
-    override fun setImageDrawable(drawable: Drawable?) {
-        super.setImageDrawable(drawable)
-        post { fit(fitMode) }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -196,19 +204,120 @@ class ZoomImageView @JvmOverloads constructor(
      */
     private fun applyMatrix() {
         matrix.getValues(values)
-        val oneToOne = abs(values[Matrix.MSCALE_X] - 1f) < ONE_TO_ONE && abs(values[Matrix.MSCALE_Y] - 1f) < ONE_TO_ONE &&
-            values[Matrix.MSKEW_X] == 0f && values[Matrix.MSKEW_Y] == 0f
-        if (oneToOne) {
-            values[Matrix.MSCALE_X] = 1f
-            values[Matrix.MSCALE_Y] = 1f
-            values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].roundToInt().toFloat()
-            values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].roundToInt().toFloat()
-            drawMatrix.setValues(values)
-        } else {
-            drawMatrix.set(matrix)
-        }
+        val oneToOne = snapOneToOne(values)
+        if (oneToOne) drawMatrix.setValues(values) else drawMatrix.set(matrix)
         (drawable as? BitmapDrawable)?.isFilterBitmap = !oneToOne
         imageMatrix = drawMatrix
+        // Every move restarts the wait for the view to settle.
+        cancelDetailRender()
+        settler.removeCallbacks(settle)
+        if (oneToOne || !zoomed) dropDetail() else if (detailSource != null) settler.postDelayed(settle, SETTLE_MS)
+    }
+
+    // ------------------------------------------------------------------ detail
+
+    /**
+     * Renders part of the shown page at full detail. Once a zoom or pan has been still
+     * for [SETTLE_MS], the view asks for exactly the pixels it shows and draws the result
+     * over the page at 1:1; it then moves with the page until the next settle replaces it.
+     */
+    interface DetailSource {
+        /** A zoom is starting: the moment to get the full-detail page ready. */
+        fun prepare()
+
+        /**
+         * Starts rendering [region] of the shown bitmap's page at [width] x [height]; [done]
+         * receives it on the main thread. Returns what cancels it.
+         */
+        fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit
+    }
+
+    /** Where settled zooms get their detail; none keeps the scaled page as it is. */
+    var detailSource: DetailSource? = null
+        set(value) {
+            if (field === value) return
+            field = value
+            dropDetail()
+        }
+
+    private var detail: Bitmap? = null
+
+    /** Maps [detail]'s pixels onto the shown bitmap's. */
+    private val detailMatrix = Matrix()
+    private val detailDraw = Matrix()
+    private var detailCancel: (() -> Unit)? = null
+    private var detailRequest = 0
+    private val settle = Runnable { requestDetail() }
+
+    /** Runs [settle] whether or not the view is attached yet. */
+    private val settler = Handler(Looper.getMainLooper())
+    private val plainPaint = Paint()
+    private val filteredPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val tileRect = RectF()
+    private val shownRect = RectF()
+
+    /** True when zoomed in past the fitted scale. */
+    private val zoomed: Boolean get() = currentScale > minScale * (1f + ONE_TO_ONE)
+
+    /** The detail drawn over the page, if any; for tests. */
+    internal val detailShown: Bitmap? get() = detail
+
+    private fun cancelDetailRender() {
+        detailRequest++
+        detailCancel?.invoke()
+        detailCancel = null
+    }
+
+    private fun dropDetail() {
+        cancelDetailRender()
+        settler.removeCallbacks(settle)
+        if (detail != null) {
+            detail = null
+            invalidate()
+        }
+    }
+
+    /** Asks [detailSource] for the pixels now shown, unless they are already on screen. */
+    private fun requestDetail() {
+        val source = detailSource ?: return
+        val d = drawable as? BitmapDrawable ?: return
+        val bitmap = d.bitmap ?: return
+        if (!d.isFilterBitmap) return
+        drawMatrix.getValues(values)
+        if (values[Matrix.MSKEW_X] != 0f || values[Matrix.MSKEW_Y] != 0f) return
+        val tile = DetailTile.of(
+            values[Matrix.MSCALE_X], values[Matrix.MSCALE_Y], values[Matrix.MTRANS_X], values[Matrix.MTRANS_Y],
+            bitmap.width, bitmap.height, width - paddingLeft - paddingRight, height - paddingTop - paddingBottom
+        ) ?: return
+        val toBitmap = Matrix()
+        if (!drawMatrix.invert(toBitmap)) return
+        toBitmap.preTranslate(tile.left.toFloat(), tile.top.toFloat())
+        val current = detail
+        if (current != null && current.width == tile.width && current.height == tile.height && toBitmap == detailMatrix) return
+
+        cancelDetailRender()
+        val request = detailRequest
+        var delivered = false
+        val cancel = source.render(tile.region, tile.width, tile.height) { result ->
+            delivered = true
+            if (request != detailRequest) return@render
+            detailCancel = null
+            detail = result
+            detailMatrix.set(toBitmap)
+            invalidate()
+        }
+        if (!delivered && request == detailRequest) detailCancel = cancel
+    }
+
+    override fun setImageDrawable(drawable: Drawable?) {
+        dropDetail()
+        super.setImageDrawable(drawable)
+        post { fit(fitMode) }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        dropDetail()
     }
 
     /** True when the content is drawn at 1:1 without filtering; for tests. */
@@ -224,30 +333,102 @@ class ZoomImageView @JvmOverloads constructor(
             return d.bitmap?.takeUnless { it.isRecycled }
         }
 
-    private var lanczos: LanczosShader? = null
+    private var pageShader: LanczosShader? = null
+    private var detailShader: LanczosShader? = null
     private var shaderFailed = false
 
-    override fun onDraw(canvas: Canvas) {
-        val bitmap = shadedBitmap
-        if (bitmap == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            super.onDraw(canvas)
-            return
-        }
-        val shader = lanczos ?: runCatching { LanczosShader() }
+    /** A new [LanczosShader], or null where it cannot run, after which the view stays bilinear. */
+    private fun newShader(): LanczosShader? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
+        return runCatching { LanczosShader() }
             .onFailure {
                 Log.w(TAG, "Lanczos3 shader unavailable, drawing bilinear", it)
                 shaderFailed = true
             }
-            .getOrNull()?.also { lanczos = it }
-        if (shader == null) {
-            super.onDraw(canvas)
-            return
+            .getOrNull()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val d = drawable as? BitmapDrawable
+        val tile = detail?.takeUnless { it.isRecycled || d == null }
+        var tileAtOneToOne = false
+        var hole: RectF? = null
+        if (tile != null) {
+            detailDraw.set(detailMatrix)
+            detailDraw.postConcat(drawMatrix)
+            detailDraw.getValues(values)
+            tileAtOneToOne = snapOneToOne(values)
+            if (tileAtOneToOne) detailDraw.setValues(values)
+            // Shrinking it through Lanczos3 at source size would alias: the page shows instead.
+            if (values[Matrix.MSCALE_X] >= 1f - ONE_TO_ONE && values[Matrix.MSCALE_Y] >= 1f - ONE_TO_ONE) {
+                tileRect.set(0f, 0f, tile.width.toFloat(), tile.height.toFloat())
+                detailDraw.mapRect(tileRect)
+                hole = tileRect
+            }
         }
-        val d = drawable as BitmapDrawable
+        if (hole == null || !covers(hole)) drawPage(canvas, hole)
+        if (tile != null && d != null && hole != null) drawDetail(canvas, tile, d, tileAtOneToOne)
+    }
+
+    /**
+     * The page bitmap, through [LanczosShader] when it is scaled, leaving out [hole], where
+     * the detail goes. The shader runs only on the bands around the hole, each scissored
+     * by a plain rectangle clip, so the GPU never shades what the detail hides.
+     */
+    private fun drawPage(canvas: Canvas, hole: RectF?) {
+        val bitmap = shadedBitmap
+        val shader = if (bitmap == null) null else pageShader ?: newShader()?.also { pageShader = it }
         val saved = canvas.save()
         canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
-        canvas.concat(drawMatrix)
-        canvas.drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), shader.paint(bitmap, d.colorFilter, d.paint.alpha))
+        if (bitmap == null || shader == null) {
+            if (hole != null) canvas.clipOutRect(hole)
+            canvas.translate(-paddingLeft.toFloat(), -paddingTop.toFloat())
+            super.onDraw(canvas)
+        } else {
+            val d = drawable as BitmapDrawable
+            val paint = shader.paint(bitmap, d.colorFilter, d.paint.alpha)
+            val w = (width - paddingLeft - paddingRight).toFloat()
+            val h = (height - paddingTop - paddingBottom).toFloat()
+            val bands = if (hole == null) listOf(RectF(0f, 0f, w, h)) else bandsAround(0f, 0f, w, h, hole)
+            for (band in bands) {
+                val inBand = canvas.save()
+                canvas.clipRect(band)
+                canvas.concat(drawMatrix)
+                canvas.drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), paint)
+                canvas.restoreToCount(inBand)
+            }
+        }
+        canvas.restoreToCount(saved)
+    }
+
+    /** True when the detail, drawn over [hole], hides every view pixel the page shows on. */
+    private fun covers(hole: RectF): Boolean {
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return true
+        shownRect.set(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+        drawMatrix.mapRect(shownRect)
+        if (!shownRect.intersect(0f, 0f, (width - paddingLeft - paddingRight).toFloat(), (height - paddingTop - paddingBottom).toFloat())) return true
+        // A rectangle covers the pixels whose centers it holds.
+        return first(hole.left) <= first(shownRect.left) && first(hole.top) <= first(shownRect.top) &&
+            first(hole.right) >= first(shownRect.right) && first(hole.bottom) >= first(shownRect.bottom)
+    }
+
+    /** The first pixel whose center lies at or past [edge]. */
+    private fun first(edge: Float): Int = ceil(edge - 0.5f).toInt()
+
+    /** [tile] where [detailDraw] puts it: unfiltered at 1:1, else enlarged through [LanczosShader]. */
+    private fun drawDetail(canvas: Canvas, tile: Bitmap, d: BitmapDrawable, oneToOne: Boolean) {
+        val saved = canvas.save()
+        canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+        canvas.concat(detailDraw)
+        val shader = if (oneToOne) null else detailShader ?: newShader()?.also { detailShader = it }
+        if (shader != null) {
+            canvas.drawRect(0f, 0f, tile.width.toFloat(), tile.height.toFloat(), shader.paint(tile, d.colorFilter, d.paint.alpha))
+        } else {
+            val paint = if (oneToOne) plainPaint else filteredPaint
+            paint.colorFilter = d.colorFilter
+            paint.alpha = d.paint.alpha
+            canvas.drawBitmap(tile, 0f, 0f, paint)
+        }
         canvas.restoreToCount(saved)
     }
 
@@ -326,11 +507,48 @@ class ZoomImageView @JvmOverloads constructor(
         lastY = event.y
     }
 
-    private companion object {
-        const val TAG = "ZoomImageView"
-        const val EDGE_SLOP = 2f
+    internal companion object {
+        private const val TAG = "ZoomImageView"
+        private const val EDGE_SLOP = 2f
 
         /** Scale error below which the content counts as 1:1. */
-        const val ONE_TO_ONE = 1e-4f
+        private const val ONE_TO_ONE = 1e-4f
+
+        /** How long the view must be still before it renders its detail. */
+        private const val SETTLE_MS = 150L
+
+        /**
+         * The rectangle ([left], [top], [right], [bottom]) less [hole], as up to four
+         * bands: full-width above and below the hole, and beside it at its height.
+         */
+        fun bandsAround(left: Float, top: Float, right: Float, bottom: Float, hole: RectF): List<RectF> {
+            val l = hole.left.coerceIn(left, right)
+            val r = hole.right.coerceIn(left, right)
+            val t = hole.top.coerceIn(top, bottom)
+            val b = hole.bottom.coerceIn(top, bottom)
+            if (l >= r || t >= b) return listOf(RectF(left, top, right, bottom))
+            return listOf(
+                RectF(left, top, right, t),
+                RectF(left, b, right, bottom),
+                RectF(left, t, l, b),
+                RectF(r, t, right, b)
+            ).filter { it.left < it.right && it.top < it.bottom }
+        }
+
+        /**
+         * True when matrix [values] draw at 1:1, which they are then snapped to: scale
+         * exactly 1 and the translation on whole pixels.
+         */
+        fun snapOneToOne(values: FloatArray): Boolean {
+            val oneToOne = abs(values[Matrix.MSCALE_X] - 1f) < ONE_TO_ONE && abs(values[Matrix.MSCALE_Y] - 1f) < ONE_TO_ONE &&
+                values[Matrix.MSKEW_X] == 0f && values[Matrix.MSKEW_Y] == 0f
+            if (oneToOne) {
+                values[Matrix.MSCALE_X] = 1f
+                values[Matrix.MSCALE_Y] = 1f
+                values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].roundToInt().toFloat()
+                values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].roundToInt().toFloat()
+            }
+            return oneToOne
+        }
     }
 }

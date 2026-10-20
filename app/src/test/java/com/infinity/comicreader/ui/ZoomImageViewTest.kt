@@ -3,10 +3,13 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.RectF
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.reader.Region
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -15,7 +18,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -86,5 +91,114 @@ class ZoomImageViewTest {
         v.zoomTo(2.5f, 900f, 1400f)
         assertFalse(v.drawsOneToOne)
         assertNull(v.shadedBitmap)
+    }
+
+    /** Records render requests; [deliver] completes the last one. */
+    private class RecordingDetail : ZoomImageView.DetailSource {
+        class Request(val region: Region, val width: Int, val height: Int, val done: (Bitmap) -> Unit) {
+            var cancelled = false
+        }
+
+        val requests = ArrayList<Request>()
+        var prepared = 0
+
+        override fun prepare() {
+            prepared++
+        }
+
+        override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
+            val request = Request(region, width, height, done)
+            requests += request
+            return { request.cancelled = true }
+        }
+
+        fun deliver(): Bitmap {
+            val r = requests.last()
+            return Bitmap.createBitmap(r.width, r.height, Bitmap.Config.ARGB_8888).also { r.done(it) }
+        }
+    }
+
+    private fun pass(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+
+    private fun zoomedWithDetail(): Pair<ZoomImageView, RecordingDetail> {
+        val v = view(1848, 2960, 1848, 2772, ZoomImageView.FitMode.SCREEN)
+        val detail = RecordingDetail()
+        v.detailSource = detail
+        v.zoomTo(2f, 924f, 1480f)
+        return v to detail
+    }
+
+    @Test
+    fun settledZoomAsksForTheViewAtScreenResolution() {
+        val (v, detail) = zoomedWithDetail()
+        pass(100)
+        assertTrue(detail.requests.isEmpty())
+        pass(60)
+        assertEquals(1, detail.requests.size)
+        val r = detail.requests[0]
+        assertEquals(1848, r.width)
+        assertEquals(2960, r.height)
+        // The middle half across, and the rows of 2960 out of 5544 around the middle.
+        assertEquals(0.25, r.region.x, 1e-6)
+        assertEquals(0.5, r.region.width, 1e-6)
+        assertEquals(2960.0 / 5544, r.region.height, 1e-6)
+        assertEquals(0.5, r.region.y + r.region.height / 2, 1e-3)
+
+        val shown = detail.deliver()
+        assertTrue(v.detailShown === shown)
+        // Settling again where it already is asks for nothing new.
+        pass(200)
+        assertEquals(1, detail.requests.size)
+    }
+
+    @Test
+    fun movingCancelsTheRenderInFlightAndKeepsTheShownDetail() {
+        val (v, detail) = zoomedWithDetail()
+        pass(160)
+        val shown = detail.deliver()
+        v.zoomTo(2.2f, 924f, 1480f)
+        pass(160)
+        assertEquals(2, detail.requests.size)
+        assertTrue(v.detailShown === shown)
+
+        v.zoomTo(2.4f, 924f, 1480f)
+        assertTrue(detail.requests[1].cancelled)
+        // A render finishing after it was cancelled is not shown.
+        detail.requests[1].done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+        assertTrue(v.detailShown === shown)
+    }
+
+    @Test
+    fun backToFitOrANewPageDropsTheDetail() {
+        val (v, detail) = zoomedWithDetail()
+        pass(160)
+        detail.deliver()
+        v.fit()
+        assertNull(v.detailShown)
+        pass(200)
+        assertEquals(1, detail.requests.size)
+
+        v.zoomTo(2f, 924f, 1480f)
+        pass(160)
+        detail.deliver()
+        v.setImageBitmap(Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888))
+        assertNull(v.detailShown)
+    }
+
+    @Test
+    fun bandsAroundTheDetailCoverTheRestExactly() {
+        val bands = ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(10f, 20f, 60f, 150f))
+        assertEquals(
+            listOf(
+                RectF(0f, 0f, 100f, 20f),
+                RectF(0f, 150f, 100f, 200f),
+                RectF(0f, 20f, 10f, 150f),
+                RectF(60f, 20f, 100f, 150f)
+            ),
+            bands
+        )
+        // A hole past an edge leaves no empty band; one off the view leaves it whole.
+        assertEquals(listOf(RectF(0f, 150f, 100f, 200f)), ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(-5f, -5f, 105f, 150f)))
+        assertEquals(listOf(RectF(0f, 0f, 100f, 200f)), ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(120f, 0f, 150f, 50f)))
     }
 }

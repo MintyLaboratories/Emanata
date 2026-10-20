@@ -182,6 +182,10 @@ class ViewerActivity : AppCompatActivity() {
         bindViews()
         applied = settings.reader.value
         loadPrefs()
+        // A recreated reader (theme or language change) continues where it was.
+        savedInstanceState?.getString(STATE_PATH)?.let {
+            intent.putExtra(EXTRA_PATH, it).putExtra(EXTRA_PAGE, savedInstanceState.getInt(STATE_PAGE))
+        }
 
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
@@ -308,6 +312,14 @@ class ViewerActivity : AppCompatActivity() {
         endDismissed = false
         hideEndCard()
         open()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val f = file ?: return
+        if (source == null) return
+        outState.putString(STATE_PATH, f.absolutePath)
+        outState.putInt(STATE_PAGE, currentIndex)
     }
 
     override fun onStart() {
@@ -580,6 +592,8 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun setup(src: PageSource) {
         val requested = intent.getIntExtra(EXTRA_PAGE, -1)
+        // Used once: a later reopen sets it again, and anything else starts from history.
+        intent.removeExtra(EXTRA_PAGE)
         val saved = library.pageFor(file!!.absolutePath)
         val start = when {
             requested >= 0 -> requested
@@ -1943,6 +1957,9 @@ class ViewerActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_PATH = "extra_path"
         const val EXTRA_PAGE = "extra_page"
+
+        private const val STATE_PATH = "state_path"
+        private const val STATE_PAGE = "state_page"
 
         private const val SHARE_DIR = "shared"
         private const val EXPORT_W = 2400

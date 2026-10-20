@@ -101,4 +101,33 @@ class PageAdapterDetailTest {
         assertTrue(source.details.all { it.released })
         adapter.release()
     }
+
+    @Test
+    fun loneLastPageOfASpreadHasTheWholeBudget() {
+        val source = DetailSource(3)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = true, twoPage = true, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = adapter
+            layOut(2960, 1848)
+        }
+        val pair = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images
+        idle { pair.all { it.detailSource != null } }
+        var shown: Bitmap? = null
+        pair[0].detailSource!!.render(Region(0.0, 0.0, 1.0, 1.0), 10, 10) { shown = it }
+        idle { shown != null }
+
+        rv.scrollToPosition(1)
+        rv.layOut(2960, 1848)
+        val lone = (rv.findViewHolderForAdapterPosition(1) as PageAdapter.PageHolder).images
+        assertEquals(View.GONE, lone[1].visibility)
+        idle { lone[0].detailSource != null }
+        shown = null
+        lone[0].detailSource!!.render(Region(0.0, 0.0, 1.0, 1.0), 10, 10) { shown = it }
+        idle { shown != null }
+
+        val (half, whole) = source.budgets.map { it.second }
+        assertEquals(2 * half, whole)
+        adapter.release()
+    }
 }

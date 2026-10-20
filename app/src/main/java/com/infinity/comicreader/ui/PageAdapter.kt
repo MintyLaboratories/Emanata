@@ -372,12 +372,12 @@ class PageAdapter(
             return { job.cancel() }
         }
 
-        /** Loads the page at full detail within its share of [detailBudget]. */
+        /** Loads the page at full detail within its share of [detailBudget]: the item's, split between the pages shown. */
         private fun loader(): () -> PageDetail {
             val chapter = strip.chapterOf(key.page)
             val source = chapter.value.source
             val index = key.page - chapter.first
-            val maxBytes = detailBudget / holder.images.size
+            val maxBytes = detailBudget / holder.images.count { it.visibility != View.GONE }.coerceAtLeast(1)
             return { source.loadDetail(index, key.target, maxBytes) }
         }
     }

@@ -10,12 +10,14 @@ import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
  * render their first page; folders fall back to the first image/openable file
- * found a couple of levels deep. Results are cached in memory (bounded by heap)
- * and on disk under `cacheDir/thumbnails`.
+ * found a couple of levels deep. Covers are scaled to just cover the requested
+ * box, rounded up to a [ThumbSizing] tier, and cached per tier in memory (bounded
+ * by heap) and on disk under `cacheDir/thumbnails`.
  */
 object Thumbs {
     private const val DISK_DIR = "thumbnails"
@@ -37,19 +39,21 @@ object Thumbs {
 
     /** Blocking — call from a background dispatcher. Returns null when no cover exists. */
     fun load(context: Context, entry: BookEntry, charset: String, reqW: Int, reqH: Int): Bitmap? {
-        val k = key(entry)
+        val boxW = ThumbSizing.tier(reqW)
+        val boxH = ThumbSizing.tier(reqH)
+        val k = "${key(entry)}|${boxW}x$boxH"
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
         if (disk.isFile) {
-            val cached = decodeFile(disk)
+            val cached = decodeFile(disk, boxW, boxH)
             if (cached != null) {
                 memory.put(k, cached)
                 return cached
             }
         }
 
-        val bitmap = generate(entry, charset, reqW, reqH) ?: return null
+        val bitmap = generate(entry, charset, boxW, boxH)?.let { fit(it, boxW, boxH) } ?: return null
         memory.put(k, bitmap)
         runCatching {
             disk.parentFile?.mkdirs()
@@ -90,6 +94,15 @@ object Thumbs {
         null
     }
 
+    /** Scales [bitmap] down so it just covers the box; decoding by sample size overshoots up to 2x. */
+    private fun fit(bitmap: Bitmap, boxW: Int, boxH: Int): Bitmap {
+        val scale = ThumbSizing.coverScale(bitmap.width, bitmap.height, boxW, boxH)
+        if (scale >= 1f) return bitmap
+        val w = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, w, h, true)
+    }
+
     private fun coverOf(file: File, charset: String, reqW: Int, reqH: Int): Bitmap? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
@@ -119,12 +132,12 @@ object Thumbs {
         return null
     }
 
-    private fun decodeFile(file: File): Bitmap? {
+    private fun decodeFile(file: File, boxW: Int, boxH: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0) return null
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = BitmapUtils.sampleSize(bounds.outWidth, bounds.outHeight, 480, 640, THUMB_CAP_PIXELS)
+            inSampleSize = BitmapUtils.sampleSize(bounds.outWidth, bounds.outHeight, boxW, boxH, THUMB_CAP_PIXELS)
         }
         return BitmapFactory.decodeFile(file.absolutePath, opts)
     }

@@ -2,7 +2,9 @@ package com.infinity.comicreader.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
+import android.graphics.Color
 import android.graphics.ColorFilter
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RuntimeShader
 import android.graphics.Shader
@@ -41,6 +43,21 @@ class LanczosShader internal constructor(source: String = SOURCE) {
         paint.alpha = alpha
         return paint
     }
+
+    /** Lets go of the bitmap last drawn, which the shader and its paint would otherwise keep alive. */
+    fun clear() {
+        if (bitmap == null) return
+        shader.setInputShader("image", empty)
+        // Setting the paint's shader again drops the native copy it took at the last draw.
+        paint.shader = null
+        paint.shader = shader
+        bitmap = null
+    }
+
+    /** The bitmap the shader holds; for tests. */
+    internal val held: Bitmap? get() = bitmap
+
+    private val empty by lazy { LinearGradient(0f, 0f, 1f, 0f, Color.TRANSPARENT, Color.TRANSPARENT, Shader.TileMode.CLAMP) }
 
     internal companion object {
         // Source pixel i has its center at i + 0.5. A position p lies between the

@@ -2,8 +2,10 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -20,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
@@ -183,6 +186,41 @@ class ZoomImageViewTest {
         detail.deliver()
         v.setImageBitmap(Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888))
         assertNull(v.detailShown)
+    }
+
+    /** Draws [v] as the screen would, through the shaders, which the host runs in its own AGSL dialect. */
+    private fun draw(v: ZoomImageView) {
+        val canvas = Canvas(Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888))
+        Canvas::class.java.getMethod("setHwFeaturesInSwModeEnabled", Boolean::class.javaPrimitiveType).invoke(canvas, true)
+        v.draw(canvas)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shadersLetGoOfBitmapsNoLongerShown() {
+        ZoomImageView.shaderSource = LanczosShader.SOURCE.replace("image.eval(", "sample(image, ")
+        try {
+            val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
+            val page = (v.drawable as BitmapDrawable).bitmap
+            val detail = RecordingDetail()
+            v.detailSource = detail
+            v.zoomTo(2f, 150f, 200f)
+            draw(v)
+            assertEquals(listOf(page), v.shadersHold)
+
+            pass(160)
+            val tile = detail.deliver()
+            v.zoomTo(2.2f, 150f, 200f)
+            draw(v)
+            assertTrue(v.shadersHold.any { it === tile })
+
+            v.fit()
+            assertEquals(listOf(page), v.shadersHold)
+            v.setImageDrawable(null)
+            assertTrue(v.shadersHold.isEmpty())
+        } finally {
+            ZoomImageView.shaderSource = LanczosShader.SOURCE
+        }
     }
 
     @Test

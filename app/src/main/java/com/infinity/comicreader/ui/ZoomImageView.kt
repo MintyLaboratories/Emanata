@@ -271,6 +271,7 @@ class ZoomImageView @JvmOverloads constructor(
     private fun dropDetail() {
         cancelDetailRender()
         settler.removeCallbacks(settle)
+        detailShader?.clear()
         if (detail != null) {
             detail = null
             invalidate()
@@ -311,6 +312,7 @@ class ZoomImageView @JvmOverloads constructor(
 
     override fun setImageDrawable(drawable: Drawable?) {
         dropDetail()
+        pageShader?.clear()
         super.setImageDrawable(drawable)
         post { fit(fitMode) }
     }
@@ -318,6 +320,7 @@ class ZoomImageView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         dropDetail()
+        pageShader?.clear()
     }
 
     /** True when the content is drawn at 1:1 without filtering; for tests. */
@@ -337,10 +340,13 @@ class ZoomImageView @JvmOverloads constructor(
     private var detailShader: LanczosShader? = null
     private var shaderFailed = false
 
+    /** The bitmaps the shaders hold; for tests. */
+    internal val shadersHold: List<Bitmap> get() = listOfNotNull(pageShader?.held, detailShader?.held)
+
     /** A new [LanczosShader], or null where it cannot run, after which the view stays bilinear. */
     private fun newShader(): LanczosShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
-        return runCatching { LanczosShader() }
+        return runCatching { LanczosShader(shaderSource) }
             .onFailure {
                 Log.w(TAG, "Lanczos3 shader unavailable, drawing bilinear", it)
                 shaderFailed = true
@@ -513,6 +519,9 @@ class ZoomImageView @JvmOverloads constructor(
 
         /** Scale error below which the content counts as 1:1. */
         private const val ONE_TO_ONE = 1e-4f
+
+        /** The AGSL the views draw with; tests swap in their host's dialect. */
+        internal var shaderSource = LanczosShader.SOURCE
 
         /** How long the view must be still before it renders its detail. */
         private const val SETTLE_MS = 150L

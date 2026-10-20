@@ -102,4 +102,18 @@ class LanczosShaderTest {
         assertEquals(0xE0, row.last())
         assertTrue(row.zipWithNext().all { (a, b) -> b >= a })
     }
+
+    @Test
+    fun clearedShaderLetsGoOfTheBitmapAndDrawsTheNextOne() {
+        val shader = shader()
+        val first = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        shader.paint(first, null, 255)
+        assertTrue(shader.held === first)
+        shader.clear()
+        assertEquals(null, shader.held)
+
+        val src = noise(6, 5, 2)
+        val got = shaded(shader, src, 6, 5, 2f, 12, 10)
+        assertTrue(maxDiff(expected(src, 6, 5, 2f, 12, 10), got) <= 2)
+    }
 }

@@ -25,8 +25,8 @@ import kotlin.math.roundToInt
 /**
  * Image view with pinch-to-zoom, panning, double-tap zoom and configurable fit modes.
  * Uses [ScaleType.MATRIX] and manipulates the image matrix directly; at 1:1 the
- * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); at any other scale
- * through Lanczos3 on the GPU ([LanczosShader], API 33+), or bilinear below that.
+ * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); enlarged through
+ * Lanczos3 on the GPU ([LanczosShader], API 33+); shrunk, or below API 33, bilinear.
  * A zoom that settles is re-rendered from the full-detail page ([DetailSource]).
  *
  * [onTap] receives the tap position as a fraction of the view width so callers can
@@ -340,14 +340,21 @@ class ZoomImageView @JvmOverloads constructor(
     internal val drawsOneToOne: Boolean
         get() = (drawable as? BitmapDrawable)?.isFilterBitmap == false
 
-    /** The bitmap to draw through [LanczosShader]: a scaled one, where the GPU filter supports it. */
+    /**
+     * The bitmap to draw through [LanczosShader]: an enlarged one, where the GPU filter
+     * supports it. A shrunk one draws bilinear, which aliases less than the shader would.
+     */
     internal val shadedBitmap: Bitmap?
         get() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
             val d = drawable as? BitmapDrawable ?: return null
             if (!d.isFilterBitmap) return null
+            drawMatrix.getValues(drawValues)
+            if (drawValues[Matrix.MSCALE_X] < 1f - ONE_TO_ONE || drawValues[Matrix.MSCALE_Y] < 1f - ONE_TO_ONE) return null
             return d.bitmap?.takeUnless { it.isRecycled }
         }
+
+    private val drawValues = FloatArray(9)
 
     private var pageShader: LanczosShader? = null
     private var detailShader: LanczosShader? = null

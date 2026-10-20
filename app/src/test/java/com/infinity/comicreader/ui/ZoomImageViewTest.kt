@@ -91,6 +91,17 @@ class ZoomImageViewTest {
     }
 
     @Test
+    fun shrunkBitmapStaysBilinear() {
+        val v = view(300, 400, 600, 800, ZoomImageView.FitMode.SCREEN)
+        assertFalse(v.drawsOneToOne)
+        assertNull(v.shadedBitmap)
+        v.zoomTo(0.8f, 150f, 200f)
+        assertNull(v.shadedBitmap)
+        v.zoomTo(1.5f, 150f, 200f)
+        assertNotNull(v.shadedBitmap)
+    }
+
+    @Test
     @Config(sdk = [32])
     fun zoomBeforeApi33StaysBilinear() {
         val v = view(1848, 2960, 1848, 2772, ZoomImageView.FitMode.SCREEN)

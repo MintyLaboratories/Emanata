@@ -110,9 +110,13 @@ class PageAdapterFailureTest {
     /** Fails its only page once with [error], then decodes it. */
     private class FlakySource(private val error: Throwable) : PageSource {
         val loads = AtomicInteger()
+        val failed = AtomicInteger()
         override val pageCount: Int = 1
         override fun loadPage(index: Int, target: Target): Bitmap {
-            if (loads.incrementAndGet() == 1) throw error
+            if (loads.incrementAndGet() == 1) {
+                failed.incrementAndGet()
+                throw error
+            }
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         }
 
@@ -134,6 +138,21 @@ class PageAdapterFailureTest {
     @Test
     fun lowMemoryIsRetriedOnNextBind() =
         assertRetriedAfter(DecodeException("Not enough memory for this JPEG image", transient = true))
+
+    @Test
+    fun transientFailureIsRetriedBeforeItsDecodeIsForgotten() {
+        val source = FlakySource(IOException("Read timed out"))
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
+        // The decode fails; the main thread has not yet run its completion when the page binds again.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (source.failed.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        Thread.sleep(50)
+        val holder = bindAndWait(adapter, 0)
+        assertTrue(holder.images[0].drawable is BitmapDrawable)
+        assertEquals(2, source.loads.get())
+        adapter.release()
+    }
 
     /** The first decode waits for [release], then fails; later ones succeed. */
     private class StalledSource : PageSource {

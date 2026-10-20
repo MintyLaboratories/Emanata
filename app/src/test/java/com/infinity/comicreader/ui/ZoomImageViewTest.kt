@@ -169,6 +169,55 @@ class ZoomImageViewTest {
         assertFalse(parent.disallowed)
     }
 
+    /** A touch event at [t] ms with [fingers] as (pointer id, x, y), in pointer index order. */
+    private fun touch(t: Long, action: Int, vararg fingers: Triple<Int, Float, Float>): MotionEvent {
+        val props = Array(fingers.size) { MotionEvent.PointerProperties().apply { id = fingers[it].first; toolType = MotionEvent.TOOL_TYPE_FINGER } }
+        val coords = Array(fingers.size) { MotionEvent.PointerCoords().apply { x = fingers[it].second; y = fingers[it].third; pressure = 1f; size = 1f } }
+        return MotionEvent.obtain(0, t, action, fingers.size, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+    }
+
+    private fun pointer(action: Int, index: Int) = action or (index shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+
+    @Test
+    fun aSecondFingerNeitherPinchesNorJumpsTheVerticalDrag() {
+        val drag = RecordingDrag()
+        val parent = Parent()
+        val v = view(1000, 1500, 1000, 1500, ZoomImageView.FitMode.SCREEN)
+        parent.addView(v)
+        v.verticalDrag = drag
+        v.onTouchEvent(touch(0, MotionEvent.ACTION_DOWN, Triple(0, 500f, 1000f)))
+        v.onTouchEvent(touch(16, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1060f)))
+        v.onTouchEvent(touch(32, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1090f)))
+        v.onTouchEvent(touch(48, pointer(MotionEvent.ACTION_POINTER_DOWN, 1), Triple(0, 500f, 1090f), Triple(1, 200f, 400f)))
+        v.onTouchEvent(touch(64, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1100f), Triple(1, 100f, 200f)))
+        v.onTouchEvent(touch(80, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1100f), Triple(1, 50f, 100f)))
+        // The first finger lifts; the second carries on from where it is.
+        v.onTouchEvent(touch(96, pointer(MotionEvent.ACTION_POINTER_UP, 0), Triple(0, 500f, 1100f), Triple(1, 50f, 100f)))
+        v.onTouchEvent(touch(112, MotionEvent.ACTION_MOVE, Triple(1, 50f, 120f)))
+        v.onTouchEvent(touch(128, MotionEvent.ACTION_UP, Triple(1, 50f, 120f)))
+        assertEquals(listOf("start", "move 30.0", "move 10.0", "move 0.0", "move 20.0", "end"), drag.events)
+        assertEquals(1f, values(v)[Matrix.MSCALE_X], 0f)
+    }
+
+    @Test
+    fun aPinchedGestureNeverLocksBrightness() {
+        val drag = RecordingDrag()
+        val parent = Parent()
+        val v = view(1000, 1500, 1000, 1500, ZoomImageView.FitMode.SCREEN)
+        parent.addView(v)
+        v.verticalDrag = drag
+        v.onTouchEvent(touch(0, MotionEvent.ACTION_DOWN, Triple(0, 500f, 1000f)))
+        v.onTouchEvent(touch(16, pointer(MotionEvent.ACTION_POINTER_DOWN, 1), Triple(0, 500f, 1000f), Triple(1, 500f, 400f)))
+        // Pinching in, which stays at the fitted scale.
+        v.onTouchEvent(touch(32, MotionEvent.ACTION_MOVE, Triple(0, 500f, 950f), Triple(1, 500f, 500f)))
+        v.onTouchEvent(touch(48, MotionEvent.ACTION_MOVE, Triple(0, 500f, 900f), Triple(1, 500f, 600f)))
+        v.onTouchEvent(touch(64, pointer(MotionEvent.ACTION_POINTER_UP, 1), Triple(0, 500f, 900f), Triple(1, 500f, 600f)))
+        v.onTouchEvent(touch(80, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1100f)))
+        v.onTouchEvent(touch(96, MotionEvent.ACTION_MOVE, Triple(0, 500f, 1300f)))
+        v.onTouchEvent(touch(112, MotionEvent.ACTION_UP, Triple(0, 500f, 1300f)))
+        assertTrue(drag.events.isEmpty())
+    }
+
     @Test
     fun withoutAVerticalDragThePagerGetsEveryUnpannedTouch() {
         val parent = Parent()

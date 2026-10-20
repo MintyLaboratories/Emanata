@@ -75,6 +75,12 @@ class ZoomImageView @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var axis = AxisLock.NONE
+
+    /** The finger whose movement drags; another takes over when it lifts. */
+    private var activePointer = MotionEvent.INVALID_POINTER_ID
+
+    /** True once a second finger joined the gesture before it locked vertically. */
+    private var pinched = false
     var doubleTapEnabled = true
 
     /**
@@ -576,19 +582,36 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        scaleDetector.onTouchEvent(event)
+        val action = event.actionMasked
+        // A drag locked to the vertical axis is brightness only: further fingers do not pinch.
+        if (axis != AxisLock.VERTICAL || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            scaleDetector.onTouchEvent(event)
+        }
         gestureDetector.onTouchEvent(event)
 
-        when (event.actionMasked) {
+        when (action) {
             MotionEvent.ACTION_DOWN -> {
+                activePointer = event.getPointerId(0)
                 lastX = event.x
                 lastY = event.y
                 downX = event.x
                 downY = event.y
                 axis = AxisLock.NONE
+                pinched = false
                 // Until the drag picks its direction, keep it from a parent that would turn the
                 // page: a pannable page may pan, and a vertical drag must not turn it.
                 parent?.requestDisallowInterceptTouchEvent(canPan() || verticalDrag != null)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> if (axis != AxisLock.VERTICAL) pinched = true
+            MotionEvent.ACTION_POINTER_UP -> {
+                // The drag goes on with a finger still down, from where that finger is.
+                val up = event.actionIndex
+                if (event.getPointerId(up) == activePointer) {
+                    val next = if (up == 0) 1 else 0
+                    activePointer = event.getPointerId(next)
+                    lastX = event.getX(next)
+                    lastY = event.getY(next)
+                }
             }
             MotionEvent.ACTION_MOVE -> handleMove(event)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -600,15 +623,23 @@ class ZoomImageView @JvmOverloads constructor(
         return true
     }
 
+    /**
+     * Follows the finger the drag moves with. A vertical lock moves brightness whatever other
+     * fingers do; a gesture that has pinched never locks an axis.
+     */
     private fun handleMove(event: MotionEvent) {
-        if (scaleDetector.isInProgress) {
+        val index = event.findPointerIndex(activePointer)
+        if (index < 0) return
+        val x = event.getX(index)
+        val y = event.getY(index)
+        if (axis == AxisLock.VERTICAL) {
+            verticalDrag?.move(y - lastY)
+        } else if (scaleDetector.isInProgress) {
             parent?.requestDisallowInterceptTouchEvent(true)
         } else if (event.pointerCount == 1) {
-            val dx = event.x - lastX
-            val dy = event.y - lastY
-            if (axis == AxisLock.VERTICAL) {
-                verticalDrag?.move(dy)
-            } else if (canPan()) {
+            val dx = x - lastX
+            val dy = y - lastY
+            if (canPan()) {
                 // Pan while there is room in the dominant direction; at an edge hand the
                 // gesture back so the pager / list can move to the next page.
                 val horizontal = abs(dx) >= abs(dy)
@@ -619,8 +650,8 @@ class ZoomImageView @JvmOverloads constructor(
                     clamp()
                     applyMatrix()
                 }
-            } else if (verticalDrag != null && axis == AxisLock.NONE) {
-                axis = AxisLock.decide(event.x - downX, event.y - downY, touchSlop)
+            } else if (verticalDrag != null && axis == AxisLock.NONE && !pinched) {
+                axis = AxisLock.decide(x - downX, y - downY, touchSlop)
                 when (axis) {
                     AxisLock.VERTICAL -> verticalDrag?.start()
                     AxisLock.HORIZONTAL -> parent?.requestDisallowInterceptTouchEvent(false)
@@ -628,8 +659,8 @@ class ZoomImageView @JvmOverloads constructor(
                 }
             }
         }
-        lastX = event.x
-        lastY = event.y
+        lastX = x
+        lastY = y
     }
 
     internal companion object {

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
@@ -15,7 +16,9 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -183,6 +186,9 @@ class PageAdapter(
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
         recycler = recyclerView
+        recyclerView.context.getSystemService(ActivityManager::class.java)?.let { am ->
+            detailBudget = DetailStore.budget(ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem)
+        }
         val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
             val w = right - left
             val h = bottom - top
@@ -329,12 +335,55 @@ class PageAdapter(
 
     override fun onViewRecycled(holder: PageHolder) {
         super.onViewRecycled(holder)
+        details.drop(detailKeys(holder))
         for (i in holder.images.indices) {
             stopWaiting(holder, i)
-            holder.images[i].setImageDrawable(null)
-            holder.shown[i] = NO_PAGE
+            clearImage(holder, i)
         }
     }
+
+    /** An item scrolled off screen gives up its pages' full detail. */
+    override fun onViewDetachedFromWindow(holder: PageHolder) {
+        super.onViewDetachedFromWindow(holder)
+        details.drop(detailKeys(holder))
+    }
+
+    // ------------------------------------------------------------------ detail
+
+    /** Full-detail pages for the item being zoomed. */
+    private val details = DetailStore<PageKey>(scope, AppDispatchers.io)
+
+    /** Memory one item's full-detail pages may take; set from the device's RAM once attached. */
+    private var detailBudget = DetailStore.MAX_BUDGET
+
+    /** The pages [holder] shows at full detail, or could. */
+    private fun detailKeys(holder: PageHolder): List<PageKey> =
+        holder.images.mapNotNull { (it.detailSource as? SlotDetail)?.key }
+
+    /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
+    private inner class SlotDetail(private val holder: PageHolder, val key: PageKey) : ZoomImageView.DetailSource {
+        override fun prepare() {
+            if (!released) details.prepare(key, detailKeys(holder), loader())
+        }
+
+        override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
+            if (released) return {}
+            val job = details.render(key, detailKeys(holder), loader(), { it.render(region, width, height, linear) }, done)
+            return { job.cancel() }
+        }
+
+        /** Loads the page at full detail within its share of [detailBudget]. */
+        private fun loader(): () -> PageDetail {
+            val chapter = strip.chapterOf(key.page)
+            val source = chapter.value.source
+            val index = key.page - chapter.first
+            val maxBytes = detailBudget / holder.images.size
+            return { source.loadDetail(index, key.target, maxBytes) }
+        }
+    }
+
+    /** Frees the full-detail pages; zooms that settle later load them again. */
+    fun trimMemory() = details.clear()
 
     // ------------------------------------------------------------------ binding
 
@@ -342,8 +391,7 @@ class PageAdapter(
         val image = holder.images[slot]
         stopWaiting(holder, slot)
         if (pageIndex < 0 || pageIndex >= end) {
-            image.setImageDrawable(null)
-            holder.shown[slot] = NO_PAGE
+            clearImage(holder, slot)
             return
         }
         image.colorFilter = Filters.colorFilter(filter)
@@ -352,7 +400,7 @@ class PageAdapter(
         val key = keyFor(pageIndex)
         val cached = cache.get(key)
         if (cached != null) {
-            applyBitmap(holder, slot, pageIndex, cached)
+            applyBitmap(holder, slot, key, cached)
             return
         }
         failures[pageIndex]?.takeIf { it.permanent }?.let {
@@ -360,10 +408,7 @@ class PageAdapter(
             return
         }
         // The page at its old size stays up until the new size arrives.
-        if (holder.shown[slot] != pageIndex) {
-            image.setImageDrawable(null)
-            holder.shown[slot] = NO_PAGE
-        }
+        if (holder.shown[slot] != pageIndex) clearImage(holder, slot)
 
         val entry = request(key)
         entry.waiters++
@@ -374,7 +419,7 @@ class PageAdapter(
                 failures[pageIndex]?.let { applyFailure(holder, slot, it) }
                 return@launch
             }
-            applyBitmap(holder, slot, pageIndex, bitmap)
+            applyBitmap(holder, slot, key, bitmap)
             updateLongStripAspect(holder, pageIndex, bitmap)
         }
     }
@@ -420,15 +465,25 @@ class PageAdapter(
         }
     }
 
-    private fun applyBitmap(holder: PageHolder, slot: Int, page: Int, bitmap: Bitmap) {
+    /** Shows [bitmap], decoded for [key]; settled zooms re-render it from the page's full detail. */
+    private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
         image.setImageBitmap(bitmap)
         image.setFitMode(fitMode)
-        holder.shown[slot] = page
+        image.detailSource = SlotDetail(holder, key)
+        holder.shown[slot] = key.page
+    }
+
+    private fun clearImage(holder: PageHolder, slot: Int) {
+        val image = holder.images[slot]
+        image.detailSource = null
+        image.setImageDrawable(null)
+        holder.shown[slot] = NO_PAGE
     }
 
     private fun applyFailure(holder: PageHolder, slot: Int, failure: Failure) {
         val image = holder.images[slot]
+        image.detailSource = null
         val res = image.resources
         val name = failure.name ?: res.getString(R.string.page_number, failure.index + 1)
         image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
@@ -576,6 +631,7 @@ class PageAdapter(
      */
     fun release(closeSources: Boolean = true) {
         released = true
+        details.clear()
         scope.cancel()
         pending.clear()
         cache.evictAll()

@@ -1,0 +1,145 @@
+package com.infinity.comicreader.ui
+
+import android.util.Log
+import com.infinity.comicreader.reader.Cancellation
+import com.infinity.comicreader.reader.PageDetail
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.util.concurrent.CancellationException
+
+/**
+ * Full-detail pages ([PageDetail]) for the item on screen, keyed by [K], and the
+ * renders made from them for settled zooms.
+ *
+ * - Only the pages of one item (a page, or the two of a spread) are kept: asking for
+ *   one drops every page not named with it, so memory stays at one item's worth.
+ * - A page's detail loads once and serves every render until it is dropped; a page
+ *   dropped mid-render is freed once that render is done.
+ * - Loads and renders run one at a time on [io], since each holds a full page or
+ *   uses every core already.
+ *
+ * Main thread only, apart from what runs on [io]; [scope] must run on the main thread.
+ */
+internal class DetailStore<K>(private val scope: CoroutineScope, private val io: CoroutineDispatcher) {
+
+    private class Entry {
+        lateinit var deferred: Deferred<PageDetail?>
+
+        /** Renders using the detail; it is freed only once none is. */
+        var users = 0
+
+        /** The loaded detail; guarded by the entry. */
+        var detail: PageDetail? = null
+        var dropped = false
+    }
+
+    private val entries = HashMap<K, Entry>()
+    private val gate = Semaphore(1)
+
+    /** The pages currently held or loading; for tests. */
+    val keys: Set<K> get() = entries.keys
+
+    /** Starts loading [key] with [load] unless it is held, dropping every page not in [keep]. */
+    fun prepare(key: K, keep: Collection<K>, load: () -> PageDetail) {
+        entry(key, keep, load)
+    }
+
+    /**
+     * Renders [request] from [key]'s detail, loading it with [load] first if needed,
+     * and hands the result to [done] on the main thread unless the returned job is
+     * cancelled first. Drops every page not in [keep]. A failed load or render is
+     * logged and gives nothing.
+     */
+    fun <R> render(key: K, keep: Collection<K>, load: () -> PageDetail, request: (PageDetail) -> R, done: (R) -> Unit): Job {
+        val entry = entry(key, keep, load)
+        return scope.launch {
+            val detail = entry.deferred.await() ?: return@launch
+            if (entry.dropped) return@launch
+            entry.users++
+            try {
+                val job = coroutineContext.job
+                val result = gate.withPermit {
+                    withContext(io) { Cancellation.during({ job.isCancelled }) { request(detail) } }
+                }
+                done(result)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.w(TAG, "Detail render failed", t)
+            } finally {
+                entry.users--
+                if (entry.dropped && entry.users == 0) free(entry)
+            }
+        }
+    }
+
+    /** Drops every page but [keep]. */
+    fun retain(keep: Collection<K>) {
+        entries.keys.filter { it !in keep }.forEach { drop(it) }
+    }
+
+    /** Drops [keys]. */
+    fun drop(keys: Collection<K>) = keys.forEach { drop(it) }
+
+    /** Drops every page, as when memory runs low. */
+    fun clear() = entries.keys.toList().forEach { drop(it) }
+
+    private fun entry(key: K, keep: Collection<K>, load: () -> PageDetail): Entry {
+        entries.keys.filter { it != key && it !in keep }.forEach { drop(it) }
+        entries[key]?.let { return it }
+        val entry = Entry()
+        entry.deferred = scope.async(io) {
+            gate.withPermit {
+                val job = coroutineContext.job
+                val detail = try {
+                    Cancellation.during({ job.isCancelled }) { load() }
+                } catch (e: CancellationException) {
+                    null
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Detail load failed", t)
+                    null
+                }
+                synchronized(entry) {
+                    if (entry.dropped) detail?.release() else entry.detail = detail
+                }
+                if (entry.dropped) null else detail
+            }
+        }
+        entries[key] = entry
+        return entry
+    }
+
+    private fun drop(key: K) {
+        val entry = entries.remove(key) ?: return
+        synchronized(entry) { entry.dropped = true }
+        entry.deferred.cancel()
+        if (entry.users == 0) free(entry)
+    }
+
+    private fun free(entry: Entry) {
+        synchronized(entry) {
+            entry.detail?.release()
+            entry.detail = null
+        }
+    }
+
+    companion object {
+        private const val TAG = "DetailStore"
+
+        /** Most memory one item's full-detail pages may hold: two of the largest pages drawn. */
+        const val MAX_BUDGET = 200L * 1024 * 1024
+
+        /** The detail budget on a device with [totalMem] bytes of RAM: a sixteenth of it, at most [MAX_BUDGET]. */
+        fun budget(totalMem: Long): Long = (totalMem / 16).coerceIn(MIN_BUDGET, MAX_BUDGET)
+
+        private const val MIN_BUDGET = 32L * 1024 * 1024
+    }
+}

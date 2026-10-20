@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import android.content.ComponentCallbacks2
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -339,6 +340,13 @@ class ViewerActivity : AppCompatActivity() {
         stopAutoScroll()
         saveHistory()
         flushStats()
+    }
+
+    /** Gives up the zoom's full-detail pages, the largest memory the reader holds, once memory runs low or the UI hides. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        @Suppress("DEPRECATION")
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) adapter?.trimMemory()
     }
 
     override fun onDestroy() {

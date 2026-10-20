@@ -153,10 +153,8 @@ object Decoders {
     private fun platformSize(bytes: ByteArray): IntArray? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) headerSize(bytes) else legacyBounds(bytes)
 
-    /** Stops [ImageDecoder] once the header is read. */
-    private object HeaderRead : RuntimeException() {
-        override fun fillInStackTrace(): Throwable = this
-    }
+    /** Stops [ImageDecoder] once the header is read; shared, so it keeps no stack trace or suppressed exceptions. */
+    private object HeaderRead : RuntimeException(null, null, false, false)
 
     /** Size from [ImageDecoder]'s header pass, which already applies EXIF orientation like the decode. */
     @RequiresApi(Build.VERSION_CODES.P)

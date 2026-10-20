@@ -1,18 +1,37 @@
 package com.infinity.comicreader.reader
 
 import android.app.Application
+import android.graphics.Bitmap
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
 
 /** [Decoders] against the real platform decoders (Robolectric native graphics). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class DecodersPlatformTest {
+
+    private fun encoded(width: Int, height: Int, format: Bitmap.CompressFormat): ByteArray {
+        val out = ByteArrayOutputStream()
+        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).compress(format, 90, out)
+        return out.toByteArray()
+    }
+
+    @Test
+    fun sizeFromPlatformHeaderPass() {
+        repeat(3) {
+            assertArrayEquals(intArrayOf(40, 30), Decoders.size(encoded(40, 30, Bitmap.CompressFormat.JPEG)))
+        }
+        assertArrayEquals(intArrayOf(41, 29), Decoders.size(encoded(41, 29, Bitmap.CompressFormat.WEBP_LOSSLESS)))
+        assertNull(Decoders.size(ByteArray(100) { 7 }))
+    }
 
     @Test
     fun truncatedImageKeepsDecodedPart() {

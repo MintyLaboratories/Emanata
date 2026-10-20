@@ -163,7 +163,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   automatically when a chapter ends, and how many backs on a first page open
   the previous one.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
-  drag, double-tap zoom).
+  drag, double-tap zoom, and **smooth scrolling (fling)**, off by default: a
+  zoomed page keeps gliding after the finger lifts and stops at its edges).
 - File-list options (file names, status bar, breadcrumb, quick button).
 - Clear history, clear bookmarks, clear thumbnails, reset all settings; every
   Clear or Reset asks first. Resetting settings keeps per-book adjustments and

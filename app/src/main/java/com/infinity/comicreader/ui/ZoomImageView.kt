@@ -19,6 +19,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.OverScroller
 import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
@@ -38,7 +39,8 @@ import kotlin.math.roundToInt
  * [onTap] receives the tap position as fractions of the view's width and height, for
  * tap zones. [verticalDrag] receives drags locked to the vertical axis while the
  * image cannot pan (the brightness gesture); a drag locked horizontally goes to the
- * parent, to turn the page.
+ * parent, to turn the page. With [flingEnabled] a pan keeps gliding after the finger
+ * lifts, slowing down, and stops at the page's edges.
  */
 class ZoomImageView @JvmOverloads constructor(
     context: Context,
@@ -84,6 +86,28 @@ class ZoomImageView @JvmOverloads constructor(
     private var pinched = false
     var doubleTapEnabled = true
 
+    /** A pan flung by the finger glides on, with inertia, until it stops or meets an edge. */
+    var flingEnabled = false
+
+    /** True once this gesture panned the page itself: only such a drag flings. */
+    private var panned = false
+    private val scroller = OverScroller(context)
+
+    /** Moves the page to the fling's next position, frame by frame, until it ends. */
+    private val flingStep = object : Runnable {
+        override fun run() {
+            if (!scroller.computeScrollOffset()) return
+            matrix.getValues(values)
+            matrix.postTranslate(scroller.currX - values[Matrix.MTRANS_X], scroller.currY - values[Matrix.MTRANS_Y])
+            clamp()
+            applyMatrix()
+            if (!scroller.isFinished) postOnAnimation(this)
+        }
+    }
+
+    /** True while a fling moves the page; for tests. */
+    internal val flinging: Boolean get() = !scroller.isFinished
+
     /**
      * The page's colors. A plain one is the view's color filter; any other runs on the
      * GPU, where it can, with the page's resampling; elsewhere the filter alone applies,
@@ -104,6 +128,7 @@ class ZoomImageView @JvmOverloads constructor(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                stopFling()
                 detailSource?.prepare()
                 return true
             }
@@ -125,6 +150,12 @@ class ZoomImageView @JvmOverloads constructor(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (!flingEnabled || !panned || pinched || scaleDetector.isInProgress) return false
+                fling(velocityX, velocityY)
+                return true
+            }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 performClick()
@@ -162,6 +193,7 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     fun fit(mode: FitMode = fitMode) {
+        stopFling()
         val drawable = drawable ?: return
         val viewW = width.toFloat()
         val viewH = height.toFloat()
@@ -204,6 +236,7 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     internal fun zoomTo(target: Float, focusX: Float, focusY: Float) {
+        stopFling()
         val clamped = target.coerceIn(minScale, maxScale)
         val factor = clamped / currentScale
         currentScale = clamped
@@ -359,6 +392,7 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun setImageDrawable(drawable: Drawable?) {
+        stopFling()
         dropDetail()
         clearShaders(pageShaders)
         super.setImageDrawable(drawable)
@@ -392,6 +426,7 @@ class ZoomImageView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        stopFling()
         dropDetail()
         clearShaders(pageShaders)
     }
@@ -575,6 +610,26 @@ class ZoomImageView @JvmOverloads constructor(
         canvas.restoreToCount(saved)
     }
 
+    /** Glides the page at [velocityX], [velocityY] px/s, slowing down, within its edges. */
+    internal fun fling(velocityX: Float, velocityY: Float) {
+        val d = drawable ?: return
+        matrix.getValues(values)
+        val x = flingRange(d.intrinsicWidth * values[Matrix.MSCALE_X], width.toFloat(), values[Matrix.MTRANS_X])
+        val y = flingRange(d.intrinsicHeight * values[Matrix.MSCALE_Y], height.toFloat(), values[Matrix.MTRANS_Y])
+        stopFling()
+        scroller.fling(
+            values[Matrix.MTRANS_X].roundToInt(), values[Matrix.MTRANS_Y].roundToInt(),
+            velocityX.roundToInt(), velocityY.roundToInt(), x.first, x.last, y.first, y.last
+        )
+        postOnAnimation(flingStep)
+    }
+
+    private fun stopFling() {
+        if (scroller.isFinished) return
+        scroller.forceFinished(true)
+        removeCallbacks(flingStep)
+    }
+
     override fun performClick(): Boolean {
         super.performClick()
         return true
@@ -617,6 +672,9 @@ class ZoomImageView @JvmOverloads constructor(
 
         when (action) {
             MotionEvent.ACTION_DOWN -> {
+                // A finger on the page catches a fling.
+                stopFling()
+                panned = false
                 activePointer = event.getPointerId(0)
                 lastX = event.x
                 lastY = event.y
@@ -672,6 +730,7 @@ class ZoomImageView @JvmOverloads constructor(
                 val room = if (horizontal) roomX(dx) else roomY(dy)
                 parent?.requestDisallowInterceptTouchEvent(room)
                 if (room) {
+                    panned = true
                     matrix.postTranslate(if (roomX(dx)) dx else 0f, if (roomY(dy)) dy else 0f)
                     clamp()
                     applyMatrix()
@@ -721,6 +780,14 @@ class ZoomImageView @JvmOverloads constructor(
                 RectF(r, t, right, b)
             ).filter { it.left < it.right && it.top < it.bottom }
         }
+
+        /**
+         * The translations a fling may move content [content] px long through in a view
+         * [view] px long: from its far edge to its near one, or only [trans] where it fits.
+         */
+        fun flingRange(content: Float, view: Float, trans: Float): IntRange =
+            if (content <= view + EDGE_SLOP) trans.roundToInt()..trans.roundToInt()
+            else (view - content).roundToInt()..0
 
         /**
          * True when matrix [values] draw at 1:1, which they are then snapped to: scale

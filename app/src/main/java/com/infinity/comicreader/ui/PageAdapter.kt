@@ -80,7 +80,8 @@ class PageAdapter(
     private val verticalDrag: ZoomImageView.VerticalDrag? = null,
     private val autoCrop: Boolean = false,
     private val linear: Boolean = false,
-    private val preload: Int = 2
+    private val preload: Int = 2,
+    private val fling: Boolean = false
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, VERTICAL, LONG_STRIP }
@@ -287,6 +288,7 @@ class PageAdapter(
 
     private fun makeImage(context: Context): ZoomImageView = ZoomImageView(context).apply {
         doubleTapEnabled = doubleTapZoom
+        flingEnabled = fling
         onTap = { x, y -> tapped(this, x, y) }
         verticalDrag = this@PageAdapter.verticalDrag
         look = this@PageAdapter.look

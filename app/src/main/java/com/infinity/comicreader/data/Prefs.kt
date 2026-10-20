@@ -171,6 +171,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_DOUBLE_TAP, true)
         set(v) = put(KEY_DOUBLE_TAP, v)
 
+    /** A zoomed page keeps gliding after the finger lifts. */
+    var fling: Boolean
+        get() = bool(KEY_FLING, false)
+        set(v) = put(KEY_FLING, v)
+
     // ---------------------------------------------------------------- library
 
     var showHidden: Boolean
@@ -353,6 +358,7 @@ class Prefs(context: Context) {
         private const val KEY_VOLUME_KEYS = "pref_volume_keys"
         private const val KEY_BRIGHTNESS_GESTURE = "pref_brightness_gesture"
         private const val KEY_DOUBLE_TAP = "pref_double_tap"
+        private const val KEY_FLING = "pref_fling"
         private const val KEY_SHOW_HIDDEN = "pref_show_hidden"
         private const val KEY_THUMBS = "pref_thumbs"
         private const val KEY_GRID = "pref_grid"
@@ -378,7 +384,7 @@ class Prefs(context: Context) {
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
-            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
+            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,

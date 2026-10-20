@@ -191,6 +191,11 @@
             app:defaultValue="true"
             app:key="pref_double_tap"
             app:title="@string/pref_double_tap" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_fling"
+            app:summary="@string/pref_fling_desc"
+            app:title="@string/pref_fling" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_list">

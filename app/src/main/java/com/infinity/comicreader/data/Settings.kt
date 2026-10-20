@@ -68,6 +68,7 @@ data class ReaderSettings(
     val volumeKeys: Boolean,
     val brightnessGesture: Boolean,
     val doubleTapZoom: Boolean,
+    val fling: Boolean,
     val charset: String
 ) {
     companion object {
@@ -94,6 +95,7 @@ data class ReaderSettings(
             volumeKeys = p.volumeKeys,
             brightnessGesture = p.brightnessGesture,
             doubleTapZoom = p.doubleTapZoom,
+            fling = p.fling,
             charset = p.charset
         )
     }

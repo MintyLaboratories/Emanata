@@ -483,7 +483,7 @@ class ViewerActivity : AppCompatActivity() {
             rebuild = true
         }
         // Built into the page adapter.
-        if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture ||
+        if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
             s.linearLight != old.linearLight ||
             s.preload != old.preload
         ) {
@@ -719,7 +719,8 @@ class ViewerActivity : AppCompatActivity() {
             verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
             autoCrop = autoCrop,
             linear = prefs.linearLight,
-            preload = prefs.preload
+            preload = prefs.preload,
+            fling = prefs.fling
         )
         a.fitMode = effectiveFit()
         a.filter = filter

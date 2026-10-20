@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Looper
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
@@ -16,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,7 +44,13 @@ class ListActivityStartupTest {
         root = Environment.getExternalStorageDirectory()
     }
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+    private fun idle() {
+        // Listings run on the IO pool; let them land on the main thread.
+        repeat(10) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+    }
 
     private fun ListActivity.tab() = findViewById<TabLayout>(R.id.tabs).selectedTabPosition
 
@@ -66,6 +74,22 @@ class ListActivityStartupTest {
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
         idle()
         assertEquals(dir.absolutePath, activity.crumbPaths().last())
+    }
+
+    @Test
+    fun browseRefreshesOnResumeAfterStartingOnAnotherTab() {
+        val dir = File(root, "Comics").apply { mkdirs() }
+        prefs.lastPath = dir.absolutePath
+        prefs.startupTab = Prefs.TAB_HISTORY
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        controller.get().findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
+        idle()
+        File(dir, "new.cbz").createNewFile()
+        controller.pause().stop().restart().start().resume()
+        idle()
+        val adapter = controller.get().findViewById<RecyclerView>(R.id.recycler).adapter as BookAdapter
+        assertTrue(adapter.positionOf(File(dir, "new.cbz").absolutePath) >= 0)
     }
 
     @Test

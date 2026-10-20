@@ -216,15 +216,16 @@ class ListActivity : AppCompatActivity() {
         super.onResume()
         applyStatusBarSetting()
         roots = StorageRoots.list(this)
-        if (!hasStorageAccess() || mode != TAB_BROWSE) return
+        if (!hasStorageAccess()) return
         if (!resumedOnce) {
+            // Right after onCreate's listing, or after access was granted to start up with.
             resumedOnce = true
             if (currentDir == null) startUp()
             return
         }
         // Refresh so files added/removed outside the app (or from the viewer)
         // appear immediately.
-        currentDir?.let { loadDirectory(it) }
+        if (mode == TAB_BROWSE) currentDir?.let { loadDirectory(it) }
     }
 
     override fun onDestroy() {

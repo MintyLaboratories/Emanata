@@ -36,6 +36,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.util.Collections
+import java.util.WeakHashMap
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -118,8 +120,8 @@ class PageAdapter(
 
     private var look = Look.NONE
 
-    /** Every image this adapter made, shown or waiting in the recycler's caches. */
-    private val images = ArrayList<ZoomImageView>()
+    /** Every image this adapter made that is still alive, shown or waiting in the recycler's caches. */
+    private val images: MutableSet<ZoomImageView> = Collections.newSetFromMap(WeakHashMap())
 
     /** Shows the current [filter] and [adjustments] on every image at once, without binding again. */
     private fun applyLook() {

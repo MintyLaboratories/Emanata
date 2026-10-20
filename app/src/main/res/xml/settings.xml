@@ -64,7 +64,7 @@
             app:summary="@string/pref_ask_resume_desc"
             app:title="@string/pref_ask_resume" />
         <SwitchPreferenceCompat
-            app:defaultValue="false"
+            app:defaultValue="true"
             app:key="pref_auto_next"
             app:summary="@string/pref_auto_next_desc"
             app:title="@string/pref_auto_next" />

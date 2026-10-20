@@ -125,8 +125,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Page spacing** slider for vertical and long-strip modes.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
   direct link to the next chapter.
-- **Auto next chapter:** reaching the last page rolls straight into the next
-  chapter and the end-of-chapter card is skipped entirely (it still appears
+- **Auto next chapter** (on by default): reaching the last page rolls straight
+  into the next chapter and the end-of-chapter card is skipped entirely (it still appears
   when the setting is off, or on the last chapter of a folder). In **long strip**
   and **vertical** modes the next chapter's pages are already laid into the strip,
   so scrolling (or an upward flick) simply continues into them the way page-to-page

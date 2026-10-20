@@ -98,7 +98,7 @@ class Prefs(context: Context) {
         set(v) = put(KEY_SPACING, v.coerceIn(0, 48))
 
     var autoNext: Boolean
-        get() = bool(KEY_AUTO_NEXT, false)
+        get() = bool(KEY_AUTO_NEXT, true)
         set(v) = put(KEY_AUTO_NEXT, v)
 
     var resume: Boolean

@@ -133,7 +133,6 @@ class PageAdapter(
      * is scrolled past would race with decodes that are still in flight for it.
      */
     private val segments = ArrayList<Segment>()
-    private val total get() = segments.sumOf { it.count }
     private val end get() = segments.lastOrNull()?.let { it.first + it.count } ?: 0
     private var base = 0
     private var released = false
@@ -149,7 +148,7 @@ class PageAdapter(
         val waiters = arrayOfNulls<Job>(images.size)
     }
 
-    override fun getItemCount(): Int = (layout.itemCount(total) - base).coerceAtLeast(0)
+    override fun getItemCount(): Int = (layout.itemCount(end) - base).coerceAtLeast(0)
 
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
@@ -221,14 +220,14 @@ class PageAdapter(
         // [position] is an item index; strip pages keep their chapter-relative number,
         // so shift by [base] (0 in paged mode, where nothing is ever appended).
         val item = position + base
-        val pages = layout.slots(item, total)
+        val pages = layout.slots(item, end)
         for (slot in pages.indices) {
             val page = pages[slot]
             // The lone last page of a spread takes the whole row.
             if (spread) holder.images[slot].visibility = if (page == NO_PAGE) View.GONE else View.VISIBLE
             bindImage(holder, slot, page)
         }
-        prefetchAfter(layout.lastPage(item, total))
+        prefetchAfter(layout.lastPage(item, end))
     }
 
     /**
@@ -311,7 +310,7 @@ class PageAdapter(
     private fun bindImage(holder: PageHolder, slot: Int, pageIndex: Int) {
         val image = holder.images[slot]
         stopWaiting(holder, slot)
-        if (pageIndex < 0 || pageIndex >= total) {
+        if (pageIndex < 0 || pageIndex >= end) {
             image.setImageDrawable(null)
             return
         }
@@ -413,7 +412,7 @@ class PageAdapter(
         val ahead = if (mode == Mode.LONG_STRIP) minOf(preload, MAX_STRIP_PRELOAD) else preload
         for (k in 1..ahead) {
             val p = lastShown + k
-            if (p >= total) break
+            if (p >= end) break
             if (cache.get(p) == null && pending[p] == null) request(p, lastReqW, lastReqH).prefetch = true
         }
     }

@@ -71,6 +71,14 @@ class NoticesTest {
     }
 
     @Test
+    fun unrarRestrictionIsStatedInAboutAndReadme() {
+        assertEquals(Notices.UNRAR_NOTE, Notices.forArtifact("com.github.junrar:junrar")!!.note)
+        val readme = File("../README.md").readText().replace(Regex("\\s+"), " ")
+        assertTrue(readme.contains(Notices.UNRAR_NOTE))
+        assertTrue(Notices.UNRAR_NOTE.contains("may not be used to develop a RAR (WinRAR) compatible archiver"))
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

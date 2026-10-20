@@ -279,22 +279,36 @@ No internet permission is requested.
 
 ## License
 
-Released under the [MIT License](LICENSE). Based on
+The app's own code is released under the [MIT License](LICENSE). Based on
 [ComicReader](https://github.com/infinity6901/ComicReader) by infinity6901 (MIT).
 
-Third-party components (also listed in the app under Settings → About):
+Bundled third-party components keep their own licenses. The app shows each
+license and NOTICE text under Settings → About (files in
+`app/src/main/assets/licenses/`).
 
 | Component | License |
 |---|---|
 | AndroidX, Material Components for Android | Apache-2.0 |
 | Kotlin standard library, kotlinx.coroutines | Apache-2.0 |
-| [junrar](https://github.com/junrar/junrar) | UnRAR License |
-| Apache Commons Compress, Apache Commons IO | Apache-2.0 |
+| JetBrains Java Annotations, JSpecify, Error Prone annotations, Guava ListenableFuture | Apache-2.0 |
+| [junrar](https://github.com/junrar/junrar) | UnRAR License (see below) |
+| Apache Commons Compress, IO, Lang, Codec | Apache-2.0 |
 | XZ for Java | Public domain |
-| SLF4J (`slf4j-nop`) | MIT |
+| SLF4J (`slf4j-api`, `slf4j-nop`) | MIT |
 | [jxl-coder](https://github.com/awxkee/jxl-coder) | Apache-2.0 or BSD-3-Clause |
-| libjxl (in jxl-coder) | BSD-3-Clause |
-| Highway (in jxl-coder) | Apache-2.0 |
-| Brotli (in jxl-coder) | MIT |
-| Little CMS (in jxl-coder) | MIT |
+| libjxl, skcms (in jxl-coder) | BSD-3-Clause |
+| Highway (in jxl-coder) | Apache-2.0 or BSD-3-Clause |
+| Brotli, Little CMS, GIFLIB (in jxl-coder) | MIT |
+| libpng with APNG patch (in jxl-coder) | PNG Reference Library License v2 |
+| [Eigen](https://gitlab.com/libeigen/eigen) (in jxl-coder) | MPL-2.0 |
+| Android NDK cpufeatures (in jxl-coder) | BSD-2-Clause |
+| Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
+| Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
+| LLVM libc++abi, libunwind (in jxl-coder) | Apache-2.0 with LLVM Exceptions |
 | Material Symbols | Apache-2.0 |
+
+Dual-licensed components are used under Apache-2.0.
+
+**UnRAR:** junrar is derived from the UnRAR source code. All copyrights to RAR
+and UnRAR are owned by Alexander Roshal. The UnRAR code may not be used to
+develop a RAR (WinRAR) compatible archiver.

@@ -40,6 +40,11 @@ object Notices {
     const val UPSTREAM_URL = "https://github.com/infinity6901/ComicReader"
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
 
+    /** The statement the UnRAR license requires in the documentation of software using it. */
+    const val UNRAR_NOTE = "junrar is derived from the UnRAR source code. All copyrights to RAR and UnRAR " +
+        "are owned by Alexander Roshal. The UnRAR code may not be used to develop a RAR (WinRAR) " +
+        "compatible archiver."
+
     /** Folder under `assets/` holding the license and NOTICE files. */
     const val ASSET_DIR = "licenses"
 
@@ -77,7 +82,7 @@ object Notices {
         ),
         Notice(
             "junrar", "UnRAR License", "https://github.com/junrar/junrar", listOf("unrar.txt"),
-            listOf("com.github.junrar:junrar")
+            listOf("com.github.junrar:junrar"), note = UNRAR_NOTE
         ),
         Notice(
             "Apache Commons Compress", APACHE_2, "https://commons.apache.org/proper/commons-compress/",

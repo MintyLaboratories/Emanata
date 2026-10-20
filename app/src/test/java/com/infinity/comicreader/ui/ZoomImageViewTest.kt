@@ -3,6 +3,8 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -43,6 +45,21 @@ class ZoomImageViewTest {
         assertTrue(view(1848, 2960, 1848, 5000, ZoomImageView.FitMode.WIDTH).drawsOneToOne)
         assertTrue(view(1848, 2960, 1973, 2960, ZoomImageView.FitMode.HEIGHT).drawsOneToOne)
         assertTrue(view(1848, 2960, 1848, 2960, ZoomImageView.FitMode.STRETCH).drawsOneToOne)
+    }
+
+    @Test
+    fun slowPanAccumulatesBelowAPixelPerMove() {
+        val v = view(1848, 2960, 1848, 5000, ZoomImageView.FitMode.WIDTH)
+        val t = SystemClock.uptimeMillis()
+        var y = 1000f
+        v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 900f, y, 0))
+        repeat(10) {
+            y -= 0.3f
+            v.onTouchEvent(MotionEvent.obtain(t, t + 16L * (it + 1), MotionEvent.ACTION_MOVE, 900f, y, 0))
+        }
+        val m = values(v)
+        assertEquals(-3f, m[Matrix.MTRANS_Y], 0f)
+        assertTrue(v.drawsOneToOne)
     }
 
     @Test

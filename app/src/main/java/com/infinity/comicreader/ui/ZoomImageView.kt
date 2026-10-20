@@ -30,6 +30,7 @@ class ZoomImageView @JvmOverloads constructor(
     enum class FitMode { SCREEN, WIDTH, HEIGHT, STRETCH }
 
     private val matrix = Matrix()
+    private val drawMatrix = Matrix()
     private val baseMatrix = Matrix()
     private var fitMode = FitMode.SCREEN
     private var minScale = 1f
@@ -184,9 +185,9 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     /**
-     * Shows [matrix]. At 1:1 it is snapped to whole pixels and the bitmap is drawn
-     * unfiltered, so a page decoded at its on-screen size reaches the screen pixel for
-     * pixel; any other scale draws filtered.
+     * Shows [matrix]. At 1:1 a copy snapped to whole pixels is drawn, unfiltered, so a
+     * page decoded at its on-screen size reaches the screen pixel for pixel while
+     * [matrix] keeps the exact pan; any other scale draws filtered.
      */
     private fun applyMatrix() {
         matrix.getValues(values)
@@ -197,10 +198,12 @@ class ZoomImageView @JvmOverloads constructor(
             values[Matrix.MSCALE_Y] = 1f
             values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].roundToInt().toFloat()
             values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].roundToInt().toFloat()
-            matrix.setValues(values)
+            drawMatrix.setValues(values)
+        } else {
+            drawMatrix.set(matrix)
         }
         (drawable as? BitmapDrawable)?.isFilterBitmap = !oneToOne
-        imageMatrix = matrix
+        imageMatrix = drawMatrix
     }
 
     /** True when the content is drawn at 1:1 without filtering; for tests. */

@@ -11,10 +11,14 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Plan
+import kotlin.math.roundToInt
 
 /**
  * Displays a bitmap fitted to the view and lets the user drag a crop rectangle
- * over it. Corners resize; the inside of the rectangle moves it.
+ * over it. Corners resize; the inside of the rectangle moves it. The bitmap is shown
+ * through a Lanczos3 copy at its on-screen size, drawn 1:1.
  */
 class CropView @JvmOverloads constructor(
     context: Context,
@@ -23,6 +27,7 @@ class CropView @JvmOverloads constructor(
 ) : View(context, attrs, defStyle) {
 
     private var bitmap: Bitmap? = null
+    private var preview: Bitmap? = null
     private val imageMatrix = Matrix()
     private val displayRect = RectF()
     private val cropRect = RectF()
@@ -31,7 +36,6 @@ class CropView @JvmOverloads constructor(
     private var lastX = 0f
     private var lastY = 0f
 
-    private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val dimPaint = Paint().apply { color = 0x99000000.toInt() }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -45,6 +49,7 @@ class CropView @JvmOverloads constructor(
 
     fun setBitmap(value: Bitmap) {
         bitmap = value
+        preview = null
         requestLayout()
         post {
             computeMatrix()
@@ -66,15 +71,23 @@ class CropView @JvmOverloads constructor(
         val bw = b.width.toFloat()
         val bh = b.height.toFloat()
         val scale = minOf(vw / bw, vh / bh)
-        val dw = bw * scale
-        val dh = bh * scale
-        val dx = (vw - dw) / 2f
-        val dy = (vh - dh) / 2f
-        displayRect.set(dx, dy, dx + dw, dy + dh)
+        val dw = (bw * scale).roundToInt().coerceIn(1, width)
+        val dh = (bh * scale).roundToInt().coerceIn(1, height)
+        val dx = (width - dw) / 2
+        val dy = (height - dh) / 2
+        displayRect.set(dx.toFloat(), dy.toFloat(), (dx + dw).toFloat(), (dy + dh).toFloat())
         imageMatrix.reset()
-        imageMatrix.postScale(scale, scale)
-        imageMatrix.postTranslate(dx, dy)
+        imageMatrix.postScale(dw / bw, dh / bh)
+        imageMatrix.postTranslate(dx.toFloat(), dy.toFloat())
+        val p = preview
+        if (p == null || p.width != dw || p.height != dh) {
+            preview = if (dw == b.width && dh == b.height) b
+            else BitmapUtils.resample(b, Plan(dw, dh, 0.0, 0.0, bw.toDouble(), bh.toDouble()), linear = false)
+        }
     }
+
+    /** `[width, height]` of the bitmap as drawn, or null before layout; for tests. */
+    internal val previewSize: IntArray? get() = preview?.let { intArrayOf(it.width, it.height) }
 
     private fun resetCrop() {
         if (displayRect.isEmpty) return
@@ -91,8 +104,8 @@ class CropView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val b = bitmap ?: return
-        canvas.drawBitmap(b, imageMatrix, bitmapPaint)
+        val p = preview ?: return
+        canvas.drawBitmap(p, displayRect.left, displayRect.top, null)
 
         // Dim the area outside the crop rectangle.
         canvas.drawRect(0f, 0f, width.toFloat(), cropRect.top, dimPaint)

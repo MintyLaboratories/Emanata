@@ -467,14 +467,19 @@ class PageAdapter(
         }
     }
 
-    fun release() {
+    /**
+     * Stops all work. With [closeSources] false the chapters stay open for the
+     * adapter that replaces this one, as when a layout change rebuilds it.
+     */
+    fun release(closeSources: Boolean = true) {
         released = true
         scope.cancel()
         pending.clear()
         cache.evictAll()
+        val chapters = strip.clear()
         // Every chapter's handle is released here rather than earlier, so a decode
         // still in flight cannot meet a closed archive.
-        strip.clear().forEach { retire(it) }
+        if (closeSources) chapters.forEach { retire(it) }
     }
 
     companion object {

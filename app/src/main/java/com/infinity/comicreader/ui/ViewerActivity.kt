@@ -505,7 +505,8 @@ class ViewerActivity : AppCompatActivity() {
         val src = source ?: return
         pager.adapter = null
         vertical.adapter = null
-        adapter?.release()
+        // The new adapter reads the same chapters: they must stay open.
+        adapter?.release(closeSources = false)
 
         val a = PageAdapter(
             source = src,

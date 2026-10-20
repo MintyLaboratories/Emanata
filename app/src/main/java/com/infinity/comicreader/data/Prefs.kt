@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
+import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.TapZones
 
 /**
@@ -76,9 +77,21 @@ class Prefs(context: Context) {
         get() = str(KEY_FILTER, "none")
         set(v) = put(KEY_FILTER, v)
 
-    var brightness: Int
-        get() = integer(KEY_BRIGHTNESS, 100).coerceIn(20, 100)
-        set(v) = put(KEY_BRIGHTNESS, v.coerceIn(20, 100))
+    /** The adjustments every book starts with; a book's own replace them. */
+    var defaultAdjustments: Adjustments
+        get() = Adjustments(
+            integer(KEY_ADJUST_BRIGHTNESS, 0),
+            integer(KEY_ADJUST_CONTRAST, 0),
+            integer(KEY_ADJUST_SATURATION, 0)
+        ).coerced()
+        set(v) {
+            val a = v.coerced()
+            sp.edit()
+                .putInt(KEY_ADJUST_BRIGHTNESS, a.brightness)
+                .putInt(KEY_ADJUST_CONTRAST, a.contrast)
+                .putInt(KEY_ADJUST_SATURATION, a.saturation)
+                .apply()
+        }
 
     var pageSpacing: Int
         get() = integer(KEY_SPACING, 0).coerceIn(0, 48)
@@ -282,7 +295,9 @@ class Prefs(context: Context) {
         private const val KEY_PAGE_MODE = "pref_page_mode"
         private const val KEY_FIT = "pref_fit"
         private const val KEY_FILTER = "pref_filter"
-        private const val KEY_BRIGHTNESS = "pref_brightness"
+        private const val KEY_ADJUST_BRIGHTNESS = "pref_adjust_brightness"
+        private const val KEY_ADJUST_CONTRAST = "pref_adjust_contrast"
+        private const val KEY_ADJUST_SATURATION = "pref_adjust_saturation"
         private const val KEY_SPACING = "pref_page_spacing"
         private const val KEY_AUTO_NEXT = "pref_auto_next"
         private const val KEY_RESUME = "pref_resume"
@@ -313,16 +328,20 @@ class Prefs(context: Context) {
 
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
-            KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_BRIGHTNESS, KEY_SPACING, KEY_AUTO_NEXT,
+            KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
-            KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES
+            KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
+            KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS
         )
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
         private const val OLD_TAP_ZONES = "pref_tap_zones"
+
+        /** Replaced by [KEY_ADJUST_BRIGHTNESS]: a black overlay, 20..100 with 100 = none. */
+        private const val OLD_BRIGHTNESS = "pref_brightness"
 
         /**
          * The changes that bring [stored] settings up to date: a value to write per key,
@@ -337,6 +356,13 @@ class Prefs(context: Context) {
                     out[KEY_TAP_ZONE_LAYOUT] = (if (on) TapZones.LEFT_RIGHT else TapZones.DISABLED).value
                 }
                 out[OLD_TAP_ZONES] = null
+            }
+            if (OLD_BRIGHTNESS in stored) {
+                val old = stored[OLD_BRIGHTNESS] as? Int
+                if (KEY_ADJUST_BRIGHTNESS !in stored && old != null) {
+                    out[KEY_ADJUST_BRIGHTNESS] = old.coerceIn(20, 100) - 100
+                }
+                out[OLD_BRIGHTNESS] = null
             }
             return out
         }

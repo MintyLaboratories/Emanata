@@ -102,8 +102,8 @@
                     android:title="@string/reading_rtl" />
             </group>
             <item
-                android:id="@+id/menu_brightness"
-                android:title="@string/menu_brightness" />
+                android:id="@+id/menu_adjustments"
+                android:title="@string/menu_adjustments" />
             <item
                 android:id="@+id/menu_page_spacing"
                 android:title="@string/menu_page_spacing" />

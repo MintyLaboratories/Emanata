@@ -101,8 +101,12 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - **Share** or **save** the current page as an image.
 - **Per-folder layout:** "Remember layout for this folder" stores mode, direction, fit
   and spread for that folder only.
-- **Brightness** overlay (with an optional vertical-drag gesture) and a **night**
-  filter.
+- **Adjustments:** brightness, contrast and saturation, each -100..+100, computed
+  in OKLab on the GPU in the same pass as the page's scaling (Android 13+), live
+  while dragging. Brightness blends toward black or white, contrast scales
+  lightness about mid-gray, saturation scales chroma within the sRGB gamut.
+  Changes are per book with a reset to the defaults set in Settings. A vertical
+  drag on the page sets brightness. A **night** filter sits on top.
 - **Page spacing** slider for vertical and long-strip modes.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
   direct link to the next chapter.
@@ -124,14 +128,14 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   chapter list, next-chapter) never ask.
 - Per-book reading position is stored in history.
 - Every reader option is written back to preferences, so the mode, fit, filter,
-  brightness, spacing, direction and toggles **persist across chapters and app
-  restarts**.
+  spacing, direction and toggles **persist across chapters and app restarts**.
 
 ### Settings
 - Theme: system / light / dark.
 - Per-app language: system, English, 한국어, 日本語, Русский.
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).
-- Default reading direction, page mode, fit, filter, page spacing, brightness.
+- Default reading direction, page mode, fit, filter, page spacing.
+- Default adjustments (brightness, contrast, saturation) for every book.
 - **Linear-light scaling** (off by default): pages and covers are shrunk in
   linear light, so halftones and screentones keep their brightness; thin dark
   lines come out lighter. Enlarging stays in sRGB.

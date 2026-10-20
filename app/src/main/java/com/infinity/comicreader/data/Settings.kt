@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.infinity.comicreader.reader.Adjustments
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,7 +50,7 @@ data class ReaderSettings(
     val pageMode: String,
     val fit: String,
     val filter: String,
-    val brightness: Int,
+    val adjustments: Adjustments,
     val pageSpacing: Int,
     val autoNext: Boolean,
     val resume: Boolean,
@@ -76,7 +77,7 @@ data class ReaderSettings(
             pageMode = p.pageMode,
             fit = p.fit,
             filter = p.filter,
-            brightness = p.brightness,
+            adjustments = p.defaultAdjustments,
             pageSpacing = p.pageSpacing,
             autoNext = p.autoNext,
             resume = p.resume,

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,6 +46,29 @@ class PrefsUpgradeTest {
             mapOf("pref_tap_zones" to null),
             Prefs.upgrade(mapOf("pref_tap_zones" to false, "pref_tap_zone_layout" to "top_bottom"))
         )
+    }
+
+    @Test
+    fun overlayBrightnessBecomesTheBrightnessAdjustment() {
+        assertEquals(
+            mapOf("pref_adjust_brightness" to -50, "pref_brightness" to null),
+            Prefs.upgrade(mapOf("pref_brightness" to 50))
+        )
+        assertEquals(0, Prefs.upgrade(mapOf("pref_brightness" to 100))["pref_adjust_brightness"])
+        assertEquals(-80, Prefs.upgrade(mapOf("pref_brightness" to 20))["pref_adjust_brightness"])
+        assertEquals(
+            mapOf("pref_brightness" to null),
+            Prefs.upgrade(mapOf("pref_brightness" to 50, "pref_adjust_brightness" to 10))
+        )
+    }
+
+    @Test
+    fun upgradedBrightnessIsTheDefault() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit().putInt("pref_brightness", 70).commit()
+        val prefs = Prefs(context)
+        prefs.upgrade()
+        assertEquals(Adjustments(brightness = -30), prefs.defaultAdjustments)
+        assertFalse("pref_brightness" in stored())
     }
 
     @Test

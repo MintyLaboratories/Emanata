@@ -108,7 +108,11 @@
     <string name="menu_reader_settings">Reader settings</string>
     <string name="menu_filters">Page filter</string>
     <string name="menu_page_spacing">Page spacing</string>
-    <string name="menu_brightness">Brightness</string>
+    <string name="menu_adjustments">Adjustments</string>
+    <string name="adjust_brightness">Brightness</string>
+    <string name="adjust_contrast">Contrast</string>
+    <string name="adjust_saturation">Saturation</string>
+    <string name="adjust_reset">Reset to defaults</string>
     <string name="menu_spread">Two-page spread</string>
     <string name="menu_crop">Crop page</string>
     <string name="menu_auto_crop">Auto-crop margins</string>
@@ -199,7 +203,7 @@
     <string name="pref_page_mode">Default page mode</string>
     <string name="pref_fit">Default fit mode</string>
     <string name="pref_filter">Default page filter</string>
-    <string name="pref_brightness">Default brightness</string>
+    <string name="pref_cat_adjustments">Default adjustments</string>
     <string name="pref_page_spacing">Page spacing</string>
     <string name="pref_auto_next">Auto next chapter</string>
     <string name="pref_auto_next_desc">Open the next chapter automatically when a chapter ends, without the end-of-chapter prompt</string>

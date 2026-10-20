@@ -50,6 +50,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.NestedArchives
@@ -74,9 +75,10 @@ import kotlin.math.abs
  * The reader.
  *
  * Page layout is one of three modes — paged, vertical or long strip — and every
- * reader option (mode, fit, filter, brightness, spacing, direction, two-page,
- * night filter, keep-on, fullscreen) is read from and written back to [Prefs], so
- * the choices survive chapter changes and app restarts. Changes made elsewhere,
+ * reader option (mode, fit, filter, spacing, direction, two-page, night filter,
+ * keep-on, fullscreen) is read from and written back to [Prefs], so the choices
+ * survive chapter changes and app restarts. Color adjustments are per book, in
+ * [Library], falling back to the defaults in [Prefs]. Changes made elsewhere,
  * such as in the settings screen, apply live through [SettingsRepository].
  */
 class ViewerActivity : AppCompatActivity() {
@@ -95,7 +97,6 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var seek: SeekBar
     private lateinit var pageText: TextView
     private lateinit var chapterText: TextView
-    private lateinit var dim: View
     private lateinit var nightOverlay: View
     private lateinit var progress: android.widget.ProgressBar
     private lateinit var endCard: View
@@ -131,7 +132,13 @@ class ViewerActivity : AppCompatActivity() {
     private var twoPage = false
     private var readingDir = "ltr"
     private var filter = Filters.NONE
-    private var brightness = 100
+    private var adjustments = Adjustments.NEUTRAL
+
+    /** True when the open book has adjustments of its own rather than the defaults. */
+    private var ownAdjustments = false
+
+    /** True when [adjustments] changed since they were last stored. */
+    private var adjustmentsDirty = false
     private var spacingDp = 0
     private var nightFilter = false
     private var keepOn = false
@@ -338,6 +345,7 @@ class ViewerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        persistAdjustments()
         stopAutoScroll()
         saveHistory()
         flushStats()
@@ -386,7 +394,6 @@ class ViewerActivity : AppCompatActivity() {
         seek = findViewById(R.id.viewer_seek)
         pageText = findViewById(R.id.viewer_page_text)
         chapterText = findViewById(R.id.viewer_chapter_text)
-        dim = findViewById(R.id.viewer_dim)
         nightOverlay = findViewById(R.id.night_overlay)
         progress = findViewById(R.id.viewer_progress)
         endCard = findViewById(R.id.viewer_end)
@@ -403,13 +410,11 @@ class ViewerActivity : AppCompatActivity() {
         fit = prefs.fit
         autoCrop = prefs.autoCrop
         filter = prefs.filter
-        brightness = prefs.brightness
         spacingDp = prefs.pageSpacing
         keepOn = prefs.keepScreenOn
         nightFilter = prefs.nightFilter
         applyKeepScreenOn()
         applyNight()
-        applyBrightness()
         if (prefs.fullscreen) applyFullscreen(true)
     }
 
@@ -424,18 +429,15 @@ class ViewerActivity : AppCompatActivity() {
         if (old == s) return
         applied = s
         var rebuild = false
-        // Whether anything the menu or the end card reflects changed. Brightness and
-        // auto-scroll speed are written on every drag step and change neither.
+        // Whether anything the menu or the end card reflects changed. Adjustments and
+        // auto-scroll speed change neither.
         var shown = false
         if (s.filter != old.filter && s.filter != filter) {
             filter = s.filter
             adapter?.filter = filter
             shown = true
         }
-        if (s.brightness != old.brightness && s.brightness != brightness) {
-            brightness = s.brightness
-            applyBrightness()
-        }
+        if (s.adjustments != old.adjustments && !ownAdjustments) showAdjustments(s.adjustments)
         if (s.pageSpacing != old.pageSpacing && s.pageSpacing != spacingDp) {
             spacingDp = s.pageSpacing
             adapter?.spacingPx = spacingPx()
@@ -566,7 +568,9 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
         val target = File(path)
+        persistAdjustments()
         file = target
+        loadAdjustments()
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
@@ -691,6 +695,7 @@ class ViewerActivity : AppCompatActivity() {
         )
         a.fitMode = effectiveFit()
         a.filter = filter
+        a.adjustments = adjustments
         a.spacingPx = spacingPx()
         adapter = a
 
@@ -795,7 +800,9 @@ class ViewerActivity : AppCompatActivity() {
         val top = lm?.findViewByPosition(anchor)?.top ?: 0
 
         source = next
+        persistAdjustments()
         file = nextFile
+        loadAdjustments()
         // Reopening or recreating the reader must load the chapter now shown.
         intent.putExtra(EXTRA_PATH, nextFile.absolutePath)
         currentIndex = (first - boundary).coerceAtLeast(0)
@@ -1048,19 +1055,97 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun onBrightnessDrag(dy: Float) {
         val range = 420f * resources.displayMetrics.density
-        val delta = (dy / range) * 85f
-        setBrightness((brightness + delta).toInt().coerceIn(20, 100))
+        val delta = (dy / range) * 100f
+        val b = (adjustments.brightness + delta).toInt()
+        setAdjustments(adjustments.copy(brightness = b), persist = false)
     }
 
-    private fun setBrightness(value: Int) {
-        brightness = value.coerceIn(20, 100)
-        prefs.brightness = brightness
-        applyBrightness()
+    // ------------------------------------------------------------------ adjustments
+
+    /** Takes the open book's adjustments: its own, or the defaults. */
+    private fun loadAdjustments() {
+        val own = file?.let { library.adjustmentsFor(it.absolutePath) }
+        ownAdjustments = own != null
+        adjustmentsDirty = false
+        showAdjustments(own ?: prefs.defaultAdjustments)
     }
 
-    private fun applyBrightness() {
-        dim.alpha = ((100 - brightness) / 100f) * 0.82f
+    private fun showAdjustments(value: Adjustments) {
+        adjustments = value
+        adapter?.adjustments = value
     }
+
+    /** Makes [value] the book's own adjustments; stored now with [persist], else by [persistAdjustments]. */
+    private fun setAdjustments(value: Adjustments, persist: Boolean = true) {
+        ownAdjustments = true
+        adjustmentsDirty = true
+        showAdjustments(value.coerced())
+        if (persist) persistAdjustments()
+    }
+
+    /** Stores the book's adjustments, or forgets them when it follows the defaults. */
+    private fun persistAdjustments() {
+        if (!adjustmentsDirty) return
+        adjustmentsDirty = false
+        val f = file ?: return
+        library.setAdjustments(f.absolutePath, if (ownAdjustments) adjustments else null)
+    }
+
+    /** Returns the book to the default adjustments. */
+    private fun resetAdjustments() {
+        ownAdjustments = false
+        adjustmentsDirty = true
+        persistAdjustments()
+        showAdjustments(prefs.defaultAdjustments)
+    }
+
+    /** One adjustment's slider: its ids and how it reads and changes [Adjustments]. */
+    private class AdjustSlider(
+        val slider: Int,
+        val label: Int,
+        val name: Int,
+        val get: (Adjustments) -> Int,
+        val with: (Adjustments, Int) -> Adjustments
+    )
+
+    private val adjustSliders = listOf(
+        AdjustSlider(R.id.adjust_brightness, R.id.adjust_brightness_value, R.string.adjust_brightness, { it.brightness }) { a, v -> a.copy(brightness = v) },
+        AdjustSlider(R.id.adjust_contrast, R.id.adjust_contrast_value, R.string.adjust_contrast, { it.contrast }) { a, v -> a.copy(contrast = v) },
+        AdjustSlider(R.id.adjust_saturation, R.id.adjust_saturation_value, R.string.adjust_saturation, { it.saturation }) { a, v -> a.copy(saturation = v) }
+    )
+
+    /** Binds the adjustments panel ([R.layout.view_adjustments]) inside [root]: live while dragging, stored on release. */
+    private fun bindAdjustments(root: View) {
+        fun show() {
+            for (s in adjustSliders) {
+                val value = s.get(adjustments)
+                root.findViewById<Slider>(s.slider).safeSet(value.toFloat())
+                root.findViewById<TextView>(s.label).text = adjustLabel(s.name, value)
+            }
+        }
+        for (s in adjustSliders) {
+            val slider = root.findViewById<Slider>(s.slider)
+            val label = root.findViewById<TextView>(s.label)
+            slider.addOnChangeListener { _, value, fromUser ->
+                if (!fromUser) return@addOnChangeListener
+                setAdjustments(s.with(adjustments, value.toInt()), persist = false)
+                label.text = adjustLabel(s.name, value.toInt())
+            }
+            slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) = Unit
+
+                override fun onStopTrackingTouch(slider: Slider) = persistAdjustments()
+            })
+        }
+        root.findViewById<View>(R.id.adjust_reset).setOnClickListener {
+            resetAdjustments()
+            show()
+        }
+        show()
+    }
+
+    private fun adjustLabel(name: Int, value: Int): String =
+        getString(name) + " · " + if (value > 0) "+$value" else "$value"
 
     private fun applyNight() {
         nightOverlay.visibility = if (nightFilter) View.VISIBLE else View.GONE
@@ -1276,7 +1361,7 @@ class ViewerActivity : AppCompatActivity() {
             R.id.menu_pages -> { openPages(); true }
             R.id.menu_crop -> { startCrop(); true }
             R.id.menu_two_page -> { toggleTwoPage(); true }
-            R.id.menu_brightness -> { showBrightnessDialog(); true }
+            R.id.menu_adjustments -> { showAdjustmentsDialog(); true }
             R.id.menu_page_spacing -> { showSpacingDialog(); true }
             R.id.menu_prev_chapter -> { openPrevChapter(); true }
             R.id.menu_next_chapter -> { openNextChapter(); true }
@@ -1360,7 +1445,7 @@ class ViewerActivity : AppCompatActivity() {
         bindFitSection(view)
         bindFilterSection(view)
         bindDirectionSection(view)
-        bindBrightnessSection(view)
+        bindAdjustments(view)
         bindSpacingSection(view)
         bindAutoScrollSection(view)
         bindOrientationSection(view)
@@ -1445,21 +1530,6 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
     }
-
-    private fun bindBrightnessSection(view: View) {
-        val label = view.findViewById<TextView>(R.id.sheet_brightness_value)
-        val slider = view.findViewById<Slider>(R.id.sheet_brightness)
-        label.text = brightnessLabel()
-        slider.safeSet(brightness.toFloat())
-        slider.addOnChangeListener { _, value, fromUser ->
-            if (!fromUser) return@addOnChangeListener
-            setBrightness(value.toInt())
-            label.text = brightnessLabel()
-        }
-    }
-
-    private fun brightnessLabel(): String =
-        getString(R.string.menu_brightness) + " · " + getString(R.string.percent_format, brightness)
 
     private fun bindSpacingSection(view: View) {
         val label = view.findViewById<TextView>(R.id.sheet_spacing_value)
@@ -1566,18 +1636,17 @@ class ViewerActivity : AppCompatActivity() {
         this.value = snapped.coerceIn(valueFrom, valueTo)
     }
 
-    private fun showBrightnessDialog() {
-        val slider = Slider(this).apply {
-            valueFrom = 20f
-            valueTo = 100f
-            stepSize = 5f
-            value = (brightness / 5 * 5).toFloat().coerceIn(20f, 100f)
+    private fun showAdjustmentsDialog() {
+        val panel = layoutInflater.inflate(R.layout.view_adjustments, null)
+        bindAdjustments(panel)
+        val container = LinearLayout(this).apply {
+            setPadding(48, 24, 48, 0)
+            addView(panel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-        slider.addOnChangeListener { _, value, _ -> setBrightness(value.toInt()) }
         AlertDialog.Builder(this)
-            .setTitle(R.string.menu_brightness)
-            .setView(sliderContainer(slider))
+            .setView(container)
             .setPositiveButton(R.string.ok, null)
+            .setOnDismissListener { persistAdjustments() }
             .show()
     }
 

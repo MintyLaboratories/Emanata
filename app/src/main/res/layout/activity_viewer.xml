@@ -21,13 +21,6 @@
         android:visibility="gone" />
 
     <View
-        android:id="@+id/viewer_dim"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@android:color/black"
-        android:alpha="0" />
-
-    <View
         android:id="@+id/night_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

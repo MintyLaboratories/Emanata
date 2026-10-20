@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/menu_adjustments"
+            android:textAppearance="@style/TextAppearance.ComicReader.Label"
+            android:textColor="?attr/colorPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/adjust_reset"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/adjust_reset" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/adjust_brightness_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/adjust_brightness"
+        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        tools:text="Brightness · 0" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/adjust_brightness"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stepSize="1"
+        android:value="0"
+        android:valueFrom="-100"
+        android:valueTo="100"
+        app:tickVisible="false" />
+
+    <TextView
+        android:id="@+id/adjust_contrast_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/adjust_contrast"
+        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        tools:text="Contrast · 0" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/adjust_contrast"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stepSize="1"
+        android:value="0"
+        android:valueFrom="-100"
+        android:valueTo="100"
+        app:tickVisible="false" />
+
+    <TextView
+        android:id="@+id/adjust_saturation_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/adjust_saturation"
+        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        tools:text="Saturation · 0" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/adjust_saturation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stepSize="1"
+        android:value="0"
+        android:valueFrom="-100"
+        android:valueTo="100"
+        app:tickVisible="false" />
+</LinearLayout>

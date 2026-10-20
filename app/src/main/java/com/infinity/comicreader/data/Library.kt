@@ -1,14 +1,15 @@
 package com.infinity.comicreader.data
 
 import android.content.Context
+import com.infinity.comicreader.reader.Adjustments
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.time.LocalDate
 
 /**
- * Favorites, read marks, reading history, bookmarks, per-series settings and
- * reading statistics, persisted as JSON documents in SharedPreferences.
+ * Favorites, read marks, reading history, bookmarks, per-series settings, per-book
+ * color adjustments and reading statistics, persisted as JSON documents in SharedPreferences.
  *
  * Every read tolerates a corrupted document (it yields an empty value instead of
  * throwing) and every read-modify-write runs under one process-wide lock, because
@@ -139,10 +140,12 @@ class Library(context: Context) {
             fun remap(p: String) = if (under(p, old)) new + p.removePrefix(old) else p
             writeStringList(KEY_FAVORITES, favorites().map { remap(it) })
             writeStringList(KEY_READ, readSet().map { remap(it) })
-            val series = readObject(KEY_SERIES)
-            val moved = JSONObject()
-            series.keys().forEach { k -> moved.put(remap(k), series.get(k)) }
-            sp.edit().putString(KEY_SERIES, moved.toString()).apply()
+            for (key in PATH_OBJECT_KEYS) {
+                val all = readObject(key)
+                val moved = JSONObject()
+                all.keys().forEach { k -> moved.put(remap(k), all.get(k)) }
+                sp.edit().putString(key, moved.toString()).apply()
+            }
             writeHistory(
                 history().map { h ->
                     if (under(h.path, old)) {
@@ -167,10 +170,12 @@ class Library(context: Context) {
         synchronized(LOCK) {
             writeStringList(KEY_FAVORITES, favorites().filterNot { under(it, root) })
             writeStringList(KEY_READ, readSet().filterNot { under(it, root) })
-            val series = readObject(KEY_SERIES)
-            val kept = JSONObject()
-            series.keys().forEach { k -> if (!under(k, root)) kept.put(k, series.get(k)) }
-            sp.edit().putString(KEY_SERIES, kept.toString()).apply()
+            for (key in PATH_OBJECT_KEYS) {
+                val all = readObject(key)
+                val kept = JSONObject()
+                all.keys().forEach { k -> if (!under(k, root)) kept.put(k, all.get(k)) }
+                sp.edit().putString(key, kept.toString()).apply()
+            }
             writeHistory(history().filterNot { under(it.path, root) })
             writeBookmarks(bookmarks().filterNot { under(it.path, root) })
         }
@@ -201,6 +206,27 @@ class Library(context: Context) {
                 )
             }
             sp.edit().putString(KEY_SERIES, all.toString()).apply()
+        }
+    }
+
+    // ---------------- per-book color adjustments ----------------
+    /** The adjustments set for the book at [path], or null when it uses the defaults. */
+    fun adjustmentsFor(path: String): Adjustments? {
+        val o = readObject(KEY_ADJUST).optJSONObject(path) ?: return null
+        return Adjustments(o.optInt("b"), o.optInt("c"), o.optInt("s")).coerced()
+    }
+
+    /** Saves [adjustments] for the book at [path], or returns it to the defaults when null. */
+    fun setAdjustments(path: String, adjustments: Adjustments?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_ADJUST)
+            if (adjustments == null) {
+                all.remove(path)
+            } else {
+                val a = adjustments.coerced()
+                all.put(path, JSONObject().put("b", a.brightness).put("c", a.contrast).put("s", a.saturation))
+            }
+            sp.edit().putString(KEY_ADJUST, all.toString()).apply()
         }
     }
 
@@ -358,10 +384,14 @@ class Library(context: Context) {
         const val KEY_BOOKMARKS = "bookmarks"
         const val KEY_SERIES = "series"
         const val KEY_STATS = "stats"
+        const val KEY_ADJUST = "adjust"
         const val MAX_HISTORY = 200
         const val MAX_DAYS = 3650
         val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS)
-        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS)
+        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST)
+
+        /** Documents keyed by file or folder path. */
+        val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST)
         val LOCK = Any()
     }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -56,12 +57,12 @@ class SettingsRepositoryTest {
         prefs.pageMode = "longstrip"
         prefs.fit = "width"
         prefs.twoPage = true
-        prefs.brightness = 60
+        prefs.defaultAdjustments = Adjustments(brightness = -40, contrast = 10, saturation = 300)
         val reader = repo.reader.value
         assertEquals("longstrip", reader.pageMode)
         assertEquals("width", reader.fit)
         assertTrue(reader.twoPage)
-        assertEquals(60, reader.brightness)
+        assertEquals(Adjustments(-40, 10, 100), reader.adjustments)
     }
 
     @Test

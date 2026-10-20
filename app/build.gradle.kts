@@ -27,6 +27,8 @@ android {
         versionCode = 4
         versionName = "1.3"
         vectorDrawables { useSupportLibrary = true }
+        // 64-bit ARM devices and x86_64 emulators; 32-bit libraries only add size.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     signingConfigs {

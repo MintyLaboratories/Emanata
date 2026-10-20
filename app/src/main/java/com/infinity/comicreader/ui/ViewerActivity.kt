@@ -750,7 +750,11 @@ class ViewerActivity : AppCompatActivity() {
         chapterText.text = modeLabel()
         updateChapterButtons()
         updateEndCard()
-        if (currentIndex in 0 until count) seenPages.set(currentIndex)
+        if (currentIndex in 0 until count) {
+            val layout = pageLayout()
+            val item = layout.itemOf(currentIndex)
+            seenPages.set(layout.firstPage(item), layout.lastPage(item, count) + 1)
+        }
         if (!markedRead && count > 0 && pageLayout().onLastItem(currentIndex, count)) {
             markedRead = true
             file?.absolutePath?.let { library.setRead(it, true) }

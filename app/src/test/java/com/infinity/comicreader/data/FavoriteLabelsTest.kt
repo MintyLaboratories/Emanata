@@ -68,6 +68,14 @@ class FavoriteLabelsTest {
     }
 
     @Test
+    fun parentLabelsRepeatedOnAnotherRootShowTheRoot() {
+        assertEquals(
+            listOf("Device…stacks/Comics", "a/Comics", "Share A…stacks/Comics", "b/Comics"),
+            labels("stacks/Comics", "a/Comics", "/shares/a/stacks/Comics", "/shares/a/b/Comics")
+        )
+    }
+
+    @Test
     fun prefixAndNameAreSeparate() {
         val path = "${device.path}/stacks/Comics"
         val label = FavoriteLabels.of(listOf(path, "${device.path}/attic/Comics"), roots).getValue(path)

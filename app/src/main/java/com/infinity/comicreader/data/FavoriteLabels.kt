@@ -14,7 +14,8 @@ data class FavoriteLabel(val prefix: String, val name: String, val suffix: Strin
  * - One instance keeps its bare name.
  * - When the clashing items sit on different storage roots, an item alone on its
  *   root is shown as `Root…Name`; items sharing a root fall through to the parent
- *   rules among themselves.
+ *   rules among themselves; a parent label that another root's items also produce
+ *   gets its root in front, `Root…parent/Name`.
  * - Parent rules: the nearest ancestor no other clashing item has at the same
  *   depth. The parent gives `parent/Name`; a farther one gives `ancestor…Name`, or
  *   the folders spelled out (`ancestor/middle/Name`) when another clashing item
@@ -73,10 +74,23 @@ object FavoriteLabels {
                     members.forEach { labels[it] = byParents(it, members) }
                 }
             }
+            prefixRepeatsWithRoot(group, labels)
         } else {
             group.forEach { labels[it] = byParents(it, group) }
         }
         return labels
+    }
+
+    /** A label that also turns up on another root gets its root in front: `Share A…stacks/Comics`. */
+    private fun prefixRepeatsWithRoot(group: List<Item>, labels: MutableMap<Item, FavoriteLabel>) {
+        val same = group.groupBy { labels.getValue(it).text.lowercase() }.values
+        for (items in same) {
+            if (items.mapTo(HashSet()) { it.root?.path }.size < 2) continue
+            for (item in items) {
+                val root = item.root ?: continue
+                labels[item] = FavoriteLabel(root.name + ELLIPSIS + labels.getValue(item).prefix, item.name)
+            }
+        }
     }
 
     private fun byParents(item: Item, among: List<Item>): FavoriteLabel {

@@ -24,6 +24,12 @@
     <string name="menu_exit">Exit</string>
     <string name="menu_add_favorite">Add to favorites</string>
     <string name="menu_remove_favorite">Remove from favorites</string>
+    <string name="menu_add_folder_favorite">Add folder to favorites</string>
+    <string name="menu_remove_folder_favorite">Remove folder from favorites</string>
+    <string name="favorite_added">Added to favorites</string>
+    <string name="favorite_removed">Removed from favorites</string>
+    <string name="folder_favorite_added">Folder added to favorites</string>
+    <string name="folder_favorite_removed">Folder removed from favorites</string>
     <string name="menu_set_startup">Set as startup folder</string>
     <string name="menu_open_location">Open file location</string>
     <string name="menu_rename">Rename</string>

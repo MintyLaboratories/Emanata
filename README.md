@@ -136,6 +136,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   *Swipe back again for the previous chapter*; the last one within 1.5 s of
   the one before opens the previous chapter at its last page or spread.
 - Bookmarks per page, plus a bookmark list to jump between them.
+- The menu adds the open comic, or the folder it is in, to the favorites, or
+  removes it.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,
   and tap-to-toggle the UI bars. Volume keys turn pages.
 - A reader settings **bottom sheet** exposes every reader option in place, and

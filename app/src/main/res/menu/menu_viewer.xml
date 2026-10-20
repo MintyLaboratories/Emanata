@@ -42,6 +42,16 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/menu_favorite"
+        android:title="@string/menu_add_favorite"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_favorite_folder"
+        android:title="@string/menu_add_folder_favorite"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/menu_prev_chapter"
         android:title="@string/menu_prev_chapter"
         app:showAsAction="never" />

@@ -1395,10 +1395,42 @@ class ViewerActivity : AppCompatActivity() {
             isVisible = prefs.perSeries
             isChecked = seriesActive
         }
+        prepareFavorites(menu)
         menu.findItem(R.id.menu_chapters)?.isEnabled = chapters.size > 1
         menu.findItem(R.id.menu_prev_chapter)?.isEnabled = prevChapter() != null
         menu.findItem(R.id.menu_next_chapter)?.isEnabled = nextChapter() != null
         return super.onPrepareOptionsMenu(menu)
+    }
+
+    /**
+     * The open comic's and its folder's favorite items, each adding or removing; hidden
+     * for a document another app handed over, which only has a copy in the cache.
+     */
+    private fun prepareFavorites(menu: Menu) {
+        val f = file?.takeUnless { it.absolutePath.startsWith(cacheDir.absolutePath + File.separator) }
+        val folder = f?.parentFile
+        menu.findItem(R.id.menu_favorite)?.apply {
+            isVisible = f != null
+            if (f != null) {
+                setTitle(if (library.isFavorite(f.absolutePath)) R.string.menu_remove_favorite else R.string.menu_add_favorite)
+            }
+        }
+        menu.findItem(R.id.menu_favorite_folder)?.apply {
+            isVisible = folder != null
+            if (folder != null) {
+                setTitle(
+                    if (library.isFavorite(folder.absolutePath)) R.string.menu_remove_folder_favorite
+                    else R.string.menu_add_folder_favorite
+                )
+            }
+        }
+    }
+
+    /** Adds [path] to the favorites, or removes it, and says which. */
+    private fun toggleFavorite(path: String?, added: Int, removed: Int) {
+        if (path == null) return
+        toast(if (library.toggleFavorite(path)) added else removed)
+        invalidateOptionsMenu()
     }
 
     private fun checkOnly(menu: Menu, id: Int) {
@@ -1453,6 +1485,14 @@ class ViewerActivity : AppCompatActivity() {
             R.id.menu_rotate -> { cycleOrientation(); true }
             R.id.menu_bookmark -> { toggleBookmark(); true }
             R.id.menu_bookmark_list -> { showBookmarks(); true }
+            R.id.menu_favorite -> {
+                toggleFavorite(file?.absolutePath, R.string.favorite_added, R.string.favorite_removed)
+                true
+            }
+            R.id.menu_favorite_folder -> {
+                toggleFavorite(file?.parent, R.string.folder_favorite_added, R.string.folder_favorite_removed)
+                true
+            }
             R.id.menu_pages -> { openPages(); true }
             R.id.menu_crop -> { startCrop(); true }
             R.id.menu_two_page -> { toggleTwoPage(); true }

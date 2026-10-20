@@ -58,6 +58,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -111,6 +112,9 @@ class ListActivity : AppCompatActivity() {
     /** Known sections of the favorites shown; a missing path is still being classified. */
     private var favoriteKinds: Map<String, FavoriteKind> = emptyMap()
     private var classifyJob: Job? = null
+
+    /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
+    private var listJob: Job? = null
     private lateinit var kindCache: FavoriteKindCache
     private val shown = ArrayList<BookEntry>()
 
@@ -403,12 +407,19 @@ class ListActivity : AppCompatActivity() {
         invalidateOptionsMenu()
 
         showProgress(true)
-        lifecycleScope.launch {
+        launchListing {
             val list = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
             progress.visibility = View.GONE
             displayEntries(list)
             if (highlight != null) scrollToHighlight(highlight)
         }
+    }
+
+    /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
+    private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
+        listJob?.cancel()
+        classifyJob?.cancel()
+        listJob = lifecycleScope.launch(block = load)
     }
 
     /** Favorites, read marks and history, loaded once per listing instead of once per row. */
@@ -473,10 +484,8 @@ class ListActivity : AppCompatActivity() {
         pathbar.visibility = View.GONE
         invalidateOptionsMenu()
         showProgress(true)
-        classifyJob?.cancel()
-        lifecycleScope.launch {
+        launchListing {
             val (list, kinds) = withContext(AppDispatchers.io) { favoriteEntries() }
-            if (mode != TAB_FAVORITES) return@launch
             progress.visibility = View.GONE
             favoriteKinds = kinds
             displayEntries(list)
@@ -540,7 +549,7 @@ class ListActivity : AppCompatActivity() {
         pathbar.visibility = View.GONE
         invalidateOptionsMenu()
         showProgress(true)
-        lifecycleScope.launch {
+        launchListing {
             val list = withContext(AppDispatchers.io) {
                 val snap = snapshot()
                 library.history().map { entryForHistory(it, snap) }
@@ -558,7 +567,7 @@ class ListActivity : AppCompatActivity() {
         pathbar.visibility = View.GONE
         invalidateOptionsMenu()
         showProgress(true)
-        lifecycleScope.launch {
+        launchListing {
             val list = withContext(AppDispatchers.io) {
                 val snap = snapshot()
                 library.bookmarks().map { entryForBookmark(it, snap) }

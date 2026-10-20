@@ -133,8 +133,11 @@ object Decoders {
             // Software pixels: auto-crop and export read them back.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             decoder.setTargetSampleSize(sampleSize(info.size.width, info.size.height, reqW, reqH, capPixels))
-            // A truncated file still shows what was decoded, as BitmapFactory did.
-            decoder.setOnPartialImageListener { it.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE }
+            // A truncated or corrupt file still shows the part that decoded.
+            decoder.setOnPartialImageListener {
+                it.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE ||
+                    it.error == ImageDecoder.DecodeException.SOURCE_MALFORMED_DATA
+            }
         }
 
     private fun decodeLegacy(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {

@@ -43,15 +43,17 @@ class ErrorPageDrawable(
     }
     private val textWidth = (WIDTH * 0.8f).toInt()
     private val layouts = listOf(
-        layout(title, titlePaint, 2),
-        layout(name, namePaint, 3),
-        layout(reason, reasonPaint, 4)
+        layout(title, titlePaint, 2, TextUtils.TruncateAt.END),
+        // One line, so the middle of a long path gives way and the file name stays.
+        layout(name, namePaint, 1, TextUtils.TruncateAt.MIDDLE),
+        layout(reason, reasonPaint, 4, TextUtils.TruncateAt.END)
     )
 
-    private fun layout(text: String, paint: TextPaint, maxLines: Int): StaticLayout =
+    /** Multi-line layouts only ellipsize at the [TextUtils.TruncateAt.END]. */
+    private fun layout(text: String, paint: TextPaint, maxLines: Int, cut: TextUtils.TruncateAt): StaticLayout =
         StaticLayout.Builder.obtain(text, 0, text.length, paint, textWidth)
             .setAlignment(Layout.Alignment.ALIGN_CENTER)
-            .setEllipsize(TextUtils.TruncateAt.MIDDLE)
+            .setEllipsize(cut)
             .setMaxLines(maxLines)
             .build()
 

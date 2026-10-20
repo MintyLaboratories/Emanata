@@ -24,6 +24,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -124,10 +125,11 @@ class ListActivity : AppCompatActivity() {
         applyLayoutManager()
         recycler.setHasFixedSize(false)
         recycler.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val widthChanged = right - left != oldRight - oldLeft
+            // The keyboard shrinks the list while searching: cells keep their size.
+            val heightChanged = bottom - top != oldBottom - oldTop && !keyboardVisible()
             // Not from inside a layout pass: resizing cells rebinds them.
-            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
-                recycler.post { updateCellSize() }
-            }
+            if (widthChanged || heightChanged) recycler.post { updateCellSize() }
         }
 
         tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
@@ -691,6 +693,9 @@ class ListActivity : AppCompatActivity() {
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
         return GridSizing.columns(prefs.gridColumns, widthDp)
     }
+
+    private fun keyboardVisible(): Boolean =
+        ViewCompat.getRootWindowInsets(recycler)?.isVisible(WindowInsetsCompat.Type.ime()) == true
 
     /** Sizes grid cells: one column's width, and a height that fits the chosen rows on screen. */
     private fun updateCellSize() {

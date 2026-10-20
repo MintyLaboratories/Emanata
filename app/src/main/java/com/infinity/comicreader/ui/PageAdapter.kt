@@ -108,6 +108,7 @@ class PageAdapter(
     private var layoutListener: View.OnLayoutChangeListener? = null
 
     private val spread = twoPage && mode == Mode.PAGED
+    private val layout = PageLayout(spread, rtl)
 
     /** A chapter laid into the strip: [first] is its first page in the whole strip. */
     private class Segment(
@@ -138,8 +139,7 @@ class PageAdapter(
     private var released = false
 
     init {
-        val first = if (spread) (source.pageCount + 1) / 2 else source.pageCount
-        segments += Segment(source, 0, first)
+        segments += Segment(source, 0, source.pageCount)
     }
 
     inner class PageHolder(val container: View, val images: List<ZoomImageView>) :
@@ -149,7 +149,7 @@ class PageAdapter(
         val waiters = arrayOfNulls<Job>(images.size)
     }
 
-    override fun getItemCount(): Int = (total - base).coerceAtLeast(0)
+    override fun getItemCount(): Int = (layout.itemCount(total) - base).coerceAtLeast(0)
 
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
@@ -217,17 +217,15 @@ class PageAdapter(
     override fun onBindViewHolder(holder: PageHolder, position: Int) {
         // [position] is an item index; strip pages keep their chapter-relative number,
         // so shift by [base] (0 in paged mode, where nothing is ever appended).
-        val page = position + base
-        if (spread) {
-            val firstPage = if (rtl) page * 2 + 1 else page * 2
-            val secondPage = if (rtl) page * 2 else page * 2 + 1
-            bindImage(holder, 0, firstPage)
-            bindImage(holder, 1, secondPage)
-            prefetchAfter(page * 2 + 1)
-        } else {
-            bindImage(holder, 0, page)
-            prefetchAfter(page)
+        val item = position + base
+        val pages = layout.slots(item, total)
+        for (slot in pages.indices) {
+            val page = pages[slot]
+            // The lone last page of a spread takes the whole row.
+            if (spread) holder.images[slot].visibility = if (page == NO_PAGE) View.GONE else View.VISIBLE
+            bindImage(holder, slot, page)
         }
+        prefetchAfter(layout.lastPage(item, total))
     }
 
     /**
@@ -493,7 +491,7 @@ class PageAdapter(
 
     companion object {
         private const val TAG = "PageAdapter"
-        private const val NO_PAGE = -1
+        private const val NO_PAGE = PageLayout.NONE
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2

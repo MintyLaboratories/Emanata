@@ -660,9 +660,11 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun useSpread() = twoPage && mode == MODE_PAGED
 
-    private fun pageToItem(page: Int) = if (useSpread()) page / 2 else page
+    private fun pageLayout() = PageLayout(useSpread())
 
-    private fun itemToPage(item: Int) = if (useSpread()) item * 2 else item
+    private fun pageToItem(page: Int) = pageLayout().itemOf(page)
+
+    private fun itemToPage(item: Int) = pageLayout().firstPage(item)
 
     private fun brightnessGestureEnabled() = prefs.brightnessGesture && mode == MODE_PAGED
 

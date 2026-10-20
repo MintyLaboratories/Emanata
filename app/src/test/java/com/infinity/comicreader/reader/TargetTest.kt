@@ -85,6 +85,18 @@ class TargetTest {
     }
 
     @Test
+    fun tallStripsStayDrawable() {
+        // Portrait fit width and landscape fit width, aspects up to the side cap.
+        for (box in intArrayOf(1848, 2960)) {
+            for (h in intArrayOf(5000, 6000, 7400, 9000, 12000, 20000, 60000)) {
+                val plan = Target(box, 0).plan(720.0, h.toDouble())
+                assertTrue("$box / 720x$h", plan.width.toLong() * plan.height * 4 <= Target.MAX_DRAW_BYTES)
+                assertTrue(plan.height <= Target.MAX_OUTPUT_SIDE)
+            }
+        }
+    }
+
+    @Test
     fun cropAtScaleOneNeedsNoResampling() {
         assertTrue(Target.NATIVE.plan(300.0, 200.0, left = 10.0, top = 20.0).isCrop())
         assertFalse(Target(150, 0).plan(300.0, 200.0).isCrop())

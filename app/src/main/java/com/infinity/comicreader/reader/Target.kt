@@ -93,8 +93,11 @@ data class Target(
          */
         const val DEFAULT_CAP_PIXELS = 50_000_000L
 
-        /** Largest result: 120 MB of ARGB stays below the platform's limit on drawing one bitmap. */
-        const val MAX_OUTPUT_PIXELS = 30_000_000L
+        /** Largest bitmap, in bytes, the platform draws: larger ones throw when drawn. */
+        const val MAX_DRAW_BYTES = 100L * 1024 * 1024
+
+        /** Largest result: [MAX_DRAW_BYTES] of ARGB. */
+        const val MAX_OUTPUT_PIXELS = MAX_DRAW_BYTES / 4
 
         /** Longest side of a result: the largest texture the GPU uploads in one piece. */
         const val MAX_OUTPUT_SIDE = 16_384

@@ -41,6 +41,35 @@ class NoticesTest {
         assertFalse(Notice.matches("a.*", "ab:x"))
     }
 
+    private val assetDir = File("src/main/assets/${Notices.ASSET_DIR}")
+
+    @Test
+    fun everyNoticeShipsExistingTexts() {
+        for (n in Notices.all) {
+            assertTrue("${n.name} has no text", n.texts.isNotEmpty())
+            for (t in n.texts) assertTrue("${n.name}: missing $t", File(assetDir, t).isFile)
+        }
+        assertEquals("unreferenced license files", assetDir.list()!!.toSet(), Notices.textFiles)
+    }
+
+    @Test
+    fun attributionLicensesCarryTheirCopyright() {
+        val attribution = listOf(Notices.MIT, Notices.BSD_2, Notices.BSD_3, "PNG Reference Library License version 2")
+        for (n in Notices.all.filter { it.license in attribution }) {
+            val text = n.texts.joinToString { File(assetDir, it).readText() }
+            assertTrue("${n.name} lacks a copyright line", text.contains("Copyright"))
+        }
+    }
+
+    @Test
+    fun apacheNoticeFilesShowBeforeTheLicense() {
+        val compress = Notices.forArtifact("org.apache.commons:commons-compress")!!
+        val text = Notices.fullText(compress) { File(assetDir, it).readText() }
+        assertTrue(text.startsWith("Apache Commons Compress\nCopyright"))
+        assertTrue(text.contains("-".repeat(40)))
+        assertTrue(text.contains("Apache License\n                           Version 2.0"))
+    }
+
     @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {

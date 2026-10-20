@@ -1,11 +1,13 @@
 package com.infinity.comicreader.ui
 
+import android.content.DialogInterface
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
 import com.infinity.comicreader.util.Notices
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,10 +43,39 @@ class AboutActivityTest {
         assertTrue(message.contains("Copyright (c) 2026 Emanata Comic Reader contributors"))
     }
 
+    /** Taps the row of the notice named [name] and returns the dialog it opened. */
+    private fun AboutActivity.tapNotice(name: String): AlertDialog {
+        val notices = findViewById<LinearLayout>(R.id.about_notices)
+        notices.getChildAt(notices.titles().indexOf(name)).performClick()
+        shadowOf(mainLooper).idle()
+        return ShadowDialog.getLatestDialog() as AlertDialog
+    }
+
     @Test
-    fun linkRowsOpenTheirAddress() {
+    fun noticeRowShowsItsLicenseTexts() {
         val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
-        about.findViewById<LinearLayout>(R.id.about_notices).getChildAt(0).performClick()
+        val dialog = about.tapNotice("Apache Commons Compress")
+        val text = dialog.findViewById<TextView>(R.id.notice_text)!!.text.toString()
+        assertTrue(text.contains("Copyright 2002-2024 The Apache Software Foundation"))
+        assertTrue(text.contains("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION"))
+        assertFalse(dialog.findViewById<TextView>(R.id.notice_note)!!.isShown)
+    }
+
+    @Test
+    fun noticeNoteShowsAboveTheText() {
+        val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        val dialog = about.tapNotice("libpng")
+        val note = dialog.findViewById<TextView>(R.id.notice_note)!!
+        assertTrue(note.isShown)
+        assertTrue(note.text.contains("Max Stepin"))
+        assertTrue(dialog.findViewById<TextView>(R.id.notice_text)!!.text.contains("Cosmin Truta"))
+    }
+
+    @Test
+    fun noticeDialogOpensTheProjectPage() {
+        val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        about.tapNotice(Notices.all[0].name).getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
+        shadowOf(about.mainLooper).idle()
         val started = shadowOf(about).nextStartedActivity
         assertEquals(Notices.all[0].url, started.dataString)
     }

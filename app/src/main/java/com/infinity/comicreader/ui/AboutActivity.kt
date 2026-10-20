@@ -9,8 +9,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
 import com.infinity.comicreader.R
 import com.google.android.material.appbar.MaterialToolbar
+import com.infinity.comicreader.util.Notice
 import com.infinity.comicreader.util.Notices
 
 /** Version, source and upstream links, the app's license and every third-party license. */
@@ -32,7 +34,25 @@ class AboutActivity : AppCompatActivity() {
         addRow(links, getString(R.string.about_license), getString(R.string.about_license_summary)) { showLicense() }
 
         val notices = findViewById<LinearLayout>(R.id.about_notices)
-        for (n in Notices.all) addRow(notices, n.name, n.license) { open(n.url) }
+        for (n in Notices.all) addRow(notices, n.name, n.license) { showNotice(n) }
+    }
+
+    /** [notice]'s note and license texts, with a button to its project page. */
+    private fun showNotice(notice: Notice) {
+        val view = layoutInflater.inflate(R.layout.dialog_notice, null)
+        view.findViewById<TextView>(R.id.notice_note).apply {
+            text = notice.note
+            isVisible = notice.note != null
+        }
+        view.findViewById<TextView>(R.id.notice_text).text = Notices.fullText(notice) { name ->
+            assets.open("${Notices.ASSET_DIR}/$name").bufferedReader().use { it.readText() }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(notice.name)
+            .setView(view)
+            .setPositiveButton(R.string.ok, null)
+            .setNeutralButton(R.string.about_project_page) { _, _ -> open(notice.url) }
+            .show()
     }
 
     private fun versionName(): String =

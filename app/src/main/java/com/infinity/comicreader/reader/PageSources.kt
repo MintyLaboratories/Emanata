@@ -15,12 +15,15 @@ object PageSources {
 
     private fun openRaw(file: File, charsetName: String): PageSource = when (Formats.typeOf(file.name)) {
         EntryType.IMAGE -> ImageSource(file)
-        EntryType.PDF, EntryType.ARCHIVE -> when (ArchiveKind.detect(file)) {
-            ArchiveKind.ZIP -> ZipSource(file, charsetName)
-            ArchiveKind.RAR -> RarSource(file)
-            ArchiveKind.SEVEN_ZIP -> SevenZipSource(file)
-            ArchiveKind.PDF -> PdfSource(file)
-            null -> throw IOException("Unsupported archive: ${file.name}")
+        EntryType.PDF, EntryType.ARCHIVE -> {
+            val kind = ArchiveKind.detect(file)
+            if (kind == ArchiveKind.PDF) {
+                PdfSource(file)
+            } else {
+                val reader = ArchiveReader.open(file, charsetName, kind)
+                    ?: throw IOException("Unsupported archive: ${file.name}")
+                ArchiveSource(reader)
+            }
         }
         else -> throw IOException("Unsupported file type: ${file.name}")
     }

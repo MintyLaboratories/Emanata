@@ -62,7 +62,7 @@ object BitmapUtils {
     fun boundsStream(input: InputStream): IntArray? = boundsBytes(readCapped(input))
 
     /** Reads [input] fully, but refuses to buffer more than [MAX_ENTRY_BYTES]. */
-    private fun readCapped(input: InputStream): ByteArray {
+    fun readCapped(input: InputStream): ByteArray {
         val out = ByteArrayOutputStream()
         val buf = ByteArray(64 * 1024)
         var total = 0L

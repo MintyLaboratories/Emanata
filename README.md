@@ -119,9 +119,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 | Extension | Handler | Library |
 |---|---|---|
 | jpg/jpeg/png/gif/bmp/webp/avif | `ImageSource` | `BitmapFactory` |
-| zip / cbz | `ZipSource` | `java.util.zip` |
-| rar / cbr | `RarSource` | junrar 8.x (RAR4 and RAR5/7) |
-| 7z / cb7 | `SevenZipSource` | Apache Commons Compress |
+| zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
+| rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
+| 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
 
 ## Project layout
@@ -209,10 +209,10 @@ No internet permission is requested.
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
   loads the current page and its neighbours concurrently, all access to these
-  backends is serialized on the source instance (`@Synchronized`).
-- Page/thumbnail decode failures are logged (`SevenZipSource`, `RarSource`,
-  `PdfSource`, `PageAdapter`, `ThumbAdapter`, `ViewerActivity`) instead of being
-  silently swallowed.
+  backends is serialized on the reader or source instance (`@Synchronized`).
+- Page/thumbnail decode failures are logged (`ArchiveSource`, `PdfSource`,
+  `PageAdapter`, `ThumbAdapter`, `ViewerActivity`) instead of being silently
+  swallowed.
 - The file browser reloads the current folder on resume, so files added or
   removed outside the app appear without a manual refresh.
 

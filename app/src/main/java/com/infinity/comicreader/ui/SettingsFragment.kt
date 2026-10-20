@@ -15,8 +15,11 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsFragment : PreferenceFragmentCompat() {
 
@@ -149,8 +152,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         findPreference<Preference>("pref_clear_thumbs")?.setOnPreferenceClickListener {
             confirm(requireContext(), R.string.confirm_clear_thumbs_title, R.string.confirm_clear_thumbs_msg, R.string.clear) {
-                Thumbs.clear(requireContext())
-                toast(R.string.pref_cleared_thumbs)
+                val app = requireContext().applicationContext
+                lifecycleScope.launch {
+                    withContext(AppDispatchers.io) { Thumbs.clear(app) }
+                    toast(R.string.pref_cleared_thumbs)
+                }
             }
             true
         }

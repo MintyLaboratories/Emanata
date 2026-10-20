@@ -27,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowToast
 import java.io.File
 
 /** Every Clear / Reset in Settings asks first and acts only when confirmed. */
@@ -97,7 +98,18 @@ class SettingsConfirmTest {
         tap("pref_clear_thumbs").press(DialogInterface.BUTTON_NEGATIVE)
         assertTrue(thumb.exists())
         tap("pref_clear_thumbs").press(DialogInterface.BUTTON_POSITIVE)
+        awaitUntil { !thumb.exists() && ShadowToast.getTextOfLatestToast() != null }
         assertFalse(thumb.exists())
+        assertEquals(context.getString(R.string.pref_cleared_thumbs), ShadowToast.getTextOfLatestToast())
+    }
+
+    /** Runs the main looper until [done] holds, for work that hops to a background thread. */
+    private fun awaitUntil(done: () -> Boolean) {
+        repeat(100) {
+            idle()
+            if (done()) return
+            Thread.sleep(20)
+        }
     }
 
     @Test

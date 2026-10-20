@@ -55,4 +55,13 @@ class PageTargetsTest {
         assertEquals(1848, plan.height)
         assertEquals(1232, plan.width)
     }
+
+    @Test
+    fun stripItemIsAsTallAsItsBitmap() {
+        for (width in intArrayOf(1848, 2960)) {
+            for (h in 1..Target.MAX_OUTPUT_SIDE) {
+                assertEquals("$width x $h", h, PageTargets.stripHeight(width, h.toFloat() / width))
+            }
+        }
+    }
 }

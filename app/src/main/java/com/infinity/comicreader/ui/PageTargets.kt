@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Target
+import kotlin.math.roundToInt
 
 /**
  * The exact size each page bitmap is decoded to, so that at rest it is drawn pixel
@@ -49,4 +50,10 @@ object PageTargets {
         fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear)
         else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear)
     }
+
+    /**
+     * Height of a long-strip item [width] wide showing a page of height / width [aspect]:
+     * rounded, so a page decoded at that width gets back its exact bitmap height.
+     */
+    fun stripHeight(width: Int, aspect: Float): Int = (width * aspect).roundToInt().coerceAtLeast(1)
 }

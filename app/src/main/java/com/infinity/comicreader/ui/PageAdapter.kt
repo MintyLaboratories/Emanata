@@ -547,8 +547,7 @@ class PageAdapter(
 
     private fun longStripHeight(page: Int): Int {
         val width = itemSize()[0]
-        val aspect = aspects[page] ?: learnedAspect
-        return (width * aspect).toInt().coerceAtLeast(1)
+        return PageTargets.stripHeight(width, aspects[page] ?: learnedAspect)
     }
 
     private fun learnAspect() {

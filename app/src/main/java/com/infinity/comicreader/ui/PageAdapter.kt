@@ -420,7 +420,7 @@ class PageAdapter(
         for (k in 1..ahead) {
             val p = lastShown + k
             if (p >= end) break
-            if (cache.get(p) != null || pending[p] != null) continue
+            if (cache.get(p) != null || pending[p] != null || failures.containsKey(p)) continue
             val (reqW, reqH) = requestSize(p, lastItemW, lastItemH)
             request(p, reqW, reqH).prefetch = true
         }

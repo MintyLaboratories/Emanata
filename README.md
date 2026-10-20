@@ -133,8 +133,14 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   `157`, padding ignored, a folder before its longer-named siblings.
 - Nested archives (up to two levels) are copied to `cacheDir/nested`
   (`NestedArchives`): reused across opens, least recently used evicted past
-  2 GiB, inner archives over 1 GiB or past the per-book budget skipped. Covers
+  2 GiB (never while a book holds them), inner archives over 1 GiB or past the
+  per-book budget skipped. They sort by file name among their siblings. Covers
   copy only the inner archive holding the first page.
+- A copy that fails for lack of storage fails the whole open, so a book never
+  opens with pages missing. Copies stop when the open is cancelled; the
+  long-strip prefetch uses cached copies only.
+- At most four inner archives stay open per book; others reopen from their
+  copies when read.
 
 ## Project layout
 

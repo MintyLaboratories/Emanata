@@ -12,11 +12,13 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.EditText
@@ -42,6 +44,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Bookmark
@@ -52,6 +55,8 @@ import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.Chapter
+import com.infinity.comicreader.reader.Chapters
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.NestedArchives
@@ -133,6 +138,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Sibling chapters (openable files in the same folder), natural-ordered. */
     private var chapters: List<File> = emptyList()
+
+    /** Chapters inside the open book (its folders or inner archives), for the chapter drawer. */
+    private var bookChapters: List<Chapter> = emptyList()
 
     /** Current page index (always a real page, never a spread index). */
     private var currentIndex = 0
@@ -595,6 +603,7 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
+        bookChapters = emptyList()
         repeatedBack.reset()
         backPage = -1
         resolveLayout()
@@ -663,6 +672,7 @@ class ViewerActivity : AppCompatActivity() {
         val saved = library.pageFor(path)
         val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = library.isRead(path))
         currentIndex = start.page.coerceIn(0, src.pageCount - 1)
+        bookChapters = chaptersOf(src)
         seenPages.clear()
         attach()
         prepareStripAhead()
@@ -829,6 +839,7 @@ class ViewerActivity : AppCompatActivity() {
         val top = lm?.findViewByPosition(anchor)?.top ?: 0
 
         source = next
+        bookChapters = chaptersOf(next)
         persistAdjustments()
         file = nextFile
         loadAdjustments()
@@ -1396,6 +1407,7 @@ class ViewerActivity : AppCompatActivity() {
             isChecked = seriesActive
         }
         prepareFavorites(menu)
+        menu.findItem(R.id.menu_book_chapters)?.isVisible = bookChapters.isNotEmpty()
         menu.findItem(R.id.menu_chapters)?.isEnabled = chapters.size > 1
         menu.findItem(R.id.menu_prev_chapter)?.isEnabled = prevChapter() != null
         menu.findItem(R.id.menu_next_chapter)?.isEnabled = nextChapter() != null
@@ -1474,6 +1486,7 @@ class ViewerActivity : AppCompatActivity() {
         return when (id) {
             R.id.menu_tune -> { showReaderSheet(); true }
             R.id.menu_chapters -> { showChapterList(); true }
+            R.id.menu_book_chapters -> { showChapterDrawer(); true }
             R.id.menu_auto_scroll -> { toggleAutoScroll(); true }
             R.id.menu_auto_next -> { setAutoNext(!prefs.autoNext); true }
             R.id.menu_auto_speed -> { showAutoSpeedDialog(); true }
@@ -2029,6 +2042,40 @@ class ViewerActivity : AppCompatActivity() {
             .create()
         dialog.show()
         if (current > 2) dialog.listView.setSelection(current - 2)
+    }
+
+    /** The chapters of [src]: [Chapters.of] its page paths. */
+    private fun chaptersOf(src: PageSource): List<Chapter> =
+        Chapters.of(List(src.pageCount) { src.pageName(it) })
+
+    /**
+     * The chapter drawer: the open book's chapters from the start edge, the current one
+     * highlighted; tapping one goes to its first page. Opened from the toolbar only, as an
+     * edge swipe would clash with the system back gesture.
+     */
+    private fun showChapterDrawer() {
+        val list = bookChapters
+        if (list.isEmpty()) return
+        val view = layoutInflater.inflate(R.layout.sheet_chapters, null)
+        val dialog = SideSheetDialog(this)
+        val width = minOf(
+            resources.getDimensionPixelSize(R.dimen.chapter_drawer_width),
+            (resources.displayMetrics.widthPixels * 0.85f).toInt()
+        )
+        dialog.setContentView(view, ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT))
+        dialog.setSheetEdge(Gravity.START)
+        view.findViewById<TextView>(R.id.chapters_title).text = file?.let { chapterLabel(it) }
+        val current = list.indexOfFirst { currentIndex in it }
+        val rv = view.findViewById<RecyclerView>(R.id.chapters_list)
+        val lm = LinearLayoutManager(this)
+        rv.layoutManager = lm
+        rv.adapter = ChapterAdapter(list, current) { chapter ->
+            dialog.dismiss()
+            goTo(chapter.first)
+        }
+        // Two rows of context above the current chapter.
+        if (current > 2) lm.scrollToPositionWithOffset(current - 2, 0)
+        dialog.show()
     }
 
     // ------------------------------------------------------------------ share / save page

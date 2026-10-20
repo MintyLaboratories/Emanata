@@ -110,6 +110,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   timed page turns in paged mode); touching the screen takes over.
 - **Auto-crop** trims blank page borders; pages ahead are **preloaded**.
 - **Chapter list** to jump to any chapter in the folder.
+- **Chapter drawer** (toolbar button): a book's own chapters, its folders or the
+  inner archives of a nested book, with the current one highlighted; tap one to
+  jump to it.
 - **Share** or **save** the current page as an image.
 - **Per-folder layout:** "Remember layout for this folder" stores mode, direction, fit
   and spread for that folder only.

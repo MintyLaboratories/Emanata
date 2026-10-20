@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The chapter drawer: the book's chapters, the current one highlighted. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/chapters_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:paddingHorizontal="@dimen/space_6"
+        android:paddingTop="@dimen/space_6"
+        android:paddingBottom="@dimen/space_3"
+        android:textAppearance="@style/TextAppearance.ComicReader.AppTitle"
+        tools:text="Book" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/chapters_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingHorizontal="@dimen/space_3"
+        android:paddingBottom="@dimen/space_4" />
+</LinearLayout>

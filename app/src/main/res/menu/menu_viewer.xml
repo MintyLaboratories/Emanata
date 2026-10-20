@@ -16,6 +16,13 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/menu_book_chapters"
+        android:icon="@drawable/ic_toc"
+        android:title="@string/menu_book_chapters"
+        android:visible="false"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/menu_tune"
         android:icon="@drawable/ic_tune"
         android:title="@string/menu_reader_settings"

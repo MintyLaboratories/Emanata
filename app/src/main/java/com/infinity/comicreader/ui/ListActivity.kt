@@ -191,10 +191,13 @@ class ListActivity : AppCompatActivity() {
             }
         }
 
-        incomingDir = handleIncoming(intent)
         restored = savedInstanceState
-        // What another app hands in is shown on Browse, not on the startup tab.
-        if (intent.data != null && savedInstanceState == null) startTab = TAB_BROWSE
+        // What another app hands in is shown on Browse, not on the startup tab; a
+        // recreate restores the screen instead of handling it again.
+        if (savedInstanceState == null) {
+            incomingDir = handleIncoming(intent)
+            if (intent.data != null) startTab = TAB_BROWSE
+        }
 
         if (!hasStorageAccess()) {
             requestStorageAccess()

@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -115,6 +116,19 @@ class ListActivityStartupTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java, viewIntent(path)).setup().get()
         idle()
         assertEquals(listOf(root.absolutePath, incoming.absolutePath), activity.crumbPaths())
+    }
+
+    @Test
+    fun aBookFromAnotherAppOpensOnceAcrossARecreate() {
+        val book = File(root, "a.cbz").apply { createNewFile() }
+        val first = Robolectric.buildActivity(ListActivity::class.java, viewIntent(book.absolutePath)).setup()
+        idle()
+        assertEquals(ViewerActivity::class.java.name, shadowOf(first.get()).nextStartedActivity?.component?.className)
+        val state = Bundle()
+        first.saveInstanceState(state)
+        val second = Robolectric.buildActivity(ListActivity::class.java, viewIntent(book.absolutePath)).setup(state)
+        idle()
+        assertNull(shadowOf(second.get()).nextStartedActivity)
     }
 
     @Test

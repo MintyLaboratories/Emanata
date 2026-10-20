@@ -30,7 +30,9 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -44,7 +46,9 @@ import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
+import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
@@ -66,12 +70,17 @@ import kotlin.math.abs
  * Page layout is one of three modes — paged, vertical or long strip — and every
  * reader option (mode, fit, filter, brightness, spacing, direction, two-page,
  * night filter, keep-on, fullscreen) is read from and written back to [Prefs], so
- * the choices survive chapter changes and app restarts.
+ * the choices survive chapter changes and app restarts. Changes made elsewhere,
+ * such as in the settings screen, apply live through [SettingsRepository].
  */
 class ViewerActivity : AppCompatActivity() {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
+    private lateinit var settings: SettingsRepository
+
+    /** The global settings last applied; changes are diffed against it. */
+    private lateinit var applied: ReaderSettings
 
     private lateinit var pager: ViewPager2
     private lateinit var vertical: RecyclerView
@@ -168,8 +177,10 @@ class ViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         library = Library(this)
+        settings = SettingsRepository.get(this)
         setContentView(R.layout.activity_viewer)
         bindViews()
+        applied = settings.reader.value
         loadPrefs()
 
         setSupportActionBar(toolbar)
@@ -262,12 +273,33 @@ class ViewerActivity : AppCompatActivity() {
             hideEndCard()
         }
 
+        // Changes made while the reader is stopped (the settings screen sits on top
+        // of it) arrive when it starts again.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settings.reader.collect { applySettings(it) }
+            }
+        }
+
         open()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        stopAutoScroll()
+        flushStats()
+        saveHistory()
+        openJob?.cancel()
+        closeSource()
+        endDismissed = false
+        hideEndCard()
+        open()
+    }
+
+    /** Opens the current chapter again at the current page. */
+    private fun reopen() {
+        intent.putExtra(EXTRA_PAGE, currentIndex)
         stopAutoScroll()
         flushStats()
         saveHistory()
@@ -346,7 +378,96 @@ class ViewerActivity : AppCompatActivity() {
         applyKeepScreenOn()
         applyNight()
         applyBrightness()
-        if (prefs.fullscreen) setFullscreen(true)
+        if (prefs.fullscreen) applyFullscreen(true)
+    }
+
+    /**
+     * Re-applies the global settings that changed since [applied]. The reader's own
+     * writes arrive here as well and already match its state, so they do nothing.
+     * Only changed keys are applied, so a folder's remembered layout is not replaced
+     * by an unrelated change.
+     */
+    private fun applySettings(s: ReaderSettings) {
+        val old = applied
+        if (old == s) return
+        applied = s
+        var rebuild = false
+        if (s.filter != old.filter && s.filter != filter) {
+            filter = s.filter
+            adapter?.filter = filter
+        }
+        if (s.brightness != old.brightness && s.brightness != brightness) {
+            brightness = s.brightness
+            applyBrightness()
+        }
+        if (s.pageSpacing != old.pageSpacing && s.pageSpacing != spacingDp) {
+            spacingDp = s.pageSpacing
+            adapter?.spacingPx = spacingPx()
+        }
+        if (s.nightFilter != old.nightFilter && s.nightFilter != nightFilter) {
+            nightFilter = s.nightFilter
+            applyNight()
+        }
+        if (s.keepScreenOn != old.keepScreenOn && s.keepScreenOn != keepOn) {
+            keepOn = s.keepScreenOn
+            // A running auto-scroll keeps the screen on by itself.
+            if (!autoScrolling) applyKeepScreenOn()
+        }
+        if (s.fullscreen != old.fullscreen) applyFullscreen(s.fullscreen)
+        if (s.autoCrop != old.autoCrop && s.autoCrop != autoCrop) {
+            autoCrop = s.autoCrop
+            rebuild = true
+        }
+        // Built into the page adapter.
+        if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture ||
+            s.preload != old.preload
+        ) {
+            rebuild = true
+        }
+        if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
+            s.twoPage != old.twoPage || s.perSeries != old.perSeries
+        ) {
+            if (reloadLayout()) rebuild = true
+        }
+        if (s.charset != old.charset && source != null) {
+            // Entry names, and with them the page order, depend on the charset.
+            reopen()
+        } else {
+            if (rebuild) attach()
+            if (rebuild || s.autoNext != old.autoNext) {
+                if (s.autoNext) prepareStripAhead() else dropStripAhead()
+            }
+            updateEndCard()
+        }
+        invalidateOptionsMenu()
+    }
+
+    /**
+     * Resolves mode, direction, fit and spread again: the folder's remembered layout
+     * when it has one, else the global defaults. Returns true when the adapter must
+     * be rebuilt; a fit change alone is applied in place.
+     */
+    private fun reloadLayout(): Boolean {
+        val oldMode = mode
+        val oldDir = readingDir
+        val oldFit = fit
+        val oldTwoPage = twoPage
+        resolveLayout()
+        if (mode != oldMode) {
+            stopAutoScroll()
+            // Only the strip modes lay the next chapter in behind this one.
+            if (mode == MODE_PAGED) dropStripAhead()
+        }
+        if (fit != oldFit) adapter?.fitMode = effectiveFit()
+        return mode != oldMode || readingDir != oldDir || twoPage != oldTwoPage
+    }
+
+    private fun resolveLayout() {
+        mode = prefs.pageMode
+        readingDir = prefs.readingDir
+        fit = prefs.fit
+        twoPage = prefs.twoPage
+        file?.parentFile?.absolutePath?.let { applySeries(it) }
     }
 
     /** Applies the folder's remembered layout, if it has one and the feature is on. */
@@ -402,11 +523,7 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
-        mode = prefs.pageMode
-        readingDir = prefs.readingDir
-        fit = prefs.fit
-        twoPage = prefs.twoPage
-        target.parentFile?.absolutePath?.let { applySeries(it) }
+        resolveLayout()
 
         openJob = lifecycleScope.launch {
             val (src, siblings) = withContext(AppDispatchers.io) {
@@ -560,10 +677,14 @@ class ViewerActivity : AppCompatActivity() {
      * them, exactly like scrolling between two pages of one archive.
      */
     private fun prepareStripAhead() {
-        stripAheadJob?.cancel()
-        stripAheadJob = null
-        if (mode == MODE_PAGED || !prefs.autoNext) return
-        if (stripAhead != null) return
+        if (mode == MODE_PAGED || !prefs.autoNext) {
+            stripAheadJob?.cancel()
+            stripAheadJob = null
+            return
+        }
+        // Already open, or opening: the next chapter only changes with the file,
+        // and a new file closes both first.
+        if (stripAhead != null || stripAheadJob?.isActive == true) return
         val next = nextChapter() ?: return
         stripAheadJob = lifecycleScope.launch {
             val (src, ok) = withContext(AppDispatchers.io) {
@@ -918,6 +1039,12 @@ class ViewerActivity : AppCompatActivity() {
     private fun toggleKeepOn() = setKeepOn(!keepOn)
 
     private fun setFullscreen(enabled: Boolean) {
+        applyFullscreen(enabled)
+        prefs.fullscreen = enabled
+        invalidateOptionsMenu()
+    }
+
+    private fun applyFullscreen(enabled: Boolean) {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (enabled) {
             controller.hide(WindowInsetsCompat.Type.systemBars())
@@ -926,8 +1053,6 @@ class ViewerActivity : AppCompatActivity() {
         } else {
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
-        prefs.fullscreen = enabled
-        invalidateOptionsMenu()
     }
 
     private fun toggleBars() {

@@ -176,6 +176,47 @@ class PageAdapterFailureTest {
         adapter.release()
     }
 
+    /** The first decode fails at once; the second waits for [release], then decodes. */
+    private class FailThenStallSource : PageSource {
+        val release = CountDownLatch(1)
+        val loads = AtomicInteger()
+        val done = AtomicInteger()
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            try {
+                val n = loads.incrementAndGet()
+                if (n == 1) throw IOException("Read timed out")
+                release.await(5, TimeUnit.SECONDS)
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            } finally {
+                done.incrementAndGet()
+            }
+        }
+
+        override fun close() {}
+    }
+
+    @Test
+    fun oldWaiterLeavingDoesNotCancelANewerDecode() {
+        val source = FailThenStallSource()
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val first = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(first, 0)
+        // The first decode fails; before its holder hears of it, another holder starts a new one.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (source.done.get() < 1 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        val second = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(second, 0)
+        idleUntil { source.loads.get() == 2 }
+
+        // The first holder leaving must not abandon the decode the second waits for.
+        adapter.onViewRecycled(first)
+        source.release.countDown()
+        idleUntil { second.images[0].drawable != null }
+        assertTrue(second.images[0].drawable is BitmapDrawable)
+        adapter.release()
+    }
+
     @Test
     fun goodPageShowsItsBitmap() {
         val adapter = PageAdapter(source = BrokenPageSource(), mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)

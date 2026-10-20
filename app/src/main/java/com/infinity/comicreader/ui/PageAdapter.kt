@@ -104,7 +104,7 @@ class PageAdapter(
             notifyItemRangeChanged(0, itemCount)
         }
 
-    private class Pending(val deferred: Deferred<Bitmap?>) {
+    internal class Pending(val key: PageKey, val deferred: Deferred<Bitmap?>) {
         var waiters = 0
         var prefetch = false
     }
@@ -174,7 +174,7 @@ class PageAdapter(
     inner class PageHolder(val container: View, val images: List<ZoomImageView>) :
         RecyclerView.ViewHolder(container) {
         /** The decode each image is waiting for, and the coroutine waiting for it. */
-        internal val keys = arrayOfNulls<PageKey>(images.size)
+        internal val decodes = arrayOfNulls<Pending>(images.size)
         val waiters = arrayOfNulls<Job>(images.size)
 
         /** The page each image shows, at whatever size, or [NO_PAGE]. */
@@ -412,7 +412,7 @@ class PageAdapter(
 
         val entry = request(key)
         entry.waiters++
-        holder.keys[slot] = key
+        holder.decodes[slot] = entry
         holder.waiters[slot] = scope.launch {
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
@@ -445,13 +445,12 @@ class PageAdapter(
     private fun stopWaiting(holder: PageHolder, slot: Int) {
         holder.waiters[slot]?.cancel()
         holder.waiters[slot] = null
-        val key = holder.keys[slot] ?: return
-        holder.keys[slot] = null
-        val entry = pending[key] ?: return
+        val entry = holder.decodes[slot] ?: return
+        holder.decodes[slot] = null
         entry.waiters--
         if (entry.waiters <= 0 && !entry.prefetch && entry.deferred.isActive) {
             entry.deferred.cancel()
-            pending.remove(key)
+            if (pending[entry.key] === entry) pending.remove(entry.key)
         }
     }
 
@@ -550,7 +549,7 @@ class PageAdapter(
             }
         }
         deferred.invokeOnCompletion { releaseLoad(seg) }
-        val entry = Pending(deferred)
+        val entry = Pending(key, deferred)
         pending[key] = entry
         deferred.invokeOnCompletion {
             // Runs on the decoder thread; hop back before touching [pending].

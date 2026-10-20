@@ -215,6 +215,11 @@
             app:key="pref_grid_rows"
             app:title="@string/pref_grid_rows"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_group_favorites"
+            app:summary="@string/pref_group_favorites_desc"
+            app:title="@string/pref_group_favorites" />
         <ListPreference
             app:defaultValue="name"
             app:entries="@array/sort_entries"

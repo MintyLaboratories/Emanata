@@ -4,6 +4,9 @@ import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,11 +18,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.FavoriteLabel
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -68,7 +73,11 @@ class BookAdapter(
         if (grid) notifyDataSetChanged()
     }
 
-    private val items = ArrayList<BookEntry>()
+    /** [BookEntry] and [SectionRow] rows, after the header. */
+    private val items = ArrayList<Any>()
+
+    /** Tapped a section header. */
+    var onSectionClick: ((SectionRow) -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -96,10 +105,21 @@ class BookAdapter(
 
     val itemOffset: Int get() = if (header != null) 1 else 0
 
-    fun submit(list: List<BookEntry>) {
+    /** Shows [list]: [BookEntry] rows, optionally between [SectionRow] headers. */
+    fun submit(list: List<Any>) {
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
+    }
+
+    /** True for rows that span the whole grid width: the header and section headers. */
+    fun isFullWidth(position: Int): Boolean =
+        (position == 0 && header != null) || items.getOrNull(position - itemOffset) is SectionRow
+
+    /** Adapter position of the entry at [path], or -1. */
+    fun positionOf(path: String): Int {
+        val i = items.indexOfFirst { it is BookEntry && it.path == path }
+        return if (i < 0) -1 else i + itemOffset
     }
 
     class BookHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -118,6 +138,13 @@ class BookAdapter(
         var requested = 0L
     }
 
+    class SectionHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val title: TextView = view.findViewById(R.id.title)
+        val count: TextView = view.findViewById(R.id.count)
+        val spinner: View = view.findViewById(R.id.spinner)
+        val chevron: ImageView = view.findViewById(R.id.chevron)
+    }
+
     class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.title)
         val subtitle: TextView = view.findViewById(R.id.subtitle)
@@ -125,18 +152,24 @@ class BookAdapter(
         val chevron: ImageView = view.findViewById(R.id.chevron)
     }
 
-    override fun getItemViewType(position: Int): Int =
-        if (position == 0 && header != null) VIEW_HEADER else if (grid) VIEW_GRID else VIEW_LIST
+    override fun getItemViewType(position: Int): Int = when {
+        position == 0 && header != null -> VIEW_HEADER
+        items[position - itemOffset] is SectionRow -> VIEW_SECTION
+        grid -> VIEW_GRID
+        else -> VIEW_LIST
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val context = parent.context
         val layout = when (viewType) {
             VIEW_HEADER -> R.layout.item_book_header
+            VIEW_SECTION -> R.layout.item_section
             VIEW_GRID -> R.layout.item_book_grid
             else -> R.layout.item_book_list
         }
         val view = LayoutInflater.from(context).inflate(layout, parent, false)
         if (viewType == VIEW_HEADER) return HeaderHolder(view)
+        if (viewType == VIEW_SECTION) return SectionHolder(view)
         val holder = BookHolder(view)
         holder.thumb.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             if (r - l != oldR - oldL || b - t != oldB - oldT) requestCover(holder)
@@ -156,14 +189,24 @@ class BookAdapter(
             holder.itemView.setOnClickListener { h.onClick() }
             return
         }
-        bindBook(holder as BookHolder, items[position - itemOffset])
+        val row = items[position - itemOffset]
+        if (holder is SectionHolder && row is SectionRow) {
+            holder.title.text = row.title
+            holder.count.text = row.count.toString()
+            holder.spinner.visibility = if (row.loading) View.VISIBLE else View.GONE
+            holder.chevron.rotation = if (row.collapsed) 0f else 90f
+            holder.itemView.contentDescription = row.title
+            holder.itemView.setOnClickListener { onSectionClick?.invoke(row) }
+            return
+        }
+        bindBook(holder as BookHolder, row as BookEntry)
     }
 
     private fun bindBook(holder: BookHolder, item: BookEntry) {
         val context = holder.itemView.context
         holder.job?.cancel()
 
-        holder.title.text = item.name
+        holder.title.text = item.label?.let { labelText(context, it) } ?: item.name
         val showName = prefs.showFilenames
         holder.title.visibility = if (showName) View.VISIBLE else View.GONE
         val subtitle = item.subtitle ?: subtitleFor(context, item)
@@ -268,6 +311,21 @@ class BookAdapter(
         card.layoutParams = cardParams
     }
 
+    /** The name in the title color, the prefix and suffix that tell it apart grayed. */
+    private fun labelText(context: android.content.Context, label: FavoriteLabel): CharSequence {
+        if (label.prefix.isEmpty() && label.suffix.isEmpty()) return label.name
+        val gray = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
+        val text = SpannableString(label.text)
+        val nameEnd = label.prefix.length + label.name.length
+        if (label.prefix.isNotEmpty()) {
+            text.setSpan(ForegroundColorSpan(gray), 0, label.prefix.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (label.suffix.isNotEmpty()) {
+            text.setSpan(ForegroundColorSpan(gray), nameEnd, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return text
+    }
+
     private fun applyHighlight(holder: BookHolder, item: BookEntry) {
         val card = holder.card ?: return
         val highlighted = item.path == highlightPath
@@ -348,5 +406,6 @@ class BookAdapter(
         const val VIEW_LIST = 0
         const val VIEW_GRID = 1
         const val VIEW_HEADER = 2
+        const val VIEW_SECTION = 3
     }
 }

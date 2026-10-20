@@ -236,6 +236,11 @@
     <string name="pref_list_pathview">Show path bar</string>
     <string name="pref_list_statusbar">Show status bar in the library</string>
     <string name="pref_list_quickfab">Show the list/grid button</string>
+    <string name="pref_group_favorites">Group favorites</string>
+    <string name="pref_group_favorites_desc">Show favorites under Libraries, Sets and Comics</string>
+    <string name="section_libraries">Libraries</string>
+    <string name="section_sets">Sets</string>
+    <string name="section_comics">Comics</string>
 
     <string name="pref_cat_data">Your data</string>
     <string name="pref_auto_crop_desc">Trim blank borders in paged and vertical modes</string>

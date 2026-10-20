@@ -20,6 +20,7 @@ data class ListSettings(
     val pathView: Boolean,
     val statusBar: Boolean,
     val quickFab: Boolean,
+    val groupFavorites: Boolean,
     val linearLight: Boolean,
     val charset: String
 ) {
@@ -36,6 +37,7 @@ data class ListSettings(
             pathView = p.listPathView,
             statusBar = p.listStatusBar,
             quickFab = p.listQuickFab,
+            groupFavorites = p.groupFavorites,
             linearLight = p.linearLight,
             charset = p.charset
         )

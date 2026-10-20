@@ -24,7 +24,9 @@ data class BookEntry(
     val read: Boolean = false,
     /** For folders: how many direct children are already marked read (-1 = unknown). */
     val readCount: Int = -1,
-    val subtitle: String? = null
+    val subtitle: String? = null,
+    /** Shown instead of [name] where same-name favorites need telling apart. */
+    val label: FavoriteLabel? = null
 ) {
     val path: String get() = file.absolutePath
 }

@@ -42,6 +42,10 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.FavoriteClassifier
+import com.infinity.comicreader.data.FavoriteKind
+import com.infinity.comicreader.data.FavoriteKindCache
+import com.infinity.comicreader.data.FavoriteLabels
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListSettings
@@ -93,6 +97,11 @@ class ListActivity : AppCompatActivity() {
     private var deepJob: Job? = null
     private var deepResults: List<BookEntry>? = null
     private val allEntries = ArrayList<BookEntry>()
+
+    /** Known sections of the favorites shown; a missing path is still being classified. */
+    private var favoriteKinds: Map<String, FavoriteKind> = emptyMap()
+    private var classifyJob: Job? = null
+    private lateinit var kindCache: FavoriteKindCache
     private val shown = ArrayList<BookEntry>()
 
     private val permissionLauncher =
@@ -106,6 +115,7 @@ class ListActivity : AppCompatActivity() {
         prefs = Prefs(this)
         library = Library(this)
         settings = SettingsRepository.get(this)
+        kindCache = FavoriteKindCache(this)
         applied = settings.list.value
         setContentView(R.layout.activity_list)
 
@@ -131,6 +141,7 @@ class ListActivity : AppCompatActivity() {
             onLongClick = { onEntryLongClick(it) },
             onStarClick = { toggleFavorite(it.file.absolutePath) }
         )
+        adapter.onSectionClick = { toggleSection(it.kind) }
         recycler.adapter = adapter
         applyLayoutManager()
         recycler.setHasFixedSize(false)
@@ -223,6 +234,7 @@ class ListActivity : AppCompatActivity() {
         ) {
             adapter.notifyDataSetChanged()
         }
+        if (s.groupFavorites != old.groupFavorites && mode == TAB_FAVORITES) applyFilterAndSort()
         if (s.pathView != old.pathView && mode == TAB_BROWSE) {
             pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
         }
@@ -409,15 +421,64 @@ class ListActivity : AppCompatActivity() {
         pathbar.visibility = View.GONE
         invalidateOptionsMenu()
         showProgress(true)
+        classifyJob?.cancel()
         lifecycleScope.launch {
-            val list = withContext(AppDispatchers.io) {
-                val snap = snapshot()
-                library.favorites().map { entryFor(File(it), snap) }
-            }
+            val (list, kinds) = withContext(AppDispatchers.io) { favoriteEntries() }
+            if (mode != TAB_FAVORITES) return@launch
             progress.visibility = View.GONE
+            favoriteKinds = kinds
             displayEntries(list)
+            classifyPending(list)
         }
     }
+
+    /** The favorites with their labels, and the sections already known for them. */
+    private fun favoriteEntries(): Pair<List<BookEntry>, Map<String, FavoriteKind>> {
+        val snap = snapshot()
+        val paths = library.favorites()
+        val labels = FavoriteLabels.of(paths, roots)
+        val kinds = HashMap<String, FavoriteKind>()
+        val list = paths.map { path ->
+            val label = labels[path]
+            val entry = entryFor(File(path), snap).let { if (label != null) it.copy(name = label.name, label = label) else it }
+            val kind = if (!entry.isDir) FavoriteKind.COMIC else kindCache.get(path, entry.lastModified)
+            if (kind != null) kinds[path] = kind
+            entry
+        }
+        kindCache.retain(paths)
+        return list to kinds
+    }
+
+    /** Classifies the favorites not classified yet, then shows them in their sections. */
+    private fun classifyPending(list: List<BookEntry>) {
+        val pending = list.filter { it.path !in favoriteKinds }
+        if (pending.isEmpty()) return
+        classifyJob = lifecycleScope.launch {
+            val found = withContext(AppDispatchers.io) {
+                pending.associate { e ->
+                    val kind = FavoriteClassifier.classify(e.file, isRoot = roots.any { it.path == e.path })
+                    kindCache.put(e.path, e.lastModified, kind)
+                    e.path to kind
+                }
+            }
+            favoriteKinds = favoriteKinds + found
+            if (mode == TAB_FAVORITES) applyFilterAndSort()
+        }
+    }
+
+    private fun toggleSection(kind: FavoriteKind) {
+        val collapsed = prefs.collapsedSections
+        prefs.collapsedSections = if (kind in collapsed) collapsed - kind else collapsed + kind
+        applyFilterAndSort()
+    }
+
+    private fun sectionTitle(kind: FavoriteKind): String = getString(
+        when (kind) {
+            FavoriteKind.LIBRARY -> R.string.section_libraries
+            FavoriteKind.SET -> R.string.section_sets
+            FavoriteKind.COMIC -> R.string.section_comics
+        }
+    )
 
     private fun showHistory() {
         mode = TAB_HISTORY
@@ -528,7 +589,12 @@ class ListActivity : AppCompatActivity() {
 
         shown.clear()
         shown.addAll(filtered.sortedWith(comparator))
-        adapter.submit(shown)
+        if (mode == TAB_FAVORITES && prefs.groupFavorites) {
+            val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
+            adapter.submit(FavoriteSections.rows(groups, prefs.collapsedSections) { sectionTitle(it) })
+        } else {
+            adapter.submit(shown)
+        }
         updateRecentHeader()
         updateEmptyState()
         updateFabIcon()
@@ -581,9 +647,8 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun scrollToHighlight(path: String) {
-        val index = shown.indexOfFirst { it.path == path }
-        // The "Recent" row shifts every entry down by one position.
-        if (index >= 0) recycler.scrollToPosition(index + adapter.itemOffset)
+        val position = adapter.positionOf(path)
+        if (position >= 0) recycler.scrollToPosition(position)
     }
 
     private fun showProgress(visible: Boolean) {
@@ -692,10 +757,10 @@ class ListActivity : AppCompatActivity() {
         val first = (current as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
         recycler.layoutManager = if (grid) {
             GridLayoutManager(this, columnCount()).apply {
-                // The "Recent" row is not a grid cell: it spans the whole width.
+                // The "Recent" row and section headers are not grid cells: they span the whole width.
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
                     override fun getSpanSize(position: Int): Int =
-                        if (position == 0 && adapter.header != null) spanCount else 1
+                        if (adapter.isFullWidth(position)) spanCount else 1
                 }
             }
         } else {

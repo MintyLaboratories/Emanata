@@ -13,7 +13,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Crumb
 
 /**
- * The location as tappable crumbs, `Device / _ / Comics`: the root crumb stays
+ * The location as tappable crumbs, `Device / Comics / Series`: the root crumb stays
  * pinned at the start while the folders after it scroll, kept scrolled to the end
  * so the current folder is always visible. The current folder is not tappable.
  */

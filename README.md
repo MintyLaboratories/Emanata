@@ -48,10 +48,17 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   Every history entry shows its **parent folder below the name**, so bare
   chapters like "Chapter 1" stay recognisable. Tapping a history entry opens
   the folder that contains that chapter.
-- Long-press a file or folder to favorite it, set it as the home folder, open its
-  location, rename, mark read/unread or delete it.
-- Breadcrumb path bar, quick favorite button, back button navigates up (clamped
-  at the root of internal storage).
+- **Favorites** are grouped into collapsible **Libraries**, **Sets** and
+  **Comics** by what they hold (a folder of comics is a Set, comics two or more
+  levels down make a Library); "Group favorites" turns this off. Favorites with
+  the same name get a grayed prefix that tells them apart (`stacks/Comics`,
+  `books…Comics`, `Device…Comics`).
+- **Startup tab** and **startup location** (last seen, first or most recent
+  favorite folder, or a custom folder picked from the favorites).
+- Long-press a file or folder to favorite it, make a folder the startup folder,
+  open its location, rename, mark read/unread or delete it.
+- Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
+  named (`Device`, the SD card's label); back navigates up, never above a root.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.

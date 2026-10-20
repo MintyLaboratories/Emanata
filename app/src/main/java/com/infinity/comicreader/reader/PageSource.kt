@@ -17,6 +17,13 @@ interface PageSource : Closeable {
      */
     fun pageSize(index: Int): IntArray? = null
 
+    /**
+     * Page [index] at full detail, laid out as [target] lays it out, holding about
+     * [maxBytes] at most: decoded whole at its full size, or reduced to fit.
+     */
+    fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail =
+        BitmapDetail(loadPage(index, target.detail(pageSize(index), maxBytes)))
+
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 }

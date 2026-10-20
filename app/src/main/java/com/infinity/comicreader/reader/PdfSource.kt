@@ -56,6 +56,52 @@ class PdfSource(file: File) : PageSource {
         }
     }
 
+    /**
+     * Vector detail: regions are rendered straight at their size from the page's
+     * points, laid out as [loadPage] lays them out for [target]; holds no pixels.
+     */
+    @Synchronized
+    override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
+        val page = renderer.openPage(index)
+        try {
+            val pw = page.width.coerceAtLeast(1).toDouble()
+            val ph = page.height.coerceAtLeast(1).toDouble()
+            val sized = vectorTarget(target, pw)
+            var plan = sized.plan(pw, ph)
+            if (target.autoCrop) {
+                val first = render(page, plan)
+                BitmapUtils.contentBounds(first)?.let {
+                    plan = cropPlan(sized, plan, it.left, it.top, it.width(), it.height())
+                }
+                first.recycle()
+            }
+            return VectorDetail(index, plan)
+        } finally {
+            page.close()
+        }
+    }
+
+    private inner class VectorDetail(private val index: Int, private val page: Plan) : PageDetail {
+        override val byteCount: Long get() = 0L
+
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap =
+            renderPlan(index, region.plan(width, height, page.x, page.y, page.spanW, page.spanH))
+
+        override fun release() {
+            // Holds nothing: every render opens the page anew.
+        }
+    }
+
+    @Synchronized
+    private fun renderPlan(index: Int, plan: Plan): Bitmap {
+        val page = renderer.openPage(index)
+        try {
+            return render(page, plan)
+        } finally {
+            page.close()
+        }
+    }
+
     /** [page] rendered on white, its region [plan] says filling the bitmap. */
     private fun render(page: PdfRenderer.Page, plan: Plan): Bitmap {
         val bitmap = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)

@@ -35,6 +35,31 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    /** The inner detail, whose renders are guarded like reads. */
+    override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
+        if (!enter()) throw IOException("Source closed")
+        try {
+            return Detail(inner.loadDetail(index, target, maxBytes))
+        } finally {
+            exit()
+        }
+    }
+
+    private inner class Detail(private val detail: PageDetail) : PageDetail {
+        override val byteCount: Long get() = detail.byteCount
+
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+            if (!enter()) throw IOException("Source closed")
+            try {
+                return detail.render(region, width, height, linear)
+            } finally {
+                exit()
+            }
+        }
+
+        override fun release() = detail.release()
+    }
+
     override fun pageName(index: Int): String? = inner.pageName(index)
 
     override fun close() {

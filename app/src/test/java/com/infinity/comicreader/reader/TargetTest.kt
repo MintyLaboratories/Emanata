@@ -119,4 +119,23 @@ class TargetTest {
         assertTrue(Target.NATIVE.plan(300.0, 200.0, left = 10.0, top = 20.0).isCrop())
         assertFalse(Target(150, 0).plan(300.0, 200.0).isCrop())
     }
+
+    @Test
+    fun detailIsTheWholeContentAtFullSize() {
+        val shown = Target(1848, 2960, Fit.STRETCH, autoCrop = true, linear = true)
+        val detail = shown.detail(intArrayOf(4000, 6000), 96_000_000L)
+        assertEquals(Target(autoCrop = true, linear = true), detail)
+        assertEquals(Target(), Target(1848, 0).detail(null, 1L))
+    }
+
+    @Test
+    fun detailOverBudgetShrinksEvenlyToFit() {
+        val detail = Target(1848, 2960).detail(intArrayOf(4000, 6000), 24_000_000L)
+        assertEquals(Fit.SHRINK, detail.fit)
+        assertEquals(2000 to 3000, detail.width to detail.height)
+        val plan = detail.plan(4000.0, 6000.0)
+        assertTrue(plan.width.toLong() * plan.height * 4 <= 24_000_000L)
+        // A cropped page fits the same box, never enlarged.
+        assertEquals(1000 to 1500, size(detail.plan(1000.0, 1500.0)))
+    }
 }

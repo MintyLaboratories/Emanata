@@ -72,6 +72,57 @@ class GuardedSourceTest {
         assertEquals(0, inner.reads)
     }
 
+    /** A source whose detail renders wait for [proceed]; renders throw instead of making bitmaps. */
+    private class DetailSource : PageSource {
+        val started = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
+        val closes = AtomicInteger()
+        @Volatile var renders = 0
+
+        override val pageCount = 1
+        override fun loadPage(index: Int, target: Target): Bitmap = throw UnsupportedOperationException()
+
+        override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail = object : PageDetail {
+            override val byteCount = 0L
+            override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+                renders++
+                started.countDown()
+                proceed.await(5, TimeUnit.SECONDS)
+                throw IllegalStateException(if (closes.get() > 0) "closed" else "rendered")
+            }
+
+            override fun release() {}
+        }
+
+        override fun close() {
+            closes.incrementAndGet()
+        }
+    }
+
+    @Test
+    fun closeWaitsForDetailRender() {
+        val inner = DetailSource()
+        val guarded = GuardedSource(inner)
+        val detail = guarded.loadDetail(0, Target.NATIVE, Long.MAX_VALUE)
+        var message: String? = null
+        val renderer = Thread {
+            message = runCatching { detail.render(Region(0.0, 0.0, 1.0, 1.0), 1, 1, false) }.exceptionOrNull()?.message
+        }
+        renderer.start()
+        assertTrue(inner.started.await(5, TimeUnit.SECONDS))
+
+        guarded.close()
+        assertEquals(0, inner.closes.get())
+        inner.proceed.countDown()
+        renderer.join(5_000)
+        assertEquals("rendered", message)
+        assertEquals(1, inner.closes.get())
+
+        // Later renders fail without reaching the closed source.
+        assertTrue(runCatching { detail.render(Region(0.0, 0.0, 1.0, 1.0), 1, 1, false) }.exceptionOrNull() is java.io.IOException)
+        assertEquals(1, inner.renders)
+    }
+
     @Test
     fun closesOnce() {
         val inner = FakeSource()

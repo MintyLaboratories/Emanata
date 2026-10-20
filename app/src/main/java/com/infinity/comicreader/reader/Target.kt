@@ -97,6 +97,25 @@ data class Target(
     private fun native(srcW: Double, srcH: Double, left: Double, top: Double) =
         Plan(srcW.roundToInt().coerceAtLeast(1), srcH.roundToInt().coerceAtLeast(1), left, top, srcW, srcH)
 
+    /**
+     * The decode of a page that shows as this target does, at full detail: its content
+     * (auto-cropped likewise) at full size, or, when a `[width, height]` [size] page
+     * would take more than [maxBytes] of ARGB, reduced evenly to fit. Unknown sizes
+     * decode at full size.
+     */
+    fun detail(size: IntArray?, maxBytes: Long): Target {
+        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels)
+        if (size == null || size[0] <= 0 || size[1] <= 0) return full
+        val bytes = size[0].toLong() * size[1] * 4
+        if (bytes <= maxBytes) return full
+        val f = sqrt(maxBytes.toDouble() / bytes)
+        return full.copy(
+            width = floor(size[0] * f).toInt().coerceAtLeast(1),
+            height = floor(size[1] * f).toInt().coerceAtLeast(1),
+            fit = Fit.SHRINK
+        )
+    }
+
     companion object {
         /**
          * Largest source decoded without reduction: 200 MB of ARGB, above any page a

@@ -407,9 +407,13 @@ class ViewerActivity : AppCompatActivity() {
         if (old == s) return
         applied = s
         var rebuild = false
+        // Whether anything the menu or the end card reflects changed. Brightness and
+        // auto-scroll speed are written on every drag step and change neither.
+        var shown = false
         if (s.filter != old.filter && s.filter != filter) {
             filter = s.filter
             adapter?.filter = filter
+            shown = true
         }
         if (s.brightness != old.brightness && s.brightness != brightness) {
             brightness = s.brightness
@@ -422,13 +426,18 @@ class ViewerActivity : AppCompatActivity() {
         if (s.nightFilter != old.nightFilter && s.nightFilter != nightFilter) {
             nightFilter = s.nightFilter
             applyNight()
+            shown = true
         }
         if (s.keepScreenOn != old.keepScreenOn && s.keepScreenOn != keepOn) {
             keepOn = s.keepScreenOn
             // A running auto-scroll keeps the screen on by itself.
             if (!autoScrolling) applyKeepScreenOn()
+            shown = true
         }
-        if (s.fullscreen != old.fullscreen) applyFullscreen(s.fullscreen)
+        if (s.fullscreen != old.fullscreen) {
+            applyFullscreen(s.fullscreen)
+            shown = true
+        }
         if (s.autoCrop != old.autoCrop && s.autoCrop != autoCrop) {
             autoCrop = s.autoCrop
             rebuild = true
@@ -443,18 +452,23 @@ class ViewerActivity : AppCompatActivity() {
             s.twoPage != old.twoPage || s.perSeries != old.perSeries
         ) {
             if (reloadLayout()) rebuild = true
+            shown = true
         }
         if (s.charset != old.charset && (source != null || openJob?.isActive == true)) {
             // Entry names, and with them the page order, depend on the charset.
             reopen()
-        } else {
-            if (rebuild) attach()
-            if (rebuild || s.autoNext != old.autoNext) {
-                if (s.autoNext) prepareStripAhead() else dropStripAhead()
-            }
-            updateEndCard()
+            invalidateOptionsMenu()
+            return
         }
-        invalidateOptionsMenu()
+        if (rebuild) attach()
+        if (rebuild || s.autoNext != old.autoNext) {
+            if (s.autoNext) prepareStripAhead() else dropStripAhead()
+            shown = true
+        }
+        if (shown) {
+            updateEndCard()
+            invalidateOptionsMenu()
+        }
     }
 
     /**

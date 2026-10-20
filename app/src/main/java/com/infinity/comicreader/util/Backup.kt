@@ -13,7 +13,10 @@ import org.json.JSONObject
  * restore accepts nothing but the known keys, with the expected JSON types.
  */
 object Backup {
-    private const val APP = "ComicReader"
+    private const val APP = "Emanata"
+
+    /** Names a restorable backup may carry: this app's and its upstream's. */
+    private val APPS = setOf(APP, "ComicReader")
     private const val VERSION = 1
 
     /** Largest backup file that will be read. Real backups are a few hundred KB. */
@@ -31,10 +34,10 @@ object Backup {
         return root.toString(2)
     }
 
-    /** Restores a backup. Returns false when [json] is not a ComicReader backup. */
+    /** Restores a backup. Returns false when [json] is not a backup of this app or its upstream. */
     fun import(context: Context, json: String): Boolean {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return false
-        if (root.optString("app") != APP || root.optInt("version", 0) !in 1..VERSION) return false
+        if (root.optString("app") !in APPS || root.optInt("version", 0) !in 1..VERSION) return false
         val lib = root.optJSONObject("library") ?: return false
 
         Library(context).importAll(lib)

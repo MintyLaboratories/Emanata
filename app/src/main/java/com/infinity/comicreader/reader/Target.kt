@@ -25,7 +25,8 @@ enum class Fit {
  * fits the width, and both free keep the source size. [COVER][Fit.COVER] and
  * [STRETCH][Fit.STRETCH] need both dimensions and act as [INSIDE][Fit.INSIDE] without.
  *
- * [linear] filters in linear light. [capPixels] bounds the decoded source: a larger
+ * [linear] shrinks in linear light; enlarging stays in sRGB, where Lanczos halos are
+ * fainter. [capPixels] bounds the decoded source: a larger
  * image is first reduced by the decoder's own power-of-two sampling (see [Decoders]).
  * The result never exceeds [MAX_OUTPUT_PIXELS], nor [MAX_OUTPUT_SIDE] on either side.
  *
@@ -112,6 +113,9 @@ data class Plan(val width: Int, val height: Int, val x: Double, val y: Double, v
 
     /** True when the result is the [srcW] x [srcH] source, untouched. */
     fun isIdentity(srcW: Int, srcH: Int): Boolean = isCrop() && x == 0.0 && y == 0.0 && width == srcW && height == srcH
+
+    /** True when neither axis is enlarged. */
+    fun shrinks(): Boolean = width <= spanW && height <= spanH
 
     /** True when the result is a whole-pixel crop of the source, with no resampling. */
     fun isCrop(): Boolean =

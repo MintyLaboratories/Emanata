@@ -89,7 +89,7 @@ object Decoders {
         if (plan.isIdentity(src.width, src.height)) return src
         try {
             return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
-            else BitmapUtils.resample(src, plan, target.linear)
+            else BitmapUtils.resample(src, plan, target.linear && plan.shrinks())
         } finally {
             // Frees the full-resolution pixels before the caller keeps the result.
             src.recycle()

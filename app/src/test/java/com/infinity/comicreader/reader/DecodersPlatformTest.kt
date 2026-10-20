@@ -200,6 +200,18 @@ class DecodersPlatformTest {
         assertEquals(30, bitmap.height)
     }
 
+    /** Fine gray stripes, where linear light visibly changes the mean. */
+    private fun stripes(w: Int, h: Int): Bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+        for (y in 0 until h) for (x in 0 until w) setPixel(x, y, if ((x + y) % 2 == 0) Color.BLACK else Color.WHITE)
+    }
+
+    @Test
+    fun linearLightOnlyShrinks() {
+        fun fit(w: Int, linear: Boolean) = pixels(Decoders.fit(stripes(20, 20), Target(w, 0, linear = linear)))
+        assertArrayEquals(fit(50, false), fit(50, true))
+        assertFalse(fit(7, false).contentEquals(fit(7, true)))
+    }
+
     @Test
     fun cancelledResampleIsNotADecodeFailure() {
         val png = encoded(400, 300, Bitmap.CompressFormat.PNG)

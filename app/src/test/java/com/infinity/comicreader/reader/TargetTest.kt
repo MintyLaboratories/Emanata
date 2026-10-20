@@ -97,6 +97,14 @@ class TargetTest {
     }
 
     @Test
+    fun shrinksOnlyWhenNoAxisEnlarges() {
+        assertTrue(Target(1848, 2960).plan(4000.0, 6000.0).shrinks())
+        assertTrue(Target.NATIVE.plan(300.0, 200.0).shrinks())
+        assertFalse(Target(1848, 2960).plan(800.0, 1200.0).shrinks())
+        assertFalse(Target(1848, 2960, Fit.STRETCH).plan(4000.0, 2000.0).shrinks())
+    }
+
+    @Test
     fun cropAtScaleOneNeedsNoResampling() {
         assertTrue(Target.NATIVE.plan(300.0, 200.0, left = 10.0, top = 20.0).isCrop())
         assertFalse(Target(150, 0).plan(300.0, 200.0).isCrop())

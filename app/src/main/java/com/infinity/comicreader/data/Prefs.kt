@@ -252,13 +252,7 @@ class Prefs(context: Context) {
         val changes = upgrade(sp.all)
         if (changes.isEmpty()) return
         val e = sp.edit()
-        for ((k, v) in changes) {
-            when (v) {
-                is String -> e.putString(k, v)
-                is Int -> e.putInt(k, v)
-                else -> e.remove(k)
-            }
-        }
+        write(e, changes)
         e.apply()
     }
 
@@ -272,16 +266,9 @@ class Prefs(context: Context) {
      * unknown keys and odd types are ignored.
      */
     fun importAll(values: Map<String, Any>) {
-        val e = sp.edit()
         val known = values.filterKeys { it in KNOWN_KEYS }
-        for ((k, v) in known + upgrade(known)) {
-            when (v) {
-                is String -> e.putString(k, v)
-                is Boolean -> e.putBoolean(k, v)
-                is Int -> e.putInt(k, v)
-                null -> e.remove(k)
-            }
-        }
+        val e = sp.edit()
+        write(e, known + upgrade(known))
         e.apply()
     }
 
@@ -342,6 +329,18 @@ class Prefs(context: Context) {
 
         /** Replaced by [KEY_ADJUST_BRIGHTNESS]: a black overlay, 20..100 with 100 = none. */
         private const val OLD_BRIGHTNESS = "pref_brightness"
+
+        /** Puts each of [values] into [e]: a string, boolean or int is written, null removes its key, other types are ignored. */
+        internal fun write(e: SharedPreferences.Editor, values: Map<String, Any?>) {
+            for ((k, v) in values) {
+                when (v) {
+                    is String -> e.putString(k, v)
+                    is Boolean -> e.putBoolean(k, v)
+                    is Int -> e.putInt(k, v)
+                    null -> e.remove(k)
+                }
+            }
+        }
 
         /**
          * The changes that bring [stored] settings up to date: a value to write per key,

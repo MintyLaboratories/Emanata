@@ -94,6 +94,16 @@ class PrefsUpgradeTest {
     }
 
     @Test
+    fun writtenChangesKeepEveryTypeAndRemoveNulls() {
+        val sp = PreferenceManager.getDefaultSharedPreferences(context)
+        sp.edit().putString("gone", "x").commit()
+        val e = sp.edit()
+        Prefs.write(e, mapOf("s" to "v", "b" to false, "i" to 7, "gone" to null, "odd" to 1.5))
+        e.commit()
+        assertEquals(mapOf("s" to "v", "b" to false, "i" to 7), stored())
+    }
+
+    @Test
     fun anOldBackupRestoresIntoTheNewSetting() {
         val prefs = Prefs(context)
         prefs.tapZones = "bottom_top"

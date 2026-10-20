@@ -106,6 +106,13 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var endPrev: View
     private lateinit var btnPrevChapter: ImageButton
     private lateinit var btnNextChapter: ImageButton
+    private lateinit var hint: TextView
+
+    /** Counts "previous page" actions on the first page, toward the previous chapter. */
+    private val repeatedBack = RepeatedBack()
+
+    /** The page [repeatedBack] is counting on; another page starts the count over. */
+    private var backPage = -1
 
     private var source: PageSource? = null
     private var adapter: PageAdapter? = null
@@ -401,6 +408,7 @@ class ViewerActivity : AppCompatActivity() {
         endSubtitle = findViewById(R.id.end_subtitle)
         endNext = findViewById(R.id.end_next)
         endPrev = findViewById(R.id.end_prev)
+        hint = findViewById(R.id.viewer_hint)
         vertical.layoutManager = LinearLayoutManager(this)
         // Any relayout (rotation, the card's buttons, the bars) places the card again.
         findViewById<View>(R.id.viewer_root).addOnLayoutChangeListener { root, _, _, _, _, _, _, _, _ ->
@@ -587,6 +595,8 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
+        repeatedBack.reset()
+        backPage = -1
         resolveLayout()
 
         openJob = lifecycleScope.launch {
@@ -898,7 +908,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun goTo(page: Int) {
         val count = source?.pageCount ?: return
         if (page < 0) {
-            if (prefs.autoNext) openPrevChapter() else goTo(0)
+            goTo(0)
+            backAtStart()
             return
         }
         if (page >= count) {
@@ -947,7 +958,48 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * A "previous page" action on the chapter's first page: counted toward "Previous
+     * chapter on repeated back", which hints at the next one needed, or opens the
+     * previous chapter at its last page (its last spread in two-page mode).
+     */
+    private fun backAtStart() {
+        val prev = prevChapter() ?: return
+        when (repeatedBack.back(SystemClock.uptimeMillis(), prefs.prevChapterBacks)) {
+            RepeatedBack.Result.IGNORED -> Unit
+            RepeatedBack.Result.HINT -> showHint()
+            RepeatedBack.Result.OPEN -> {
+                hideHintNow()
+                openChapter(prev, LAST_PAGE)
+            }
+        }
+    }
+
+    /** Shows the repeated-back hint for as long as the next action still counts. */
+    private fun showHint() {
+        handler.removeCallbacks(hideHint)
+        hint.animate().cancel()
+        hint.alpha = 1f
+        hint.visibility = View.VISIBLE
+        handler.postDelayed(hideHint, RepeatedBack.WINDOW_MS)
+    }
+
+    private fun hideHintNow() {
+        handler.removeCallbacks(hideHint)
+        hideHint.run()
+    }
+
+    private val hideHint = Runnable {
+        if (hint.visibility == View.VISIBLE) {
+            hint.animate().alpha(0f).setDuration(150).withEndAction { hint.visibility = View.GONE }.start()
+        }
+    }
+
     private fun onPageChanged() {
+        if (currentIndex != backPage) {
+            repeatedBack.reset()
+            backPage = currentIndex
+        }
         val count = source?.pageCount ?: 0
         pageText.text = getString(R.string.page_indicator, currentIndex + 1, count)
         chapterText.text = modeLabel()
@@ -1852,12 +1904,16 @@ class ViewerActivity : AppCompatActivity() {
         private var startY = 0f
         private var tracking = false
 
+        /** True when the swipe began on the chapter's first page, where swiping back counts. */
+        private var fromStart = false
+
         override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = e.x
                     startY = e.y
                     tracking = true
+                    fromStart = atChapterStart()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val dx = e.x - startX
@@ -1871,6 +1927,12 @@ class ViewerActivity : AppCompatActivity() {
                         autoAdvance() && atChapterEnd()
                     ) {
                         openNextChapter()
+                    }
+                    // Backward: rightward in a paged book (leftward in RTL), a flick down for a strip.
+                    if (tracking && e.actionMasked == MotionEvent.ACTION_UP && -along > across * 2 &&
+                        -along > swipeMinPx() && fromStart && atChapterStart()
+                    ) {
+                        backAtStart()
                     }
                     tracking = false
                 }
@@ -1890,6 +1952,15 @@ class ViewerActivity : AppCompatActivity() {
         return when (mode) {
             MODE_PAGED -> pageLayout().onLastItem(currentIndex, src.pageCount)
             else -> !vertical.canScrollVertically(1)
+        }
+    }
+
+    /** True when the reader sits on the first page or at the top of a strip. */
+    private fun atChapterStart(): Boolean {
+        if (source == null) return false
+        return when (mode) {
+            MODE_PAGED -> pageLayout().itemOf(currentIndex) == 0
+            else -> !vertical.canScrollVertically(-1)
         }
     }
 
@@ -2112,6 +2183,9 @@ class ViewerActivity : AppCompatActivity() {
 
         private const val STATE_PATH = "state_path"
         private const val STATE_PAGE = "state_page"
+
+        /** A start page past any book's end: opens it at its last page. */
+        private const val LAST_PAGE = Int.MAX_VALUE
 
         private const val SHARE_DIR = "shared"
         private const val EXPORT_W = 2400

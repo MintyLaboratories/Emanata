@@ -227,6 +227,21 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <TextView
+        android:id="@+id/viewer_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="@dimen/end_card_margin"
+        android:background="@drawable/bg_reader_bottom"
+        android:gravity="center"
+        android:paddingHorizontal="@dimen/space_5"
+        android:paddingVertical="@dimen/space_3"
+        android:text="@string/hint_prev_chapter"
+        android:textColor="@android:color/white"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
     <ProgressBar
         android:id="@+id/viewer_progress"
         android:layout_width="wrap_content"

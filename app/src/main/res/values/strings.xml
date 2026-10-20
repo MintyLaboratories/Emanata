@@ -215,6 +215,11 @@
     <string name="resume_ask">Ask</string>
     <string name="resume_yes">Yes</string>
     <string name="resume_no">No</string>
+    <string name="pref_prev_chapter_backs">Previous chapter on repeated back</string>
+    <string name="prev_chapter_backs_off">Disabled</string>
+    <string name="prev_chapter_backs_2">2 swipes</string>
+    <string name="prev_chapter_backs_3">3 swipes</string>
+    <string name="hint_prev_chapter">Swipe back again for the previous chapter</string>
     <string name="pref_two_page">Two-page spread</string>
 
     <string name="pref_tap_zones">Tap zones (previous/next)</string>
@@ -472,6 +477,17 @@
         <item>ask</item>
         <item>yes</item>
         <item>no</item>
+    </string-array>
+
+    <string-array name="prev_chapter_backs_entries">
+        <item>@string/prev_chapter_backs_off</item>
+        <item>@string/prev_chapter_backs_2</item>
+        <item>@string/prev_chapter_backs_3</item>
+    </string-array>
+    <string-array name="prev_chapter_backs_values">
+        <item>0</item>
+        <item>2</item>
+        <item>3</item>
     </string-array>
 
     <string-array name="tap_zone_entries">

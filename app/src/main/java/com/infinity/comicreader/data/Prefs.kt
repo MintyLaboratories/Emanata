@@ -101,6 +101,14 @@ class Prefs(context: Context) {
         get() = bool(KEY_AUTO_NEXT, true)
         set(v) = put(KEY_AUTO_NEXT, v)
 
+    /**
+     * "Previous page" actions on a chapter's first page that open the previous chapter:
+     * 0 (off), 2 or 3. Stored as a string by the list preference.
+     */
+    var prevChapterBacks: Int
+        get() = str(KEY_PREV_CHAPTER_BACKS, "2").toIntOrNull()?.takeIf { it in PREV_CHAPTER_BACKS } ?: 2
+        set(v) = put(KEY_PREV_CHAPTER_BACKS, (v.takeIf { it in PREV_CHAPTER_BACKS } ?: 2).toString())
+
     /** Whether a book with a saved position opens there. */
     var resumeMode: ResumeMode
         get() = ResumeMode.of(sp.getString(KEY_RESUME_MODE, null))
@@ -336,6 +344,8 @@ class Prefs(context: Context) {
         private const val KEY_SPACING = "pref_page_spacing"
         private const val KEY_AUTO_NEXT = "pref_auto_next"
         private const val KEY_RESUME_MODE = "pref_resume_mode"
+        private const val KEY_PREV_CHAPTER_BACKS = "pref_prev_chapter_backs"
+        private val PREV_CHAPTER_BACKS = setOf(0, 2, 3)
         private const val KEY_TWO_PAGE = "pref_two_page"
         private const val KEY_NIGHT = "pref_night"
         private const val KEY_TAP_ZONE_LAYOUT = "pref_tap_zone_layout"
@@ -367,7 +377,7 @@ class Prefs(context: Context) {
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
-            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
+            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,

@@ -67,6 +67,13 @@
             app:summary="@string/pref_auto_next_desc"
             app:title="@string/pref_auto_next" />
         <ListPreference
+            app:defaultValue="2"
+            app:entries="@array/prev_chapter_backs_entries"
+            app:entryValues="@array/prev_chapter_backs_values"
+            app:key="pref_prev_chapter_backs"
+            app:title="@string/pref_prev_chapter_backs"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="ltr"
             app:entries="@array/reading_dir_entries"
             app:entryValues="@array/reading_dir_values"

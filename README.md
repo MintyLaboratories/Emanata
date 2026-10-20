@@ -131,6 +131,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   and **vertical** modes the next chapter's pages are already laid into the strip,
   so scrolling (or an upward flick) simply continues into them the way page-to-page
   scrolling does inside a single archive - no stop, no reload, no end card.
+- **Previous chapter on repeated back** (Disabled, 2 or 3 swipes; default 2):
+  going back on a chapter's first page (swipe, tap zone, volume key) shows
+  *Swipe back again for the previous chapter*; the last one within 1.5 s of
+  the one before opens the previous chapter at its last page or spread.
 - Bookmarks per page, plus a bookmark list to jump between them.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,
   and tap-to-toggle the UI bars. Volume keys turn pages.
@@ -155,8 +159,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Linear-light scaling** (off by default): pages and covers are shrunk in
   linear light, so halftones and screentones keep their brightness; thin dark
   lines come out lighter. Enlarging stays in sRGB.
-- Reader: resume where I left off (ask, yes or no), and open the next chapter
-  automatically when a chapter ends.
+- Reader: resume where I left off (ask, yes or no), open the next chapter
+  automatically when a chapter ends, and how many backs on a first page open
+  the previous one.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
   drag, double-tap zoom).
 - File-list options (file names, status bar, breadcrumb, quick button).

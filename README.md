@@ -59,8 +59,10 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   (Settings → Your data) to a JSON file you choose.
 
 ### Reader
-- **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`) and
-  archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, plus `pdf`.
+- **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`,
+  `heic`/`heif`, `jxl`) and archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, plus
+  `pdf`. Images are recognised by content, not extension.
+- **Broken pages** show a placeholder naming the page and the reason.
 - **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
   Pages in subfolders keep folder order. Archives inside an archive (one per
   issue) show their pages in place. macOS, hidden and empty entries are skipped.
@@ -121,7 +123,8 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 
 | Extension | Handler | Library |
 |---|---|---|
-| jpg/jpeg/png/gif/bmp/webp/avif | `ImageSource` | `BitmapFactory` |
+| jpg/jpeg/png/gif/bmp/webp/avif/heic/heif | `ImageSource` | platform `ImageDecoder` (`BitmapFactory` below API 28) |
+| jxl | `ImageSource` | jxl-coder (libjxl) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
 | rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
@@ -129,6 +132,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 
 - The backend is picked from the file's magic bytes (`ArchiveKind`), the
   extension only when they match nothing.
+- Every image, in an archive or not, decodes through `Decoders`, which picks the
+  decoder from the magic bytes (`ImageKind`). PNG and JPEG XL sizes come from
+  the header alone (`ImageHeaders`).
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Nested archives (up to two levels) are copied to `cacheDir/nested`
@@ -150,7 +156,7 @@ app/src/main/java/com/infinity/comicreader/
   data/                      Prefs, Library (history/bookmarks/favorites),
                              Thumbs, models
   reader/                    PageSource implementations + factory, Filters,
-                             BitmapUtils
+                             Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,
                              CropActivity + CropView, PagesActivity + ThumbAdapter,
                              ZoomImageView, PageAdapter, BookAdapter
@@ -221,8 +227,8 @@ No internet permission is requested.
 
 - `minSdk 26`, `targetSdk 34`.
 - AVIF decoding depends on the platform: it works natively on Android 12+
-  (API 31+); on older devices AVIF pages may fail to decode.
-- The reader decodes pages with `inSampleSize` downsampling to bound memory use,
+  (API 31+); on older devices AVIF pages show the error placeholder.
+- The reader decodes pages with power-of-two downsampling to bound memory use,
   then lets `ZoomImageView` scale the result.
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid

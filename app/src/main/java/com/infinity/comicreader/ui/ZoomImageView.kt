@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.content.Context
 import android.graphics.Matrix
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -9,10 +10,12 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.appcompat.widget.AppCompatImageView
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Image view with pinch-to-zoom, panning, double-tap zoom and configurable fit modes.
- * Uses [ScaleType.MATRIX] and manipulates the image matrix directly.
+ * Uses [ScaleType.MATRIX] and manipulates the image matrix directly; at 1:1 the
+ * bitmap is drawn unfiltered on whole pixels ([applyMatrix]).
  *
  * [onTap] receives the tap position as a fraction of the view width so callers can
  * implement left/centre/right tap zones. [onVerticalDrag] receives the vertical
@@ -50,7 +53,7 @@ class ZoomImageView @JvmOverloads constructor(
                 currentScale = newScale
                 matrix.postScale(factor, factor, detector.focusX, detector.focusY)
                 clamp()
-                imageMatrix = matrix
+                applyMatrix()
                 return true
             }
         }
@@ -115,7 +118,7 @@ class ZoomImageView @JvmOverloads constructor(
             currentScale = 1f
             minScale = 1f
             maxScale = 1f
-            imageMatrix = matrix
+            applyMatrix()
             return
         }
 
@@ -130,14 +133,15 @@ class ZoomImageView @JvmOverloads constructor(
         val scaledH = drawableH * scale
         // Centre what fits; when a page is taller (or wider) than the view start at its
         // top (left) edge so reading begins at the beginning and the rest can be panned to.
-        val startX = if (scaledW > viewW) 0f else (viewW - scaledW) / 2f
-        val startY = if (scaledH > viewH) 0f else (viewH - scaledH) / 2f
+        // Whole-pixel offsets, so a page at 1:1 lands on the pixel grid.
+        val startX = if (scaledW > viewW) 0f else ((viewW - scaledW) / 2f).roundToInt().toFloat()
+        val startY = if (scaledH > viewH) 0f else ((viewH - scaledH) / 2f).roundToInt().toFloat()
         baseMatrix.postTranslate(startX, startY)
         matrix.set(baseMatrix)
         currentScale = scale
         minScale = scale
         maxScale = scale * 8f
-        imageMatrix = matrix
+        applyMatrix()
     }
 
     private fun zoomTo(target: Float, focusX: Float, focusY: Float) {
@@ -146,7 +150,7 @@ class ZoomImageView @JvmOverloads constructor(
         currentScale = clamped
         matrix.postScale(factor, factor, focusX, focusY)
         clamp()
-        imageMatrix = matrix
+        applyMatrix()
     }
 
     private fun clamp() {
@@ -178,6 +182,30 @@ class ZoomImageView @JvmOverloads constructor(
         }
         matrix.postTranslate(dx, dy)
     }
+
+    /**
+     * Shows [matrix]. At 1:1 it is snapped to whole pixels and the bitmap is drawn
+     * unfiltered, so a page decoded at its on-screen size reaches the screen pixel for
+     * pixel; any other scale draws filtered.
+     */
+    private fun applyMatrix() {
+        matrix.getValues(values)
+        val oneToOne = abs(values[Matrix.MSCALE_X] - 1f) < ONE_TO_ONE && abs(values[Matrix.MSCALE_Y] - 1f) < ONE_TO_ONE &&
+            values[Matrix.MSKEW_X] == 0f && values[Matrix.MSKEW_Y] == 0f
+        if (oneToOne) {
+            values[Matrix.MSCALE_X] = 1f
+            values[Matrix.MSCALE_Y] = 1f
+            values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].roundToInt().toFloat()
+            values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].roundToInt().toFloat()
+            matrix.setValues(values)
+        }
+        (drawable as? BitmapDrawable)?.isFilterBitmap = !oneToOne
+        imageMatrix = matrix
+    }
+
+    /** True when the content is drawn at 1:1 without filtering; for tests. */
+    internal val drawsOneToOne: Boolean
+        get() = (drawable as? BitmapDrawable)?.isFilterBitmap == false
 
     override fun performClick(): Boolean {
         super.performClick()
@@ -244,7 +272,7 @@ class ZoomImageView @JvmOverloads constructor(
                 if (room) {
                     matrix.postTranslate(if (roomX(dx)) dx else 0f, if (roomY(dy)) dy else 0f)
                     clamp()
-                    imageMatrix = matrix
+                    applyMatrix()
                 }
             } else {
                 onVerticalDrag?.invoke(dy)
@@ -256,5 +284,8 @@ class ZoomImageView @JvmOverloads constructor(
 
     private companion object {
         const val EDGE_SLOP = 2f
+
+        /** Scale error below which the content counts as 1:1. */
+        const val ONE_TO_ONE = 1e-4f
     }
 }

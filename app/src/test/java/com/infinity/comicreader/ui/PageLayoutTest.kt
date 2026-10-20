@@ -133,4 +133,15 @@ class PageLayoutTest {
         assertFalse(single.onLastItem(2, 4))
         assertTrue(ltr.onLastItem(0, 0))
     }
+
+    @Test
+    fun slotOfFollowsScreenOrder() {
+        assertEquals(0, ltr.slotOf(2, 5))
+        assertEquals(1, ltr.slotOf(3, 5))
+        // Right to left, the first page of a pair sits on the right.
+        assertEquals(1, rtl.slotOf(2, 5))
+        assertEquals(0, rtl.slotOf(3, 5))
+        assertEquals(0, single.slotOf(3, 5))
+        assertEquals(-1, ltr.slotOf(7, 5))
+    }
 }

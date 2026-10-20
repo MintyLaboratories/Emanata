@@ -45,6 +45,9 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false) {
         return if (rtl) intArrayOf(second, first) else intArrayOf(first, second)
     }
 
+    /** The slot of its item that [page] shows in, left to right on screen; -1 when out of the book. */
+    fun slotOf(page: Int, pageCount: Int): Int = slots(itemOf(page), pageCount).indexOf(page)
+
     private fun pageOrNone(page: Int, pageCount: Int) =
         if (page in 0 until pageCount) page else NONE
 

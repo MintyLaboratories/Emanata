@@ -2,6 +2,8 @@ package com.infinity.comicreader.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.LruCache
 import android.view.View
@@ -10,7 +12,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
-import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
@@ -84,8 +85,8 @@ class PageAdapter(
         set(value) {
             if (field == value) return
             field = value
-            // Paged pages are decoded for the active fit mode, so they must be redone.
-            if (mode == Mode.PAGED) dropDecoded()
+            // Pages are decoded for the active fit mode, except in long strips, which always fit the width.
+            if (mode != Mode.LONG_STRIP) dropDecoded()
             notifyItemRangeChanged(0, itemCount)
         }
 
@@ -100,12 +101,15 @@ class PageAdapter(
         var prefetch = false
     }
 
+    /** A page decoded for one exact [target]; the same page at another size is another entry. */
+    internal data class PageKey(val page: Int, val target: Target)
+
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val gate = Semaphore(DECODE_THREADS)
-    private val cache = object : LruCache<Int, Bitmap>(cacheBytes()) {
-        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
+    private val cache = object : LruCache<PageKey, Bitmap>(cacheBytes()) {
+        override fun sizeOf(key: PageKey, value: Bitmap): Int = value.byteCount
     }
-    private val pending = HashMap<Int, Pending>()
+    private val pending = HashMap<PageKey, Pending>()
 
     /**
      * Why a page could not be shown; [name] is null when its source has no page names.
@@ -123,11 +127,15 @@ class PageAdapter(
     private val results = Any()
     private val aspects = ConcurrentHashMap<Int, Float>()
     private var learnedAspect = 1.45f
-    private var recyclerWidth = 0
-    private var fallbackWidth = 1080
-    private var lastItemW = 1080
-    private var lastItemH = 1920
+    private var recycler: RecyclerView? = null
+    private var fallbackW = 1080
+    private var fallbackH = 1920
+
+    /** Item size the bound pages were last sized for; a layout at another size rebinds them. */
+    private var sizedW = 0
+    private var sizedH = 0
     private var layoutListener: View.OnLayoutChangeListener? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val spread = twoPage && mode == Mode.PAGED
     private val layout = PageLayout(spread, rtl)
@@ -157,23 +165,29 @@ class PageAdapter(
 
     inner class PageHolder(val container: View, val images: List<ZoomImageView>) :
         RecyclerView.ViewHolder(container) {
-        /** The page each image is showing or waiting for, and the coroutine waiting for it. */
-        val pages = IntArray(images.size) { NO_PAGE }
+        /** The decode each image is waiting for, and the coroutine waiting for it. */
+        internal val keys = arrayOfNulls<PageKey>(images.size)
         val waiters = arrayOfNulls<Job>(images.size)
+
+        /** The page each image shows, at whatever size, or [NO_PAGE]. */
+        val shown = IntArray(images.size) { NO_PAGE }
     }
 
     override fun getItemCount(): Int = strip.itemCount
 
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
-        recyclerWidth = recyclerView.width
-        val listener = View.OnLayoutChangeListener { v, left, _, right, _, _, _, _, _ ->
-            val width = right - left
-            if (width > 0 && width != recyclerWidth) {
-                recyclerWidth = width
-                if (mode == Mode.LONG_STRIP) notifyItemRangeChanged(0, itemCount)
+        recycler = recyclerView
+        val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+            val w = right - left
+            val h = bottom - top
+            if (w > 0 && h > 0 && (w != sizedW || h != sizedH)) {
+                sizedW = w
+                sizedH = h
+                // Pages are decoded for the item size: show them again at the new one,
+                // outside this layout pass.
+                mainHandler.post { if (!released) notifyItemRangeChanged(0, itemCount) }
             }
-            if (v.width > 0) fallbackWidth = v.width
         }
         layoutListener = listener
         recyclerView.addOnLayoutChangeListener(listener)
@@ -184,11 +198,23 @@ class PageAdapter(
         super.onDetachedFromRecyclerView(recyclerView)
         layoutListener?.let { recyclerView.removeOnLayoutChangeListener(it) }
         layoutListener = null
+        if (recycler === recyclerView) recycler = null
+    }
+
+    /** `[width, height]` of every item: the recycler's size, which items match, or a guess before it is measured. */
+    private fun itemSize(): IntArray {
+        val rv = recycler
+        val w = rv?.width?.takeIf { it > 0 } ?: fallbackW
+        val h = rv?.height?.takeIf { it > 0 } ?: fallbackH
+        return intArrayOf(w, h)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageHolder {
         val context = parent.context
-        if (parent.width > 0) fallbackWidth = parent.width
+        if (parent.width > 0 && parent.height > 0) {
+            fallbackW = parent.width
+            fallbackH = parent.height
+        }
         if (spread) {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -301,6 +327,7 @@ class PageAdapter(
         for (i in holder.images.indices) {
             stopWaiting(holder, i)
             holder.images[i].setImageDrawable(null)
+            holder.shown[i] = NO_PAGE
         }
     }
 
@@ -311,54 +338,70 @@ class PageAdapter(
         stopWaiting(holder, slot)
         if (pageIndex < 0 || pageIndex >= end) {
             image.setImageDrawable(null)
+            holder.shown[slot] = NO_PAGE
             return
         }
         image.colorFilter = Filters.colorFilter(filter)
         prepareContainer(holder, pageIndex)
 
-        val cached = cache.get(pageIndex)
+        val key = keyFor(pageIndex)
+        val cached = cache.get(key)
         if (cached != null) {
-            applyBitmap(image, cached)
+            applyBitmap(holder, slot, pageIndex, cached)
             return
         }
         failures[pageIndex]?.takeIf { it.permanent }?.let {
-            applyFailure(image, it)
+            applyFailure(holder, slot, it)
             return
         }
-        image.setImageDrawable(null)
+        // The page at its old size stays up until the new size arrives.
+        if (holder.shown[slot] != pageIndex) {
+            image.setImageDrawable(null)
+            holder.shown[slot] = NO_PAGE
+        }
 
-        // A spread row's slots may still have their old widths before layout: size
-        // from the row, which is the same for paired and lone pages.
-        val sized = if (spread) holder.container else image
-        lastItemW = if (sized.width > 0) sized.width else fallbackWidth
-        lastItemH = if (image.height > 0) image.height else 1920
-        val target = requestSize(pageIndex, lastItemW, lastItemH)
-        val entry = request(pageIndex, target)
+        val entry = request(key)
         entry.waiters++
-        holder.pages[slot] = pageIndex
+        holder.keys[slot] = key
         holder.waiters[slot] = scope.launch {
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
-                failures[pageIndex]?.let { applyFailure(image, it) }
+                failures[pageIndex]?.let { applyFailure(holder, slot, it) }
                 return@launch
             }
-            applyBitmap(image, bitmap)
+            applyBitmap(holder, slot, pageIndex, bitmap)
             updateLongStripAspect(holder, pageIndex, bitmap)
         }
     }
 
-    /** Forgets the page [slot] was waiting for; abandons its decode if nobody else wants it. */
+    /**
+     * The decode [page] needs now: its exact on-screen size for the current item size,
+     * fit mode and place in a spread, so it is drawn at 1:1.
+     */
+    private fun keyFor(page: Int): PageKey {
+        val (w, h) = itemSize()
+        sizedW = w
+        sizedH = h
+        val slot = when {
+            !spread || layout.shownAlone(page, end) -> PageTargets.Slot.ALONE
+            layout.slotOf(page, end) == 0 -> PageTargets.Slot.LEFT
+            else -> PageTargets.Slot.RIGHT
+        }
+        val view = PageTargets.viewSize(mode, spread, w, h, spacingPx, slot)
+        return PageKey(page, PageTargets.target(mode, fitMode, view[0], view[1], autoCrop))
+    }
+
+    /** Forgets the decode [slot] was waiting for; abandons it if nobody else wants it. */
     private fun stopWaiting(holder: PageHolder, slot: Int) {
         holder.waiters[slot]?.cancel()
         holder.waiters[slot] = null
-        val page = holder.pages[slot]
-        holder.pages[slot] = NO_PAGE
-        if (page == NO_PAGE) return
-        val entry = pending[page] ?: return
+        val key = holder.keys[slot] ?: return
+        holder.keys[slot] = null
+        val entry = pending[key] ?: return
         entry.waiters--
         if (entry.waiters <= 0 && !entry.prefetch && entry.deferred.isActive) {
             entry.deferred.cancel()
-            pending.remove(page)
+            pending.remove(key)
         }
     }
 
@@ -372,16 +415,20 @@ class PageAdapter(
         }
     }
 
-    private fun applyBitmap(image: ZoomImageView, bitmap: Bitmap) {
+    private fun applyBitmap(holder: PageHolder, slot: Int, page: Int, bitmap: Bitmap) {
+        val image = holder.images[slot]
         image.setImageBitmap(bitmap)
         image.setFitMode(fitMode)
+        holder.shown[slot] = page
     }
 
-    private fun applyFailure(image: ZoomImageView, failure: Failure) {
+    private fun applyFailure(holder: PageHolder, slot: Int, failure: Failure) {
+        val image = holder.images[slot]
         val res = image.resources
         val name = failure.name ?: res.getString(R.string.page_number, failure.index + 1)
         image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
         image.setFitMode(fitMode)
+        holder.shown[slot] = NO_PAGE
     }
 
     // ------------------------------------------------------------------ decoding
@@ -407,9 +454,10 @@ class PageAdapter(
         else -> true
     }
 
-    /** Starts (or joins) the background decode of [pageIndex]. Main thread only. */
-    private fun request(pageIndex: Int, target: Target): Pending {
-        pending[pageIndex]?.let { return it }
+    /** Starts (or joins) the background decode for [key]. Main thread only. */
+    private fun request(key: PageKey): Pending {
+        pending[key]?.let { return it }
+        val pageIndex = key.page
         val chapter = strip.chapterOf(pageIndex)
         val seg = chapter.value
         // Keep the chapter open while its page is being decoded, even if the strip
@@ -418,9 +466,9 @@ class PageAdapter(
         val gen = synchronized(results) { generation }
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, target, gen)
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target, gen)
                 if (bitmap != null && bitmap.width > 0) {
-                    synchronized(results) { if (gen == generation) cache.put(pageIndex, bitmap) }
+                    synchronized(results) { if (gen == generation) cache.put(key, bitmap) }
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
                 }
                 bitmap
@@ -428,10 +476,10 @@ class PageAdapter(
         }
         deferred.invokeOnCompletion { releaseLoad(seg) }
         val entry = Pending(deferred)
-        pending[pageIndex] = entry
+        pending[key] = entry
         deferred.invokeOnCompletion {
             // Runs on the decoder thread; hop back before touching [pending].
-            scope.launch { if (pending[pageIndex] === entry) pending.remove(pageIndex) }
+            scope.launch { if (pending[key] === entry) pending.remove(key) }
         }
         return entry
     }
@@ -442,8 +490,9 @@ class PageAdapter(
         for (k in 1..ahead) {
             val p = lastShown + k
             if (p >= end) break
-            if (cache.get(p) != null || pending[p] != null || failures[p]?.permanent == true) continue
-            request(p, requestSize(p, lastItemW, lastItemH)).prefetch = true
+            val key = keyFor(p)
+            if (cache.get(key) != null || pending[key] != null || failures[p]?.permanent == true) continue
+            request(key).prefetch = true
         }
     }
 
@@ -479,27 +528,9 @@ class PageAdapter(
     }
 
     private fun longStripHeight(page: Int): Int {
-        val width = if (recyclerWidth > 0) recyclerWidth else fallbackWidth
+        val width = itemSize()[0]
         val aspect = aspects[page] ?: learnedAspect
         return (width * aspect).toInt().coerceAtLeast(1)
-    }
-
-    /**
-     * Decode size for [page] on an item [itemW] x [itemH]: a page paired in a spread
-     * gets half the row, a lone one the whole row.
-     */
-    private fun requestSize(page: Int, itemW: Int, itemH: Int): Target {
-        val pageW = if (layout.shownAlone(page, end)) itemW else itemW / 2
-        val viewW = pageW.coerceAtLeast(360)
-        val viewH = itemH.coerceAtLeast(360)
-        val crop = autoCrop && mode != Mode.LONG_STRIP
-        return when {
-            mode == Mode.LONG_STRIP || mode == Mode.VERTICAL -> Target(viewW, 0, autoCrop = crop)
-            fitMode == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = crop)
-            fitMode == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = crop)
-            fitMode == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop = crop)
-            else -> Target(viewW, viewH, autoCrop = crop)
-        }
     }
 
     private fun learnAspect() {

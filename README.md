@@ -74,7 +74,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right or right-to-left (tap zones follow).
 - **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
-- **Fit modes:** fit screen, fit width, fit height, stretch.
+- **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
+  scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
+  the whole row for a lone page) and drawn pixel for pixel, unfiltered.
 - **Page filter:** none, invert, grayscale, high contrast, sepia.
 - **Auto-scroll** with adjustable speed (continuous in vertical / long-strip modes,
   timed page turns in paged mode); touching the screen takes over.

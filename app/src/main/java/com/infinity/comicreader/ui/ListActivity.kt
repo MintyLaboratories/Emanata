@@ -8,6 +8,7 @@ import android.provider.OpenableColumns
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.view.Menu
@@ -261,7 +262,10 @@ class ListActivity : AppCompatActivity() {
         ) {
             adapter.notifyDataSetChanged()
         }
-        if (s.groupFavorites != old.groupFavorites && mode == TAB_FAVORITES) applyFilterAndSort()
+        if (s.groupFavorites != old.groupFavorites && mode == TAB_FAVORITES) {
+            applyFilterAndSort()
+            classifyPending(allEntries.toList())
+        }
         if (s.pathView != old.pathView && mode == TAB_BROWSE) {
             pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
         }
@@ -510,20 +514,31 @@ class ListActivity : AppCompatActivity() {
         return list to kinds
     }
 
-    /** Classifies the favorites not classified yet, then shows them in their sections. */
+    /**
+     * Classifies the favorites not classified yet when they are grouped, moving them
+     * into their sections as they are found, at most every [CLASSIFY_PUBLISH_MS].
+     */
     private fun classifyPending(list: List<BookEntry>) {
+        if (!prefs.groupFavorites) return
         val pending = list.filter { it.path !in favoriteKinds }
         if (pending.isEmpty()) return
+        classifyJob?.cancel()
         classifyJob = lifecycleScope.launch {
-            val found = withContext(AppDispatchers.io) {
-                pending.associate { e ->
-                    val kind = FavoriteClassifier.classify(e.file, isRoot = roots.any { it.path == e.path })
-                    kindCache.put(e.path, e.lastModified, kind)
-                    e.path to kind
+            val found = HashMap<String, FavoriteKind>()
+            var shownAt = SystemClock.uptimeMillis()
+            for ((i, e) in pending.withIndex()) {
+                // Leaving the tab or listing again stops here, between favorites.
+                found[e.path] = withContext(AppDispatchers.io) {
+                    FavoriteClassifier.classify(e.file, isRoot = roots.any { it.path == e.path })
+                        .also { kindCache.put(e.path, e.lastModified, it) }
                 }
+                val now = SystemClock.uptimeMillis()
+                if (i < pending.lastIndex && now - shownAt < CLASSIFY_PUBLISH_MS) continue
+                favoriteKinds = favoriteKinds + found
+                found.clear()
+                shownAt = now
+                if (mode == TAB_FAVORITES) applyFilterAndSort()
             }
-            favoriteKinds = favoriteKinds + found
-            if (mode == TAB_FAVORITES) applyFilterAndSort()
         }
     }
 
@@ -1342,6 +1357,7 @@ class ListActivity : AppCompatActivity() {
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L
+        private const val CLASSIFY_PUBLISH_MS = 250L
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

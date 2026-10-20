@@ -10,9 +10,12 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.FavoriteKind
+import com.infinity.comicreader.data.FavoriteKindCache
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -95,5 +98,24 @@ class ListActivityFavoritesTest {
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
         idle()
         assertEquals(listOf("Solo"), rows(activity.findViewById(R.id.recycler)))
+    }
+
+    @Test
+    fun ungroupedFavoritesAreClassifiedOnceGrouped() {
+        val library = Library(context)
+        val solo = folder("Solo", "x.cbz")
+        library.toggleFavorite(solo.absolutePath)
+        val prefs = Prefs(context)
+        prefs.groupFavorites = false
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
+        idle()
+        assertNull(FavoriteKindCache(context).get(solo.absolutePath, solo.lastModified()))
+
+        prefs.groupFavorites = true
+        idle()
+        assertEquals(FavoriteKind.SET, FavoriteKindCache(context).get(solo.absolutePath, solo.lastModified()))
+        assertEquals(listOf("Sets", "Solo"), rows(activity.findViewById(R.id.recycler)))
     }
 }

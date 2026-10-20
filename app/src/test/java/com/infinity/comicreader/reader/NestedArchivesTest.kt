@@ -66,14 +66,28 @@ class NestedArchivesTest {
     }
 
     @Test
-    fun innerArchiveBesideLooseImagesSortsAsFolder() {
+    fun innerArchiveBesideLooseImagesSortsByName() {
         val f = Fixtures.zip(
             File(tmp.root, "book.cbz"),
             entry("b.jpg"),
             entry("a.cbz", Fixtures.zipBytes(entry("z.jpg"))),
-            entry("a.jpg")
+            entry("a.jpg"),
+            entry("a2.jpg")
         )
-        open(f).use { assertEquals(listOf("a.jpg", "a.cbz/z.jpg", "b.jpg"), it.pagePaths) }
+        open(f).use { assertEquals(listOf("a.cbz/z.jpg", "a.jpg", "a2.jpg", "b.jpg"), it.pagePaths) }
+    }
+
+    @Test
+    fun innerArchivesSortByFileName() {
+        val f = Fixtures.zip(
+            File(tmp.root, "book.cbz"),
+            entry("Issue 1.5.cbz", Fixtures.zipBytes(entry("01.jpg"))),
+            entry("Issue 1 extra.cbz", Fixtures.zipBytes(entry("01.jpg"))),
+            entry("Issue 1.cbz", Fixtures.zipBytes(entry("01.jpg")))
+        )
+        open(f).use {
+            assertEquals(listOf("Issue 1.cbz/01.jpg", "Issue 1 extra.cbz/01.jpg", "Issue 1.5.cbz/01.jpg"), it.pagePaths)
+        }
     }
 
     @Test

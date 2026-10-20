@@ -34,18 +34,12 @@ class ArchiveSource(
     /** Adds the pages of [reader] to [out] in order; true once [firstPageOnly] is satisfied. */
     private fun collect(reader: ArchiveReader, key: String, prefix: String, depth: Int, out: MutableList<Page>): Boolean {
         val canNest = nested != null && depth < NestedArchives.MAX_DEPTH
-        // An inner archive sorts as the folder its pages appear in.
+        // An inner archive sorts by its file name, like the books of a folder.
         val items = reader.entries
             .filter { !ArchiveJunk.isJunk(it.path, it.size) }
-            .mapNotNull { e ->
-                when {
-                    Formats.isImageName(e.path) -> e to e.path
-                    canNest && Formats.isArchiveName(e.path) -> e to e.path + "/"
-                    else -> null
-                }
-            }
-            .sortedWith(compareBy(NaturalOrder) { it.second })
-        for ((entry, sortKey) in items) {
+            .filter { Formats.isImageName(it.path) || (canNest && Formats.isArchiveName(it.path)) }
+            .sortedWith(compareBy(NaturalOrder) { it.path })
+        for (entry in items) {
             if (Formats.isImageName(entry.path)) {
                 out += Page(prefix + entry.path, reader, entry)
                 if (firstPageOnly) return true
@@ -53,7 +47,7 @@ class ArchiveSource(
             }
             val inner = nested?.open(reader, key, entry) ?: continue
             readers += inner.reader
-            if (collect(inner.reader, inner.key, prefix + sortKey, depth + 1, out)) return true
+            if (collect(inner.reader, inner.key, prefix + entry.path + "/", depth + 1, out)) return true
         }
         return false
     }

@@ -17,6 +17,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicIntegerArray
 
@@ -131,6 +133,47 @@ class PageAdapterFailureTest {
     @Test
     fun lowMemoryIsRetriedOnNextBind() =
         assertRetriedAfter(DecodeException("Not enough memory for this JPEG image", transient = true))
+
+    /** The first decode waits for [release], then fails; later ones succeed. */
+    private class StalledSource : PageSource {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val loads = AtomicInteger()
+        val done = AtomicInteger()
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+            try {
+                if (loads.incrementAndGet() == 1) {
+                    entered.countDown()
+                    release.await(5, TimeUnit.SECONDS)
+                    throw DecodeException("Could not decode this JPEG image")
+                }
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            } finally {
+                done.incrementAndGet()
+            }
+        }
+
+        override fun close() {}
+    }
+
+    @Test
+    fun failureFromOldDecodeSizeIsDropped() {
+        val source = StalledSource()
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
+        assertTrue(source.entered.await(5, TimeUnit.SECONDS))
+
+        // The decode size changes while the old decode is still running, then it fails.
+        adapter.fitMode = ZoomImageView.FitMode.WIDTH
+        source.release.countDown()
+        idleUntil { source.done.get() == 1 }
+
+        val holder = bindAndWait(adapter, 0)
+        assertTrue(holder.images[0].drawable is BitmapDrawable)
+        assertEquals(2, source.loads.get())
+        adapter.release()
+    }
 
     @Test
     fun goodPageShowsItsBitmap() {

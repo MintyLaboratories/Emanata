@@ -113,6 +113,13 @@ class PageAdapter(
     private class Failure(val index: Int, val name: String?, val reason: String, val permanent: Boolean)
 
     private val failures = ConcurrentHashMap<Int, Failure>()
+
+    /**
+     * Bumped whenever decoded results are thrown away; a decode started under an older
+     * value keeps its result out of [cache] and [failures]. Guarded by [results].
+     */
+    private var generation = 0
+    private val results = Any()
     private val aspects = ConcurrentHashMap<Int, Float>()
     private var learnedAspect = 1.45f
     private var recyclerWidth = 0
@@ -381,14 +388,15 @@ class PageAdapter(
     private fun cacheBytes(): Int =
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
 
-    /** Page [index] of [source], shown as [pageIndex]; null after recording why in [failures]. */
-    private fun decode(source: PageSource, index: Int, pageIndex: Int, reqW: Int, reqH: Int): Bitmap? = try {
+    /** Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for generation [gen]. */
+    private fun decode(source: PageSource, index: Int, pageIndex: Int, reqW: Int, reqH: Int, gen: Int): Bitmap? = try {
         val raw = source.loadPage(index, reqW, reqH)
         if (autoCrop && mode != Mode.LONG_STRIP) BitmapUtils.autoCrop(raw) else raw
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
         val name = runCatching { source.pageName(index) }.getOrNull()
-        failures[pageIndex] = Failure(index, name, t.message ?: t.javaClass.simpleName, isPermanent(t))
+        val failure = Failure(index, name, t.message ?: t.javaClass.simpleName, isPermanent(t))
+        synchronized(results) { if (gen == generation) failures[pageIndex] = failure }
         null
     }
 
@@ -407,11 +415,12 @@ class PageAdapter(
         // Keep the chapter open while its page is being decoded, even if the strip
         // rolls on past it in the meantime.
         seg.loads.incrementAndGet()
+        val gen = synchronized(results) { generation }
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, reqW, reqH)
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, reqW, reqH, gen)
                 if (bitmap != null && bitmap.width > 0) {
-                    cache.put(pageIndex, bitmap)
+                    synchronized(results) { if (gen == generation) cache.put(pageIndex, bitmap) }
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
                 }
                 bitmap
@@ -444,8 +453,11 @@ class PageAdapter(
         // Cancelling can complete handlers inline, which edit [pending]: iterate a copy.
         pending.values.toList().forEach { it.deferred.cancel() }
         pending.clear()
-        cache.evictAll()
-        failures.clear()
+        synchronized(results) {
+            generation++
+            cache.evictAll()
+            failures.clear()
+        }
     }
 
     // ------------------------------------------------------------------ long strip

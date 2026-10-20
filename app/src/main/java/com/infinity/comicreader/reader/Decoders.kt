@@ -51,43 +51,87 @@ object Decoders {
 
     fun decode(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap {
         val kind = ImageKind.sniff(bytes)
-        val label = kind?.name ?: "unrecognized"
-        return try {
+        return reported(kind) {
             when {
                 kind == ImageKind.JXL -> decodeJxl(bytes, reqW, reqH, capPixels)
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> decodePlatform(bytes, reqW, reqH, capPixels)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
+                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), reqW, reqH, capPixels)
                 else -> decodeLegacy(bytes, reqW, reqH, capPixels)
             }
-        } catch (e: DecodeException) {
-            throw e
-        } catch (e: LinkageError) {
-            throw DecodeException("No $label decoder on this device", e)
-        } catch (e: OutOfMemoryError) {
-            throw DecodeException("Not enough memory for this $label image", e, transient = true)
-        } catch (e: Exception) {
-            throw DecodeException("Could not decode this $label image", e)
         }
     }
 
     fun decode(input: InputStream, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap =
         decode(BitmapUtils.readCapped(input), reqW, reqH, capPixels)
 
-    fun decode(file: File, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap =
-        file.inputStream().use { decode(it, reqW, reqH, capPixels) }
+    /** Streams [file] to the platform decoder; JPEG XL, and any image below API 28, is read whole first. */
+    fun decode(file: File, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap {
+        val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
+        if (kind == ImageKind.JXL || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return file.inputStream().use { decode(it, reqW, reqH, capPixels) }
+        }
+        return reported(kind) { decodePlatform(ImageDecoder.createSource(file), reqW, reqH, capPixels) }
+    }
 
     /** Intrinsic `[width, height]` as a decode would return it at full size, without decoding pixels; null if unknown. */
     fun size(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
-        // An eXIf chunk may rotate the decode, so only the platform's reading matches it then.
-        ImageKind.PNG ->
-            if (ImageHeaders.pngMayHaveExif(bytes)) platformSize(bytes) ?: ImageHeaders.pngSize(bytes)
-            else ImageHeaders.pngSize(bytes) ?: platformSize(bytes)
+        ImageKind.PNG -> pngSize(bytes) { platformSize(bytes) }
         ImageKind.JXL -> jxlSize(bytes)
         else -> platformSize(bytes)
     }
 
     fun size(input: InputStream): IntArray? = size(BitmapUtils.readCapped(input))
 
-    fun size(file: File): IntArray? = runCatching { file.inputStream().use { size(it) } }.getOrNull()
+    /** Like [size] on bytes, reading only the first [ImageHeaders.PREFIX_BYTES] unless a JPEG XL header lies beyond. */
+    fun size(file: File): IntArray? = runCatching {
+        val head = readPrefix(file, ImageHeaders.PREFIX_BYTES)
+        when (ImageKind.sniff(head)) {
+            ImageKind.PNG -> pngSize(head) { platformSize(file) }
+            ImageKind.JXL -> ImageHeaders.jxlSize(head) ?: file.inputStream().use { jxlSize(BitmapUtils.readCapped(it)) }
+            else -> platformSize(file)
+        }
+    }.getOrNull()
+
+    /** An eXIf chunk may rotate the decode, so only the [platform] reading matches it then. */
+    private inline fun pngSize(head: ByteArray, platform: () -> IntArray?): IntArray? =
+        if (ImageHeaders.pngMayHaveExif(head)) platform() ?: ImageHeaders.pngSize(head)
+        else ImageHeaders.pngSize(head) ?: platform()
+
+    /** Up to the first [max] bytes of [file]. */
+    private fun readPrefix(file: File, max: Int): ByteArray = file.inputStream().use { input ->
+        val buf = ByteArray(max)
+        var n = 0
+        while (n < max) {
+            val read = input.read(buf, n, max - n)
+            if (read < 0) break
+            n += read
+        }
+        if (n == max) buf else buf.copyOf(n)
+    }
+
+    /** Runs a decode of a [kind] image, turning every failure into a [DecodeException] that says why. */
+    private inline fun reported(kind: ImageKind?, decode: () -> Bitmap): Bitmap {
+        val label = kind?.name ?: "unrecognized"
+        return try {
+            decode()
+        } catch (e: DecodeException) {
+            throw e
+        } catch (e: LinkageError) {
+            throw DecodeException("No $label decoder on this device", e)
+        } catch (e: OutOfMemoryError) {
+            throw DecodeException("Not enough memory for this $label image", e, transient = true)
+        } catch (e: IOException) {
+            if (isReadError(e)) throw DecodeException("Could not read this $label image", e, transient = true)
+            throw DecodeException("Could not decode this $label image", e)
+        } catch (e: Exception) {
+            throw DecodeException("Could not decode this $label image", e)
+        }
+    }
+
+    /** A failure to read the source, which may pass, rather than bytes that do not decode. */
+    private fun isReadError(e: IOException): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.P || e !is ImageDecoder.DecodeException ||
+            e.error == ImageDecoder.DecodeException.SOURCE_EXCEPTION
 
     /**
      * Power-of-two sample size that keeps both dimensions at or above the target,
@@ -133,8 +177,8 @@ object Decoders {
     // ------------------------------------------------------------------ platform
 
     @RequiresApi(Build.VERSION_CODES.P)
-    private fun decodePlatform(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap =
-        eightBit(ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+    private fun decodePlatform(source: ImageDecoder.Source, reqW: Int, reqH: Int, capPixels: Long): Bitmap =
+        eightBit(ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             // Software pixels: auto-crop and export read them back.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             decoder.setTargetSampleSize(sampleSize(info.size.width, info.size.height, reqW, reqH, capPixels))
@@ -160,7 +204,8 @@ object Decoders {
     }
 
     private fun decodeLegacy(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
-        val bounds = legacyBounds(bytes) ?: throw DecodeException("Unsupported image format on this Android version")
+        val bounds = legacyBounds { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+            ?: throw DecodeException("Unsupported image format on this Android version")
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sampleSize(bounds[0], bounds[1], reqW, reqH, capPixels)
             inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -170,17 +215,22 @@ object Decoders {
     }
 
     private fun platformSize(bytes: ByteArray): IntArray? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) headerSize(bytes) else legacyBounds(bytes)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) headerSize(ImageDecoder.createSource(ByteBuffer.wrap(bytes)))
+        else legacyBounds { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+
+    private fun platformSize(file: File): IntArray? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) headerSize(ImageDecoder.createSource(file))
+        else legacyBounds { BitmapFactory.decodeFile(file.path, it) }
 
     /** Stops [ImageDecoder] once the header is read; shared, so it keeps no stack trace or suppressed exceptions. */
     private object HeaderRead : RuntimeException(null, null, false, false)
 
     /** Size from [ImageDecoder]'s header pass, which already applies EXIF orientation like the decode. */
     @RequiresApi(Build.VERSION_CODES.P)
-    private fun headerSize(bytes: ByteArray): IntArray? {
+    private fun headerSize(source: ImageDecoder.Source): IntArray? {
         var size: IntArray? = null
         try {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { _, info, _ ->
+            ImageDecoder.decodeBitmap(source) { _, info, _ ->
                 size = intArrayOf(info.size.width, info.size.height)
                 throw HeaderRead
             }
@@ -192,9 +242,10 @@ object Decoders {
         return size?.takeIf { it[0] > 0 && it[1] > 0 }
     }
 
-    private fun legacyBounds(bytes: ByteArray): IntArray? {
+    /** Size from a [BitmapFactory] bounds-only pass, which [decode] runs with the options it is given. */
+    private inline fun legacyBounds(decode: (BitmapFactory.Options) -> Unit): IntArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        decode(bounds)
         return if (bounds.outWidth > 0 && bounds.outHeight > 0) intArrayOf(bounds.outWidth, bounds.outHeight) else null
     }
 }

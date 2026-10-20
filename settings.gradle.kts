@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ComicReader"
+rootProject.name = "Emanata"
 include(":app")

@@ -89,7 +89,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
 
         findPreference<Preference>("pref_backup")?.setOnPreferenceClickListener {
-            exportLauncher.launch("comicreader-backup.json")
+            exportLauncher.launch("emanata-backup.json")
             true
         }
 

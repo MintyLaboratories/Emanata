@@ -21,7 +21,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.infinity.comicreader"
+        applicationId = "minty.emanata"
         minSdk = 26
         targetSdk = 34
         versionCode = 4

@@ -35,8 +35,8 @@ class NestedArchives(
     private val cancelled: () -> Boolean = { false },
     private val copy: Boolean = true
 ) {
-    /** An opened inner archive and the identity its own inner archives are keyed by. */
-    class Opened(val reader: ArchiveReader, val key: String)
+    /** An opened inner archive, its cached [file], and the identity its own inner archives are keyed by. */
+    class Opened(val reader: ArchiveReader, val file: File, val key: String)
 
     /** An inner archive cannot be opened now, though a later open may succeed. */
     open class UnavailableException(message: String, cause: Throwable? = null) : IOException(message, cause)
@@ -69,8 +69,12 @@ class NestedArchives(
             Log.w(TAG, "Could not open nested archive ${entry.path}", e)
             null
         } ?: return null
-        return Opened(reader, key)
+        return Opened(reader, file, key)
     }
+
+    /** Opens again a copy that [open] returned, while this instance still holds it. */
+    fun reopen(file: File): ArchiveReader =
+        ArchiveReader.open(file, charsetName) ?: throw IOException("Not an archive: ${file.name}")
 
     private fun extract(outer: ArchiveReader, entry: ArchiveEntry, key: String): File? {
         val limit = if (entry.size >= 0) entry.size else maxEntryBytes

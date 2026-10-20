@@ -96,6 +96,49 @@ class NestedArchivesTest {
     }
 
     @Test
+    fun fewInnerArchivesStayOpen() {
+        val issues = (1..6).map { n -> entry("Issue $n.cbz", Fixtures.zipBytes(entry("01.jpg", "issue$n".toByteArray()))) }
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), *issues.toTypedArray())
+        ArchiveSource(ZipReader(f, "UTF-8"), NestedArchives.keyOf(f), nested(), maxOpenInner = 2).use { src ->
+            assertTrue(src.openInnerCount <= 2)
+            for (i in 0 until 6) assertEquals("issue${i + 1}", src.text(i))
+            assertEquals(2, src.openInnerCount)
+            // Closed for room, reopened from its copy.
+            assertEquals("issue1", src.text(0))
+            assertEquals(2, src.openInnerCount)
+        }
+    }
+
+    @Test
+    fun concurrentReadsSurviveEviction() {
+        val issues = (1..4).map { n -> entry("Issue $n.cb7", sevenZipBytes(entry("01.jpg", "issue$n".toByteArray()))) }
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), *issues.toTypedArray())
+        val failures = Collections.synchronizedList(ArrayList<Throwable>())
+        ArchiveSource(ZipReader(f, "UTF-8"), NestedArchives.keyOf(f), nested(), maxOpenInner = 1).use { src ->
+            List(4) { t ->
+                thread {
+                    try {
+                        repeat(50) { i ->
+                            val page = (t + i) % 4
+                            assertEquals("issue${page + 1}", src.text(page))
+                        }
+                    } catch (e: Throwable) {
+                        failures += e
+                    }
+                }
+            }.forEach { it.join() }
+        }
+        if (failures.isNotEmpty()) throw failures.first()
+    }
+
+    @Test(expected = IOException::class)
+    fun closedSourceDoesNotReopen() {
+        val src = open(omnibus())
+        src.close()
+        src.text(4)
+    }
+
+    @Test
     fun copiesAreReused() {
         val f = omnibus()
         open(f).use { }

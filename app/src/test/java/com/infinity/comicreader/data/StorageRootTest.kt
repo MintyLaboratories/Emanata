@@ -66,6 +66,15 @@ class StorageRootTest {
     }
 
     @Test
+    fun describeDropsTheDeviceRootAndNamesOthers() {
+        assertEquals("attic/Comics", StorageRoot.describe("/storage/emulated/0/attic/Comics", roots))
+        assertEquals("", StorageRoot.describe("/storage/emulated/0", roots))
+        assertEquals("SD card/Comics/A", StorageRoot.describe("/storage/1234-ABCD/Comics/A", roots))
+        assertEquals("SD card", StorageRoot.describe("/storage/1234-ABCD", roots))
+        assertEquals("/mnt/media", StorageRoot.describe("/mnt/media", roots))
+    }
+
+    @Test
     fun aSystemFolderIsOneCrumb() {
         assertEquals(listOf(Crumb("/", "/", true)), Crumbs.of("/", roots))
         assertEquals(listOf(Crumb("storage", "/storage", true)), Crumbs.of("/storage", roots))

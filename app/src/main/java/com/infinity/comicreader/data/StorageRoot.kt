@@ -27,6 +27,21 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
          */
         fun bound(path: String, roots: List<StorageRoot>): StorageRoot? = of(path, roots) ?: implied(path)
 
+        /**
+         * [path] as a subtitle reads it: below the device's storage without its root
+         * (`Comics/Series`, empty for the root itself), on another root after the
+         * root's name (`SD card/Comics`), and in full under no root.
+         */
+        fun describe(path: String, roots: List<StorageRoot>): String {
+            val root = of(path, roots) ?: return path
+            val below = root.segments(path).joinToString("/")
+            return when {
+                root.kind == Kind.DEVICE -> below
+                below.isEmpty() -> root.name
+                else -> root.name + "/" + below
+            }
+        }
+
         private val SYSTEM_TOPS = setOf("/", "/storage", "/storage/emulated")
 
         private fun implied(path: String): StorageRoot? {

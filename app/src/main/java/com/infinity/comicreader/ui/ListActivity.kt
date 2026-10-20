@@ -420,16 +420,8 @@ class ListActivity : AppCompatActivity() {
 
     private fun snapshot() = Snapshot(library.favoriteSet(), library.readSet(), library.historyMap())
 
-    /** A folder's path relative to the shared storage root, e.g. "Comics/One Piece". */
-    private fun relativePath(dir: File): String {
-        val root = Environment.getExternalStorageDirectory().absolutePath
-        val path = dir.absolutePath
-        return when {
-            path == root -> ""
-            path.startsWith("$root/") -> path.removePrefix("$root/")
-            else -> path
-        }
-    }
+    /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
+    private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
 
     /** Items a user would see inside [dir]: sub-folders and openable files, minus hidden ones. */
     private fun visibleChildren(dir: File): List<File> {
@@ -660,7 +652,7 @@ class ListActivity : AppCompatActivity() {
         adapter.header = dir?.let {
             BookAdapter.Header(
                 title = getString(R.string.recent),
-                subtitle = relativePath(it).ifEmpty { it.absolutePath },
+                subtitle = relativePath(it).ifEmpty { StorageRoot.of(it.absolutePath, roots)?.name ?: it.absolutePath },
                 iconRes = R.drawable.ic_history,
                 onClick = { loadDirectory(it) }
             )

@@ -98,8 +98,8 @@ data class ReaderSettings(
  * screen wrote it, so consumers re-apply what changed live or when they start
  * again. Theme and language are not here: they apply by recreating activities.
  */
-class SettingsRepository internal constructor(context: Context) {
-    private val prefs = Prefs(context)
+class SettingsRepository internal constructor(private val app: Context) {
+    private val prefs = Prefs(app)
 
     private val _list = MutableStateFlow(ListSettings.from(prefs))
     val list: StateFlow<ListSettings> = _list.asStateFlow()
@@ -121,9 +121,13 @@ class SettingsRepository internal constructor(context: Context) {
         @Volatile
         private var instance: SettingsRepository? = null
 
-        fun get(context: Context): SettingsRepository =
-            instance ?: synchronized(this) {
-                instance ?: SettingsRepository(context.applicationContext).also { instance = it }
+        /** One per application object; tests start a fresh application for each case. */
+        fun get(context: Context): SettingsRepository {
+            val app = context.applicationContext
+            instance?.takeIf { it.app === app }?.let { return it }
+            return synchronized(this) {
+                instance?.takeIf { it.app === app } ?: SettingsRepository(app).also { instance = it }
             }
+        }
     }
 }

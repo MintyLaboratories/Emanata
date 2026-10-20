@@ -120,6 +120,11 @@
             app:summary="@string/pref_auto_crop_desc"
             app:title="@string/menu_auto_crop" />
         <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_linear_light"
+            app:summary="@string/pref_linear_light_desc"
+            app:title="@string/pref_linear_light" />
+        <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_per_series"
             app:summary="@string/pref_per_series_desc"

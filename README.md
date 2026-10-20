@@ -116,6 +116,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - Per-app language: system, English, 한국어, 日本語, Русский.
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).
 - Default reading direction, page mode, fit, filter, page spacing, brightness.
+- **Linear-light scaling** (off by default): pages and covers are scaled in
+  linear light, so halftones and screentones keep their brightness; thin dark
+  lines come out lighter.
 - Reader: resume where I left off, ask whether to resume or start from the
   first page, and open the next chapter automatically when a chapter ends.
 - Gestures (tap zones, volume keys, brightness drag, double-tap zoom).

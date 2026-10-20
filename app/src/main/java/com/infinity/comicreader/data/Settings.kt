@@ -19,6 +19,7 @@ data class ListSettings(
     val pathView: Boolean,
     val statusBar: Boolean,
     val quickFab: Boolean,
+    val linearLight: Boolean,
     val charset: String
 ) {
     companion object {
@@ -34,6 +35,7 @@ data class ListSettings(
             pathView = p.listPathView,
             statusBar = p.listStatusBar,
             quickFab = p.listQuickFab,
+            linearLight = p.linearLight,
             charset = p.charset
         )
     }
@@ -55,6 +57,7 @@ data class ReaderSettings(
     val twoPage: Boolean,
     val nightFilter: Boolean,
     val autoCrop: Boolean,
+    val linearLight: Boolean,
     val preload: Int,
     val autoSpeed: Int,
     val perSeries: Boolean,
@@ -80,6 +83,7 @@ data class ReaderSettings(
             twoPage = p.twoPage,
             nightFilter = p.nightFilter,
             autoCrop = p.autoCrop,
+            linearLight = p.linearLight,
             preload = p.preload,
             autoSpeed = p.autoSpeed,
             perSeries = p.perSeries,

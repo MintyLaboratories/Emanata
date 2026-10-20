@@ -109,6 +109,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_AUTO_CROP, false)
         set(v) = put(KEY_AUTO_CROP, v)
 
+    /** Scale images in linear light rather than in sRGB values. */
+    var linearLight: Boolean
+        get() = bool(KEY_LINEAR_LIGHT, false)
+        set(v) = put(KEY_LINEAR_LIGHT, v)
+
     /** How many pages ahead to decode (0 = off). Stored as a string by the list preference. */
     var preload: Int
         get() = str(KEY_PRELOAD, "2").toIntOrNull()?.coerceIn(0, 6) ?: 2
@@ -277,6 +282,7 @@ class Prefs(context: Context) {
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_speed"
         private const val KEY_PER_SERIES = "pref_per_series"
+        private const val KEY_LINEAR_LIGHT = "pref_linear_light"
 
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -284,7 +290,8 @@ class Prefs(context: Context) {
             KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONES, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
-            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS
+            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
+            KEY_LINEAR_LIGHT
         )
     }
 }

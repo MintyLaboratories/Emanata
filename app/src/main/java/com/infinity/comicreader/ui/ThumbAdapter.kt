@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 class ThumbAdapter(
     private val source: PageSource,
     private val currentPage: Int,
+    private val linear: Boolean = false,
     private val onPick: (Int) -> Unit
 ) : RecyclerView.Adapter<ThumbAdapter.Holder>() {
 
@@ -73,7 +74,7 @@ class ThumbAdapter(
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
                     try {
-                        source.loadPage(position, Target(THUMB_W, THUMB_H))
+                        source.loadPage(position, Target(THUMB_W, THUMB_H, linear = linear))
                     } catch (t: Throwable) {
                         Log.w(TAG, "Failed to load thumbnail $position", t)
                         null

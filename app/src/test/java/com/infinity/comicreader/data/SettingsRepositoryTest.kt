@@ -108,6 +108,16 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun linearLightIsOffByDefaultAndReachesBothScreens() {
+        assertFalse(repo.reader.value.linearLight)
+        PreferenceManager.getDefaultSharedPreferences(context).edit().putBoolean("pref_linear_light", true).apply()
+        assertTrue(repo.reader.value.linearLight)
+        assertTrue(repo.list.value.linearLight)
+        // Backed up and restored like every other setting.
+        assertEquals(true, prefs.exportAll()["pref_linear_light"])
+    }
+
+    @Test
     fun getReturnsOneInstance() {
         assertSame(SettingsRepository.get(context), SettingsRepository.get(context))
     }

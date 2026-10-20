@@ -184,12 +184,13 @@ class BookAdapter(
         if (prefs.thumbnails && request != null) {
             val appContext = context.applicationContext
             val charset = prefs.charset
+            val linear = prefs.linearLight
             val (reqW, reqH) = request
             val target = position
             holder.job = scope.launch {
                 val bitmap = withContext(AppDispatchers.io) {
                     gate.withPermit {
-                        runCatching { Thumbs.load(appContext, item, charset, reqW, reqH) }.getOrNull()
+                        runCatching { Thumbs.load(appContext, item, charset, reqW, reqH, linear) }.getOrNull()
                     }
                 }
                 if (bitmap != null && holder.bindingAdapterPosition == target) {

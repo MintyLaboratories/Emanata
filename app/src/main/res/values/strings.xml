@@ -228,6 +228,8 @@
 
     <string name="pref_cat_data">Your data</string>
     <string name="pref_auto_crop_desc">Trim blank borders in paged and vertical modes</string>
+    <string name="pref_linear_light">Linear-light scaling</string>
+    <string name="pref_linear_light_desc">Scale pages and covers in linear light: halftones and screentones keep their brightness, thin dark lines come out lighter</string>
     <string name="pref_per_series">Per-folder layout</string>
     <string name="pref_per_series_desc">Let the reader menu remember mode, direction, fit and spread for a folder</string>
     <string name="pref_preload">Preload pages</string>

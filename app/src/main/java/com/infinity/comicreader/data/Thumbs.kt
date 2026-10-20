@@ -38,10 +38,10 @@ object Thumbs {
         "${entry.path}|${entry.size}|${entry.lastModified}|${entry.isDir}"
 
     /** Blocking — call from a background dispatcher. Returns null when no cover exists. */
-    fun load(context: Context, entry: BookEntry, charset: String, reqW: Int, reqH: Int): Bitmap? {
+    fun load(context: Context, entry: BookEntry, charset: String, reqW: Int, reqH: Int, linear: Boolean = false): Bitmap? {
         val boxW = ThumbSizing.tier(reqW)
         val boxH = ThumbSizing.tier(reqH)
-        val k = "${key(entry)}|${boxW}x$boxH"
+        val k = "${key(entry)}|${boxW}x$boxH" + if (linear) "|linear" else ""
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
@@ -53,7 +53,7 @@ object Thumbs {
             }
         }
 
-        val bitmap = generate(entry, charset, context.cacheDir, Target(boxW, boxH, Fit.COVER, capPixels = THUMB_CAP_PIXELS))
+        val bitmap = generate(entry, charset, context.cacheDir, Target(boxW, boxH, Fit.COVER, linear = linear, capPixels = THUMB_CAP_PIXELS))
             ?: return null
         memory.put(k, bitmap)
         runCatching {

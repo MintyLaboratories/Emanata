@@ -52,7 +52,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * read error is tried again the next time it is shown.
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
- * instance whenever the mode, spread, reading direction or [autoCrop] changes.
+ * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
+ * (linear-light scaling) changes.
  *
  * Vertical and long-strip layouts may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
@@ -67,6 +68,7 @@ class PageAdapter(
     private val rtl: Boolean = false,
     private val onVerticalDrag: ((Float) -> Unit)? = null,
     private val autoCrop: Boolean = false,
+    private val linear: Boolean = false,
     private val preload: Int = 2
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
@@ -388,7 +390,7 @@ class PageAdapter(
             else -> PageTargets.Slot.RIGHT
         }
         val view = PageTargets.viewSize(mode, spread, w, h, spacingPx, slot)
-        return PageKey(page, PageTargets.target(mode, fitMode, view[0], view[1], autoCrop))
+        return PageKey(page, PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear))
     }
 
     /** Forgets the decode [slot] was waiting for; abandons it if nobody else wants it. */

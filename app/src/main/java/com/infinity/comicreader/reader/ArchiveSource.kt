@@ -13,7 +13,7 @@ class ArchiveSource(private val reader: ArchiveReader) : PageSource {
 
     private val pages: List<Page> = try {
         reader.entries
-            .filter { Formats.isImageName(it.path) }
+            .filter { Formats.isImageName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }
             .map { Page(it.path, it) }
             .sortedWith(compareBy(NaturalOrder) { it.path })
     } catch (t: Throwable) {

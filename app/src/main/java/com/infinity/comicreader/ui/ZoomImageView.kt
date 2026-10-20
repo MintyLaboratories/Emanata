@@ -1,10 +1,14 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.util.AttributeSet
+import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -15,7 +19,8 @@ import kotlin.math.roundToInt
 /**
  * Image view with pinch-to-zoom, panning, double-tap zoom and configurable fit modes.
  * Uses [ScaleType.MATRIX] and manipulates the image matrix directly; at 1:1 the
- * bitmap is drawn unfiltered on whole pixels ([applyMatrix]).
+ * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); at any other scale
+ * through Lanczos3 on the GPU ([LanczosShader], API 33+), or bilinear below that.
  *
  * [onTap] receives the tap position as a fraction of the view width so callers can
  * implement left/centre/right tap zones. [onVerticalDrag] receives the vertical
@@ -145,7 +150,7 @@ class ZoomImageView @JvmOverloads constructor(
         applyMatrix()
     }
 
-    private fun zoomTo(target: Float, focusX: Float, focusY: Float) {
+    internal fun zoomTo(target: Float, focusX: Float, focusY: Float) {
         val clamped = target.coerceIn(minScale, maxScale)
         val factor = clamped / currentScale
         currentScale = clamped
@@ -209,6 +214,42 @@ class ZoomImageView @JvmOverloads constructor(
     /** True when the content is drawn at 1:1 without filtering; for tests. */
     internal val drawsOneToOne: Boolean
         get() = (drawable as? BitmapDrawable)?.isFilterBitmap == false
+
+    /** The bitmap to draw through [LanczosShader]: a scaled one, where the GPU filter supports it. */
+    internal val shadedBitmap: Bitmap?
+        get() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
+            val d = drawable as? BitmapDrawable ?: return null
+            if (!d.isFilterBitmap) return null
+            return d.bitmap?.takeUnless { it.isRecycled }
+        }
+
+    private var lanczos: LanczosShader? = null
+    private var shaderFailed = false
+
+    override fun onDraw(canvas: Canvas) {
+        val bitmap = shadedBitmap
+        if (bitmap == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            super.onDraw(canvas)
+            return
+        }
+        val shader = lanczos ?: runCatching { LanczosShader() }
+            .onFailure {
+                Log.w(TAG, "Lanczos3 shader unavailable, drawing bilinear", it)
+                shaderFailed = true
+            }
+            .getOrNull()?.also { lanczos = it }
+        if (shader == null) {
+            super.onDraw(canvas)
+            return
+        }
+        val d = drawable as BitmapDrawable
+        val saved = canvas.save()
+        canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+        canvas.concat(drawMatrix)
+        canvas.drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), shader.paint(bitmap, d.colorFilter, d.paint.alpha))
+        canvas.restoreToCount(saved)
+    }
 
     override fun performClick(): Boolean {
         super.performClick()
@@ -286,6 +327,7 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     private companion object {
+        const val TAG = "ZoomImageView"
         const val EDGE_SLOP = 2f
 
         /** Scale error below which the content counts as 1:1. */

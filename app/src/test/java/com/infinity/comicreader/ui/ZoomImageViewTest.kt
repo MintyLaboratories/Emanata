@@ -9,6 +9,8 @@ import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,5 +67,24 @@ class ZoomImageViewTest {
     @Test
     fun scaledBitmapIsFiltered() {
         assertFalse(view(1848, 2960, 924, 1386, ZoomImageView.FitMode.SCREEN).drawsOneToOne)
+    }
+
+    @Test
+    fun zoomedBitmapGoesThroughTheLanczosShader() {
+        val v = view(1848, 2960, 1848, 2772, ZoomImageView.FitMode.SCREEN)
+        assertNull(v.shadedBitmap)
+        v.zoomTo(2.5f, 900f, 1400f)
+        assertNotNull(v.shadedBitmap)
+        v.fit()
+        assertNull(v.shadedBitmap)
+    }
+
+    @Test
+    @Config(sdk = [32])
+    fun zoomBeforeApi33StaysBilinear() {
+        val v = view(1848, 2960, 1848, 2772, ZoomImageView.FitMode.SCREEN)
+        v.zoomTo(2.5f, 900f, 1400f)
+        assertFalse(v.drawsOneToOne)
+        assertNull(v.shadedBitmap)
     }
 }

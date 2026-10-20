@@ -50,9 +50,11 @@ import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
@@ -1813,7 +1815,7 @@ class ViewerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val outcome = withContext(AppDispatchers.io) {
                 runCatching {
-                    val bitmap = src.loadPage(page, EXPORT_W, EXPORT_H)
+                    val bitmap = src.loadPage(page, Target(EXPORT_W, EXPORT_H, Fit.SHRINK))
                     if (share) shareUri(bitmap, name) else {
                         savePicture(bitmap, name)
                         null
@@ -1951,7 +1953,7 @@ class ViewerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val bitmap = withContext(AppDispatchers.io) {
                 try {
-                    src.loadPage(page, 2400, 3200)
+                    src.loadPage(page, Target(EXPORT_W, EXPORT_H, Fit.SHRINK))
                 } catch (t: Throwable) {
                     null
                 }

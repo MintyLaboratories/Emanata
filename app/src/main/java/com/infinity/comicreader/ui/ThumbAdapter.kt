@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -72,7 +73,7 @@ class ThumbAdapter(
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
                     try {
-                        source.loadPage(position, 240, 320)
+                        source.loadPage(position, Target(THUMB_W, THUMB_H))
                     } catch (t: Throwable) {
                         Log.w(TAG, "Failed to load thumbnail $position", t)
                         null
@@ -106,5 +107,7 @@ class ThumbAdapter(
 
     companion object {
         private const val TAG = "ThumbAdapter"
+        private const val THUMB_W = 240
+        private const val THUMB_H = 320
     }
 }

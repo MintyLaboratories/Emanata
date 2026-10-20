@@ -4,23 +4,24 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
+import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
 import java.security.MessageDigest
-import kotlin.math.roundToInt
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
  * render their first page; folders fall back to the first image/openable file
- * found a couple of levels deep. Covers are scaled to just cover the requested
+ * found a couple of levels deep. Covers are cropped and scaled to fill the requested
  * box, rounded up to a [ThumbSizing] tier, and cached per tier in memory (bounded
  * by heap) and on disk under `cacheDir/thumbnails`.
  */
 object Thumbs {
     private const val DISK_DIR = "thumbnails"
-    private const val THUMB_CAP_PIXELS = 4_000_000L
+    private const val THUMB_CAP_PIXELS = 16_000_000L
     private const val MAX_DISK_BYTES = 120L * 1024 * 1024
     private const val HEX_DIGITS = "0123456789abcdef"
 
@@ -52,7 +53,7 @@ object Thumbs {
             }
         }
 
-        val bitmap = generate(entry, charset, context.cacheDir, boxW, boxH)?.let { fit(it, boxW, boxH) }
+        val bitmap = generate(entry, charset, context.cacheDir, Target(boxW, boxH, Fit.COVER, capPixels = THUMB_CAP_PIXELS))
             ?: return null
         memory.put(k, bitmap)
         runCatching {
@@ -84,33 +85,24 @@ object Thumbs {
 
     // ------------------------------------------------------------------ internals
 
-    private fun generate(entry: BookEntry, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? = try {
+    private fun generate(entry: BookEntry, charset: String, cacheDir: File, target: Target): Bitmap? = try {
         when {
-            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, reqW, reqH) }
-            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, reqW, reqH, THUMB_CAP_PIXELS)
-            else -> coverOf(entry.file, charset, cacheDir, reqW, reqH)
+            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, target) }
+            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target)
+            else -> coverOf(entry.file, charset, cacheDir, target)
         }
     } catch (t: Throwable) {
         null
     }
 
-    /** Scales [bitmap] down so it just covers the box; decoding by sample size overshoots up to 2x. */
-    private fun fit(bitmap: Bitmap, boxW: Int, boxH: Int): Bitmap {
-        val scale = ThumbSizing.coverScale(bitmap.width, bitmap.height, boxW, boxH)
-        if (scale >= 1f) return bitmap
-        val w = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
-        val h = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
-        return Bitmap.createScaledBitmap(bitmap, w, h, true)
-    }
-
-    private fun coverOf(file: File, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? {
+    private fun coverOf(file: File, charset: String, cacheDir: File, target: Target): Bitmap? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
-            return Decoders.decode(file, reqW, reqH, THUMB_CAP_PIXELS)
+            return Decoders.decode(file, target)
         }
         val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
         return try {
-            if (source.pageCount <= 0) null else source.loadPage(0, reqW, reqH)
+            if (source.pageCount <= 0) null else source.loadPage(0, target)
         } catch (t: Throwable) {
             null
         } finally {
@@ -133,7 +125,7 @@ object Thumbs {
     }
 
     private fun decodeFile(file: File, boxW: Int, boxH: Int): Bitmap? =
-        runCatching { Decoders.decode(file, boxW, boxH, THUMB_CAP_PIXELS) }.getOrNull()
+        runCatching { Decoders.decode(file, Target(boxW, boxH, Fit.COVER, capPixels = THUMB_CAP_PIXELS)) }.getOrNull()
 
     private fun diskFile(context: Context, key: String): File =
         File(File(context.cacheDir, DISK_DIR), sha256(key) + ".jpg")

@@ -129,13 +129,13 @@ class ArchiveSource(
         }
     }
 
-    override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+    override fun loadPage(index: Int, target: Target): Bitmap {
         if (pages.isEmpty()) throw IOException("Archive contains no images")
         val page = pages[index]
         try {
             // Buffered under the reader's lock, decoded outside it.
             val bytes = readPage(index) { BitmapUtils.readCapped(it) }
-            return Decoders.decode(bytes, reqWidth, reqHeight)
+            return Decoders.decode(bytes, target)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load archive entry ${page.path} (index $index)", t)
             throw t

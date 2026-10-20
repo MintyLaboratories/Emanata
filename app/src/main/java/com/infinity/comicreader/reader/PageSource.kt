@@ -7,11 +7,8 @@ import java.io.Closeable
 interface PageSource : Closeable {
     val pageCount: Int
 
-    /**
-     * Render page [index] at up to approximately [reqWidth] x [reqHeight] pixels.
-     * Implementations may return a smaller image; callers must not assume exact size.
-     */
-    fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap
+    /** Render page [index] at exactly the size [target] gives for it. */
+    fun loadPage(index: Int, target: Target): Bitmap
 
     /**
      * Intrinsic `[width, height]` of page [index] without decoding its pixels, or

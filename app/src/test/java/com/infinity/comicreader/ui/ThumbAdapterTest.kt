@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,7 +27,7 @@ class ThumbAdapterTest {
     /** Page 1 never decodes; the others are 1x1 bitmaps. */
     private class BrokenPageSource : PageSource {
         override val pageCount: Int = 2
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+        override fun loadPage(index: Int, target: Target): Bitmap {
             if (index == 1) throw DecodeException("Could not decode this JXL image")
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         }

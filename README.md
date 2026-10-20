@@ -136,6 +136,10 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG and JPEG XL sizes come from
   the header alone (`ImageHeaders`).
+- Images decode at full resolution, then Lanczos3 (`Lanczos`, pure Kotlin,
+  parallel) scales them to the exact size they are shown at. Only a source over
+  50 MP is first reduced by the decoder's own power-of-two sampling, to bound
+  memory.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Nested archives (up to two levels) are copied to `cacheDir/nested`

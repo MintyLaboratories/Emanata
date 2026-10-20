@@ -9,6 +9,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,7 +33,7 @@ class PageAdapterFailureTest {
         val perPage = AtomicIntegerArray(3)
         val done = AtomicIntegerArray(3)
         override val pageCount: Int = 3
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+        override fun loadPage(index: Int, target: Target): Bitmap {
             loads.incrementAndGet()
             perPage.incrementAndGet(index)
             try {
@@ -110,7 +111,7 @@ class PageAdapterFailureTest {
     private class FlakySource(private val error: Throwable) : PageSource {
         val loads = AtomicInteger()
         override val pageCount: Int = 1
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+        override fun loadPage(index: Int, target: Target): Bitmap {
             if (loads.incrementAndGet() == 1) throw error
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         }
@@ -141,7 +142,7 @@ class PageAdapterFailureTest {
         val loads = AtomicInteger()
         val done = AtomicInteger()
         override val pageCount: Int = 1
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+        override fun loadPage(index: Int, target: Target): Bitmap {
             try {
                 if (loads.incrementAndGet() == 1) {
                     entered.countDown()

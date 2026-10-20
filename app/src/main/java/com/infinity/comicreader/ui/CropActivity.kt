@@ -11,6 +11,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.Decoders
+import com.infinity.comicreader.reader.Fit
+import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.launch
@@ -108,7 +110,7 @@ class CropActivity : AppCompatActivity() {
     }.getOrNull()
 
     private fun decodeCapped(path: String, maxDim: Int): Bitmap? =
-        runCatching { Decoders.decode(File(path), maxDim, maxDim, capPixels = Long.MAX_VALUE) }.getOrNull()
+        runCatching { Decoders.decode(File(path), Target(maxDim, maxDim, Fit.SHRINK, capPixels = Long.MAX_VALUE)) }.getOrNull()
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 

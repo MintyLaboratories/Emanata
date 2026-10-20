@@ -21,7 +21,7 @@ class GuardedSourceTest {
         @Volatile var reads = 0
 
         override val pageCount = 3
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap =
+        override fun loadPage(index: Int, target: Target): Bitmap =
             throw UnsupportedOperationException()
 
         override fun pageSize(index: Int): IntArray {

@@ -17,10 +17,10 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override val pageCount: Int get() = inner.pageCount
 
-    override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+    override fun loadPage(index: Int, target: Target): Bitmap {
         if (!enter()) throw IOException("Source closed")
         try {
-            return inner.loadPage(index, reqWidth, reqHeight)
+            return inner.loadPage(index, target)
         } finally {
             exit()
         }

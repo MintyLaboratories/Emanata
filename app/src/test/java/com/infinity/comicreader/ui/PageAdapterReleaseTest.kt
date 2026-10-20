@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.graphics.Bitmap
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,7 +17,7 @@ class PageAdapterReleaseTest {
 
     private class FakeSource(override val pageCount: Int) : PageSource {
         var closed = false
-        override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap =
+        override fun loadPage(index: Int, target: Target): Bitmap =
             Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
 
         override fun close() {

@@ -33,45 +33,66 @@ class DecodeException(
  * leading bytes ([ImageKind.sniff]), never from the file name. Unknown bytes still
  * go to the platform decoder, which reads a few rarer formats too.
  *
- * Every decode takes the size it will be shown at, [reqW] x [reqH]; a dimension of
- * 1 or less leaves that axis free. The result is never smaller than the target on a
- * constrained axis unless [capPixels] forces it, and may be up to twice as large:
- * downscaling is still a power-of-two sample size ([sampleSize]) applied inside the
- * decoder. Exact-size resampling replaces that in one place, [decodeJxl],
- * [decodePlatform] and [decodeLegacy]: decode at sample size 1, then resample to
- * the target.
+ * Every decode produces exactly the [Target] it is given:
+ *  1. the image is decoded at full resolution, with no decoder-side scaling;
+ *  2. with [Target.autoCrop], blank borders are found on that full image;
+ *  3. it is resampled with Lanczos3 ([BitmapUtils.resample]) to the target size,
+ *     and the full-resolution bitmap is recycled at once.
+ *
+ * Memory guard: a source above [Target.capPixels] (50 MP by default) is first reduced
+ * by the smallest power-of-two sample size that brings it under the cap, inside the
+ * decoder ([capSample]), and only then resampled. That reduction is the decoder's own:
+ * libjpeg-turbo's DCT scaling for JPEG, an area average for WebP, point sampling for
+ * PNG, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
  *
  * JPEG XL decodes with jxl-coder on every API level. Other formats use
  * [ImageDecoder] on API 28+ (AVIF from API 31), with [BitmapFactory] below that.
  */
 object Decoders {
-    const val DEFAULT_CAP_PIXELS = 12_000_000L
 
-    /** Longest side assumed for an unconstrained axis when picking a sample size. */
-    private const val MAX_DIM = 4096
-
-    fun decode(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap {
+    fun decode(bytes: ByteArray, target: Target): Bitmap {
         val kind = ImageKind.sniff(bytes)
         return reported(kind) {
-            when {
-                kind == ImageKind.JXL -> decodeJxl(bytes, reqW, reqH, capPixels)
+            val full = when {
+                kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
-                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), reqW, reqH, capPixels)
-                else -> decodeLegacy(bytes, reqW, reqH, capPixels)
+                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), target.capPixels)
+                else -> decodeLegacy(bytes, target.capPixels)
             }
+            fit(full, target)
         }
     }
 
-    fun decode(input: InputStream, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap =
-        decode(BitmapUtils.readCapped(input), reqW, reqH, capPixels)
+    fun decode(input: InputStream, target: Target): Bitmap = decode(BitmapUtils.readCapped(input), target)
 
     /** Streams [file] to the platform decoder; JPEG XL, and any image below API 28, is read whole first. */
-    fun decode(file: File, reqW: Int, reqH: Int, capPixels: Long = DEFAULT_CAP_PIXELS): Bitmap {
+    fun decode(file: File, target: Target): Bitmap {
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
         if (kind == ImageKind.JXL || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            return file.inputStream().use { decode(it, reqW, reqH, capPixels) }
+            return file.inputStream().use { decode(it, target) }
         }
-        return reported(kind) { decodePlatform(ImageDecoder.createSource(file), reqW, reqH, capPixels) }
+        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target) }
+    }
+
+    /** [full] cropped and resampled to [target]; [full] itself when it already is the result, else recycled. */
+    fun fit(full: Bitmap, target: Target): Bitmap {
+        val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
+            full.recycle()
+        }
+        val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src) else null
+        val plan = if (bounds != null) {
+            target.plan(bounds.width().toDouble(), bounds.height().toDouble(), bounds.left.toDouble(), bounds.top.toDouble())
+        } else {
+            target.plan(src.width.toDouble(), src.height.toDouble())
+        }
+        if (plan.isIdentity(src.width, src.height)) return src
+        try {
+            return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
+            else BitmapUtils.resample(src, plan, target.linear)
+        } finally {
+            // Frees the full-resolution pixels before the caller keeps the result.
+            src.recycle()
+        }
     }
 
     /** Intrinsic `[width, height]` as a decode would return it at full size, without decoding pixels; null if unknown. */
@@ -134,38 +155,29 @@ object Decoders {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.P || e !is ImageDecoder.DecodeException ||
             e.error == ImageDecoder.DecodeException.SOURCE_EXCEPTION
 
-    /**
-     * Power-of-two sample size that keeps both dimensions at or above the target,
-     * then halves further until the image fits [capPixels].
-     */
-    fun sampleSize(w: Int, h: Int, reqW: Int, reqH: Int, capPixels: Long): Int {
+    /** Smallest power-of-two sample size that brings a [w] x [h] image to at most [capPixels]: 1 below the cap. */
+    fun capSample(w: Int, h: Int, capPixels: Long): Int {
         if (w <= 0 || h <= 0) return 1
-        val tw = if (reqW > 0) reqW else MAX_DIM
-        val th = if (reqH > 0) reqH else MAX_DIM
         var sample = 1
-        while (w / (sample * 2) >= tw && h / (sample * 2) >= th) sample *= 2
         while (w.toLong() * h.toLong() / (sample.toLong() * sample.toLong()) > capPixels) sample *= 2
         return sample
     }
 
     // ------------------------------------------------------------------ JPEG XL
 
-    /**
-     * Largest JPEG XL image decoded. jxl-coder holds the whole image in native memory
-     * before scaling it, whatever the target size, so [capPixels] does not bound it.
-     */
+    /** Largest JPEG XL image decoded. jxl-coder holds the whole image in native memory, whatever the cap. */
     const val MAX_JXL_PIXELS = 40_000_000L
 
     /** JPEG XL decodes running at once, bounding that native memory. */
     private val jxlGate = Semaphore(2)
 
-    /** Downscales inside jxl-coder (Mitchell) to the power-of-two size the other formats get. */
-    private fun decodeJxl(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
+    /** Full decode; only past [capPixels] does jxl-coder's sampled decode do the coarse reduction. */
+    private fun decodeJxl(bytes: ByteArray, capPixels: Long): Bitmap {
         val size = jxlSize(bytes) ?: throw DecodeException("Not a valid JXL image")
         if (size[0].toLong() * size[1] > MAX_JXL_PIXELS) {
             throw DecodeException("JXL image is too large (${size[0]} x ${size[1]})")
         }
-        val sample = sampleSize(size[0], size[1], reqW, reqH, capPixels)
+        val sample = capSample(size[0], size[1], capPixels)
         jxlGate.acquireUninterruptibly()
         try {
             if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
@@ -195,11 +207,11 @@ object Decoders {
     // ------------------------------------------------------------------ platform
 
     @RequiresApi(Build.VERSION_CODES.P)
-    private fun decodePlatform(source: ImageDecoder.Source, reqW: Int, reqH: Int, capPixels: Long): Bitmap =
+    private fun decodePlatform(source: ImageDecoder.Source, capPixels: Long): Bitmap =
         eightBit(ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-            // Software pixels: auto-crop and export read them back.
+            // Software pixels: the resampler, auto-crop and export read them back.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            decoder.setTargetSampleSize(sampleSize(info.size.width, info.size.height, reqW, reqH, capPixels))
+            decoder.setTargetSampleSize(capSample(info.size.width, info.size.height, capPixels))
             // A truncated or corrupt file still shows the part that decoded.
             decoder.setOnPartialImageListener {
                 it.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE ||
@@ -209,7 +221,7 @@ object Decoders {
 
     /**
      * Redraws a half-float bitmap (16-bit PNGs, other deep images) as 8-bit sRGB, which takes half
-     * the memory in the page cache and in exported PNGs.
+     * the memory and is what the resampler reads.
      */
     private fun eightBit(bitmap: Bitmap): Bitmap {
         if (bitmap.config != Bitmap.Config.RGBA_F16) return bitmap
@@ -221,11 +233,11 @@ object Decoders {
         return out
     }
 
-    private fun decodeLegacy(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
+    private fun decodeLegacy(bytes: ByteArray, capPixels: Long): Bitmap {
         val bounds = legacyBounds { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
             ?: throw DecodeException("Unsupported image format on this Android version")
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize(bounds[0], bounds[1], reqW, reqH, capPixels)
+            inSampleSize = capSample(bounds[0], bounds[1], capPixels)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)

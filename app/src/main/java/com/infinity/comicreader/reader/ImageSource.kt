@@ -7,8 +7,8 @@ import java.io.File
 class ImageSource(private val file: File) : PageSource {
     override val pageCount: Int get() = 1
 
-    override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap =
-        Decoders.decode(file, reqWidth, reqHeight)
+    override fun loadPage(index: Int, target: Target): Bitmap =
+        Decoders.decode(file, target)
 
     override fun pageSize(index: Int): IntArray? = Decoders.size(file)
 

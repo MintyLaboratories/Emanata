@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Log
@@ -25,29 +26,35 @@ class PdfSource(file: File) : PageSource {
      * [PdfRenderer] allows only one open [PdfRenderer.Page] at a time and is not
      * safe for concurrent use; the adapter loads neighbours concurrently, so
      * access is serialized here.
+     *
+     * The page is rendered straight at the target size, its points mapped onto the
+     * bitmap by the [Plan]. Without a target size it renders at [NATIVE_SCALE] pixels
+     * per point. With auto-crop, a first render finds the content, which a second one
+     * then fills the target with.
      */
     @Synchronized
-    override fun loadPage(index: Int, reqWidth: Int, reqHeight: Int): Bitmap {
+    override fun loadPage(index: Int, target: Target): Bitmap {
         try {
             val page = renderer.openPage(index)
             try {
-                val ratio = if (page.width > 0) page.height.toFloat() / page.width.toFloat() else 1.4f
-                // Callers pass 1 for the dimension they do not constrain, so derive the
-                // width from whichever limits are real (fit-height requests only set the height).
-                val fromWidth = if (reqWidth > 1) reqWidth else 0
-                val fromHeight = if (reqHeight > 1) (reqHeight / ratio).toInt() else 0
-                val wanted = when {
-                    fromWidth > 0 && fromHeight > 0 -> minOf(fromWidth, fromHeight)
-                    fromWidth > 0 -> fromWidth
-                    fromHeight > 0 -> fromHeight
-                    else -> page.width * 2
+                val pw = page.width.coerceAtLeast(1).toDouble()
+                val ph = page.height.coerceAtLeast(1).toDouble()
+                val sized = if (target.width <= 0 && target.height <= 0) {
+                    target.copy(width = (pw * NATIVE_SCALE).toInt())
+                } else {
+                    target
                 }
-                val w = wanted.coerceIn(360, MAX_WIDTH)
-                val h = (w * ratio).toInt().coerceIn(1, MAX_HEIGHT)
-                val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                return bitmap
+                val plan = sized.plan(pw, ph)
+                val bitmap = render(page, plan)
+                if (!target.autoCrop) return bitmap
+                val bounds = BitmapUtils.contentBounds(bitmap) ?: return bitmap
+                val sx = plan.spanW / plan.width
+                val sy = plan.spanH / plan.height
+                val cropped = sized.plan(
+                    bounds.width() * sx, bounds.height() * sy, plan.x + bounds.left * sx, plan.y + bounds.top * sy
+                )
+                bitmap.recycle()
+                return render(page, cropped)
             } finally {
                 page.close()
             }
@@ -55,6 +62,18 @@ class PdfSource(file: File) : PageSource {
             Log.w(TAG, "Failed to render PDF page $index", t)
             throw t
         }
+    }
+
+    /** [page] rendered on white, its region [plan] says filling the bitmap. */
+    private fun render(page: PdfRenderer.Page, plan: Plan): Bitmap {
+        val bitmap = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.WHITE)
+        val transform = Matrix().apply {
+            setTranslate(-plan.x.toFloat(), -plan.y.toFloat())
+            postScale((plan.width / plan.spanW).toFloat(), (plan.height / plan.spanH).toFloat())
+        }
+        page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        return bitmap
     }
 
     @Synchronized
@@ -77,7 +96,8 @@ class PdfSource(file: File) : PageSource {
 
     companion object {
         private const val TAG = "PdfSource"
-        private const val MAX_WIDTH = 3000
-        private const val MAX_HEIGHT = 8000
+
+        /** Pixels per PDF point (1/72 inch) for a render without a target size. */
+        private const val NATIVE_SCALE = 2
     }
 }

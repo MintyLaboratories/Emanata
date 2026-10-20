@@ -10,10 +10,11 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
-import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -331,8 +332,8 @@ class PageAdapter(
         val sized = if (spread) holder.container else image
         lastItemW = if (sized.width > 0) sized.width else fallbackWidth
         lastItemH = if (image.height > 0) image.height else 1920
-        val (reqW, reqH) = requestSize(pageIndex, lastItemW, lastItemH)
-        val entry = request(pageIndex, reqW, reqH)
+        val target = requestSize(pageIndex, lastItemW, lastItemH)
+        val entry = request(pageIndex, target)
         entry.waiters++
         holder.pages[slot] = pageIndex
         holder.waiters[slot] = scope.launch {
@@ -389,9 +390,8 @@ class PageAdapter(
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
 
     /** Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for generation [gen]. */
-    private fun decode(source: PageSource, index: Int, pageIndex: Int, reqW: Int, reqH: Int, gen: Int): Bitmap? = try {
-        val raw = source.loadPage(index, reqW, reqH)
-        if (autoCrop && mode != Mode.LONG_STRIP) BitmapUtils.autoCrop(raw) else raw
+    private fun decode(source: PageSource, index: Int, pageIndex: Int, target: Target, gen: Int): Bitmap? = try {
+        source.loadPage(index, target)
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
         val name = runCatching { source.pageName(index) }.getOrNull()
@@ -408,7 +408,7 @@ class PageAdapter(
     }
 
     /** Starts (or joins) the background decode of [pageIndex]. Main thread only. */
-    private fun request(pageIndex: Int, reqW: Int, reqH: Int): Pending {
+    private fun request(pageIndex: Int, target: Target): Pending {
         pending[pageIndex]?.let { return it }
         val chapter = strip.chapterOf(pageIndex)
         val seg = chapter.value
@@ -418,7 +418,7 @@ class PageAdapter(
         val gen = synchronized(results) { generation }
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, reqW, reqH, gen)
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, target, gen)
                 if (bitmap != null && bitmap.width > 0) {
                     synchronized(results) { if (gen == generation) cache.put(pageIndex, bitmap) }
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -443,8 +443,7 @@ class PageAdapter(
             val p = lastShown + k
             if (p >= end) break
             if (cache.get(p) != null || pending[p] != null || failures[p]?.permanent == true) continue
-            val (reqW, reqH) = requestSize(p, lastItemW, lastItemH)
-            request(p, reqW, reqH).prefetch = true
+            request(p, requestSize(p, lastItemW, lastItemH)).prefetch = true
         }
     }
 
@@ -489,15 +488,17 @@ class PageAdapter(
      * Decode size for [page] on an item [itemW] x [itemH]: a page paired in a spread
      * gets half the row, a lone one the whole row.
      */
-    private fun requestSize(page: Int, itemW: Int, itemH: Int): Pair<Int, Int> {
+    private fun requestSize(page: Int, itemW: Int, itemH: Int): Target {
         val pageW = if (layout.shownAlone(page, end)) itemW else itemW / 2
         val viewW = pageW.coerceAtLeast(360)
         val viewH = itemH.coerceAtLeast(360)
+        val crop = autoCrop && mode != Mode.LONG_STRIP
         return when {
-            mode == Mode.LONG_STRIP || mode == Mode.VERTICAL -> viewW to 1
-            fitMode == ZoomImageView.FitMode.WIDTH -> viewW to 1
-            fitMode == ZoomImageView.FitMode.HEIGHT -> 1 to viewH
-            else -> viewW to viewH
+            mode == Mode.LONG_STRIP || mode == Mode.VERTICAL -> Target(viewW, 0, autoCrop = crop)
+            fitMode == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = crop)
+            fitMode == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = crop)
+            fitMode == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop = crop)
+            else -> Target(viewW, viewH, autoCrop = crop)
         }
     }
 

@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import kotlin.math.abs
@@ -34,21 +35,21 @@ object BitmapUtils {
             abs(Color.blue(a) - Color.blue(b)) > tol
 
     /**
-     * Trims uniform borders (the colour found in the corners) from [src]. Returns
-     * [src] itself when there is nothing worth trimming, when the page has no
-     * consistent border colour, or when the result would be implausibly small.
+     * Content of [src] inside uniform borders (the color found in the corners). Returns
+     * null when there is nothing worth trimming, when the page has no
+     * consistent border color, or when the result would be implausibly small.
      */
-    fun autoCrop(src: Bitmap): Bitmap {
+    fun contentBounds(src: Bitmap): Rect? {
         val w = src.width
         val h = src.height
-        if (w < 64 || h < 64) return src
+        if (w < 64 || h < 64) return null
         val tol = 60
         val bg = src.getPixel(1, 1)
         // The border colour must be shared by at least one other corner.
         val similar = listOf(
             src.getPixel(w - 2, 1), src.getPixel(1, h - 2), src.getPixel(w - 2, h - 2)
         ).count { !differs(it, bg, tol) }
-        if (similar < 1) return src
+        if (similar < 1) return null
 
         val minHits = maxOf(2, w / 200)
         val row = IntArray(w)
@@ -65,7 +66,7 @@ object BitmapUtils {
 
         var top = 0
         while (top < h && !rowHasContent(top)) top++
-        if (top >= h) return src // blank page
+        if (top >= h) return null // blank page
         var bottom = h - 1
         while (bottom > top && !rowHasContent(bottom)) bottom--
 
@@ -95,7 +96,26 @@ object BitmapUtils {
         val newW = r - l + 1
         val newH = b - t + 1
         val ratio = (newW.toLong() * newH).toDouble() / (w.toLong() * h)
-        if (ratio > 0.97 || ratio < 0.25) return src
-        return Bitmap.createBitmap(src, l, t, newW, newH)
+        if (ratio > 0.97 || ratio < 0.25) return null
+        return Rect(l, t, l + newW, t + newH)
+    }
+
+    // ------------------------------------------------------------------ resampling
+
+    /**
+     * [src] resampled with [Lanczos] as [plan] says, into a new ARGB_8888 bitmap. Reads
+     * and writes rows in place, so no second full-size copy of [src] is ever made.
+     */
+    fun resample(src: Bitmap, plan: Plan, linear: Boolean): Bitmap {
+        val w = src.width
+        val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
+        Lanczos.resample(
+            w, src.height,
+            { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
+            Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH),
+            plan.width, plan.height, linear,
+            { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } }
+        )
+        return out
     }
 }

@@ -2,6 +2,8 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -129,7 +131,7 @@ object Decoders {
 
     @RequiresApi(Build.VERSION_CODES.P)
     private fun decodePlatform(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap =
-        ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+        eightBit(ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
             // Software pixels: auto-crop and export read them back.
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             decoder.setTargetSampleSize(sampleSize(info.size.width, info.size.height, reqW, reqH, capPixels))
@@ -138,7 +140,21 @@ object Decoders {
                 it.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE ||
                     it.error == ImageDecoder.DecodeException.SOURCE_MALFORMED_DATA
             }
-        }
+        })
+
+    /**
+     * Redraws a half-float bitmap (16-bit PNGs, other deep images) as 8-bit sRGB, which takes half
+     * the memory in the page cache and in exported PNGs.
+     */
+    private fun eightBit(bitmap: Bitmap): Bitmap {
+        if (bitmap.config != Bitmap.Config.RGBA_F16) return bitmap
+        val out = Bitmap.createBitmap(
+            bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888, bitmap.hasAlpha(), ColorSpace.get(ColorSpace.Named.SRGB)
+        )
+        Canvas(out).drawBitmap(bitmap, 0f, 0f, null)
+        bitmap.recycle()
+        return out
+    }
 
     private fun decodeLegacy(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
         val bounds = legacyBounds(bytes) ?: throw DecodeException("Unsupported image format on this Android version")

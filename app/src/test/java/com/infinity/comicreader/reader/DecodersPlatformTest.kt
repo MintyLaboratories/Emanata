@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Color
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -31,6 +32,15 @@ class DecodersPlatformTest {
         }
         assertArrayEquals(intArrayOf(41, 29), Decoders.size(encoded(41, 29, Bitmap.CompressFormat.WEBP_LOSSLESS)))
         assertNull(Decoders.size(ByteArray(100) { 7 }))
+    }
+
+    @Test
+    fun sixteenBitImageDecodesToEightBit() {
+        val bitmap = Decoders.decode(TestImages.png(40, 30, bitDepth = 16), 0, 0)
+        assertEquals(Bitmap.Config.ARGB_8888, bitmap.config)
+        assertEquals(40 * 30 * 4, bitmap.byteCount)
+        // Every channel of the fixture is 0x8080 of 0xFFFF.
+        assertEquals(0x80.toDouble(), Color.red(bitmap.getPixel(5, 5)).toDouble(), 2.0)
     }
 
     @Test

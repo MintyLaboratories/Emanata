@@ -42,6 +42,16 @@ class PageStripTest {
     }
 
     @Test
+    fun spreadRefusesTrims() {
+        val strip = spread(10)
+        assertNull(strip.dropTo(3))
+        assertNull(strip.dropAfter(3))
+        assertEquals(0, strip.base)
+        assertEquals(5, strip.itemCount)
+        assertArrayEquals(intArrayOf(6, 7), strip.slots(3))
+    }
+
+    @Test
     fun appendInsertsBehindLastChapter() {
         val strip = single(10)
         assertEquals(10 until 16, strip.append("b", 6))

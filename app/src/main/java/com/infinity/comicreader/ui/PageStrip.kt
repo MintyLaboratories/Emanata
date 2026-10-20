@@ -6,8 +6,8 @@ package com.infinity.comicreader.ui
  * valid across trims; [base] is the page item 0 shows once chapters before it are
  * trimmed away. Positions are adapter item positions, counted from [base].
  *
- * Only single-page layouts hold more than one chapter: a spread layout keeps its
- * one chapter and maps items to pages through [layout].
+ * Only single-page layouts hold more than one chapter or are trimmed: a spread
+ * layout keeps its one chapter, so [base] stays 0 and items map through [layout].
  */
 class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
@@ -59,9 +59,10 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
     /**
      * Forgets every item before [position], leaving item 0 to show that page, and
-     * drops the chapters that end before it. Null when nothing changes.
+     * drops the chapters that end before it. Null when nothing changes or in a spread.
      */
     fun dropTo(position: Int): Removal<T>? {
+        if (layout.spread) return null
         val keep = (base + position).coerceIn(base, end)
         if (keep == base) return null
         val gone = forget { it.first + it.count <= keep }
@@ -70,8 +71,12 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
         return removal
     }
 
-    /** Throws away every chapter starting at item [position] or later. Null when nothing changes. */
+    /**
+     * Throws away every chapter starting at item [position] or later. Null when
+     * nothing changes or in a spread.
+     */
     fun dropAfter(position: Int): Removal<T>? {
+        if (layout.spread) return null
         val first = base + position
         if (first >= end) return null
         val count = end - first

@@ -7,6 +7,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.File
+import kotlin.math.roundToInt
 
 /** Renders PDF pages with the platform [PdfRenderer]. */
 class PdfSource(file: File) : PageSource {
@@ -28,9 +29,8 @@ class PdfSource(file: File) : PageSource {
      * access is serialized here.
      *
      * The page is rendered straight at the target size, its points mapped onto the
-     * bitmap by the [Plan]. Without a target size it renders at [NATIVE_SCALE] pixels
-     * per point. With auto-crop, a first render finds the content, which a second one
-     * then fills the target with.
+     * bitmap by the [Plan] ([vectorTarget]). With auto-crop, a first render finds the
+     * content, which a second one then fills the target with ([cropPlan]).
      */
     @Synchronized
     override fun loadPage(index: Int, target: Target): Bitmap {
@@ -39,20 +39,12 @@ class PdfSource(file: File) : PageSource {
             try {
                 val pw = page.width.coerceAtLeast(1).toDouble()
                 val ph = page.height.coerceAtLeast(1).toDouble()
-                val sized = if (target.width <= 0 && target.height <= 0) {
-                    target.copy(width = (pw * NATIVE_SCALE).toInt())
-                } else {
-                    target
-                }
+                val sized = vectorTarget(target, pw)
                 val plan = sized.plan(pw, ph)
                 val bitmap = render(page, plan)
                 if (!target.autoCrop) return bitmap
                 val bounds = BitmapUtils.contentBounds(bitmap) ?: return bitmap
-                val sx = plan.spanW / plan.width
-                val sy = plan.spanH / plan.height
-                val cropped = sized.plan(
-                    bounds.width() * sx, bounds.height() * sy, plan.x + bounds.left * sx, plan.y + bounds.top * sy
-                )
+                val cropped = cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
                 bitmap.recycle()
                 return render(page, cropped)
             } finally {
@@ -68,11 +60,7 @@ class PdfSource(file: File) : PageSource {
     private fun render(page: PdfRenderer.Page, plan: Plan): Bitmap {
         val bitmap = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         bitmap.eraseColor(Color.WHITE)
-        val transform = Matrix().apply {
-            setTranslate(-plan.x.toFloat(), -plan.y.toFloat())
-            postScale((plan.width / plan.spanW).toFloat(), (plan.height / plan.spanH).toFloat())
-        }
-        page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.render(bitmap, null, transform(plan), PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
         return bitmap
     }
 
@@ -98,6 +86,32 @@ class PdfSource(file: File) : PageSource {
         private const val TAG = "PdfSource"
 
         /** Pixels per PDF point (1/72 inch) for a render without a target size. */
-        private const val NATIVE_SCALE = 2
+        const val NATIVE_SCALE = 2
+
+        /**
+         * [target] for a [pw]-point-wide page, whose points stand in for source pixels. A
+         * vector page has no native resolution, so [Fit.SHRINK] enlarges like [Fit.INSIDE],
+         * and with no size at all the page renders at [NATIVE_SCALE] pixels per point.
+         */
+        fun vectorTarget(target: Target, pw: Double): Target {
+            val t = if (target.fit == Fit.SHRINK) target.copy(fit = Fit.INSIDE) else target
+            return if (t.width <= 0 && t.height <= 0) t.copy(width = (pw * NATIVE_SCALE).roundToInt()) else t
+        }
+
+        /**
+         * The second render's plan: content found at ([left], [top]) sized [w] x [h] in the
+         * pixels of the [first] render, mapped back to points and onto [target].
+         */
+        fun cropPlan(target: Target, first: Plan, left: Int, top: Int, w: Int, h: Int): Plan {
+            val sx = first.spanW / first.width
+            val sy = first.spanH / first.height
+            return target.plan(w * sx, h * sy, first.x + left * sx, first.y + top * sy)
+        }
+
+        /** Maps page points onto bitmap pixels: the [plan]'s span fills the bitmap. */
+        fun transform(plan: Plan): Matrix = Matrix().apply {
+            setTranslate(-plan.x.toFloat(), -plan.y.toFloat())
+            postScale((plan.width / plan.spanW).toFloat(), (plan.height / plan.spanH).toFloat())
+        }
     }
 }

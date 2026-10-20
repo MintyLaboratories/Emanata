@@ -330,6 +330,17 @@ class ZoomImageView @JvmOverloads constructor(
         settler.postDelayed(settle, SETTLE_MS)
     }
 
+    /** A hidden window drops the detail and lets go of shaded bitmaps; shown again, it renders the detail anew. */
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == VISIBLE) {
+            resettle()
+        } else {
+            dropDetail()
+            pageShader?.clear()
+        }
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         dropDetail()

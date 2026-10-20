@@ -229,6 +229,23 @@ class ZoomImageViewTest {
         assertTrue(v.detailShown === shown)
     }
 
+    @Test
+    fun hiddenWindowDropsTheDetailUntilShownAgain() {
+        val (v, detail) = zoomedWithDetail()
+        pass(160)
+        detail.deliver()
+        v.dispatchWindowVisibilityChanged(View.GONE)
+        assertNull(v.detailShown)
+        pass(200)
+        assertEquals(1, detail.requests.size)
+
+        v.dispatchWindowVisibilityChanged(View.VISIBLE)
+        pass(160)
+        assertEquals(2, detail.requests.size)
+        val shown = detail.deliver()
+        assertTrue(v.detailShown === shown)
+    }
+
     /** Draws [v] as the screen would, through the shaders, which the host runs in its own AGSL dialect. */
     private fun draw(v: ZoomImageView) {
         val canvas = Canvas(Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888))

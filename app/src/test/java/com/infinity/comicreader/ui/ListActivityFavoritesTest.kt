@@ -16,6 +16,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -98,6 +99,28 @@ class ListActivityFavoritesTest {
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
         idle()
         assertEquals(listOf("Solo"), rows(activity.findViewById(R.id.recycler)))
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp")
+    fun gridRowsFitBetweenSectionHeaders() {
+        val library = Library(context)
+        library.toggleFavorite(folder("Solo", "x.cbz").absolutePath)
+        library.toggleFavorite(File(root, "a.cbz").apply { createNewFile() }.absolutePath)
+        val prefs = Prefs(context)
+        prefs.listGrid = true
+        prefs.gridColumns = 2
+        prefs.gridRows = 2
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
+        idle()
+        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        // Sets header, Solo, Comics header, a.cbz: both rows and both headers on screen.
+        assertEquals(4, recycler.childCount)
+        val bottom = (0 until recycler.childCount).maxOf { recycler.getChildAt(it).bottom }
+        assertTrue(bottom <= recycler.height - recycler.paddingBottom)
+        assertTrue((recycler.adapter as BookAdapter).cellHeight > 0)
     }
 
     @Test

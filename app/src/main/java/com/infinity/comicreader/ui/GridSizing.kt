@@ -29,4 +29,20 @@ object GridSizing {
      */
     fun rowSpace(heightPx: Int, paddingTop: Int, paddingBottom: Int, headerPx: Int): Int =
         (heightPx - paddingTop - paddingBottom - headerPx).coerceAtLeast(0)
+
+    /**
+     * How many section headers show at the top of the list with its first [rows]
+     * rows: sections hold [sectionItems] cells each (0 when collapsed) in [columns]
+     * columns, and every header reached before the rows run out counts.
+     */
+    fun headersWithin(rows: Int, sectionItems: List<Int>, columns: Int): Int {
+        var used = 0
+        var headers = 0
+        for (items in sectionItems) {
+            if (used >= rows) break
+            headers++
+            used += (items + columns - 1) / columns
+        }
+        return headers
+    }
 }

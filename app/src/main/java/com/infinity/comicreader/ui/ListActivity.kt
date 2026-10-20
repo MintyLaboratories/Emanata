@@ -84,6 +84,12 @@ class ListActivity : AppCompatActivity() {
 
     /** A detached "Recent" row, measured to size grid rows around the real one. */
     private var headerProbe: View? = null
+
+    /** A detached section header, measured to size grid rows around the real ones. */
+    private var sectionProbe: View? = null
+
+    /** Cells in each Favorites section shown, 0 for a collapsed one; empty when not grouped. */
+    private var sectionItems: List<Int> = emptyList()
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -670,8 +676,11 @@ class ListActivity : AppCompatActivity() {
         shown.addAll(filtered.sortedWith(comparator))
         if (mode == TAB_FAVORITES && prefs.groupFavorites) {
             val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
-            adapter.submit(FavoriteSections.rows(groups, prefs.collapsedSections) { sectionTitle(it) })
+            val collapsed = prefs.collapsedSections
+            sectionItems = groups.map { if (it.kind in collapsed) 0 else it.entries.size }
+            adapter.submit(FavoriteSections.rows(groups, collapsed) { sectionTitle(it) })
         } else {
+            sectionItems = emptyList()
             adapter.submit(shown)
         }
         updateRecentHeader()
@@ -867,7 +876,7 @@ class ListActivity : AppCompatActivity() {
         val inner = recycler.width - recycler.paddingLeft - recycler.paddingRight
         val width = inner.coerceAtLeast(0) / columnCount()
         val rows = prefs.gridRows
-        val header = if (rows > 0) headerHeight(inner) else 0
+        val header = if (rows > 0) headerHeight(inner) + sectionHeadersHeight(inner, rows) else 0
         val available = GridSizing.rowSpace(recycler.height, recycler.paddingTop, recycler.paddingBottom, header)
         val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
         adapter.setCellSize(width, GridSizing.cellHeight(available, rows, minPx))
@@ -883,6 +892,20 @@ class ListActivity : AppCompatActivity() {
             text = h.subtitle
             visibility = if (h.subtitle.isEmpty()) View.GONE else View.VISIBLE
         }
+        return measuredHeight(view, width)
+    }
+
+    /** Height of the section headers shown with the first [rows] grid rows at list width [width]. */
+    private fun sectionHeadersHeight(width: Int, rows: Int): Int {
+        val count = GridSizing.headersWithin(rows, sectionItems, columnCount())
+        if (count == 0 || width <= 0) return 0
+        val view = sectionProbe ?: layoutInflater.inflate(R.layout.item_section, recycler, false).also { sectionProbe = it }
+        view.findViewById<TextView>(R.id.title).text = sectionTitle(FavoriteKind.LIBRARY)
+        return count * measuredHeight(view, width)
+    }
+
+    /** Height of [view] with its margins at width [width]. */
+    private fun measuredHeight(view: View, width: Int): Int {
         view.measure(
             View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)

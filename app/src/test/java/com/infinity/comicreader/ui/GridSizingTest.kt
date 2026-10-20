@@ -24,6 +24,18 @@ class GridSizingTest {
     }
 
     @Test
+    fun headersWithinTheFirstRows() {
+        // 3 columns: sections of 2, 7 and 1 cells take 1, 3 and 1 rows.
+        assertEquals(1, GridSizing.headersWithin(1, listOf(2, 7, 1), 3))
+        assertEquals(2, GridSizing.headersWithin(2, listOf(2, 7, 1), 3))
+        assertEquals(2, GridSizing.headersWithin(4, listOf(2, 7, 1), 3))
+        assertEquals(3, GridSizing.headersWithin(5, listOf(2, 7, 1), 3))
+        // A collapsed section is a header without rows.
+        assertEquals(3, GridSizing.headersWithin(2, listOf(0, 0, 4), 3))
+        assertEquals(0, GridSizing.headersWithin(3, emptyList(), 3))
+    }
+
+    @Test
     fun autoRowsKeepFixedCells() {
         assertEquals(0, GridSizing.cellHeight(2400, 0))
     }

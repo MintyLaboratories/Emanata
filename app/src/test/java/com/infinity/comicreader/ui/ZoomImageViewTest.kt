@@ -249,6 +249,36 @@ class ZoomImageViewTest {
     }
 
     @Test
+    fun aColoredPageIsCachedInALayerUnlessItCanPan() {
+        val v = view(300, 400, 300, 400, ZoomImageView.FitMode.SCREEN)
+        assertEquals(View.LAYER_TYPE_NONE, v.layerType)
+        v.look = Look.of(Filters.INVERT, Adjustments.NEUTRAL)
+        assertEquals(View.LAYER_TYPE_HARDWARE, v.layerType)
+        v.zoomTo(2f, 150f, 200f)
+        assertEquals(View.LAYER_TYPE_NONE, v.layerType)
+        v.fit()
+        assertEquals(View.LAYER_TYPE_HARDWARE, v.layerType)
+        v.look = Look.of(Filters.SEPIA, Adjustments.NEUTRAL)
+        assertEquals(View.LAYER_TYPE_NONE, v.layerType)
+
+        // A page taller than the view pans; a view larger than the screen would need too large a layer.
+        val tall = view(300, 400, 300, 900, ZoomImageView.FitMode.WIDTH)
+        tall.look = Look.of(Filters.NONE, Adjustments(brightness = 10))
+        assertEquals(View.LAYER_TYPE_NONE, tall.layerType)
+        val big = view(4000, 6000, 4000, 6000, ZoomImageView.FitMode.SCREEN)
+        big.look = Look.of(Filters.NONE, Adjustments(brightness = 10))
+        assertEquals(View.LAYER_TYPE_NONE, big.layerType)
+    }
+
+    @Test
+    @Config(sdk = [32])
+    fun beforeApi33NoLayerIsMade() {
+        val v = view(300, 400, 300, 400, ZoomImageView.FitMode.SCREEN)
+        v.look = Look.of(Filters.INVERT, Adjustments.NEUTRAL)
+        assertEquals(View.LAYER_TYPE_NONE, v.layerType)
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aOneToOnePageIsDrawnThroughItsLook() {
         ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT

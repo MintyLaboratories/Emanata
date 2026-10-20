@@ -18,6 +18,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
+import android.view.WindowManager
 import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
@@ -95,6 +96,7 @@ class ZoomImageView @JvmOverloads constructor(
             if (value.invert != old.invert || !value.matrix.contentEquals(old.matrix)) {
                 colorFilter = if (value.invert) Filters.colorFilter(Filters.INVERT) else value.matrix?.let { ColorMatrixColorFilter(it) }
             }
+            updateLayer()
             invalidate()
         }
 
@@ -251,6 +253,7 @@ class ZoomImageView @JvmOverloads constructor(
         if (oneToOne) drawMatrix.setValues(values) else drawMatrix.set(matrix)
         (drawable as? BitmapDrawable)?.isFilterBitmap = !oneToOne
         imageMatrix = drawMatrix
+        updateLayer()
         // Every move restarts the wait for the view to settle.
         cancelDetailRender()
         settler.removeCallbacks(settle)
@@ -359,6 +362,7 @@ class ZoomImageView @JvmOverloads constructor(
         dropDetail()
         clearShaders(pageShaders)
         super.setImageDrawable(drawable)
+        updateLayer()
         post { fit(fitMode) }
     }
 
@@ -453,6 +457,28 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     private fun clearShaders(shaders: Array<PageShader?>) = shaders.forEach { it?.clear() }
+
+    /**
+     * Caches a [colored] page that cannot pan, and is no larger than the screen, in a GPU
+     * layer: a page turn or scroll then moves the shaded texture instead of shading every
+     * frame. A page that pans or zooms draws directly, as each move would redraw the layer.
+     */
+    private fun updateLayer() {
+        val cached = colored && drawable is BitmapDrawable && width > 0 && width.toLong() * height <= screenPixels && !canPan()
+        val type = if (cached) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        if (layerType != type) setLayerType(type, null)
+    }
+
+    /** The largest window's area, insets included, in either orientation. */
+    private val screenPixels: Long by lazy {
+        val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            context.getSystemService(WindowManager::class.java)?.maximumWindowMetrics?.bounds?.takeUnless { it.isEmpty }
+        } else {
+            null
+        }
+        if (bounds != null) bounds.width().toLong() * bounds.height()
+        else resources.displayMetrics.let { it.widthPixels.toLong() * it.heightPixels }
+    }
 
     override fun onDraw(canvas: Canvas) {
         val d = drawable as? BitmapDrawable

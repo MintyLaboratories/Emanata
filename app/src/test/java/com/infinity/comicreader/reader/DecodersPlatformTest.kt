@@ -108,6 +108,21 @@ class DecodersPlatformTest {
     }
 
     @Test
+    fun oversizedJxlRefusedBeforeDecoding() {
+        // SizeHeader only: 100000 x 100000 pixels.
+        val e = assertThrows(DecodeException::class.java) { Decoders.decode(hex("ff0afc342c0100"), 100, 100) }
+        assertEquals("JXL image is too large (100000 x 100000)", e.message)
+        assertFalse(e.transient)
+    }
+
+    @Test
+    fun jxlGoesToJxlCoder() {
+        // The host has no jxl-coder native library, so reaching it fails this way.
+        val e = assertThrows(DecodeException::class.java) { Decoders.decode(hex("ff0ab00048e0271300130801"), 0, 0) }
+        assertEquals("No JXL decoder on this device", e.message)
+    }
+
+    @Test
     fun undecodableBytesFailForGood() {
         val e = assertThrows(DecodeException::class.java) { Decoders.decode(ByteArray(100) { 7 }, 0, 0) }
         assertEquals("Could not decode this unrecognized image", e.message)

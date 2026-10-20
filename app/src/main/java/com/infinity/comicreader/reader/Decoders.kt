@@ -15,6 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.Semaphore
 
 /**
  * An image that could not be decoded; [message] says why, for the page placeholder.
@@ -149,19 +150,36 @@ object Decoders {
 
     // ------------------------------------------------------------------ JPEG XL
 
+    /**
+     * Largest JPEG XL image decoded. jxl-coder holds the whole image in native memory
+     * before scaling it, whatever the target size, so [capPixels] does not bound it.
+     */
+    const val MAX_JXL_PIXELS = 40_000_000L
+
+    /** JPEG XL decodes running at once, bounding that native memory. */
+    private val jxlGate = Semaphore(2)
+
     /** Downscales inside jxl-coder (Mitchell) to the power-of-two size the other formats get. */
     private fun decodeJxl(bytes: ByteArray, reqW: Int, reqH: Int, capPixels: Long): Bitmap {
         val size = jxlSize(bytes) ?: throw DecodeException("Not a valid JXL image")
+        if (size[0].toLong() * size[1] > MAX_JXL_PIXELS) {
+            throw DecodeException("JXL image is too large (${size[0]} x ${size[1]})")
+        }
         val sample = sampleSize(size[0], size[1], reqW, reqH, capPixels)
-        if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
-        return JxlCoder.decodeSampled(
-            bytes,
-            (size[0] / sample).coerceAtLeast(1),
-            (size[1] / sample).coerceAtLeast(1),
-            PreferredColorConfig.RGBA_8888,
-            ScaleMode.FIT,
-            JxlResizeFilter.MITCHELL_NETRAVALI
-        )
+        jxlGate.acquireUninterruptibly()
+        try {
+            if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
+            return JxlCoder.decodeSampled(
+                bytes,
+                (size[0] / sample).coerceAtLeast(1),
+                (size[1] / sample).coerceAtLeast(1),
+                PreferredColorConfig.RGBA_8888,
+                ScaleMode.FIT,
+                JxlResizeFilter.MITCHELL_NETRAVALI
+            )
+        } finally {
+            jxlGate.release()
+        }
     }
 
     /** Header size, or the library's own reading for layouts [ImageHeaders.jxlSize] does not follow. */

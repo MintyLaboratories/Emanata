@@ -231,9 +231,41 @@ class Prefs(context: Context) {
         get() = ui.getString("last_path", null)
         set(v) = ui.edit().putString("last_path", v).apply()
 
-    var homePath: String?
-        get() = ui.getString("home_path", null)
-        set(v) = ui.edit().putString("home_path", v).apply()
+    /** One of [StartupLocation]'s choices; a home folder set by an older version counts as custom. */
+    var startupLocation: String
+        get() = sp.getString(KEY_STARTUP_LOCATION, null)
+            ?: if (legacyHome != null) StartupLocation.CUSTOM else StartupLocation.LAST
+        set(v) {
+            dropLegacyHome()
+            put(KEY_STARTUP_LOCATION, v)
+        }
+
+    /** The folder of the custom startup location. */
+    var startupPath: String?
+        get() = sp.getString(KEY_STARTUP_PATH, null) ?: legacyHome
+        set(v) {
+            dropLegacyHome()
+            put(KEY_STARTUP_PATH, v)
+        }
+
+    /** Makes [path] the custom startup location. */
+    fun setStartupFolder(path: String) {
+        dropLegacyHome()
+        sp.edit().putString(KEY_STARTUP_PATH, path).putString(KEY_STARTUP_LOCATION, StartupLocation.CUSTOM).apply()
+    }
+
+    /** Moves an older version's home folder into the startup settings before they are written. */
+    private fun dropLegacyHome() {
+        val home = legacyHome ?: return
+        val e = sp.edit()
+        if (!sp.contains(KEY_STARTUP_PATH)) e.putString(KEY_STARTUP_PATH, home)
+        if (!sp.contains(KEY_STARTUP_LOCATION)) e.putString(KEY_STARTUP_LOCATION, StartupLocation.CUSTOM)
+        e.apply()
+        ui.edit().remove("home_path").apply()
+    }
+
+    /** The home folder older versions kept with the browsing state. */
+    private val legacyHome: String? get() = ui.getString("home_path", null)
 
     /** Favorites tab sections the user folded away, by [FavoriteKind.key]. */
     var collapsedSections: Set<FavoriteKind>
@@ -329,6 +361,8 @@ class Prefs(context: Context) {
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
         private const val KEY_GROUP_FAVORITES = "pref_group_favorites"
         private const val KEY_STARTUP_TAB = "pref_startup_tab"
+        private const val KEY_STARTUP_LOCATION = "pref_startup_location"
+        private const val KEY_STARTUP_PATH = "pref_startup_path"
         private const val KEY_AUTO_CROP = "pref_auto_crop"
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_speed"
@@ -344,7 +378,7 @@ class Prefs(context: Context) {
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
-            KEY_STARTUP_TAB
+            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH
         )
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */

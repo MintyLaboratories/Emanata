@@ -237,6 +237,16 @@
     <string name="pref_list_statusbar">Show status bar in the library</string>
     <string name="pref_list_quickfab">Show the list/grid button</string>
     <string name="pref_startup_tab">Startup tab</string>
+    <string name="pref_startup_location">Startup location</string>
+    <string name="pref_startup_custom">Startup folder</string>
+    <string name="startup_last">Last seen</string>
+    <string name="startup_first_favorite">First favorite folder</string>
+    <string name="startup_recent_favorite">Most recent favorite folder</string>
+    <string name="startup_custom">Custom</string>
+    <string name="startup_custom_summary">Custom: ^1</string>
+    <string name="picker_other_folder">Other folder…</string>
+    <string name="picker_choose">Choose</string>
+    <string name="picker_up">Up</string>
     <string name="pref_group_favorites">Group favorites</string>
     <string name="pref_group_favorites_desc">Show favorites under Libraries, Sets and Comics</string>
     <string name="section_libraries">Libraries</string>
@@ -290,6 +300,19 @@
         <item>favorites</item>
         <item>history</item>
         <item>bookmarks</item>
+    </string-array>
+
+    <string-array name="startup_location_entries">
+        <item>@string/startup_last</item>
+        <item>@string/startup_first_favorite</item>
+        <item>@string/startup_recent_favorite</item>
+        <item>@string/startup_custom</item>
+    </string-array>
+    <string-array name="startup_location_values">
+        <item>last</item>
+        <item>first_favorite</item>
+        <item>recent_favorite</item>
+        <item>custom</item>
     </string-array>
 
     <string-array name="sort_entries">

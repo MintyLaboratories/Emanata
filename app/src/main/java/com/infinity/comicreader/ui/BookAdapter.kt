@@ -4,9 +4,6 @@ import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,13 +15,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.EntryType
-import com.infinity.comicreader.data.FavoriteLabel
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.color.MaterialColors
 import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -206,7 +201,7 @@ class BookAdapter(
         val context = holder.itemView.context
         holder.job?.cancel()
 
-        holder.title.text = item.label?.let { labelText(context, it) } ?: item.name
+        holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: item.name
         val showName = prefs.showFilenames
         holder.title.visibility = if (showName) View.VISIBLE else View.GONE
         val subtitle = item.subtitle ?: subtitleFor(context, item)
@@ -309,21 +304,6 @@ class BookAdapter(
             holder.subtitle.visibility = View.INVISIBLE
         }
         card.layoutParams = cardParams
-    }
-
-    /** The name in the title color, the prefix and suffix that tell it apart grayed. */
-    private fun labelText(context: android.content.Context, label: FavoriteLabel): CharSequence {
-        if (label.prefix.isEmpty() && label.suffix.isEmpty()) return label.name
-        val gray = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
-        val text = SpannableString(label.text)
-        val nameEnd = label.prefix.length + label.name.length
-        if (label.prefix.isNotEmpty()) {
-            text.setSpan(ForegroundColorSpan(gray), 0, label.prefix.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        if (label.suffix.isNotEmpty()) {
-            text.setSpan(ForegroundColorSpan(gray), nameEnd, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        return text
     }
 
     private fun applyHighlight(holder: BookHolder, item: BookEntry) {

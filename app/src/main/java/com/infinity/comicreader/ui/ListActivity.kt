@@ -51,6 +51,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.util.AppDispatchers
@@ -341,10 +342,18 @@ class ListActivity : AppCompatActivity() {
         else -> TAB_BROWSE
     }
 
-    private fun startDirectory(): File =
-        prefs.homePath?.let { File(it) }?.takeIf { it.isDirectory }
-            ?: prefs.lastPath?.let { File(it) }?.takeIf { it.isDirectory }
-            ?: Environment.getExternalStorageDirectory()
+    private fun startDirectory(): File {
+        val path = StartupLocation.resolve(
+            choice = prefs.startupLocation,
+            custom = prefs.startupPath,
+            last = prefs.lastPath,
+            shown = { LibraryOrder.favorites(this, prefs, roots).map { it.path } },
+            added = library.favorites(),
+            history = library.history().map { it.path },
+            isDir = { File(it).isDirectory }
+        )
+        return path?.let { File(it) } ?: Environment.getExternalStorageDirectory()
+    }
 
     /** Browses the startup location. */
     private fun openStartDirectory() = loadDirectory(startDirectory())
@@ -616,17 +625,7 @@ class ListActivity : AppCompatActivity() {
             else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
         }
 
-        var byField: Comparator<BookEntry> = when (prefs.listSort) {
-            "size" -> compareBy { it.size }
-            "date" -> compareBy { it.lastModified }
-            "type" -> compareBy { it.type.ordinal }
-            else -> compareBy(NaturalOrder) { it.name }
-        }
-        if (prefs.listSortDir == "desc") byField = byField.reversed()
-
-        val comparator = compareByDescending<BookEntry> { it.isDir }
-            .then(byField)
-            .thenBy(NaturalOrder) { it.name }
+        val comparator = LibraryOrder.comparator(prefs.listSort, prefs.listSortDir)
 
         shown.clear()
         shown.addAll(filtered.sortedWith(comparator))
@@ -757,9 +756,11 @@ class ListActivity : AppCompatActivity() {
                 }
             }
             add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
-            add(getString(R.string.menu_set_home)) {
-                prefs.homePath = path
-                toast(R.string.home_set)
+            if (entry.isDir) {
+                add(getString(R.string.menu_set_home)) {
+                    prefs.setStartupFolder(path)
+                    toast(R.string.home_set)
+                }
             }
             if (entry.file.exists()) {
                 add(getString(R.string.menu_rename)) { renameEntry(entry.file) }

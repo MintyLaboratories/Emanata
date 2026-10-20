@@ -9,7 +9,9 @@ import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.StartupLocation
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -61,6 +63,32 @@ class ListActivityStartupTest {
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
         idle()
         assertEquals(dir.absolutePath, activity.crumbPaths().last())
+    }
+
+    @Test
+    fun browseOpensAtTheCustomLocation() {
+        prefs.lastPath = File(root, "Last").apply { mkdirs() }.absolutePath
+        val custom = File(root, "Custom").apply { mkdirs() }
+        prefs.setStartupFolder(custom.absolutePath)
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(custom.absolutePath, activity.crumbPaths().last())
+    }
+
+    @Test
+    fun browseOpensAtTheFirstFavoriteFolder() {
+        prefs.lastPath = File(root, "Last").apply { mkdirs() }.absolutePath
+        val library = Library(ApplicationProvider.getApplicationContext())
+        val book = File(root, "a.cbz").apply { createNewFile() }
+        val beta = File(root, "Beta").apply { mkdirs() }
+        val alpha = File(root, "Alpha").apply { mkdirs() }
+        listOf(book, beta, alpha).forEach { library.toggleFavorite(it.absolutePath) }
+        prefs.groupFavorites = false
+        prefs.startupLocation = StartupLocation.FIRST_FAVORITE
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        // Favorites sort by name, folders first.
+        assertEquals(alpha.absolutePath, activity.crumbPaths().last())
     }
 
     @Test

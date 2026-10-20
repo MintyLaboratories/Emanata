@@ -5,11 +5,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import android.text.TextUtils
+import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
@@ -82,6 +85,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
+
         findPreference<Preference>("pref_backup")?.setOnPreferenceClickListener {
             exportLauncher.launch("comicreader-backup.json")
             true
@@ -138,6 +143,33 @@ class SettingsFragment : PreferenceFragmentCompat() {
             toast(R.string.pref_reset_done)
             activity?.recreate()
             true
+        }
+    }
+
+    /** Shows the custom folder in the summary; choosing Custom asks for the folder first. */
+    private fun setUpStartupLocation(pref: ListPreference, prefs: Prefs) {
+        if (pref.value == null) pref.value = prefs.startupLocation
+        val summary = Preference.SummaryProvider<ListPreference> { p ->
+            val path = prefs.startupPath
+            if (p.value == StartupLocation.CUSTOM && path != null) {
+                TextUtils.expandTemplate(
+                    getText(R.string.startup_custom_summary),
+                    FolderPicker.describe(requireContext(), path)
+                )
+            } else {
+                p.entry
+            }
+        }
+        pref.summaryProvider = summary
+        pref.setOnPreferenceChangeListener { _, value ->
+            if (value != StartupLocation.CUSTOM) return@setOnPreferenceChangeListener true
+            FolderPicker(requireContext()) { path ->
+                prefs.setStartupFolder(path)
+                pref.value = StartupLocation.CUSTOM
+                // Same value, new folder: refresh the summary.
+                pref.summaryProvider = summary
+            }.show()
+            false
         }
     }
 

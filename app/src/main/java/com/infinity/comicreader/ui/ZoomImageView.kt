@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.ViewConfiguration
 import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
@@ -34,8 +35,9 @@ import kotlin.math.roundToInt
  * A [look] beyond a plain color matrix runs in the same GPU pass, at every scale.
  *
  * [onTap] receives the tap position as fractions of the view's width and height, for
- * tap zones. [onVerticalDrag] receives the vertical
- * delta of a drag while the image is not zoomed (used for the brightness gesture).
+ * tap zones. [verticalDrag] receives drags locked to the vertical axis while the
+ * image cannot pan (the brightness gesture); a drag locked horizontally goes to the
+ * parent, to turn the page.
  */
 class ZoomImageView @JvmOverloads constructor(
     context: Context,
@@ -57,7 +59,22 @@ class ZoomImageView @JvmOverloads constructor(
     private val values = FloatArray(9)
 
     var onTap: ((Float, Float) -> Unit)? = null
-    var onVerticalDrag: ((Float) -> Unit)? = null
+    var verticalDrag: VerticalDrag? = null
+
+    /** A drag the view locked to the vertical axis ([AxisLock]); the parent sees none of it. */
+    interface VerticalDrag {
+        fun start()
+
+        /** The finger moved [dy] px, down positive. */
+        fun move(dy: Float)
+
+        fun end()
+    }
+
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private var downX = 0f
+    private var downY = 0f
+    private var axis = AxisLock.NONE
     var doubleTapEnabled = true
 
     /**
@@ -564,12 +581,19 @@ class ZoomImageView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x
                 lastY = event.y
-                // Until we know the drag direction, let a pannable page keep the gesture.
-                parent?.requestDisallowInterceptTouchEvent(canPan())
+                downX = event.x
+                downY = event.y
+                axis = AxisLock.NONE
+                // Until the drag picks its direction, keep it from a parent that would turn the
+                // page: a pannable page may pan, and a vertical drag must not turn it.
+                parent?.requestDisallowInterceptTouchEvent(canPan() || verticalDrag != null)
             }
             MotionEvent.ACTION_MOVE -> handleMove(event)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (axis == AxisLock.VERTICAL) verticalDrag?.end()
+                axis = AxisLock.NONE
                 parent?.requestDisallowInterceptTouchEvent(false)
+            }
         }
         return true
     }
@@ -580,7 +604,9 @@ class ZoomImageView @JvmOverloads constructor(
         } else if (event.pointerCount == 1) {
             val dx = event.x - lastX
             val dy = event.y - lastY
-            if (canPan()) {
+            if (axis == AxisLock.VERTICAL) {
+                verticalDrag?.move(dy)
+            } else if (canPan()) {
                 // Pan while there is room in the dominant direction; at an edge hand the
                 // gesture back so the pager / list can move to the next page.
                 val horizontal = abs(dx) >= abs(dy)
@@ -591,8 +617,13 @@ class ZoomImageView @JvmOverloads constructor(
                     clamp()
                     applyMatrix()
                 }
-            } else {
-                onVerticalDrag?.invoke(dy)
+            } else if (verticalDrag != null && axis == AxisLock.NONE) {
+                axis = AxisLock.decide(event.x - downX, event.y - downY, touchSlop)
+                when (axis) {
+                    AxisLock.VERTICAL -> verticalDrag?.start()
+                    AxisLock.HORIZONTAL -> parent?.requestDisallowInterceptTouchEvent(false)
+                    AxisLock.NONE -> return
+                }
             }
         }
         lastX = event.x

@@ -104,6 +104,81 @@ class ZoomImageViewTest {
         assertNotNull(v.shadedBitmap)
     }
 
+    /** A parent that records whether its child keeps touches from it. */
+    private class Parent : FrameLayout(ApplicationProvider.getApplicationContext<Application>()) {
+        var disallowed = false
+
+        override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+            disallowed = disallowIntercept
+            super.requestDisallowInterceptTouchEvent(disallowIntercept)
+        }
+    }
+
+    private class RecordingDrag : ZoomImageView.VerticalDrag {
+        val events = ArrayList<String>()
+        override fun start() { events += "start" }
+        override fun move(dy: Float) { events += "move $dy" }
+        override fun end() { events += "end" }
+    }
+
+    /** A fitted page in a [Parent], dragged from (500, 1000) through [points], then lifted. */
+    private fun dragged(drag: RecordingDrag, vararg points: Pair<Float, Float>): Parent {
+        val parent = Parent()
+        val v = view(1000, 1500, 1000, 1500, ZoomImageView.FitMode.SCREEN)
+        parent.addView(v)
+        v.verticalDrag = drag
+        val t = SystemClock.uptimeMillis()
+        v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 500f, 1000f, 0))
+        assertTrue(parent.disallowed)
+        points.forEachIndexed { i, (x, y) ->
+            v.onTouchEvent(MotionEvent.obtain(t, t + 16L * (i + 1), MotionEvent.ACTION_MOVE, x, y, 0))
+        }
+        return parent
+    }
+
+    @Test
+    fun aVerticalDragLocksAndSidewaysDriftNeverReachesThePager() {
+        val drag = RecordingDrag()
+        // Mostly upward past the slop, then drifting far sideways.
+        val parent = dragged(drag, 502f to 995f, 503f to 960f, 600f to 940f, 800f to 930f)
+        assertTrue(parent.disallowed)
+        assertEquals(listOf("start", "move -20.0", "move -10.0"), drag.events)
+    }
+
+    @Test
+    fun aHorizontalDragGoesToThePagerAndNeverToBrightness() {
+        val drag = RecordingDrag()
+        val parent = dragged(drag, 505f to 1001f, 540f to 1005f, 560f to 1080f, 570f to 1200f)
+        assertFalse(parent.disallowed)
+        assertTrue(drag.events.isEmpty())
+    }
+
+    @Test
+    fun liftingTheFingerEndsTheVerticalDrag() {
+        val drag = RecordingDrag()
+        val parent = Parent()
+        val v = view(1000, 1500, 1000, 1500, ZoomImageView.FitMode.SCREEN)
+        parent.addView(v)
+        v.verticalDrag = drag
+        val t = SystemClock.uptimeMillis()
+        v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 500f, 1000f, 0))
+        v.onTouchEvent(MotionEvent.obtain(t, t + 16, MotionEvent.ACTION_MOVE, 500f, 1060f, 0))
+        v.onTouchEvent(MotionEvent.obtain(t, t + 32, MotionEvent.ACTION_MOVE, 500f, 1090f, 0))
+        v.onTouchEvent(MotionEvent.obtain(t, t + 48, MotionEvent.ACTION_UP, 500f, 1090f, 0))
+        assertEquals(listOf("start", "move 30.0", "end"), drag.events)
+        assertFalse(parent.disallowed)
+    }
+
+    @Test
+    fun withoutAVerticalDragThePagerGetsEveryUnpannedTouch() {
+        val parent = Parent()
+        val v = view(1000, 1500, 1000, 1500, ZoomImageView.FitMode.SCREEN)
+        parent.addView(v)
+        val t = SystemClock.uptimeMillis()
+        v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 500f, 1000f, 0))
+        assertFalse(parent.disallowed)
+    }
+
     @Test
     fun aColoredLookShadesEveryScaleAndAPlainOneNone() {
         val v = view(300, 400, 300, 400, ZoomImageView.FitMode.SCREEN)

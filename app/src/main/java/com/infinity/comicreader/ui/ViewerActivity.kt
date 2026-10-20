@@ -688,7 +688,7 @@ class ViewerActivity : AppCompatActivity() {
             doubleTapZoom = prefs.doubleTapZoom,
             twoPage = useSpread(),
             rtl = readingDir == "rtl",
-            onVerticalDrag = if (brightnessGestureEnabled()) ({ dy -> onBrightnessDrag(dy) }) else null,
+            verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
             autoCrop = autoCrop,
             linear = prefs.linearLight,
             preload = prefs.preload
@@ -1053,11 +1053,27 @@ class ViewerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ gestures
 
-    private fun onBrightnessDrag(dy: Float) {
-        val range = 420f * resources.displayMetrics.density
-        val delta = (dy / range) * 100f
-        val b = (adjustments.brightness + delta).toInt()
-        setAdjustments(adjustments.copy(brightness = b), persist = false)
+    /**
+     * Brightness by vertical drag: up is brighter. One screen height spans the whole range,
+     * and crossing 0 holds there for [BRIGHTNESS_HOLD] of the screen height.
+     */
+    private val brightnessDrag = object : ZoomImageView.VerticalDrag {
+        private var snap: SnapDrag? = null
+
+        override fun start() {
+            val h = resources.displayMetrics.heightPixels.toFloat()
+            snap = SnapDrag(adjustments.brightness, h / (Adjustments.MAX - Adjustments.MIN), h * BRIGHTNESS_HOLD)
+        }
+
+        override fun move(dy: Float) {
+            val value = snap?.moveBy(-dy) ?: return
+            if (value != adjustments.brightness) setAdjustments(adjustments.copy(brightness = value), persist = false)
+        }
+
+        override fun end() {
+            snap = null
+            persistAdjustments()
+        }
     }
 
     // ------------------------------------------------------------------ adjustments
@@ -2074,6 +2090,9 @@ class ViewerActivity : AppCompatActivity() {
         private const val PAGE_INTERVAL_MS_BASE = 13_000L
         private const val DP_PER_SECOND_PER_STEP = 30f
         private const val FRAME_MS = 16L
+
+        /** How long, as a share of the screen height, a brightness drag holds at 0. */
+        private const val BRIGHTNESS_HOLD = 0.15f
 
         private const val MODE_PAGED = "paged"
         private const val MODE_VERTICAL = "vertical"

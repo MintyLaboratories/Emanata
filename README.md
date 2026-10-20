@@ -105,8 +105,11 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   in OKLab on the GPU in the same pass as the page's scaling (Android 13+), live
   while dragging. Brightness blends toward black or white, contrast scales
   lightness about mid-gray, saturation scales chroma within the sRGB gamut.
-  Changes are per book with a reset to the defaults set in Settings. A vertical
-  drag on the page sets brightness. A **night** filter sits on top.
+  Changes are per book with a reset to the defaults set in Settings. A **night**
+  filter sits on top.
+- **Brightness drag:** in paged mode, drag up for brighter, down for darker.
+  Crossing 0 holds there for 15% of the screen height. A drag locks to its first
+  direction: vertical never turns the page, horizontal never changes brightness.
 - **Page spacing** slider for vertical and long-strip modes.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
   direct link to the next chapter.

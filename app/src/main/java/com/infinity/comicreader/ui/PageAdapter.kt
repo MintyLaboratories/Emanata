@@ -74,7 +74,7 @@ class PageAdapter(
     private val doubleTapZoom: Boolean,
     private val twoPage: Boolean = false,
     private val rtl: Boolean = false,
-    private val onVerticalDrag: ((Float) -> Unit)? = null,
+    private val verticalDrag: ZoomImageView.VerticalDrag? = null,
     private val autoCrop: Boolean = false,
     private val linear: Boolean = false,
     private val preload: Int = 2
@@ -285,7 +285,7 @@ class PageAdapter(
     private fun makeImage(context: Context): ZoomImageView = ZoomImageView(context).apply {
         doubleTapEnabled = doubleTapZoom
         onTap = { x, y -> tapped(this, x, y) }
-        onVerticalDrag = this@PageAdapter.onVerticalDrag
+        verticalDrag = this@PageAdapter.verticalDrag
         look = this@PageAdapter.look
         images += this
     }

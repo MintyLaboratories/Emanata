@@ -1157,8 +1157,10 @@ class ViewerActivity : AppCompatActivity() {
             })
         }
         root.findViewById<View>(R.id.adjust_reset).setOnClickListener {
-            resetAdjustments()
-            show()
+            confirm(this, R.string.confirm_reset_adjust_title, R.string.confirm_reset_adjust_msg, R.string.reset) {
+                resetAdjustments()
+                show()
+            }
         }
         show()
     }
@@ -2001,7 +2003,11 @@ class ViewerActivity : AppCompatActivity() {
             .setTitle(R.string.menu_bookmark_list)
             .setItems(labels) { _, which -> goTo(marks[which].page) }
             .setNeutralButton(R.string.clear) { _, _ ->
-                marks.forEach { library.removeBookmark(f.absolutePath, it.page) }
+                val message = getString(R.string.confirm_clear_book_bookmarks_msg, f.name)
+                confirm(this, R.string.confirm_clear_book_bookmarks_title, message, R.string.clear) {
+                    marks.forEach { library.removeBookmark(f.absolutePath, it.page) }
+                    invalidateOptionsMenu()
+                }
             }
             .show()
     }

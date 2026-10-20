@@ -132,29 +132,37 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<Preference>("pref_clear_history")?.setOnPreferenceClickListener {
-            library.clearHistory()
-            toast(R.string.pref_cleared)
+            confirm(requireContext(), R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
+                library.clearHistory()
+                toast(R.string.pref_cleared)
+            }
             true
         }
 
         findPreference<Preference>("pref_clear_bookmarks")?.setOnPreferenceClickListener {
-            library.clearBookmarks()
-            toast(R.string.pref_cleared)
+            confirm(requireContext(), R.string.confirm_clear_bookmarks_title, R.string.confirm_clear_bookmarks_msg, R.string.clear) {
+                library.clearBookmarks()
+                toast(R.string.pref_cleared)
+            }
             true
         }
 
         findPreference<Preference>("pref_clear_thumbs")?.setOnPreferenceClickListener {
-            Thumbs.clear(requireContext())
-            toast(R.string.pref_cleared_thumbs)
+            confirm(requireContext(), R.string.confirm_clear_thumbs_title, R.string.confirm_clear_thumbs_msg, R.string.clear) {
+                Thumbs.clear(requireContext())
+                toast(R.string.pref_cleared_thumbs)
+            }
             true
         }
 
         findPreference<Preference>("pref_reset")?.setOnPreferenceClickListener {
-            prefs.reset()
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-            Locales.apply("system")
-            toast(R.string.pref_reset_done)
-            activity?.recreate()
+            confirm(requireContext(), R.string.confirm_reset_title, R.string.confirm_reset_msg, R.string.reset) {
+                prefs.reset()
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+                Locales.apply("system")
+                toast(R.string.pref_reset_done)
+                activity?.recreate()
+            }
             true
         }
     }

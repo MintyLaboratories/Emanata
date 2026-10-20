@@ -159,7 +159,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
   drag, double-tap zoom).
 - File-list options (file names, status bar, breadcrumb, quick button).
-- Clear history, clear bookmarks, clear thumbnails, reset all settings.
+- Clear history, clear bookmarks, clear thumbnails, reset all settings; every
+  Clear or Reset asks first. Resetting settings keeps per-book adjustments and
+  reading progress.
+- About: version, source, upstream credit, the license and third-party licenses.
 
 ## Format support mapping
 

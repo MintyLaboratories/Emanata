@@ -816,7 +816,12 @@ class ListActivity : AppCompatActivity() {
             }
         }
         if (mode == TAB_HISTORY) {
-            add(getString(R.string.pref_clear_history)) { library.clearHistory(); refreshCurrent() }
+            add(getString(R.string.pref_clear_history)) {
+                confirm(this, R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
+                    library.clearHistory()
+                    refreshCurrent()
+                }
+            }
         }
 
         AlertDialog.Builder(this)
@@ -1121,7 +1126,18 @@ class ListActivity : AppCompatActivity() {
         return books.firstOrNull { it.absolutePath !in read }?.let { it to 0 }
     }
 
+    /** Marks the books directly in [dir] read, or unread once confirmed. */
     private fun markFolder(dir: File, read: Boolean) {
+        if (read) return markFolderNow(dir, true)
+        val message = android.text.TextUtils.expandTemplate(
+            getText(R.string.confirm_mark_unread_msg), FolderPicker.describe(this, dir.absolutePath)
+        )
+        confirm(this, R.string.confirm_mark_unread_title, message, R.string.menu_mark_all_unread) {
+            markFolderNow(dir, false)
+        }
+    }
+
+    private fun markFolderNow(dir: File, read: Boolean) {
         lifecycleScope.launch {
             withContext(AppDispatchers.io) {
                 val paths = dir.listFiles()
@@ -1146,7 +1162,11 @@ class ListActivity : AppCompatActivity() {
                 )
             )
             .setPositiveButton(R.string.ok, null)
-            .setNeutralButton(R.string.reset_stats) { _, _ -> library.clearStats() }
+            .setNeutralButton(R.string.reset_stats) { _, _ ->
+                confirm(this, R.string.confirm_reset_stats_title, R.string.confirm_reset_stats_msg, R.string.reset) {
+                    library.clearStats()
+                }
+            }
             .show()
     }
 

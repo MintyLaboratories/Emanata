@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.app.Application
+import android.graphics.Rect
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +46,32 @@ class PdfPlanTest {
         val pts = floatArrayOf(100f, 50f, 300f, 150f)
         PdfSource.transform(Plan(1000, 500, 100.0, 50.0, 200.0, 100.0)).mapPoints(pts)
         assertEquals(listOf(0f, 0f, 1000f, 500f), pts.map { Math.round(it * 1000) / 1000f })
+    }
+
+    @Test
+    fun layoutCropsToTheContentFoundInTheFirstRender() {
+        val firsts = ArrayList<Plan>()
+        val plan = PdfSource.plan(Target(1000, 0, autoCrop = true), pw, ph) {
+            firsts += it
+            Rect(100, 50, 900, 1200)
+        }
+        assertEquals(listOf(Plan(1000, 1294, 0.0, 0.0, pw, ph)), firsts)
+        val sy = ph / 1294
+        assertEquals(1000, plan.width)
+        assertEquals(1438, plan.height)
+        assertEquals(100 * 0.612, plan.x, 1e-9)
+        assertEquals(50 * sy, plan.y, 1e-9)
+        assertEquals(800 * 0.612, plan.spanW, 1e-9)
+        assertEquals(1150 * sy, plan.spanH, 1e-9)
+        // The detail's whole region at the page's size is the page's own plan.
+        assertEquals(plan, Region(0.0, 0.0, 1.0, 1.0).plan(plan.width, plan.height, plan.x, plan.y, plan.spanW, plan.spanH))
+    }
+
+    @Test
+    fun layoutWithoutAutoCropOrContentIsTheWholePage() {
+        val whole = Plan(1000, 1294, 0.0, 0.0, pw, ph)
+        assertEquals(whole, PdfSource.plan(Target(1000, 0), pw, ph) { throw AssertionError("No first render without auto-crop") })
+        assertEquals(whole, PdfSource.plan(Target(1000, 0, autoCrop = true), pw, ph) { null })
     }
 
     @Test

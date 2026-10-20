@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Log
@@ -29,24 +30,14 @@ class PdfSource(file: File) : PageSource {
      * access is serialized here.
      *
      * The page is rendered straight at the target size, its points mapped onto the
-     * bitmap by the [Plan] ([vectorTarget]). With auto-crop, a first render finds the
-     * content, which a second one then fills the target with ([cropPlan]).
+     * bitmap by the [Plan] from [layout].
      */
     @Synchronized
     override fun loadPage(index: Int, target: Target): Bitmap {
         try {
             val page = renderer.openPage(index)
             try {
-                val pw = page.width.coerceAtLeast(1).toDouble()
-                val ph = page.height.coerceAtLeast(1).toDouble()
-                val sized = vectorTarget(target, pw)
-                val plan = sized.plan(pw, ph)
-                val bitmap = render(page, plan)
-                if (!target.autoCrop) return bitmap
-                val bounds = BitmapUtils.contentBounds(bitmap) ?: return bitmap
-                val cropped = cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
-                bitmap.recycle()
-                return render(page, cropped)
+                return render(page, layout(page, target))
             } finally {
                 page.close()
             }
@@ -64,22 +55,18 @@ class PdfSource(file: File) : PageSource {
     override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
         val page = renderer.openPage(index)
         try {
-            val pw = page.width.coerceAtLeast(1).toDouble()
-            val ph = page.height.coerceAtLeast(1).toDouble()
-            val sized = vectorTarget(target, pw)
-            var plan = sized.plan(pw, ph)
-            if (target.autoCrop) {
-                val first = render(page, plan)
-                BitmapUtils.contentBounds(first)?.let {
-                    plan = cropPlan(sized, plan, it.left, it.top, it.width(), it.height())
-                }
-                first.recycle()
-            }
-            return VectorDetail(index, plan)
+            return VectorDetail(index, layout(page, target))
         } finally {
             page.close()
         }
     }
+
+    /** Where [target] lays out [page], for [loadPage] and [loadDetail] alike ([plan]). */
+    private fun layout(page: PdfRenderer.Page, target: Target): Plan =
+        plan(target, page.width.coerceAtLeast(1).toDouble(), page.height.coerceAtLeast(1).toDouble()) { first ->
+            val bitmap = render(page, first)
+            BitmapUtils.contentBounds(bitmap).also { bitmap.recycle() }
+        }
 
     private inner class VectorDetail(private val index: Int, private val page: Plan) : PageDetail {
         override val byteCount: Long get() = 0L
@@ -142,6 +129,19 @@ class PdfSource(file: File) : PageSource {
         fun vectorTarget(target: Target, pw: Double): Target {
             val t = if (target.fit == Fit.SHRINK) target.copy(fit = Fit.INSIDE) else target
             return if (t.width <= 0 && t.height <= 0) t.copy(width = (pw * NATIVE_SCALE).roundToInt()) else t
+        }
+
+        /**
+         * Where [target] lays out a [pw] x [ph]-point page ([vectorTarget]). With auto-crop,
+         * [content] finds the content in a first render at the uncropped plan, and the
+         * content then fills the target ([cropPlan]); without content found the page does.
+         */
+        fun plan(target: Target, pw: Double, ph: Double, content: (Plan) -> Rect?): Plan {
+            val sized = vectorTarget(target, pw)
+            val plan = sized.plan(pw, ph)
+            if (!target.autoCrop) return plan
+            val bounds = content(plan) ?: return plan
+            return cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
         }
 
         /**

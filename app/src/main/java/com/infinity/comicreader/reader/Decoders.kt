@@ -15,6 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Semaphore
 
 /**
@@ -137,6 +138,8 @@ object Decoders {
         return try {
             decode()
         } catch (e: DecodeException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (e: LinkageError) {
             throw DecodeException("No $label decoder on this device", e)

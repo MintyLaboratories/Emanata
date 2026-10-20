@@ -2,8 +2,11 @@ package com.infinity.comicreader.reader
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -203,6 +206,37 @@ class LanczosTest {
         Lanczos.resample(large, 140, 90, Lanczos.Window.of(140, 90), 300, 10, linear = true)
         Lanczos.resample(large, 140, 90, Lanczos.Window.of(140, 90), 9, 70)
         assertArrayEquals(first, Lanczos.resample(small, 31, 29, Lanczos.Window.of(31, 29), 12, 40))
+    }
+
+    @Test
+    fun cancellingStopsEveryThread() {
+        val src = noise(200, 300, 6, opaque = true)
+        for (threads in listOf(1, 4)) {
+            val polls = AtomicInteger()
+            val rows = AtomicInteger()
+            assertThrows(CancellationException::class.java) {
+                Lanczos.resample(
+                    200, 300, { y, row -> System.arraycopy(src, y * 200, row, 0, 200) }, Lanczos.Window.of(200, 300),
+                    100, 150, false, { _, n, _ -> rows.addAndGet(n) }, threads
+                ) { polls.incrementAndGet() > 10 }
+            }
+            // Only rows started before the mark was set are written.
+            assertTrue("$threads threads: ${rows.get()} rows", rows.get() <= 10)
+        }
+    }
+
+    @Test
+    fun cancellationMarksOnlyTheThreadDuringTheCall() {
+        assertTrue(!Cancellation.current()())
+        Cancellation.during({ true }) {
+            assertTrue(Cancellation.current()())
+            Cancellation.during({ false }) { assertTrue(!Cancellation.current()()) }
+            assertTrue(Cancellation.current()())
+            var other = true
+            Thread { other = Cancellation.current()() }.apply { start(); join() }
+            assertTrue(!other)
+        }
+        assertTrue(!Cancellation.current()())
     }
 
     @Test

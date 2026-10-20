@@ -105,17 +105,24 @@ object BitmapUtils {
     /**
      * [src] resampled with [Lanczos] as [plan] says, into a new ARGB_8888 bitmap. Reads
      * and writes rows in place, so no second full-size copy of [src] is ever made.
+     * Stops early, throwing, once this thread's [Cancellation] mark is set.
      */
     fun resample(src: Bitmap, plan: Plan, linear: Boolean): Bitmap {
         val w = src.width
         val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
-        Lanczos.resample(
-            w, src.height,
-            { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
-            Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH),
-            plan.width, plan.height, linear,
-            { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } }
-        )
+        try {
+            Lanczos.resample(
+                w, src.height,
+                { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
+                Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH),
+                plan.width, plan.height, linear,
+                { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
+                cancelled = Cancellation.current()
+            )
+        } catch (t: Throwable) {
+            out.recycle()
+            throw t
+        }
         return out
     }
 }

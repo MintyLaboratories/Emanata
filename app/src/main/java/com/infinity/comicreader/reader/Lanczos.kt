@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.lang.ref.SoftReference
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
@@ -105,6 +107,8 @@ object Lanczos {
      * Resamples [window] of a [srcW] x [srcH] image read through [reader] to [dstW] x [dstH],
      * handing each finished row to [writer], on up to [threads] threads. Blocks the
      * calling thread until done, so it must not run on [Dispatchers.Default] itself.
+     * Polls [cancelled] before each row and, once it returns true, stops every thread
+     * and throws [CancellationException].
      */
     fun resample(
         srcW: Int,
@@ -115,7 +119,8 @@ object Lanczos {
         dstH: Int,
         linear: Boolean,
         writer: RowWriter,
-        threads: Int = Runtime.getRuntime().availableProcessors()
+        threads: Int = Runtime.getRuntime().availableProcessors(),
+        cancelled: () -> Boolean = { false }
     ) {
         val ax = axis(srcW, window.x, window.width, dstW)
         val ay = axis(srcH, window.y, window.height, dstH)
@@ -123,24 +128,28 @@ object Lanczos {
         // the kernel's few rows it shares with the next.
         val bands = min(dstH, threads.coerceAtLeast(1) * BANDS_PER_THREAD)
         val workers = min(threads, bands)
+        val stopped = AtomicBoolean()
         if (workers <= 1) {
-            withBand(srcW, ax, ay, linear, reader) { it.run(0, dstH, writer) }
-            return
-        }
-        val next = AtomicInteger()
-        runBlocking(Dispatchers.Default) {
-            repeat(workers) {
-                launch {
-                    withBand(srcW, ax, ay, linear, reader) { band ->
-                        while (true) {
-                            val b = next.getAndIncrement()
-                            if (b >= bands) break
-                            band.run((dstH.toLong() * b / bands).toInt(), (dstH.toLong() * (b + 1) / bands).toInt(), writer)
+            withBand(srcW, ax, ay, linear, reader) { if (!it.run(0, dstH, writer, cancelled)) stopped.set(true) }
+        } else {
+            val next = AtomicInteger()
+            runBlocking(Dispatchers.Default) {
+                repeat(workers) {
+                    launch {
+                        withBand(srcW, ax, ay, linear, reader) { band ->
+                            while (!stopped.get()) {
+                                val b = next.getAndIncrement()
+                                if (b >= bands) break
+                                val y0 = (dstH.toLong() * b / bands).toInt()
+                                val y1 = (dstH.toLong() * (b + 1) / bands).toInt()
+                                if (!band.run(y0, y1, writer, cancelled)) stopped.set(true)
+                            }
                         }
                     }
                 }
             }
         }
+        if (stopped.get()) throw CancellationException("Resampling cancelled")
     }
 
     /** [resample] for pixels held in an array, row-major. */
@@ -152,12 +161,13 @@ object Lanczos {
         dstW: Int,
         dstH: Int,
         linear: Boolean = false,
-        threads: Int = Runtime.getRuntime().availableProcessors()
+        threads: Int = Runtime.getRuntime().availableProcessors(),
+        cancelled: () -> Boolean = { false }
     ): IntArray {
         val out = IntArray(dstW * dstH)
         resample(
             srcW, srcH, { y, row -> System.arraycopy(src, y * srcW, row, 0, srcW) }, window, dstW, dstH, linear,
-            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, threads
+            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, threads, cancelled
         )
         return out
     }
@@ -217,9 +227,10 @@ object Lanczos {
         private val sum = buffers.sum.atLeast(rowLen).also { buffers.sum = it }
         private val out = buffers.out.atLeast(dstW).also { buffers.out = it }
 
-        /** Filters output rows [y0] until [y1], writing each as it is done. */
-        fun run(y0: Int, y1: Int, writer: RowWriter) {
+        /** Filters output rows [y0] until [y1], writing each as it is done; false when [cancelled] stopped it. */
+        fun run(y0: Int, y1: Int, writer: RowWriter, cancelled: () -> Boolean): Boolean {
             for (y in y0 until y1) {
+                if (cancelled()) return false
                 vertical(y)
                 var o = 0
                 for (x in 0 until dstW) {
@@ -228,6 +239,7 @@ object Lanczos {
                 }
                 writer.write(y, 1, out)
             }
+            return true
         }
 
         private fun vertical(y: Int) {

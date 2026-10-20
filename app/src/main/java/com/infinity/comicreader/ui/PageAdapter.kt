@@ -12,6 +12,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
+import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
@@ -23,11 +24,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -438,9 +441,21 @@ class PageAdapter(
     private fun cacheBytes(): Int =
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
 
-    /** Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for generation [gen]. */
-    private fun decode(source: PageSource, index: Int, pageIndex: Int, target: Target, gen: Int): Bitmap? = try {
-        source.loadPage(index, target)
+    /**
+     * Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for
+     * generation [gen]. Throws [CancellationException] when [cancelled] stops the decode first.
+     */
+    private fun decode(
+        source: PageSource,
+        index: Int,
+        pageIndex: Int,
+        target: Target,
+        gen: Int,
+        cancelled: () -> Boolean
+    ): Bitmap? = try {
+        Cancellation.during(cancelled) { source.loadPage(index, target) }
+    } catch (e: CancellationException) {
+        throw e
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
         val name = runCatching { source.pageName(index) }.getOrNull()
@@ -468,7 +483,8 @@ class PageAdapter(
         val gen = synchronized(results) { generation }
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target, gen)
+                val job = coroutineContext.job
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target, gen) { job.isCancelled }
                 if (bitmap != null && bitmap.width > 0) {
                     synchronized(results) { if (gen == generation) cache.put(key, bitmap) }
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()

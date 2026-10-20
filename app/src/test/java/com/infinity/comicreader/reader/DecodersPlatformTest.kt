@@ -199,4 +199,13 @@ class DecodersPlatformTest {
         assertEquals(40, bitmap.width)
         assertEquals(30, bitmap.height)
     }
+
+    @Test
+    fun cancelledResampleIsNotADecodeFailure() {
+        val png = encoded(400, 300, Bitmap.CompressFormat.PNG)
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            Cancellation.during({ true }) { Decoders.decode(png, Target(100, 0)) }
+        }
+        assertEquals(100, Decoders.decode(png, Target(100, 0)).width)
+    }
 }

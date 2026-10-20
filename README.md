@@ -91,7 +91,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered.
-- **Page filter:** none, invert, grayscale, high contrast, sepia.
+- **Page filter:** none, invert, grayscale, high contrast, sepia. Invert flips
+  lightness only, in OKLab, so colors keep their hue (Android 13+; an RGB
+  invert before).
 - **Auto-scroll** with adjustable speed (continuous in vertical / long-strip modes,
   timed page turns in paged mode); touching the screen takes over.
 - **Auto-crop** trims blank page borders; pages ahead are **preloaded**.

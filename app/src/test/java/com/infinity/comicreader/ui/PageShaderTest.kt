@@ -3,7 +3,10 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Lanczos
+import com.infinity.comicreader.reader.Look
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,26 +20,35 @@ import kotlin.math.max
 import kotlin.random.Random
 
 /**
- * [LanczosShader]'s AGSL against the CPU resampler ([Lanczos]) plus the 2 x 2 clamp,
- * run by the host's software Skia.
+ * [PageShader]'s AGSL run by the host's software Skia: Lanczos3 against the CPU resampler
+ * ([Lanczos]) plus the 2 x 2 clamp, and the color stage against [Look.apply].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class LanczosShaderTest {
+class PageShaderTest {
 
-    /** The host's Skia predates `shader.eval()` and takes the older `sample(shader, p)`. */
-    private fun shader() = LanczosShader(LanczosShader.SOURCE.replace("image.eval(", "sample(image, "))
+    private fun shader(kernel: PageShader.Kernel = PageShader.Kernel.LANCZOS, colored: Boolean = false) =
+        PageShader(kernel, colored, HOST_DIALECT)
 
-    /** [src] ([w] x [h]) drawn through the shader scaled by [scale] into an [outW] x [outH] bitmap. */
-    private fun shaded(shader: LanczosShader, src: IntArray, w: Int, h: Int, scale: Float, outW: Int, outH: Int): IntArray {
+    /** [src] ([w] x [h]) drawn through [shader] with [look], scaled by [scale] into an [outW] x [outH] bitmap. */
+    private fun shaded(
+        shader: PageShader,
+        src: IntArray,
+        w: Int,
+        h: Int,
+        scale: Float,
+        outW: Int,
+        outH: Int,
+        look: Look = Look.NONE
+    ): IntArray {
         val bitmap = Bitmap.createBitmap(src, w, h, Bitmap.Config.ARGB_8888)
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         // The software canvas refuses runtime shaders unless told otherwise.
         Canvas::class.java.getMethod("setHwFeaturesInSwModeEnabled", Boolean::class.javaPrimitiveType).invoke(canvas, true)
         canvas.scale(scale, scale)
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255))
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255, look))
         return IntArray(outW * outH).also { out.getPixels(it, 0, outW, 0, 0, outW, outH) }
     }
 
@@ -115,5 +127,65 @@ class LanczosShaderTest {
         val src = noise(6, 5, 2)
         val got = shaded(shader, src, 6, 5, 2f, 12, 10)
         assertTrue(maxDiff(expected(src, 6, 5, 2f, 12, 10), got) <= 2)
+    }
+
+    private val looks = listOf(
+        Look.of(Filters.INVERT, Adjustments.NEUTRAL),
+        Look.of(Filters.NONE, Adjustments(brightness = 35)),
+        Look.of(Filters.NONE, Adjustments(brightness = -60)),
+        Look.of(Filters.NONE, Adjustments(contrast = 70)),
+        Look.of(Filters.NONE, Adjustments(contrast = -40)),
+        Look.of(Filters.NONE, Adjustments(saturation = 100)),
+        Look.of(Filters.NONE, Adjustments(saturation = -100)),
+        Look.of(Filters.SEPIA, Adjustments(10, 20, 30)),
+        Look.of(Filters.INVERT, Adjustments(-20, 100, 60)),
+        Look.of(Filters.NONE, Adjustments(100, -100, -100))
+    )
+
+    @Test
+    fun colorStageMatchesTheReferenceAtOneToOne() {
+        val w = 32
+        val h = 16
+        val src = noise(w, h, 3)
+        val shader = shader(PageShader.Kernel.NEAREST, colored = true)
+        for (look in looks) {
+            val got = shaded(shader, src, w, h, 1f, w, h, look)
+            val diff = maxDiff(IntArray(src.size) { look.apply(src[it]) }, got)
+            assertTrue("${look.adjustments} invert ${look.invert} differs by $diff", diff <= 2)
+        }
+    }
+
+    @Test
+    fun colorStageFollowsTheLanczosResult() {
+        val w = 12
+        val h = 8
+        val src = noise(w, h, 4)
+        val plain = shaded(shader(), src, w, h, 2.5f, 30, 20)
+        val shader = shader(PageShader.Kernel.LANCZOS, colored = true)
+        // Near-threshold contrast flips on any rounding; the 1:1 test covers it.
+        for (look in looks.filter { it.adjustments.contrastFactor < 4f }) {
+            val got = shaded(shader, src, w, h, 2.5f, 30, 20, look)
+            val diff = maxDiff(IntArray(plain.size) { look.apply(plain[it]) }, got)
+            // The reference starts from the plain result rounded to 8 bits, an error that raised
+            // contrast or saturation amplifies, most near black where sRGB is steepest.
+            val a = look.adjustments
+            val limit = if (a.contrastFactor > 1f || a.saturationFactor > 1f) 12 else 3
+            assertTrue("${look.adjustments} invert ${look.invert} differs by $diff", diff <= limit)
+        }
+    }
+
+    @Test
+    fun colorStageAfterBilinearShrink() {
+        val w = 16
+        val h = 16
+        val flat = IntArray(w * h) { 0xFF8040C0.toInt() }
+        val look = Look.of(Filters.INVERT, Adjustments(brightness = 20))
+        val got = shaded(shader(PageShader.Kernel.LINEAR, colored = true), flat, w, h, 0.5f, 8, 8, look)
+        assertTrue(maxDiff(IntArray(got.size) { look.apply(flat[0]) }, got) <= 2)
+    }
+
+    companion object {
+        /** The host's Skia predates `shader.eval()` and takes the older `sample(shader, p)`. */
+        val HOST_DIALECT: (String) -> String = { it.replace("image.eval(", "sample(image, ") }
     }
 }

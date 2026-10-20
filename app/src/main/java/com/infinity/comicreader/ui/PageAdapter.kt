@@ -13,9 +13,11 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
+import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Region
@@ -98,11 +100,31 @@ class PageAdapter(
             notifyItemRangeChanged(0, itemCount)
         }
 
+    /** The page filter, one of [Filters]. */
     var filter: String = Filters.NONE
         set(value) {
+            if (field == value) return
             field = value
-            notifyItemRangeChanged(0, itemCount)
+            applyLook()
         }
+
+    var adjustments: Adjustments = Adjustments.NEUTRAL
+        set(value) {
+            if (field == value) return
+            field = value
+            applyLook()
+        }
+
+    private var look = Look.NONE
+
+    /** Every image this adapter made, shown or waiting in the recycler's caches. */
+    private val images = ArrayList<ZoomImageView>()
+
+    /** Shows the current [filter] and [adjustments] on every image at once, without binding again. */
+    private fun applyLook() {
+        look = Look.of(filter, adjustments)
+        images.forEach { it.look = look }
+    }
 
     internal class Pending(val key: PageKey, val deferred: Deferred<Bitmap?>) {
         var waiters = 0
@@ -264,7 +286,8 @@ class PageAdapter(
         doubleTapEnabled = doubleTapZoom
         onTap = { x, y -> tapped(this, x, y) }
         onVerticalDrag = this@PageAdapter.onVerticalDrag
-        colorFilter = Filters.colorFilter(this@PageAdapter.filter)
+        look = this@PageAdapter.look
+        images += this
     }
 
     private val tapAt = IntArray(2)
@@ -415,7 +438,7 @@ class PageAdapter(
             clearImage(holder, slot)
             return
         }
-        image.colorFilter = Filters.colorFilter(filter)
+        image.look = look
         prepareContainer(holder, pageIndex)
 
         val key = keyFor(pageIndex)

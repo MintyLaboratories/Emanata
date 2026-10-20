@@ -13,6 +13,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Region
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,6 +102,53 @@ class ZoomImageViewTest {
         assertNull(v.shadedBitmap)
         v.zoomTo(1.5f, 150f, 200f)
         assertNotNull(v.shadedBitmap)
+    }
+
+    @Test
+    fun aColoredLookShadesEveryScaleAndAPlainOneNone() {
+        val v = view(300, 400, 300, 400, ZoomImageView.FitMode.SCREEN)
+        v.look = Look.of(Filters.SEPIA, Adjustments.NEUTRAL)
+        assertNull(v.shadedBitmap)
+        assertNotNull(v.colorFilter)
+        v.look = Look.of(Filters.NONE, Adjustments(brightness = -30))
+        assertTrue(v.drawsOneToOne)
+        assertNotNull(v.shadedBitmap)
+        assertNull(v.colorFilter)
+        val shrunk = view(300, 400, 600, 800, ZoomImageView.FitMode.SCREEN)
+        shrunk.look = Look.of(Filters.INVERT, Adjustments.NEUTRAL)
+        assertNotNull(shrunk.shadedBitmap)
+        // The fallback where the GPU stage cannot run.
+        assertNotNull(shrunk.colorFilter)
+        shrunk.look = Look.NONE
+        assertNull(shrunk.shadedBitmap)
+        assertNull(shrunk.colorFilter)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aOneToOnePageIsDrawnThroughItsLook() {
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
+        try {
+            val v = view(8, 4, 8, 4, ZoomImageView.FitMode.SCREEN)
+            val page = (v.drawable as BitmapDrawable).bitmap
+            val pixels = IntArray(32) { (0xFF shl 24) or (it * 0x070B0D) }
+            page.setPixels(pixels, 0, 8, 0, 0, 8, 4)
+            val look = Look.of(Filters.INVERT, Adjustments(brightness = 25, saturation = 40))
+            v.look = look
+            val out = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(out)
+            Canvas::class.java.getMethod("setHwFeaturesInSwModeEnabled", Boolean::class.javaPrimitiveType).invoke(canvas, true)
+            v.draw(canvas)
+            for (i in pixels.indices) {
+                val got = out.getPixel(i % 8, i / 8)
+                val want = look.apply(pixels[i])
+                for (shift in 0..16 step 8) {
+                    assertTrue(Math.abs(((got shr shift) and 0xFF) - ((want shr shift) and 0xFF)) <= 2)
+                }
+            }
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
     }
 
     @Test
@@ -256,7 +306,7 @@ class ZoomImageViewTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun shadersLetGoOfBitmapsNoLongerShown() {
-        ZoomImageView.shaderSource = LanczosShader.SOURCE.replace("image.eval(", "sample(image, ")
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
         try {
             val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
             val page = (v.drawable as BitmapDrawable).bitmap
@@ -277,7 +327,7 @@ class ZoomImageViewTest {
             v.setImageDrawable(null)
             assertTrue(v.shadersHold.isEmpty())
         } finally {
-            ZoomImageView.shaderSource = LanczosShader.SOURCE
+            ZoomImageView.shaderDialect = { it }
         }
     }
 

@@ -2,13 +2,18 @@ package com.infinity.comicreader.reader
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Color
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -59,5 +64,46 @@ class PageDetailTest {
         val out = detail().render(Region(-0.5 / w, 0.0, 1.0, 1.0), w, h, false)
         val expected = Lanczos.resample(pixels, w, h, Lanczos.Window(-0.5, 0.0, w.toDouble(), h.toDouble()), w, h)
         assertArrayEquals(expected, pixelsOf(out))
+    }
+
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    /** A page with white borders around sharp-edged content: auto-crop takes them off. */
+    private fun borderedPage(): File {
+        val pw = 240
+        val ph = 320
+        val page = IntArray(pw * ph) {
+            val x = it % pw
+            val y = it / pw
+            if (x < 20 || y < 30 || x >= pw - 16 || y >= ph - 24) {
+                Color.WHITE
+            } else {
+                val check = if ((x / 3 + y / 3) % 2 == 0) 0 else 120
+                Color.rgb(check, (x * 150) / pw, (y * 150) / ph)
+            }
+        }
+        val out = ByteArrayOutputStream()
+        Bitmap.createBitmap(page, pw, ph, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, out)
+        return temp.newFile("page.png").apply { writeBytes(out.toByteArray()) }
+    }
+
+    // File decodes run on API 27, where the host decodes them (through BitmapFactory).
+    @Test
+    @Config(sdk = [27])
+    fun autoCroppedDetailLinesUpWithThePageShown() {
+        val source = ImageSource(borderedPage())
+        val target = Target(100, 150, autoCrop = true)
+        val shown = source.loadPage(0, target)
+        val whole = source.loadDetail(0, target, Long.MAX_VALUE).render(Region(0.0, 0.0, 1.0, 1.0), shown.width, shown.height, false)
+        assertEquals(shown.width, whole.width)
+        assertEquals(shown.height, whole.height)
+        // Only within the kernel's reach of an edge, where the shown page read the border, may they differ.
+        val a = pixelsOf(shown)
+        val b = pixelsOf(whole)
+        val margin = 4
+        for (y in margin until shown.height - margin) for (x in margin until shown.width - margin) {
+            assertEquals("($x, $y)", a[y * shown.width + x], b[y * shown.width + x])
+        }
     }
 }

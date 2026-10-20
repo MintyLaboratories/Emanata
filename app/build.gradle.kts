@@ -1,3 +1,4 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.FileInputStream
 import java.util.Properties
@@ -85,6 +86,23 @@ kotlin {
         jvmTarget.set(JvmTarget.JVM_17)
     }
 }
+
+// Writes the group:name of every module the release APK bundles, one per line;
+// NoticesTest checks each one has a notice on the About screen.
+val releaseModules = tasks.register("releaseModules") {
+    val out = layout.buildDirectory.file("notices/release-modules.txt")
+    outputs.file(out)
+    outputs.upToDateWhen { false }
+    doLast {
+        val modules = configurations.getByName("releaseRuntimeClasspath")
+            .incoming.resolutionResult.allComponents
+            .mapNotNull { it.id as? ModuleComponentIdentifier }
+            .map { "${it.group}:${it.module}" }
+            .distinct().sorted()
+        out.get().asFile.apply { parentFile.mkdirs() }.writeText(modules.joinToString("\n", postfix = "\n"))
+    }
+}
+tasks.withType<Test>().configureEach { inputs.files(releaseModules) }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

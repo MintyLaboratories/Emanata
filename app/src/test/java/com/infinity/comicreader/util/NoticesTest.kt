@@ -1,6 +1,7 @@
 package com.infinity.comicreader.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -8,24 +9,36 @@ import java.io.File
 
 class NoticesTest {
 
-    /** `group:name` of every `implementation(...)` dependency the app ships. */
-    private fun shippedArtifacts(): List<String> {
-        val gradle = File("build.gradle.kts").readText()
-        return Regex("""^\s*implementation\("([^:"]+):([^:"]+):[^"]+"\)""", RegexOption.MULTILINE)
-            .findAll(gradle).map { "${it.groupValues[1]}:${it.groupValues[2]}" }.toList()
-    }
+    /** `group:name` of every module in the resolved release classpath, written by `releaseModules`. */
+    private fun shippedArtifacts(): List<String> =
+        File("build/notices/release-modules.txt").readLines().filter { it.isNotBlank() }
 
     @Test
-    fun everyShippedDependencyHasANotice() {
+    fun everyShippedModuleHasANotice() {
         val artifacts = shippedArtifacts()
-        assertTrue("no dependencies parsed", artifacts.size > 5)
+        assertTrue("no modules listed", artifacts.size > 20)
+        assertTrue("transitive modules missing", "org.apache.commons:commons-lang3" in artifacts)
         for (a in artifacts) assertNotNull("no notice for $a", Notices.forArtifact(a))
     }
 
     @Test
-    fun noticesNameOnlyShippedDependencies() {
-        val shipped = shippedArtifacts().toSet()
-        for (n in Notices.all) for (a in n.artifacts) assertTrue("$a is not a dependency", a in shipped)
+    fun noticesNameOnlyShippedModules() {
+        val shipped = shippedArtifacts()
+        for (n in Notices.all) for (p in n.artifacts) {
+            assertTrue("$p matches no shipped module", shipped.any { Notice.matches(p, it) })
+        }
+    }
+
+    @Test
+    fun patternsMatchExactGroupOrSubgroups() {
+        assertTrue(Notice.matches("a.b:c", "a.b:c"))
+        assertFalse(Notice.matches("a.b:c", "a.b:cd"))
+        assertTrue(Notice.matches("a.b:*", "a.b:anything"))
+        assertFalse(Notice.matches("a.b:*", "a.bc:x"))
+        assertFalse(Notice.matches("a.b:*", "a.b.c:x"))
+        assertTrue(Notice.matches("a.*", "a:x"))
+        assertTrue(Notice.matches("a.*", "a.b.c:x"))
+        assertFalse(Notice.matches("a.*", "ab:x"))
     }
 
     @Test

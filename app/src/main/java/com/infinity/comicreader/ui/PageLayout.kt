@@ -20,6 +20,10 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false) {
     fun lastPage(item: Int, pageCount: Int): Int =
         if (spread) minOf(item * 2 + 1, pageCount - 1) else item
 
+    /** True when [page] is on the item that shows the last of [pageCount] pages. */
+    fun onLastItem(page: Int, pageCount: Int): Boolean =
+        itemOf(page) >= itemOf((pageCount - 1).coerceAtLeast(0))
+
     /**
      * The page each slot of [item] shows, left to right on screen, or [NONE] for a
      * slot with no page (past the end, or the empty half beside a lone last page).

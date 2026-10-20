@@ -770,7 +770,7 @@ class ViewerActivity : AppCompatActivity() {
         }
         val atEnd = when (mode) {
             MODE_LONGSTRIP -> !vertical.canScrollVertically(1)
-            else -> currentIndex >= src.pageCount - 1
+            else -> pageLayout().onLastItem(currentIndex, src.pageCount)
         }
         if (!atEnd) {
             endDismissed = false
@@ -1587,8 +1587,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun atChapterEnd(): Boolean {
         val src = source ?: return false
         return when (mode) {
-            MODE_PAGED -> currentIndex >=
-                (if (useSpread()) src.pageCount - 2 else src.pageCount - 1).coerceAtLeast(0)
+            MODE_PAGED -> pageLayout().onLastItem(currentIndex, src.pageCount)
             else -> !vertical.canScrollVertically(1)
         }
     }

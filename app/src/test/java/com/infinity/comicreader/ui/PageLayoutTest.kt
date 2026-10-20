@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import com.infinity.comicreader.ui.PageLayout.Companion.NONE
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,5 +82,17 @@ class PageLayoutTest {
         assertEquals(7, ltr.lastPage(3, 9))
         assertEquals(4, single.firstPage(4))
         assertEquals(4, single.lastPage(4, 9))
+    }
+
+    @Test
+    fun lastItemOfEvenSpreadStartsBeforeLastPage() {
+        // A spread of 4 pages ends on item (2, 3); the reader sits on its first page.
+        assertTrue(ltr.onLastItem(2, 4))
+        assertFalse(ltr.onLastItem(1, 4))
+        assertTrue(ltr.onLastItem(4, 5))
+        assertFalse(ltr.onLastItem(3, 5))
+        assertTrue(single.onLastItem(3, 4))
+        assertFalse(single.onLastItem(2, 4))
+        assertTrue(ltr.onLastItem(0, 0))
     }
 }

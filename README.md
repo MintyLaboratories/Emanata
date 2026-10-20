@@ -61,7 +61,8 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 ### Reader
 - **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`,
   `heic`/`heif`, `jxl`) and archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, plus
-  `pdf`. Images are recognised by content, not extension.
+  `pdf`. The extension decides which images are listed; their content decides
+  how they are decoded.
 - **Broken pages** show a placeholder naming the page and the reason.
 - **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
   Pages in subfolders keep folder order. Archives inside an archive (one per

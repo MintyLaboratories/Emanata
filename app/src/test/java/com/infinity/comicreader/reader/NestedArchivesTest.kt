@@ -11,6 +11,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 class NestedArchivesTest {
@@ -186,9 +189,52 @@ class NestedArchivesTest {
         val mid = File(cache, "mid.cbz").apply { writeBytes(ByteArray(100)); setLastModified(2_000_000) }
         val kept = File(cache, "kept.cbz").apply { writeBytes(ByteArray(100)); setLastModified(500_000) }
         val stalePart = File(cache, "x.cbz.part").apply { writeBytes(ByteArray(1)); setLastModified(1) }
-        NestedArchives.trim(cache, maxBytes = 150, keep = setOf(kept))
+        NestedArchives.retain(kept)
+        try {
+            NestedArchives.trim(cache, maxBytes = 150)
+        } finally {
+            NestedArchives.release(kept)
+        }
         assertTrue(kept.exists())
         assertTrue(!old.exists() && !mid.exists())
         assertTrue(!stalePart.exists())
+    }
+
+    @Test
+    fun trimSparesCopiesOfOpenBooks() {
+        val f = omnibus()
+        open(f).use { src ->
+            NestedArchives.trim(cache, maxBytes = 0)
+            assertEquals(3, cached().size)
+            assertEquals("issue10/01", src.text(4))
+        }
+        NestedArchives.trim(cache, maxBytes = 0)
+        assertEquals(0, cached().size)
+    }
+
+    @Test
+    fun concurrentOpensAndTrimsKeepEveryPage() {
+        val f = omnibus()
+        val failures = Collections.synchronizedList(ArrayList<Throwable>())
+        val stop = AtomicBoolean(false)
+        val trimmer = thread { while (!stop.get()) NestedArchives.trim(cache, maxBytes = 0) }
+        val readers = List(4) {
+            thread {
+                try {
+                    repeat(20) {
+                        open(f).use { src ->
+                            assertEquals(5, src.pageCount)
+                            assertEquals("issue10/01", src.text(4))
+                        }
+                    }
+                } catch (t: Throwable) {
+                    failures += t
+                }
+            }
+        }
+        readers.forEach { it.join() }
+        stop.set(true)
+        trimmer.join()
+        if (failures.isNotEmpty()) throw failures.first()
     }
 }

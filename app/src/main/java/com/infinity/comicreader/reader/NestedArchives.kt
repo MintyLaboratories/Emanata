@@ -7,13 +7,14 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Opens archives stored inside an archive (a `.cbr` holding one `.cbz` per issue).
  * Each inner archive is copied to a file under [dir] and opened like a book of its
  * own. Copies are reused across opens, keyed by the outer archive's identity and the
  * entry path, and the least recently used go first once [dir] passes [maxBytes].
+ * Copies held by any open book, in this or another instance, are never evicted;
+ * [close] lets go of this instance's.
  *
  * One instance serves one book open and is not thread-safe. Guards: an inner
  * archive larger than [maxEntryBytes], a book needing more than [maxBytes] of copies
@@ -29,12 +30,12 @@ class NestedArchives(
     /** An opened inner archive and the identity its own inner archives are keyed by. */
     class Opened(val reader: ArchiveReader, val key: String)
 
-    private val inUse = HashSet<File>()
+    private val held = ArrayList<File>()
     private var usedBytes = 0L
 
     /** Opens [entry] of [outer], whose identity is [outerKey]; null when it is skipped or unreadable. */
     fun open(outer: ArchiveReader, outerKey: String, entry: ArchiveEntry): Opened? {
-        if (inUse.size >= MAX_ARCHIVES) return null
+        if (held.size >= MAX_ARCHIVES) return null
         val key = "$outerKey\n${entry.path}\n${entry.size}"
         val file = try {
             extract(outer, entry, key)
@@ -55,28 +56,44 @@ class NestedArchives(
         val limit = if (entry.size >= 0) entry.size else maxEntryBytes
         if (limit > maxEntryBytes || usedBytes + limit > maxBytes) return null
         val target = File(dir, hash(key) + "." + Formats.ext(entry.path))
-        synchronized(LOCKS.computeIfAbsent(target.name) { Any() }) {
-            if (!target.isFile || (entry.size >= 0 && target.length() != entry.size)) {
-                dir.mkdirs()
-                trim(dir, maxBytes - limit, inUse)
-                if (dir.usableSpace < limit + FREE_SPACE_RESERVE) return null
-                val part = File.createTempFile(target.name, PART_SUFFIX, dir)
-                try {
-                    val copied = outer.read(entry) { input -> part.outputStream().use { copyBounded(input, it, limit) } }
-                    if (entry.size >= 0 && copied != entry.size) throw IOException("Short nested archive")
-                    if (!part.renameTo(target)) {
-                        target.delete()
-                        if (!part.renameTo(target)) throw IOException("Could not store nested archive")
+        // Held before it is checked or written, so no trim can delete it from here on.
+        val lock = retain(target)
+        try {
+            synchronized(lock) {
+                if (!target.isFile || (entry.size >= 0 && target.length() != entry.size)) {
+                    dir.mkdirs()
+                    trim(dir, maxBytes - limit)
+                    if (dir.usableSpace < limit + FREE_SPACE_RESERVE) {
+                        release(target)
+                        return null
                     }
-                } finally {
-                    part.delete()
+                    val part = File.createTempFile(target.name, PART_SUFFIX, dir)
+                    try {
+                        val copied = outer.read(entry) { input -> part.outputStream().use { copyBounded(input, it, limit) } }
+                        if (entry.size >= 0 && copied != entry.size) throw IOException("Short nested archive")
+                        if (!part.renameTo(target)) {
+                            target.delete()
+                            if (!part.renameTo(target)) throw IOException("Could not store nested archive")
+                        }
+                    } finally {
+                        part.delete()
+                    }
                 }
+                target.setLastModified(System.currentTimeMillis())
             }
-            target.setLastModified(System.currentTimeMillis())
+        } catch (t: Throwable) {
+            release(target)
+            throw t
         }
-        inUse += target
+        held += target
         usedBytes += target.length()
         return target
+    }
+
+    /** Lets go of the copies this instance opened, so [trim] may evict them. */
+    fun close() {
+        for (f in held) release(f)
+        held.clear()
     }
 
     companion object {
@@ -91,7 +108,31 @@ class NestedArchives(
         private const val STALE_PART_MS = 60L * 60 * 1000
         private const val TAG = "NestedArchives"
         private const val HEX_DIGITS = "0123456789abcdef"
-        private val LOCKS = ConcurrentHashMap<String, Any>()
+
+        /** Copies held by open books, by path, with their holder count; guarded by itself. */
+        private val HELD = HashMap<String, Hold>()
+
+        /** Holder count of one copy; also the lock its extraction runs under. */
+        private class Hold {
+            var count = 0
+        }
+
+        /** Marks [file] as held; returns the lock that serializes writing it. */
+        internal fun retain(file: File): Any = synchronized(HELD) {
+            HELD.getOrPut(file.absolutePath) { Hold() }.also { it.count++ }
+        }
+
+        internal fun release(file: File) {
+            synchronized(HELD) {
+                val hold = HELD[file.absolutePath] ?: return
+                if (--hold.count == 0) HELD.remove(file.absolutePath)
+            }
+        }
+
+        /** Deletes [file] unless an open book holds it. */
+        private fun deleteUnheld(file: File): Boolean = synchronized(HELD) {
+            file.absolutePath !in HELD && file.delete()
+        }
 
         fun dirIn(cacheDir: File) = File(cacheDir, DIR)
 
@@ -100,18 +141,18 @@ class NestedArchives(
 
         /**
          * Deletes least recently used copies until [dir] holds at most [maxBytes], never
-         * touching [keep]. Unfinished copies count until they are an hour old, then go.
+         * touching those held by an open book. Unfinished copies count until they are an
+         * hour old, then go.
          */
-        fun trim(dir: File, maxBytes: Long = MAX_CACHE_BYTES, keep: Set<File> = emptySet()) {
+        fun trim(dir: File, maxBytes: Long = MAX_CACHE_BYTES) {
             val files = dir.listFiles()?.filter { it.isFile } ?: return
             val now = System.currentTimeMillis()
             var total = files.sumOf { it.length() }
             for (f in files.sortedBy { it.lastModified() }) {
                 if (total <= maxBytes) break
-                if (f in keep) continue
                 if (f.name.endsWith(PART_SUFFIX) && now - f.lastModified() < STALE_PART_MS) continue
                 val size = f.length()
-                if (f.delete()) total -= size
+                if (deleteUnheld(f)) total -= size
             }
             for (f in files) {
                 if (f.name.endsWith(PART_SUFFIX) && now - f.lastModified() >= STALE_PART_MS) f.delete()

@@ -27,7 +27,7 @@ class ArchiveSource(
     private val pages: List<Page> = try {
         ArrayList<Page>().also { collect(root, rootKey, "", 0, it) }
     } catch (t: Throwable) {
-        closeReaders()
+        release()
         throw t
     }
 
@@ -85,11 +85,12 @@ class ArchiveSource(
     }
 
     override fun close() {
-        closeReaders()
+        release()
     }
 
-    private fun closeReaders() {
+    private fun release() {
         for (r in readers) runCatching { r.close() }
+        nested?.close()
     }
 
     companion object {

@@ -189,6 +189,13 @@
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_list">
+        <ListPreference
+            app:defaultValue="browse"
+            app:entries="@array/startup_tab_entries"
+            app:entryValues="@array/startup_tab_values"
+            app:key="pref_startup_tab"
+            app:title="@string/pref_startup_tab"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:defaultValue="false"
             app:key="pref_show_hidden"

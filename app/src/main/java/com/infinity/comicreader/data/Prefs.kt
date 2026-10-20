@@ -215,6 +215,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /** The tab the library opens on: one of [TAB_BROWSE], [TAB_FAVORITES], [TAB_HISTORY], [TAB_BOOKMARKS]. */
+    var startupTab: String
+        get() = str(KEY_STARTUP_TAB, TAB_BROWSE)
+        set(v) = put(KEY_STARTUP_TAB, v)
+
     /** Split the Favorites tab into Libraries, Sets and Comics. */
     var groupFavorites: Boolean
         get() = bool(KEY_GROUP_FAVORITES, true)
@@ -283,6 +288,11 @@ class Prefs(context: Context) {
     }
 
     companion object {
+        const val TAB_BROWSE = "browse"
+        const val TAB_FAVORITES = "favorites"
+        const val TAB_HISTORY = "history"
+        const val TAB_BOOKMARKS = "bookmarks"
+
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"
         private const val KEY_CHARSET = "pref_charset"
@@ -318,6 +328,7 @@ class Prefs(context: Context) {
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
         private const val KEY_GROUP_FAVORITES = "pref_group_favorites"
+        private const val KEY_STARTUP_TAB = "pref_startup_tab"
         private const val KEY_AUTO_CROP = "pref_auto_crop"
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_speed"
@@ -332,7 +343,8 @@ class Prefs(context: Context) {
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
-            KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES
+            KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
+            KEY_STARTUP_TAB
         )
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */

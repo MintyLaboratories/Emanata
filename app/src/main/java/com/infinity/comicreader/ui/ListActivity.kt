@@ -94,6 +94,12 @@ class ListActivity : AppCompatActivity() {
     private var mode = TAB_BROWSE
     private var query = ""
     private var resumedOnce = false
+
+    /** The state to come back to after a recreate, until [startUp] uses it. */
+    private var restored: Bundle? = null
+
+    /** Overrides the startup tab setting for the first [startUp]. */
+    private var startTab: Int? = null
     private var deepJob: Job? = null
     private var deepResults: List<BookEntry>? = null
     private val allEntries = ArrayList<BookEntry>()
@@ -107,7 +113,7 @@ class ListActivity : AppCompatActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
             // Only read access is required to browse; write access (old Android) is a bonus.
-            if (result[Manifest.permission.READ_EXTERNAL_STORAGE] == true) openStartDirectory()
+            if (result[Manifest.permission.READ_EXTERNAL_STORAGE] == true) startUp()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -182,12 +188,21 @@ class ListActivity : AppCompatActivity() {
         }
 
         handleIncoming(intent)
+        restored = savedInstanceState
+        // A folder handed in by another app is shown instead of the startup tab.
+        if (intent.data != null && savedInstanceState == null) startTab = TAB_BROWSE
 
         if (!hasStorageAccess()) {
             requestStorageAccess()
         } else {
-            openStartDirectory()
+            startUp()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_MODE, mode)
+        currentDir?.let { outState.putString(STATE_DIR, it.absolutePath) }
     }
 
     override fun onResume() {
@@ -197,7 +212,7 @@ class ListActivity : AppCompatActivity() {
         if (!hasStorageAccess() || mode != TAB_BROWSE) return
         if (!resumedOnce) {
             resumedOnce = true
-            if (currentDir == null) openStartDirectory()
+            if (currentDir == null) startUp()
             return
         }
         // Refresh so files added/removed outside the app (or from the viewer)
@@ -296,14 +311,43 @@ class ListActivity : AppCompatActivity() {
         }
     }
 
-    private fun openStartDirectory() {
-        mode = TAB_BROWSE
-        selectTab(TAB_BROWSE)
-        val start = prefs.homePath?.let { File(it) }?.takeIf { it.isDirectory }
+    /**
+     * Opens the screen as it was before a recreate, else on the startup tab with
+     * Browse at the startup location behind it.
+     */
+    private fun startUp() {
+        val state = restored
+        restored = null
+        val savedDir = state?.getString(STATE_DIR)?.let { File(it) }?.takeIf { it.isDirectory }
+        val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
+        startTab = null
+        val dir = savedDir ?: startDirectory()
+        if (tab == TAB_BROWSE) {
+            loadDirectory(dir)
+            return
+        }
+        currentDir = dir
+        when (tab) {
+            TAB_FAVORITES -> showFavorites()
+            TAB_HISTORY -> showHistory()
+            else -> showBookmarks()
+        }
+    }
+
+    private fun tabOf(value: String): Int = when (value) {
+        Prefs.TAB_FAVORITES -> TAB_FAVORITES
+        Prefs.TAB_HISTORY -> TAB_HISTORY
+        Prefs.TAB_BOOKMARKS -> TAB_BOOKMARKS
+        else -> TAB_BROWSE
+    }
+
+    private fun startDirectory(): File =
+        prefs.homePath?.let { File(it) }?.takeIf { it.isDirectory }
             ?: prefs.lastPath?.let { File(it) }?.takeIf { it.isDirectory }
             ?: Environment.getExternalStorageDirectory()
-        loadDirectory(start)
-    }
+
+    /** Browses the startup location. */
+    private fun openStartDirectory() = loadDirectory(startDirectory())
 
     // ------------------------------------------------------------------ tabs
 
@@ -414,7 +458,6 @@ class ListActivity : AppCompatActivity() {
 
     private fun showFavorites() {
         mode = TAB_FAVORITES
-        currentDir = null
         adapter.highlightPath = null
         selectTab(TAB_FAVORITES)
         supportActionBar?.title = getString(R.string.menu_favorites)
@@ -482,7 +525,6 @@ class ListActivity : AppCompatActivity() {
 
     private fun showHistory() {
         mode = TAB_HISTORY
-        currentDir = null
         adapter.highlightPath = null
         selectTab(TAB_HISTORY)
         supportActionBar?.title = getString(R.string.menu_history)
@@ -501,7 +543,6 @@ class ListActivity : AppCompatActivity() {
 
     private fun showBookmarks() {
         mode = TAB_BOOKMARKS
-        currentDir = null
         adapter.highlightPath = null
         selectTab(TAB_BOOKMARKS)
         supportActionBar?.title = getString(R.string.menu_bookmarks)
@@ -1293,6 +1334,8 @@ class ListActivity : AppCompatActivity() {
         private const val TAB_FAVORITES = 1
         private const val TAB_HISTORY = 2
         private const val TAB_BOOKMARKS = 3
+        private const val STATE_MODE = "mode"
+        private const val STATE_DIR = "dir"
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L

@@ -236,6 +236,7 @@
     <string name="pref_list_pathview">Show path bar</string>
     <string name="pref_list_statusbar">Show status bar in the library</string>
     <string name="pref_list_quickfab">Show the list/grid button</string>
+    <string name="pref_startup_tab">Startup tab</string>
     <string name="pref_group_favorites">Group favorites</string>
     <string name="pref_group_favorites_desc">Show favorites under Libraries, Sets and Comics</string>
     <string name="section_libraries">Libraries</string>
@@ -278,6 +279,19 @@
     <string name="about_license">Free and open source software, released under the MIT License.</string>
 
     <!-- ===================== Arrays ===================== -->
+    <string-array name="startup_tab_entries">
+        <item>@string/tab_browse</item>
+        <item>@string/tab_favorites</item>
+        <item>@string/tab_history</item>
+        <item>@string/tab_bookmarks</item>
+    </string-array>
+    <string-array name="startup_tab_values">
+        <item>browse</item>
+        <item>favorites</item>
+        <item>history</item>
+        <item>bookmarks</item>
+    </string-array>
+
     <string-array name="sort_entries">
         <item>@string/sort_name</item>
         <item>@string/sort_size</item>

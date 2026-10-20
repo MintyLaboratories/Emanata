@@ -67,11 +67,18 @@ object Notices {
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons"),
     )
 
-    /** Joins the hard-wrapped lines of each paragraph of [text]; blank lines separate paragraphs. */
+    /**
+     * Joins the hard-wrapped lines of each paragraph of [text]; blank lines separate
+     * paragraphs, and each copyright line stays on its own line.
+     */
     fun reflow(text: String): String =
         text.replace("\r\n", "\n").trim()
             .split(Regex("\n\\s*\n"))
-            .joinToString("\n\n") { para -> para.lines().joinToString(" ") { it.trim() } }
+            .joinToString("\n\n") { para ->
+                para.lines().map { it.trim() }.reduce { acc, line ->
+                    if (line.startsWith("Copyright")) "$acc\n$line" else "$acc $line"
+                }
+            }
 
     /** The notice covering Gradle coordinate `group:name`, or null if none does. */
     fun forArtifact(coordinate: String): Notice? = all.firstOrNull { coordinate in it.artifacts }

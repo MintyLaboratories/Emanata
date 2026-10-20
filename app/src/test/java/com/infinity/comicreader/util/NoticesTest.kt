@@ -51,4 +51,10 @@ class NoticesTest {
             Notices.reflow(text)
         )
     }
+
+    @Test
+    fun reflowKeepsEachCopyrightLine() {
+        val text = "Copyright (c) 2026 A\nCopyright (c) 2026 B\n\nPermission\nis granted."
+        assertEquals("Copyright (c) 2026 A\nCopyright (c) 2026 B\n\nPermission is granted.", Notices.reflow(text))
+    }
 }

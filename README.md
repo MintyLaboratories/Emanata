@@ -1,18 +1,23 @@
-<img src="screenshots/icon.png" alt="ComicReader" width="96" align="right" />
+<img src="screenshots/icon.png" alt="Emanata Comic Reader" width="96" align="right" />
 
-# ComicReader
+# Emanata Comic Reader
 
-A clean-room, ad-free comic / PDF reader for Android, written in Kotlin.
+An ad-free comic / PDF reader for Android, written in Kotlin. No ads, no
+analytics, no in-app billing, and no network access.
 
-This is an **original implementation** built to match the *feature set* of a
-reference comic reader — not a copy of its code. No ads, no analytics, no
-in-app billing, and no network access.
+Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
 ## Download
 
-Get the latest signed APK from the [**Releases**](https://github.com/infinity6901/ComicReader/releases/latest) page.
+Get the latest APK from the [**Releases**](https://github.com/MintyLaboratories/EmanataComicReader/releases/latest) page.
+
+The app id is `minty.emanata` (debug: `minty.emanata.debug`), so it installs
+beside ComicReader rather than over it. To bring your library across, back it up
+in ComicReader (Settings → Your data) and restore the file in Emanata.
 
 ## Screenshots
+
+> Outdated: these show upstream ComicReader and predate Emanata's changes.
 
 | Library | Chapters | Reader — paged |
 |---|---|---|
@@ -236,25 +241,13 @@ Release uses `isMinifyEnabled = true` + `isShrinkResources = true` (R8). The
 proguard rules keep junrar and commons-compress whole so the reflection paths in
 the archive backends survive minification.
 
-### Prebuilt outputs
-
-`dist/` holds the built artifacts:
-
-| Artifact | Size | Notes |
-|---|---|---|
-| `ComicReader-1.3-foss-release.apk` | 2.63 MB | v2-signed, R8-minified, offline |
-| `ComicReader-1.3-debug.apk` | 7.69 MB | debuggable, unsigned-config |
-| `ComicReader-1.2-foss-release.apk` | 2.62 MB | v2-signed, R8-minified, offline |
-| `ComicReader-1.2-debug.apk` | 7.53 MB | debuggable, unsigned-config |
-
 ### Install on a connected device
 
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Note: the debug and release APKs use different signing keys, so installing one
-requires uninstalling the other.
+The debug build installs beside the release build (`minty.emanata.debug`).
 
 ## Permissions
 
@@ -283,4 +276,22 @@ No internet permission is requested.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). Based on
+[ComicReader](https://github.com/infinity6901/ComicReader) by infinity6901 (MIT).
+
+Third-party components (also listed in the app under Settings → About):
+
+| Component | License |
+|---|---|
+| AndroidX, Material Components for Android | Apache-2.0 |
+| Kotlin standard library, kotlinx.coroutines | Apache-2.0 |
+| [junrar](https://github.com/junrar/junrar) | UnRAR License |
+| Apache Commons Compress, Apache Commons IO | Apache-2.0 |
+| XZ for Java | Public domain |
+| SLF4J (`slf4j-nop`) | MIT |
+| [jxl-coder](https://github.com/awxkee/jxl-coder) | Apache-2.0 or BSD-3-Clause |
+| libjxl (in jxl-coder) | BSD-3-Clause |
+| Highway (in jxl-coder) | Apache-2.0 |
+| Brotli (in jxl-coder) | MIT |
+| Little CMS (in jxl-coder) | MIT |
+| Material Symbols | Apache-2.0 |

@@ -61,6 +61,9 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 ### Reader
 - **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`) and
   archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, plus `pdf`.
+- **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
+  Pages in subfolders keep folder order. Archives inside an archive (one per
+  issue) show their pages in place. macOS, hidden and empty entries are skipped.
 - **Page modes:** paged (horizontal swipe), vertical (one page per screen) or
   **long strip** (continuous webtoon scrolling, no gaps).
 - **Two-page spread:** facing pages side by side (respects RTL ordering).
@@ -123,6 +126,15 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 | rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
+
+- The backend is picked from the file's magic bytes (`ArchiveKind`), the
+  extension only when they match nothing.
+- Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
+  `157`, padding ignored, a folder before its longer-named siblings.
+- Nested archives (up to two levels) are copied to `cacheDir/nested`
+  (`NestedArchives`): reused across opens, least recently used evicted past
+  2 GiB, inner archives over 1 GiB or past the per-book budget skipped. Covers
+  copy only the inner archive holding the first page.
 
 ## Project layout
 

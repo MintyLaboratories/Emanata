@@ -342,7 +342,11 @@ class ViewerActivity : AppCompatActivity() {
         flushStats()
     }
 
-    /** Gives up the zoom's full-detail pages, the largest memory the reader holds, once memory runs low or the UI hides. */
+    /**
+     * Gives up the zoom's full-detail pages, the largest memory the reader holds, once the
+     * UI hides, and before API 34 also once memory runs low. From API 34 only the UI-hidden
+     * and background levels arrive, so in the foreground the detail budget alone bounds them.
+     */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         @Suppress("DEPRECATION")

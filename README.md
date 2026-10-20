@@ -137,10 +137,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - A reader settings **bottom sheet** exposes every reader option in place, and
   carries the same settings as the 3-dots menu (Display / Page filter / Reading
   / Page actions), so both surfaces stay in sync.
-- Resumes at the last page read. If **Ask where to start** is on, a chapter
-  with saved progress asks first: *Resume page* or *First page*, with the page
-  number and percentage. Chapters opened explicitly (history, bookmark,
-  chapter list, next-chapter) never ask.
+- **Resume where I left off:** Ask (default), Yes or No. Ask offers *Resume
+  page* or *First page*, with the page number and percentage; ticking
+  *Don't ask again* turns the answer into Yes or No. Only a book with a saved
+  position asks; a finished book opens at the first page. Chapters opened
+  explicitly (history, bookmark, chapter list, next-chapter) never ask.
 - Per-book reading position is stored in history.
 - Every reader option is written back to preferences, so the mode, fit, filter,
   spacing, direction and toggles **persist across chapters and app restarts**.
@@ -154,8 +155,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Linear-light scaling** (off by default): pages and covers are shrunk in
   linear light, so halftones and screentones keep their brightness; thin dark
   lines come out lighter. Enlarging stays in sRGB.
-- Reader: resume where I left off, ask whether to resume or start from the
-  first page, and open the next chapter automatically when a chapter ends.
+- Reader: resume where I left off (ask, yes or no), and open the next chapter
+  automatically when a chapter ends.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
   drag, double-tap zoom).
 - File-list options (file names, status bar, breadcrumb, quick button).

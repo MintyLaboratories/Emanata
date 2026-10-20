@@ -759,10 +759,8 @@ class ListActivity : AppCompatActivity() {
                 else toast(R.string.open_location_failed)
             }
             Formats.isOpenable(entry.name) -> {
-                // The reader decides where to start: the resume/first-page prompt when
-                // it is on, the saved page, or the first page for a finished book.
-                val page = if (library.isRead(entry.path)) 0 else -1
-                openViewer(entry.file, page)
+                // The reader decides where to start (ResumeMode.start).
+                openViewer(entry.file, -1)
             }
             else -> toast(R.string.error_open)
         }

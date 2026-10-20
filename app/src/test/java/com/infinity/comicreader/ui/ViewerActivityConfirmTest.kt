@@ -14,6 +14,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -49,7 +50,7 @@ class ViewerActivityConfirmTest {
         context = ApplicationProvider.getApplicationContext()
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().clear().commit()
-        Prefs(context).apply { resume = false; askResume = false }
+        Prefs(context).resumeMode = ResumeMode.NO
         library = Library(context)
         book = File(tmp.newFolder("attic"), "one.cbz")
         ZipOutputStream(book.outputStream()).use { zip ->

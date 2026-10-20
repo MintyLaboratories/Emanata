@@ -54,15 +54,13 @@
             app:defaultValue="false"
             app:key="pref_keep_screen_on"
             app:title="@string/pref_keep_on" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:key="pref_resume"
-            app:title="@string/pref_resume" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:key="pref_ask_resume"
-            app:summary="@string/pref_ask_resume_desc"
-            app:title="@string/pref_ask_resume" />
+        <ListPreference
+            app:defaultValue="ask"
+            app:entries="@array/resume_mode_entries"
+            app:entryValues="@array/resume_mode_values"
+            app:key="pref_resume_mode"
+            app:title="@string/pref_resume"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_auto_next"

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Ask dialog's "Don't ask again", under the message and aligned with it. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="?attr/dialogPreferredPadding"
+    android:paddingTop="@dimen/space_1">
+
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/resume_dont_ask"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start"
+        android:layout_marginStart="-6dp"
+        android:checked="false"
+        android:text="@string/dont_ask_again" />
+</FrameLayout>

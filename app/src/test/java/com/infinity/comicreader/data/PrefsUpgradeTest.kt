@@ -111,4 +111,56 @@ class PrefsUpgradeTest {
         assertEquals("disabled", prefs.tapZones)
         assertFalse("pref_tap_zones" in stored())
     }
+
+    @Test
+    fun resumeSwitchesBecomeOneSetting() {
+        val gone = mapOf("pref_resume" to null, "pref_ask_resume" to null)
+        assertEquals(
+            mapOf("pref_resume_mode" to "no") + gone,
+            Prefs.upgrade(mapOf("pref_resume" to false, "pref_ask_resume" to true))
+        )
+        assertEquals(
+            mapOf("pref_resume_mode" to "ask") + gone,
+            Prefs.upgrade(mapOf("pref_resume" to true, "pref_ask_resume" to true))
+        )
+        assertEquals(
+            mapOf("pref_resume_mode" to "yes") + gone,
+            Prefs.upgrade(mapOf("pref_resume" to true, "pref_ask_resume" to false))
+        )
+    }
+
+    @Test
+    fun aMissingResumeSwitchWasOn() {
+        assertEquals("yes", Prefs.upgrade(mapOf("pref_ask_resume" to false))["pref_resume_mode"])
+        assertEquals("no", Prefs.upgrade(mapOf("pref_resume" to false))["pref_resume_mode"])
+        assertEquals("ask", Prefs.upgrade(mapOf("pref_resume" to true))["pref_resume_mode"])
+    }
+
+    @Test
+    fun aResumeModeAlreadySetWins() {
+        assertEquals(
+            mapOf("pref_resume" to null, "pref_ask_resume" to null),
+            Prefs.upgrade(mapOf("pref_resume" to false, "pref_ask_resume" to false, "pref_resume_mode" to "ask"))
+        )
+    }
+
+    @Test
+    fun upgradedResumeModeIsStoredAndDefaultIsAsk() {
+        val prefs = Prefs(context)
+        assertEquals(ResumeMode.ASK, prefs.resumeMode)
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+            .putBoolean("pref_resume", true).putBoolean("pref_ask_resume", false).commit()
+        prefs.upgrade()
+        assertEquals(ResumeMode.YES, prefs.resumeMode)
+        assertFalse("pref_resume" in stored())
+        assertFalse("pref_ask_resume" in stored())
+    }
+
+    @Test
+    fun anOldBackupRestoresTheResumeMode() {
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_resume" to false, "pref_ask_resume" to true))
+        assertEquals(ResumeMode.NO, prefs.resumeMode)
+        assertFalse("pref_resume" in stored())
+    }
 }

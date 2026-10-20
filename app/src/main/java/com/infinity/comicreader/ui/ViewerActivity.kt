@@ -18,6 +18,7 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -636,13 +637,10 @@ class ViewerActivity : AppCompatActivity() {
         val requested = intent.getIntExtra(EXTRA_PAGE, -1)
         // Used once: a later reopen sets it again, and anything else starts from history.
         intent.removeExtra(EXTRA_PAGE)
-        val saved = library.pageFor(file!!.absolutePath)
-        val start = when {
-            requested >= 0 -> requested
-            prefs.resume -> saved
-            else -> 0
-        }
-        currentIndex = start.coerceIn(0, src.pageCount - 1)
+        val path = file!!.absolutePath
+        val saved = library.pageFor(path)
+        val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = library.isRead(path))
+        currentIndex = start.page.coerceIn(0, src.pageCount - 1)
         seenPages.clear()
         attach()
         prepareStripAhead()
@@ -653,19 +651,27 @@ class ViewerActivity : AppCompatActivity() {
             startAutoScroll()
         }
 
-        if (requested < 0 && prefs.askResume && saved in 1 until src.pageCount) {
-            askStartPage(saved, src.pageCount)
-        }
+        if (start.ask) askStartPage(saved, src.pageCount)
     }
 
-    /** The resume / first-page choice offered when a chapter has saved progress. */
+    /**
+     * The resume / first-page choice offered when a chapter has saved progress. With
+     * "Don't ask again" ticked the answer becomes the "Resume where I left off" setting.
+     */
     private fun askStartPage(saved: Int, count: Int) {
         val percent = ((saved + 1) * 100f / count).toInt().coerceIn(1, 100)
+        val extra = layoutInflater.inflate(R.layout.dialog_resume, null)
+        val dontAsk = extra.findViewById<CheckBox>(R.id.resume_dont_ask)
+        fun answer(resume: Boolean) {
+            prefs.resumeMode = prefs.resumeMode.afterAnswer(resume, dontAsk.isChecked)
+            goTo(if (resume) saved else 0)
+        }
         AlertDialog.Builder(this)
             .setTitle(chapterLabel(file!!))
             .setMessage(getString(R.string.resume_progress, saved + 1, count, percent))
-            .setPositiveButton(R.string.resume_page) { _, _ -> goTo(saved) }
-            .setNegativeButton(R.string.first_page) { _, _ -> goTo(0) }
+            .setView(extra)
+            .setPositiveButton(R.string.resume_page) { _, _ -> answer(resume = true) }
+            .setNegativeButton(R.string.first_page) { _, _ -> answer(resume = false) }
             .show()
     }
 

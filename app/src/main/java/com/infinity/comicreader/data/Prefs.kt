@@ -101,14 +101,10 @@ class Prefs(context: Context) {
         get() = bool(KEY_AUTO_NEXT, true)
         set(v) = put(KEY_AUTO_NEXT, v)
 
-    var resume: Boolean
-        get() = bool(KEY_RESUME, true)
-        set(v) = put(KEY_RESUME, v)
-
-    /** Ask whether to resume or start from the first page when a chapter has saved progress. */
-    var askResume: Boolean
-        get() = bool(KEY_ASK_RESUME, true)
-        set(v) = put(KEY_ASK_RESUME, v)
+    /** Whether a book with a saved position opens there. */
+    var resumeMode: ResumeMode
+        get() = ResumeMode.of(sp.getString(KEY_RESUME_MODE, null))
+        set(v) = put(KEY_RESUME_MODE, v.value)
 
     var twoPage: Boolean
         get() = bool(KEY_TWO_PAGE, false)
@@ -339,8 +335,7 @@ class Prefs(context: Context) {
         private const val KEY_ADJUST_SATURATION = "pref_adjust_saturation"
         private const val KEY_SPACING = "pref_page_spacing"
         private const val KEY_AUTO_NEXT = "pref_auto_next"
-        private const val KEY_RESUME = "pref_resume"
-        private const val KEY_ASK_RESUME = "pref_ask_resume"
+        private const val KEY_RESUME_MODE = "pref_resume_mode"
         private const val KEY_TWO_PAGE = "pref_two_page"
         private const val KEY_NIGHT = "pref_night"
         private const val KEY_TAP_ZONE_LAYOUT = "pref_tap_zone_layout"
@@ -372,7 +367,7 @@ class Prefs(context: Context) {
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
-            KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
+            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
@@ -386,6 +381,10 @@ class Prefs(context: Context) {
 
         /** Replaced by [KEY_ADJUST_BRIGHTNESS]: a black overlay, 20..100 with 100 = none. */
         private const val OLD_BRIGHTNESS = "pref_brightness"
+
+        /** With [OLD_ASK_RESUME], replaced by [KEY_RESUME_MODE] ([ResumeMode.fromSwitches]); both default on. */
+        private const val OLD_RESUME = "pref_resume"
+        private const val OLD_ASK_RESUME = "pref_ask_resume"
 
         /** Puts each of [values] into [e]: a string, boolean or int is written, null removes its key, other types are ignored. */
         internal fun write(e: SharedPreferences.Editor, values: Map<String, Any?>) {
@@ -419,6 +418,15 @@ class Prefs(context: Context) {
                     out[KEY_ADJUST_BRIGHTNESS] = old.coerceIn(20, 100) - 100
                 }
                 out[OLD_BRIGHTNESS] = null
+            }
+            if (OLD_RESUME in stored || OLD_ASK_RESUME in stored) {
+                if (KEY_RESUME_MODE !in stored) {
+                    val resume = stored[OLD_RESUME] as? Boolean ?: true
+                    val ask = stored[OLD_ASK_RESUME] as? Boolean ?: true
+                    out[KEY_RESUME_MODE] = ResumeMode.fromSwitches(resume, ask).value
+                }
+                out[OLD_RESUME] = null
+                out[OLD_ASK_RESUME] = null
             }
             return out
         }

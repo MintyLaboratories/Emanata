@@ -40,12 +40,15 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.StorageRoot
+import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
@@ -69,7 +72,7 @@ class ListActivity : AppCompatActivity() {
     private lateinit var recycler: RecyclerView
     private lateinit var toolbar: MaterialToolbar
     private lateinit var tabs: TabLayout
-    private lateinit var pathbar: TextView
+    private lateinit var pathbar: CrumbBar
     private lateinit var fab: FloatingActionButton
 
     /** A detached "Recent" row, measured to size grid rows around the real one. */
@@ -81,6 +84,9 @@ class ListActivity : AppCompatActivity() {
     private lateinit var emptySubtitle: TextView
 
     private var currentDir: File? = null
+
+    /** Mounted storage volumes, refreshed whenever the screen resumes. */
+    private var roots: List<StorageRoot> = emptyList()
     private var mode = TAB_BROWSE
     private var query = ""
     private var resumedOnce = false
@@ -152,6 +158,9 @@ class ListActivity : AppCompatActivity() {
         updateFabIcon()
         fab.visibility = View.GONE
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
+        pathbar.onCrumbClick = { loadDirectory(File(it.path)) }
+        pathbar.onRootMenuClick = { showRootChooser() }
+        roots = StorageRoots.list(this)
 
         // Settings changed here, in the settings screen or anywhere else apply live;
         // changes made while this screen was stopped arrive when it starts again.
@@ -173,6 +182,7 @@ class ListActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         applyStatusBarSetting()
+        roots = StorageRoots.list(this)
         if (!hasStorageAccess() || mode != TAB_BROWSE) return
         if (!resumedOnce) {
             resumedOnce = true
@@ -313,10 +323,9 @@ class ListActivity : AppCompatActivity() {
         adapter.highlightPath = highlight
         selectTab(TAB_BROWSE)
 
-        val root = Environment.getExternalStorageDirectory()
-        val atRoot = dir.absolutePath == root.absolutePath
+        val atRoot = roots.any { it.path == dir.absolutePath }
         supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
-        pathbar.text = dir.absolutePath
+        pathbar.show(Crumbs.of(dir.absolutePath, roots), rootMenu = roots.size > 1)
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         invalidateOptionsMenu()
 
@@ -1174,18 +1183,32 @@ class ListActivity : AppCompatActivity() {
     }
 
     /**
-     * The parent directory, unless that would climb above the shared storage
-     * root (`/storage/emulated/0`). Browsing must never leave the user's files.
+     * The parent directory, unless that would climb above the storage root holding
+     * [dir] (`/storage/emulated/0`, an SD card's top). Browsing must never leave the
+     * user's files.
      */
     private fun parentWithinBounds(dir: File): File? {
-        val root = Environment.getExternalStorageDirectory().absolutePath
         val path = dir.absolutePath
-        if (path == root) return null
+        val root = StorageRoot.of(path, roots)
+        if (root != null && path == root.path) return null
         val parent = dir.parentFile ?: return null
+        if (root != null) return parent
         val parentPath = parent.absolutePath
-        if (parentPath == root || parentPath.startsWith("$root/")) return parent
         if (parentPath == "/" || parentPath == "/storage" || parentPath == "/storage/emulated") return null
         return parent
+    }
+
+    /** Lists the mounted storage roots; picking one opens its top folder. */
+    private fun showRootChooser() {
+        val list = roots
+        val current = currentDir?.let { StorageRoot.of(it.absolutePath, list) }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.choose_root)
+            .setSingleChoiceItems(list.map { it.name }.toTypedArray(), list.indexOf(current)) { dialog, which ->
+                dialog.dismiss()
+                loadDirectory(File(list[which].path))
+            }
+            .show()
     }
 
     @Deprecated("Deprecated in Java")

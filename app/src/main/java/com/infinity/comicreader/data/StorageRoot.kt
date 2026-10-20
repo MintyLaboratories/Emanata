@@ -8,13 +8,12 @@ package com.infinity.comicreader.data
 data class StorageRoot(val path: String, val name: String, val kind: Kind) {
     enum class Kind { DEVICE, REMOVABLE, SHARE }
 
-    fun contains(p: String): Boolean = p == path || p.startsWith(prefix)
+    fun contains(p: String): Boolean =
+        p == path || (p.length > path.length && p.startsWith(path) && (isSeparator(p[path.length]) || isSeparator(path.last())))
 
     /** Folder names from below the root down to [p]; empty for the root itself. */
     fun segments(p: String): List<String> =
-        if (p == path || !contains(p)) emptyList() else p.substring(prefix.length).split('/').filter { it.isNotEmpty() }
-
-    private val prefix: String get() = if (path.endsWith('/')) path else "$path/"
+        if (p == path || !contains(p)) emptyList() else Paths.parts(p.substring(path.length))
 
     companion object {
         /** The innermost of [roots] holding [path], or null when none does. */
@@ -34,21 +33,31 @@ object Crumbs {
     fun of(path: String, roots: List<StorageRoot>): List<Crumb> {
         val root = StorageRoot.of(path, roots)
         val out = ArrayList<Crumb>()
-        if (root != null) {
+        val start = if (root != null) {
             out.add(Crumb(root.name, root.path, isRoot = true))
-            var at = root.path.trimEnd('/')
-            for (name in root.segments(path)) {
-                at = "$at/$name"
-                out.add(Crumb(name, at, isRoot = false))
-            }
+            root.path.length
         } else {
             out.add(Crumb("/", "/", isRoot = true))
-            var at = ""
-            for (name in path.split('/').filter { it.isNotEmpty() }) {
-                at = "$at/$name"
-                out.add(Crumb(name, at, isRoot = false))
-            }
+            0
+        }
+        // Each crumb's path is the given path cut after that folder, separators untouched.
+        var i = start
+        while (i < path.length) {
+            while (i < path.length && isSeparator(path[i])) i++
+            if (i >= path.length) break
+            var end = i
+            while (end < path.length && !isSeparator(path[end])) end++
+            out.add(Crumb(path.substring(i, end), path.substring(0, end), isRoot = false))
+            i = end
         }
         return out
     }
+}
+
+/** Either path separator: Android paths use `/`, tests on a desktop JVM may see `\`. */
+internal fun isSeparator(c: Char) = c == '/' || c == '\\'
+
+internal object Paths {
+    /** The non-empty names in [p], split at either separator. */
+    fun parts(p: String): List<String> = p.split('/', '\\').filter { it.isNotEmpty() }
 }

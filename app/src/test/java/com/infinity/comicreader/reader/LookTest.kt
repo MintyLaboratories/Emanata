@@ -191,4 +191,13 @@ class LookTest {
         assertEquals(-1f, Adjustments(brightness = -400).brightnessAmount)
         assertEquals(2f, Adjustments(saturation = 400).saturationFactor)
     }
+
+    @Test
+    fun adjustmentsEqualToTheDefaultsAreNotTheBooksOwn() {
+        val defaults = Adjustments(10, -20, 0)
+        assertFalse(Adjustments(10, -20, 0).ownAgainst(defaults))
+        assertTrue(Adjustments(10, -19, 0).ownAgainst(defaults))
+        assertFalse(Adjustments(-300, 0, 0).ownAgainst(Adjustments(brightness = -100)))
+        assertTrue(Adjustments.NEUTRAL.ownAgainst(defaults))
+    }
 }

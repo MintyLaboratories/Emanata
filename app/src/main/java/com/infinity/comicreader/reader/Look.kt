@@ -28,6 +28,9 @@ data class Adjustments(val brightness: Int = 0, val contrast: Int = 0, val satur
     /** These values within -100..100. */
     fun coerced() = Adjustments(clamp(brightness), clamp(contrast), clamp(saturation))
 
+    /** True when a book with these adjustments needs its own: they differ from [defaults]. */
+    fun ownAgainst(defaults: Adjustments): Boolean = coerced() != defaults.coerced()
+
     companion object {
         val NEUTRAL = Adjustments()
         const val MIN = -100

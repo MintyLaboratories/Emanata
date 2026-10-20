@@ -1091,9 +1091,12 @@ class ViewerActivity : AppCompatActivity() {
         adapter?.adjustments = value
     }
 
-    /** Makes [value] the book's own adjustments; stored now with [persist], else by [persistAdjustments]. */
+    /**
+     * Shows [value]: the book's own adjustments, or the defaults again when it equals them.
+     * Stored now with [persist], else by [persistAdjustments].
+     */
     private fun setAdjustments(value: Adjustments, persist: Boolean = true) {
-        ownAdjustments = true
+        ownAdjustments = value.ownAgainst(prefs.defaultAdjustments)
         adjustmentsDirty = true
         showAdjustments(value.coerced())
         if (persist) persistAdjustments()

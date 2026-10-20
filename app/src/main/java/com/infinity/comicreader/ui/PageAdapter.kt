@@ -68,7 +68,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class PageAdapter(
     source: PageSource,
     private val mode: Mode,
-    private val onTap: (Float) -> Unit,
+    private val onTap: (Float, Float) -> Unit,
     private val doubleTapZoom: Boolean,
     private val twoPage: Boolean = false,
     private val rtl: Boolean = false,
@@ -262,9 +262,30 @@ class PageAdapter(
 
     private fun makeImage(context: Context): ZoomImageView = ZoomImageView(context).apply {
         doubleTapEnabled = doubleTapZoom
-        onTap = { fraction -> this@PageAdapter.onTap(fraction) }
+        onTap = { x, y -> tapped(this, x, y) }
         onVerticalDrag = this@PageAdapter.onVerticalDrag
         colorFilter = Filters.colorFilter(this@PageAdapter.filter)
+    }
+
+    private val tapAt = IntArray(2)
+    private val listAt = IntArray(2)
+
+    /**
+     * Passes on a tap at ([x], [y]), fractions of [image], as fractions of the list's
+     * area, so the zones span the screen even across a spread's two pages.
+     */
+    private fun tapped(image: View, x: Float, y: Float) {
+        val list = recycler
+        if (list == null || list.width <= 0 || list.height <= 0) {
+            onTap(x, y)
+            return
+        }
+        image.getLocationOnScreen(tapAt)
+        list.getLocationOnScreen(listAt)
+        onTap(
+            (tapAt[0] - listAt[0] + x * image.width) / list.width,
+            (tapAt[1] - listAt[1] + y * image.height) / list.height
+        )
     }
 
     override fun onBindViewHolder(holder: PageHolder, position: Int) {

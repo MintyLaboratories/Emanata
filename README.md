@@ -76,7 +76,11 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - **Two-page spread:** facing pages side by side (respects RTL ordering).
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
-- **Reading direction:** left-to-right or right-to-left (tap zones follow).
+- **Reading direction:** left-to-right or right-to-left (left/right tap zones
+  follow unless mirroring is turned off).
+- **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
+  thirds turn the page (a whole spread in two-page mode), the middle third
+  toggles the UI.
 - **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
   While moving, the page is drawn through a Lanczos3 GPU shader with an
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
@@ -131,7 +135,8 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   lines come out lighter. Enlarging stays in sRGB.
 - Reader: resume where I left off, ask whether to resume or start from the
   first page, and open the next chapter automatically when a chapter ends.
-- Gestures (tap zones, volume keys, brightness drag, double-tap zoom).
+- Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
+  drag, double-tap zoom).
 - File-list options (file names, status bar, breadcrumb, quick button).
 - Clear history, clear bookmarks, clear thumbnails, reset all settings.
 

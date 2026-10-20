@@ -29,8 +29,8 @@ import kotlin.math.roundToInt
  * Lanczos3 on the GPU ([LanczosShader], API 33+); shrunk, or below API 33, bilinear.
  * A zoom that settles is re-rendered from the full-detail page ([DetailSource]).
  *
- * [onTap] receives the tap position as a fraction of the view width so callers can
- * implement left/centre/right tap zones. [onVerticalDrag] receives the vertical
+ * [onTap] receives the tap position as fractions of the view's width and height, for
+ * tap zones. [onVerticalDrag] receives the vertical
  * delta of a drag while the image is not zoomed (used for the brightness gesture).
  */
 class ZoomImageView @JvmOverloads constructor(
@@ -52,7 +52,7 @@ class ZoomImageView @JvmOverloads constructor(
     private var lastY = 0f
     private val values = FloatArray(9)
 
-    var onTap: ((Float) -> Unit)? = null
+    var onTap: ((Float, Float) -> Unit)? = null
     var onVerticalDrag: ((Float) -> Unit)? = null
     var doubleTapEnabled = true
 
@@ -84,8 +84,9 @@ class ZoomImageView @JvmOverloads constructor(
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 performClick()
-                val fraction = if (width > 0) e.x / width.toFloat() else 0.5f
-                onTap?.invoke(fraction)
+                val x = if (width > 0) e.x / width.toFloat() else 0.5f
+                val y = if (height > 0) e.y / height.toFloat() else 0.5f
+                onTap?.invoke(x, y)
                 return true
             }
 

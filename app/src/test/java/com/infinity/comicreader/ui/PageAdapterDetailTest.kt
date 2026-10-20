@@ -73,7 +73,7 @@ class PageAdapterDetailTest {
     @Test
     fun spreadHalvesRenderTheirOwnPagesAndKeepBoth() {
         val source = DetailSource(4)
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = true, twoPage = true, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = true, twoPage = true, preload = 0)
         val rv = RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             this.adapter = adapter
@@ -105,7 +105,7 @@ class PageAdapterDetailTest {
     @Test
     fun loneLastPageOfASpreadHasTheWholeBudget() {
         val source = DetailSource(3)
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = true, twoPage = true, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = true, twoPage = true, preload = 0)
         val rv = RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             this.adapter = adapter

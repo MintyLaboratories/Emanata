@@ -14,6 +14,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         val prefs = Prefs(this)
+        prefs.upgrade()
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         cleanCaches()

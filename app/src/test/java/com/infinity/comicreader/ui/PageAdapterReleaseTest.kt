@@ -26,7 +26,7 @@ class PageAdapterReleaseTest {
     }
 
     private fun adapter(source: PageSource, mode: PageAdapter.Mode = PageAdapter.Mode.PAGED) =
-        PageAdapter(source = source, mode = mode, onTap = {}, doubleTapZoom = true)
+        PageAdapter(source = source, mode = mode, onTap = { _, _ -> }, doubleTapZoom = true)
 
     @Test
     fun releaseClosesChapters() {

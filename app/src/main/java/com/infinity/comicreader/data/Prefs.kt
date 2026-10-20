@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
+import com.infinity.comicreader.reader.TapZones
 
 /**
  * Central settings access. Everything that must survive across chapters, screens
@@ -131,9 +132,15 @@ class Prefs(context: Context) {
 
     // ---------------------------------------------------------------- gestures
 
-    var tapZones: Boolean
-        get() = bool(KEY_TAP_ZONES, true)
-        set(v) = put(KEY_TAP_ZONES, v)
+    /** Which edges turn pages; one of [TapZones]' values. */
+    var tapZones: String
+        get() = TapZones.of(sp.getString(KEY_TAP_ZONE_LAYOUT, null)).value
+        set(v) = put(KEY_TAP_ZONE_LAYOUT, TapZones.of(v).value)
+
+    /** Swap the left and right tap zones in right-to-left books. */
+    var mirrorTapZones: Boolean
+        get() = bool(KEY_TAP_ZONES_MIRROR, true)
+        set(v) = put(KEY_TAP_ZONES_MIRROR, v)
 
     var volumeKeys: Boolean
         get() = bool(KEY_VOLUME_KEYS, false)
@@ -227,20 +234,39 @@ class Prefs(context: Context) {
         e.apply()
     }
 
+    /** Moves values stored under replaced keys to the settings that replaced them. */
+    fun upgrade() {
+        val changes = upgrade(sp.all)
+        if (changes.isEmpty()) return
+        val e = sp.edit()
+        for ((k, v) in changes) {
+            when (v) {
+                is String -> e.putString(k, v)
+                is Int -> e.putInt(k, v)
+                else -> e.remove(k)
+            }
+        }
+        e.apply()
+    }
+
     /** Every stored `pref_*` value of a simple type, for backup. */
     fun exportAll(): Map<String, Any> =
         sp.all.filter { (k, v) -> k in KNOWN_KEYS && (v is String || v is Boolean || v is Int) }
             .mapValues { it.value as Any }
 
-    /** Restores values written by [exportAll]; unknown keys and odd types are ignored. */
+    /**
+     * Restores values written by [exportAll], an older version's brought up to date;
+     * unknown keys and odd types are ignored.
+     */
     fun importAll(values: Map<String, Any>) {
         val e = sp.edit()
-        for ((k, v) in values) {
-            if (k !in KNOWN_KEYS) continue
+        val known = values.filterKeys { it in KNOWN_KEYS }
+        for ((k, v) in known + upgrade(known)) {
             when (v) {
                 is String -> e.putString(k, v)
                 is Boolean -> e.putBoolean(k, v)
                 is Int -> e.putInt(k, v)
+                null -> e.remove(k)
             }
         }
         e.apply()
@@ -263,7 +289,8 @@ class Prefs(context: Context) {
         private const val KEY_ASK_RESUME = "pref_ask_resume"
         private const val KEY_TWO_PAGE = "pref_two_page"
         private const val KEY_NIGHT = "pref_night"
-        private const val KEY_TAP_ZONES = "pref_tap_zones"
+        private const val KEY_TAP_ZONE_LAYOUT = "pref_tap_zone_layout"
+        private const val KEY_TAP_ZONES_MIRROR = "pref_tap_zones_mirror"
         private const val KEY_VOLUME_KEYS = "pref_volume_keys"
         private const val KEY_BRIGHTNESS_GESTURE = "pref_brightness_gesture"
         private const val KEY_DOUBLE_TAP = "pref_double_tap"
@@ -287,11 +314,31 @@ class Prefs(context: Context) {
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_BRIGHTNESS, KEY_SPACING, KEY_AUTO_NEXT,
-            KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONES, KEY_VOLUME_KEYS,
+            KEY_RESUME, KEY_ASK_RESUME, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
             KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
-            KEY_LINEAR_LIGHT
+            KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES
         )
+
+        /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
+        private const val OLD_TAP_ZONES = "pref_tap_zones"
+
+        /**
+         * The changes that bring [stored] settings up to date: a value to write per key,
+         * or null for a key to remove. A replaced key's value moves to its successor
+         * unless the successor is already set.
+         */
+        internal fun upgrade(stored: Map<String, Any?>): Map<String, Any?> {
+            val out = LinkedHashMap<String, Any?>()
+            if (OLD_TAP_ZONES in stored) {
+                val on = stored[OLD_TAP_ZONES] as? Boolean ?: true
+                if (KEY_TAP_ZONE_LAYOUT !in stored) {
+                    out[KEY_TAP_ZONE_LAYOUT] = (if (on) TapZones.LEFT_RIGHT else TapZones.DISABLED).value
+                }
+                out[OLD_TAP_ZONES] = null
+            }
+            return out
+        }
     }
 }

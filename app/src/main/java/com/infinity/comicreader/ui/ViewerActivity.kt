@@ -55,6 +55,7 @@ import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Formats
@@ -679,7 +680,7 @@ class ViewerActivity : AppCompatActivity() {
         val a = PageAdapter(
             source = src,
             mode = adapterMode(),
-            onTap = { fraction -> onTap(fraction) },
+            onTap = { x, y -> onTap(x, y) },
             doubleTapZoom = prefs.doubleTapZoom,
             twoPage = useSpread(),
             rtl = readingDir == "rtl",
@@ -910,21 +911,15 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    private fun onTap(fraction: Float) {
-        if (!prefs.tapZones || mode == MODE_LONGSTRIP) {
-            toggleBars()
-            return
-        }
+    /** A tap at ([x], [y]), as fractions of the page view: turns a page or spread, or toggles the UI. */
+    private fun onTap(x: Float, y: Float) {
+        val zones = if (mode == MODE_LONGSTRIP) TapZones.DISABLED else TapZones.of(prefs.tapZones)
         val rtl = readingDir == "rtl" && mode == MODE_PAGED
-        val delta = when {
-            fraction < 0.33f -> if (rtl) 1 else -1
-            fraction > 0.67f -> if (rtl) -1 else 1
-            else -> {
-                toggleBars()
-                return
-            }
+        when (zones.action(x, y, rtl, prefs.mirrorTapZones)) {
+            TapZones.Action.PREVIOUS -> turn(-1)
+            TapZones.Action.NEXT -> turn(1)
+            TapZones.Action.MENU -> toggleBars()
         }
-        turn(delta)
     }
 
     private fun onPageChanged() {

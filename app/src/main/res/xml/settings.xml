@@ -146,11 +146,17 @@
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_gestures">
+        <ListPreference
+            app:defaultValue="left_right"
+            app:entries="@array/tap_zone_entries"
+            app:entryValues="@array/tap_zone_values"
+            app:key="pref_tap_zone_layout"
+            app:title="@string/pref_tap_zones"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
-            app:key="pref_tap_zones"
-            app:summary="@string/pref_tap_zones_desc"
-            app:title="@string/pref_tap_zones" />
+            app:key="pref_tap_zones_mirror"
+            app:title="@string/pref_tap_zones_mirror" />
         <SwitchPreferenceCompat
             app:defaultValue="false"
             app:key="pref_volume_keys"

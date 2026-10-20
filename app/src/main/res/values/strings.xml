@@ -208,8 +208,13 @@
     <string name="pref_ask_resume_desc">Ask whether to resume or start from the first page when a chapter has saved progress</string>
     <string name="pref_two_page">Two-page spread</string>
 
-    <string name="pref_tap_zones">Enable tap zones</string>
-    <string name="pref_tap_zones_desc">Tap the left/right edges to turn pages</string>
+    <string name="pref_tap_zones">Tap zones (previous/next)</string>
+    <string name="pref_tap_zones_mirror">Mirror left/right zones in right-to-left books</string>
+    <string name="tap_zones_disabled">Disabled</string>
+    <string name="tap_zones_left_right">Left / Right</string>
+    <string name="tap_zones_right_left">Right / Left</string>
+    <string name="tap_zones_top_bottom">Top / Bottom</string>
+    <string name="tap_zones_bottom_top">Bottom / Top</string>
     <string name="pref_volume_keys">Use volume keys to turn pages</string>
     <string name="pref_brightness_gesture">Swipe vertically to change brightness</string>
     <string name="pref_double_tap">Double-tap to zoom</string>
@@ -382,6 +387,21 @@
         <item>grayscale</item>
         <item>contrast</item>
         <item>sepia</item>
+    </string-array>
+
+    <string-array name="tap_zone_entries">
+        <item>@string/tap_zones_disabled</item>
+        <item>@string/tap_zones_left_right</item>
+        <item>@string/tap_zones_right_left</item>
+        <item>@string/tap_zones_top_bottom</item>
+        <item>@string/tap_zones_bottom_top</item>
+    </string-array>
+    <string-array name="tap_zone_values">
+        <item>disabled</item>
+        <item>left_right</item>
+        <item>right_left</item>
+        <item>top_bottom</item>
+        <item>bottom_top</item>
     </string-array>
 
     <string-array name="columns_entries">

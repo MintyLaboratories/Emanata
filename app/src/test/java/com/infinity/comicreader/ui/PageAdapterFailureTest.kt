@@ -65,7 +65,7 @@ class PageAdapterFailureTest {
     @Test
     fun failedPageShowsPlaceholderAndIsNotRetried() {
         val source = BrokenPageSource()
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
 
         val holder = bindAndWait(adapter, 1)
         assertTrue(holder.images[0].drawable is ErrorPageDrawable)
@@ -93,7 +93,7 @@ class PageAdapterFailureTest {
     @Test
     fun prefetchSkipsFailedPage() {
         val source = BrokenPageSource()
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 1)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 1)
 
         // Showing page 0 prefetches page 1, which fails.
         bindAndWait(adapter, 0)
@@ -125,7 +125,7 @@ class PageAdapterFailureTest {
 
     private fun assertRetriedAfter(error: Throwable) {
         val source = FlakySource(error)
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         assertTrue(bindAndWait(adapter, 0).images[0].drawable is ErrorPageDrawable)
         assertTrue(bindAndWait(adapter, 0).images[0].drawable is BitmapDrawable)
         assertEquals(2, source.loads.get())
@@ -142,7 +142,7 @@ class PageAdapterFailureTest {
     @Test
     fun transientFailureIsRetriedBeforeItsDecodeIsForgotten() {
         val source = FlakySource(IOException("Read timed out"))
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
         // The decode fails; the main thread has not yet run its completion when the page binds again.
         val deadline = System.currentTimeMillis() + 5_000
@@ -180,7 +180,7 @@ class PageAdapterFailureTest {
     @Test
     fun failureFromOldDecodeSizeIsDropped() {
         val source = StalledSource()
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
         assertTrue(source.entered.await(5, TimeUnit.SECONDS))
 
@@ -218,7 +218,7 @@ class PageAdapterFailureTest {
     @Test
     fun oldWaiterLeavingDoesNotCancelANewerDecode() {
         val source = FailThenStallSource()
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val first = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(first, 0)
         // The first decode fails; before its holder hears of it, another holder starts a new one.
@@ -238,7 +238,7 @@ class PageAdapterFailureTest {
 
     @Test
     fun goodPageShowsItsBitmap() {
-        val adapter = PageAdapter(source = BrokenPageSource(), mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = BrokenPageSource(), mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val holder = bindAndWait(adapter, 0)
         assertTrue(holder.images[0].drawable is BitmapDrawable)
         adapter.release()

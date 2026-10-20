@@ -59,7 +59,7 @@ class PageAdapterTargetTest {
     }
 
     private fun adapter(source: PageSource, twoPage: Boolean = false) = PageAdapter(
-        source = source, mode = PageAdapter.Mode.PAGED, onTap = {}, doubleTapZoom = false, twoPage = twoPage, preload = 0
+        source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, twoPage = twoPage, preload = 0
     )
 
     @Test

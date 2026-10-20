@@ -59,6 +59,7 @@ import com.infinity.comicreader.util.NaturalOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -557,7 +558,8 @@ class ViewerActivity : AppCompatActivity() {
 
         openJob = lifecycleScope.launch {
             val (opened, siblings) = withContext(AppDispatchers.io) {
-                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir) }
+                val job = coroutineContext.job
+                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, cancelled = { !job.isActive }) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {
@@ -722,7 +724,11 @@ class ViewerActivity : AppCompatActivity() {
         val next = nextChapter() ?: return
         stripAheadJob = lifecycleScope.launch {
             val (src, ok) = withContext(AppDispatchers.io) {
-                val s = runCatching { PageSources.open(next, prefs.charset, cacheDir) }.getOrNull()
+                // Nested archives are not copied ahead: a book needing new copies opens when reached.
+                val job = coroutineContext.job
+                val s = runCatching {
+                    PageSources.open(next, prefs.charset, cacheDir, cancelled = { !job.isActive }, copyNested = false)
+                }.getOrNull()
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

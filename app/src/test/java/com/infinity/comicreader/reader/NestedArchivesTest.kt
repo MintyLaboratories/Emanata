@@ -11,6 +11,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -177,6 +178,51 @@ class NestedArchivesTest {
         val f = omnibus()
         cache.writeText("a file where the cache folder belongs")
         open(f).use { }
+    }
+
+    @Test
+    fun cancelledOpenFailsAndLeavesNoCopies() {
+        val f = omnibus()
+        // Cancelled after the first check, so mid-way through the first copy.
+        var checks = 0
+        val nested = NestedArchives(cache, "UTF-8", cancelled = { checks++ > 0 })
+        try {
+            open(f, nested).use { }
+            throw AssertionError("expected UnavailableException")
+        } catch (expected: NestedArchives.UnavailableException) {
+        }
+        assertEquals(0, cached().size)
+    }
+
+    @Test
+    fun cancelledCopyStops() {
+        var reads = 0
+        val endless = object : InputStream() {
+            override fun read(): Int = 0
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                reads++
+                return len
+            }
+        }
+        try {
+            NestedArchives.copyBounded(endless, ByteArrayOutputStream(), Long.MAX_VALUE) { reads >= 3 }
+            throw AssertionError("expected UnavailableException")
+        } catch (expected: NestedArchives.UnavailableException) {
+        }
+        assertEquals(3, reads)
+    }
+
+    @Test
+    fun withoutCopyingOnlyCachedCopiesOpen() {
+        val f = omnibus()
+        try {
+            open(f, NestedArchives(cache, "UTF-8", copy = false)).use { }
+            throw AssertionError("expected UnavailableException")
+        } catch (expected: NestedArchives.UnavailableException) {
+        }
+        assertEquals(0, cached().size)
+        open(f).use { }
+        open(f, NestedArchives(cache, "UTF-8", copy = false)).use { assertEquals(5, it.pageCount) }
     }
 
     @Test(expected = NestedArchives.StorageException::class)

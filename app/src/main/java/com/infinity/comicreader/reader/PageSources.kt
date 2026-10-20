@@ -12,14 +12,26 @@ import java.io.IOException
  * closing one never cuts off a read in flight.
  */
 object PageSources {
-    fun open(file: File, charsetName: String, cacheDir: File): PageSource =
-        GuardedSource(openRaw(file, charsetName, cacheDir, firstPageOnly = false))
+    /**
+     * Opens [file]. Nested-archive copying stops once [cancelled] turns true; without
+     * [copyNested] only cached copies are used, and a book needing a new one fails.
+     */
+    fun open(
+        file: File,
+        charsetName: String,
+        cacheDir: File,
+        cancelled: () -> Boolean = { false },
+        copyNested: Boolean = true
+    ): PageSource {
+        val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, cancelled = cancelled, copy = copyNested)
+        return GuardedSource(openRaw(file, charsetName, nested, firstPageOnly = false))
+    }
 
     /** Like [open], but an archive holds only its first page: enough for a cover, and cheaper. */
     fun openCover(file: File, charsetName: String, cacheDir: File): PageSource =
-        GuardedSource(openRaw(file, charsetName, cacheDir, firstPageOnly = true))
+        GuardedSource(openRaw(file, charsetName, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName), firstPageOnly = true))
 
-    private fun openRaw(file: File, charsetName: String, cacheDir: File, firstPageOnly: Boolean): PageSource =
+    private fun openRaw(file: File, charsetName: String, nested: NestedArchives, firstPageOnly: Boolean): PageSource =
         when (Formats.typeOf(file.name)) {
             EntryType.IMAGE -> ImageSource(file)
             EntryType.PDF, EntryType.ARCHIVE -> {
@@ -29,7 +41,6 @@ object PageSources {
                 } else {
                     val reader = ArchiveReader.open(file, charsetName, kind)
                         ?: throw IOException("Unsupported archive: ${file.name}")
-                    val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName)
                     ArchiveSource(reader, NestedArchives.keyOf(file), nested, firstPageOnly)
                 }
             }

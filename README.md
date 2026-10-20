@@ -34,6 +34,8 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 
 ### File browser
 - Browse local storage by folder; list and grid layouts.
+- Covers are made at the exact size of their cell (cropped and Lanczos3-scaled,
+  drawn 1:1) and cached losslessly.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - A **Recent** row sits above the browsing list and opens the folder holding the
   last chapter you read.

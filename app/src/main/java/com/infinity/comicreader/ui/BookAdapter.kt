@@ -2,6 +2,8 @@ package com.infinity.comicreader.ui
 
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -68,6 +70,7 @@ class BookAdapter(
 
     private val items = ArrayList<BookEntry>()
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** Caps concurrent cover decodes; a row scrolled away before its turn is never decoded. */
     private val gate = Semaphore(THUMB_THREADS)
@@ -109,6 +112,10 @@ class BookAdapter(
         val subtitle: TextView = view.findViewById(R.id.subtitle)
         val star: ImageView = view.findViewById(R.id.star)
         var job: Job? = null
+
+        /** The entry bound here, and the cover size last requested for it (width in the high half). */
+        var entry: BookEntry? = null
+        var requested = 0L
     }
 
     class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -129,7 +136,12 @@ class BookAdapter(
             else -> R.layout.item_book_list
         }
         val view = LayoutInflater.from(context).inflate(layout, parent, false)
-        return if (viewType == VIEW_HEADER) HeaderHolder(view) else BookHolder(view)
+        if (viewType == VIEW_HEADER) return HeaderHolder(view)
+        val holder = BookHolder(view)
+        holder.thumb.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
+            if (r - l != oldR - oldL || b - t != oldB - oldT) requestCover(holder)
+        }
+        return holder
     }
 
     override fun getItemCount(): Int = items.size + itemOffset
@@ -148,7 +160,6 @@ class BookAdapter(
     }
 
     private fun bindBook(holder: BookHolder, item: BookEntry) {
-        val position = holder.absoluteAdapterPosition
         val context = holder.itemView.context
         holder.job?.cancel()
 
@@ -172,36 +183,45 @@ class BookAdapter(
         holder.thumb.setImageDrawable(null)
         holder.placeholder.visibility = View.VISIBLE
 
-        // A grid cover is requested at the cell size: until it is measured, the
-        // placeholder stays rather than caching a cover for the wrong size.
-        val res = context.resources
-        val request = if (grid) {
-            val fixed = res.getDimensionPixelSize(R.dimen.grid_thumb_h)
-            GridSizing.coverRequest(cellWidth, cellHeight, prefs.gridRows, fixed)
-        } else {
-            res.getDimensionPixelSize(R.dimen.list_thumb_w) to res.getDimensionPixelSize(R.dimen.list_thumb_h)
-        }
-        if (prefs.thumbnails && request != null) {
-            val appContext = context.applicationContext
-            val charset = prefs.charset
-            val linear = prefs.linearLight
-            val (reqW, reqH) = request
-            val target = position
-            holder.job = scope.launch {
-                val bitmap = withContext(AppDispatchers.io) {
-                    gate.withPermit {
-                        runCatching { Thumbs.load(appContext, item, charset, reqW, reqH, linear) }.getOrNull()
-                    }
-                }
-                if (bitmap != null && holder.bindingAdapterPosition == target) {
-                    holder.thumb.setImageBitmap(bitmap)
-                    holder.placeholder.visibility = View.GONE
-                }
-            }
-        }
+        // The cover is requested at its view's exact size, once that is laid out.
+        holder.entry = item
+        holder.requested = 0L
+        // At once when nothing about the cell changed, else after its next layout.
+        if (!holder.itemView.isLayoutRequested) requestCover(holder)
+        mainHandler.post { requestCover(holder) }
 
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener { onLongClick(item); true }
+    }
+
+    /**
+     * Loads the cover of the entry [holder] shows at the cover view's size, so it is
+     * drawn 1:1. Runs after each bind and again whenever the view changes size; a
+     * size already requested, or a view not laid out yet, asks for nothing.
+     */
+    private fun requestCover(holder: BookHolder) {
+        val item = holder.entry ?: return
+        val w = holder.thumb.width
+        val h = holder.thumb.height
+        if (!prefs.thumbnails || w <= 0 || h <= 0) return
+        val size = (w.toLong() shl 32) or h.toLong()
+        if (holder.requested == size) return
+        holder.requested = size
+        holder.job?.cancel()
+        val appContext = holder.itemView.context.applicationContext
+        val charset = prefs.charset
+        val linear = prefs.linearLight
+        holder.job = scope.launch {
+            val bitmap = withContext(AppDispatchers.io) {
+                gate.withPermit {
+                    runCatching { Thumbs.load(appContext, item, charset, w, h, linear) }.getOrNull()
+                }
+            }
+            if (bitmap != null && holder.entry === item) {
+                holder.thumb.setImageBitmap(bitmap)
+                holder.placeholder.visibility = View.GONE
+            }
+        }
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
@@ -209,6 +229,7 @@ class BookAdapter(
         if (holder !is BookHolder) return
         holder.job?.cancel()
         holder.job = null
+        holder.entry = null
         holder.thumb.setImageDrawable(null)
     }
 

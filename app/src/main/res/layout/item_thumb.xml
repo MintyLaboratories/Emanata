@@ -13,7 +13,7 @@
         android:layout_height="150dp"
         android:background="@drawable/bg_thumb_placeholder"
         android:contentDescription="@string/pages_title"
-        android:scaleType="centerCrop"
+        android:scaleType="center"
         app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb"
         app:strokeWidth="0dp" />
 

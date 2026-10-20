@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
@@ -15,14 +16,18 @@ import java.security.MessageDigest
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
  * render their first page; folders fall back to the first image/openable file
- * found a couple of levels deep. Covers are cropped and scaled to fill the requested
- * box, rounded up to a [ThumbSizing] tier, and cached per tier in memory (bounded
- * by heap) and on disk under `cacheDir/thumbnails`.
+ * found a couple of levels deep. Covers are made at exactly the size of the view
+ * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]), then cropped and
+ * Lanczos3-scaled to fill it ([Fit.COVER]), so the view draws them 1:1. They are
+ * cached per size in memory (bounded by heap) and losslessly on disk under
+ * `cacheDir/thumbnails`.
  */
 object Thumbs {
     private const val DISK_DIR = "thumbnails"
+
+    /** Covers decode at full size below this; larger sources take the decoder's coarse reduction first. */
     private const val THUMB_CAP_PIXELS = 16_000_000L
-    private const val MAX_DISK_BYTES = 120L * 1024 * 1024
+    private const val MAX_DISK_BYTES = 160L * 1024 * 1024
     private const val HEX_DIGITS = "0123456789abcdef"
 
     private val memory = object : LruCache<String, Bitmap>(maxBytes()) {
@@ -37,31 +42,39 @@ object Thumbs {
     private fun key(entry: BookEntry): String =
         "${entry.path}|${entry.size}|${entry.lastModified}|${entry.isDir}"
 
-    /** Blocking — call from a background dispatcher. Returns null when no cover exists. */
-    fun load(context: Context, entry: BookEntry, charset: String, reqW: Int, reqH: Int, linear: Boolean = false): Bitmap? {
-        val boxW = ThumbSizing.tier(reqW)
-        val boxH = ThumbSizing.tier(reqH)
-        val k = "${key(entry)}|${boxW}x$boxH" + if (linear) "|linear" else ""
+    /**
+     * The cover of [entry], exactly [width] x [height]. Blocking — call from a background
+     * dispatcher. Returns null when no cover exists.
+     */
+    fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, linear: Boolean = false): Bitmap? {
+        val target = Target(width, height, Fit.COVER, linear = linear, capPixels = THUMB_CAP_PIXELS)
+        val k = "${key(entry)}|${width}x$height" + if (linear) "|linear" else ""
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
         if (disk.isFile) {
-            val cached = decodeFile(disk, boxW, boxH)
+            val cached = runCatching { Decoders.decode(disk, target) }.getOrNull()
             if (cached != null) {
                 memory.put(k, cached)
                 return cached
             }
         }
 
-        val bitmap = generate(entry, charset, context.cacheDir, Target(boxW, boxH, Fit.COVER, linear = linear, capPixels = THUMB_CAP_PIXELS))
-            ?: return null
+        val bitmap = generate(entry, charset, context.cacheDir, target) ?: return null
         memory.put(k, bitmap)
         runCatching {
             disk.parentFile?.mkdirs()
-            disk.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+            disk.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
         }
         return bitmap
     }
+
+    /** WebP lossless where the platform writes it, PNG before that. */
+    private val LOSSLESS =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.PNG
+
+    /** For lossless formats the quality is encoder effort: low keeps writing fast. */
+    private const val LOSSLESS_EFFORT = 25
 
     /**
      * Keeps the on-disk cover cache under [maxBytes] by deleting the least recently written
@@ -124,11 +137,8 @@ object Thumbs {
         return null
     }
 
-    private fun decodeFile(file: File, boxW: Int, boxH: Int): Bitmap? =
-        runCatching { Decoders.decode(file, Target(boxW, boxH, Fit.COVER, capPixels = THUMB_CAP_PIXELS)) }.getOrNull()
-
     private fun diskFile(context: Context, key: String): File =
-        File(File(context.cacheDir, DISK_DIR), sha256(key) + ".jpg")
+        File(File(context.cacheDir, DISK_DIR), sha256(key) + if (LOSSLESS == Bitmap.CompressFormat.PNG) ".png" else ".webp")
 
     /**
      * Cache-file name for [value]. This is only used to build a collision-resistant

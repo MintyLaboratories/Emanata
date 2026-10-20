@@ -21,14 +21,4 @@ object GridSizing {
         if (rows <= 0 || availablePx <= 0) return 0
         return maxOf(availablePx / rows, minPx)
     }
-
-    /**
-     * Cover size to request for a grid cell as (width, height), or null while the
-     * cell is not measured yet. With [rows] set the cover gets the cell minus the
-     * text, so the cell height bounds it; otherwise covers are [fixedCoverPx] tall.
-     */
-    fun coverRequest(cellWidth: Int, cellHeight: Int, rows: Int, fixedCoverPx: Int): Pair<Int, Int>? {
-        if (cellWidth <= 0 || (rows > 0 && cellHeight <= 0)) return null
-        return cellWidth to if (rows > 0) cellHeight else fixedCoverPx
-    }
 }

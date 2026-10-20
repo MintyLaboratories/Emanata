@@ -156,6 +156,46 @@ class PageShaderTest {
     }
 
     @Test
+    fun colorStageUnpremultipliesTranslucentPixels() {
+        val w = 32
+        val h = 16
+        val alpha = 0x80
+        // Premultiplied channels 0..128, stored exactly: at alpha 128 each round-trips through its unpremultiplied byte.
+        val random = Random(5)
+        val premul = IntArray(w * h * 3) { random.nextInt(alpha + 1) }
+        fun unpremul(p: Int) = Math.round(p * 255f / alpha).coerceAtMost(255)
+        fun premul(c: Int) = Math.round(c * alpha / 255f)
+        val src = IntArray(w * h) { i ->
+            (alpha shl 24) or (unpremul(premul[i * 3]) shl 16) or (unpremul(premul[i * 3 + 1]) shl 8) or unpremul(premul[i * 3 + 2])
+        }
+        val shader = shader(PageShader.Kernel.NEAREST, colored = true)
+        for (look in looks) {
+            val got = shaded(shader, src, w, h, 1f, w, h, look)
+            // Compared premultiplied, as stored, so the 7-bit rounding at half alpha is not amplified.
+            var worst = 0
+            for (i in got.indices) {
+                assertEquals(alpha, got[i] ushr 24)
+                val out = look.apply(premul[i * 3] / alpha.toFloat(), premul[i * 3 + 1] / alpha.toFloat(), premul[i * 3 + 2] / alpha.toFloat())
+                for (c in 0..2) {
+                    val stored = premul((got[i] shr (16 - 8 * c)) and 0xFF)
+                    worst = max(worst, abs(Math.round(out[c] * alpha) - stored))
+                }
+            }
+            assertTrue("${look.adjustments} invert ${look.invert} differs by $worst", worst <= 1)
+        }
+    }
+
+    @Test
+    fun colorStageLeavesTransparentPixelsTransparent() {
+        val random = Random(6)
+        val src = IntArray(16 * 8) { random.nextInt(0x1000000) }
+        val shader = shader(PageShader.Kernel.NEAREST, colored = true)
+        for (look in looks) {
+            assertTrue(shaded(shader, src, 16, 8, 1f, 16, 8, look).all { it == 0 })
+        }
+    }
+
+    @Test
     fun colorStageFollowsTheLanczosResult() {
         val w = 12
         val h = 8

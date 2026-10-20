@@ -340,6 +340,8 @@ class ZoomImageView @JvmOverloads constructor(
             delivered = true
             if (request != detailRequest) return@render
             detailCancel = null
+            // The shaders that drew the old tile would keep it alive.
+            clearShaders(detailShaders)
             detail = result
             detailMatrix.set(toBitmap)
             invalidate()

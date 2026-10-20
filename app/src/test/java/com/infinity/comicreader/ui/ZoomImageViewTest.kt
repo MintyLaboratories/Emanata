@@ -407,6 +407,37 @@ class ZoomImageViewTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aNewDetailTileReleasesTheOldOneFromEveryShader() {
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
+        try {
+            val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
+            val detail = RecordingDetail()
+            v.detailSource = detail
+            v.look = Look.of(Filters.NONE, Adjustments(brightness = -20))
+            v.zoomTo(2f, 150f, 200f)
+            pass(160)
+            val first = detail.deliver()
+            // At 1:1, then enlarged, then enlarged without the color stage: three shaders.
+            draw(v)
+            v.zoomTo(2.2f, 150f, 200f)
+            draw(v)
+            v.look = Look.NONE
+            draw(v)
+            assertTrue(v.shadersHold.any { it === first })
+
+            pass(160)
+            val second = detail.deliver()
+            v.look = Look.of(Filters.INVERT, Adjustments.NEUTRAL)
+            draw(v)
+            assertTrue(v.shadersHold.any { it === second })
+            assertFalse(v.shadersHold.any { it === first })
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
+    }
+
+    @Test
     fun bandsAroundTheDetailCoverTheRestExactly() {
         val bands = ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(10f, 20f, 60f, 150f))
         assertEquals(

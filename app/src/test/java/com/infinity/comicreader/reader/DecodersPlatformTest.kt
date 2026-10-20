@@ -35,6 +35,16 @@ class DecodersPlatformTest {
     }
 
     @Test
+    fun pngWithExifSizedLikeItsDecode() {
+        // Big-endian TIFF with one entry: Orientation = 6 (rotate 90 degrees clockwise).
+        val tiff = byteArrayOf(0x4D, 0x4D, 0, 0x2A, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+        val png = TestImages.png(40, 30, extra = listOf("eXIf" to tiff))
+        val bitmap = Decoders.decode(png, 0, 0)
+        assertArrayEquals(intArrayOf(bitmap.width, bitmap.height), Decoders.size(png))
+        assertArrayEquals(intArrayOf(40, 30), Decoders.size(TestImages.png(40, 30)))
+    }
+
+    @Test
     fun sixteenBitImageDecodesToEightBit() {
         val bitmap = Decoders.decode(TestImages.png(40, 30, bitDepth = 16), 0, 0)
         assertEquals(Bitmap.Config.ARGB_8888, bitmap.config)

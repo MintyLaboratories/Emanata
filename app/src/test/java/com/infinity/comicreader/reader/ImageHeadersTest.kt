@@ -1,7 +1,9 @@
 package com.infinity.comicreader.reader
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.util.zip.CRC32
@@ -36,6 +38,15 @@ class ImageHeadersTest {
         val noIhdr = png(37, 23).also { it[12] = 'X'.code.toByte() }
         assertNull(ImageHeaders.pngSize(noIhdr))
         assertNull(ImageHeaders.pngSize(bytes(0xFF, 0xD8, 0xFF, 0xE0)))
+    }
+
+    @Test
+    fun pngExifBeforeImageData() {
+        assertFalse(ImageHeaders.pngMayHaveExif(TestImages.png(4, 3)))
+        assertFalse(ImageHeaders.pngMayHaveExif(TestImages.png(4, 3, extra = listOf("tEXt" to "a\u0000b".toByteArray()))))
+        assertTrue(ImageHeaders.pngMayHaveExif(TestImages.png(4, 3, extra = listOf("eXIf" to ByteArray(8)))))
+        // Unknown when the bytes end before the image data.
+        assertTrue(ImageHeaders.pngMayHaveExif(png(37, 23)))
     }
 
     // ------------------------------------------------------------------ JPEG XL

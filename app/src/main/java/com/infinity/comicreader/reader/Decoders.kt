@@ -77,7 +77,10 @@ object Decoders {
 
     /** Intrinsic `[width, height]` as a decode would return it at full size, without decoding pixels; null if unknown. */
     fun size(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
-        ImageKind.PNG -> ImageHeaders.pngSize(bytes)
+        // An eXIf chunk may rotate the decode, so only the platform's reading matches it then.
+        ImageKind.PNG ->
+            if (ImageHeaders.pngMayHaveExif(bytes)) platformSize(bytes) ?: ImageHeaders.pngSize(bytes)
+            else ImageHeaders.pngSize(bytes) ?: platformSize(bytes)
         ImageKind.JXL -> jxlSize(bytes)
         else -> platformSize(bytes)
     }

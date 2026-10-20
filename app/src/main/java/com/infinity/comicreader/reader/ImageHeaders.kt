@@ -18,6 +18,20 @@ object ImageHeaders {
         return if (w in 1L..Int.MAX_VALUE && h in 1L..Int.MAX_VALUE) intArrayOf(w.toInt(), h.toInt()) else null
     }
 
+    /** True when an eXIf chunk precedes the image data, or [bytes] end before either is found. */
+    fun pngMayHaveExif(bytes: ByteArray): Boolean {
+        var at = 8L
+        while (at + 8 <= bytes.size) {
+            when (String(bytes, at.toInt() + 4, 4, Charsets.US_ASCII)) {
+                "eXIf" -> return true
+                "IDAT" -> return false
+            }
+            // Length, type, data and CRC.
+            at += 12 + be32(bytes, at.toInt())
+        }
+        return true
+    }
+
     /**
      * Size of a JPEG XL image, bare codestream or ISO-BMFF container. Reads the
      * codestream's SizeHeader, then the orientation from ImageMetadata: orientations

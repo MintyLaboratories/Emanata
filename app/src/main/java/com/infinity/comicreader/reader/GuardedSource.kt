@@ -35,6 +35,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    override fun pageName(index: Int): String? = inner.pageName(index)
+
     override fun close() {
         synchronized(lock) {
             closing = true

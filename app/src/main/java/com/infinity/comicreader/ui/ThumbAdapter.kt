@@ -84,6 +84,10 @@ class ThumbAdapter(
                 if (holder.bindingAdapterPosition == position) {
                     holder.image.setImageBitmap(bitmap)
                 }
+            } else if (holder.bindingAdapterPosition == position) {
+                val res = holder.itemView.resources
+                val name = source.pageName(position) ?: res.getString(R.string.page_number, position + 1)
+                holder.image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, ""))
             }
         }
     }

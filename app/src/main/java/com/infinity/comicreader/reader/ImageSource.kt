@@ -12,6 +12,8 @@ class ImageSource(private val file: File) : PageSource {
 
     override fun pageSize(index: Int): IntArray? = Decoders.size(file)
 
+    override fun pageName(index: Int): String = file.name
+
     override fun close() {
         // Intentionally empty: pages are decoded on demand and no file handle is kept open.
     }

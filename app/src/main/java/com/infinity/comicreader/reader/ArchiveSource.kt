@@ -149,6 +149,8 @@ class ArchiveSource(
         }.getOrNull()
     }
 
+    override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
+
     override fun close() {
         closeAll()
     }

@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
+import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.PageSource
@@ -41,7 +42,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
  * the next [preload] pages are decoded ahead of time. With [autoCrop] blank borders
- * are trimmed (never in long-strip mode, where the gaps belong to the art).
+ * are trimmed (never in long-strip mode, where the gaps belong to the art). A page
+ * that fails to decode shows an [ErrorPageDrawable] naming it and why, and is not
+ * retried until the decode size changes.
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction or [autoCrop] changes.
@@ -99,6 +102,11 @@ class PageAdapter(
         override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
     }
     private val pending = HashMap<Int, Pending>()
+
+    /** Why a page could not be shown; [name] is null when its source has no page names. */
+    private class Failure(val index: Int, val name: String?, val reason: String)
+
+    private val failures = ConcurrentHashMap<Int, Failure>()
     private val aspects = ConcurrentHashMap<Int, Float>()
     private var learnedAspect = 1.45f
     private var recyclerWidth = 0
@@ -299,6 +307,10 @@ class PageAdapter(
             applyBitmap(image, cached)
             return
         }
+        failures[pageIndex]?.let {
+            applyFailure(image, it)
+            return
+        }
         image.setImageDrawable(null)
 
         // A spread row's slots may still have their old widths before layout: size
@@ -311,7 +323,11 @@ class PageAdapter(
         entry.waiters++
         holder.pages[slot] = pageIndex
         holder.waiters[slot] = scope.launch {
-            val bitmap = entry.deferred.await() ?: return@launch
+            val bitmap = entry.deferred.await()
+            if (bitmap == null) {
+                failures[pageIndex]?.let { applyFailure(image, it) }
+                return@launch
+            }
             applyBitmap(image, bitmap)
             updateLongStripAspect(holder, pageIndex, bitmap)
         }
@@ -347,16 +363,26 @@ class PageAdapter(
         image.setFitMode(fitMode)
     }
 
+    private fun applyFailure(image: ZoomImageView, failure: Failure) {
+        val res = image.resources
+        val name = failure.name ?: res.getString(R.string.page_number, failure.index + 1)
+        image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
+        image.setFitMode(fitMode)
+    }
+
     // ------------------------------------------------------------------ decoding
 
     private fun cacheBytes(): Int =
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
 
-    private fun decode(source: PageSource, index: Int, reqW: Int, reqH: Int): Bitmap? = try {
+    /** Page [index] of [source], shown as [pageIndex]; null after recording why in [failures]. */
+    private fun decode(source: PageSource, index: Int, pageIndex: Int, reqW: Int, reqH: Int): Bitmap? = try {
         val raw = source.loadPage(index, reqW, reqH)
         if (autoCrop && mode != Mode.LONG_STRIP) BitmapUtils.autoCrop(raw) else raw
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
+        val name = runCatching { source.pageName(index) }.getOrNull()
+        failures[pageIndex] = Failure(index, name, t.message ?: t.javaClass.simpleName)
         null
     }
 
@@ -370,7 +396,7 @@ class PageAdapter(
         seg.loads.incrementAndGet()
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
-                val bitmap = decode(seg.source, pageIndex - chapter.first, reqW, reqH)
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, reqW, reqH)
                 if (bitmap != null && bitmap.width > 0) {
                     cache.put(pageIndex, bitmap)
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -406,6 +432,7 @@ class PageAdapter(
         pending.values.toList().forEach { it.deferred.cancel() }
         pending.clear()
         cache.evictAll()
+        failures.clear()
     }
 
     // ------------------------------------------------------------------ long strip
@@ -476,6 +503,7 @@ class PageAdapter(
         scope.cancel()
         pending.clear()
         cache.evictAll()
+        failures.clear()
         val chapters = strip.clear()
         // Every chapter's handle is released here rather than earlier, so a decode
         // still in flight cannot meet a closed archive.

@@ -19,4 +19,7 @@ interface PageSource : Closeable {
      * strips so pages do not resize as they load.
      */
     fun pageSize(index: Int): IntArray? = null
+
+    /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
+    fun pageName(index: Int): String? = null
 }

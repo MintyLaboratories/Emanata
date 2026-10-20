@@ -73,7 +73,6 @@
     <string name="folder_read_summary">%1$d items · %2$d read</string>
     <string name="pages_count">%1$d pages</string>
     <string name="page_number">Page %1$d</string>
-    <string name="percent_format">%1$d%%</string>
     <string name="missing_file">Missing from storage</string>
     <string name="deleted_format">Deleted %1$d item(s)</string>
     <string name="delete_confirm_title">Delete files?</string>

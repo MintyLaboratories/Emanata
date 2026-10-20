@@ -28,7 +28,10 @@ class ArchiveJunkTest {
 
     @Test
     fun pageEntries() {
-        for (path in listOf("001.jpg", "Book/001.jpg", "./001.jpg", "Book/ch.1/001.jpg", "MACOSX/001.jpg")) {
+        for (path in listOf(
+            "001.jpg", "Book/001.jpg", "./001.jpg", "Book/ch.1/001.jpg", "MACOSX/001.jpg",
+            "...Extras/001.jpg", "Book/..001.jpg"
+        )) {
             assertFalse(path, ArchiveJunk.isJunk(path, 10))
         }
         assertFalse(ArchiveJunk.isJunk("001.jpg", -1))

@@ -12,7 +12,10 @@ object ArchiveJunk {
     fun isJunk(path: String, size: Long): Boolean {
         if (size == 0L) return true
         val parts = path.split('/', '\\').filter { it.isNotEmpty() && it != "." && it != ".." }
-        if (parts.any { it.startsWith('.') || it.equals("__MACOSX", ignoreCase = true) }) return true
+        if (parts.any { isHidden(it) || it.equals("__MACOSX", ignoreCase = true) }) return true
         return parts.lastOrNull()?.lowercase(Locale.ROOT) in SHELL_FILES
     }
+
+    /** A dotfile name; `...Extras` and other names opening with an ellipsis are not hidden. */
+    private fun isHidden(name: String) = name.startsWith('.') && !name.startsWith("..")
 }

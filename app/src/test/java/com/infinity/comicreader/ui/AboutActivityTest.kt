@@ -33,6 +33,14 @@ class AboutActivityTest {
     }
 
     @Test
+    fun versionChipShowsOnlyTheVersion() {
+        val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        val chip = about.findViewById<TextView>(R.id.about_version).text.toString()
+        assertTrue(chip.startsWith("Version "))
+        assertFalse(chip.contains(about.getString(R.string.app_name)))
+    }
+
+    @Test
     fun licenseRowShowsTheLicense() {
         val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
         val links = about.findViewById<LinearLayout>(R.id.about_links)

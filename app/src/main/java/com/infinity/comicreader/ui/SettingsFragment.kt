@@ -112,7 +112,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val version = runCatching {
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
             }.getOrNull().orEmpty()
-            summary = getString(R.string.about_version_format, getString(R.string.app_name), version)
+            summary = getString(R.string.about_version_format, version)
             setOnPreferenceClickListener {
                 startActivity(android.content.Intent(requireContext(), AboutActivity::class.java))
                 true

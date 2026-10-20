@@ -26,7 +26,7 @@ class AboutActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
 
         findViewById<TextView>(R.id.about_version).text =
-            getString(R.string.about_version_format, getString(R.string.app_name), versionName())
+            getString(R.string.about_version_format, versionName())
 
         val links = findViewById<LinearLayout>(R.id.about_links)
         addRow(links, getString(R.string.about_source), shortUrl(Notices.SOURCE_URL)) { open(Notices.SOURCE_URL) }

@@ -101,6 +101,9 @@ class ListActivity : AppCompatActivity() {
 
     /** Overrides the startup tab setting for the first [startUp]. */
     private var startTab: Int? = null
+
+    /** A folder handed in by another app, browsed by the first [startUp] instead of the startup location. */
+    private var incomingDir: File? = null
     private var deepJob: Job? = null
     private var deepResults: List<BookEntry>? = null
     private val allEntries = ArrayList<BookEntry>()
@@ -188,9 +191,9 @@ class ListActivity : AppCompatActivity() {
             }
         }
 
-        handleIncoming(intent)
+        incomingDir = handleIncoming(intent)
         restored = savedInstanceState
-        // A folder handed in by another app is shown instead of the startup tab.
+        // What another app hands in is shown on Browse, not on the startup tab.
         if (intent.data != null && savedInstanceState == null) startTab = TAB_BROWSE
 
         if (!hasStorageAccess()) {
@@ -314,7 +317,7 @@ class ListActivity : AppCompatActivity() {
 
     /**
      * Opens the screen as it was before a recreate, else on the startup tab with
-     * Browse at the startup location behind it.
+     * Browse behind it at the folder handed in, or else the startup location.
      */
     private fun startUp() {
         val state = restored
@@ -322,7 +325,8 @@ class ListActivity : AppCompatActivity() {
         val savedDir = state?.getString(STATE_DIR)?.let { File(it) }?.takeIf { it.isDirectory }
         val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
         startTab = null
-        val dir = savedDir ?: startDirectory()
+        val dir = savedDir ?: incomingDir ?: startDirectory()
+        incomingDir = null
         if (tab == TAB_BROWSE) {
             loadDirectory(dir)
             return
@@ -960,28 +964,26 @@ class ListActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun handleIncomingFile(file: File) {
-        if (!isUnderStorage(file)) return
-        if (file.isFile && Formats.isOpenable(file.name)) {
-            openViewer(file, 0)
-        } else if (file.isDirectory) {
-            loadDirectory(file)
-        }
+    /** Opens a book at [file]; returns a folder there for the caller to browse. Both by canonical path. */
+    private fun handleIncomingFile(file: File): File? {
+        val real = runCatching { file.canonicalFile }.getOrNull() ?: return null
+        if (!isUnderStorage(real.path)) return null
+        if (real.isFile && Formats.isOpenable(real.name)) openViewer(real, 0)
+        return real.takeIf { it.isDirectory }
     }
 
     /** Only shared storage may be opened by path: never the app's own or other private folders. */
-    private fun isUnderStorage(file: File): Boolean {
-        val path = runCatching { file.canonicalPath }.getOrNull() ?: return false
-        val root = Environment.getExternalStorageDirectory().canonicalPath
-        return path == root || path.startsWith("$root/") || path.startsWith("/storage/")
-    }
+    private fun isUnderStorage(canonical: String): Boolean =
+        StorageRoot.of(canonical, roots) != null || canonical.startsWith("/storage/")
 
-    private fun handleIncoming(intent: Intent) {
-        val uri = intent.data ?: return
+    /** Opens a book handed in by another app; returns a folder handed in for the caller to browse. */
+    private fun handleIncoming(intent: Intent): File? {
+        val uri = intent.data ?: return null
         when (uri.scheme) {
-            "file" -> uri.path?.let { handleIncomingFile(File(it)) }
+            "file" -> return uri.path?.let { handleIncomingFile(File(it)) }
             "content" -> openSharedContent(uri)
         }
+        return null
     }
 
     /** Another app handed us a content:// URI: copy it into the cache and open the copy. */
@@ -1102,7 +1104,7 @@ class ListActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIncoming(intent)
+        handleIncoming(intent)?.let { loadDirectory(it) }
     }
 
     // ------------------------------------------------------------------ menu

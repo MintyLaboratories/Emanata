@@ -2,6 +2,8 @@ package com.infinity.comicreader.ui
 
 import android.Manifest
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Looper
@@ -89,6 +91,30 @@ class ListActivityStartupTest {
         idle()
         // Favorites sort by name, folders first.
         assertEquals(alpha.absolutePath, activity.crumbPaths().last())
+    }
+
+    private fun viewIntent(path: String) =
+        Intent(Intent.ACTION_VIEW, Uri.Builder().scheme("file").path(path).build())
+
+    @Test
+    fun aFolderFromAnotherAppWinsOverTheStartupLocation() {
+        prefs.setStartupFolder(File(root, "Custom").apply { mkdirs() }.absolutePath)
+        prefs.startupTab = Prefs.TAB_FAVORITES
+        val incoming = File(root, "Incoming").apply { mkdirs() }
+        val activity = Robolectric.buildActivity(ListActivity::class.java, viewIntent(incoming.absolutePath)).setup().get()
+        idle()
+        assertEquals(0, activity.tab())
+        assertEquals(incoming.absolutePath, activity.crumbPaths().last())
+    }
+
+    @Test
+    fun aFolderFromAnotherAppOpensByItsCanonicalPath() {
+        val incoming = File(root, "Incoming").apply { mkdirs() }
+        File(root, "Other").mkdirs()
+        val path = File(root, "Other/../Incoming").path
+        val activity = Robolectric.buildActivity(ListActivity::class.java, viewIntent(path)).setup().get()
+        idle()
+        assertEquals(listOf(root.absolutePath, incoming.absolutePath), activity.crumbPaths())
     }
 
     @Test

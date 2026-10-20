@@ -78,6 +78,12 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right or right-to-left (tap zones follow).
 - **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
+  While moving, the page is drawn through a Lanczos3 GPU shader with an
+  anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
+  the visible part is re-rendered with Lanczos3 from the full-resolution page
+  (vector for PDF) at exact screen resolution and swapped in pixel for pixel.
+  Only the zoomed page or spread is kept at full resolution, within a memory
+  budget, and it is freed when memory runs low.
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered.
@@ -242,8 +248,8 @@ No internet permission is requested.
 - `minSdk 26`, `targetSdk 34`.
 - AVIF decoding depends on the platform: it works natively on Android 12+
   (API 31+); on older devices AVIF pages show the error placeholder.
-- The reader decodes pages with power-of-two downsampling to bound memory use,
-  then lets `ZoomImageView` scale the result.
+- Zoom: `LanczosShader` (AGSL) draws while the gesture moves; `DetailTile`,
+  `DetailStore` and `PageSource.loadDetail` re-render the settled view.
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
   loads the current page and its neighbours concurrently, all access to these

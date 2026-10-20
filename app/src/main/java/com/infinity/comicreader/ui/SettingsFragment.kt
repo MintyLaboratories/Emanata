@@ -6,6 +6,7 @@ import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import android.text.TextUtils
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -163,7 +164,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         pref.summaryProvider = summary
         pref.setOnPreferenceChangeListener { _, value ->
             if (value != StartupLocation.CUSTOM) return@setOnPreferenceChangeListener true
-            FolderPicker(requireContext()) { path ->
+            FolderPicker(requireContext(), lifecycleScope) { path ->
                 prefs.setStartupFolder(path)
                 pref.value = StartupLocation.CUSTOM
                 // Same value, new folder: refresh the summary.

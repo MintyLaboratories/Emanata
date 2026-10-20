@@ -6,23 +6,21 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Chooses the right [PageSource] for a file based on its extension. Sources come
- * wrapped in a [GuardedSource], so closing one never cuts off a read in flight.
+ * Chooses the right [PageSource] for a file: images by extension, archives and PDFs
+ * by their leading bytes ([ArchiveKind.detect]). Sources come wrapped in a
+ * [GuardedSource], so closing one never cuts off a read in flight.
  */
 object PageSources {
     fun open(file: File, charsetName: String): PageSource = GuardedSource(openRaw(file, charsetName))
 
     private fun openRaw(file: File, charsetName: String): PageSource = when (Formats.typeOf(file.name)) {
         EntryType.IMAGE -> ImageSource(file)
-        EntryType.PDF -> PdfSource(file)
-        EntryType.ARCHIVE -> {
-            val ext = Formats.ext(file.name)
-            when {
-                ext in Formats.ZIP -> ZipSource(file, charsetName)
-                ext in Formats.RAR -> RarSource(file)
-                ext in Formats.SEVEN_ZIP -> SevenZipSource(file)
-                else -> throw IOException("Unsupported archive: $ext")
-            }
+        EntryType.PDF, EntryType.ARCHIVE -> when (ArchiveKind.detect(file)) {
+            ArchiveKind.ZIP -> ZipSource(file, charsetName)
+            ArchiveKind.RAR -> RarSource(file)
+            ArchiveKind.SEVEN_ZIP -> SevenZipSource(file)
+            ArchiveKind.PDF -> PdfSource(file)
+            null -> throw IOException("Unsupported archive: ${file.name}")
         }
         else -> throw IOException("Unsupported file type: ${file.name}")
     }

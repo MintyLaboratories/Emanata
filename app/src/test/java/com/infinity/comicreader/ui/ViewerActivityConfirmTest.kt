@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -110,6 +111,14 @@ class ViewerActivityConfirmTest {
         assertEquals(own, library.adjustmentsFor(book.absolutePath))
 
         viewer.tapResetAdjustments().second.press(DialogInterface.BUTTON_POSITIVE)
+        assertNull(library.adjustmentsFor(book.absolutePath))
+    }
+
+    @Test
+    fun resetAdjustmentsOnDefaultsDoesNotAsk() {
+        val viewer = launch()
+        val (panel, after) = viewer.tapResetAdjustments()
+        assertSame(panel, after)
         assertNull(library.adjustmentsFor(book.absolutePath))
     }
 

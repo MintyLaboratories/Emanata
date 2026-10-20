@@ -1156,10 +1156,13 @@ class ViewerActivity : AppCompatActivity() {
                 override fun onStopTrackingTouch(slider: Slider) = persistAdjustments()
             })
         }
+        // Asks only when the book has its own adjustments to lose.
         root.findViewById<View>(R.id.adjust_reset).setOnClickListener {
-            confirm(this, R.string.confirm_reset_adjust_title, R.string.confirm_reset_adjust_msg, R.string.reset) {
-                resetAdjustments()
-                show()
+            val reset = { resetAdjustments(); show() }
+            if (ownAdjustments) {
+                confirm(this, R.string.confirm_reset_adjust_title, R.string.confirm_reset_adjust_msg, R.string.reset) { reset() }
+            } else {
+                reset()
             }
         }
         show()

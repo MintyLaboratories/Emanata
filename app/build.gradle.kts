@@ -52,6 +52,11 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+        // Installs beside a release build instead of replacing it.
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
     }
 
     compileOptions {

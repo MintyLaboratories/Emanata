@@ -245,13 +245,13 @@ class PageAdapter(
     }
 
     /**
-     * Forgets every strip item before [absolute] (a chapter that was read past),
-     * leaving item 0 to show that page. Keeps the decoded-page cache valid because
-     * pages are addressed by their absolute number, not by item index.
+     * Forgets every strip item before item [position] (a chapter that was read
+     * past), leaving item 0 to show that page. Keeps the decoded-page cache valid
+     * because pages are addressed by their absolute number, not by item index.
      * Main thread only.
      */
-    fun dropTo(absolute: Int) {
-        val keep = absolute.coerceIn(base, end)
+    fun dropTo(position: Int) {
+        val keep = (base + position).coerceIn(base, end)
         if (keep == base) return
         forget { it.first + it.count <= keep }
         val removed = keep - base
@@ -260,10 +260,11 @@ class PageAdapter(
     }
 
     /**
-     * Undoes an append: throws away every chapter starting at [first] (used when
-     * "auto next chapter" is switched off again mid-chapter). Main thread only.
+     * Undoes an append: throws away every chapter starting at item [position] (used
+     * when "auto next chapter" is switched off again mid-chapter). Main thread only.
      */
-    fun dropAfter(first: Int) {
+    fun dropAfter(position: Int) {
+        val first = base + position
         if (first >= end) return
         val removed = end - first
         forget { it.first >= first }

@@ -106,6 +106,17 @@ class PageLayoutTest {
     }
 
     @Test
+    fun onlyLoneLastPageOfSpreadIsAlone() {
+        assertTrue(single.shownAlone(3, 5))
+        assertTrue(single.shownAlone(4, 5))
+        assertFalse(ltr.shownAlone(0, 5))
+        assertFalse(ltr.shownAlone(3, 5))
+        assertTrue(ltr.shownAlone(4, 5))
+        assertFalse(ltr.shownAlone(9, 10))
+        assertTrue(rtl.shownAlone(0, 1))
+    }
+
+    @Test
     fun lastPageNeverPassesTheEnd() {
         assertEquals(8, single.lastPage(12, 9))
         assertEquals(8, ltr.lastPage(6, 9))

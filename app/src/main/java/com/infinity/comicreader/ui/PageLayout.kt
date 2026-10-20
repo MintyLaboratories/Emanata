@@ -26,6 +26,10 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false) {
      */
     fun step(page: Int, delta: Int): Int = firstPage(itemOf(page) + delta)
 
+    /** True when [page] has its item to itself: always, or a spread's lone last page. */
+    fun shownAlone(page: Int, pageCount: Int): Boolean =
+        itemOf(page).let { firstPage(it) == lastPage(it, pageCount) }
+
     /** True when [page] is on the item that shows the last of [pageCount] pages. */
     fun onLastItem(page: Int, pageCount: Int): Boolean =
         itemOf(page) >= itemOf((pageCount - 1).coerceAtLeast(0))

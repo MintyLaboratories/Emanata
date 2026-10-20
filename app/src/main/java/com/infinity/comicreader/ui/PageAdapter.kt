@@ -103,8 +103,8 @@ class PageAdapter(
     private var learnedAspect = 1.45f
     private var recyclerWidth = 0
     private var fallbackWidth = 1080
-    private var lastReqW = 1080
-    private var lastReqH = 1920
+    private var lastItemW = 1080
+    private var lastItemH = 1920
     private var layoutListener: View.OnLayoutChangeListener? = null
 
     private val spread = twoPage && mode == Mode.PAGED
@@ -301,9 +301,12 @@ class PageAdapter(
         }
         image.setImageDrawable(null)
 
-        val (reqW, reqH) = requestSize(image)
-        lastReqW = reqW
-        lastReqH = reqH
+        // A spread row's slots may still have their old widths before layout: size
+        // from the row, which is the same for paired and lone pages.
+        val sized = if (spread) holder.container else image
+        lastItemW = if (sized.width > 0) sized.width else fallbackWidth
+        lastItemH = if (image.height > 0) image.height else 1920
+        val (reqW, reqH) = requestSize(pageIndex, lastItemW, lastItemH)
         val entry = request(pageIndex, reqW, reqH)
         entry.waiters++
         holder.pages[slot] = pageIndex
@@ -391,7 +394,9 @@ class PageAdapter(
         for (k in 1..ahead) {
             val p = lastShown + k
             if (p >= end) break
-            if (cache.get(p) == null && pending[p] == null) request(p, lastReqW, lastReqH).prefetch = true
+            if (cache.get(p) != null || pending[p] != null) continue
+            val (reqW, reqH) = requestSize(p, lastItemW, lastItemH)
+            request(p, reqW, reqH).prefetch = true
         }
     }
 
@@ -428,9 +433,14 @@ class PageAdapter(
         return (width * aspect).toInt().coerceAtLeast(1)
     }
 
-    private fun requestSize(image: ZoomImageView): Pair<Int, Int> {
-        val viewW = (if (image.width > 0) image.width else fallbackWidth).coerceAtLeast(360)
-        val viewH = (if (image.height > 0) image.height else 1920).coerceAtLeast(360)
+    /**
+     * Decode size for [page] on an item [itemW] x [itemH]: a page paired in a spread
+     * gets half the row, a lone one the whole row.
+     */
+    private fun requestSize(page: Int, itemW: Int, itemH: Int): Pair<Int, Int> {
+        val pageW = if (layout.shownAlone(page, end)) itemW else itemW / 2
+        val viewW = pageW.coerceAtLeast(360)
+        val viewH = itemH.coerceAtLeast(360)
         return when {
             mode == Mode.LONG_STRIP || mode == Mode.VERTICAL -> viewW to 1
             fitMode == ZoomImageView.FitMode.WIDTH -> viewW to 1

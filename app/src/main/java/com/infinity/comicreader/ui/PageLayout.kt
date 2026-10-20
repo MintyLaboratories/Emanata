@@ -18,7 +18,7 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false) {
 
     /** The last page, in reading order, that [item] shows out of [pageCount]. */
     fun lastPage(item: Int, pageCount: Int): Int =
-        if (spread) minOf(item * 2 + 1, pageCount - 1) else item
+        minOf(if (spread) item * 2 + 1 else item, pageCount - 1)
 
     /** True when [page] is on the item that shows the last of [pageCount] pages. */
     fun onLastItem(page: Int, pageCount: Int): Boolean =

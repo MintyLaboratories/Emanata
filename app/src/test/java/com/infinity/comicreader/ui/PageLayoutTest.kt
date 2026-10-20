@@ -85,6 +85,12 @@ class PageLayoutTest {
     }
 
     @Test
+    fun lastPageNeverPassesTheEnd() {
+        assertEquals(8, single.lastPage(12, 9))
+        assertEquals(8, ltr.lastPage(6, 9))
+    }
+
+    @Test
     fun lastItemOfEvenSpreadStartsBeforeLastPage() {
         // A spread of 4 pages ends on item (2, 3); the reader sits on its first page.
         assertTrue(ltr.onLastItem(2, 4))

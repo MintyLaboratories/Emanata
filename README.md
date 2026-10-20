@@ -124,7 +124,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   direction: vertical never turns the page, horizontal never changes brightness.
 - **Page spacing** slider for vertical and long-strip modes.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
-  direct link to the next chapter.
+  direct link to the next chapter, centered at 75% of the screen height.
 - **Auto next chapter** (on by default): reaching the last page rolls straight
   into the next chapter and the end-of-chapter card is skipped entirely (it still appears
   when the setting is off, or on the last chapter of a folder). In **long strip**

@@ -21,4 +21,5 @@
 
     <!-- Reader -->
     <dimen name="reader_indicator_min_w">84dp</dimen>
+    <dimen name="end_card_margin">32dp</dimen>
 </resources>

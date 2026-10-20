@@ -402,6 +402,18 @@ class ViewerActivity : AppCompatActivity() {
         endNext = findViewById(R.id.end_next)
         endPrev = findViewById(R.id.end_prev)
         vertical.layoutManager = LinearLayoutManager(this)
+        // Any relayout (rotation, the card's buttons, the bars) places the card again.
+        findViewById<View>(R.id.viewer_root).addOnLayoutChangeListener { root, _, _, _, _, _, _, _, _ ->
+            placeEndCard(root.height)
+        }
+    }
+
+    /** Puts the end card at [EndCard.top] in a root [rootHeight] tall, above the bottom bar while it shows. */
+    private fun placeEndCard(rootHeight: Int) {
+        if (endCard.visibility != View.VISIBLE) return
+        val margin = resources.getDimensionPixelSize(R.dimen.end_card_margin)
+        val limit = if (bottomBar.visibility == View.VISIBLE) bottomBar.top else rootHeight
+        endCard.translationY = (EndCard.top(rootHeight, endCard.height, margin, limit) - endCard.top).toFloat()
     }
 
     private fun loadPrefs() {

@@ -22,7 +22,8 @@ import java.util.concurrent.CancellationException
  * - Only the pages of one item (a page, or the two of a spread) are kept: asking for
  *   one drops every page not named with it, so memory stays at one item's worth.
  * - A page's detail loads once and serves every render until it is dropped; a page
- *   dropped mid-render is freed once that render is done.
+ *   dropped mid-render is freed once that render is done. A failed load is forgotten,
+ *   so the next render tries again.
  * - Loads and renders run one at a time on [io], since each holds a full page or
  *   uses every core already.
  *
@@ -111,6 +112,13 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
                     if (entry.dropped) detail?.release() else entry.detail = detail
                 }
                 if (entry.dropped) null else detail
+            }
+        }
+        entry.deferred.invokeOnCompletion {
+            // Runs where the load ended; hop back before touching [entries].
+            scope.launch {
+                val failed = synchronized(entry) { entry.detail == null }
+                if (failed && entries[key] === entry) entries.remove(key)
             }
         }
         entries[key] = entry

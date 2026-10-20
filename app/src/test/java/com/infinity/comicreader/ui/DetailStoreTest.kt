@@ -137,11 +137,18 @@ class DetailStoreTest {
     }
 
     @Test
-    fun failedLoadGivesNothing() {
+    fun failedLoadGivesNothingAndIsTriedAgain() {
         var done = 0
         val job = store.render("a", listOf("a"), { throw OutOfMemoryError("synthetic") }, { it }) { done++ }
         idle { job.isCompleted }
         assertEquals(0, done)
+        idle { store.keys.isEmpty() }
+        assertTrue(store.keys.isEmpty())
+
+        store.render("a", listOf("a"), loader("a"), { it }) { done++ }
+        idle { done == 1 }
+        assertEquals(1, done)
+        assertEquals(1, loads.get())
     }
 
     @Test

@@ -660,7 +660,11 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun useSpread() = twoPage && mode == MODE_PAGED
 
-    private fun pageLayout() = PageLayout(useSpread())
+    private val singleLayout = PageLayout(spread = false)
+    private val spreadLayout = PageLayout(spread = true)
+
+    /** Page/item mapping for the current layout; reading direction does not affect it. */
+    private fun pageLayout() = if (useSpread()) spreadLayout else singleLayout
 
     private fun pageToItem(page: Int) = pageLayout().itemOf(page)
 

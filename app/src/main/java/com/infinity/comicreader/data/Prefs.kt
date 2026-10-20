@@ -207,6 +207,10 @@ class Prefs(context: Context) {
             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
 
+    /** The caller must hold [listener] strongly: SharedPreferences keeps only a weak reference. */
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        sp.registerOnSharedPreferenceChangeListener(listener)
+
     fun reset() {
         val e = sp.edit()
         sp.all.keys.filter { it.startsWith("pref_") }.forEach { e.remove(it) }

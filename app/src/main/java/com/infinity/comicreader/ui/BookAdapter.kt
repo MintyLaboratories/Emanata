@@ -34,12 +34,20 @@ import kotlinx.coroutines.withContext
  * is done from the long-press menu.
  */
 class BookAdapter(
-    var grid: Boolean,
+    grid: Boolean,
     private val prefs: Prefs,
     private val onClick: (BookEntry) -> Unit,
     private val onLongClick: (BookEntry) -> Unit,
     private val onStarClick: (BookEntry) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    /** Grid cells or list rows; switching rebinds every row with the other layout. */
+    var grid: Boolean = grid
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
 
     private val items = ArrayList<BookEntry>()
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)

@@ -27,7 +27,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -39,7 +41,9 @@ import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
@@ -55,6 +59,10 @@ class ListActivity : AppCompatActivity() {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
+    private lateinit var settings: SettingsRepository
+
+    /** The settings the screen currently shows; changes are diffed against it. */
+    private lateinit var applied: ListSettings
     private lateinit var adapter: BookAdapter
     private lateinit var recycler: RecyclerView
     private lateinit var toolbar: MaterialToolbar
@@ -86,6 +94,8 @@ class ListActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         library = Library(this)
+        settings = SettingsRepository.get(this)
+        applied = settings.list.value
         setContentView(R.layout.activity_list)
 
         toolbar = findViewById(R.id.toolbar)
@@ -131,6 +141,14 @@ class ListActivity : AppCompatActivity() {
         fab.visibility = View.GONE
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
 
+        // Settings changed here, in the settings screen or anywhere else apply live;
+        // changes made while this screen was stopped arrive when it starts again.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settings.list.collect { applySettings(it) }
+            }
+        }
+
         handleIncoming(intent)
 
         if (!hasStorageAccess()) {
@@ -157,6 +175,36 @@ class ListActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         adapter.release()
+    }
+
+    /** Re-applies whatever changed since the settings last shown. */
+    private fun applySettings(s: ListSettings) {
+        val old = applied
+        if (old == s) return
+        applied = s
+        if (s.grid != old.grid || s.gridColumns != old.gridColumns) {
+            adapter.grid = s.grid
+            applyLayoutManager()
+            updateFabIcon()
+            invalidateOptionsMenu()
+        }
+        if (s.showHidden != old.showHidden) {
+            invalidateOptionsMenu()
+            // Coming back to the browse tab, onResume reloads the folder anyway.
+            if (mode != TAB_BROWSE || lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
+        }
+        if (s.sort != old.sort || s.sortDir != old.sortDir) {
+            applyFilterAndSort()
+        } else if (s.thumbnails != old.thumbnails || s.showFilenames != old.showFilenames || s.charset != old.charset) {
+            adapter.notifyDataSetChanged()
+        }
+        if (s.pathView != old.pathView && mode == TAB_BROWSE) {
+            pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
+        }
+        if (s.statusBar != old.statusBar) applyStatusBarSetting()
+        if (s.quickFab != old.quickFab) {
+            fab.visibility = if (shown.isNotEmpty() && s.quickFab) View.VISIBLE else View.GONE
+        }
     }
 
     private fun applyStatusBarSetting() {
@@ -598,13 +646,9 @@ class ListActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
     private fun toggleGrid() {
         prefs.listGrid = !prefs.listGrid
-        adapter.grid = prefs.listGrid
-        applyLayoutManager()
-        adapter.notifyDataSetChanged()
-        updateFabIcon()
-        invalidateOptionsMenu()
     }
 
     private fun updateFabIcon() {
@@ -613,7 +657,16 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun applyLayoutManager() {
-        recycler.layoutManager = if (prefs.listGrid) {
+        val grid = prefs.listGrid
+        val current = recycler.layoutManager
+        if (grid && current is GridLayoutManager) {
+            current.spanCount = columnCount()
+            return
+        }
+        if (!grid && current != null && current !is GridLayoutManager) return
+        // Keep the reader's place when switching between list and grid.
+        val first = (current as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        recycler.layoutManager = if (grid) {
             GridLayoutManager(this, columnCount()).apply {
                 // The "Recent" row is not a grid cell: it spans the whole width.
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
@@ -624,6 +677,7 @@ class ListActivity : AppCompatActivity() {
         } else {
             LinearLayoutManager(this)
         }
+        if (first > 0) recycler.scrollToPosition(first)
     }
 
     private fun columnCount(): Int {
@@ -982,11 +1036,7 @@ class ListActivity : AppCompatActivity() {
             R.id.menu_sort -> showSortDialog()
             R.id.menu_sort_dir -> toggleSortDirection()
             R.id.menu_columns -> showColumnsDialog()
-            R.id.menu_show_hidden -> {
-                prefs.showHidden = !prefs.showHidden
-                invalidateOptionsMenu()
-                refreshCurrent()
-            }
+            R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }
             R.id.menu_mark_all_read -> currentDir?.let { markFolder(it, true) }
@@ -1020,7 +1070,6 @@ class ListActivity : AppCompatActivity() {
             .setTitle(R.string.menu_sort)
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.listSort = values[which]
-                applyFilterAndSort()
                 dialog.dismiss()
             }
             .show()
@@ -1029,7 +1078,6 @@ class ListActivity : AppCompatActivity() {
     private fun toggleSortDirection() {
         prefs.listSortDir = if (prefs.listSortDir == "asc") "desc" else "asc"
         toast(if (prefs.listSortDir == "asc") R.string.menu_ascending else R.string.menu_descending)
-        applyFilterAndSort()
     }
 
     private fun showColumnsDialog() {
@@ -1040,8 +1088,6 @@ class ListActivity : AppCompatActivity() {
             .setTitle(R.string.menu_columns)
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 prefs.gridColumns = values[which].toIntOrNull() ?: 0
-                applyLayoutManager()
-                adapter.notifyDataSetChanged()
                 dialog.dismiss()
             }
             .show()

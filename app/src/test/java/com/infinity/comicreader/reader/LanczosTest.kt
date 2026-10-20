@@ -120,6 +120,13 @@ class LanczosTest {
     }
 
     @Test
+    fun largeShrinkMatchesReference() {
+        // About 13:1 and 7:1, where each output reads 78 and 42 source pixels per axis.
+        checkAgainstReference(300, 160, Lanczos.Window.of(300, 160), 23, 23, opaque = false, linear = false)
+        checkAgainstReference(300, 160, Lanczos.Window.of(300, 160), 23, 23, opaque = true, linear = true)
+    }
+
+    @Test
     fun linearLightMatchesReference() {
         checkAgainstReference(61, 47, Lanczos.Window.of(61, 47), 17, 13, opaque = true, linear = true)
         checkAgainstReference(13, 11, Lanczos.Window.of(13, 11), 40, 29, opaque = false, linear = true)

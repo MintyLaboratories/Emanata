@@ -1290,19 +1290,14 @@ class ListActivity : AppCompatActivity() {
     }
 
     /**
-     * The parent directory, unless that would climb above the storage root holding
+     * The parent directory, unless that would climb above the [StorageRoot.bound] of
      * [dir] (`/storage/emulated/0`, an SD card's top). Browsing must never leave the
      * user's files.
      */
     private fun parentWithinBounds(dir: File): File? {
         val path = dir.absolutePath
-        val root = StorageRoot.of(path, roots)
-        if (root != null && path == root.path) return null
-        val parent = dir.parentFile ?: return null
-        if (root != null) return parent
-        val parentPath = parent.absolutePath
-        if (parentPath == "/" || parentPath == "/storage" || parentPath == "/storage/emulated") return null
-        return parent
+        val root = StorageRoot.bound(path, roots) ?: return null
+        return if (path == root.path) null else dir.parentFile
     }
 
     /** Lists the mounted storage roots; picking one opens its top folder. */

@@ -57,9 +57,27 @@ class StorageRootTest {
     }
 
     @Test
-    fun crumbsOutsideRootsStartAtSlash() {
+    fun crumbsOutsideRootsStartBelowTheSystemFolders() {
         val crumbs = Crumbs.of("/mnt/media", roots)
-        assertEquals(listOf("/", "mnt", "media"), crumbs.map { it.label })
-        assertEquals(listOf("/", "/mnt", "/mnt/media"), crumbs.map { it.path })
+        assertEquals(listOf("mnt", "media"), crumbs.map { it.label })
+        assertEquals(listOf("/mnt", "/mnt/media"), crumbs.map { it.path })
+        assertEquals(listOf("5678-EF01", "Comics"), Crumbs.of("/storage/5678-EF01/Comics", roots).map { it.label })
+        assertEquals(listOf("10", "x"), Crumbs.of("/storage/emulated/10/x", roots).map { it.label })
+    }
+
+    @Test
+    fun aSystemFolderIsOneCrumb() {
+        assertEquals(listOf(Crumb("/", "/", true)), Crumbs.of("/", roots))
+        assertEquals(listOf(Crumb("storage", "/storage", true)), Crumbs.of("/storage", roots))
+        assertEquals(listOf(Crumb("emulated", "/storage/emulated/", true)), Crumbs.of("/storage/emulated/", roots))
+    }
+
+    @Test
+    fun boundIsTheRootElseTheFirstFolderBelowTheSystemOnes() {
+        assertEquals(card, StorageRoot.bound("/storage/1234-ABCD/a", roots))
+        assertEquals("/storage/5678-EF01", StorageRoot.bound("/storage/5678-EF01/a/b", roots)?.path)
+        assertEquals("/storage/emulated/10", StorageRoot.bound("/storage/emulated/10", roots)?.path)
+        assertNull(StorageRoot.bound("/storage/emulated", roots))
+        assertNull(StorageRoot.bound("/", roots))
     }
 }

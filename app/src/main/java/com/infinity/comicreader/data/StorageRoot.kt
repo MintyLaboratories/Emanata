@@ -19,6 +19,30 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
         /** The innermost of [roots] holding [path], or null when none does. */
         fun of(path: String, roots: List<StorageRoot>): StorageRoot? =
             roots.filter { it.contains(path) }.maxByOrNull { it.path.length }
+
+        /**
+         * The top [path] may be browsed up to: its root in [roots], else the first
+         * folder below the system ones (`/`, `/storage`, `/storage/emulated`), e.g.
+         * an unlisted volume's `/storage/1234-ABCD`. Null for a system folder itself.
+         */
+        fun bound(path: String, roots: List<StorageRoot>): StorageRoot? = of(path, roots) ?: implied(path)
+
+        private val SYSTEM_TOPS = setOf("/", "/storage", "/storage/emulated")
+
+        private fun implied(path: String): StorageRoot? {
+            var i = 0
+            while (i < path.length) {
+                while (i < path.length && isSeparator(path[i])) i++
+                if (i >= path.length) break
+                val start = i
+                while (i < path.length && !isSeparator(path[i])) i++
+                val top = path.substring(0, i)
+                if (Paths.parts(top).joinToString("/", prefix = "/") !in SYSTEM_TOPS) {
+                    return StorageRoot(top, path.substring(start, i), Kind.REMOVABLE)
+                }
+            }
+            return null
+        }
     }
 }
 
@@ -27,19 +51,15 @@ data class Crumb(val label: String, val path: String, val isRoot: Boolean)
 
 object Crumbs {
     /**
-     * The crumbs leading to [path]: its root by name, then each folder below it.
-     * A path under no root starts from the filesystem root, shown as `/`.
+     * The crumbs leading to [path]: its [StorageRoot.bound] by name, then each folder
+     * below it. A system folder above every bound is a crumb of its own.
      */
     fun of(path: String, roots: List<StorageRoot>): List<Crumb> {
-        val root = StorageRoot.of(path, roots)
+        val root = StorageRoot.bound(path, roots)
+            ?: return listOf(Crumb(Paths.parts(path).lastOrNull() ?: "/", path, isRoot = true))
         val out = ArrayList<Crumb>()
-        val start = if (root != null) {
-            out.add(Crumb(root.name, root.path, isRoot = true))
-            root.path.length
-        } else {
-            out.add(Crumb("/", "/", isRoot = true))
-            0
-        }
+        out.add(Crumb(root.name, root.path, isRoot = true))
+        val start = root.path.length
         // Each crumb's path is the given path cut after that folder, separators untouched.
         var i = start
         while (i < path.length) {

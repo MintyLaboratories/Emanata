@@ -83,7 +83,7 @@ Get the latest signed APK from the [**Releases**](https://github.com/infinity690
   the visible part is re-rendered with Lanczos3 from the full-resolution page
   (vector for PDF) at exact screen resolution and swapped in pixel for pixel.
   Only the zoomed page or spread is kept at full resolution, within a memory
-  budget, and it is freed when memory runs low.
+  budget, and it is freed when the reader is hidden.
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered.

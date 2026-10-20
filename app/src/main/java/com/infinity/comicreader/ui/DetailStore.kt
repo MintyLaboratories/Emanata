@@ -142,7 +142,10 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     companion object {
         private const val TAG = "DetailStore"
 
-        /** Most memory one item's full-detail pages may hold: two of the largest pages drawn. */
+        /**
+         * Most memory one item's full-detail pages may hold once loaded: two of the largest
+         * pages drawn. Loading one briefly takes more (see [com.infinity.comicreader.reader.Target.detail]).
+         */
         const val MAX_BUDGET = 200L * 1024 * 1024
 
         /** The detail budget on a device with [totalMem] bytes of RAM: a sixteenth of it, at most [MAX_BUDGET]. */

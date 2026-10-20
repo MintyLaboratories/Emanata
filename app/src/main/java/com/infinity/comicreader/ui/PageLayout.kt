@@ -20,6 +20,12 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false) {
     fun lastPage(item: Int, pageCount: Int): Int =
         minOf(if (spread) item * 2 + 1 else item, pageCount - 1)
 
+    /**
+     * The first page of the item [delta] items away from the one showing [page];
+     * below 0 or at least the page count when that steps out of the book.
+     */
+    fun step(page: Int, delta: Int): Int = firstPage(itemOf(page) + delta)
+
     /** True when [page] is on the item that shows the last of [pageCount] pages. */
     fun onLastItem(page: Int, pageCount: Int): Boolean =
         itemOf(page) >= itemOf((pageCount - 1).coerceAtLeast(0))

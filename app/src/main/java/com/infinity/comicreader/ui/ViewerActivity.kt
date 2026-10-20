@@ -251,8 +251,8 @@ class ViewerActivity : AppCompatActivity() {
         btnNextChapter = findViewById(R.id.btn_next_chapter)
         btnPrevChapter.setOnClickListener { openPrevChapter() }
         btnNextChapter.setOnClickListener { openNextChapter() }
-        findViewById<View>(R.id.btn_prev_page).setOnClickListener { goTo(currentIndex - 1) }
-        findViewById<View>(R.id.btn_next_page).setOnClickListener { goTo(currentIndex + 1) }
+        findViewById<View>(R.id.btn_prev_page).setOnClickListener { turn(-1) }
+        findViewById<View>(R.id.btn_next_page).setOnClickListener { turn(1) }
         findViewById<View>(R.id.btn_pages).setOnClickListener { openPages() }
 
         endPrev.setOnClickListener { openPrevChapter() }
@@ -706,6 +706,9 @@ class ViewerActivity : AppCompatActivity() {
         onPageChanged()
     }
 
+    /** Moves [delta] items (pages, or spreads in two-page mode) from the current one. */
+    private fun turn(delta: Int) = goTo(pageLayout().step(currentIndex, delta))
+
     /** Called when the reader is told to move past the last page. */
     private fun handleAdvance() {
         val next = nextChapter()
@@ -741,7 +744,7 @@ class ViewerActivity : AppCompatActivity() {
                 return
             }
         }
-        goTo(currentIndex + delta)
+        turn(delta)
     }
 
     private fun onPageChanged() {
@@ -949,7 +952,7 @@ class ViewerActivity : AppCompatActivity() {
             // Auto-repeat would skip pages while the key is held; one press, one page.
             if (event.repeatCount == 0) {
                 stopAutoScroll()
-                goTo(currentIndex + if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 1 else -1)
+                turn(if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 1 else -1)
             }
             return true
         }
@@ -1449,12 +1452,12 @@ class ViewerActivity : AppCompatActivity() {
             if (!autoScrolling) return
             if (mode == MODE_PAGED) {
                 val count = source?.pageCount ?: return
-                val step = if (useSpread()) 2 else 1
-                if (currentIndex + step >= count) {
+                val next = pageLayout().step(currentIndex, 1)
+                if (next >= count) {
                     finishAutoScroll()
                     return
                 }
-                goTo(currentIndex + step)
+                goTo(next)
                 handler.postDelayed(this, PAGE_INTERVAL_MS_BASE / prefs.autoSpeed)
             } else {
                 val now = SystemClock.uptimeMillis()

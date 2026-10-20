@@ -85,6 +85,27 @@ class PageLayoutTest {
     }
 
     @Test
+    fun stepMovesOneSpreadAtATime() {
+        assertEquals(2, ltr.step(0, 1))
+        assertEquals(2, ltr.step(1, 1))
+        assertEquals(0, ltr.step(3, -1))
+        assertEquals(-2, ltr.step(1, -1))
+        // Past the last spread of an even and an odd book.
+        assertEquals(10, ltr.step(8, 1))
+        assertEquals(10, ltr.step(9, 1))
+        assertEquals(1, single.step(0, 1))
+        assertEquals(-1, single.step(0, -1))
+    }
+
+    @Test
+    fun stepVisitsEverySpreadOnce() {
+        for (pageCount in listOf(9, 10)) {
+            val visited = generateSequence(0) { ltr.step(it, 1) }.takeWhile { it < pageCount }.toList()
+            assertEquals((0 until ltr.itemCount(pageCount)).map { it * 2 }, visited)
+        }
+    }
+
+    @Test
     fun lastPageNeverPassesTheEnd() {
         assertEquals(8, single.lastPage(12, 9))
         assertEquals(8, ltr.lastPage(6, 9))

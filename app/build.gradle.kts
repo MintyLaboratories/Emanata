@@ -64,6 +64,8 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // android.util.Log and similar stubs return defaults instead of throwing in JVM tests.
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {

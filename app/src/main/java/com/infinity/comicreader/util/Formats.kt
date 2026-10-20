@@ -32,5 +32,7 @@ object Formats {
 
     fun isImageName(name: String): Boolean = ext(name) in IMAGE
 
+    fun isArchiveName(name: String): Boolean = ext(name) in ARCHIVE
+
     fun isOpenable(name: String): Boolean = typeOf(name) != EntryType.OTHER
 }

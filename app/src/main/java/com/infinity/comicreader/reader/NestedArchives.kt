@@ -1,0 +1,145 @@
+package com.infinity.comicreader.reader
+
+import android.util.Log
+import com.infinity.comicreader.util.Formats
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Opens archives stored inside an archive (a `.cbr` holding one `.cbz` per issue).
+ * Each inner archive is copied to a file under [dir] and opened like a book of its
+ * own. Copies are reused across opens, keyed by the outer archive's identity and the
+ * entry path, and the least recently used go first once [dir] passes [maxBytes].
+ *
+ * One instance serves one book open and is not thread-safe. Guards: an inner
+ * archive larger than [maxEntryBytes], a book needing more than [maxBytes] of copies
+ * or more than [MAX_ARCHIVES] archives, and nesting deeper than [MAX_DEPTH] are skipped.
+ * Copying stops at the declared size, so a forged header cannot fill the disk.
+ */
+class NestedArchives(
+    private val dir: File,
+    private val charsetName: String,
+    private val maxBytes: Long = MAX_CACHE_BYTES,
+    private val maxEntryBytes: Long = MAX_ENTRY_BYTES
+) {
+    /** An opened inner archive and the identity its own inner archives are keyed by. */
+    class Opened(val reader: ArchiveReader, val key: String)
+
+    private val inUse = HashSet<File>()
+    private var usedBytes = 0L
+
+    /** Opens [entry] of [outer], whose identity is [outerKey]; null when it is skipped or unreadable. */
+    fun open(outer: ArchiveReader, outerKey: String, entry: ArchiveEntry): Opened? {
+        if (inUse.size >= MAX_ARCHIVES) return null
+        val key = "$outerKey\n${entry.path}\n${entry.size}"
+        val file = try {
+            extract(outer, entry, key)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not extract nested archive ${entry.path}", e)
+            null
+        } ?: return null
+        val reader = try {
+            ArchiveReader.open(file, charsetName)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not open nested archive ${entry.path}", e)
+            null
+        } ?: return null
+        return Opened(reader, key)
+    }
+
+    private fun extract(outer: ArchiveReader, entry: ArchiveEntry, key: String): File? {
+        val limit = if (entry.size >= 0) entry.size else maxEntryBytes
+        if (limit > maxEntryBytes || usedBytes + limit > maxBytes) return null
+        val target = File(dir, hash(key) + "." + Formats.ext(entry.path))
+        synchronized(LOCKS.computeIfAbsent(target.name) { Any() }) {
+            if (!target.isFile || (entry.size >= 0 && target.length() != entry.size)) {
+                dir.mkdirs()
+                trim(dir, maxBytes - limit, inUse)
+                if (dir.usableSpace < limit + FREE_SPACE_RESERVE) return null
+                val part = File.createTempFile(target.name, PART_SUFFIX, dir)
+                try {
+                    val copied = outer.read(entry) { input -> part.outputStream().use { copyBounded(input, it, limit) } }
+                    if (entry.size >= 0 && copied != entry.size) throw IOException("Short nested archive")
+                    if (!part.renameTo(target)) {
+                        target.delete()
+                        if (!part.renameTo(target)) throw IOException("Could not store nested archive")
+                    }
+                } finally {
+                    part.delete()
+                }
+            }
+            target.setLastModified(System.currentTimeMillis())
+        }
+        inUse += target
+        usedBytes += target.length()
+        return target
+    }
+
+    companion object {
+        /** Archives may nest this many levels below the book itself. */
+        const val MAX_DEPTH = 2
+        const val MAX_ARCHIVES = 256
+        const val MAX_CACHE_BYTES = 2L * 1024 * 1024 * 1024
+        const val MAX_ENTRY_BYTES = 1L * 1024 * 1024 * 1024
+        private const val FREE_SPACE_RESERVE = 256L * 1024 * 1024
+        private const val DIR = "nested"
+        private const val PART_SUFFIX = ".part"
+        private const val STALE_PART_MS = 60L * 60 * 1000
+        private const val TAG = "NestedArchives"
+        private const val HEX_DIGITS = "0123456789abcdef"
+        private val LOCKS = ConcurrentHashMap<String, Any>()
+
+        fun dirIn(cacheDir: File) = File(cacheDir, DIR)
+
+        /** Identity of a book file on disk: changes when the file is replaced. */
+        fun keyOf(file: File) = "${file.absolutePath}\n${file.length()}\n${file.lastModified()}"
+
+        /**
+         * Deletes least recently used copies until [dir] holds at most [maxBytes], never
+         * touching [keep]. Unfinished copies count until they are an hour old, then go.
+         */
+        fun trim(dir: File, maxBytes: Long = MAX_CACHE_BYTES, keep: Set<File> = emptySet()) {
+            val files = dir.listFiles()?.filter { it.isFile } ?: return
+            val now = System.currentTimeMillis()
+            var total = files.sumOf { it.length() }
+            for (f in files.sortedBy { it.lastModified() }) {
+                if (total <= maxBytes) break
+                if (f in keep) continue
+                if (f.name.endsWith(PART_SUFFIX) && now - f.lastModified() < STALE_PART_MS) continue
+                val size = f.length()
+                if (f.delete()) total -= size
+            }
+            for (f in files) {
+                if (f.name.endsWith(PART_SUFFIX) && now - f.lastModified() >= STALE_PART_MS) f.delete()
+            }
+        }
+
+        /** Copies [input] to [output]; fails once more than [limit] bytes arrive. Returns the bytes copied. */
+        internal fun copyBounded(input: InputStream, output: OutputStream, limit: Long): Long {
+            val buf = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) return total
+                total += n
+                if (total > limit) throw IOException("Nested archive exceeds $limit bytes")
+                output.write(buf, 0, n)
+            }
+        }
+
+        private fun hash(value: String): String {
+            val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+            val hex = CharArray(32)
+            for (i in 0 until 16) {
+                val b = bytes[i].toInt() and 0xFF
+                hex[i * 2] = HEX_DIGITS[b ushr 4]
+                hex[i * 2 + 1] = HEX_DIGITS[b and 0x0F]
+            }
+            return String(hex)
+        }
+    }
+}

@@ -53,7 +53,8 @@ object Thumbs {
             }
         }
 
-        val bitmap = generate(entry, charset, boxW, boxH)?.let { fit(it, boxW, boxH) } ?: return null
+        val bitmap = generate(entry, charset, context.cacheDir, boxW, boxH)?.let { fit(it, boxW, boxH) }
+            ?: return null
         memory.put(k, bitmap)
         runCatching {
             disk.parentFile?.mkdirs()
@@ -84,11 +85,11 @@ object Thumbs {
 
     // ------------------------------------------------------------------ internals
 
-    private fun generate(entry: BookEntry, charset: String, reqW: Int, reqH: Int): Bitmap? = try {
+    private fun generate(entry: BookEntry, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? = try {
         when {
-            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, reqW, reqH) }
+            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, reqW, reqH) }
             entry.type == EntryType.IMAGE -> BitmapUtils.decodeFile(entry.path, reqW, reqH, THUMB_CAP_PIXELS)
-            else -> coverOf(entry.file, charset, reqW, reqH)
+            else -> coverOf(entry.file, charset, cacheDir, reqW, reqH)
         }
     } catch (t: Throwable) {
         null
@@ -103,12 +104,12 @@ object Thumbs {
         return Bitmap.createScaledBitmap(bitmap, w, h, true)
     }
 
-    private fun coverOf(file: File, charset: String, reqW: Int, reqH: Int): Bitmap? {
+    private fun coverOf(file: File, charset: String, cacheDir: File, reqW: Int, reqH: Int): Bitmap? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
             return BitmapUtils.decodeFile(file.absolutePath, reqW, reqH, THUMB_CAP_PIXELS)
         }
-        val source = runCatching { PageSources.open(file, charset) }.getOrNull() ?: return null
+        val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
         return try {
             if (source.pageCount <= 0) null else source.loadPage(0, reqW, reqH)
         } catch (t: Throwable) {

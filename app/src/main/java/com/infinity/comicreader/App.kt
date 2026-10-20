@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Locales
 import java.io.File
@@ -18,7 +19,7 @@ class App : Application() {
         cleanCaches()
     }
 
-    /** Drops temporary files left by earlier runs and keeps the cover cache bounded. */
+    /** Drops temporary files left by earlier runs and keeps the cover and nested-archive caches bounded. */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
             runCatching {
@@ -31,6 +32,7 @@ class App : Application() {
                 }
                 File(cacheDir, "crop_src.png").takeIf { it.lastModified() < cutoff }?.delete()
                 Thumbs.trim(this)
+                NestedArchives.trim(NestedArchives.dirIn(cacheDir))
             }
         }
     }

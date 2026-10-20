@@ -556,7 +556,7 @@ class ViewerActivity : AppCompatActivity() {
 
         openJob = lifecycleScope.launch {
             val (src, siblings) = withContext(AppDispatchers.io) {
-                val s = runCatching { PageSources.open(target, prefs.charset) }.getOrNull()
+                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir) }.getOrNull()
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {
@@ -719,7 +719,7 @@ class ViewerActivity : AppCompatActivity() {
         val next = nextChapter() ?: return
         stripAheadJob = lifecycleScope.launch {
             val (src, ok) = withContext(AppDispatchers.io) {
-                val s = runCatching { PageSources.open(next, prefs.charset) }.getOrNull()
+                val s = runCatching { PageSources.open(next, prefs.charset, cacheDir) }.getOrNull()
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

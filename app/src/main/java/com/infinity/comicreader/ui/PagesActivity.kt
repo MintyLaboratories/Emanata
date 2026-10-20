@@ -51,7 +51,7 @@ class PagesActivity : AppCompatActivity() {
         val prefs = Prefs(this)
         lifecycleScope.launch {
             val result = withContext(AppDispatchers.io) {
-                val opened = runCatching { PageSources.open(File(path), prefs.charset) }
+                val opened = runCatching { PageSources.open(File(path), prefs.charset, cacheDir) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

@@ -672,6 +672,8 @@ class ViewerActivity : AppCompatActivity() {
         val saved = library.pageFor(path)
         val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = library.isRead(path))
         currentIndex = start.page.coerceIn(0, src.pageCount - 1)
+        // Come back to from the next chapter: the end card waits for a move past the end.
+        if (requested == LAST_PAGE) endDismissed = true
         bookChapters = chaptersOf(src)
         seenPages.clear()
         attach()

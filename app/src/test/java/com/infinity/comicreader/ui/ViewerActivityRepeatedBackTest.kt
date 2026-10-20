@@ -163,6 +163,17 @@ class ViewerActivityRepeatedBackTest {
     }
 
     @Test
+    fun comingBackAtTheLastPageHoldsTheEndCardUntilMovingOn() {
+        prefs.autoNext = false
+        val viewer = launch(first, Int.MAX_VALUE)
+        val card = viewer.findViewById<View>(R.id.viewer_end)
+        assertEquals(View.GONE, card.visibility)
+        viewer.findViewById<View>(R.id.btn_next_page).performClick()
+        idle()
+        assertEquals(View.VISIBLE, card.visibility)
+    }
+
+    @Test
     fun inTwoPageModeAtItsLastSpread() {
         prefs.twoPage = true
         // Six pages make three spreads.

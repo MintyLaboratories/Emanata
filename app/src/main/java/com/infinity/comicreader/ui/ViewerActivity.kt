@@ -751,7 +751,7 @@ class ViewerActivity : AppCompatActivity() {
         updateChapterButtons()
         updateEndCard()
         if (currentIndex in 0 until count) seenPages.set(currentIndex)
-        if (!markedRead && count > 0 && currentIndex >= count - 1) {
+        if (!markedRead && count > 0 && pageLayout().onLastItem(currentIndex, count)) {
             markedRead = true
             file?.absolutePath?.let { library.setRead(it, true) }
         }

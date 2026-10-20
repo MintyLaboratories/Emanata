@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GridSizingTest {
@@ -49,5 +50,21 @@ class GridSizingTest {
     fun cellsNeverShrinkBelowMinimum() {
         assertEquals(300, GridSizing.cellHeight(900, 6, minPx = 300))
         assertEquals(450, GridSizing.cellHeight(900, 2, minPx = 300))
+    }
+
+    @Test
+    fun coverWaitsForMeasuredCell() {
+        assertNull(GridSizing.coverRequest(0, 0, rows = 0, fixedCoverPx = 336))
+        assertNull(GridSizing.coverRequest(308, 0, rows = 3, fixedCoverPx = 336))
+    }
+
+    @Test
+    fun coverTakesCellWidthAndFixedHeight() {
+        assertEquals(308 to 336, GridSizing.coverRequest(308, 0, rows = 0, fixedCoverPx = 336))
+    }
+
+    @Test
+    fun coverTakesCellSizeWithRows() {
+        assertEquals(308 to 950, GridSizing.coverRequest(308, 950, rows = 3, fixedCoverPx = 336))
     }
 }

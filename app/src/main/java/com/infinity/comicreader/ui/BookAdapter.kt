@@ -50,13 +50,21 @@ class BookAdapter(
             notifyDataSetChanged()
         }
 
+    /** Grid cell width; 0 until the list is measured. */
+    var cellWidth: Int = 0
+        private set
+
     /** Grid cell height from the "Grid rows" setting; 0 keeps the fixed cover height. */
     var cellHeight: Int = 0
-        set(value) {
-            if (field == value) return
-            field = value
-            if (grid) notifyDataSetChanged()
-        }
+        private set
+
+    /** Sets the grid cell size; covers are requested at it, so a change rebinds the grid. */
+    fun setCellSize(width: Int, height: Int) {
+        if (width == cellWidth && height == cellHeight) return
+        cellWidth = width
+        cellHeight = height
+        if (grid) notifyDataSetChanged()
+    }
 
     private val items = ArrayList<BookEntry>()
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
@@ -164,18 +172,19 @@ class BookAdapter(
         holder.thumb.setImageDrawable(null)
         holder.placeholder.visibility = View.VISIBLE
 
-        if (prefs.thumbnails) {
+        // A grid cover is requested at the cell size: until it is measured, the
+        // placeholder stays rather than caching a cover for the wrong size.
+        val res = context.resources
+        val request = if (grid) {
+            val fixed = res.getDimensionPixelSize(R.dimen.grid_thumb_h)
+            GridSizing.coverRequest(cellWidth, cellHeight, prefs.gridRows, fixed)
+        } else {
+            res.getDimensionPixelSize(R.dimen.list_thumb_w) to res.getDimensionPixelSize(R.dimen.list_thumb_h)
+        }
+        if (prefs.thumbnails && request != null) {
             val appContext = context.applicationContext
             val charset = prefs.charset
-            val reqW: Int
-            val reqH: Int
-            if (grid) {
-                reqW = maxOf(context.resources.getDimensionPixelSize(R.dimen.grid_thumb_h), cellHeight)
-                reqH = reqW
-            } else {
-                reqW = context.resources.getDimensionPixelSize(R.dimen.list_thumb_w)
-                reqH = context.resources.getDimensionPixelSize(R.dimen.list_thumb_h)
-            }
+            val (reqW, reqH) = request
             val target = position
             holder.job = scope.launch {
                 val bitmap = withContext(AppDispatchers.io) {

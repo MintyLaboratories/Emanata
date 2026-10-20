@@ -78,6 +78,21 @@ class ListActivityLiveSettingsTest {
     }
 
     @Test
+    fun cellsTakeColumnWidth() {
+        prefs.listGrid = true
+        prefs.gridColumns = 4
+        val list = launch()
+        idle()
+        val recycler = list.recycler()
+        val adapter = recycler.adapter as BookAdapter
+        assertTrue(recycler.width > 0)
+        assertEquals((recycler.width - recycler.paddingLeft - recycler.paddingRight) / 4, adapter.cellWidth)
+        prefs.gridColumns = 2
+        idle()
+        assertEquals((recycler.width - recycler.paddingLeft - recycler.paddingRight) / 2, adapter.cellWidth)
+    }
+
+    @Test
     fun backToListApplies() {
         prefs.listGrid = true
         val list = launch()

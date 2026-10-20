@@ -123,9 +123,11 @@ class ListActivity : AppCompatActivity() {
         recycler.adapter = adapter
         applyLayoutManager()
         recycler.setHasFixedSize(false)
-        recycler.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+        recycler.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             // Not from inside a layout pass: resizing cells rebinds them.
-            if (bottom - top != oldBottom - oldTop) recycler.post { updateCellHeight() }
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                recycler.post { updateCellSize() }
+            }
         }
 
         tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
@@ -189,7 +191,7 @@ class ListActivity : AppCompatActivity() {
         if (s.grid != old.grid || s.gridColumns != old.gridColumns || s.gridRows != old.gridRows) {
             adapter.grid = s.grid
             applyLayoutManager()
-            updateCellHeight()
+            updateCellSize()
             updateFabIcon()
             invalidateOptionsMenu()
         }
@@ -690,11 +692,17 @@ class ListActivity : AppCompatActivity() {
         return GridSizing.columns(prefs.gridColumns, widthDp)
     }
 
-    /** Sizes grid cells so the chosen number of rows fills the list's visible height. */
-    private fun updateCellHeight() {
+    /** Sizes grid cells: one column's width, and a height that fits the chosen rows on screen. */
+    private fun updateCellSize() {
+        if (!prefs.listGrid) {
+            adapter.setCellSize(0, 0)
+            return
+        }
+        val inner = recycler.width - recycler.paddingLeft - recycler.paddingRight
+        val width = inner.coerceAtLeast(0) / columnCount()
         val available = recycler.height - recycler.paddingTop
         val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
-        adapter.cellHeight = if (prefs.listGrid) GridSizing.cellHeight(available, prefs.gridRows, minPx) else 0
+        adapter.setCellSize(width, GridSizing.cellHeight(available, prefs.gridRows, minPx))
     }
 
     private fun toggleFavorite(path: String?) {

@@ -466,6 +466,7 @@
     <string name="about_upstream">Based on ComicReader by infinity6901 (MIT)</string>
     <string name="about_license">License</string>
     <string name="about_license_summary">The app\'s own code is MIT; bundled components keep their own licenses</string>
+    <string name="about_tip">Leave a tip (Ko-fi)</string>
     <string name="about_third_party">Third-party licenses</string>
     <string name="about_project_page">Project page</string>
 

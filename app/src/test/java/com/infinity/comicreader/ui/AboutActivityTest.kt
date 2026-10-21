@@ -51,6 +51,13 @@ class AboutActivityTest {
         assertTrue(message.contains("Copyright (c) 2026 Emanata Comic Reader contributors"))
     }
 
+    @Test
+    fun tipButtonOpensTheTipPage() {
+        val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        about.findViewById<android.view.View>(R.id.about_tip).performClick()
+        assertEquals(Notices.TIP_URL, shadowOf(about).nextStartedActivity.dataString)
+    }
+
     /** Taps the row of the notice named [name] and returns the dialog it opened. */
     private fun AboutActivity.tapNotice(name: String): AlertDialog {
         val notices = findViewById<LinearLayout>(R.id.about_notices)

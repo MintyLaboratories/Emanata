@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -15,7 +16,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.infinity.comicreader.util.Notice
 import com.infinity.comicreader.util.Notices
 
-/** Version, source and upstream links, the app's license and every third-party license. */
+/** Version, source and upstream links, the app's license, a tip jar and every third-party license. */
 class AboutActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +33,7 @@ class AboutActivity : AppCompatActivity() {
         addRow(links, getString(R.string.about_source), shortUrl(Notices.SOURCE_URL)) { open(Notices.SOURCE_URL) }
         addRow(links, getString(R.string.about_upstream), shortUrl(Notices.UPSTREAM_URL)) { open(Notices.UPSTREAM_URL) }
         addRow(links, getString(R.string.about_license), getString(R.string.about_license_summary)) { showLicense() }
+        findViewById<View>(R.id.about_tip).setOnClickListener { open(Notices.TIP_URL) }
 
         val notices = findViewById<LinearLayout>(R.id.about_notices)
         for (n in Notices.all) addRow(notices, n.name, n.license) { showNotice(n) }

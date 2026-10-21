@@ -39,6 +39,7 @@ object Notices {
 
     const val UPSTREAM_URL = "https://github.com/infinity6901/ComicReader"
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
+    const val TIP_URL = "https://ko-fi.com/mmeminty"
 
     /** The statement the UnRAR license requires in the documentation of software using it. */
     const val UNRAR_NOTE = "junrar is derived from the UnRAR source code. All copyrights to RAR and UnRAR " +

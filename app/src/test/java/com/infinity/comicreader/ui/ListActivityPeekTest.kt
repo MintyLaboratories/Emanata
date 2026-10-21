@@ -35,6 +35,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
@@ -281,6 +282,44 @@ class ListActivityPeekTest {
         val entries = activity.peekedEntriesOrNull(File(book.parentFile, "Extras"))
         assertNull(entries)
         assertEquals(listOf(activity.getString(R.string.peek_folder_empty)), texts(activity.peek()))
+    }
+
+    /** Covers shown in the open peek's laid-out cells. */
+    private fun ListActivity.peekCovers(): List<android.graphics.drawable.Drawable?> {
+        val grid = peek().grid()
+        grid.measure(
+            View.MeasureSpec.makeMeasureSpec(grid.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(grid.height, View.MeasureSpec.EXACTLY)
+        )
+        grid.layout(grid.left, grid.top, grid.right, grid.bottom)
+        idle(1000)
+        return (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
+    }
+
+    /** Covers shown in [extras]' peek with the library's covers setting [on]. */
+    private fun folderPeekCovers(on: Boolean): List<android.graphics.drawable.Drawable?> {
+        val extras = extrasWithBooks()
+        Prefs(ApplicationProvider.getApplicationContext<Application>()).thumbnails = on
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(3, activity.peekedEntries(extras).size)
+        return activity.peekCovers()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun folderPeekShowsCoversWhenTheLibraryDoes() {
+        val covers = folderPeekCovers(on = true)
+        assertEquals(3, covers.size)
+        assertTrue(covers.all { it != null })
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun folderPeekMakesNoCoversWhenTheLibraryShowsNone() {
+        val covers = folderPeekCovers(on = false)
+        assertEquals(3, covers.size)
+        assertTrue(covers.all { it == null })
     }
 
     @Test

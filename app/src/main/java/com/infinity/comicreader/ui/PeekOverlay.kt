@@ -112,8 +112,16 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         card.isClickable = true
     }
 
-    /** What a folder peek needs: the folder's [entries], their covers' [style] and the library's cover size ([tileCover], if any). */
-    class Folder(val tileCover: IntArray?, val style: CoverStyle, val entries: suspend (File) -> List<BookEntry>)
+    /**
+     * What a folder peek needs: the folder's [entries], their covers' [style], the
+     * library's cover size ([tileCover], if any) and whether it shows covers at all.
+     */
+    class Folder(
+        val tileCover: IntArray?,
+        val style: CoverStyle,
+        val entries: suspend (File) -> List<BookEntry>,
+        val showCovers: Boolean = true
+    )
 
     /**
      * Starts peeking into [entry], growing from [tile] toward [full] (both in this
@@ -194,7 +202,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
                 entries == null -> return@launch showMessage(R.string.peek_folder_unreadable)
                 entries.isEmpty() -> return@launch showMessage(R.string.peek_folder_empty)
             }
-            val a = CoverPeekAdapter(context, entries, cells.width, cells.height, folder.style, charset) { picked ->
+            val a = CoverPeekAdapter(context, entries, cells.width, cells.height, folder.style, charset, folder.showCovers) { picked ->
                 onOpen?.invoke(picked, -1)
                 hide()
             }

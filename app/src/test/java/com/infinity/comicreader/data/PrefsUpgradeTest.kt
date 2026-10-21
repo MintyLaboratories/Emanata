@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -295,5 +296,20 @@ class PrefsUpgradeTest {
         assertEquals(DetailDisplay.COMFORTABLE, Prefs(context).view(Prefs.TAB_HISTORY).detail)
         assertEquals(mapOf("pref_show_filenames" to null), Prefs.upgrade(mapOf("pref_show_filenames" to true)))
         assertEquals(TitleDisplay.DOUBLE, Prefs(context).titleDisplay)
+    }
+
+    @Test
+    fun languageSettingOffersEveryKnownLocale() {
+        assertEquals(Prefs.LOCALES, context.resources.getStringArray(R.array.locale_values).toList())
+    }
+
+    @Test
+    fun untranslatedLanguageFallsBackToSystem() {
+        assertEquals(mapOf("pref_locale" to null), Prefs.upgrade(mapOf("pref_locale" to "ko")))
+        assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_locale" to "en")))
+        assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_locale" to "system")))
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_locale" to "ru"))
+        assertEquals("system", prefs.localeTag)
     }
 }

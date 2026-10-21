@@ -216,7 +216,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 
 ### Settings
 - Theme: system / light / dark.
-- Per-app language: system, English, 한국어, 日本語, Русский.
+- Per-app language: system or English.
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).
 - Default reading direction, page mode, fit, filter, page spacing.
 - Default adjustments (brightness, contrast, saturation) for every book.

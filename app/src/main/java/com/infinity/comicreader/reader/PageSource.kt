@@ -45,6 +45,12 @@ interface PageSource : Closeable {
      */
     fun loadPreview(index: Int): Bitmap? = null
 
+    /**
+     * The [Seams.Profile] of page [index]'s [bottom] or top edge, decoded as a thin strip
+     * where its format allows ([Decoders.edge]); null when it cannot be read. Blocking.
+     */
+    fun edge(index: Int, bottom: Boolean): Seams.Profile? = null
+
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 

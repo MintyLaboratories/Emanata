@@ -75,6 +75,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         override fun release() = detail.release()
     }
 
+    override fun edge(index: Int, bottom: Boolean): Seams.Profile? {
+        if (!enter()) return null
+        try {
+            return inner.edge(index, bottom)
+        } finally {
+            exit()
+        }
+    }
+
     override fun pageName(index: Int): String? = inner.pageName(index)
 
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? {

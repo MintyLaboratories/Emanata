@@ -2,9 +2,11 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import android.graphics.Canvas
 import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
+import android.graphics.Rect
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.awxkee.jxlcoder.JxlCoder
@@ -270,6 +272,76 @@ object Decoders {
     private fun isReadError(e: IOException): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.P || e !is ImageDecoder.DecodeException ||
             e.error == ImageDecoder.DecodeException.SOURCE_EXCEPTION
+
+    // ------------------------------------------------------------------ edges
+
+    /** Kinds [edge] decodes only a strip of. */
+    private val REGION_KINDS = setOf(ImageKind.JPEG, ImageKind.PNG, ImageKind.WEBP)
+
+    /** Pixels a whole decode for [edge] works on at most, sampled down by a power of two. */
+    private const val EDGE_CAP_PIXELS = 4_000_000L
+
+    /** Share of the height a whole decode for [edge] keeps, at least [Seams.ROWS] rows. */
+    private const val EDGE_BAND = 0.002
+
+    /**
+     * The [Seams.Profile] of an encoded image's [bottom] or top edge, or null when it does
+     * not decode. JPEG, PNG and WebP decode only a strip of its outermost rows, sampled down
+     * toward [Seams.LENGTH] wide ([BitmapRegionDecoder]); other formats decode whole, capped
+     * at [EDGE_CAP_PIXELS], keeping only a thin band. For analysis only, never shown.
+     * Blocking.
+     */
+    fun edge(bytes: ByteArray, bottom: Boolean): Seams.Profile? {
+        val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() ?: return null
+        val w = size[0]
+        val h = size[1]
+        if (w <= 0 || h <= 0) return null
+        val strip = (if (ImageKind.sniff(bytes) in REGION_KINDS) runCatching { regionStrip(bytes, w, h, bottom) }.getOrNull() else null)
+            ?: runCatching { bandStrip(bytes, h, bottom) }.getOrNull()
+            ?: return null
+        return try {
+            val pixels = IntArray(strip.width * strip.height)
+            strip.getPixels(pixels, 0, strip.width, 0, 0, strip.width, strip.height)
+            Seams.profile(pixels, strip.width, strip.height, bottom)
+        } finally {
+            strip.recycle()
+        }
+    }
+
+    /** The power-of-two sample that leaves a [w]-wide image at least [Seams.LENGTH] wide. */
+    internal fun edgeSample(w: Int): Int {
+        var sample = 1
+        while (w / (sample * 2) >= Seams.LENGTH) sample *= 2
+        return sample
+    }
+
+    /** The [Seams.ROWS] outermost rows of a [w] x [h] image, sampled down ([edgeSample]), decoded alone. */
+    private fun regionStrip(bytes: ByteArray, w: Int, h: Int, bottom: Boolean): Bitmap? {
+        val sample = edgeSample(w)
+        val rows = (Seams.ROWS * sample).coerceAtMost(h)
+        val rect = if (bottom) Rect(0, h - rows, w, h) else Rect(0, 0, w, rows)
+        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
+        } else {
+            @Suppress("DEPRECATION")
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
+        } ?: return null
+        return try {
+            decoder.decodeRegion(rect, BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            })
+        } finally {
+            decoder.recycle()
+        }
+    }
+
+    /** A thin band at the [bottom] or top of an [h]-tall image, from a whole decode [Seams.LENGTH] wide. */
+    private fun bandStrip(bytes: ByteArray, h: Int, bottom: Boolean): Bitmap {
+        val band = maxOf(Seams.ROWS.toDouble() / h, EDGE_BAND).coerceAtMost(1.0)
+        val box = if (bottom) Box(0.0, 1.0 - band, 1.0, 1.0) else Box(0.0, 0.0, 1.0, band)
+        return decode(bytes, Target(Seams.LENGTH, 0, capPixels = EDGE_CAP_PIXELS, box = box))
+    }
 
     /** Smallest power-of-two sample size that brings a [w] x [h] image to at most [capPixels]: 1 below the cap. */
     fun capSample(w: Int, h: Int, capPixels: Long): Int {

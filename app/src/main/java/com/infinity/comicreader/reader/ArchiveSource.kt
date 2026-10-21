@@ -187,6 +187,11 @@ class ArchiveSource(
         Decoders.headerSize(ByteArrayInputStream(bytes)) ?: Decoders.size(bytes)
     }.getOrNull()
 
+    override fun edge(index: Int, bottom: Boolean): Seams.Profile? {
+        if (index !in pages.indices) return null
+        return runCatching { Decoders.edge(readPage(index) { BitmapUtils.readCapped(it) }, bottom) }.getOrNull()
+    }
+
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
 
     /**

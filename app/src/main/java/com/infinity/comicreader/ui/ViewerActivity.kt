@@ -1086,13 +1086,7 @@ class ViewerActivity : AppCompatActivity() {
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
         if (spread) return PageLayout.of(Spreads.pair(a, Spreads.Options(prefs.coverAlone, shifted)), spread = true, rtl = rtl)
         if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
-            val first = if (rtl) Half.RIGHT else Half.LEFT
-            val second = if (rtl) Half.LEFT else Half.RIGHT
-            val views = (0 until a.size).flatMap { i ->
-                if (a.splittable(i)) listOf(listOf(PageLayout.Part(i, first)), listOf(PageLayout.Part(i, second)))
-                else listOf(listOf(PageLayout.Part(i)))
-            }
-            return PageLayout(false, rtl, views)
+            return PageLayout.split(a.size, rtl) { a.splittable(it) }
         }
         return PageLayout(false, rtl)
     }

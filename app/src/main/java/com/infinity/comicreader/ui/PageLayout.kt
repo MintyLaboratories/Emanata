@@ -124,5 +124,18 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false, private 
         /** A [spread] layout of [views] given as page indices in reading order, each page whole. */
         fun of(views: List<IntArray>, spread: Boolean, rtl: Boolean): PageLayout =
             PageLayout(spread, rtl, views.map { v -> v.map { Part(it) } })
+
+        /**
+         * One page a screen for [count] pages, each page [splittable] says is a spread in
+         * one file shown as its two halves in reading order: the right one first when [rtl].
+         */
+        fun split(count: Int, rtl: Boolean, splittable: (Int) -> Boolean): PageLayout {
+            val first = if (rtl) Half.RIGHT else Half.LEFT
+            val second = if (rtl) Half.LEFT else Half.RIGHT
+            val views = (0 until count).flatMap { i ->
+                if (splittable(i)) listOf(listOf(Part(i, first)), listOf(Part(i, second))) else listOf(listOf(Part(i)))
+            }
+            return PageLayout(false, rtl, views)
+        }
     }
 }

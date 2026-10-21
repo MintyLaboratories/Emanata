@@ -199,4 +199,17 @@ class PageLayoutTest {
         assertTrue(ltr.grouped)
         assertTrue(ltr.sameAs(PageLayout(spread = true)))
     }
+
+    @Test
+    fun splitShowsASpreadsHalvesInReadingOrder() {
+        val ltr = PageLayout.split(3, rtl = false) { it == 1 }
+        assertEquals(4, ltr.itemCount(3))
+        assertEquals(listOf(PageLayout.Part(0)), ltr.parts(0, 3).toList())
+        assertEquals(listOf(PageLayout.Part(1, Half.LEFT)), ltr.parts(1, 3).toList())
+        assertEquals(listOf(PageLayout.Part(1, Half.RIGHT)), ltr.parts(2, 3).toList())
+        val rtl = PageLayout.split(3, rtl = true) { it == 1 }
+        assertEquals(listOf(PageLayout.Part(1, Half.RIGHT)), rtl.parts(1, 3).toList())
+        assertEquals(listOf(PageLayout.Part(1, Half.LEFT)), rtl.parts(2, 3).toList())
+        assertEquals(listOf(PageLayout.Part(2)), rtl.parts(3, 3).toList())
+    }
 }

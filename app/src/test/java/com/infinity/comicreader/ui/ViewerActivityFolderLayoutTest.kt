@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Looper
 import android.view.View
+import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
@@ -68,11 +70,6 @@ class ViewerActivityFolderLayoutTest {
         return viewer
     }
 
-    private fun ViewerActivity.click(id: Int) {
-        shadowOf(this).clickMenuItem(id)
-        idle()
-    }
-
     private fun ViewerActivity.paged() = findViewById<View>(R.id.viewer_pager).visibility == View.VISIBLE
 
     private fun folder() = library.folderLayout(dir.absolutePath)
@@ -80,12 +77,15 @@ class ViewerActivityFolderLayoutTest {
     @Test
     fun choosingADirectionKeepsOnlyTheDirectionForTheFolder() {
         val viewer = launch()
-        viewer.click(R.id.menu_dir_rtl)
+        val sheet = ReaderSheet(viewer)
+        assertEquals(View.VISIBLE, sheet.view<View>(R.id.sheet_scope_row).visibility)
+        sheet.tap(R.id.btn_dir_rtl)
         assertEquals(FolderLayout.Direction("rtl"), folder())
         assertEquals("ltr", prefs.readingDir)
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.findViewById<View>(R.id.viewer_pager).layoutDirection)
-        // Other options still change the defaults, and the defaults still reach this folder.
-        viewer.click(R.id.menu_fit_width)
+        // "All books" stays selected, so other options still change the defaults, which still reach this folder.
+        assertEquals(R.id.btn_scope_all, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_scope).checkedButtonId)
+        sheet.tap(R.id.btn_fit_width)
         assertEquals("width", prefs.fit)
         assertEquals(FolderLayout.Direction("rtl"), folder())
         prefs.pageMode = "longstrip"
@@ -97,10 +97,11 @@ class ViewerActivityFolderLayoutTest {
     fun thisFolderFreezesTheLayoutOnScreen() {
         prefs.fit = "height"
         val viewer = launch()
-        viewer.click(R.id.menu_series)
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_scope_folder)
         assertEquals(FolderLayout.Frozen(ReaderLayout(fit = "height")), folder())
+        assertEquals(viewer.getString(R.string.scope_folder_hint), sheet.view<TextView>(R.id.sheet_scope_hint).text.toString())
         // Changes now stay with the folder.
-        viewer.click(R.id.menu_fit_width)
+        sheet.tap(R.id.btn_fit_width)
         assertEquals("height", prefs.fit)
         assertEquals("width", (folder() as FolderLayout.Frozen).layout.fit)
         // And the defaults no longer reach it.
@@ -114,7 +115,7 @@ class ViewerActivityFolderLayoutTest {
         library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout("longstrip", "rtl", "width", TwoPage.ON, true, 16)))
         val viewer = launch()
         assertEquals(false, viewer.paged())
-        viewer.click(R.id.menu_series)
+        ReaderSheet(viewer).tap(R.id.btn_scope_all)
         assertEquals(FolderLayout.Direction("rtl"), folder())
         assertEquals(true, viewer.paged())
     }
@@ -123,7 +124,9 @@ class ViewerActivityFolderLayoutTest {
     fun withPerFolderLayoutOffADirectionIsTheDefault() {
         prefs.perSeries = false
         val viewer = launch()
-        viewer.click(R.id.menu_dir_rtl)
+        val sheet = ReaderSheet(viewer)
+        assertEquals(View.GONE, sheet.view<View>(R.id.sheet_scope_row).visibility)
+        sheet.tap(R.id.btn_dir_rtl)
         assertEquals("rtl", prefs.readingDir)
         assertNull(folder())
     }

@@ -67,6 +67,43 @@
         <item name="android:background">?attr/colorSurface</item>
     </style>
 
+    <!-- ================= Reader settings sheet ================= -->
+    <!-- A group heading: Layout, Color, Behavior. -->
+    <style name="Widget.ComicReader.SheetSection" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_6</item>
+        <item name="android:textAppearance">@style/TextAppearance.ComicReader.ItemTitle</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
+    </style>
+
+    <!-- The name of one option above its control. -->
+    <style name="Widget.ComicReader.SheetLabel" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_3</item>
+        <item name="android:textAppearance">@style/TextAppearance.ComicReader.Label</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!-- A single choice as segmented buttons, one always selected. -->
+    <style name="Widget.ComicReader.SheetSegments" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_1</item>
+        <item name="singleSelection">true</item>
+        <item name="selectionRequired">true</item>
+    </style>
+
+    <style name="Widget.ComicReader.SheetSegment" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:paddingStart">@dimen/space_1</item>
+        <item name="android:paddingEnd">@dimen/space_1</item>
+    </style>
+
     <!-- ================= Reader chrome ================= -->
     <!-- Always-dark overlay for the reader bars, whatever the app theme. -->
     <style name="ThemeOverlay.ComicReader.Reader" parent="ThemeOverlay.Material3.Dark">

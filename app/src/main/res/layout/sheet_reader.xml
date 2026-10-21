@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reader settings: every reading option in one sheet. "Apply to" at the top says
+  whether the Layout group changes this folder's layout or every book's defaults;
+  Color and Behavior always apply everywhere. Each single choice is a row of
+  segmented buttons, one tap per choice, one always selected.
+-->
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:maxHeight="560dp">
+    android:layout_height="wrap_content">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -22,111 +27,180 @@
             android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
             android:textSize="17sp" />
 
-        <!-- Page mode -->
-        <TextView
+        <!-- Apply to -->
+        <LinearLayout
+            android:id="@+id/sheet_scope_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5"
-            android:text="@string/menu_page_mode"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary" />
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Widget.ComicReader.SheetLabel"
+                android:text="@string/sheet_apply_to" />
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/sheet_scope"
+                style="@style/Widget.ComicReader.SheetSegments">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_scope_folder"
+                    style="@style/Widget.ComicReader.SheetSegment"
+                    android:text="@string/scope_folder" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_scope_all"
+                    style="@style/Widget.ComicReader.SheetSegment"
+                    android:text="@string/scope_all" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <TextView
+                android:id="@+id/sheet_scope_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_1"
+                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                tools:text="@string/scope_all_hint" />
+        </LinearLayout>
+
+        <!-- Layout -->
+        <TextView
+            style="@style/Widget.ComicReader.SheetSection"
+            android:text="@string/sheet_layout" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_page_mode" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_page_mode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
-            app:selectionRequired="true"
-            app:singleSelection="true">
+            style="@style/Widget.ComicReader.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_paged"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/page_mode_paged"
-                android:textSize="12sp" />
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/page_mode_paged" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_vertical"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/page_mode_vertical"
-                android:textSize="12sp" />
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/page_mode_vertical" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_longstrip"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/page_mode_longstrip"
-                android:textSize="12sp" />
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/page_mode_longstrip" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <!-- Fit -->
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5"
-            android:text="@string/menu_fit"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary" />
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_reading_dir" />
 
-        <com.google.android.material.chip.ChipGroup
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_dir"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_dir_ltr"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/reading_ltr" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_dir_rtl"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/reading_rtl" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_fit" />
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_fit"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_1"
-            app:singleLine="false"
-            app:singleSelection="true">
+            style="@style/Widget.ComicReader.SheetSegments">
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_fit_screen"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/menu_fit_screen" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fit_screen"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/fit_screen_short" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_fit_width"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/menu_fit_width" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fit_width"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/fit_width_short" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_fit_height"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/menu_fit_height" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fit_height"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/fit_height_short" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_fit_stretch"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fit_stretch"
+                style="@style/Widget.ComicReader.SheetSegment"
                 android:text="@string/menu_fit_stretch" />
-        </com.google.android.material.chip.ChipGroup>
+        </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <!-- Filter -->
         <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_two_page" />
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_two_page"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_two_off"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/two_page_off" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_two_on"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/two_page_on" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_two_landscape"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/two_page_landscape" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_auto_crop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5"
-            android:text="@string/menu_filters"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary" />
+            android:layout_marginTop="@dimen/space_3"
+            android:minHeight="48dp"
+            android:text="@string/menu_auto_crop" />
+
+        <TextView
+            android:id="@+id/sheet_spacing_value"
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_page_spacing"
+            tools:text="Page spacing · 0 dp" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sheet_spacing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="4"
+            android:value="0"
+            android:valueFrom="0"
+            android:valueTo="48" />
+
+        <!-- Color -->
+        <TextView
+            style="@style/Widget.ComicReader.SheetSection"
+            android:text="@string/sheet_color" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_filters" />
 
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/sheet_filter"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_1"
+            app:selectionRequired="true"
             app:singleSelection="true">
 
             <com.google.android.material.chip.Chip
@@ -165,81 +239,35 @@
                 android:text="@string/str_filter_sepia" />
         </com.google.android.material.chip.ChipGroup>
 
-        <!-- Reading direction -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5"
-            android:text="@string/menu_reading_dir"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary" />
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/sheet_dir"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_1"
-            app:singleSelection="true">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_dir_ltr"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/reading_ltr" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_dir_rtl"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/reading_rtl" />
-        </com.google.android.material.chip.ChipGroup>
-
-        <!-- Adjustments -->
         <include
             layout="@layout/view_adjustments"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5" />
+            android:layout_marginTop="@dimen/space_3" />
 
-        <!-- Page spacing -->
-        <TextView
-            android:id="@+id/sheet_spacing_value"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_3"
-            android:text="@string/menu_page_spacing"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary"
-            tools:text="Page spacing · 0 dp" />
-
-        <com.google.android.material.slider.Slider
-            android:id="@+id/sheet_spacing"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:stepSize="4"
-            android:value="0"
-            android:valueFrom="0"
-            android:valueTo="48" />
-
-        <!-- Auto-scroll -->
         <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_auto_scroll"
+            android:id="@+id/sheet_night"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_4"
             android:minHeight="48dp"
-            android:text="@string/menu_auto_scroll" />
+            android:text="@string/menu_night" />
+
+        <!-- Behavior -->
+        <TextView
+            style="@style/Widget.ComicReader.SheetSection"
+            android:text="@string/sheet_behavior" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_auto_next"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/menu_auto_next" />
 
         <TextView
             android:id="@+id/sheet_auto_speed_value"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_3"
+            style="@style/Widget.ComicReader.SheetLabel"
             android:text="@string/pref_auto_speed"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary"
             tools:text="Auto-scroll speed · 5 / 10" />
 
         <com.google.android.material.slider.Slider
@@ -250,67 +278,6 @@
             android:value="5"
             android:valueFrom="1"
             android:valueTo="10" />
-
-        <!-- Orientation lock -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_5"
-            android:text="@string/menu_orientation"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
-            android:textColor="?attr/colorPrimary" />
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/sheet_orientation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_1"
-            app:singleSelection="true">
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_orient_default"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/orientation_default" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_orient_portrait"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/orientation_portrait" />
-
-            <com.google.android.material.chip.Chip
-                android:id="@+id/chip_orient_landscape"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/orientation_landscape" />
-        </com.google.android.material.chip.ChipGroup>
-
-        <!-- Switches -->
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_two_page"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_4"
-            android:minHeight="48dp"
-            android:text="@string/menu_two_page" />
-
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_auto_crop"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/menu_auto_crop" />
-
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_night"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/menu_night" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_keep_on"
@@ -326,26 +293,36 @@
             android:minHeight="48dp"
             android:text="@string/menu_fullscreen" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_auto_next"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/menu_auto_next" />
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_orientation" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_series"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/menu_remember_series" />
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_orientation"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_orient_default"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/orientation_default" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_orient_portrait"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/orientation_portrait" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_orient_landscape"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/orientation_landscape" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_more_settings"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_2"
+            android:layout_marginTop="@dimen/space_3"
             android:text="@string/settings" />
     </LinearLayout>
 

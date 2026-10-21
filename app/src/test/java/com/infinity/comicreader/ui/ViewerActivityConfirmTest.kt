@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.app.Application
+import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
@@ -92,12 +93,10 @@ class ViewerActivityConfirmTest {
         return latestDialog()
     }
 
-    /** Opens the adjustments dialog, taps its Reset, and returns the dialog showing afterward. */
-    private fun ViewerActivity.tapResetAdjustments(): Pair<AlertDialog, AlertDialog> {
-        val panel = menu(R.id.menu_adjustments)
-        panel.findViewById<View>(R.id.adjust_reset)!!.performClick()
-        idle()
-        return panel to latestDialog()
+    /** Opens the reader settings sheet, taps its adjustments' Reset, and returns the sheet and the dialog showing afterward. */
+    private fun ViewerActivity.tapResetAdjustments(): Pair<Dialog, Dialog> {
+        val sheet = ReaderSheet(this).tap(R.id.adjust_reset)
+        return sheet.dialog to ShadowDialog.getLatestDialog()
     }
 
     @Test
@@ -106,12 +105,12 @@ class ViewerActivityConfirmTest {
         library.setAdjustments(book.absolutePath, own)
         val viewer = launch()
 
-        val (_, canceled) = viewer.tapResetAdjustments()
+        val canceled = viewer.tapResetAdjustments().second as AlertDialog
         assertEquals(context.getString(R.string.confirm_reset_adjust_msg), canceled.message())
         canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(own, library.adjustmentsFor(book.absolutePath))
 
-        viewer.tapResetAdjustments().second.press(DialogInterface.BUTTON_POSITIVE)
+        (viewer.tapResetAdjustments().second as AlertDialog).press(DialogInterface.BUTTON_POSITIVE)
         assertNull(library.adjustmentsFor(book.absolutePath))
     }
 

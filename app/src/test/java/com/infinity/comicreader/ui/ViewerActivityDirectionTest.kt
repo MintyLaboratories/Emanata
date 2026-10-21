@@ -29,7 +29,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
-import org.robolectric.fakes.RoboMenuItem
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 
@@ -181,8 +180,7 @@ class ViewerActivityDirectionTest {
         val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
         awaitOpen(viewer)
         // Another layout option written back from the reader leaves the default direction alone.
-        viewer.onOptionsItemSelected(RoboMenuItem(R.id.menu_fit_width))
-        shadowOf(Looper.getMainLooper()).idle()
+        ReaderSheet(viewer).tap(R.id.btn_fit_width)
         assertEquals("width", prefs.fit)
         assertEquals("ltr", prefs.readingDir)
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
@@ -192,8 +190,7 @@ class ViewerActivityDirectionTest {
     fun choosingADirectionOverADetectedOneKeepsItForTheFolder() {
         val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
         awaitOpen(viewer)
-        viewer.onOptionsItemSelected(RoboMenuItem(R.id.menu_dir_ltr))
-        shadowOf(Looper.getMainLooper()).idle()
+        ReaderSheet(viewer).tap(R.id.btn_dir_ltr)
         assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
         assertEquals(FolderLayout.Direction("ltr"), library.folderLayout(dir.absolutePath))
         assertEquals("ltr", prefs.readingDir)

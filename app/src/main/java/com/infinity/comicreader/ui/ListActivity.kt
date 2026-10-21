@@ -65,6 +65,7 @@ import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortValues
@@ -341,7 +342,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val dir = currentDir ?: return false
         val gone = StorageRoot.removed(dir.absolutePath, before, roots)
         if (gone != null) {
-            toast(getString(R.string.location_removed, gone.name))
+            // The reader closing a book on this drive has just said so.
+            if (!RemovalNotices.alreadyTold(gone)) toast(getString(R.string.location_removed, gone.name))
             trail = null
             currentDir = null
             if (mode == TAB_BROWSE && hasStorageAccess()) {

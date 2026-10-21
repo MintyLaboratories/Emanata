@@ -72,6 +72,33 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
     }
 }
 
+/**
+ * Drives whose removal one screen already told, so the screen shown next does not
+ * tell it again: the reader closing a book on a pulled drive, then the list it
+ * returns to. Times are milliseconds on a monotonic clock.
+ */
+object RemovalNotices {
+    /** How long a told removal keeps the next screen quiet. */
+    const val QUIET_MS = 30_000L
+
+    private val told = HashMap<String, Long>()
+
+    private fun clock(): Long = System.nanoTime() / 1_000_000
+
+    /** Records that [root]'s removal was told at [now]. */
+    @Synchronized
+    fun told(root: StorageRoot, now: Long = clock()) {
+        told[root.path] = now
+    }
+
+    /** True, once, when [root]'s removal was told less than [QUIET_MS] before [now]. */
+    @Synchronized
+    fun alreadyTold(root: StorageRoot, now: Long = clock()): Boolean {
+        val at = told.remove(root.path) ?: return false
+        return now - at in 0 until QUIET_MS
+    }
+}
+
 /** One tappable step of a location: [label] shown, [path] opened. */
 data class Crumb(val label: String, val path: String, val isRoot: Boolean)
 

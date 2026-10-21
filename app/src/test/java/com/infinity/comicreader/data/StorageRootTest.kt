@@ -13,6 +13,17 @@ class StorageRootTest {
     private val roots = listOf(device, card)
 
     @Test
+    fun aToldRemovalQuietsTheNextScreenOnce() {
+        RemovalNotices.told(card, now = 1_000)
+        assertFalse(RemovalNotices.alreadyTold(device, now = 2_000))
+        assertTrue(RemovalNotices.alreadyTold(card, now = 2_000))
+        assertFalse(RemovalNotices.alreadyTold(card, now = 2_000))
+        // Long after, the drive's removal is news again.
+        RemovalNotices.told(card, now = 1_000)
+        assertFalse(RemovalNotices.alreadyTold(card, now = 1_000 + RemovalNotices.QUIET_MS))
+    }
+
+    @Test
     fun containsOnlyWholeFolders() {
         assertTrue(device.contains("/storage/emulated/0"))
         assertTrue(device.contains("/storage/emulated/0/Comics"))

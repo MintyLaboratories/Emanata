@@ -54,6 +54,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.ReadingDirection
+import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StorageRoot
@@ -407,6 +408,7 @@ class ViewerActivity : AppCompatActivity() {
         saveHistory()
         openJob?.cancel()
         closeSource()
+        RemovalNotices.told(gone)
         toast(getString(R.string.book_storage_removed, gone.name))
         finish()
     }

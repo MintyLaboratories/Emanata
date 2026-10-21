@@ -8,6 +8,7 @@ import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.reader.Fixtures
@@ -69,6 +70,8 @@ class ViewerActivityStorageTest {
         viewer.checkStorage(now = emptyList())
         assertTrue(viewer.isFinishing)
         assertEquals("Drive A was removed, so the book was closed", ShadowToast.getTextOfLatestToast())
+        // The list it returns to does not say it again.
+        assertTrue(RemovalNotices.alreadyTold(usb))
     }
 
     @Test

@@ -34,7 +34,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 
 | Reader — continuous (webtoon) | End of chapter | Reader settings |
 |---|---|---|
-| ![Continuous](screenshots/reader-longstrip.jpg) | ![End of chapter](screenshots/end-of-chapter.jpg) | ![Reader settings](screenshots/reader-settings.png) |
+| ![Continuous](screenshots/reader-continuous.jpg) | ![End of chapter](screenshots/end-of-chapter.jpg) | ![Reader settings](screenshots/reader-settings.png) |
 
 | Two-page spread (RTL manga) | Favorites | History |
 |---|---|---|
@@ -97,8 +97,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (natural order, so `page2` sorts before `page10`) breaks every tie. Items
   without a value sort last. **Folders first** is on by default. Browse and
   Favorites start by name, History and Bookmarks by last access (adding a
-  bookmark counts). Page counts, ComicInfo years, detected directions and
-  folder totals are found in the background; page counts fill in without moving
+  bookmark counts). Page counts, ComicInfo years, detected directions (slices
+  by their header shape, or as the reader found them) and folder totals are
+  found in the background; reading direction sorts top to bottom between left
+  to right and right to left. Page counts fill in without moving
   rows. A book with inner archives not yet copied out takes ComicInfo's
   `PageCount`.
 - **Filter** (per tab): file type, reading direction, read status, year and
@@ -170,7 +172,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Layout × direction:** *Paged* or *Continuous*, read *Left to right*,
   *Right to left* or *Top to bottom*. Paged top to bottom swipes up, one page a
   screen, snapping. Continuous reads top to bottom only: one scrolling column
-  with a **page gap** (0 for webtoons) and optional auto-crop. Two-page and
+  with a **page gap** (0 for webtoons) and optional auto-crop (never for
+  detected slices, whose blank bands and widths belong to the strip). Two-page and
   split spreads are for paging left or right. The older Vertical mode reads as
   Paged top to bottom, Long strip as Continuous top to bottom, per folder too.
 - **Two-page spread:** Off, On or Landscape only; facing pages side by side
@@ -194,7 +197,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   manhua) top to bottom in one column: pages two to ten times as tall as wide,
   of one width, from their headers; varying heights settle it alone, otherwise
   the seams must run on (the bottom rows of one slice against the top rows of
-  the next, decoded as thin strips; blank seams are skipped). It then reads a
+  the next, decoded as thin strips; blank seams are skipped). The finding is
+  kept per book. Seams are read in archives and single images; PDFs tell by
+  shape only, and loose images in a folder (one chapter each) are not checked.
+  It then reads a
   book right to left from, in order: ComicInfo
   `Manga=YesAndRightToLeft`; a wraparound cover's front half (found by its
   barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the

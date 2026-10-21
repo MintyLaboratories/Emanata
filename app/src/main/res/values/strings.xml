@@ -155,7 +155,7 @@
     <string name="menu_fit_width">Fit width</string>
     <string name="menu_fit_height">Fit height</string>
     <string name="menu_fit_stretch">Stretch</string>
-    <string name="menu_rotate">Rotate</string>
+    <string name="menu_rotate">Rotate screen</string>
     <string name="menu_bookmark_add">Add bookmark</string>
     <string name="menu_bookmark_list">Bookmarks</string>
     <string name="menu_bookmark_remove">Remove bookmark</string>

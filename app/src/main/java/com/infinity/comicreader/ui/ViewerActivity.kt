@@ -1076,7 +1076,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Turns the screen for the wide page on screen, or back, as [spreadRotation] says. */
     private fun updateSpreadRotation() {
-        spreadRotation.show(widePageShown(), prefs.rotateSpreads)?.let { requestedOrientation = it }
+        spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape())?.let { requestedOrientation = it }
     }
 
     /** True while items show numbers of their own: a page split in halves takes two. */
@@ -1278,7 +1278,8 @@ class ViewerActivity : AppCompatActivity() {
         else -> PageAdapter.Mode.PAGED
     }
 
-    private fun useSpread() = mode == MODE_PAGED && twoPage.spread(landscape())
+    /** Two-page reading for the orientation pages are laid out for: while turned for a wide page, the one that comes back. */
+    private fun useSpread() = mode == MODE_PAGED && twoPage.spread(spreadRotation.layoutLandscape(landscape()))
 
     private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 

@@ -29,6 +29,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
@@ -211,5 +212,43 @@ class ViewerActivitySpreadsTest {
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
         viewer.next()
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    /** Turns the screen to [qualifier] (`land` or `port`), as the system does after a request. */
+    private fun ViewerActivity.turn(qualifier: String) {
+        RuntimeEnvironment.setQualifiers(qualifier)
+        onConfigurationChanged(resources.configuration)
+        idle()
+    }
+
+    @Test
+    fun landscapeOnlyKeepsOnePageAScreenWhileTurnedForAWidePage() {
+        prefs.twoPage = TwoPage.LANDSCAPE
+        val viewer = launch(book(numbered(1, 8), setOf("Tale 001-003")))
+        sizesRead()
+        assertEquals(8, viewer.items())
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        viewer.turn("land")
+        // Turned for the wide page alone: still one page a screen, not pairs.
+        assertEquals(8, viewer.items())
+        assertEquals("3 / 8", viewer.indicator())
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        viewer.turn("port")
+        assertEquals(8, viewer.items())
+        assertEquals("4 / 8", viewer.indicator())
+        viewer.next()
+        assertEquals("5 / 8", viewer.indicator())
+    }
+
+    @Test
+    fun landscapeOnlyPairsAfterATurnTheReaderMakes() {
+        prefs.twoPage = TwoPage.LANDSCAPE
+        val viewer = launch(book(numbered(1, 8)))
+        sizesRead()
+        viewer.turn("land")
+        assertTrue(viewer.items() < 8)
+        viewer.turn("port")
     }
 }

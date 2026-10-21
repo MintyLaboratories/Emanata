@@ -5,7 +5,9 @@ import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpreadRotationTest {
@@ -54,5 +56,34 @@ class SpreadRotationTest {
         r.choose(SCREEN_ORIENTATION_LANDSCAPE)
         r.show(7, enabled = true)
         assertEquals(SCREEN_ORIENTATION_LANDSCAPE, r.show(7, enabled = false))
+    }
+
+    @Test
+    fun whileHeldPagesAreLaidOutForTheOrientationThatComesBack() {
+        val r = SpreadRotation()
+        assertTrue(r.layoutLandscape(landscape = true))
+        r.show(5, enabled = true, landscape = false)
+        assertFalse(r.layoutLandscape(landscape = true))
+        r.show(-1, enabled = true, landscape = true)
+        assertTrue(r.layoutLandscape(landscape = true))
+    }
+
+    @Test
+    fun aHeldTurnFromLandscapeLaysOutForLandscape() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, landscape = true)
+        assertTrue(r.layoutLandscape(landscape = true))
+    }
+
+    @Test
+    fun theReadersLockDecidesTheLayoutWhileHeld() {
+        val r = SpreadRotation()
+        r.choose(SCREEN_ORIENTATION_LANDSCAPE)
+        r.show(5, enabled = true, landscape = false)
+        assertTrue(r.layoutLandscape(landscape = true))
+        r.choose(SCREEN_ORIENTATION_PORTRAIT)
+        r.show(-1, enabled = true)
+        r.show(6, enabled = true, landscape = true)
+        assertFalse(r.layoutLandscape(landscape = true))
     }
 }

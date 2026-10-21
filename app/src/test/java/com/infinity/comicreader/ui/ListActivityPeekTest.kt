@@ -174,13 +174,61 @@ class ListActivityPeekTest {
         assertNull(shadowOf(activity).nextStartedActivity)
     }
 
+    private fun PeekOverlay.grid(): RecyclerView {
+        fun find(v: View): RecyclerView? = when (v) {
+            is RecyclerView -> v
+            is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
+            else -> null
+        }
+        return find(this)!!
+    }
+
+    private fun extrasWithBooks(): File {
+        val extras = File(book.parentFile, "Extras")
+        val page = TestImages.png(4, 6)
+        Fixtures.zip(File(extras, "Part 2.cbz"), "01.png" to page)
+        Fixtures.zip(File(extras, "Part 10.cbz"), "01.png" to page)
+        Fixtures.zip(File(extras, "Part 1.cbz"), "01.png" to page)
+        return extras
+    }
+
     @Test
-    fun foldersOfferNoPeek() {
+    fun folderPeekShowsWhatItHoldsInBrowseOrder() {
+        val extras = extrasWithBooks()
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
-        activity.longPress(File(book.parentFile, "Extras"))
-        val menu = ShadowDialog.getLatestDialog() as AlertDialog
-        val items = (0 until menu.listView.adapter.count).map { menu.listView.adapter.getItem(it).toString() }
-        assertFalse("Peek" in items)
+        activity.longPress(extras)
+        (ShadowDialog.getLatestDialog() as AlertDialog).click("Peek")
+        idle(500)
+        val peek = activity.peek()
+        assertTrue(peek.isShowing)
+        val grid = peek.grid()
+        grid.measure(
+            View.MeasureSpec.makeMeasureSpec(grid.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(grid.height, View.MeasureSpec.EXACTLY)
+        )
+        grid.layout(grid.left, grid.top, grid.right, grid.bottom)
+        assertTrue(grid.adapter is CoverPeekAdapter)
+        val titles = (0 until grid.childCount).map {
+            grid.getChildAt(it).findViewById<android.widget.TextView>(R.id.peek_title).text.toString()
+        }
+        assertEquals(listOf("Part 1.cbz", "Part 2.cbz", "Part 10.cbz"), titles)
+
+        grid.getChildAt(1).performClick()
+        idle()
+        val started = shadowOf(activity).nextStartedActivity
+        assertEquals(File(extras, "Part 2.cbz").absolutePath, started?.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertFalse(peek.isShowing)
+    }
+
+    @Test
+    fun spreadingFullyOnAFolderOpensIt() {
+        val extras = extrasWithBooks()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.spread(extras, spread = 2000f)
+        assertFalse(activity.peek().isShowing)
+        assertNull(shadowOf(activity).nextStartedActivity)
+        assertEquals(extras.absolutePath, Prefs(activity).lastPath)
     }
 }

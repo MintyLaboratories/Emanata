@@ -7,23 +7,27 @@ import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
+import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Prefs
+import java.io.File
 import kotlin.math.hypot
 
 /**
  * Pinch to peek on a list: spreading two fingers on a comic in [recycler] grows a
- * [PeekOverlay] of its pages out of its cover ([PeekGesture]). [target] names the
- * comic under a list point and the view its cover is drawn in; [mode] is the
- * "Pinch to peek" setting. The second finger landing on a comic takes the touch
- * from its row, so the row neither clicks nor opens its long-press menu.
+ * [PeekOverlay] of its pages out of its cover ([PeekGesture]); on a folder, of the
+ * covers of what [folderEntries] lists in it. [target] names the comic or folder
+ * under a list point and the view its cover is drawn in; [mode] is the "Pinch to
+ * peek" setting. The second finger landing on an entry takes the touch from its
+ * row, so the row neither clicks nor opens its long-press menu.
  */
 class PinchPeek(
     private val activity: AppCompatActivity,
     private val recycler: RecyclerView,
     private val mode: () -> PeekMode,
     private val target: (x: Float, y: Float) -> Pair<BookEntry, View>?,
+    private val folderEntries: suspend (File) -> List<BookEntry> = { emptyList() },
     onOpen: (BookEntry, Int) -> Unit
 ) {
     private val prefs = Prefs(activity)
@@ -81,14 +85,19 @@ class PinchPeek(
         return minOf(metrics.widthPixels, metrics.heightPixels) * PeekGesture.FULL_SPREAD_SHARE
     }
 
-    /** Starts a peek into [entry] growing out of [tileView], or out of the list's middle without one. */
+    /** Starts a peek into [entry] growing out of [tileView] (its cover box), or out of the list's middle without one. */
     fun start(entry: BookEntry, tileView: View?) {
         val full = boxOf(recycler).let {
             val inset = INSET_DP * activity.resources.displayMetrics.density
             Box(it.left + inset, it.top + inset, it.width - 2 * inset, it.height - 2 * inset)
         }
         val tile = tileView?.let { boxOf(it) } ?: Box(full.left + full.width / 2, full.top + full.height / 2, 1f, 1f)
-        overlay.begin(entry, tile, full, activity.lifecycleScope, prefs.charset, activity.cacheDir, prefs.linearLight)
+        val folder = if (!entry.isDir) null else {
+            // The library's own cover size, so the covers it made are reused as they are.
+            val cover = tileView?.findViewById<View>(R.id.thumb)?.takeIf { it.width > 0 && it.height > 0 }
+            PeekOverlay.Folder(cover?.let { intArrayOf(it.width, it.height) }, prefs.coverStyle, folderEntries)
+        }
+        overlay.begin(entry, tile, full, activity.lifecycleScope, prefs.charset, activity.cacheDir, prefs.linearLight, folder)
     }
 
     /** Peeks into [entry] growing out of [tileView] and leaves it open. */

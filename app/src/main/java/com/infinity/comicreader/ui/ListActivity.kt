@@ -1079,13 +1079,25 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     // ------------------------------------------------------------------ peek
 
-    /** Spreading two fingers on a comic grows a grid of its pages out of it ([PinchPeek]). */
+    /**
+     * Spreading two fingers on a comic grows a grid of its pages out of it, on a folder
+     * a grid of the covers inside ([PinchPeek]).
+     */
     private fun setUpPeek() {
-        pinch = PinchPeek(this, recycler, { applied.pinchPeek }, ::peekTarget) { entry, page -> openViewer(entry.file, page) }
+        pinch = PinchPeek(this, recycler, { applied.pinchPeek }, ::peekTarget, ::peekEntries) { entry, page ->
+            if (entry.isDir) loadDirectory(entry.file) else openViewer(entry.file, page)
+        }
         peek = pinch.overlay
     }
 
-    /** The comic under list point ([x], [y]) and the view its cover is drawn in, or null. */
+    /** What [dir] lists when browsed, in the browse order. */
+    private suspend fun peekEntries(dir: File): List<BookEntry> {
+        val entries = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
+        val sort = prefs.sort(Prefs.TAB_BROWSE)
+        return entries.sortedWith(LibrarySort.comparator(sort, values().frozen(entries, sort.keys)))
+    }
+
+    /** The comic or folder under list point ([x], [y]) and the view its cover is drawn in, or null. */
     private fun peekTarget(x: Float, y: Float): Pair<BookEntry, View>? {
         val child = recycler.findChildViewUnder(x, y) ?: return null
         val entry = adapter.entryAt(recycler.getChildAdapterPosition(child)) ?: return null
@@ -1093,7 +1105,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return entry to (child.findViewById<View>(R.id.box) ?: child)
     }
 
-    private fun canPeek(entry: BookEntry) = !entry.isDir && Formats.isOpenable(entry.name) && entry.file.isFile
+    private fun canPeek(entry: BookEntry) =
+        if (entry.isDir) entry.file.isDirectory else Formats.isOpenable(entry.name) && entry.file.isFile
 
     /** Peeks into [entry] from the long-press menu: the grid grows out of its tile and stays open. */
     private fun peekFromMenu(entry: BookEntry) {

@@ -20,10 +20,12 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.AppDispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -34,13 +36,14 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * A grid of a comic's pages over the library, growing out of the comic's tile:
- * [progress] 0 is the tile, 1 the grid open over the list. Open, it scrolls; a
- * tapped page opens the book there, a tap outside, Back or pinching it closes it.
+ * A grid of a comic's pages, or of the covers in a folder, over the library, growing
+ * out of its tile: [progress] 0 is the tile, 1 the grid open over the list. Open, it
+ * scrolls; a tapped page opens the book there and a tapped cover opens its comic or
+ * folder; a tap outside, Back or pinching it closes it.
  */
 class PeekOverlay(context: Context) : FrameLayout(context) {
 
-    /** Opens [BookEntry] at a page; -1 lets the reader choose where to start. */
+    /** Opens [BookEntry] at a page; -1 lets the reader choose where to start, or opens a folder. */
     var onOpen: ((BookEntry, Int) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
@@ -52,6 +55,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     private var entry: BookEntry? = null
     private var source: PageSource? = null
     private var adapter: ThumbAdapter? = null
+    private var covers: CoverPeekAdapter? = null
     private var loadJob: Job? = null
     private var animator: ValueAnimator? = null
     private var tile = Box(0f, 0f, 0f, 0f)
@@ -61,7 +65,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     var progress = 0f
         private set
 
-    /** True while it shows a comic, growing, open or closing. */
+    /** True while it shows a comic or folder, growing, open or closing. */
     val isShowing: Boolean get() = entry != null
 
     /** Pinching the open grid closes it like the spread that opened it, in reverse. */
@@ -89,11 +93,23 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         card.isClickable = true
     }
 
+    /** What a folder peek needs: the folder's [entries], their covers' [style] and the library's cover size ([tileCover], if any). */
+    class Folder(val tileCover: IntArray?, val style: CoverStyle, val entries: suspend (File) -> List<BookEntry>)
+
     /**
      * Starts peeking into [entry], growing from [tile] toward [full] (both in this
-     * view's coordinates); its pages load in [scope].
+     * view's coordinates); its pages, or with [folder] the covers inside it, load in [scope].
      */
-    fun begin(entry: BookEntry, tile: Box, full: Box, scope: CoroutineScope, charset: String, cacheDir: File, linear: Boolean) {
+    fun begin(
+        entry: BookEntry,
+        tile: Box,
+        full: Box,
+        scope: CoroutineScope,
+        charset: String,
+        cacheDir: File,
+        linear: Boolean,
+        folder: Folder? = null
+    ) {
         clear()
         this.entry = entry
         this.tile = tile
@@ -102,12 +118,16 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             leftMargin = full.left.roundToInt()
             topMargin = full.top.roundToInt()
         }
-        val columns = (full.width / density / CELL_DP).toInt().coerceIn(MIN_COLUMNS, MAX_COLUMNS)
-        val cell = (full.width - grid.paddingLeft - grid.paddingRight) / columns
-        grid.layoutManager = GridLayoutManager(context, columns)
         spinner.visibility = VISIBLE
         visibility = VISIBLE
         setProgress(0f)
+        if (folder != null) beginFolder(entry, scope, charset, folder) else beginPages(entry, scope, charset, cacheDir, linear)
+    }
+
+    private fun beginPages(entry: BookEntry, scope: CoroutineScope, charset: String, cacheDir: File, linear: Boolean) {
+        val columns = (full.width / density / CELL_DP).toInt().coerceIn(MIN_COLUMNS, MAX_COLUMNS)
+        val cell = (full.width - grid.paddingLeft - grid.paddingRight) / columns
+        grid.layoutManager = GridLayoutManager(context, columns)
         val started = SystemClock.elapsedRealtime()
         val timing = FillTiming(started)
         loadJob = scope.launch {
@@ -128,6 +148,36 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             adapter = a
             grid.adapter = a
             if (entry.progressPage > 0) grid.scrollToPosition(entry.progressPage)
+        }
+    }
+
+    private fun beginFolder(entry: BookEntry, scope: CoroutineScope, charset: String, folder: Folder) {
+        val avail = (full.width - grid.paddingLeft - grid.paddingRight).toInt()
+        val cells = CoverCells.of(
+            avail, folder.tileCover, (MIN_COVER_DP * density).roundToInt(), (CELL_DP * density).roundToInt(),
+            (COVER_PAD_DP * density).roundToInt(), MAX_FOLDER_COLUMNS
+        )
+        grid.layoutManager = GridLayoutManager(context, cells.columns)
+        val started = SystemClock.elapsedRealtime()
+        val timing = FillTiming(started)
+        loadJob = scope.launch {
+            val entries = try {
+                folder.entries(entry.file)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                emptyList()
+            }
+            if (this@PeekOverlay.entry !== entry) return@launch
+            spinner.visibility = GONE
+            val a = CoverPeekAdapter(context, entries, cells.width, cells.height, folder.style, charset) { picked ->
+                onOpen?.invoke(picked, -1)
+                hide()
+            }
+            val listMs = SystemClock.elapsedRealtime() - started
+            a.onShown = { position, exact -> logFill(timing, position, exact) { "covers: listed ${entries.size} in $listMs ms" } }
+            covers = a
+            grid.adapter = a
         }
     }
 
@@ -207,6 +257,8 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         grid.adapter = null
         adapter?.release()
         adapter = null
+        covers?.release()
+        covers = null
         runCatching { source?.close() }
         source = null
         entry = null
@@ -263,5 +315,11 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
 
         /** Height of a page cell over its width. */
         private const val PAGE_ASPECT = 1.5f
+
+        /** Library covers narrower than this (list rows) are made larger for a folder peek. */
+        private const val MIN_COVER_DP = 96f
+        /** A cover's padding on either side, as `item_peek_cover` has it. */
+        private const val COVER_PAD_DP = 4f
+        private const val MAX_FOLDER_COLUMNS = 12
     }
 }

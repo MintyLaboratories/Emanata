@@ -76,20 +76,11 @@ object Thumbs {
      * the half its [BookEntry.direction] starts on, so the direction is part of the key.
      */
     fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
+        cached(context, entry, width, height, style)?.let { return it }
         val page = entry.bookmarkPage
         val rightToLeft = entry.direction == ReadingDirection.RTL
-        val k = "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}" + if (page >= 0) "|p$page" else ""
-        memory.get(k)?.let { return it }
-
+        val k = coverKey(entry, width, height, style)
         val disk = diskFile(context, k)
-        if (disk.isFile) {
-            // Stored at the box size: the decode is the file as it is.
-            val cached = runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()
-            if (cached != null) {
-                memory.put(k, cached)
-                return cached
-            }
-        }
 
         val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height) ?: return null
         val cover = try {
@@ -110,6 +101,28 @@ object Thumbs {
             disk.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
         }
         return bitmap
+    }
+
+    /**
+     * The cover of [entry] as [load] makes it, when one was made before: from memory or
+     * disk, never generated. Blocking; null when there is none yet.
+     */
+    fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
+        val k = coverKey(entry, width, height, style)
+        memory.get(k)?.let { return it }
+        val disk = diskFile(context, k)
+        if (!disk.isFile) return null
+        // Stored at the box size: the decode is the file as it is.
+        val cached = runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull() ?: return null
+        memory.put(k, cached)
+        return cached
+    }
+
+    /** What a cover is cached by: its file, box size, style, the direction it starts on, and a bookmark's page. */
+    private fun coverKey(entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
+        val page = entry.bookmarkPage
+        val rightToLeft = entry.direction == ReadingDirection.RTL
+        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}" + if (page >= 0) "|p$page" else ""
     }
 
     /** WebP lossless where the platform writes it, PNG before that. */

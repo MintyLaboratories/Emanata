@@ -164,7 +164,8 @@ object Tiff {
     /**
      * Decodes [page] of [input], keeping every [sample]th pixel of every [sample]th row,
      * into [sink]: `ceil(width / sample)` x `ceil(height / sample)` pixels. A file that
-     * ends early keeps the rows decoded before; one with none throws.
+     * ends early keeps the rows decoded before; one with none throws, as does any other
+     * failure.
      */
     fun decode(input: Input, page: Page, sample: Int, jpeg: JpegDecoder, sink: Sink) {
         require(sample >= 1)
@@ -183,7 +184,7 @@ object Tiff {
                         chunk(input, page, index, cx, cy, sample, out, sink)
                     }
                     decoded = true
-                } catch (e: IOException) {
+                } catch (e: EOFException) {
                     if (!decoded) throw e
                     return
                 }

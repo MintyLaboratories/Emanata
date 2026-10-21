@@ -162,6 +162,19 @@ class TiffTest {
     }
 
     @Test
+    fun laterChunkFailureThrows() {
+        // Only an early end is forgiven: a strip that does not decode fails the page.
+        var calls = 0
+        val e = assertThrows(DecodeException::class.java) {
+            decode(fixture("jpeg-rgb.tif"), jpeg = {
+                if (calls++ > 0) throw DecodeException("bad strip")
+                Tiff.Raster(37, 16, IntArray(37 * 16))
+            })
+        }
+        assertEquals("bad strip", e.message)
+    }
+
+    @Test
     fun notTiffOrUnsupported() {
         assertNull(Tiff.size(Tiff.ByteInput(ByteArray(64))))
         assertThrows(DecodeException::class.java) { Tiff.page(Tiff.ByteInput("II*\u0000".toByteArray() + ByteArray(4))) }

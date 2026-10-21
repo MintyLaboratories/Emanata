@@ -285,9 +285,9 @@ class BookAdapter(
         bindBadge(holder.badge, item)
         applyHighlight(holder, item)
 
-        val icon = iconFor(item)
+        val icon = EntryIcons.iconFor(item)
         holder.placeholder.setImageResource(icon)
-        holder.placeholder.imageTintList = ColorStateList.valueOf(tintFor(context, item))
+        holder.placeholder.imageTintList = ColorStateList.valueOf(EntryIcons.tintFor(context, item))
         holder.thumb.setImageDrawable(null)
         holder.placeholder.visibility = View.VISIBLE
 
@@ -480,25 +480,6 @@ class BookAdapter(
             size
         }
     }
-
-    private fun iconFor(item: BookEntry): Int = when {
-        item.isDir -> R.drawable.ic_folder
-        item.type == EntryType.PDF -> R.drawable.ic_picture_as_pdf
-        item.type == EntryType.ARCHIVE -> R.drawable.ic_auto_stories
-        item.type == EntryType.IMAGE -> R.drawable.ic_image
-        else -> R.drawable.ic_file
-    }
-
-    private fun tintFor(context: android.content.Context, item: BookEntry): Int = ContextCompat.getColor(
-        context,
-        when {
-            item.isDir -> R.color.md_primary
-            item.type == EntryType.PDF -> R.color.md_error
-            item.type == EntryType.ARCHIVE -> R.color.md_secondary
-            item.type == EntryType.IMAGE -> R.color.md_tertiary
-            else -> R.color.md_on_surface_variant
-        }
-    )
 
     private companion object {
         const val THUMB_THREADS = 3

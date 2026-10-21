@@ -155,13 +155,27 @@ class ArchiveSource(
      * The outer archive's ComicInfo.xml; inner archives' own are not read. In a solid
      * archive, [cheapOnly] reads it only when it is stored before the first page.
      */
-    override fun comicInfo(cheapOnly: Boolean): ComicInfo? {
+    override fun comicInfo(cheapOnly: Boolean): ComicInfo? = withRoot { reader ->
+        ComicInfo.read(reader, before = if (cheapOnly) cheapBefore(reader) else Int.MAX_VALUE)
+    }
+
+    override fun comicInfoCostly(): Boolean = withRoot { reader ->
+        val entry = ComicInfo.entryOf(reader)
+        entry != null && entry.index >= cheapBefore(reader)
+    }
+
+    /**
+     * The entry index a root entry must come before to be read without unpacking pages
+     * the first one does not need: any, unless the root is solid.
+     */
+    private fun cheapBefore(reader: ArchiveReader): Int =
+        if (reader.randomAccess) Int.MAX_VALUE else pages.firstOrNull()?.takeIf { it.slot === slots[0] }?.entry?.index ?: 0
+
+    private inline fun <T> withRoot(block: (ArchiveReader) -> T): T {
         val root = slots[0]
         val reader = acquire(root)
         try {
-            if (!cheapOnly || reader.randomAccess) return ComicInfo.read(reader)
-            val first = pages.firstOrNull()?.takeIf { it.slot === root }?.entry?.index ?: return null
-            return ComicInfo.read(reader, before = first)
+            return block(reader)
         } finally {
             release(root)
         }

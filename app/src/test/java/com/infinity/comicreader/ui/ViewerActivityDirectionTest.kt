@@ -114,6 +114,24 @@ class ViewerActivityDirectionTest {
     }
 
     @Test
+    fun aComicInfoStoredAfterThePagesOfASolidArchiveTurnsTheBookOnceRead() {
+        val pages = (0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
+        val book = Fixtures.sevenZip(File(dir, "Series B v01.cb7"), *(pages + Fixtures.entry("ComicInfo.xml", rtlInfo.toByteArray())).toTypedArray())
+        val viewer = launch(book).get()
+        awaitOpen(viewer)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (viewer.pagerDirection() != View.LAYOUT_DIRECTION_RTL && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        assertEquals("Right-to-left (from ComicInfo)", viewer.hint().text.toString())
+        // Kept with the library's facts, so the next open knows at once.
+        val facts = BookFactsCache(ApplicationProvider.getApplicationContext()).get(book.absolutePath, book.length())
+        assertEquals(DirectionDetection.Source.COMIC_INFO, facts?.detected?.source)
+    }
+
+    @Test
     fun aFolderDirectionIsNeverOverridden() {
         val book = book("Series B v01.cbz", rtlInfo)
         library.setSeries(dir.absolutePath, SeriesSettings("paged", "ltr", "screen", false))

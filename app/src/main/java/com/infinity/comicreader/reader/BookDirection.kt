@@ -10,6 +10,9 @@ object BookDirection {
     /** True when [file] is a book whose first page may be a wraparound cover; a loose page is not its folder's cover. */
     fun hasCover(file: File): Boolean = !Formats.isImageName(file.name)
 
+    /** What a book's contents told: [detected]; [complete] is false when its ComicInfo was left unread for its cost. */
+    data class Contents(val detected: DirectionDetection.Detected?, val complete: Boolean = true)
+
     /**
      * What [source], opened from [file], tells without its cover. A single image stands for
      * the folder of [siblings] it is read with, whose names are its pages. A book's [facts],
@@ -21,11 +24,11 @@ object BookDirection {
         source: PageSource,
         siblings: List<File> = emptyList(),
         facts: BookFacts? = null
-    ): DirectionDetection.Detected? {
-        if (!hasCover(file)) return DirectionDetection.fromContents(null, file.parentFile?.name.orEmpty(), siblings.map { it.name })
-        if (facts != null) return facts.detected
+    ): Contents {
+        if (!hasCover(file)) return Contents(DirectionDetection.fromContents(null, file.parentFile?.name.orEmpty(), siblings.map { it.name }))
+        if (facts != null) return Contents(facts.detected)
         val names = (0 until source.pageCount).mapNotNull { source.pageName(it) }
-        return DirectionDetection.fromContents(source.comicInfo(cheapOnly = true), file.name, names)
+        return Contents(DirectionDetection.fromContents(source.comicInfo(cheapOnly = true), file.name, names), !source.comicInfoCostly())
     }
 
     /**

@@ -62,6 +62,7 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.BookDirection
+import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.reader.Chapter
 import com.infinity.comicreader.reader.Chapters
 import com.infinity.comicreader.reader.DirectionDetection
@@ -189,8 +190,8 @@ class ViewerActivity : AppCompatActivity() {
 
     private var openJob: Job? = null
 
-    /** Looks for the open book's wraparound cover front after it shows ([scanCover]). */
-    private var coverJob: Job? = null
+    /** Finishes the open book's direction detection after it shows ([detectAfterOpen]). */
+    private var lateDetectionJob: Job? = null
 
     /** Counts the reader's own direction choices, so a late cover finding never undoes one. */
     private var directionChoices = 0
@@ -708,11 +709,11 @@ class ViewerActivity : AppCompatActivity() {
         detection = null
         resolveLayout()
 
-        coverJob?.cancel()
+        lateDetectionJob?.cancel()
         openJob = lifecycleScope.launch {
             // A folder with its own layout keeps its direction: nothing to detect.
             val detect = prefs.detectDirection && !seriesActive
-            val (opened, siblings, detected) = withContext(AppDispatchers.io) {
+            val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, cancelled = { !job.isActive }) }
                 try {
@@ -742,13 +743,14 @@ class ViewerActivity : AppCompatActivity() {
                 finish()
                 return@launch
             }
-            detection = detected
+            detection = contents?.detected
             applyDetection()
             source = src
             setup(src)
             noteDetection()
-            if (detect && BookDirection.hasCover(target) && !Thumbs.frontKnown(target) && !DirectionDetection.outranksCover(detected)) {
-                scanCover(target, src)
+            if (contents != null && BookDirection.hasCover(target)) {
+                val coverPending = !Thumbs.frontKnown(target) && !DirectionDetection.outranksCover(contents.detected)
+                if (!contents.complete || coverPending) detectAfterOpen(target, src, contents)
             }
         }
     }
@@ -758,32 +760,48 @@ class ViewerActivity : AppCompatActivity() {
      * the library's facts of the book when it has them, else its cheap contents, then the
      * cover's front half when this session already found it. Blocking.
      */
-    private fun detectBeforeOpen(target: File, src: PageSource, siblings: List<File>): DirectionDetection.Detected? {
+    private fun detectBeforeOpen(target: File, src: PageSource, siblings: List<File>): BookDirection.Contents {
         if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
         factsCache.load()
         val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(target.absolutePath, target.length()))
-        return DirectionDetection.withCover(contents, Thumbs.knownFront(target))
+        return contents.copy(detected = DirectionDetection.withCover(contents.detected, Thumbs.knownFront(target)))
     }
 
     /**
-     * Looks for a wraparound cover's front half once the book shows, and turns the book to
-     * the direction it gives while the reader is still where it opened and has not chosen
-     * a direction; otherwise the finding waits for the next open.
+     * Once the book shows, finishes what [detectBeforeOpen] left: a ComicInfo too costly to
+     * read first (read with the library's facts, through its own file handle, and kept for
+     * them), then a wraparound cover's front half. The book turns to the direction found
+     * while the reader is still where it opened and has not chosen one; otherwise the
+     * finding waits for the next open.
      */
-    private fun scanCover(book: File, src: PageSource) {
+    private fun detectAfterOpen(book: File, src: PageSource, before: BookDirection.Contents) {
         val openedAt = currentIndex
         val choices = directionChoices
-        coverJob = lifecycleScope.launch {
-            val front = withContext(AppDispatchers.io) {
-                runCatching { BookDirection.coverFront(src) }.getOrNull().also {
+        val charset = prefs.charset
+        lateDetectionJob = lifecycleScope.launch {
+            val found = withContext(AppDispatchers.io) {
+                var contents = before.detected
+                if (!before.complete) {
+                    val facts = runCatching { BookFactsReader.read(book, charset, cacheDir) }.getOrNull()
                     ensureActive()
-                    Thumbs.rememberFront(book, it)
+                    if (facts != null) {
+                        factsCache.put(book.absolutePath, book.length(), facts)
+                        contents = facts.detected
+                    }
                 }
+                if (DirectionDetection.outranksCover(contents)) return@withContext contents
+                val front = if (Thumbs.frontKnown(book)) {
+                    Thumbs.knownFront(book)
+                } else {
+                    runCatching { BookDirection.coverFront(src) }.getOrNull().also {
+                        ensureActive()
+                        Thumbs.rememberFront(book, it)
+                    }
+                }
+                DirectionDetection.withCover(contents, front)
             }
             if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch
-            if (!prefs.detectDirection || seriesActive) return@launch
-            val found = DirectionDetection.withCover(detection, front)
-            if (found == detection) return@launch
+            if (!prefs.detectDirection || seriesActive || found == detection) return@launch
             detection = found
             if (reloadLayout()) attach()
             invalidateOptionsMenu()
@@ -792,8 +810,8 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun closeSource() {
-        coverJob?.cancel()
-        coverJob = null
+        lateDetectionJob?.cancel()
+        lateDetectionJob = null
         adapter?.release()
         adapter = null
         stripAheadJob?.cancel()

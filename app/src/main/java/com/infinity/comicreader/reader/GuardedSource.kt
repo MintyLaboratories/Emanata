@@ -73,6 +73,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    override fun comicInfoCostly(): Boolean {
+        if (!enter()) return false
+        try {
+            return inner.comicInfoCostly()
+        } finally {
+            exit()
+        }
+    }
+
     override fun close() {
         synchronized(lock) {
             closing = true

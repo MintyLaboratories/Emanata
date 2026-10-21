@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.reader.Fixtures.entry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -56,13 +57,20 @@ class ArchiveSourceTest {
         val after = Fixtures.sevenZip(File(tmp.root, "after.cb7"), entry("01.jpg"), entry("02.jpg"), info)
         open(after).use { src ->
             assertNull(src.comicInfo(cheapOnly = true))
+            assertTrue(src.comicInfoCostly())
             assertEquals(2004, src.comicInfo()?.year)
         }
         val before = Fixtures.sevenZip(File(tmp.root, "before.cb7"), info, entry("01.jpg"), entry("02.jpg"))
-        open(before).use { assertEquals(2004, it.comicInfo(cheapOnly = true)?.year) }
+        open(before).use {
+            assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
+            assertFalse(it.comicInfoCostly())
+        }
         // Zip reads any entry directly.
         val zip = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), info)
-        open(zip).use { assertEquals(2004, it.comicInfo(cheapOnly = true)?.year) }
+        open(zip).use {
+            assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
+            assertFalse(it.comicInfoCostly())
+        }
     }
 
     @Test

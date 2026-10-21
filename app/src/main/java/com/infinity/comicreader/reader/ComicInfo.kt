@@ -95,11 +95,14 @@ data class ComicInfo(
          * be read, or when it is not stored before entry index [before].
          */
         fun read(reader: ArchiveReader, before: Int = Int.MAX_VALUE): ComicInfo? {
-            val entry = reader.entries.filter { isComicInfo(it.path) }
-                .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } } ?: return null
+            val entry = entryOf(reader) ?: return null
             if (entry.index >= before) return null
             return runCatching { reader.read(entry) { parse(readUpTo(it, MAX_BYTES)) } }.getOrNull()
         }
+
+        /** The ComicInfo.xml entry [read] reads; null when there is none. */
+        fun entryOf(reader: ArchiveReader): ArchiveEntry? = reader.entries.filter { isComicInfo(it.path) }
+            .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } }
 
         /** At most [max] bytes of [input]. */
         private fun readUpTo(input: InputStream, max: Int): ByteArray {

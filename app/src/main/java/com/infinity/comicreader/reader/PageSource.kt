@@ -35,4 +35,7 @@ interface PageSource : Closeable {
      * null when reading it would first unpack pages the first one does not need.
      */
     fun comicInfo(cheapOnly: Boolean = false): ComicInfo? = null
+
+    /** True when the book has a ComicInfo.xml that [comicInfo] with `cheapOnly` skips. */
+    fun comicInfoCostly(): Boolean = false
 }

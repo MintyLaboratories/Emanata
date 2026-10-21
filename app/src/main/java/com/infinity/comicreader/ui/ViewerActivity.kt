@@ -1550,8 +1550,9 @@ class ViewerActivity : AppCompatActivity() {
         menu.findItem(R.id.menu_auto_scroll)?.isChecked = autoScrolling
         menu.findItem(R.id.menu_auto_next)?.isChecked = prefs.autoNext
         prepareFavorites(menu)
-        menu.findItem(R.id.menu_book_chapters)?.isVisible = bookChapters.isNotEmpty()
-        menu.findItem(R.id.menu_chapters)?.isEnabled = chapters.size > 1
+        val drawer = ChapterDrawer.hasEntries(bookChapters, chapters)
+        menu.findItem(R.id.menu_book_chapters)?.isVisible = drawer
+        menu.findItem(R.id.menu_chapters)?.isVisible = drawer
         menu.findItem(R.id.menu_prev_chapter)?.isEnabled = prevChapter() != null
         menu.findItem(R.id.menu_next_chapter)?.isEnabled = nextChapter() != null
         return super.onPrepareOptionsMenu(menu)
@@ -1599,8 +1600,7 @@ class ViewerActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.menu_tune -> { showReaderSheet(); true }
-            R.id.menu_chapters -> { showChapterList(); true }
-            R.id.menu_book_chapters -> { showChapterDrawer(); true }
+            R.id.menu_chapters, R.id.menu_book_chapters -> { showChapterDrawer(); true }
             R.id.menu_auto_scroll -> { toggleAutoScroll(); true }
             R.id.menu_auto_next -> { setAutoNext(!prefs.autoNext); true }
             R.id.menu_share_page -> { exportPage(share = true); true }
@@ -2059,42 +2059,21 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun swipeMinPx(): Int = (resources.displayMetrics.widthPixels / 8f).toInt()
 
-    // ------------------------------------------------------------------ chapter list
-
-    private fun showChapterList() {
-        val list = chapters
-        if (list.size < 2) return
-        val read = library.readSet()
-        val current = siblingIndex()
-        val labels = list.mapIndexed { i, f ->
-            val mark = when {
-                i == current -> "▶ "
-                f.absolutePath in read -> "✓ "
-                else -> "     "
-            }
-            mark + chapterLabel(f)
-        }.toTypedArray()
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.chapters_title)
-            .setItems(labels) { _, which -> if (which != current) openChapter(list[which], 0) }
-            .setNegativeButton(R.string.close, null)
-            .create()
-        dialog.show()
-        if (current > 2) dialog.listView.setSelection(current - 2)
-    }
+    // ------------------------------------------------------------------ chapter drawer
 
     /** The chapters of [src]: [Chapters.of] its page paths. */
     private fun chaptersOf(src: PageSource): List<Chapter> =
         Chapters.of(List(src.pageCount) { src.pageName(it) })
 
     /**
-     * The chapter drawer: the open book's chapters from the start edge, the current one
-     * highlighted; tapping one goes to its first page. Opened from the toolbar only, as an
-     * edge swipe would clash with the system back gesture.
+     * The chapter drawer from the start edge: the open book's chapters, then the files in
+     * its folder, the current ones highlighted. A chapter goes to its first page, a file
+     * opens. Opened from the toolbar or the menu, as an edge swipe would clash with the
+     * system back gesture.
      */
     private fun showChapterDrawer() {
-        val list = bookChapters
-        if (list.isEmpty()) return
+        val rows = ChapterDrawer.rows(bookChapters, currentIndex, chapters, file?.absolutePath, library.readSet())
+        if (rows.isEmpty()) return
         val view = layoutInflater.inflate(R.layout.sheet_chapters, null)
         val dialog = SideSheetDialog(this)
         val width = minOf(
@@ -2104,14 +2083,21 @@ class ViewerActivity : AppCompatActivity() {
         dialog.setContentView(view, ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT))
         dialog.setSheetEdge(Gravity.START)
         view.findViewById<TextView>(R.id.chapters_title).text = file?.let { chapterLabel(it) }
-        val current = Chapters.indexAt(list, currentIndex)
+        val current = ChapterDrawer.currentRow(rows)
         val rv = view.findViewById<RecyclerView>(R.id.chapters_list)
         val lm = LinearLayoutManager(this)
         rv.layoutManager = lm
-        rv.adapter = ChapterAdapter(list, current) { chapter ->
-            dialog.dismiss()
-            goTo(chapter.first)
-        }
+        rv.adapter = ChapterAdapter(
+            rows,
+            onChapter = { chapter ->
+                dialog.dismiss()
+                goTo(chapter.first)
+            },
+            onFile = { f ->
+                dialog.dismiss()
+                if (f.absolutePath != file?.absolutePath) openChapter(f, 0)
+            }
+        )
         // Two rows of context above the current chapter.
         if (current > 2) lm.scrollToPositionWithOffset(current - 2, 0)
         dialog.show()

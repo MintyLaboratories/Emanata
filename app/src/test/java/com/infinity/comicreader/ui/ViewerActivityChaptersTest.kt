@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.sidesheet.SideSheetDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Library
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,7 +31,7 @@ import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** The chapter drawer lists a book's folders, highlights the current one and jumps to a tapped one. */
+/** The chapter drawer lists a book's folders and its folder's files, highlights the current ones and goes to a tapped one. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ViewerActivityChaptersTest {
@@ -47,8 +48,8 @@ class ViewerActivityChaptersTest {
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
-    private fun book(name: String, entries: List<String>): File {
-        val f = File(tmp.root, name)
+    private fun book(name: String, entries: List<String>, dir: File = tmp.root): File {
+        val f = File(dir, name)
         ZipOutputStream(f.outputStream()).use { zip ->
             for (e in entries) {
                 zip.putNextEntry(ZipEntry(e))
@@ -107,22 +108,45 @@ class ViewerActivityChaptersTest {
         val viewer = launch(book("parts.cbz", parts), 3)
         assertTrue(viewer.drawerButtonShown())
         val (_, list) = viewer.openDrawer()
-        assertEquals(3, list.adapter!!.itemCount)
-        assertEquals("Part 2", list.row(1).findViewById<TextView>(R.id.chapter_name).text.toString())
-        assertEquals(context.getString(R.string.chapter_pages, 3, 4), list.row(1).findViewById<TextView>(R.id.chapter_pages).text.toString())
-        assertEquals(context.getString(R.string.chapter_page, 5), list.row(2).findViewById<TextView>(R.id.chapter_pages).text.toString())
-        assertFalse(list.row(0).isActivated)
-        assertTrue(list.row(1).isActivated)
-        assertFalse(list.row(2).isActivated)
+        // A heading, then the three folders; the book is alone in its folder, so no folder section.
+        assertEquals(4, list.adapter!!.itemCount)
+        assertEquals(context.getString(R.string.chapters_in_book), list.row(0).findViewById<TextView>(R.id.chapters_section).text.toString())
+        assertEquals("Part 2", list.row(2).findViewById<TextView>(R.id.chapter_name).text.toString())
+        assertEquals(context.getString(R.string.chapter_pages, 3, 4), list.row(2).findViewById<TextView>(R.id.chapter_pages).text.toString())
+        assertEquals(context.getString(R.string.chapter_page, 5), list.row(3).findViewById<TextView>(R.id.chapter_pages).text.toString())
+        assertFalse(list.row(1).isActivated)
+        assertTrue(list.row(2).isActivated)
+        assertFalse(list.row(3).isActivated)
     }
 
     @Test
     fun tappingAChapterJumpsToItsFirstPage() {
         val viewer = launch(book("parts.cbz", parts), 0)
         val (dialog, list) = viewer.openDrawer()
-        list.row(2).performClick()
+        list.row(3).performClick()
         idle()
         assertEquals(4, viewer.page())
         assertFalse(dialog.isShowing)
+    }
+
+    @Test
+    fun filesInTheFolderShowAndOpen() {
+        val shelf = tmp.newFolder("shelf")
+        val first = book("Book 01.cbz", listOf("01.png", "02.png"), shelf)
+        val second = book("Book 02.cbz", listOf("01.png", "02.png"), shelf)
+        Library(context).setRead(second.absolutePath, true)
+        val viewer = launch(first, 0)
+        assertTrue(viewer.drawerButtonShown())
+        val (dialog, list) = viewer.openDrawer()
+        assertEquals(3, list.adapter!!.itemCount)
+        assertEquals(context.getString(R.string.chapters_in_folder), list.row(0).findViewById<TextView>(R.id.chapters_section).text.toString())
+        assertEquals("Book 01", list.row(1).findViewById<TextView>(R.id.chapter_name).text.toString())
+        assertTrue(list.row(1).isActivated)
+        assertEquals(View.GONE, list.row(1).findViewById<View>(R.id.chapter_pages).visibility)
+        assertEquals(context.getString(R.string.chapter_read), list.row(2).findViewById<TextView>(R.id.chapter_pages).text.toString())
+        list.row(2).performClick()
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(second.absolutePath, shadowOf(viewer).nextStartedActivity.getStringExtra(ViewerActivity.EXTRA_PATH))
     }
 }

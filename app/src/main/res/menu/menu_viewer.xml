@@ -17,7 +17,7 @@
     <item
         android:id="@+id/menu_book_chapters"
         android:icon="@drawable/ic_toc"
-        android:title="@string/menu_book_chapters"
+        android:title="@string/chapters_title"
         android:visible="false"
         app:showAsAction="ifRoom" />
 
@@ -39,7 +39,8 @@
 
     <item
         android:id="@+id/menu_chapters"
-        android:title="@string/menu_chapters"
+        android:title="@string/chapters_title"
+        android:visible="false"
         app:showAsAction="never" />
 
     <item

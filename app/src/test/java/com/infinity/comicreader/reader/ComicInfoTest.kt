@@ -94,6 +94,25 @@ class ComicInfoTest {
     }
 
     @Test
+    fun encodingFromMarkOrDeclaration() {
+        val body = "<ComicInfo><Series>Zażółć</Series><Year>2004</Year></ComicInfo>"
+        val utf16 = ComicInfo.parse("\uFEFF<?xml version=\"1.0\" encoding=\"UTF-16\"?>$body".toByteArray(Charsets.UTF_16LE))
+        assertEquals("Zażółć", utf16.series)
+        assertEquals(2004, utf16.year)
+        assertEquals("Zażółć", ComicInfo.parse("<?xml version=\"1.0\"?>$body".toByteArray(Charsets.UTF_16BE)).series)
+        val latin2 = ComicInfo.parse("<?xml version='1.0' encoding='ISO-8859-2'?>$body".toByteArray(charset("ISO-8859-2")))
+        assertEquals("Zażółć", latin2.series)
+    }
+
+    @Test
+    fun undecodableBytesKeepTheRest() {
+        // Latin-1 bytes with no declaration: read as UTF-8, the stray byte is replaced, not fatal.
+        val info = ComicInfo.parse("<ComicInfo><Summary>café</Summary><Year>2004</Year></ComicInfo>".toByteArray(Charsets.ISO_8859_1))
+        assertEquals(2004, info.year)
+        assertEquals(Charsets.UTF_8, ComicInfo.charsetOf("<?xml version=\"1.0\" encoding=\"no-such\"?>".toByteArray()))
+    }
+
+    @Test
     fun externalEntitiesAreNeverRead() {
         val xml = """<?xml version="1.0"?><!DOCTYPE ComicInfo [<!ENTITY x SYSTEM "file:///etc/hostname">]>""" +
             "<ComicInfo><Series>A&x;</Series><Year>2003</Year></ComicInfo>"

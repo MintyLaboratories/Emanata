@@ -7,6 +7,7 @@ import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.StringReader
+import java.nio.charset.Charset
 import java.util.Locale
 import javax.xml.parsers.SAXParserFactory
 
@@ -56,7 +57,7 @@ data class ComicInfo(
                 val reader = factory.newSAXParser().xmlReader
                 reader.contentHandler = handler
                 reader.setEntityResolver { _, _ -> InputSource(StringReader("")) }
-                reader.parse(InputSource(StringReader(xml.trimStart('﻿'))))
+                reader.parse(InputSource(StringReader(xml.trimStart('\uFEFF'))))
             } catch (e: SAXException) {
                 // Lenient: keep what came before the error.
             } catch (e: Exception) {
@@ -65,8 +66,29 @@ data class ComicInfo(
             return handler.result()
         }
 
-        /** [bytes] as UTF-8 (the encoding ComicInfo writers use), parsed by [parse]. */
-        fun parse(bytes: ByteArray): ComicInfo = parse(String(bytes, Charsets.UTF_8))
+        /** [bytes] in the encoding [charsetOf] finds, parsed by [parse]; bytes that do not decode become U+FFFD. */
+        fun parse(bytes: ByteArray): ComicInfo = parse(String(bytes, charsetOf(bytes)))
+
+        private val DECLARED = Regex("""^<\?xml[^>]*?\sencoding\s*=\s*["']([A-Za-z][A-Za-z0-9._:-]*)["']""")
+
+        /**
+         * The encoding of an XML document: its byte order mark, else UTF-16 by the
+         * pattern of `<?`, else its declaration, else UTF-8 (what ComicInfo writers use).
+         */
+        internal fun charsetOf(bytes: ByteArray): Charset {
+            fun at(i: Int) = if (i < bytes.size) bytes[i].toInt() and 0xFF else -1
+            return when {
+                at(0) == 0xEF && at(1) == 0xBB && at(2) == 0xBF -> Charsets.UTF_8
+                at(0) == 0xFE && at(1) == 0xFF || at(0) == 0xFF && at(1) == 0xFE -> Charsets.UTF_16
+                at(0) == 0x3C && at(1) == 0 && at(2) == 0x3F && at(3) == 0 -> Charsets.UTF_16LE
+                at(0) == 0 && at(1) == 0x3C && at(2) == 0 && at(3) == 0x3F -> Charsets.UTF_16BE
+                else -> {
+                    val head = String(bytes, 0, minOf(bytes.size, 200), Charsets.ISO_8859_1)
+                    DECLARED.find(head)?.groupValues?.get(1)
+                        ?.let { name -> runCatching { Charset.forName(name) }.getOrNull() } ?: Charsets.UTF_8
+                }
+            }
+        }
 
         /** The ComicInfo.xml nearest the top of [reader]; null when there is none or it cannot be read. */
         fun read(reader: ArchiveReader): ComicInfo? {

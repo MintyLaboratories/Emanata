@@ -254,6 +254,15 @@
             app:key="pref_crop_anchor"
             app:title="@string/pref_crop_anchor"
             app:useSimpleSummaryProvider="true" />
+        <SeekBarPreference
+            android:max="32"
+            app:defaultValue="8"
+            app:key="pref_cover_spacing"
+            app:min="0"
+            app:seekBarIncrement="2"
+            app:showSeekBarValue="true"
+            app:summary="@string/pref_cover_spacing_desc"
+            app:title="@string/pref_cover_spacing" />
         <!-- One entry per tab; each opens that tab's view settings. -->
         <Preference
             app:key="view_browse"

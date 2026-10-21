@@ -163,6 +163,14 @@ class ListActivityLiveSettingsTest {
     }
 
     @Test
+    fun coverSpacingAppliesLive() {
+        val list = launch()
+        prefs.coverSpacing = 16
+        idle()
+        assertEquals(16, (list.recycler().adapter as BookAdapter).options.spacing)
+    }
+
+    @Test
     fun eachTabKeepsItsOwnView() {
         val list = launch()
         idle()

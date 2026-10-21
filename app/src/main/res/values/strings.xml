@@ -85,6 +85,8 @@
     <string name="thumb_fit_fit">Fit</string>
     <string name="thumb_fit_auto">Auto</string>
     <string name="pref_crop_anchor">Crop anchor</string>
+    <string name="pref_cover_spacing">Cover spacing</string>
+    <string name="pref_cover_spacing_desc">Space between covers in the grid, in dp</string>
     <string name="crop_anchor_top">Top</string>
     <string name="crop_anchor_center">Center</string>
     <string name="menu_mark_read">Mark as read</string>

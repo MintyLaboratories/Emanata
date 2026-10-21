@@ -97,6 +97,28 @@ class ListActivityCoversTest {
     }
 
     @Test
+    fun coverSpacingSetsTheGapBetweenCells() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 3, 0)
+        prefs.coverSpacing = 20
+        val cards = rows()
+        val dp = cards[0].resources.displayMetrics.density
+        // Two half gaps between neighbors, one at the list's edge.
+        assertEquals((10 * dp).toInt(), cards[0].left)
+        assertEquals((20 * dp).toInt(), cards[1].left - cards[0].right)
+        // The cover sits 4 dp inside its card.
+        assertEquals((4 * dp).toInt(), (cards[0].findViewById<View>(R.id.cover).parent as View).paddingLeft)
+    }
+
+    @Test
+    fun coverSpacingIsClampedAndDefaultsToEight() {
+        assertEquals(8, prefs.coverSpacing)
+        prefs.coverSpacing = 99
+        assertEquals(Prefs.COVER_SPACING_MAX, prefs.coverSpacing)
+        prefs.coverSpacing = -3
+        assertEquals(0, prefs.coverSpacing)
+    }
+
+    @Test
     fun listThumbnailsFollowTheDensity() {
         prefs.setGrid(Prefs.TAB_BROWSE, false)
         prefs.setDensity(Prefs.TAB_BROWSE, ListDensity.LARGE)

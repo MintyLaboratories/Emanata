@@ -360,7 +360,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (old == s) return
         applied = s
         if (s.views[tabName()] != old.views[tabName()]) applyView()
-        if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay) adapter.options = rowOptions()
+        if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay || s.coverSpacing != old.coverSpacing) {
+            adapter.options = rowOptions()
+        }
         if (s.shortenPrefixes != old.shortenPrefixes && mode == TAB_BROWSE) refreshCurrent()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
@@ -518,7 +520,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     private fun rowOptions() =
-        RowOptions(density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay, detail = view.detail)
+        RowOptions(
+            density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay, detail = view.detail,
+            spacing = prefs.coverSpacing
+        )
 
     /** The current tab's view settings. */
     private val view: TabView get() = prefs.view(tabName())

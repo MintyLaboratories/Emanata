@@ -34,13 +34,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** How rows look beyond grid or list: list thumbnail size, cover shape, titles and details. */
 data class RowOptions(
     val density: ListDensity = ListDensity.NORMAL,
     val shape: CoverShape = CoverShape.BOOK,
     val title: TitleDisplay = TitleDisplay.DOUBLE,
-    val detail: DetailDisplay = DetailDisplay.COMFORTABLE
+    val detail: DetailDisplay = DetailDisplay.COMFORTABLE,
+    /** Space between grid cells, in dp. */
+    val spacing: Int = Prefs.COVER_SPACING_DEFAULT
 )
 
 /**
@@ -360,6 +363,9 @@ class BookAdapter(
         val cardParams = card.layoutParams as? ViewGroup.MarginLayoutParams ?: return
         val coverParams = cover.layoutParams as LinearLayout.LayoutParams
         val body = cover.parent as View
+        // Neighbors' halves add up to the spacing; the list's edges get a half.
+        val half = (options.spacing * card.resources.displayMetrics.density / 2).roundToInt()
+        cardParams.setMargins(half, half, half, half)
         val rows = cellHeight > 0
         cardParams.height = if (rows) {
             cellHeight - cardParams.topMargin - cardParams.bottomMargin

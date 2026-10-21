@@ -69,7 +69,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Compact, Normal (default), Large, Extra large or Huge, applied live. A
   progress badge too wide for its thumbnail shows a percentage, or a dot.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
-  largest box of that shape that fits the cell, centered.
+  largest box of that shape that fits the cell, centered. **Cover spacing**
+  (Settings, 0–32 dp, default 8) sets the gap between grid covers.
 - Covers are made at the exact size of their cell (Lanczos3-scaled, drawn 1:1)
   and cached losslessly.
 - **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover

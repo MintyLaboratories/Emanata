@@ -40,7 +40,9 @@ class PrefsUpgradeTest {
             Prefs.upgrade(mapOf("pref_sort" to "size", "pref_sort_dir" to "desc"))
         )
         assertEquals("added:flipped", Prefs.upgrade(mapOf("pref_sort" to "date"))["pref_sort_browse_by"])
-        assertEquals("type", Prefs.upgrade(mapOf("pref_sort" to "type", "pref_sort_dir" to "asc"))["pref_sort_browse_by"])
+        // The old type order was folder, image, archive, PDF: ascending put images first.
+        assertEquals("type:flipped", Prefs.upgrade(mapOf("pref_sort" to "type", "pref_sort_dir" to "asc"))["pref_sort_browse_by"])
+        assertEquals("type", Prefs.upgrade(mapOf("pref_sort" to "type", "pref_sort_dir" to "desc"))["pref_sort_browse_by"])
         assertEquals("name:flipped", Prefs.upgrade(mapOf("pref_sort_dir" to "desc"))["pref_sort_favorites_by"])
     }
 

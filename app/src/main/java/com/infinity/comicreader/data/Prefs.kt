@@ -486,12 +486,12 @@ class Prefs(context: Context) {
         /**
          * The old single sort ("name", "size", "date", "type"), ascending unless
          * [descending], as a sort level: dates are when files were added, and
-         * "type" ascending put archives before images.
+         * "type" ascending put images before archives.
          */
         private fun sortLevelOf(old: String?, descending: Boolean): SortLevel = when (old) {
             "size" -> SortLevel(SortKey.SIZE, flipped = !descending)
             "date" -> SortLevel(SortKey.ADDED, flipped = !descending)
-            "type" -> SortLevel(SortKey.TYPE, flipped = descending)
+            "type" -> SortLevel(SortKey.TYPE, flipped = !descending)
             else -> SortLevel(SortKey.NAME, flipped = descending)
         }
 

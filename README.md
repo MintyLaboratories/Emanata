@@ -50,7 +50,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (glides to the end, rests, glides back) or Marquee (loops leftward). Only
   overflowing titles move, at about 30 dp/s, all in sync, paused while
   scrolling, with soft edges; with system animations removed they hold still,
-  cut in the middle.
+  cut in the middle. **Shorten repeated prefixes** (on by default) leaves out
+  the series name all items of a Set share (`Lumen - 001.cbz` shows as `001.cbz`).
 - **Detail display** (per tab): Hidden, Comfortable (details on their own line)
   or Dense (right-aligned at the end of the title's last line, in small gray
   tabular digits: folders `12`, `3/12`; comics `192 · 87 MB`, `40/192 · 87 MB`).

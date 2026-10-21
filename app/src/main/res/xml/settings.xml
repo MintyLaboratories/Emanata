@@ -36,6 +36,11 @@
             app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
+            app:key="pref_shorten_prefixes"
+            app:summary="@string/pref_shorten_prefixes_desc"
+            app:title="@string/pref_shorten_prefixes" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
             app:key="pref_list_pathview"
             app:title="@string/pref_list_pathview" />
         <SwitchPreferenceCompat

@@ -279,6 +279,8 @@
     <string name="pref_sort">Sort entries by</string>
     <string name="pref_sort_dir">Sort direction</string>
     <string name="pref_title_display">Title display</string>
+    <string name="pref_shorten_prefixes">Shorten repeated prefixes</string>
+    <string name="pref_shorten_prefixes_desc">Inside a set, leave out the series name all items share</string>
     <string name="title_hidden">Hidden</string>
     <string name="title_single">Single line</string>
     <string name="title_middle">Single line, middle</string>

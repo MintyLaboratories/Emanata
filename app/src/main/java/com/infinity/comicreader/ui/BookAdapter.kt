@@ -128,6 +128,9 @@ class BookAdapter(
     /** Caps concurrent cover decodes; a row scrolled away before its turn is never decoded. */
     private val gate = Semaphore(THUMB_THREADS)
 
+    /** Left out of the titles that start with it: the series name inside a Set. Set before [submit]. */
+    var titlePrefix: String? = null
+
     /** Path to draw a focus ring around, used after "open file location". */
     var highlightPath: String? = null
 
@@ -255,7 +258,7 @@ class BookAdapter(
         holder.title.mode = mode
         holder.title.reserve = grid
         holder.title.clock = clock
-        holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: item.name
+        holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: shortName(item)
         val dense = if (options.detail == DetailDisplay.DENSE) {
             DetailText.dense(item) { FileUtils.formatSize(context, it) }.ifEmpty { null }
         } else {
@@ -382,6 +385,11 @@ class BookAdapter(
         params.width = width
         params.height = height
         box.layoutParams = params
+    }
+
+    private fun shortName(item: BookEntry): String {
+        val prefix = titlePrefix ?: return item.name
+        return if (item.type != EntryType.IMAGE && item.name.startsWith(prefix)) item.name.substring(prefix.length) else item.name
     }
 
     private fun applyHighlight(holder: BookHolder, item: BookEntry) {

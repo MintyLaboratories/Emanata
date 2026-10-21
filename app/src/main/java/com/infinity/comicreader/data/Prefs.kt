@@ -240,6 +240,11 @@ class Prefs(context: Context) {
         get() = TitleDisplay.of(sp.getString(KEY_TITLE_DISPLAY, null))
         set(v) = put(KEY_TITLE_DISPLAY, v.key)
 
+    /** Inside a Set, leave out the series name every item's title starts with. */
+    var shortenPrefixes: Boolean
+        get() = bool(KEY_SHORTEN_PREFIXES, true)
+        set(v) = put(KEY_SHORTEN_PREFIXES, v)
+
     var listPathView: Boolean
         get() = bool(KEY_PATHVIEW, true)
         set(v) = put(KEY_PATHVIEW, v)
@@ -407,6 +412,7 @@ class Prefs(context: Context) {
         private const val KEY_SORT = "pref_sort"
         private const val KEY_SORT_DIR = "pref_sort_dir"
         private const val KEY_TITLE_DISPLAY = "pref_title_display"
+        private const val KEY_SHORTEN_PREFIXES = "pref_shorten_prefixes"
         private const val KEY_PATHVIEW = "pref_list_pathview"
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
@@ -425,7 +431,7 @@ class Prefs(context: Context) {
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
-            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,

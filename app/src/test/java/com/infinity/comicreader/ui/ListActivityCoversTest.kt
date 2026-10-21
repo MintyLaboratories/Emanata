@@ -46,7 +46,13 @@ class ListActivityCoversTest {
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     /** The cover boxes on screen, after a layout of the list. */
-    private fun boxes(): List<View> {
+    private fun boxes(): List<View> = rows().mapNotNull { it.findViewById(R.id.box) }
+
+    /** The titles on screen, after a layout of the list. */
+    private fun titles(): List<String> = rows().mapNotNull { it.findViewById<TitleView>(R.id.title)?.text?.toString() }
+
+    /** The rows on screen, after a layout of the list. */
+    private fun rows(): List<View> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
@@ -55,7 +61,7 @@ class ListActivityCoversTest {
             View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY)
         )
         recycler.layout(0, 0, 1600, 2400)
-        return (0 until recycler.childCount).mapNotNull { recycler.getChildAt(it).findViewById(R.id.box) }
+        return (0 until recycler.childCount).map { recycler.getChildAt(it) }
     }
 
     private fun ratio(v: View) = v.width.toFloat() / v.height
@@ -88,5 +94,12 @@ class ListActivityCoversTest {
         val dp = box.resources.displayMetrics.density
         assertEquals((120 * dp).toInt(), box.height)
         assertEquals((80 * dp).toInt(), box.width)
+    }
+
+    @Test
+    fun titlesInsideASetLeaveOutTheSeriesName() {
+        assertEquals(listOf("1.cbz", "2.cbz", "3.cbz"), titles())
+        prefs.shortenPrefixes = false
+        assertEquals(listOf("Issue 1.cbz", "Issue 2.cbz", "Issue 3.cbz"), titles())
     }
 }

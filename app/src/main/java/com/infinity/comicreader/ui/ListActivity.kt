@@ -127,6 +127,9 @@ class ListActivity : AppCompatActivity() {
     private lateinit var kindCache: FavoriteKindCache
     private val shown = ArrayList<BookEntry>()
 
+    /** What [setPrefixOf] found for the folder browsed. */
+    private var setPrefix: String? = null
+
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
             // Only read access is required to browse; write access (old Android) is a bonus.
@@ -263,6 +266,7 @@ class ListActivity : AppCompatActivity() {
         applied = s
         if (s.views[tabName()] != old.views[tabName()]) applyView()
         if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay) adapter.options = rowOptions()
+        if (s.shortenPrefixes != old.shortenPrefixes && mode == TAB_BROWSE) refreshCurrent()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
             // Coming back to the browse tab, onResume reloads the folder anyway.
@@ -464,11 +468,26 @@ class ListActivity : AppCompatActivity() {
 
         showProgress(true)
         launchListing {
-            val list = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
+            val (list, prefix) = withContext(AppDispatchers.io) {
+                val entries = buildDirectoryEntries(dir)
+                entries to setPrefixOf(dir, entries)
+            }
+            setPrefix = prefix
             progress.visibility = View.GONE
             displayEntries(list)
             if (highlight != null) scrollToHighlight(highlight)
         }
+    }
+
+    /**
+     * The series name every item of [dir] starts with, to leave out of their titles,
+     * when [dir] is a Set and the setting asks for it. Loose images are left out.
+     */
+    private fun setPrefixOf(dir: File, entries: List<BookEntry>): String? {
+        if (!prefs.shortenPrefixes) return null
+        val prefix = TitlePrefix.common(entries.filter { it.type != EntryType.IMAGE }.map { it.name }) ?: return null
+        val isRoot = roots.any { it.path == dir.absolutePath }
+        return prefix.takeIf { FavoriteClassifier.classify(dir, isRoot) == FavoriteKind.SET }
     }
 
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
@@ -709,6 +728,7 @@ class ListActivity : AppCompatActivity() {
 
         shown.clear()
         shown.addAll(filtered.sortedWith(comparator))
+        adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
         if (mode == TAB_FAVORITES && prefs.groupFavorites) {
             val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
             val collapsed = prefs.collapsedSections

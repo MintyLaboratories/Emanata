@@ -98,6 +98,7 @@
     <string name="all_files_access">Emanata needs access to all files to open comic folders anywhere on your device.</string>
     <string name="page_indicator">%1$d / %2$d</string>
     <string name="read_progress">%1$d / %2$d</string>
+    <string name="read_percent">%1$d%%</string>
     <string name="read_badge">Read</string>
     <string name="books_count">%1$d items</string>
     <string name="folder_read_summary">%1$d items · %2$d read</string>

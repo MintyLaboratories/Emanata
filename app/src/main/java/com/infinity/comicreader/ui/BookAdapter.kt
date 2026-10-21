@@ -404,22 +404,39 @@ class BookAdapter(
         }
     }
 
+    /**
+     * The read or progress pill on the cover. A list thumbnail too narrow for the
+     * text gets the percentage, or a bare dot.
+     */
     private fun bindBadge(badge: TextView, item: BookEntry) {
         val context = badge.context
         val hasProgress = item.pages > 0 && item.progressPage > 0
         val folderDone = item.isDir && item.childCount > 0 && item.readCount >= item.childCount
-        when {
+        val forms = when {
             item.read || folderDone -> {
-                badge.visibility = View.VISIBLE
-                badge.text = context.getString(R.string.read_badge)
                 setPill(badge, R.color.md_secondary, R.color.md_on_secondary)
+                listOf(context.getString(R.string.read_badge))
             }
             hasProgress -> {
-                badge.visibility = View.VISIBLE
-                badge.text = context.getString(R.string.read_progress, item.progressPage + 1, item.pages)
                 setPill(badge, R.color.md_primary, R.color.md_on_primary)
+                listOf(
+                    context.getString(R.string.read_progress, item.progressPage + 1, item.pages),
+                    context.getString(R.string.read_percent, BadgeFit.percent(item.progressPage, item.pages))
+                )
             }
-            else -> badge.visibility = View.GONE
+            else -> emptyList()
+        }
+        if (forms.isEmpty()) {
+            badge.visibility = View.GONE
+            return
+        }
+        badge.visibility = View.VISIBLE
+        badge.text = if (grid) forms[0] else {
+            val dp = context.resources.displayMetrics.density
+            val margins = (badge.layoutParams as? ViewGroup.MarginLayoutParams)?.let { it.leftMargin + it.rightMargin } ?: 0
+            val available = CoverGeometry.listBoxDp(options.density, options.shape)[0] * dp - margins
+            val padding = badge.paddingLeft + badge.paddingRight
+            BadgeFit.choose(forms, available) { badge.paint.measureText(it) + padding }
         }
     }
 

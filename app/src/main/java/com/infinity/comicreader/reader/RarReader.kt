@@ -27,13 +27,28 @@ class RarReader(file: File) : ArchiveReader {
 
     /**
      * junrar's [Archive] is not thread-safe; the adapter loads neighbors
-     * concurrently, so access is serialized here.
+     * concurrently, so access is serialized here. junrar unpacks on a thread of its own,
+     * so an entry [block] reads only the start of is read to its end before the next
+     * read may begin.
      */
     @Synchronized
     override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T =
-        archive.getInputStream(native[entry.index]).use(block)
+        archive.getInputStream(native[entry.index]).use { input ->
+            try {
+                block(input)
+            } finally {
+                runCatching {
+                    val sink = ByteArray(DRAIN_BYTES)
+                    while (input.read(sink) >= 0) Unit
+                }
+            }
+        }
 
     override fun close() {
         runCatching { archive.close() }
+    }
+
+    private companion object {
+        const val DRAIN_BYTES = 64 * 1024
     }
 }

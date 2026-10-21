@@ -74,4 +74,16 @@ class RarReaderTest {
             assertEquals("inner", src.text(0))
         }
     }
+
+    @Test
+    fun partlyReadEntryLeavesTheNextReadWhole() {
+        for (bytes in listOf(Fixtures.rar4Bytes(*pages), Fixtures.rar5Bytes(*pages))) {
+            val f = File(tmp.newFolder(), "book.cbr").apply { writeBytes(bytes) }
+            ArchiveSource(ArchiveReader.open(f, "UTF-8")!!).use { src ->
+                assertEquals('0'.code, src.readPage(0) { it.read() })
+                assertEquals("02.jpg", src.text(1))
+                assertEquals("01.jpg", src.text(0))
+            }
+        }
+    }
 }

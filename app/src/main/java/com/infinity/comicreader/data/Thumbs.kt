@@ -21,7 +21,7 @@ import java.security.MessageDigest
  * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]), then made into
  * the box by [CoverArt] as the [CoverStyle] says, so the view draws them 1:1. They
  * are cached per size and style in memory (bounded by heap) and losslessly on disk
- * under `cacheDir/thumbnails`.
+ * under `cacheDir/thumbnails`. A bookmark's cover has its page in front ([CoverArt.withPage]).
  */
 object Thumbs {
     private const val DISK_DIR = "thumbnails"
@@ -59,7 +59,8 @@ object Thumbs {
      * dispatcher. Returns null when no cover exists.
      */
     fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
-        val k = "${key(entry)}|${width}x$height|${style.key}"
+        val page = entry.bookmarkPage
+        val k = "${key(entry)}|${width}x$height|${style.key}" + if (page >= 0) "|p$page" else ""
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
@@ -73,12 +74,17 @@ object Thumbs {
         }
 
         val full = generate(entry, charset, context.cacheDir) ?: return null
-        val bitmap = try {
+        val cover = try {
             CoverArt.cover(full, width, height, style) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
             return null
         } finally {
             full.recycle()
+        }
+        val bitmap = if (page < 0) cover else {
+            val (w, h) = CoverArt.pageBox(width, height)
+            val front = pageOf(entry.file, page, charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear))
+            if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
         memory.put(k, bitmap)
         runCatching {
@@ -138,6 +144,19 @@ object Thumbs {
         val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
         return try {
             if (source.pageCount <= 0) null else source.loadPage(0, target)
+        } catch (t: Throwable) {
+            null
+        } finally {
+            runCatching { source.close() }
+        }
+    }
+
+    /** Page [index] of the book [file] (its last page if it has fewer) made to [target]; null when it cannot be read. */
+    private fun pageOf(file: File, index: Int, charset: String, cacheDir: File, target: Target): Bitmap? {
+        if (!file.isFile) return null
+        val source = runCatching { PageSources.open(file, charset, cacheDir) }.getOrNull() ?: return null
+        return try {
+            if (source.pageCount <= 0) null else source.loadPage(index.coerceIn(0, source.pageCount - 1), target)
         } catch (t: Throwable) {
             null
         } finally {

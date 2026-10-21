@@ -54,6 +54,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
   (default) or the center of a cover cropped for height.
+- **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
+  of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side) show their front: the half
   without the barcode. Without a barcode the whole cover is fitted over a blur.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.

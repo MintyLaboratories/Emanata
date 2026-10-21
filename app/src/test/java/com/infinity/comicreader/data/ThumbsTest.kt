@@ -7,6 +7,7 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -130,6 +131,38 @@ class ThumbsTest {
         // Whole and centered: red across the middle, the dimmed blur above it.
         assertEquals(Color.RED, thumb.getPixel(65, 100))
         assertTrue(Color.red(thumb.getPixel(65, 5)) < 230)
+    }
+
+    private fun png(color: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(200, 300, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        return java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
+    @Test
+    fun aBookmarkShowsItsPageInFrontOfTheCover() {
+        val file = Fixtures.zip(
+            File(context.cacheDir, "book.cbz"),
+            Fixtures.entry("01.png", png(Color.RED)), Fixtures.entry("02.png", png(Color.GREEN)), Fixtures.entry("03.png", png(Color.BLUE))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+        val thumb = Thumbs.load(context, book.copy(bookmarkPage = 2), "UTF-8", 100, 150, CoverStyle(ThumbFit.FILL))!!
+        // The cover shows above and left of the page, which fills 80% from the bottom right.
+        assertEquals(Color.RED, thumb.getPixel(1, 1))
+        assertEquals(Color.BLUE, thumb.getPixel(99, 149))
+        assertEquals(Color.BLUE, thumb.getPixel(21, 31))
+        assertTrue(Color.red(thumb.getPixel(19, 75)) > 0)
+        // The plain cover is a cover of its own.
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150, CoverStyle(ThumbFit.FILL))!!.getPixel(99, 149))
+    }
+
+    @Test
+    fun aBookmarkPagePastTheEndShowsTheLastPage() {
+        val file = Fixtures.zip(
+            File(context.cacheDir, "short.cbz"), Fixtures.entry("01.png", png(Color.RED)), Fixtures.entry("02.png", png(Color.GREEN))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified(), bookmarkPage = 9)
+        assertEquals(Color.GREEN, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(90, 140))
     }
 
     @Test

@@ -31,6 +31,12 @@ class CoverGeometryTest {
     }
 
     @Test
+    fun aBookmarkPageTakesEightyPercent() {
+        assertArrayEquals(intArrayOf(80, 120), com.infinity.comicreader.data.CoverArt.pageBox(100, 150))
+        assertArrayEquals(intArrayOf(1, 1), com.infinity.comicreader.data.CoverArt.pageBox(1, 1))
+    }
+
+    @Test
     fun listThumbnailsKeepTodaysNormalSlot() {
         // Today's 54 x 72 dp slot is Normal with the cell's shape.
         assertArrayEquals(intArrayOf(54, 72), CoverGeometry.listBoxDp(ListDensity.NORMAL, CoverShape.CELL))

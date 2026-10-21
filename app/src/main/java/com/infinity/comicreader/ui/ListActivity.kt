@@ -672,6 +672,7 @@ class ListActivity : AppCompatActivity() {
             lastModified = bookmark.time,
             pages = snap.history[bookmark.path]?.total ?: -1,
             progressPage = bookmark.page,
+            bookmarkPage = bookmark.page,
             favorite = bookmark.path in snap.favorites,
             read = bookmark.path in snap.read,
             subtitle = getString(R.string.page_number, bookmark.page + 1)

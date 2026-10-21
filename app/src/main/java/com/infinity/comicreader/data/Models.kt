@@ -26,7 +26,9 @@ data class BookEntry(
     val readCount: Int = -1,
     val subtitle: String? = null,
     /** Shown instead of [name] where same-name favorites need telling apart. */
-    val label: FavoriteLabel? = null
+    val label: FavoriteLabel? = null,
+    /** For bookmarks: the page drawn in front of the cover (-1 = none). */
+    val bookmarkPage: Int = -1
 ) {
     val path: String get() = file.absolutePath
 }

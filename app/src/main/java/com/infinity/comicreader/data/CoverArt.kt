@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import com.infinity.comicreader.reader.BitmapUtils
@@ -10,6 +11,7 @@ import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
+import kotlin.math.roundToInt
 
 /**
  * Makes a cover of exactly the box size from a full-size image: cropped to fill
@@ -25,6 +27,38 @@ object CoverArt {
 
     /** Darkens the background a little, so the cover's own edges show. */
     private const val BACKGROUND_DIM = 0x33000000
+
+    /** A bookmark's page takes this share of the box on each side. */
+    const val PAGE_SCALE = 0.8
+
+    /** The page's shadow, as a share of the box width. */
+    private const val PAGE_SHADOW = 0.03f
+    private const val PAGE_SHADOW_COLOR = 0x99000000.toInt()
+
+    /** `[width, height]` a bookmark's page is fitted into on a [width] x [height] cover. */
+    fun pageBox(width: Int, height: Int): IntArray = intArrayOf(
+        (width * PAGE_SCALE).roundToInt().coerceAtLeast(1),
+        (height * PAGE_SCALE).roundToInt().coerceAtLeast(1)
+    )
+
+    /**
+     * [cover] with [page] drawn over it in the bottom right corner, casting a soft
+     * shadow; [cover] itself when it can be drawn on, else a copy (and [cover] is
+     * recycled).
+     */
+    fun withPage(cover: Bitmap, page: Bitmap): Bitmap {
+        val out = if (cover.isMutable) cover else cover.copy(Bitmap.Config.ARGB_8888, true).also { cover.recycle() }
+        val canvas = Canvas(out)
+        val left = (out.width - page.width).toFloat()
+        val top = (out.height - page.height).toFloat()
+        val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            setShadowLayer(out.width * PAGE_SHADOW, 0f, 0f, PAGE_SHADOW_COLOR)
+        }
+        canvas.drawRect(left, top, out.width.toFloat(), out.height.toFloat(), shadow)
+        canvas.drawBitmap(page, left, top, null)
+        return out
+    }
 
     /**
      * [src] as a [width] x [height] cover. A wraparound shows the half [front] names

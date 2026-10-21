@@ -407,6 +407,45 @@ class ZoomImageViewTest {
     }
 
     @Test
+    fun aSwappedBitmapLandsOneToOneWhereThePageWasPanned() {
+        // A 1232 px wide stand-in, enlarged 1.5x to fit the width, is panned 30 px down the page.
+        val v = view(1848, 2960, 1232, 2000, ZoomImageView.FitMode.WIDTH)
+        assertFalse(v.drawsOneToOne)
+        val t = SystemClock.uptimeMillis()
+        v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 900f, 1000f, 0))
+        v.onTouchEvent(MotionEvent.obtain(t, t + 16, MotionEvent.ACTION_MOVE, 900f, 970f, 0))
+        v.onTouchEvent(MotionEvent.obtain(t, t + 32, MotionEvent.ACTION_UP, 900f, 970f, 0))
+        assertEquals(-30f, values(v)[Matrix.MTRANS_Y], 0f)
+
+        v.swapBitmap(Bitmap.createBitmap(1848, 3000, Bitmap.Config.ARGB_8888), null)
+        val m = values(v)
+        assertEquals(1f, m[Matrix.MSCALE_X], 0f)
+        assertEquals(-30f, m[Matrix.MTRANS_Y], 0f)
+        assertTrue(v.drawsOneToOne)
+        // No later fit moves it back to the top.
+        pass(50)
+        assertEquals(-30f, values(v)[Matrix.MTRANS_Y], 0f)
+    }
+
+    @Test
+    fun aSwapKeepsTheZoomAndTheDetailTile() {
+        val (v, detail) = zoomedWithDetail()
+        pass(160)
+        val tile = detail.deliver()
+        val before = values(v)
+
+        // The same page at half the size: twice the scale shows it as large, in the same place.
+        val next = RecordingDetail()
+        v.swapBitmap(Bitmap.createBitmap(924, 1386, Bitmap.Config.ARGB_8888), next)
+        val after = values(v)
+        assertEquals(2 * before[Matrix.MSCALE_X], after[Matrix.MSCALE_X], 1e-4f)
+        assertEquals(before[Matrix.MTRANS_X], after[Matrix.MTRANS_X], 1e-3f)
+        assertEquals(before[Matrix.MTRANS_Y], after[Matrix.MTRANS_Y], 1e-3f)
+        assertTrue(v.detailShown === tile)
+        assertTrue(v.detailSource === next)
+    }
+
+    @Test
     fun zoomedViewReattachedFromACacheRendersItsDetailAgain() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val frame = FrameLayout(activity)

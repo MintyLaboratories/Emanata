@@ -54,7 +54,8 @@ class ZoomImageView @JvmOverloads constructor(
     private val matrix = Matrix()
     private val drawMatrix = Matrix()
     private val baseMatrix = Matrix()
-    private var fitMode = FitMode.SCREEN
+    var fitMode = FitMode.SCREEN
+        private set
     private var minScale = 1f
     private var currentScale = 1f
     private var maxScale = 8f
@@ -228,11 +229,7 @@ class ZoomImageView @JvmOverloads constructor(
             return
         }
 
-        val scale = when (mode) {
-            FitMode.WIDTH -> viewW / drawableW
-            FitMode.HEIGHT -> viewH / drawableH
-            else -> minOf(viewW / drawableW, viewH / drawableH)
-        }
+        val scale = fittedScale(mode, viewW, viewH, drawableW, drawableH)
         baseMatrix.reset()
         baseMatrix.postScale(scale, scale)
         val scaledW = drawableW * scale
@@ -247,6 +244,63 @@ class ZoomImageView @JvmOverloads constructor(
         currentScale = scale
         minScale = scale
         maxScale = scale * 8f
+        applyMatrix()
+    }
+
+    /**
+     * Shows [bitmap], the shown page at another size, where the page shows now and as
+     * large, its zoom over the fitted scale kept: a decode made for a new fit or view size
+     * takes over from the bitmap standing in for it without a jump. Unzoomed, it lands at
+     * its fitted scale, 1:1 for a bitmap decoded for the view. [detail] serves its settled
+     * zooms; a detail tile already drawn stays until the next settle replaces it.
+     */
+    fun swapBitmap(bitmap: Bitmap, detail: DetailSource?) {
+        val oldW = drawable?.intrinsicWidth ?: 0
+        val oldH = drawable?.intrinsicHeight ?: 0
+        val viewW = width.toFloat()
+        val viewH = height.toFloat()
+        if (drawable !is BitmapDrawable || oldW <= 0 || oldH <= 0 || viewW <= 0f || viewH <= 0f || bitmap.width <= 0 || bitmap.height <= 0) {
+            setImageBitmap(bitmap)
+            detailSource = detail
+            return
+        }
+        stopFling()
+        matrix.getValues(values)
+        val oldScaleX = values[Matrix.MSCALE_X]
+        val oldScaleY = values[Matrix.MSCALE_Y]
+        val transX = values[Matrix.MTRANS_X]
+        val transY = values[Matrix.MTRANS_Y]
+        val zoom = (currentScale / minScale).takeIf { it > 1f + ONE_TO_ONE } ?: 1f
+        clearShaders(pageShaders)
+        keepGeometry = true
+        try {
+            setImageBitmap(bitmap)
+        } finally {
+            keepGeometry = false
+        }
+        details = detail
+        val w = bitmap.width.toFloat()
+        val h = bitmap.height.toFloat()
+        val scaleX: Float
+        val scaleY: Float
+        if (fitMode == FitMode.STRETCH) {
+            scaleX = viewW / w
+            scaleY = viewH / h
+            currentScale = 1f
+            minScale = 1f
+            maxScale = 1f
+        } else {
+            minScale = fittedScale(fitMode, viewW, viewH, w, h)
+            maxScale = minScale * 8f
+            currentScale = minScale * zoom
+            scaleX = currentScale
+            scaleY = currentScale
+        }
+        // The page's top-left corner stays put; the tile follows the page's new pixels.
+        matrix.setScale(scaleX, scaleY)
+        matrix.postTranslate(transX, transY)
+        detailMatrix.postScale(oldScaleX / scaleX, oldScaleY / scaleY)
+        clamp()
         applyMatrix()
     }
 
@@ -327,12 +381,17 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     /** Where settled zooms get their detail; none keeps the scaled page as it is. */
-    var detailSource: DetailSource? = null
+    var detailSource: DetailSource?
+        get() = details
         set(value) {
-            if (field === value) return
-            field = value
+            if (details === value) return
+            details = value
             dropDetail()
         }
+    private var details: DetailSource? = null
+
+    /** True while [swapBitmap] sets the bitmap, whose geometry it places itself. */
+    private var keepGeometry = false
 
     private var detail: Bitmap? = null
 
@@ -407,6 +466,10 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun setImageDrawable(drawable: Drawable?) {
+        if (keepGeometry) {
+            super.setImageDrawable(drawable)
+            return
+        }
         stopFling()
         dropDetail()
         clearShaders(pageShaders)
@@ -777,6 +840,13 @@ class ZoomImageView @JvmOverloads constructor(
 
         /** How long the view must be still before it renders its detail. */
         private const val SETTLE_MS = 150L
+
+        /** The scale [mode] fits a [drawableW] x [drawableH] drawable into a [viewW] x [viewH] view at; not for [FitMode.STRETCH]. */
+        fun fittedScale(mode: FitMode, viewW: Float, viewH: Float, drawableW: Float, drawableH: Float): Float = when (mode) {
+            FitMode.WIDTH -> viewW / drawableW
+            FitMode.HEIGHT -> viewH / drawableH
+            else -> minOf(viewW / drawableW, viewH / drawableH)
+        }
 
         /**
          * The rectangle ([left], [top], [right], [bottom]) less [hole], as up to four

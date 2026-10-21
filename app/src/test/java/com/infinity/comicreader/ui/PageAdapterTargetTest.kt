@@ -2,6 +2,8 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -10,6 +12,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +21,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Pages are requested at their exact on-screen size, and a size change requests them again. */
 @RunWith(RobolectricTestRunner::class)
@@ -123,6 +129,60 @@ class PageAdapterTargetTest {
         rv.layOut(1848, 2960)
         idle()
         assertEquals(1, source.requests.size)
+        adapter.release()
+    }
+
+    /** Like [RecordingSource], but every decode after the first waits for [gate]. */
+    private class GatedSource(override val pageCount: Int) : PageSource {
+        val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()
+        val gate = CountDownLatch(1)
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            requests += index to target
+            if (requests.size > 1) gate.await(5, TimeUnit.SECONDS)
+            val plan = target.plan(2000.0, 3000.0)
+            return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+    }
+
+    private fun shownBitmap(image: ZoomImageView) = (image.drawable as BitmapDrawable).bitmap
+
+    @Test
+    fun newFitShowsTheBitmapAtOnceThenSwapsInItsExactSize() {
+        val source = GatedSource(1)
+        val adapter = adapter(source)
+        val rv = recycler(adapter, 1848, 2960)
+        idle { source.requests.isNotEmpty() }
+        val holder = rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder
+        val image = holder.images[0]
+        idle { image.drawable != null }
+        val screen = shownBitmap(image)
+        assertEquals(1848, screen.width)
+
+        // Fit height: the same bitmap, on the same holder, enlarged at once while the exact one decodes.
+        adapter.fitMode = ZoomImageView.FitMode.HEIGHT
+        rv.layOut(1848, 2960)
+        idle { source.requests.size >= 2 }
+        assertSame(holder, rv.findViewHolderForAdapterPosition(0))
+        assertSame(screen, shownBitmap(image))
+        assertFalse(image.drawsOneToOne)
+        val m = FloatArray(9).also { image.imageMatrix.getValues(it) }
+        assertEquals(2960f / screen.height, m[Matrix.MSCALE_Y], 1e-4f)
+
+        source.gate.countDown()
+        idle { shownBitmap(image) !== screen }
+        assertEquals(0 to Target(0, 2960), source.requests.last())
+        assertEquals(2960, shownBitmap(image).height)
+        assertTrue(image.drawsOneToOne)
+
+        // Back to fit screen: still cached, so nothing decodes.
+        adapter.fitMode = ZoomImageView.FitMode.SCREEN
+        rv.layOut(1848, 2960)
+        idle()
+        assertSame(screen, shownBitmap(image))
+        assertTrue(image.drawsOneToOne)
+        assertEquals(2, source.requests.size)
         adapter.release()
     }
 }

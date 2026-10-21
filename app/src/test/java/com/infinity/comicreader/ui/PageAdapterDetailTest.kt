@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -40,8 +41,10 @@ class PageAdapterDetailTest {
     private class DetailSource(override val pageCount: Int) : PageSource {
         val details: MutableList<Detail> = Collections.synchronizedList(ArrayList())
         val budgets: MutableList<Pair<Target, Long>> = Collections.synchronizedList(ArrayList())
+        val loads: MutableList<Target> = Collections.synchronizedList(ArrayList())
 
         override fun loadPage(index: Int, target: Target): Bitmap {
+            loads += target
             val plan = target.plan(2000.0, 3000.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         }
@@ -128,6 +131,32 @@ class PageAdapterDetailTest {
 
         val (half, whole) = source.budgets.map { it.second }
         assertEquals(2 * half, whole)
+        adapter.release()
+    }
+
+    @Test
+    fun aNewFitIsRenderedFromTheDetailAZoomHolds() {
+        val source = DetailSource(1)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = true, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = adapter
+            layOut(1848, 2960)
+        }
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        idle { image.detailSource != null }
+        var tile: Bitmap? = null
+        image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
+        idle { tile != null }
+
+        adapter.fitMode = ZoomImageView.FitMode.HEIGHT
+        rv.layOut(1848, 2960)
+        idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
+        // The 1848 x 2772 page at the height of the screen, made without decoding it again.
+        assertEquals(1973, (image.drawable as BitmapDrawable).bitmap.width)
+        assertEquals(listOf(Target(1848, 2960)), source.loads.toList())
+        assertEquals(1, source.details.size)
+        assertTrue(image.drawsOneToOne)
         adapter.release()
     }
 }

@@ -48,6 +48,9 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /** The pages currently held or loading; for tests. */
     val keys: Set<K> get() = entries.keys
 
+    /** True when [key]'s detail is loaded, so a render needs no load first. */
+    fun loaded(key: K): Boolean = entries[key]?.let { synchronized(it) { it.detail != null } } == true
+
     /** Starts loading [key] with [load] unless it is held, dropping every page not in [keep]. */
     fun prepare(key: K, keep: Collection<K>, load: () -> PageDetail) {
         entry(key, keep, load)

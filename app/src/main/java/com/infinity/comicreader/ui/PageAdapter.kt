@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -62,6 +63,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * retried until the decode size changes; one that failed for lack of memory or a
  * read error is tried again the next time it is shown.
  *
+ * A new fit, page gap or item size shows at once: each page keeps its bitmap, scaled
+ * to the new size on the GPU (Lanczos3 when enlarged), while the bitmap for the new
+ * size is made in the background, from the page's full detail when a zoom already
+ * holds it, and then takes over in place ([ZoomImageView.swapBitmap]). Bitmaps for
+ * other sizes stay cached, so going back to one is instant too.
+ *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
  * (linear-light scaling) changes.
@@ -92,7 +99,7 @@ class PageAdapter(
         set(value) {
             if (field != value) {
                 field = value
-                notifyItemRangeChanged(0, itemCount)
+                resize()
             }
         }
 
@@ -100,10 +107,24 @@ class PageAdapter(
         set(value) {
             if (field == value) return
             field = value
-            // Pages are decoded for the active fit mode, except in long strips, which always fit the width.
-            if (mode != Mode.LONG_STRIP) dropDecoded()
-            notifyItemRangeChanged(0, itemCount)
+            resize()
         }
+
+    /**
+     * Shows every page at the size the layout now asks for, in place: decodes for an
+     * old size are dropped and the items rebind on their own holders ([RESIZE]), which
+     * keep their bitmaps until the new ones arrive.
+     */
+    private fun resize() {
+        // Canceling can complete handlers inline, which edit [pending]: iterate a copy.
+        for (entry in pending.values.toList()) {
+            if (entry.key != keyFor(entry.key.page)) {
+                entry.deferred.cancel()
+                if (pending[entry.key] === entry) pending.remove(entry.key)
+            }
+        }
+        notifyItemRangeChanged(0, itemCount, RESIZE)
+    }
 
     /** The page filter, one of [Filters]. */
     var filter: String = Filters.NONE
@@ -147,19 +168,17 @@ class PageAdapter(
     private val pending = HashMap<PageKey, Pending>()
 
     /**
-     * Why a page could not be shown; [name] is null when its source has no page names.
-     * Only a [permanent] failure is shown again without another decode.
+     * Why a page could not be shown at [target]; [name] is null when its source has no
+     * page names. Only a [permanent] failure is shown again without another decode, and
+     * only at the size it failed at.
      */
-    private class Failure(val index: Int, val name: String?, val reason: String, val permanent: Boolean)
+    private class Failure(val index: Int, val name: String?, val reason: String, val permanent: Boolean, val target: Target)
 
     private val failures = ConcurrentHashMap<Int, Failure>()
 
-    /**
-     * Bumped whenever decoded results are thrown away; a decode started under an older
-     * value keeps its result out of [cache] and [failures]. Guarded by [results].
-     */
-    private var generation = 0
-    private val results = Any()
+    /** The permanent failure of [key]'s page at its size, if any. */
+    private fun permanentFailure(key: PageKey): Failure? =
+        failures[key.page]?.takeIf { it.permanent && it.target == key.target }
     private val aspects = ConcurrentHashMap<Int, Float>()
     private var learnedAspect = 1.45f
     private var recycler: RecyclerView? = null
@@ -224,7 +243,7 @@ class PageAdapter(
                 sizedH = h
                 // Pages are decoded for the item size: show them again at the new one,
                 // outside this layout pass.
-                mainHandler.post { if (!released) notifyItemRangeChanged(0, itemCount) }
+                mainHandler.post { if (!released) resize() }
             }
         }
         layoutListener = listener
@@ -437,7 +456,7 @@ class PageAdapter(
         }
 
         /** Loads the page at full detail within its share of [detailBudget]: the item's, split between the pages shown. */
-        private fun loader(): () -> PageDetail {
+        fun loader(): () -> PageDetail {
             val chapter = strip.chapterOf(key.page)
             val source = chapter.value.source
             val index = key.page - chapter.first
@@ -465,15 +484,25 @@ class PageAdapter(
         val key = keyFor(pageIndex)
         val cached = cache.get(key)
         if (cached != null) {
-            applyBitmap(holder, slot, key, cached)
+            showBitmap(holder, slot, key, cached)
             return
         }
-        failures[pageIndex]?.takeIf { it.permanent }?.let {
+        permanentFailure(key)?.let {
             applyFailure(holder, slot, it)
             return
         }
-        // The page at its old size stays up until the new size arrives.
-        if (holder.shown[slot] != pageIndex) clearImage(holder, slot)
+        // The page at another size stands in, scaled to the new one, until that arrives.
+        if (holder.shown[slot] == pageIndex) {
+            image.setFitMode(fitMode)
+        } else {
+            val standIn = cache.snapshot().entries.lastOrNull { it.key.page == pageIndex }
+            if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
+        }
+        val held = (image.detailSource as? SlotDetail)?.key?.takeIf { holder.shown[slot] == pageIndex && details.loaded(it) }
+        if (held != null) {
+            renderFromDetail(holder, slot, held, key)
+            return
+        }
 
         val entry = request(key)
         entry.waiters++
@@ -484,8 +513,25 @@ class PageAdapter(
                 failures[pageIndex]?.let { applyFailure(holder, slot, it) }
                 return@launch
             }
-            applyBitmap(holder, slot, key, bitmap)
+            showBitmap(holder, slot, key, bitmap)
             updateLongStripAspect(holder, pageIndex, bitmap)
+        }
+    }
+
+    /**
+     * Makes [key]'s bitmap from the full detail [held] keeps of the page shown in [slot],
+     * as a settled zoom would, instead of decoding the page again.
+     */
+    private fun renderFromDetail(holder: PageHolder, slot: Int, held: PageKey, key: PageKey) {
+        val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap ?: return
+        val plan = key.target.plan(shown.width.toDouble(), shown.height.toDouble())
+        val load = SlotDetail(holder, held).loader()
+        holder.waiters[slot] = details.render(held, detailKeys(holder), load, {
+            frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear))
+        }) { bitmap ->
+            holder.waiters[slot] = null
+            cache.put(key, bitmap)
+            if (holder.shown[slot] == key.page) showBitmap(holder, slot, key, bitmap)
         }
     }
 
@@ -529,6 +575,23 @@ class PageAdapter(
         }
     }
 
+    /**
+     * Shows [bitmap], made for [key]: in place of the same page at another size, where
+     * and as large as that one shows; otherwise fitted.
+     */
+    private fun showBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
+        val image = holder.images[slot]
+        when {
+            holder.shown[slot] != key.page -> applyBitmap(holder, slot, key, bitmap)
+            (image.drawable as? BitmapDrawable)?.bitmap === bitmap -> image.setFitMode(fitMode)
+            else -> {
+                // A cached bitmap can arrive at once, before the stand-in took the new fit.
+                if (image.fitMode != fitMode) image.setFitMode(fitMode)
+                image.swapBitmap(bitmap, SlotDetail(holder, key))
+            }
+        }
+    }
+
     /** Shows [bitmap], decoded for [key]; settled zooms re-render it from the page's full detail. */
     private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
@@ -561,15 +624,14 @@ class PageAdapter(
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
 
     /**
-     * Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for
-     * generation [gen]. Throws [CancellationException] when [canceled] stops the decode first.
+     * Page [index] of [source], shown as [pageIndex]; null after recording why in [failures].
+     * Throws [CancellationException] when [canceled] stops the decode first.
      */
     private fun decode(
         source: PageSource,
         index: Int,
         pageIndex: Int,
         target: Target,
-        gen: Int,
         canceled: () -> Boolean
     ): Bitmap? = try {
         Cancellation.during(canceled) { source.loadPage(index, target) }
@@ -578,8 +640,7 @@ class PageAdapter(
     } catch (t: Throwable) {
         Log.w(TAG, "Failed to load page $index", t)
         val name = runCatching { source.pageName(index) }.getOrNull()
-        val failure = Failure(index, name, t.message ?: t.javaClass.simpleName, isPermanent(t))
-        synchronized(results) { if (gen == generation) failures[pageIndex] = failure }
+        failures[pageIndex] = Failure(index, name, t.message ?: t.javaClass.simpleName, isPermanent(t), target)
         null
     }
 
@@ -601,14 +662,13 @@ class PageAdapter(
         // Keep the chapter open while its page is being decoded, even if the strip
         // rolls on past it in the meantime.
         seg.loads.incrementAndGet()
-        val gen = synchronized(results) { generation }
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
                 val job = coroutineContext.job
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target, gen) { job.isCancelled }
+                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
                     ?.let { frozen(it) }
                 if (bitmap != null && bitmap.width > 0) {
-                    synchronized(results) { if (gen == generation) cache.put(key, bitmap) }
+                    cache.put(key, bitmap)
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
                 }
                 bitmap
@@ -631,20 +691,8 @@ class PageAdapter(
             val p = lastShown + k
             if (p >= end) break
             val key = keyFor(p)
-            if (cache.get(key) != null || pending[key] != null || failures[p]?.permanent == true) continue
+            if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) continue
             request(key).prefetch = true
-        }
-    }
-
-    /** Throws away everything decoded so far (the requested size changed). */
-    private fun dropDecoded() {
-        // Canceling can complete handlers inline, which edit [pending]: iterate a copy.
-        pending.values.toList().forEach { it.deferred.cancel() }
-        pending.clear()
-        synchronized(results) {
-            generation++
-            cache.evictAll()
-            failures.clear()
         }
     }
 
@@ -713,6 +761,10 @@ class PageAdapter(
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2
+
+        /** Rebinds an item on its own holder, which keeps its bitmaps meanwhile. */
+        private val RESIZE = Any()
+        private val WHOLE_PAGE = Region(0.0, 0.0, 1.0, 1.0)
 
         /**
          * [bitmap] as an immutable bitmap, copied if it is mutable (which it then recycles):

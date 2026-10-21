@@ -142,6 +142,11 @@ class Prefs(context: Context) {
         get() = integer(KEY_AUTO_SPEED, 5).coerceIn(1, 10)
         set(v) = put(KEY_AUTO_SPEED, v.coerceIn(1, 10))
 
+    /** Read a book right to left (or left to right) when its contents say so, unless its folder has a direction set. */
+    var detectDirection: Boolean
+        get() = bool(KEY_DETECT_DIRECTION, true)
+        set(v) = put(KEY_DETECT_DIRECTION, v)
+
     /** Let the reader remember mode / direction / fit / spread per folder. */
     var perSeries: Boolean
         get() = bool(KEY_PER_SERIES, true)
@@ -455,6 +460,7 @@ class Prefs(context: Context) {
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_speed"
         private const val KEY_PER_SERIES = "pref_per_series"
+        private const val KEY_DETECT_DIRECTION = "pref_detect_direction"
         private const val KEY_LINEAR_LIGHT = "pref_linear_light"
 
         private val KNOWN_KEYS = setOf(
@@ -466,7 +472,7 @@ class Prefs(context: Context) {
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
-            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH
+            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

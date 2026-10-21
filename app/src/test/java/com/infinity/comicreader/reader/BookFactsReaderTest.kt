@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.FolderSize
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.reader.Fixtures.entry
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -60,6 +61,17 @@ class BookFactsReaderTest {
         val info = "<ComicInfo><PageCount>99</PageCount></ComicInfo>"
         val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), entry("ComicInfo.xml", info.toByteArray()))
         assertEquals(1, read(f).pages)
+    }
+
+    @Test
+    fun detectsTheDirectionWithoutTheCover() {
+        val info = "<ComicInfo><Manga>YesAndRightToLeft</Manga></ComicInfo>"
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), entry("ComicInfo.xml", info.toByteArray()))
+        assertEquals(DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.COMIC_INFO), read(f).detected)
+        val tagged = Fixtures.zip(File(tmp.root, "tagged.cbz"), entry("Series B - p000 [Kodansha Comics].jpg"), entry("p001.jpg"))
+        assertEquals(DirectionDetection.Source.PUBLISHER, read(tagged).detected?.source)
+        val plain = Fixtures.zip(File(tmp.root, "plain.cbz"), entry("01.jpg"), entry("02.jpg"))
+        assertEquals(null, read(plain).detected)
     }
 
     @Test

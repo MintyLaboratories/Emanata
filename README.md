@@ -80,8 +80,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (natural order, so `page2` sorts before `page10`) breaks every tie. Items
   without a value sort last. **Folders first** is on by default. Browse and
   Favorites start by name, History and Bookmarks by last access (adding a
-  bookmark counts). Page counts, ComicInfo years and folder totals are found
-  in the background; page counts fill in without moving rows.
+  bookmark counts). Page counts, ComicInfo years, detected directions and
+  folder totals are found in the background; page counts fill in without moving
+  rows. A book with inner archives not yet copied out takes ComicInfo's
+  `PageCount`.
 - **Filter** (per tab): file type, reading direction, read status, year and
   length ranges. A **Filtered** chip shows while anything is hidden; tap it to
   edit, × to clear. While browsing, folders face only the file type rule, so
@@ -135,7 +137,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right or right-to-left (left/right tap zones
-  follow unless mirroring is turned off).
+  follow unless mirroring is turned off). **Detect reading direction** (on by
+  default) reads a book right to left from, in order: ComicInfo
+  `Manga=YesAndRightToLeft`; a wraparound cover's front half (found by its
+  barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
+  file or page names (`[Kodansha Comics]`); manga-style page names
+  (`c001 (v01) - p000`). A short note on open says why ("Right-to-left (from
+  ComicInfo)"). A direction set for the folder always wins; choosing one over a
+  detected direction keeps it for the folder.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third
   toggles the UI.

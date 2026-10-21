@@ -1,0 +1,159 @@
+package com.infinity.comicreader.ui
+
+import android.app.Application
+import android.content.Intent
+import android.os.Looper
+import android.view.View
+import android.widget.TextView
+import androidx.preference.PreferenceManager
+import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.data.SeriesSettings
+import com.infinity.comicreader.reader.Fixtures
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
+import org.robolectric.annotation.Config
+import org.robolectric.fakes.RoboMenuItem
+import java.io.File
+
+/** "Detect reading direction" in the reader: what decides, and what it never overrides. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class ViewerActivityDirectionTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private lateinit var prefs: Prefs
+    private lateinit var library: Library
+    private lateinit var dir: File
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        prefs = Prefs(context)
+        prefs.resumeMode = ResumeMode.NO
+        library = Library(context)
+        dir = tmp.newFolder("books")
+    }
+
+    private fun book(name: String, comicInfo: String? = null): File {
+        val pages = (0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
+        val info = comicInfo?.let { listOf(Fixtures.entry("ComicInfo.xml", it.toByteArray())) }.orEmpty()
+        return Fixtures.zip(File(dir, name), *(pages + info).toTypedArray())
+    }
+
+    private val rtlInfo = "<ComicInfo><Manga>YesAndRightToLeft</Manga></ComicInfo>"
+
+    private fun launch(book: File): ActivityController<ViewerActivity> {
+        val intent = Intent(ApplicationProvider.getApplicationContext(), ViewerActivity::class.java)
+            .putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+        return Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
+    }
+
+    private fun awaitOpen(viewer: ViewerActivity) {
+        val progress = viewer.findViewById<View>(R.id.viewer_progress)
+        val deadline = System.currentTimeMillis() + 5_000
+        do {
+            Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idle()
+        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        assertEquals(View.GONE, progress.visibility)
+    }
+
+    private fun ViewerActivity.pagerDirection() = findViewById<View>(R.id.viewer_pager).layoutDirection
+
+    private fun ViewerActivity.hint() = findViewById<TextView>(R.id.viewer_hint)
+
+    @Test
+    fun comicInfoTurnsTheBookRightToLeftWithANote() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        assertEquals(View.VISIBLE, viewer.hint().visibility)
+        assertEquals("Right-to-left (from ComicInfo)", viewer.hint().text.toString())
+        // The default stays as it was.
+        assertEquals("ltr", prefs.readingDir)
+    }
+
+    @Test
+    fun publisherTagInTheFileName() {
+        val viewer = launch(book("Series B v01 [Kodansha Comics].cbz")).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        assertEquals("Right-to-left (from Kodansha)", viewer.hint().text.toString())
+    }
+
+    @Test
+    fun aFolderDirectionIsNeverOverridden() {
+        val book = book("Series B v01.cbz", rtlInfo)
+        library.setSeries(dir.absolutePath, SeriesSettings("paged", "ltr", "screen", false))
+        val viewer = launch(book).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+        assertNotEquals(View.VISIBLE, viewer.hint().visibility)
+    }
+
+    @Test
+    fun settingOffReadsTheDefault() {
+        prefs.detectDirection = false
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+    }
+
+    @Test
+    fun turningTheSettingOffAppliesLive() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        prefs.detectDirection = false
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+    }
+
+    @Test
+    fun plainBooksKeepTheDefaultWithoutANote() {
+        prefs.readingDir = "rtl"
+        val viewer = launch(book("Series A 001.cbz")).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        assertNotEquals(View.VISIBLE, viewer.hint().visibility)
+    }
+
+    @Test
+    fun changingLayoutKeepsTheDetectedDirectionOutOfTheDefaults() {
+        prefs.perSeries = false
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        // Another layout option written back from the reader leaves the default direction alone.
+        viewer.onOptionsItemSelected(RoboMenuItem(R.id.menu_fit_width))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("width", prefs.fit)
+        assertEquals("ltr", prefs.readingDir)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+    }
+
+    @Test
+    fun choosingADirectionOverADetectedOneKeepsItForTheFolder() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        viewer.onOptionsItemSelected(RoboMenuItem(R.id.menu_dir_ltr))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+        assertEquals("ltr", library.seriesFor(dir.absolutePath)?.dir)
+        assertEquals("ltr", prefs.readingDir)
+    }
+}

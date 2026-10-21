@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.nio.file.Files
@@ -73,15 +74,20 @@ object FolderSize {
             .takeWhile { alive() }.filter { it.isFile }.sumOf { it.length() }
 }
 
-/** What a book's contents tell: its page count (-1 unknown) and its ComicInfo year (0 none). */
-data class BookFacts(val pages: Int, val year: Int)
+/**
+ * What a book's contents tell: its page count (-1 unknown), its ComicInfo year (0 none)
+ * and the reading direction they suggest (null when nothing does).
+ */
+data class BookFacts(val pages: Int, val year: Int, val detected: DirectionDetection.Detected? = null)
 
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found
- * so far by path, and [facts] read from the books themselves.
+ * so far by path, and [facts] read from the books themselves. With [detect], a book
+ * whose folder has no direction set reads in the direction its facts suggest.
  */
 class EntryValues(
     private val folderSizes: Map<String, Long> = emptyMap(),
+    private val detect: Boolean = false,
     private val facts: (BookEntry) -> BookFacts? = { null }
 ) : SortValues {
     override fun of(entry: BookEntry, key: SortKey): Long? = when (key) {
@@ -90,9 +96,15 @@ class EntryValues(
         SortKey.ACCESSED -> entry.accessed.takeIf { it > 0 }
         SortKey.SIZE -> if (entry.isDir) folderSizes[entry.path] else entry.size.takeIf { it > 0 }
         SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.pages?.takeIf { it > 0 })?.toLong()
-        SortKey.DIRECTION -> entry.direction?.ordinal?.toLong()
+        SortKey.DIRECTION -> direction(entry)?.ordinal?.toLong()
         SortKey.TYPE -> LibrarySort.typeRank(entry)
         SortKey.NAME -> null
+    }
+
+    /** The direction set for the entry's folder, else the detected one when asked for, else the default. */
+    private fun direction(entry: BookEntry): ReadingDirection? {
+        if (entry.isDir || entry.directionSet || !detect) return entry.direction
+        return facts(entry)?.detected?.direction ?: entry.direction
     }
 
     /** These values frozen for [entries] and [keys], so later findings do not reorder a list already shown. */
@@ -118,10 +130,13 @@ class LibrarySnapshot(
     private val defaultDirection: ReadingDirection = ReadingDirection.LTR
 ) {
     /** The direction a folder's books read in, or a book in its folder. */
-    fun directionOf(path: String, isDir: Boolean): ReadingDirection {
-        val folder = if (isDir) path else path.substring(0, path.indexOfLast { isSeparator(it) }.coerceAtLeast(0))
-        return directions[folder] ?: defaultDirection
-    }
+    fun directionOf(path: String, isDir: Boolean): ReadingDirection = directions[folderOf(path, isDir)] ?: defaultDirection
+
+    /** True when the direction of [path] was set for its folder. */
+    fun isDirectionSet(path: String, isDir: Boolean): Boolean = folderOf(path, isDir) in directions
+
+    private fun folderOf(path: String, isDir: Boolean) =
+        if (isDir) path else path.substring(0, path.indexOfLast { isSeparator(it) }.coerceAtLeast(0))
 
     /**
      * The entry for [file], a folder holding [children] (the items a user would see)
@@ -153,6 +168,7 @@ class LibrarySnapshot(
             accessed = access[path] ?: 0,
             year = if (isDir) Years.ofFolder(file.name, children.orEmpty().map { it.name }) else Years.fromName(file.name),
             direction = directionOf(path, isDir),
+            directionSet = isDirectionSet(path, isDir),
             bookCount = books?.size ?: -1,
             begunCount = books?.count { it.absolutePath in this.history || it.absolutePath in read } ?: -1
         )

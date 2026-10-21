@@ -39,6 +39,8 @@ data class BookEntry(
     val year: Int = 0,
     /** The direction it reads in: set for its folder, or the default (null = unknown). */
     val direction: ReadingDirection? = null,
+    /** True when [direction] was set for its folder rather than being the default. */
+    val directionSet: Boolean = false,
     /** For folders: how many direct children are books or images (-1 = unknown). */
     val bookCount: Int = -1,
     /** For folders: how many of those books were opened or read (-1 = unknown). */

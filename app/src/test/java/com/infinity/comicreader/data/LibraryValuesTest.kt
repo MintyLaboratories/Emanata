@@ -1,7 +1,10 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.reader.DirectionDetection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -144,6 +147,20 @@ class LibraryValuesTest {
     }
 
     @Test
+    fun detectedDirectionUnlessTheFolderHasOne() {
+        val rtl = BookFacts(10, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.NAMING))
+        val book = entry("a.cbz").copy(direction = ReadingDirection.LTR)
+        val rtlKey = ReadingDirection.RTL.ordinal.toLong()
+        val ltrKey = ReadingDirection.LTR.ordinal.toLong()
+        assertEquals(rtlKey, EntryValues(detect = true) { rtl }.of(book, SortKey.DIRECTION))
+        // Off, or not known yet: the default.
+        assertEquals(ltrKey, EntryValues(detect = false) { rtl }.of(book, SortKey.DIRECTION))
+        assertEquals(ltrKey, EntryValues(detect = true) { null }.of(book, SortKey.DIRECTION))
+        // A direction set for the folder wins.
+        assertEquals(ltrKey, EntryValues(detect = true) { rtl }.of(book.copy(directionSet = true), SortKey.DIRECTION))
+    }
+
+    @Test
     fun snapshotDirections() {
         val snap = LibrarySnapshot(
             directions = mapOf("/b/manga" to ReadingDirection.RTL),
@@ -152,5 +169,7 @@ class LibraryValuesTest {
         assertEquals(ReadingDirection.RTL, snap.directionOf("/b/manga/1.cbz", isDir = false))
         assertEquals(ReadingDirection.RTL, snap.directionOf("/b/manga", isDir = true))
         assertEquals(ReadingDirection.LTR, snap.directionOf("/b/other/1.cbz", isDir = false))
+        assertTrue(snap.isDirectionSet("/b/manga/1.cbz", isDir = false))
+        assertFalse(snap.isDirectionSet("/b/other/1.cbz", isDir = false))
     }
 }

@@ -29,4 +29,7 @@ interface PageSource : Closeable {
 
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
+
+    /** The book's ComicInfo.xml; null when it has none. Blocking. */
+    fun comicInfo(): ComicInfo? = null
 }

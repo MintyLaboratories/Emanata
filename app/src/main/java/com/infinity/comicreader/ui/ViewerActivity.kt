@@ -54,9 +54,12 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.Chapter
 import com.infinity.comicreader.reader.Chapters
+import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.NestedArchives
@@ -164,6 +167,15 @@ class ViewerActivity : AppCompatActivity() {
 
     /** True when this folder has its own remembered layout (mode, direction, fit, spread). */
     private var seriesActive = false
+
+    /** The direction the open book's contents suggest, when "Detect reading direction" looked. */
+    private var detection: DirectionDetection.Detected? = null
+
+    /** True while [readingDir] is [detection]'s rather than a setting's. */
+    private var detectedActive = false
+
+    /** The folder and detection last noted on open, so each folder's note shows once. */
+    private var notedDetection: Pair<String?, DirectionDetection.Detected>? = null
 
     private var openJob: Job? = null
     private var endDismissed = false
@@ -516,7 +528,7 @@ class ViewerActivity : AppCompatActivity() {
             rebuild = true
         }
         if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
-            s.twoPage != old.twoPage || s.perSeries != old.perSeries
+            s.twoPage != old.twoPage || s.perSeries != old.perSeries || s.detectDirection != old.detectDirection
         ) {
             if (reloadLayout()) rebuild = true
             shown = true
@@ -540,8 +552,8 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * Resolves mode, direction, fit and spread again: the folder's remembered layout
-     * when it has one, else the global defaults. Returns true when the adapter must
-     * be rebuilt; a fit change alone is applied in place.
+     * when it has one, else the global defaults with the detected direction on top.
+     * Returns true when the adapter must be rebuilt; a fit change alone is applied in place.
      */
     private fun reloadLayout(): Boolean {
         val oldMode = mode
@@ -564,6 +576,31 @@ class ViewerActivity : AppCompatActivity() {
         fit = prefs.fit
         twoPage = prefs.twoPage
         file?.parentFile?.absolutePath?.let { applySeries(it) }
+        applyDetection()
+    }
+
+    /** Reads in the detected direction unless the folder has its own or detection is off. */
+    private fun applyDetection() {
+        val found = detection
+        detectedActive = found != null && !seriesActive && prefs.detectDirection
+        if (detectedActive && found != null) readingDir = found.direction.key
+    }
+
+    /** Says on open which direction was detected and why, when it is not the default; once per folder. */
+    private fun noteDetection() {
+        val found = detection ?: return
+        if (!detectedActive || found.direction.key == prefs.readingDir) return
+        val noted = file?.parent to found
+        if (notedDetection == noted) return
+        notedDetection = noted
+        val direction = getString(if (found.direction == ReadingDirection.RTL) R.string.direction_rtl else R.string.direction_ltr)
+        val from = when (found.source) {
+            DirectionDetection.Source.COMIC_INFO -> getString(R.string.direction_from_comic_info)
+            DirectionDetection.Source.COVER -> getString(R.string.direction_from_cover)
+            DirectionDetection.Source.PUBLISHER -> getString(R.string.direction_from_publisher, found.detail.orEmpty())
+            DirectionDetection.Source.NAMING -> getString(R.string.direction_from_naming)
+        }
+        showHint(getString(R.string.direction_detected, direction, from), DETECTION_NOTE_MS)
     }
 
     /** Applies the folder's remembered layout, if it has one and the feature is on. */
@@ -587,7 +624,8 @@ class ViewerActivity : AppCompatActivity() {
             library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage))
         } else {
             prefs.pageMode = mode
-            prefs.readingDir = readingDir
+            // A detected direction belongs to the book, not to the defaults.
+            if (!detectedActive) prefs.readingDir = readingDir
             prefs.fit = fit
             prefs.twoPage = twoPage
         }
@@ -627,12 +665,16 @@ class ViewerActivity : AppCompatActivity() {
         repeatedBack.reset()
         hideHintNow()
         backPage = -1
+        detection = null
         resolveLayout()
 
         openJob = lifecycleScope.launch {
-            val (opened, siblings) = withContext(AppDispatchers.io) {
+            val detect = prefs.detectDirection
+            val (opened, siblings, detected) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, cancelled = { !job.isActive }) }
+                val siblings = siblingChapters(target)
+                val found = if (detect) s.getOrNull()?.let { runCatching { BookDirection.detect(target, it, siblings) }.getOrNull() } else null
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {
@@ -640,7 +682,7 @@ class ViewerActivity : AppCompatActivity() {
                     runCatching { s.getOrNull()?.close() }
                     throw e
                 }
-                s to siblingChapters(target)
+                Triple(s, siblings, found)
             }
             progress.visibility = View.GONE
             chapters = siblings
@@ -657,8 +699,11 @@ class ViewerActivity : AppCompatActivity() {
                 finish()
                 return@launch
             }
+            detection = detected
+            applyDetection()
             source = src
             setup(src)
+            noteDetection()
         }
     }
 
@@ -1011,7 +1056,7 @@ class ViewerActivity : AppCompatActivity() {
         val prev = prevChapter() ?: return
         when (repeatedBack.back(SystemClock.uptimeMillis(), prefs.prevChapterBacks)) {
             RepeatedBack.Result.IGNORED -> Unit
-            RepeatedBack.Result.HINT -> showHint()
+            RepeatedBack.Result.HINT -> showHint(getString(R.string.hint_prev_chapter), RepeatedBack.WINDOW_MS)
             RepeatedBack.Result.OPEN -> {
                 hideHintNow()
                 openChapter(prev, LAST_PAGE)
@@ -1019,13 +1064,14 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    /** Shows the repeated-back hint for as long as the next action still counts. */
-    private fun showHint() {
+    /** Shows [text] above the bottom bar for [durationMs]: the repeated-back hint, or a note on open. */
+    private fun showHint(text: CharSequence, durationMs: Long) {
         handler.removeCallbacks(hideHint)
         hint.animate().cancel()
+        hint.text = text
         hint.alpha = 1f
         hint.visibility = View.VISIBLE
-        handler.postDelayed(hideHint, RepeatedBack.WINDOW_MS)
+        handler.postDelayed(hideHint, durationMs)
     }
 
     private fun hideHintNow() {
@@ -1579,9 +1625,22 @@ class ViewerActivity : AppCompatActivity() {
         invalidateOptionsMenu()
     }
 
+    /**
+     * The user's choice of direction. Over a detected one it is kept for the folder
+     * (with "Per-folder layout" on), so the detection does not return on the next open.
+     */
     private fun setReadingDir(dir: String) {
         if (readingDir == dir) return
         readingDir = dir
+        if (detectedActive) {
+            detectedActive = false
+            detection = null
+            if (prefs.perSeries && file?.parentFile != null) {
+                seriesActive = true
+                toast(R.string.series_saved)
+                invalidateOptionsMenu()
+            }
+        }
         persistLayout()
         attach()
     }
@@ -2328,6 +2387,9 @@ class ViewerActivity : AppCompatActivity() {
 
         /** A start page past any book's end: opens it at its last page. */
         private const val LAST_PAGE = Int.MAX_VALUE
+
+        /** How long the detected-direction note shows on open. */
+        private const val DETECTION_NOTE_MS = 3_000L
 
         private const val SHARE_DIR = "shared"
         private const val EXPORT_W = 2400

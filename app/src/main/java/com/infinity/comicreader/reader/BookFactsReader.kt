@@ -3,12 +3,14 @@ package com.infinity.comicreader.reader
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.util.Formats
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
 
-/** Reads what sorting and filtering need from inside a book: its page count and ComicInfo year. */
+/**
+ * Reads what sorting and filtering need from inside a book: its page count, ComicInfo
+ * year and the reading direction its contents tell ([DirectionDetection], without the
+ * cover, which would take a decode).
+ */
 object BookFactsReader {
     /**
      * The facts of [file]; pages are -1 when they cannot be counted without copying
@@ -19,7 +21,7 @@ object BookFactsReader {
         EntryType.PDF, EntryType.ARCHIVE -> {
             val kind = ArchiveKind.detect(file)
             if (kind == ArchiveKind.PDF) {
-                PdfSource(file).use { BookFacts(it.pageCount, 0) }
+                PdfSource(file).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
                 val reader = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
@@ -28,37 +30,20 @@ object BookFactsReader {
         else -> throw IOException("Not a book")
     }
 
-    /** At most [max] bytes of [input]. */
-    internal fun readUpTo(input: InputStream, max: Int): ByteArray {
-        val out = ByteArrayOutputStream()
-        val buf = ByteArray(8 * 1024)
-        while (out.size() < max) {
-            val n = input.read(buf, 0, minOf(buf.size, max - out.size()))
-            if (n < 0) break
-            out.write(buf, 0, n)
-        }
-        return out.toByteArray()
-    }
-
     private fun readArchive(reader: ArchiveReader, file: File, charsetName: String, cacheDir: File): BookFacts {
         val entries = reader.entries.filter { !ArchiveJunk.isJunk(it.path, it.size) }
-        val info = comicInfo(reader)
-        val images = entries.count { Formats.isImageName(it.path) }
+        val info = ComicInfo.read(reader)
+        val images = entries.filter { Formats.isImageName(it.path) }
         val pages = if (entries.any { Formats.isArchiveName(it.path) }) {
             // Inner archives count as chapters; only ones already copied out can be counted,
             // else ComicInfo's own count stands in.
             runCatching { PageSources.open(file, charsetName, cacheDir, copyNested = false).use { it.pageCount } }.getOrDefault(-1)
                 .takeIf { it >= 0 } ?: info?.pageCount?.takeIf { it > 0 } ?: -1
         } else {
-            images
+            images.size
         }
-        return BookFacts(pages, info?.year ?: 0)
-    }
-
-    /** The book's ComicInfo.xml: the one nearest the top of [reader]; null when there is none or it cannot be read. */
-    fun comicInfo(reader: ArchiveReader): ComicInfo? {
-        val entry = reader.entries.filter { ComicInfo.isComicInfo(it.path) }
-            .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } } ?: return null
-        return runCatching { reader.read(entry) { ComicInfo.parse(readUpTo(it, ComicInfo.MAX_BYTES)) } }.getOrNull()
+        // Inner archives' names carry tags as page names do.
+        val names = entries.filter { Formats.isImageName(it.path) || Formats.isArchiveName(it.path) }.map { it.path }
+        return BookFacts(pages, info?.year ?: 0, DirectionDetection.detect(info, file.name, names))
     }
 }

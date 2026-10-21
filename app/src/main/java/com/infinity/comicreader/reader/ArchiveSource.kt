@@ -151,6 +151,17 @@ class ArchiveSource(
 
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
 
+    /** The outer archive's ComicInfo.xml; inner archives' own are not read. */
+    override fun comicInfo(): ComicInfo? {
+        val root = slots[0]
+        val reader = acquire(root)
+        try {
+            return ComicInfo.read(reader)
+        } finally {
+            release(root)
+        }
+    }
+
     override fun close() {
         closeAll()
     }

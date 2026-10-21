@@ -27,6 +27,7 @@ data class ListSettings(
     val quickFab: Boolean,
     val groupFavorites: Boolean,
     val linearLight: Boolean,
+    val detectDirection: Boolean,
     val charset: String
 ) {
     companion object {
@@ -47,6 +48,7 @@ data class ListSettings(
             quickFab = p.listQuickFab,
             groupFavorites = p.groupFavorites,
             linearLight = p.linearLight,
+            detectDirection = p.detectDirection,
             charset = p.charset
         )
     }
@@ -71,6 +73,7 @@ data class ReaderSettings(
     val preload: Int,
     val autoSpeed: Int,
     val perSeries: Boolean,
+    val detectDirection: Boolean,
     val tapZones: String,
     val mirrorTapZones: Boolean,
     val volumeKeys: Boolean,
@@ -98,6 +101,7 @@ data class ReaderSettings(
             preload = p.preload,
             autoSpeed = p.autoSpeed,
             perSeries = p.perSeries,
+            detectDirection = p.detectDirection,
             tapZones = p.tapZones,
             mirrorTapZones = p.mirrorTapZones,
             volumeKeys = p.volumeKeys,

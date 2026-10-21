@@ -88,6 +88,11 @@
             app:key="pref_reading_dir"
             app:title="@string/pref_reading_dir"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_detect_direction"
+            app:summary="@string/pref_detect_direction_desc"
+            app:title="@string/pref_detect_direction" />
         <ListPreference
             app:defaultValue="paged"
             app:entries="@array/page_mode_entries"

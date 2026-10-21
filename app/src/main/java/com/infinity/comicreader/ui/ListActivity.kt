@@ -332,7 +332,9 @@ class ListActivity : AppCompatActivity() {
             // Coming back to the browse tab, onResume reloads the folder anyway.
             if (mode != TAB_BROWSE || lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
         }
-        if (s.sorts[tabName()] != old.sorts[tabName()] || s.filters[tabName()] != old.filters[tabName()]) {
+        if (s.sorts[tabName()] != old.sorts[tabName()] || s.filters[tabName()] != old.filters[tabName()] ||
+            s.detectDirection != old.detectDirection
+        ) {
             applyFilterAndSort()
         } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
             s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
@@ -746,6 +748,7 @@ class ListActivity : AppCompatActivity() {
             accessed = snap.access[item.path] ?: item.time,
             year = Years.fromName(item.name),
             direction = snap.directionOf(item.path, isDir = false),
+            directionSet = snap.isDirectionSet(item.path, isDir = false),
             subtitle = when {
                 !exists -> getString(R.string.missing_file)
                 where != null && where.isNotEmpty() -> where
@@ -775,6 +778,7 @@ class ListActivity : AppCompatActivity() {
             accessed = maxOf(bookmark.time, snap.history[bookmark.path]?.time ?: 0),
             year = Years.fromName(file.name),
             direction = snap.directionOf(bookmark.path, isDir = false),
+            directionSet = snap.isDirectionSet(bookmark.path, isDir = false),
             subtitle = getString(R.string.page_number, bookmark.page + 1)
         )
     }
@@ -788,7 +792,7 @@ class ListActivity : AppCompatActivity() {
     }
 
     /** Sort and filter values as found so far: folder totals and what books' contents told. */
-    private fun values() = EntryValues(folderSizes) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
+    private fun values() = EntryValues(folderSizes, prefs.detectDirection) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
 
     /**
      * Shows the entries matching the search in the tab's order. Unless [resort], the
@@ -838,13 +842,13 @@ class ListActivity : AppCompatActivity() {
 
     /**
      * Finds the values [keys] need that are not known yet, in the background: page
-     * counts and ComicInfo years of books, and folder totals. Books fill in as they
+     * counts, ComicInfo years and detected directions of books, and folder totals. Books fill in as they
      * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
      * reorder the list once all are in. Work already running for the same listing
      * goes on undisturbed.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
-        val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys
+        val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
         val needSizes = SortKey.SIZE in keys
         if (!needFacts && !needSizes) return
         val work = FactsWork(listing, needFacts, needSizes)

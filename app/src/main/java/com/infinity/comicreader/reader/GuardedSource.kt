@@ -64,6 +64,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override fun pageName(index: Int): String? = inner.pageName(index)
 
+    override fun comicInfo(): ComicInfo? {
+        if (!enter()) return null
+        try {
+            return inner.comicInfo()
+        } finally {
+            exit()
+        }
+    }
+
     override fun close() {
         synchronized(lock) {
             closing = true

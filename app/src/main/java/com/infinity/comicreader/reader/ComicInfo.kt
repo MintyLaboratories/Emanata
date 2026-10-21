@@ -4,6 +4,8 @@ import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
 import org.xml.sax.helpers.DefaultHandler
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.StringReader
 import java.util.Locale
 import javax.xml.parsers.SAXParserFactory
@@ -65,6 +67,25 @@ data class ComicInfo(
 
         /** [bytes] as UTF-8 (the encoding ComicInfo writers use), parsed by [parse]. */
         fun parse(bytes: ByteArray): ComicInfo = parse(String(bytes, Charsets.UTF_8))
+
+        /** The ComicInfo.xml nearest the top of [reader]; null when there is none or it cannot be read. */
+        fun read(reader: ArchiveReader): ComicInfo? {
+            val entry = reader.entries.filter { isComicInfo(it.path) }
+                .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } } ?: return null
+            return runCatching { reader.read(entry) { parse(readUpTo(it, MAX_BYTES)) } }.getOrNull()
+        }
+
+        /** At most [max] bytes of [input]. */
+        private fun readUpTo(input: InputStream, max: Int): ByteArray {
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(8 * 1024)
+            while (out.size() < max) {
+                val n = input.read(buf, 0, minOf(buf.size, max - out.size()))
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
+            return out.toByteArray()
+        }
 
         internal fun mangaOf(value: String?): Manga = when (value?.trim()?.lowercase(Locale.ROOT)) {
             "yesandrighttoleft" -> Manga.YES_RTL

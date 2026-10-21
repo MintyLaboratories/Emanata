@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.infinity.comicreader.reader.DirectionDetection
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,8 +30,10 @@ class BookFactsCache(context: Context) {
         synchronized(store) {
             if (store.loaded != null) return
             val map = ConcurrentHashMap<String, Pair<Long, BookFacts>>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR), null, null, null, null, null).use { c ->
-                while (c.moveToNext()) map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3))
+            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR, DIRECTION), null, null, null, null, null).use { c ->
+                while (c.moveToNext()) {
+                    map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3), DirectionDetection.Detected.decode(c.getInt(4)))
+                }
             }
             store.loaded = map
         }
@@ -40,11 +43,12 @@ class BookFactsCache(context: Context) {
     fun put(path: String, size: Long, facts: BookFacts) {
         load()
         store.loaded?.put(path, size to facts)
-        val row = ContentValues(4).apply {
+        val row = ContentValues(5).apply {
             put(PATH, path)
             put(SIZE, size)
             put(PAGES, facts.pages)
             put(YEAR, facts.year)
+            put(DIRECTION, facts.detected?.encode() ?: 0)
         }
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -55,12 +59,19 @@ class BookFactsCache(context: Context) {
         var loaded: MutableMap<String, Pair<Long, BookFacts>>? = null
     }
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, FILE, null, 1) {
+    private class Helper(context: Context) : SQLiteOpenHelper(context, FILE, null, VERSION) {
         override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL("CREATE TABLE $TABLE ($PATH TEXT PRIMARY KEY, $SIZE INTEGER NOT NULL, $PAGES INTEGER NOT NULL, $YEAR INTEGER NOT NULL)")
+            db.execSQL(
+                "CREATE TABLE $TABLE ($PATH TEXT PRIMARY KEY, $SIZE INTEGER NOT NULL, $PAGES INTEGER NOT NULL, " +
+                    "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0)"
+            )
         }
 
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        /** Older rows lack what newer versions read, so every book is read again. */
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            db.execSQL("DROP TABLE IF EXISTS $TABLE")
+            onCreate(db)
+        }
     }
 
     companion object {
@@ -70,6 +81,10 @@ class BookFactsCache(context: Context) {
         private const val SIZE = "size"
         private const val PAGES = "pages"
         private const val YEAR = "year"
+        private const val DIRECTION = "direction"
+
+        /** 2 added the detected direction. */
+        private const val VERSION = 2
         private val LOCK = Any()
 
         /** Shared by every instance: one process, one database (a new one when its file moves, as between tests). */

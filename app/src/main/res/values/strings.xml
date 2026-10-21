@@ -51,7 +51,7 @@
     <string name="folder_favorite_added">Folder added to favorites</string>
     <string name="folder_favorite_removed">Folder removed from favorites</string>
     <string name="menu_set_startup">Set as startup folder</string>
-    <string name="menu_open_location">Open file location</string>
+    <string name="menu_open_location">Show in folder</string>
     <string name="menu_rename">Rename</string>
     <string name="menu_refresh">Refresh</string>
     <string name="menu_new_folder">New folder</string>

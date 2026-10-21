@@ -985,9 +985,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         when {
             entry.isDir -> loadDirectory(entry.file)
             mode == TAB_HISTORY -> {
-                // History entries open the containing folder first, so the reader
-                // never resumes from a stale/missing path.
-                if (entry.file.exists()) openLocation(entry.file) else toast(R.string.open_location_failed)
+                // The reader decides where to start (ResumeMode.start).
+                if (entry.file.exists()) openViewer(entry.file, -1) else toast(R.string.open_location_failed)
             }
             mode == TAB_BOOKMARKS -> {
                 if (entry.file.exists()) openViewer(entry.file, entry.progressPage.coerceAtLeast(0))
@@ -1010,10 +1009,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             actions.add(action)
         }
 
-        if (mode == TAB_HISTORY && entry.file.exists()) {
-            add(getString(R.string.menu_continue)) {
-                openViewer(entry.file, library.pageFor(path))
-            }
+        if (mode == TAB_HISTORY) {
+            if (entry.file.exists()) add(getString(R.string.menu_continue)) { openViewer(entry.file, library.pageFor(path)) }
+            add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
         }
         if (canPeek(entry)) add(getString(R.string.menu_peek)) { peekFromMenu(entry) }
         if (mode == TAB_BOOKMARKS) {
@@ -1037,7 +1035,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     refreshCurrent()
                 }
             }
-            add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
+            if (mode != TAB_HISTORY) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
             if (entry.isDir) {
                 add(getString(R.string.menu_set_startup)) {
                     prefs.setStartupFolder(path)

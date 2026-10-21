@@ -44,6 +44,11 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.EntryValues
+import com.infinity.comicreader.data.FileStat
+import com.infinity.comicreader.data.LibrarySnapshot
+import com.infinity.comicreader.data.LibrarySort
+import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.data.FavoriteClassifier
 import com.infinity.comicreader.data.FavoriteKind
 import com.infinity.comicreader.data.FavoriteKindCache
@@ -280,7 +285,7 @@ class ListActivity : AppCompatActivity() {
             // Coming back to the browse tab, onResume reloads the folder anyway.
             if (mode != TAB_BROWSE || lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
         }
-        if (s.sort != old.sort || s.sortDir != old.sortDir) {
+        if (s.sorts[tabName()] != old.sorts[tabName()]) {
             applyFilterAndSort()
         } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
             s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
@@ -532,14 +537,7 @@ class ListActivity : AppCompatActivity() {
         listJob = lifecycleScope.launch(block = load)
     }
 
-    /** Favorites, read marks and history, loaded once per listing instead of once per row. */
-    private class Snapshot(
-        val favorites: Set<String>,
-        val read: Set<String>,
-        val history: Map<String, HistoryItem>
-    )
-
-    private fun snapshot() = Snapshot(library.favoriteSet(), library.readSet(), library.historyMap())
+    private fun snapshot() = LibrarySnapshot.load(library, prefs)
 
     /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
     private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
@@ -566,25 +564,8 @@ class ListActivity : AppCompatActivity() {
         return out
     }
 
-    private fun entryFor(file: File, snap: Snapshot): BookEntry {
-        val isDir = file.isDirectory
-        val history = if (isDir) null else snap.history[file.absolutePath]
-        val children = if (isDir) visibleChildren(file) else null
-        return BookEntry(
-            file = file,
-            name = file.name,
-            isDir = isDir,
-            type = if (isDir) EntryType.FOLDER else Formats.typeOf(file.name),
-            size = if (isDir) 0 else file.length(),
-            lastModified = file.lastModified(),
-            childCount = children?.size ?: -1,
-            readCount = children?.count { it.absolutePath in snap.read } ?: -1,
-            pages = history?.total ?: -1,
-            progressPage = history?.page ?: -1,
-            favorite = file.absolutePath in snap.favorites,
-            read = file.absolutePath in snap.read
-        )
-    }
+    private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry =
+        snap.entry(file, if (file.isDirectory) visibleChildren(file) else null)
 
     private fun showFavorites() {
         mode = TAB_FAVORITES
@@ -701,9 +682,10 @@ class ListActivity : AppCompatActivity() {
         }
     }
 
-    private fun entryForHistory(item: HistoryItem, snap: Snapshot): BookEntry {
+    private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot): BookEntry {
         val file = File(item.path)
         val exists = file.exists()
+        val stat = if (exists) FileStat.of(file) else null
         // Chapters are usually just "Chapter 12.cbz", so the folder below the name is
         // what tells two chapters from different comics apart.
         val where = file.parentFile?.let { relativePath(it) }
@@ -712,12 +694,17 @@ class ListActivity : AppCompatActivity() {
             name = item.name,
             isDir = false,
             type = Formats.typeOf(item.name),
-            size = if (exists) file.length() else 0,
+            size = stat?.size ?: 0,
             lastModified = item.time,
             pages = item.total,
             progressPage = item.page,
             favorite = item.path in snap.favorites,
             read = item.path in snap.read,
+            begun = true,
+            added = stat?.created ?: 0,
+            accessed = snap.access[item.path] ?: item.time,
+            year = Years.fromName(item.name),
+            direction = snap.directionOf(item.path, isDir = false),
             subtitle = when {
                 !exists -> getString(R.string.missing_file)
                 where != null && where.isNotEmpty() -> where
@@ -726,8 +713,9 @@ class ListActivity : AppCompatActivity() {
         )
     }
 
-    private fun entryForBookmark(bookmark: com.infinity.comicreader.data.Bookmark, snap: Snapshot): BookEntry {
+    private fun entryForBookmark(bookmark: com.infinity.comicreader.data.Bookmark, snap: LibrarySnapshot): BookEntry {
         val file = File(bookmark.path)
+        val stat = if (file.exists()) FileStat.of(file) else null
         return BookEntry(
             file = file,
             name = file.name.ifEmpty { bookmark.name },
@@ -740,6 +728,12 @@ class ListActivity : AppCompatActivity() {
             bookmarkPage = bookmark.page,
             favorite = bookmark.path in snap.favorites,
             read = bookmark.path in snap.read,
+            begun = bookmark.path in snap.history,
+            added = stat?.created ?: 0,
+            // A bookmark counts as accessed when added, or later when its book was read.
+            accessed = maxOf(bookmark.time, snap.history[bookmark.path]?.time ?: 0),
+            year = Years.fromName(file.name),
+            direction = snap.directionOf(bookmark.path, isDir = false),
             subtitle = getString(R.string.page_number, bookmark.page + 1)
         )
     }
@@ -759,7 +753,7 @@ class ListActivity : AppCompatActivity() {
             else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
         }
 
-        val comparator = LibraryOrder.comparator(prefs.listSort, prefs.listSortDir)
+        val comparator = LibrarySort.comparator(prefs.sort(tabName()), EntryValues())
 
         shown.clear()
         shown.addAll(filtered.sortedWith(comparator))
@@ -1362,8 +1356,6 @@ class ListActivity : AppCompatActivity() {
             isVisible = browsing
             isChecked = prefs.deepSearch
         }
-        menu.findItem(R.id.menu_sort_dir)?.isVisible =
-            mode == TAB_BROWSE || mode == TAB_FAVORITES
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -1371,7 +1363,6 @@ class ListActivity : AppCompatActivity() {
         when (item.itemId) {
             R.id.menu_grid -> toggleGrid()
             R.id.menu_sort -> showSortDialog()
-            R.id.menu_sort_dir -> toggleSortDirection()
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
             R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())
@@ -1402,21 +1393,7 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun showSortDialog() {
-        val values = resources.getStringArray(R.array.sort_values)
-        val labels = resources.getStringArray(R.array.sort_entries)
-        val checked = values.indexOf(prefs.listSort).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.menu_sort)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.listSort = values[which]
-                dialog.dismiss()
-            }
-            .show()
-    }
-
-    private fun toggleSortDirection() {
-        prefs.listSortDir = if (prefs.listSortDir == "asc") "desc" else "asc"
-        toast(if (prefs.listSortDir == "asc") R.string.menu_ascending else R.string.menu_descending)
+        SortDialog.show(this, prefs, tabName())
     }
 
 

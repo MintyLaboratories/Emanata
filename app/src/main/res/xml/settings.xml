@@ -271,20 +271,6 @@
             app:key="pref_group_favorites"
             app:summary="@string/pref_group_favorites_desc"
             app:title="@string/pref_group_favorites" />
-        <ListPreference
-            app:defaultValue="name"
-            app:entries="@array/sort_entries"
-            app:entryValues="@array/sort_values"
-            app:key="pref_sort"
-            app:title="@string/pref_sort"
-            app:useSimpleSummaryProvider="true" />
-        <ListPreference
-            app:defaultValue="asc"
-            app:entries="@array/sort_dir_entries"
-            app:entryValues="@array/sort_dir_values"
-            app:key="pref_sort_dir"
-            app:title="@string/pref_sort_dir"
-            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_data">

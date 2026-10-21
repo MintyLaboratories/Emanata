@@ -6,6 +6,8 @@ import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.SortKey
+import com.infinity.comicreader.data.SortLevel
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,7 +49,8 @@ class BackupTest {
             setUp()
             assertTrue(app, Backup.import(context, backup(app)))
             assertEquals(listOf("/books/attic"), Library(context).favorites())
-            assertEquals("date", Prefs(context).listSort)
+            // The old single sort moved to Browse: "date" ascending is oldest added first.
+            assertEquals(SortLevel(SortKey.ADDED, flipped = true), Prefs(context).sort(Prefs.TAB_BROWSE).by)
         }
     }
 

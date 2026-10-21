@@ -62,8 +62,6 @@
     <string name="pref_crop_anchor">Crop anchor</string>
     <string name="crop_anchor_top">Top</string>
     <string name="crop_anchor_center">Center</string>
-    <string name="menu_ascending">Ascending</string>
-    <string name="menu_descending">Descending</string>
     <string name="menu_mark_read">Mark as read</string>
     <string name="menu_mark_unread">Mark as unread</string>
     <string name="menu_continue">Continue reading</string>
@@ -278,8 +276,6 @@
     <string name="view_list_summary">List · %1$s</string>
     <string name="layout_grid">Grid</string>
     <string name="layout_list">List</string>
-    <string name="pref_sort">Sort entries by</string>
-    <string name="pref_sort_dir">Sort direction</string>
     <string name="pref_title_display">Title display</string>
     <string name="pref_shorten_prefixes">Shorten repeated prefixes</string>
     <string name="pref_shorten_prefixes_desc">Inside a set, leave out the series name all items share</string>
@@ -352,10 +348,36 @@
     <string name="confirm_mark_unread_title">Mark all as unread?</string>
     <string name="confirm_mark_unread_msg">Clears the read mark of every book directly in ^1. Reading progress is kept.</string>
 
+    <string name="sort_by">Sort by</string>
+    <string name="sort_then">Then by</string>
+    <string name="sort_none">None</string>
+    <string name="sort_then_auto">Then by: Name (automatic)</string>
+    <string name="sort_folders_first">Folders first</string>
     <string name="sort_name">Name</string>
+    <string name="sort_year">Year</string>
+    <string name="sort_added">Added</string>
+    <string name="sort_accessed">Accessed</string>
     <string name="sort_size">Size</string>
-    <string name="sort_date">Date</string>
-    <string name="sort_type">Type</string>
+    <string name="sort_length">Length</string>
+    <string name="sort_type">File type</string>
+    <string name="sort_direction">Reading direction</string>
+    <string name="sort_a_z">A → Z</string>
+    <string name="sort_z_a">Z → A</string>
+    <string name="sort_newest">newest first</string>
+    <string name="sort_oldest">oldest first</string>
+    <string name="sort_recent">recent first</string>
+    <string name="sort_largest">largest first</string>
+    <string name="sort_smallest">smallest first</string>
+    <string name="sort_longest">longest first</string>
+    <string name="sort_shortest">shortest first</string>
+    <string name="sort_archives_first">archives first</string>
+    <string name="sort_images_first">images first</string>
+    <string name="sort_ltr_first">left-to-right first</string>
+    <string name="sort_rtl_first">right-to-left first</string>
+    <!-- An option and its direction: "Year – newest first". -->
+    <string name="sort_level">%1$s – %2$s</string>
+    <!-- Two levels: "Year – newest first, then Length – shortest first". -->
+    <string name="sort_two_levels">%1$s, then %2$s</string>
 
     <!-- ===================== About ===================== -->
     <string name="about_desc">A clean, private, ad-free comic &amp; PDF reader. Opens images, ZIP/CBZ, RAR/CBR, 7z/CB7 and PDF — entirely offline.</string>
@@ -392,28 +414,6 @@
         <item>first_favorite</item>
         <item>recent_favorite</item>
         <item>custom</item>
-    </string-array>
-
-    <string-array name="sort_entries">
-        <item>@string/sort_name</item>
-        <item>@string/sort_size</item>
-        <item>@string/sort_date</item>
-        <item>@string/sort_type</item>
-    </string-array>
-    <string-array name="sort_values">
-        <item>name</item>
-        <item>size</item>
-        <item>date</item>
-        <item>type</item>
-    </string-array>
-
-    <string-array name="sort_dir_entries">
-        <item>@string/menu_ascending</item>
-        <item>@string/menu_descending</item>
-    </string-array>
-    <string-array name="sort_dir_values">
-        <item>asc</item>
-        <item>desc</item>
     </string-array>
 
     <string-array name="theme_entries">

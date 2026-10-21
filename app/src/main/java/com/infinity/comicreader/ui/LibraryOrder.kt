@@ -6,56 +6,35 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.data.BookEntry
-import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.EntryValues
 import com.infinity.comicreader.data.FavoriteKind
 import com.infinity.comicreader.data.FavoriteKindCache
 import com.infinity.comicreader.data.FavoriteLabel
 import com.infinity.comicreader.data.FavoriteLabels
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LibrarySnapshot
+import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
-import com.infinity.comicreader.util.Formats
-import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
 
 object LibraryOrder {
-    /** Folders first, then by [sort] ("name", "size", "date", "type") in [dir] ("asc", "desc"), then by name. */
-    fun comparator(sort: String, dir: String): Comparator<BookEntry> {
-        var byField: Comparator<BookEntry> = when (sort) {
-            "size" -> compareBy { it.size }
-            "date" -> compareBy { it.lastModified }
-            "type" -> compareBy { it.type.ordinal }
-            else -> compareBy(NaturalOrder) { it.name }
-        }
-        if (dir == "desc") byField = byField.reversed()
-        return compareByDescending<BookEntry> { it.isDir }
-            .then(byField)
-            .thenBy(NaturalOrder) { it.name }
-    }
-
     /**
      * The favorites, labeled, in Favorites tab order: sections by their cached kind
-     * when grouped (unknown ones under Sets), sorted inside by the list sort.
+     * when grouped (unknown ones under Sets), sorted inside by the tab's sort with
+     * the values their entries hold.
      */
     fun favorites(context: Context, prefs: Prefs, roots: List<StorageRoot>): List<BookEntry> {
-        val paths = Library(context).favorites()
+        val library = Library(context)
+        val paths = library.favorites()
         val labels = FavoriteLabels.of(paths, roots)
         val cache = FavoriteKindCache(context)
+        val snap = LibrarySnapshot.load(library, prefs)
         val entries = paths.map { path ->
-            val file = File(path)
-            val isDir = file.isDirectory
             val label = labels[path]
-            BookEntry(
-                file = file,
-                name = label?.name ?: file.name,
-                isDir = isDir,
-                type = if (isDir) EntryType.FOLDER else Formats.typeOf(file.name),
-                size = if (isDir) 0 else file.length(),
-                lastModified = file.lastModified(),
-                label = label
-            )
+            snap.entry(File(path), children = null, name = label?.name ?: File(path).name).copy(label = label)
         }
-        val sorted = entries.sortedWith(comparator(prefs.listSort, prefs.listSortDir))
+        val sorted = entries.sortedWith(LibrarySort.comparator(prefs.sort(Prefs.TAB_FAVORITES), EntryValues()))
         if (!prefs.groupFavorites) return sorted
         return FavoriteSections.arrange(sorted) {
             if (!it.isDir) FavoriteKind.COMIC else cache.get(it.path, it.lastModified)

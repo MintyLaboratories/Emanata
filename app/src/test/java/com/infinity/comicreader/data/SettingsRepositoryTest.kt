@@ -94,7 +94,7 @@ class SettingsRepositoryTest {
     @Test
     fun importPublishesRestoredValues() {
         prefs.importAll(mapOf("pref_sort" to "date", "pref_night" to true))
-        assertEquals("date", repo.list.value.sort)
+        assertEquals(SortLevel(SortKey.ADDED, flipped = true), repo.list.value.sorts.getValue(Prefs.TAB_BROWSE).by)
         assertTrue(repo.reader.value.nightFilter)
     }
 

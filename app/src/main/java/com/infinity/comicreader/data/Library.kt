@@ -192,6 +192,14 @@ class Library(context: Context) {
         )
     }
 
+    /** The reading direction set for each folder that has one. */
+    fun seriesDirections(): Map<String, ReadingDirection> {
+        val all = readObject(KEY_SERIES)
+        val out = HashMap<String, ReadingDirection>()
+        all.keys().forEach { k -> out[k] = if (all.optJSONObject(k)?.optString("dir") == "rtl") ReadingDirection.RTL else ReadingDirection.LTR }
+        return out
+    }
+
     /** Saves the settings for [folder], or forgets them when [settings] is null. */
     fun setSeries(folder: String, settings: SeriesSettings?) {
         synchronized(LOCK) {

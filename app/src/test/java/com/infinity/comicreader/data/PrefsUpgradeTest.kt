@@ -29,6 +29,49 @@ class PrefsUpgradeTest {
     private fun stored() = PreferenceManager.getDefaultSharedPreferences(context).all
 
     @Test
+    fun singleSortMovesToBrowseAndFavorites() {
+        assertEquals(
+            mapOf(
+                "pref_sort_browse_by" to "size",
+                "pref_sort_favorites_by" to "size",
+                "pref_sort" to null,
+                "pref_sort_dir" to null
+            ),
+            Prefs.upgrade(mapOf("pref_sort" to "size", "pref_sort_dir" to "desc"))
+        )
+        assertEquals("added:flipped", Prefs.upgrade(mapOf("pref_sort" to "date"))["pref_sort_browse_by"])
+        assertEquals("type", Prefs.upgrade(mapOf("pref_sort" to "type", "pref_sort_dir" to "asc"))["pref_sort_browse_by"])
+        assertEquals("name:flipped", Prefs.upgrade(mapOf("pref_sort_dir" to "desc"))["pref_sort_favorites_by"])
+    }
+
+    @Test
+    fun defaultSingleSortOnlyDropsTheOldKeys() {
+        assertEquals(
+            mapOf("pref_sort" to null, "pref_sort_dir" to null),
+            Prefs.upgrade(mapOf("pref_sort" to "name", "pref_sort_dir" to "asc"))
+        )
+    }
+
+    @Test
+    fun aTabSortAlreadySetWins() {
+        val changes = Prefs.upgrade(mapOf("pref_sort" to "size", "pref_sort_browse_by" to "year"))
+        assertFalse("pref_sort_browse_by" in changes)
+        assertEquals("size:flipped", changes["pref_sort_favorites_by"])
+    }
+
+    @Test
+    fun sortsPerTab() {
+        val prefs = Prefs(context)
+        assertEquals(TabSort.defaultFor(Prefs.TAB_HISTORY), prefs.sort(Prefs.TAB_HISTORY))
+        val sort = TabSort(SortLevel(SortKey.YEAR, flipped = true), SortLevel(SortKey.LENGTH), foldersFirst = false)
+        prefs.setSort(Prefs.TAB_BROWSE, sort)
+        assertEquals(sort, prefs.sort(Prefs.TAB_BROWSE))
+        assertEquals(TabSort.defaultFor(Prefs.TAB_FAVORITES), prefs.sort(Prefs.TAB_FAVORITES))
+        prefs.setSort(Prefs.TAB_BROWSE, sort.copy(then = null))
+        assertEquals(null, prefs.sort(Prefs.TAB_BROWSE).then)
+    }
+
+    @Test
     fun tapZonesSwitchBecomesALayout() {
         assertEquals(
             mapOf("pref_tap_zone_layout" to "left_right", "pref_tap_zones" to null),

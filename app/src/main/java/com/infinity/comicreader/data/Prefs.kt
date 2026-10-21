@@ -228,13 +228,24 @@ class Prefs(context: Context) {
             .apply()
     }
 
-    var listSort: String
-        get() = str(KEY_SORT, "name")
-        set(v) = put(KEY_SORT, v)
+    /** How [tab] orders its entries. */
+    fun sort(tab: String): TabSort {
+        val def = TabSort.defaultFor(tab)
+        return TabSort(
+            by = SortLevel.decode(sp.getString(sortKey(tab, SORT_BY), null)) ?: def.by,
+            then = SortLevel.decode(sp.getString(sortKey(tab, SORT_THEN), null)),
+            foldersFirst = bool(sortKey(tab, SORT_FOLDERS_FIRST), def.foldersFirst)
+        )
+    }
 
-    var listSortDir: String
-        get() = str(KEY_SORT_DIR, "asc")
-        set(v) = put(KEY_SORT_DIR, v)
+    fun setSort(tab: String, sort: TabSort) {
+        val e = sp.edit()
+            .putString(sortKey(tab, SORT_BY), sort.by.encode())
+            .putBoolean(sortKey(tab, SORT_FOLDERS_FIRST), sort.foldersFirst)
+        val then = sort.then
+        if (then == null) e.remove(sortKey(tab, SORT_THEN)) else e.putString(sortKey(tab, SORT_THEN), then.encode())
+        e.apply()
+    }
 
     var titleDisplay: TitleDisplay
         get() = TitleDisplay.of(sp.getString(KEY_TITLE_DISPLAY, null))
@@ -378,6 +389,14 @@ class Prefs(context: Context) {
         /** The key of one [field] of [tab]'s view, e.g. `pref_view_browse_grid`. */
         private fun viewKey(tab: String, field: String) = "pref_view_${tab}_$field"
 
+        private const val SORT_BY = "by"
+        private const val SORT_THEN = "then"
+        private const val SORT_FOLDERS_FIRST = "folders_first"
+        private val SORT_FIELDS = listOf(SORT_BY, SORT_THEN, SORT_FOLDERS_FIRST)
+
+        /** The key of one [field] of [tab]'s sort, e.g. `pref_sort_browse_by`. */
+        private fun sortKey(tab: String, field: String) = "pref_sort_${tab}_$field"
+
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"
         private const val KEY_CHARSET = "pref_charset"
@@ -409,8 +428,6 @@ class Prefs(context: Context) {
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
-        private const val KEY_SORT = "pref_sort"
-        private const val KEY_SORT_DIR = "pref_sort_dir"
         private const val KEY_TITLE_DISPLAY = "pref_title_display"
         private const val KEY_SHORTEN_PREFIXES = "pref_shorten_prefixes"
         private const val KEY_PATHVIEW = "pref_list_pathview"
@@ -431,12 +448,16 @@ class Prefs(context: Context) {
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
-            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH
-        ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } }
+        ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
+
+        /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */
+        private const val OLD_SORT = "pref_sort"
+        private const val OLD_SORT_DIR = "pref_sort_dir"
 
         /** With [OLD_COLUMNS] and [OLD_ROWS], replaced by Browse's and Favorites' own views; defaulted off. */
         private const val OLD_GRID = "pref_grid"
@@ -448,7 +469,19 @@ class Prefs(context: Context) {
         /** Replaced by [KEY_TITLE_DISPLAY] and each tab's detail display: off hid titles and details. */
         private const val OLD_FILENAMES = "pref_show_filenames"
 
-        /** The tabs that take over the single grid setting; the others start at their defaults. */
+        /**
+         * The old single sort ("name", "size", "date", "type"), ascending unless
+         * [descending], as a sort level: dates are when files were added, and
+         * "type" ascending put archives before images.
+         */
+        private fun sortLevelOf(old: String?, descending: Boolean): SortLevel = when (old) {
+            "size" -> SortLevel(SortKey.SIZE, flipped = !descending)
+            "date" -> SortLevel(SortKey.ADDED, flipped = !descending)
+            "type" -> SortLevel(SortKey.TYPE, flipped = descending)
+            else -> SortLevel(SortKey.NAME, flipped = descending)
+        }
+
+        /** The tabs that take over the single grid and sort settings; the others start at their defaults. */
         private val GRID_HEIRS = listOf(TAB_BROWSE, TAB_FAVORITES)
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
@@ -517,6 +550,17 @@ class Prefs(context: Context) {
                 out[OLD_GRID] = null
                 out[OLD_COLUMNS] = null
                 out[OLD_ROWS] = null
+            }
+            if (OLD_SORT in stored || OLD_SORT_DIR in stored) {
+                val level = sortLevelOf(stored[OLD_SORT] as? String, stored[OLD_SORT_DIR] == "desc")
+                if (level != SortLevel(SortKey.NAME)) {
+                    for (tab in GRID_HEIRS) {
+                        val key = sortKey(tab, SORT_BY)
+                        if (key !in stored) out[key] = level.encode()
+                    }
+                }
+                out[OLD_SORT] = null
+                out[OLD_SORT_DIR] = null
             }
             if (OLD_FILENAMES in stored) {
                 if (stored[OLD_FILENAMES] == false) {

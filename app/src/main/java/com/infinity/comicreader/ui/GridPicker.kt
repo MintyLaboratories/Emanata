@@ -174,7 +174,7 @@ class GridPicker @JvmOverloads constructor(
     override fun performClick(): Boolean = super.performClick()
 
     private companion object {
-        const val CELL_DP = 36f
+        const val CELL_DP = 48f
         const val GAP_DP = 4f
         const val LABEL_DP = 40f
         const val AUTO_MARK = "A"

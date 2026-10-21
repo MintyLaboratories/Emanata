@@ -59,6 +59,8 @@
     <string name="location_removed">%1$s was removed</string>
     <string name="book_storage_removed">%1$s was removed, so the book was closed</string>
     <string name="folder_gone">That folder no longer exists</string>
+    <!-- Brightness drag indicator: %1$s is the signed value, e.g. "+12", "−20", "0". -->
+    <string name="brightness_indicator">Brightness %1$s</string>
     <string name="menu_show_hidden">Show hidden files</string>
     <string name="menu_hide_hidden">Hide hidden files</string>
     <string name="grid_size">Grid dimensions</string>

@@ -16,8 +16,10 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
@@ -139,6 +141,9 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var btnPrevChapter: ImageButton
     private lateinit var btnNextChapter: ImageButton
     private lateinit var hint: TextView
+    private lateinit var brightnessPill: View
+    private lateinit var brightnessText: TextView
+    private lateinit var brightnessBar: SignedBar
 
     /** Counts "previous page" actions on the first page, toward the previous chapter. */
     private val repeatedBack = RepeatedBack()
@@ -513,6 +518,8 @@ class ViewerActivity : AppCompatActivity() {
         storageWatcher.stop()
         handler.removeCallbacks(hideHint)
         hint.animate().cancel()
+        handler.removeCallbacks(hideBrightness)
+        brightnessPill.animate().cancel()
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -551,6 +558,9 @@ class ViewerActivity : AppCompatActivity() {
         endNext = findViewById(R.id.end_next)
         endPrev = findViewById(R.id.end_prev)
         hint = findViewById(R.id.viewer_hint)
+        brightnessPill = findViewById(R.id.brightness_pill)
+        brightnessText = findViewById(R.id.brightness_text)
+        brightnessBar = findViewById(R.id.brightness_bar)
         vertical.layoutManager = LinearLayoutManager(this)
         // Any relayout (rotation, the card's buttons, the bars) places the card and the hint again.
         findViewById<View>(R.id.viewer_root).addOnLayoutChangeListener { root, _, _, _, _, _, _, _, _ ->
@@ -1599,7 +1609,8 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * Brightness by vertical drag: up is brighter. One screen height spans the whole range,
-     * and crossing 0 holds there for [BRIGHTNESS_HOLD] of the screen height.
+     * and crossing 0 holds there for [BRIGHTNESS_HOLD] of the screen height. The value
+     * shows in a pill ([showBrightness]) while dragging, and for a moment after.
      */
     private val brightnessDrag = object : ZoomImageView.VerticalDrag {
         private var snap: SnapDrag? = null
@@ -1607,16 +1618,52 @@ class ViewerActivity : AppCompatActivity() {
         override fun start() {
             val h = resources.displayMetrics.heightPixels.toFloat()
             snap = SnapDrag(adjustments.brightness, h / (Adjustments.MAX - Adjustments.MIN), h * BRIGHTNESS_HOLD)
+            showBrightness(adjustments.brightness, snapped = false)
         }
 
         override fun move(dy: Float) {
             val value = snap?.moveBy(-dy) ?: return
-            if (value != adjustments.brightness) setAdjustments(adjustments.copy(brightness = value), persist = false)
+            val before = adjustments.brightness
+            if (value != before) setAdjustments(adjustments.copy(brightness = value), persist = false)
+            showBrightness(value, BrightnessPill.snapped(before, value))
         }
 
         override fun end() {
             snap = null
             persistAdjustments()
+            handler.removeCallbacks(hideBrightness)
+            handler.postDelayed(hideBrightness, BrightnessPill.LINGER_MS)
+        }
+    }
+
+    /**
+     * Shows [value] in the brightness pill near the top: "Brightness +12" over a bar from
+     * −100 to +100, a 0 highlighted; [snapped] into the hold at 0 it also ticks.
+     */
+    private fun showBrightness(value: Int, snapped: Boolean) {
+        handler.removeCallbacks(hideBrightness)
+        brightnessPill.animate().cancel()
+        val number = BrightnessPill.valueText(value)
+        val text = SpannableStringBuilder(getString(R.string.brightness_indicator, number))
+        if (value == 0) {
+            val at = text.lastIndexOf(number)
+            if (at >= 0) {
+                text.setSpan(ForegroundColorSpan(getColor(R.color.reader_accent)), at, at + number.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.setSpan(StyleSpan(Typeface.BOLD), at, at + number.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        brightnessText.text = text
+        brightnessBar.value = value
+        val gap = resources.getDimensionPixelSize(R.dimen.brightness_pill_gap)
+        brightnessPill.translationY = ((if (toolbar.visibility == View.VISIBLE) toolbar.bottom else 0) + gap).toFloat()
+        brightnessPill.alpha = 1f
+        brightnessPill.visibility = View.VISIBLE
+        if (snapped) brightnessPill.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    private val hideBrightness = Runnable {
+        if (brightnessPill.visibility == View.VISIBLE) {
+            brightnessPill.animate().alpha(0f).setDuration(200).withEndAction { brightnessPill.visibility = View.GONE }.start()
         }
     }
 

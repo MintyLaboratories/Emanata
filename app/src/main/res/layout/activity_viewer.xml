@@ -166,6 +166,34 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Brightness drag indicator. -->
+    <LinearLayout
+        android:id="@+id/brightness_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:background="@drawable/bg_reader_bottom"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_5"
+        android:paddingVertical="@dimen/space_3"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/brightness_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@android:color/white"
+            android:textSize="15sp"
+            tools:text="Brightness +12" />
+
+        <com.infinity.comicreader.ui.SignedBar
+            android:id="@+id/brightness_bar"
+            android:layout_width="160dp"
+            android:layout_height="4dp"
+            android:layout_marginTop="@dimen/space_2" />
+    </LinearLayout>
+
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/viewer_end"
         android:layout_width="wrap_content"

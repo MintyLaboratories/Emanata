@@ -236,6 +236,17 @@ class ViewerActivityRepeatedBackTest {
         listOf(v) + ((v as? ViewGroup)?.let { g -> (0 until g.childCount).flatMap { descendants(g.getChildAt(it)) } } ?: emptyList())
 
     @Test
+    fun leavingTheFirstPageHidesTheHint() {
+        val viewer = launch(second, 0)
+        viewer.back()
+        assertEquals(true, viewer.hintShown())
+        viewer.findViewById<View>(R.id.btn_next_page).performClick()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(300))
+        assertEquals(1, viewer.page())
+        assertEquals(false, viewer.hintShown())
+    }
+
+    @Test
     fun aLateBackStartsOver() {
         val viewer = launch(second, 0)
         viewer.back()

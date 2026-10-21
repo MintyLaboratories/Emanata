@@ -383,6 +383,8 @@ class ViewerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        handler.removeCallbacks(hideHint)
+        hint.animate().cancel()
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -609,6 +611,7 @@ class ViewerActivity : AppCompatActivity() {
         landedAtEnd = false
         bookChapters = emptyList()
         repeatedBack.reset()
+        hideHintNow()
         backPage = -1
         resolveLayout()
 
@@ -1024,6 +1027,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun onPageChanged() {
         if (currentIndex != backPage) {
             repeatedBack.reset()
+            hideHintNow()
             backPage = currentIndex
         }
         val count = source?.pageCount ?: 0

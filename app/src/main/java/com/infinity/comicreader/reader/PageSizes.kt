@@ -62,15 +62,28 @@ class PageSizes(val dir: File) {
         fun dirIn(cacheDir: File) = File(cacheDir, "page-sizes")
 
         /**
-         * Fills the unknown entries of [sizes] from [source]'s page headers, in page order,
-         * until [canceled]; returns false when canceled first. Blocking.
+         * Fills the unknown entries of [sizes] from [source]'s page headers, nearest page
+         * [from] first ([outward]), until [canceled]; returns false when canceled first. Blocking.
          */
-        fun scan(source: PageSource, sizes: Array<IntArray?>, canceled: () -> Boolean = { false }): Boolean {
-            for (i in sizes.indices) {
+        fun scan(source: PageSource, sizes: Array<IntArray?>, from: Int = 0, canceled: () -> Boolean = { false }): Boolean {
+            for (i in outward(sizes.size, from)) {
                 if (canceled()) return false
                 if (sizes[i] == null) sizes[i] = runCatching { source.pageSize(i) }.getOrNull()
             }
             return true
+        }
+
+        /** Every index below [count], [from] first, then the next one ahead and the next one back in turn. */
+        fun outward(count: Int, from: Int): List<Int> {
+            val start = from.coerceIn(0, maxOf(count - 1, 0))
+            val out = ArrayList<Int>(count)
+            var step = 0
+            while (out.size < count) {
+                if (start + step < count) out += start + step
+                if (step > 0 && start - step >= 0) out += start - step
+                step++
+            }
+            return out
         }
     }
 }

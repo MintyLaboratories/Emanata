@@ -1013,19 +1013,21 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Reads the sizes [book]'s pages lack from their headers, in the background, stores
-     * them, and lays the book out again when they change its spreads. Skipped where that
-     * would unpack the whole book ([PageSource.cheapSizes]).
+     * Reads the sizes [book]'s pages lack from their headers, in the background and from
+     * the page on screen outward, stores them, and lays the book out again when they
+     * change its spreads. Skipped where that would unpack the whole book
+     * ([PageSource.cheapSizes]).
      */
     private fun scanSizes(book: File, src: PageSource) {
         sizesJob?.cancel()
         if (!src.cheapSizes || pageSizes.none { it == null }) return
         val names = pageNames
         val sizes = pageSizes.copyOf()
+        val from = currentIndex
         sizesJob = lifecycleScope.launch {
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                if (!PageSizes.scan(src, sizes) { !job.isActive }) return@withContext null
+                if (!PageSizes.scan(src, sizes, from) { !job.isActive }) return@withContext null
                 PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
                 classify(names, sizes)
             }

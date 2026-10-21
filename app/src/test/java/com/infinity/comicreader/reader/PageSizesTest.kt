@@ -59,4 +59,19 @@ class PageSizesTest {
         assertFalse(PageSizes.scan(source, more) { left-- <= 0 })
         assertNull(more[3])
     }
+
+    @Test
+    fun aScanStartsAtTheOpenPageAndWorksOutward() {
+        assertEquals(listOf(3, 4, 2, 5, 1, 0), PageSizes.outward(6, 3))
+        assertEquals(listOf(0, 1, 2), PageSizes.outward(3, 0))
+        assertEquals(listOf(2, 1, 0), PageSizes.outward(3, 7))
+        assertEquals(emptyList<Int>(), PageSizes.outward(0, 0))
+        val source = Sized(5)
+        val sizes = arrayOfNulls<IntArray>(5)
+        var left = 2
+        assertFalse(PageSizes.scan(source, sizes, from = 3) { left-- <= 0 })
+        assertArrayEquals(intArrayOf(4, 10), sizes[3])
+        assertArrayEquals(intArrayOf(5, 10), sizes[4])
+        assertNull(sizes[0])
+    }
 }

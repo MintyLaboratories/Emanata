@@ -672,8 +672,8 @@ class PageAdapter(
     /**
      * Finds what auto-crop takes off [page], with a decode sampled down to about
      * [MEASURE_PIXELS] and then to a tiny bitmap that is thrown away; then binds its item
-     * again. A page with no blank border, or one that does not
-     * decode, crops alone.
+     * again, or preloads it when it is ahead ([prefetchAfter]). A page with no blank
+     * border, or one that does not decode, crops alone.
      */
     private fun measure(page: Int) {
         if (released || !measuring.add(page)) return
@@ -697,6 +697,8 @@ class PageAdapter(
             }
             if (bounds[page] == null) bounds[page] = PageBounds.Found(Box.FULL, 0, 0)
             notifyItemChanged(layout.itemOf(PageLayout.Part(page)), RESIZE)
+            // An item not bound yet waits for no bind: its pages are asked for here.
+            if (!released && prefetchFrom >= 0) prefetchAfter(prefetchFrom)
         }
     }
 
@@ -847,8 +849,12 @@ class PageAdapter(
         return entry
     }
 
+    /** The item [prefetchAfter] last preloaded after, or -1. */
+    private var prefetchFrom = -1
+
     /** Decodes the [preload] parts on the items after [position] into the cache. */
     private fun prefetchAfter(position: Int) {
+        prefetchFrom = position
         var ahead = if (mode == Mode.LONG_STRIP) minOf(preload, MAX_STRIP_PRELOAD) else preload
         var item = position + 1
         while (ahead > 0 && item < itemCount) {

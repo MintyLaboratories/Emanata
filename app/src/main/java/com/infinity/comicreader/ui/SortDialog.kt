@@ -63,13 +63,13 @@ object SortDialog {
         return context.getString(R.string.sort_two_levels, first, levelText(context, then))
     }
 
-    /** Opens [tab]'s sort popup. */
-    fun show(context: Context, prefs: Prefs, tab: String): AlertDialog {
+    /** [tab]'s sort popup, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. */
+    fun create(context: Context, prefs: Prefs, tab: String): AlertDialog {
         val content = Content(context, prefs, tab)
         return AlertDialog.Builder(context)
             .setTitle(R.string.menu_sort)
             .setView(ScrollView(context).apply { addView(content.root) })
-            .show()
+            .create()
             .apply { setCanceledOnTouchOutside(true) }
     }
 

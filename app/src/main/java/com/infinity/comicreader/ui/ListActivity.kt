@@ -204,7 +204,7 @@ class ListActivity : AppCompatActivity() {
         recycler = findViewById(R.id.recycler)
         fab = findViewById(R.id.fab)
         filterChip = findViewById(R.id.filter_chip)
-        filterChip.setOnClickListener { FilterDialog.show(this, prefs, tabName()) }
+        filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
         filterChip.closeIconContentDescription = getString(R.string.filter_clear)
         progress = findViewById(R.id.progress)
@@ -1569,7 +1569,7 @@ class ListActivity : AppCompatActivity() {
         when (item.itemId) {
             R.id.menu_grid -> toggleGrid()
             R.id.menu_sort -> showSortDialog()
-            R.id.menu_filter -> FilterDialog.show(this, prefs, tabName())
+            R.id.menu_filter -> TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName())
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
             R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())
@@ -1600,7 +1600,7 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun showSortDialog() {
-        SortDialog.show(this, prefs, tabName())
+        TabDialogFragment.show(this, TabDialogFragment.Kind.SORT, tabName())
     }
 
 

@@ -22,6 +22,7 @@ import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +30,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.fakes.RoboMenuItem
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -133,6 +135,23 @@ class ListActivitySortFilterTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         assertEquals(listOf("b (2010).cbz", "c.pdf", "a (2001).cbz"), activity.shown())
+    }
+
+    @Test
+    fun sortAndFilterPopupsSurviveRotation() {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        for ((item, kind) in listOf(R.id.menu_sort to TabDialogFragment.Kind.SORT, R.id.menu_filter to TabDialogFragment.Kind.FILTER)) {
+            controller.get().onOptionsItemSelected(RoboMenuItem(item))
+            idle()
+            controller.recreate()
+            idle()
+            val fragment = controller.get().supportFragmentManager.fragments.filterIsInstance<TabDialogFragment>().single()
+            assertEquals(kind.name, fragment.requireArguments().getString("kind"))
+            assertTrue(fragment.dialog!!.isShowing)
+            fragment.dismiss()
+            idle()
+        }
     }
 
     @Test

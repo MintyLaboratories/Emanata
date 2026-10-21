@@ -65,7 +65,7 @@ class SortDialogTest {
 
     @Test
     fun tapsApplyAtOnceAndFlipTheSelectedOption() {
-        val dialog = SortDialog.show(activity, prefs, Prefs.TAB_BROWSE)
+        val dialog = SortDialog.create(activity, prefs, Prefs.TAB_BROWSE).apply { show() }
         shadowOf(Looper.getMainLooper()).idle()
         val root = dialog.window!!.decorView
         assertNotNull(root.findText("Name – A → Z"))

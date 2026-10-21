@@ -41,15 +41,15 @@ object FilterDialog {
         ReadStatus.FINISHED to R.string.filter_finished
     )
 
-    /** Opens [tab]'s filter. */
-    fun show(context: Context, prefs: Prefs, tab: String): AlertDialog {
+    /** [tab]'s filter, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. */
+    fun create(context: Context, prefs: Prefs, tab: String): AlertDialog {
         val content = Content(context, prefs, tab)
         return AlertDialog.Builder(context)
             .setTitle(R.string.menu_filter)
             .setView(ScrollView(context).apply { addView(content.root) })
             .setPositiveButton(R.string.done, null)
             .setNeutralButton(R.string.filter_clear) { _, _ -> prefs.setFilter(tab, LibraryFilter.NONE) }
-            .show()
+            .create()
     }
 
     private class Content(val context: Context, val prefs: Prefs, val tab: String) {

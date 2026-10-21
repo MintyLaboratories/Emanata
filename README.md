@@ -73,8 +73,23 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - A **Recent** row sits above the browsing list and opens the folder holding the
   last chapter you read.
-- Sort by name / size / date / type (natural number ordering, so `page2` sorts
-  before `page10`), ascending or descending.
+- **Sort** (menu → View, per tab): Name, Year, Added, Accessed, Size, Length,
+  File type or Reading direction, each named by its direction (`newest first`);
+  tap the selected option to flip it. Changes apply live; tap outside to close.
+  Year, File type and Reading direction take a **Then by** level; Name A → Z
+  (natural order, so `page2` sorts before `page10`) breaks every tie. Items
+  without a value sort last. **Folders first** is on by default. Browse and
+  Favorites start by name, History and Bookmarks by last access (adding a
+  bookmark counts). Page counts, ComicInfo years and folder totals are found
+  in the background; page counts fill in without moving rows.
+- **Filter** (per tab): file type, reading direction, read status, year and
+  length ranges. A **Filtered** chip shows while anything is hidden; tap it to
+  edit, × to clear.
+- **Peek:** spread two fingers on a comic and a grid of its pages grows out of
+  it; pinch back to collapse, release part-way to keep it open (scroll, tap a
+  page to open there), release fully spread to open the book. Settings →
+  **Pinch to peek**: Off, Peek or Peek & open (default); also in the long-press
+  menu.
 - Incremental search within the current folder.
 - Favorites (star) and reading history, with jump-back to the last page read.
   Every history entry shows its **parent folder below the name**, so bare
@@ -90,7 +105,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Long-press a file or folder to favorite it, make a folder the startup folder,
   open its location, rename, mark read/unread or delete it.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
-  named (`Device`, the SD card's label); back navigates up, never above a root.
+  named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
+  never above a root. Going up keeps the deeper folders as gray **forward
+  crumbs**; opening another folder drops them.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.

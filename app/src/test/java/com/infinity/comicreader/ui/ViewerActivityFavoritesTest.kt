@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.widget.Toolbar
 import androidx.preference.PreferenceManager
@@ -45,7 +46,11 @@ class ViewerActivityFavoritesTest {
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().clear().commit()
         library = Library(context)
         book = File(tmp.newFolder("attic"), "one.cbz")
-        ZipOutputStream(book.outputStream()).use { zip ->
+        write(book)
+    }
+
+    private fun write(f: File) {
+        ZipOutputStream(f.outputStream()).use { zip ->
             repeat(3) {
                 zip.putNextEntry(ZipEntry("p%02d.png".format(it)))
                 zip.write(byteArrayOf(0))
@@ -56,8 +61,8 @@ class ViewerActivityFavoritesTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun launch(): ViewerActivity {
-        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+    private fun launch(file: File = book): ViewerActivity {
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
         val deadline = System.currentTimeMillis() + 5_000
@@ -68,12 +73,14 @@ class ViewerActivityFavoritesTest {
         return viewer
     }
 
-    /** The toolbar menu's title for [id], prepared again. */
-    private fun ViewerActivity.title(id: Int): String {
+    /** The toolbar menu's item [id], prepared again. */
+    private fun ViewerActivity.item(id: Int): MenuItem {
         invalidateOptionsMenu()
         idle()
-        return findViewById<Toolbar>(R.id.viewer_toolbar).menu.findItem(id).title.toString()
+        return findViewById<Toolbar>(R.id.viewer_toolbar).menu.findItem(id)
     }
+
+    private fun ViewerActivity.title(id: Int): String = item(id).title.toString()
 
     private fun ViewerActivity.click(id: Int) {
         shadowOf(this).clickMenuItem(id)
@@ -90,6 +97,28 @@ class ViewerActivityFavoritesTest {
         assertEquals(context.getString(R.string.menu_remove_favorite), viewer.title(R.id.menu_favorite))
         viewer.click(R.id.menu_favorite)
         assertFalse(library.isFavorite(book.absolutePath))
+    }
+
+    @Test
+    fun aCopyInTheCacheHasNoFavoriteItems() {
+        val copy = File(File(context.cacheDir, "shared").apply { mkdirs() }, "two.cbz")
+        write(copy)
+        try {
+            val viewer = launch(copy)
+            assertFalse(viewer.item(R.id.menu_favorite).isVisible)
+            assertFalse(viewer.item(R.id.menu_favorite_folder).isVisible)
+        } finally {
+            copy.parentFile!!.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun favoritesAddedElsewhereShowWhenTheComicOpens() {
+        library.toggleFavorite(book.absolutePath)
+        library.toggleFavorite(book.parent!!)
+        val viewer = launch()
+        assertEquals(context.getString(R.string.menu_remove_favorite), viewer.title(R.id.menu_favorite))
+        assertEquals(context.getString(R.string.menu_remove_folder_favorite), viewer.title(R.id.menu_favorite_folder))
     }
 
     @Test

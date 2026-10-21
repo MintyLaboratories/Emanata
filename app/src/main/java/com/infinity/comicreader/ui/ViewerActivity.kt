@@ -169,6 +169,10 @@ class ViewerActivity : AppCompatActivity() {
     private var endDismissed = false
     private var markedRead = false
 
+    /** Whether the open comic and its folder are favorites, read once per file for the menu. */
+    private var favoriteBook = false
+    private var favoriteFolder = false
+
     /** True while the reader stays on the last page it was opened at from the next chapter: not yet read. */
     private var landedAtEnd = false
 
@@ -613,6 +617,7 @@ class ViewerActivity : AppCompatActivity() {
         val target = File(path)
         persistAdjustments()
         file = target
+        refreshFavorites()
         loadAdjustments()
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
@@ -864,6 +869,7 @@ class ViewerActivity : AppCompatActivity() {
         bookChapters = chaptersOf(next)
         persistAdjustments()
         file = nextFile
+        refreshFavorites()
         loadAdjustments()
         // Reopening or recreating the reader must load the chapter now shown.
         intent.putExtra(EXTRA_PATH, nextFile.absolutePath)
@@ -1448,29 +1454,37 @@ class ViewerActivity : AppCompatActivity() {
      * for a document another app handed over, which only has a copy in the cache.
      */
     private fun prepareFavorites(menu: Menu) {
-        val f = file?.takeUnless { it.absolutePath.startsWith(cacheDir.absolutePath + File.separator) }
+        val f = favoriteFile()
         val folder = f?.parentFile
         menu.findItem(R.id.menu_favorite)?.apply {
             isVisible = f != null
-            if (f != null) {
-                setTitle(if (library.isFavorite(f.absolutePath)) R.string.menu_remove_favorite else R.string.menu_add_favorite)
-            }
+            if (f != null) setTitle(if (favoriteBook) R.string.menu_remove_favorite else R.string.menu_add_favorite)
         }
         menu.findItem(R.id.menu_favorite_folder)?.apply {
             isVisible = folder != null
             if (folder != null) {
-                setTitle(
-                    if (library.isFavorite(folder.absolutePath)) R.string.menu_remove_folder_favorite
-                    else R.string.menu_add_folder_favorite
-                )
+                setTitle(if (favoriteFolder) R.string.menu_remove_folder_favorite else R.string.menu_add_folder_favorite)
             }
         }
+    }
+
+    /** The open comic, unless it is a copy in the cache of a document another app handed over. */
+    private fun favoriteFile(): File? =
+        file?.takeUnless { it.absolutePath.startsWith(cacheDir.absolutePath + File.separator) }
+
+    /** Reads whether the open comic and its folder are favorites. */
+    private fun refreshFavorites() {
+        val f = favoriteFile()
+        val favorites = if (f != null) library.favoriteSet() else emptySet()
+        favoriteBook = f != null && f.absolutePath in favorites
+        favoriteFolder = f?.parent?.let { it in favorites } == true
     }
 
     /** Adds [path] to the favorites, or removes it, and says which. */
     private fun toggleFavorite(path: String?, added: Int, removed: Int) {
         if (path == null) return
         toast(if (library.toggleFavorite(path)) added else removed)
+        refreshFavorites()
         invalidateOptionsMenu()
     }
 

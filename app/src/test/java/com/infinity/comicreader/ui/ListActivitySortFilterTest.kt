@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.chip.Chip
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Library
@@ -20,6 +21,7 @@ import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,6 +106,16 @@ class ListActivitySortFilterTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         assertEquals(listOf("z extras"), activity.shown())
+    }
+
+    @Test
+    fun unreadableBooksAreNotRemembered() {
+        BookFactsCache.reset()
+        val junk = File(dir, "b (2010).cbz").apply { writeText("not an archive") }
+        prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
+        Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertNull(BookFactsCache(ApplicationProvider.getApplicationContext()).get(junk.absolutePath, junk.length()))
     }
 
     @Test

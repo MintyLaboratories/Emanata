@@ -149,6 +149,9 @@ class ListActivity : AppCompatActivity() {
     /** Folder totals found so far, by path. */
     private val folderSizes = HashMap<String, Long>()
 
+    /** Books that could not be read, by path, with the size they failed at; retried next launch. */
+    private val factsFailed = HashMap<String, Long>()
+
     /** Finds values the sort needs in the background ([scheduleFacts]). */
     private var factsJob: Job? = null
 
@@ -831,7 +834,8 @@ class ListActivity : AppCompatActivity() {
         if (!needFacts && !needSizes) return
         val entries = allEntries.toList()
         val books = if (!needFacts) emptyList() else entries.filter {
-            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && factsCache.get(it.path, it.size) == null
+            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && factsCache.get(it.path, it.size) == null &&
+                factsFailed[it.path] != it.size
         }
         val folders = if (!needSizes) emptyList() else entries.filter { it.isDir && it.path !in folderSizes }
         if (books.isEmpty() && folders.isEmpty()) return
@@ -842,9 +846,9 @@ class ListActivity : AppCompatActivity() {
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in books.withIndex()) {
                 val facts = withContext(AppDispatchers.io) {
-                    runCatching { BookFactsReader.read(e.file, charset, cacheDir) }.getOrElse { BookFacts(-1, 0) }
+                    runCatching { BookFactsReader.read(e.file, charset, cacheDir) }.getOrNull()
                 }
-                found[e.path] = e.size to facts
+                if (facts != null) found[e.path] = e.size to facts else factsFailed[e.path] = e.size
                 val now = SystemClock.uptimeMillis()
                 if (i < books.lastIndex && now - shownAt < FACTS_PUBLISH_MS) continue
                 factsCache.putAll(found)

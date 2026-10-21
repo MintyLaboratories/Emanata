@@ -4,6 +4,8 @@ import com.github.junrar.Archive
 import com.github.junrar.rarfile.FileHeader
 import java.io.File
 import java.io.InputStream
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Reads a rar/cbr archive, RAR4 or RAR5 (via junrar). */
 class RarReader(file: File) : ArchiveReader {
@@ -26,14 +28,16 @@ class RarReader(file: File) : ArchiveReader {
         }
     }
 
+    /** Serializes reads first come, first served: a page for the screen waits for the read in progress, never a run of background reads. */
+    private val lock = ReentrantLock(true)
+
     /**
      * junrar's [Archive] is not thread-safe; the adapter loads neighbors
-     * concurrently, so access is serialized here. junrar unpacks on a thread of its own,
-     * so an entry [block] reads only the start of is read to its end before the next
-     * read may begin.
+     * concurrently, so access is serialized here ([lock]). junrar unpacks on a thread of
+     * its own, so an entry [block] reads only the start of is read to its end before the
+     * next read may begin.
      */
-    @Synchronized
-    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T =
+    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T = lock.withLock {
         archive.getInputStream(native[entry.index]).use { input ->
             try {
                 block(input)
@@ -44,6 +48,7 @@ class RarReader(file: File) : ArchiveReader {
                 }
             }
         }
+    }
 
     override fun close() {
         runCatching { archive.close() }

@@ -1741,17 +1741,18 @@ class ViewerActivity : AppCompatActivity() {
     /** True while the preview strip shows. */
     internal val seekPanelShown: Boolean get() = seekPanel.visibility == View.VISIBLE
 
+    /** Hides the strip; detaching its adapter recycles the cells, which stops their loads but keeps the caches. */
     private fun closeSeekPanel() {
         seekBack.isEnabled = false
         if (seekPanel.visibility != View.VISIBLE) return
         seekPanel.visibility = View.GONE
         seekScrim.visibility = View.GONE
+        seekPanel.adapter = null
     }
 
     /** Closes the strip and forgets its previews, which belong to the book being closed. */
     private fun dropSeekPreviews() {
         closeSeekPanel()
-        seekPanel.adapter = null
         seekPreviews?.release()
         seekPreviews = null
     }

@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -55,6 +56,58 @@ class WraparoundTest {
         assertFalse(Wraparound.isWraparound(1000, 1000))
         assertFalse(Wraparound.isWraparound(3000, 1000))
         assertFalse(Wraparound.isWraparound(0, 0))
+    }
+
+    @Test
+    fun aWraparoundIsTwoInnerPagesWide() {
+        val portrait = 1000.0 / 1500
+        // Two pages and a spine, at another scan size than the pages.
+        assertTrue(Wraparound.isWraparound(2750, 2000, portrait))
+        assertTrue(Wraparound.isWraparound(1500 * 2 * 85 / 100 + 10, 1500 * 3 / 2, portrait))
+        assertFalse(Wraparound.isWraparound(1400, 1500, portrait))
+        assertFalse(Wraparound.isWraparound(3000, 1500, portrait))
+        // Tall pages make a square wraparound, which shape alone would miss.
+        assertTrue(Wraparound.isWraparound(1000, 1000, 0.5))
+        assertFalse(Wraparound.isWraparound(1000, 1000, null))
+        // In a landscape book, a landscape cover is one page.
+        assertFalse(Wraparound.isWraparound(1400, 1000, 1.4))
+        assertTrue(Wraparound.isWraparound(2800, 1000, 1.4))
+        // Unknown inner pages fall back to shape alone.
+        assertTrue(Wraparound.isWraparound(1320, 1000, null))
+        assertFalse(Wraparound.isWraparound(0, 1000, portrait))
+    }
+
+    @Test
+    fun onlyWideCoversAreCandidates() {
+        assertFalse(Wraparound.isCandidate(650, 1000))
+        assertTrue(Wraparound.isCandidate(900, 1000))
+        assertFalse(Wraparound.isCandidate(0, 0))
+    }
+
+    @Test
+    fun theTypicalInnerPageIsTheMedianShape() {
+        assertEquals(0.5, Wraparound.innerRatio(listOf(intArrayOf(500, 1000), intArrayOf(2000, 1000), intArrayOf(400, 1000)))!!, 1e-9)
+        assertEquals(0.55, Wraparound.innerRatio(listOf(intArrayOf(500, 1000), intArrayOf(600, 1000), intArrayOf(0, 0)))!!, 1e-9)
+        assertNull(Wraparound.innerRatio(emptyList()))
+    }
+
+    @Test
+    fun withoutABarcodeTheFrontFollowsTheReadingDirection() {
+        assertEquals(Wraparound.Half.RIGHT, Wraparound.shownFront(null, rightToLeft = false))
+        assertEquals(Wraparound.Half.LEFT, Wraparound.shownFront(null, rightToLeft = true))
+        // The barcode outranks the direction.
+        assertEquals(Wraparound.Half.RIGHT, Wraparound.shownFront(Wraparound.Half.RIGHT, rightToLeft = true))
+        assertEquals(Wraparound.Half.LEFT, Wraparound.shownFront(Wraparound.Half.LEFT, rightToLeft = false))
+    }
+
+    @Test
+    fun theFrontIsOnePageWideFromTheOuterEdge() {
+        // 2100 wide: two 1000-wide pages and a 100-wide spine.
+        assertArrayEquals(intArrayOf(1100, 2100), Wraparound.frontColumns(2100, 1500, Wraparound.Half.RIGHT, 1000.0 / 1500))
+        assertArrayEquals(intArrayOf(0, 1000), Wraparound.frontColumns(2100, 1500, Wraparound.Half.LEFT, 1000.0 / 1500))
+        // Never more than half; half without inner pages.
+        assertArrayEquals(intArrayOf(1000, 2000), Wraparound.frontColumns(2000, 1500, Wraparound.Half.RIGHT, 0.9))
+        assertArrayEquals(intArrayOf(0, 1050), Wraparound.frontColumns(2100, 1500, Wraparound.Half.LEFT, null))
     }
 
     @Test

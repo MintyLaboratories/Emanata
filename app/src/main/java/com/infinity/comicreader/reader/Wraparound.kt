@@ -7,16 +7,27 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
+import kotlin.math.roundToInt
 
 /**
- * Wraparound covers: back and front side by side, about twice as wide as a cover.
- * The front is the half without the barcode, found from the image alone, so the
- * choice never depends on the reading direction. Free of Android types.
+ * Wraparound covers: back and front side by side, about twice as wide as one of
+ * the book's inner pages. The front is the half without the barcode; without one,
+ * the half a book in its reading direction starts on: the right one left to
+ * right, the left one right to left. Free of Android types.
  */
 object Wraparound {
-    /** Width / height of a wraparound: a cover is about 0.65, two of them about 1.3. */
+    /** Width / height of a wraparound when the book's inner pages are unknown: a cover is about 0.65, two of them about 1.3. */
     const val MIN_RATIO = 1.15
     const val MAX_RATIO = 1.8
+
+    /** At an inner page's height, a wraparound is twice its width give or take this share. */
+    const val PAGE_TOLERANCE = 0.15
+
+    /** Narrower covers are never wraparounds, even of very tall pages, so their books' inner pages need no look. */
+    const val CANDIDATE_RATIO = 0.85
+
+    /** Inner pages after the cover whose shapes make up the book's typical page. */
+    const val INNER_SAMPLE = 4
 
     /** Barcodes are looked for at most this tall; larger scans are shrunk first. */
     const val SCAN_HEIGHT = 2000
@@ -35,6 +46,45 @@ object Wraparound {
         if (width <= 0 || height <= 0) return false
         val ratio = width.toDouble() / height
         return ratio in MIN_RATIO..MAX_RATIO
+    }
+
+    /**
+     * True when a [width] x [height] cover is two of its book's pages side by side:
+     * at the height of a typical inner page of shape [innerRatio] (width / height), it
+     * is twice as wide within [PAGE_TOLERANCE]. Without inner pages (null), shape alone
+     * decides ([isWraparound]).
+     */
+    fun isWraparound(width: Int, height: Int, innerRatio: Double?): Boolean {
+        if (innerRatio == null || innerRatio <= 0.0) return isWraparound(width, height)
+        if (width <= 0 || height <= 0) return false
+        val pages = width.toDouble() / height / innerRatio
+        return pages in 2 * (1 - PAGE_TOLERANCE)..2 * (1 + PAGE_TOLERANCE)
+    }
+
+    /** True when a [width] x [height] cover is wide enough that its book's inner pages are worth a look. */
+    fun isCandidate(width: Int, height: Int): Boolean = width > 0 && height > 0 && width.toDouble() / height >= CANDIDATE_RATIO
+
+    /** The typical shape (width / height) of inner pages of [sizes] (`[width, height]` each): their median; null without any. */
+    fun innerRatio(sizes: List<IntArray>): Double? {
+        val ratios = sizes.filter { it.size >= 2 && it[0] > 0 && it[1] > 0 }.map { it[0].toDouble() / it[1] }.sorted()
+        if (ratios.isEmpty()) return null
+        val mid = ratios.size / 2
+        return if (ratios.size % 2 == 1) ratios[mid] else (ratios[mid - 1] + ratios[mid]) / 2
+    }
+
+    /** The half to show: the one the barcode told ([barcodeFront]), else the one a book read [rightToLeft] or not starts on. */
+    fun shownFront(barcodeFront: Half?, rightToLeft: Boolean): Half = barcodeFront ?: if (rightToLeft) Half.LEFT else Half.RIGHT
+
+    /**
+     * `[left, right]` columns of [half] of a [width] x [height] wraparound: from the
+     * outer edge, as wide as one inner page of [innerRatio] at this height, so a spine
+     * between the halves is left out; never more than half the width.
+     */
+    fun frontColumns(width: Int, height: Int, half: Half, innerRatio: Double?): IntArray {
+        val halfWidth = width / 2
+        val page = if (innerRatio == null || innerRatio <= 0.0) halfWidth else (innerRatio * height).roundToInt()
+        val w = page.coerceIn(1, halfWidth.coerceAtLeast(1))
+        return if (half == Half.LEFT) intArrayOf(0, w) else intArrayOf(width - w, width)
     }
 
     /**

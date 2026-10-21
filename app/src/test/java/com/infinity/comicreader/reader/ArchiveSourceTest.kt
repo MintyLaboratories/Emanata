@@ -118,4 +118,22 @@ class ArchiveSourceTest {
         val f = File(tmp.root, "book.cbz").apply { writeText("plain text") }
         assertNull(ArchiveReader.open(f, "UTF-8", ArchiveKind.sniff(f)))
     }
+
+    @Test
+    fun pageSizeReadsOnlyTheHeader() {
+        // A frame header for 1300 x 2000, then bytes no decoder would take.
+        val header = byteArrayOf(-1, -40, -1, -64, 0, 17, 8, 0x07, -48, 0x05, 0x14, 3) + ByteArray(9)
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg", header + ByteArray(200_000) { 7 }))
+        open(f).use { src -> assertEquals(listOf(1300, 2000), src.pageSize(0)?.toList()) }
+    }
+
+    @Test
+    fun pageSizeReadsOnPastALargeHeaderSegment() {
+        // A 20 KiB application segment before the frame header: past the first read.
+        val app = byteArrayOf(-1, -30, 0x50, 0x00) + ByteArray(0x5000 - 2)
+        val frame = byteArrayOf(-1, -64, 0, 17, 8, 0x07, -48, 0x05, 0x14, 3) + ByteArray(9)
+        val jpeg = byteArrayOf(-1, -40) + app + frame + ByteArray(1000)
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg", jpeg))
+        open(f).use { src -> assertEquals(listOf(1300, 2000), src.pageSize(0)?.toList()) }
+    }
 }

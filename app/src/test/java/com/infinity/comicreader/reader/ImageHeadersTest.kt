@@ -127,4 +127,47 @@ class ImageHeadersTest {
         // A box claiming to be shorter than its own header.
         assertNull(ImageHeaders.jxlSize(hex("0000000c4a584c200d0a870a00000004667479706a786c20")))
     }
+
+    // ------------------------------------------------------------------ JPEG
+
+    /** A JPEG's markers up to its frame header: [w] x [h], an EXIF [orientation] when given. */
+    private fun jpeg(w: Int, h: Int, orientation: Int? = null, little: Boolean = true, sof: Int = 0xC0): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(bytes(0xFF, 0xD8))
+        // JFIF, then a quantization table: segments the parser steps over.
+        out.write(bytes(0xFF, 0xE0, 0x00, 0x10) + "JFIF".toByteArray() + ByteArray(10))
+        if (orientation != null) {
+            fun u16(v: Int) = if (little) bytes(v, v shr 8) else bytes(v shr 8, v)
+            fun u32(v: Int) = if (little) bytes(v, v shr 8, v shr 16, v shr 24) else bytes(v shr 24, v shr 16, v shr 8, v)
+            val tiff = (if (little) "II".toByteArray() + u16(42) else "MM".toByteArray() + u16(42)) + u32(8) +
+                u16(2) + u16(0x010F) + u16(2) + u32(4) + u32(0) + u16(0x0112) + u16(3) + u32(1) + u16(orientation) + u16(0) + u32(0)
+            val body = "Exif".toByteArray() + bytes(0, 0) + tiff
+            out.write(bytes(0xFF, 0xE1, (body.size + 2) shr 8, body.size + 2) + body)
+        }
+        out.write(bytes(0xFF, 0xDB, 0x00, 0x43) + ByteArray(0x41))
+        out.write(bytes(0xFF, 0xFF, 0xFF, sof, 0x00, 0x11, 0x08, h shr 8, h, w shr 8, w, 0x03) + ByteArray(9))
+        out.write(bytes(0xFF, 0xDA, 0x00, 0x0C) + ByteArray(10))
+        return out.toByteArray()
+    }
+
+    @Test
+    fun jpegSizeFromFrameHeader() {
+        assertArrayEquals(intArrayOf(1988, 3056), ImageHeaders.jpegSize(jpeg(1988, 3056)))
+        assertArrayEquals(intArrayOf(640, 480), ImageHeaders.jpegSize(jpeg(640, 480, sof = 0xC2)))
+    }
+
+    @Test
+    fun jpegExifRotationSwapsTheSides() {
+        assertArrayEquals(intArrayOf(3056, 1988), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 6)))
+        assertArrayEquals(intArrayOf(3056, 1988), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 8, little = false)))
+        assertArrayEquals(intArrayOf(1988, 3056), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 3)))
+    }
+
+    @Test
+    fun jpegRejectsTruncatedOrForeignData() {
+        val whole = jpeg(1988, 3056)
+        assertNull(ImageHeaders.jpegSize(whole.copyOf(whole.size - 30)))
+        assertNull(ImageHeaders.jpegSize(png(37, 23)))
+        assertNull(ImageHeaders.jpegSize(jpeg(1988, 0)))
+    }
 }

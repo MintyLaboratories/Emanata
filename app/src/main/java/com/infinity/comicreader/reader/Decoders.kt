@@ -150,6 +150,32 @@ object Decoders {
 
     fun size(input: InputStream): IntArray? = size(BitmapUtils.readCapped(input))
 
+    /**
+     * Like [size] on an image's first [ImageHeaders.PREFIX_BYTES] alone, without reading
+     * the rest of [input]: null when they do not tell, so the caller reads it whole.
+     * JPEG, PNG and JPEG XL headers are parsed here; other formats go to the platform's
+     * header pass, which needs only their start too. TIFF is left to the whole read. A
+     * JPEG's frame header usually lies in its first [JPEG_HEADER_BYTES], read first.
+     */
+    fun headerSize(input: InputStream): IntArray? {
+        val head = ByteArray(ImageHeaders.PREFIX_BYTES)
+        var n = readFully(input, head, 0, JPEG_HEADER_BYTES)
+        if (ImageKind.sniff(head, n) == ImageKind.JPEG) {
+            runCatching { ImageHeaders.jpegSize(head.copyOf(n)) }.getOrNull()?.let { return it }
+        }
+        if (n == JPEG_HEADER_BYTES) n = readFully(input, head, n)
+        val bytes = if (n == head.size) head else head.copyOf(n)
+        return runCatching {
+            when (ImageKind.sniff(bytes)) {
+                ImageKind.JPEG -> ImageHeaders.jpegSize(bytes) ?: platformSize(bytes)
+                ImageKind.PNG -> pngSize(bytes) { platformSize(bytes) }
+                ImageKind.JXL -> ImageHeaders.jxlSize(bytes)
+                ImageKind.TIFF -> null
+                else -> platformSize(bytes)
+            }
+        }.getOrNull()
+    }
+
     /** Like [size] on bytes, reading only the first [ImageHeaders.PREFIX_BYTES] unless a JPEG XL header lies beyond. */
     fun size(file: File): IntArray? = runCatching {
         val head = readPrefix(file, ImageHeaders.PREFIX_BYTES)
@@ -253,15 +279,18 @@ object Decoders {
     }
 
     /** Fills [buf] from [input] past its first [from] bytes; how many it holds then. */
-    private fun readFully(input: InputStream, buf: ByteArray, from: Int): Int {
+    private fun readFully(input: InputStream, buf: ByteArray, from: Int, until: Int = buf.size): Int {
         var n = from
-        while (n < buf.size) {
-            val read = input.read(buf, n, buf.size - n)
+        while (n < until) {
+            val read = input.read(buf, n, until - n)
             if (read < 0) break
             n += read
         }
         return n
     }
+
+    /** What [headerSize] reads of a JPEG before the rest of its prefix. */
+    private const val JPEG_HEADER_BYTES = 8 * 1024
 
     /**
      * The preview ([Previews.TARGET]) of [bytes], decoded at reduced size, or null when

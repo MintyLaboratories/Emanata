@@ -157,8 +157,10 @@ class ArchiveSource(
         return bytes?.let { Decoders.preview(it) }
     }
 
+    /** From the entry's header when it tells, else from the whole entry. */
     override fun pageSize(index: Int): IntArray? {
         if (index !in pages.indices) return null
+        runCatching { readPage(index) { Decoders.headerSize(it) } }.getOrNull()?.let { return it }
         return runCatching {
             Decoders.size(readPage(index) { BitmapUtils.readCapped(it) })
         }.getOrNull()

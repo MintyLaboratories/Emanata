@@ -33,6 +33,69 @@ object ImageHeaders {
     }
 
     /**
+     * Size of a JPEG from its first frame header (SOFn), swapped for EXIF orientations
+     * 5-8 as decoders apply them. Null when the bytes end first or the height is left to
+     * a later marker (DNL).
+     */
+    fun jpegSize(bytes: ByteArray): IntArray? {
+        if (bytes.size < 4 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xD8.toByte()) return null
+        var at = 2
+        var orientation = 1
+        while (at + 4 <= bytes.size) {
+            if (bytes[at] != 0xFF.toByte()) return null
+            val marker = bytes[at + 1].toInt() and 0xFF
+            // Fill bytes before a marker.
+            if (marker == 0xFF) {
+                at++
+                continue
+            }
+            // Standalone markers carry no length.
+            if (marker == 0x01 || marker in 0xD0..0xD8) {
+                at += 2
+                continue
+            }
+            if (marker == 0xDA || marker == 0xD9) return null
+            val length = be16(bytes, at + 2)
+            if (length < 2) return null
+            val body = at + 4
+            if (marker == 0xE1) exifOrientation(bytes, body, minOf(at + 2 + length, bytes.size))?.let { orientation = it }
+            if (marker in 0xC0..0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                if (body + 5 > bytes.size) return null
+                val h = be16(bytes, body + 1)
+                val w = be16(bytes, body + 3)
+                if (w <= 0 || h <= 0) return null
+                return if (orientation in 5..8) intArrayOf(h, w) else intArrayOf(w, h)
+            }
+            at += 2 + length
+        }
+        return null
+    }
+
+    /** The orientation tag of the EXIF block in `bytes[from, end)`, or null when absent. */
+    private fun exifOrientation(bytes: ByteArray, from: Int, end: Int): Int? {
+        if (end - from < 14 || String(bytes, from, 6, Charsets.ISO_8859_1) != "Exif\u0000\u0000") return null
+        val tiff = from + 6
+        val little = when (String(bytes, tiff, 2, Charsets.ISO_8859_1)) {
+            "II" -> true
+            "MM" -> false
+            else -> return null
+        }
+        fun u16(at: Int) = if (little) (bytes[at].toInt() and 0xFF) or ((bytes[at + 1].toInt() and 0xFF) shl 8) else be16(bytes, at)
+        fun u32(at: Int) = if (little) (u16(at).toLong() or (u16(at + 2).toLong() shl 16)) else be32(bytes, at)
+        val ifd = tiff + u32(tiff + 4).toInt()
+        if (ifd < tiff || ifd + 2 > end) return null
+        val count = u16(ifd)
+        for (k in 0 until count) {
+            val entry = ifd + 2 + k * 12
+            if (entry + 12 > end) return null
+            if (u16(entry) == 0x0112) return u16(entry + 8)
+        }
+        return null
+    }
+
+    private fun be16(b: ByteArray, at: Int): Int = ((b[at].toInt() and 0xFF) shl 8) or (b[at + 1].toInt() and 0xFF)
+
+    /**
      * Size of a JPEG XL image, bare codestream or ISO-BMFF container. Reads the
      * codestream's SizeHeader, then the orientation from ImageMetadata: orientations
      * 5-8 transpose the image, so width and height swap as a decoder reports them.

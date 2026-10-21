@@ -101,7 +101,8 @@ class PageAdapter(
     private val fling: Boolean = false,
     private val onLongPress: ((Int) -> Unit)? = null,
     pageLayout: PageLayout? = null,
-    private val bounds: PageBounds = PageBounds()
+    private val bounds: PageBounds = PageBounds(),
+    private val onLoaded: ((Int) -> Unit)? = null
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, VERTICAL, LONG_STRIP }
@@ -835,9 +836,12 @@ class PageAdapter(
         deferred.invokeOnCompletion { releaseLoad(seg) }
         val entry = Pending(key, deferred)
         pending[key] = entry
-        deferred.invokeOnCompletion {
+        deferred.invokeOnCompletion { error ->
             // Runs on the decoder thread; hop back before touching [pending].
-            scope.launch { if (pending[key] === entry) pending.remove(key) }
+            scope.launch {
+                if (pending[key] === entry) pending.remove(key)
+                if (error == null) onLoaded?.invoke(pageIndex)
+            }
         }
         return entry
     }

@@ -94,6 +94,7 @@ import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -189,6 +190,10 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Reads the open book's missing page sizes in the background ([scanSizes]). */
     private var sizesJob: Job? = null
+
+    /** Lays the book out again with the sizes pages left as they loaded ([learnSize]); [learnRound] numbers its rounds. */
+    private var learnJob: Job? = null
+    private var learnRound = 0
 
     /** True when the open book's two-page pairing is shifted by one page. */
     private var shifted = false
@@ -912,6 +917,9 @@ class ViewerActivity : AppCompatActivity() {
         lateDetectionJob = null
         sizesJob?.cancel()
         sizesJob = null
+        learnJob?.cancel()
+        learnJob = null
+        learnRound++
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
@@ -1040,6 +1048,34 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
+     * Takes the size page [page] showed when it loaded, in a book whose sizes are not
+     * scanned ([PageSource.cheapSizes]): after [LEARN_DELAY_MS], all sizes learned so far
+     * are stored and the book is laid out again when they change its spreads.
+     */
+    private fun learnSize(page: Int) {
+        val src = source ?: return
+        val book = file ?: return
+        if (mode != MODE_PAGED || src.cheapSizes || page !in pageSizes.indices || pageSizes[page] != null) return
+        pageSizes[page] = src.loadedSize(page) ?: return
+        if (learnJob != null) return
+        learnJob = lifecycleScope.launch {
+            delay(LEARN_DELAY_MS)
+            // Sizes learned from here on start a round of their own.
+            learnJob = null
+            val round = ++learnRound
+            val names = pageNames
+            val sizes = pageSizes.copyOf()
+            val found = withContext(AppDispatchers.io) {
+                PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
+                classify(names, sizes)
+            }
+            if (round != learnRound || source !== src || file != book) return@launch
+            analysis = found
+            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+        }
+    }
+
+    /**
      * How items map to pages: in paged reading, the spread engine's pairs in two-page
      * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]);
      * otherwise a page an item.
@@ -1114,7 +1150,8 @@ class ViewerActivity : AppCompatActivity() {
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
-            bounds = pageBounds
+            bounds = pageBounds,
+            onLoaded = { learnSize(it) }
         )
         a.fitMode = effectiveFit()
         a.filter = filter
@@ -2705,6 +2742,9 @@ class ViewerActivity : AppCompatActivity() {
         private const val STATE_PATH = "state_path"
         private const val STATE_PAGE = "state_page"
         private const val STATE_ROTATION = "state_rotation"
+
+        /** How long [learnSize] gathers sizes before laying the book out again. */
+        private const val LEARN_DELAY_MS = 300L
 
         /** A start page past any book's end: opens it at its last page. */
         private const val LAST_PAGE = Int.MAX_VALUE

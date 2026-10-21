@@ -27,6 +27,12 @@ interface PageSource : Closeable {
     val cheapSizes: Boolean get() = true
 
     /**
+     * `[width, height]` of page [index] as found when it was last loaded ([loadPage]),
+     * or null: how a source whose sizes are not [cheapSizes] still makes them known.
+     */
+    fun loadedSize(index: Int): IntArray? = null
+
+    /**
      * Page [index] at full detail, laid out as [target] lays it out, holding about
      * [maxBytes] at most: decoded whole at its full size, or reduced to fit.
      */

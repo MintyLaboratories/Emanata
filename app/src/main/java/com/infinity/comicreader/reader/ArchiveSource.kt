@@ -4,9 +4,11 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Image pages of an archive, in natural order of their paths. With [nested], archives
@@ -120,6 +122,11 @@ class ArchiveSource(
     /** False when any archive holding pages is solid. */
     override val cheapSizes: Boolean = synchronized(lock) { pages.map { it.slot }.distinct().all { it.randomAccess == true } }
 
+    /** Sizes of the pages loaded so far, by index ([loadedSize]). */
+    private val loadedSizes = ConcurrentHashMap<Int, IntArray>()
+
+    override fun loadedSize(index: Int): IntArray? = loadedSizes[index]
+
     /** Path of each page, inner archives included as folders, in page order. */
     val pagePaths: List<String> get() = pages.map { it.path }
 
@@ -143,6 +150,7 @@ class ArchiveSource(
         try {
             // Buffered under the reader's lock, decoded outside it.
             val bytes = readPage(index) { BitmapUtils.readCapped(it) }
+            if (!loadedSizes.containsKey(index)) sizeOf(bytes)?.let { loadedSizes[index] = it }
             return Decoders.decode(bytes, target)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load archive entry ${page.path} (index $index)", t)
@@ -173,6 +181,11 @@ class ArchiveSource(
             Decoders.size(readPage(index) { BitmapUtils.readCapped(it) })
         }.getOrNull()
     }
+
+    /** [bytes]' image size from its header, else as the platform reads it. */
+    private fun sizeOf(bytes: ByteArray): IntArray? = runCatching {
+        Decoders.headerSize(ByteArrayInputStream(bytes)) ?: Decoders.size(bytes)
+    }.getOrNull()
 
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
 

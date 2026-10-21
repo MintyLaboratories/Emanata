@@ -34,6 +34,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Duration
 
 /** Paged reading laid out by the spread engine: pairs by page number, and spreads split or whole. */
 @RunWith(RobolectricTestRunner::class)
@@ -63,6 +64,10 @@ class ViewerActivitySpreadsTest {
     /** A book of [names] (`.png` added), wide where [wideNames] says. */
     private fun book(names: List<String>, wideNames: Set<String> = emptySet()): File =
         Fixtures.zip(File(dir, "Tale 001.cbz"), *names.map { Fixtures.entry("$it.png", if (it in wideNames) wide else portrait) }.toTypedArray())
+
+    /** Like [book], as a 7z archive: solid, so its page sizes are not read ahead. */
+    private fun solidBook(names: List<String>, wideNames: Set<String> = emptySet()): File =
+        Fixtures.sevenZip(File(dir, "Tale 001.cb7"), *names.map { Fixtures.entry("$it.png", if (it in wideNames) wide else portrait) }.toTypedArray())
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
@@ -275,5 +280,17 @@ class ViewerActivitySpreadsTest {
         assertTrue(sheet.view<View>(R.id.btn_two_off).isEnabled)
         sheet.tap(R.id.btn_two_off)
         assertTrue(sheet.view<View>(R.id.btn_spreads_split).isEnabled)
+    }
+
+    @Test
+    fun aSolidBookLearnsAWidePageAsItLoads() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        val viewer = launch(solidBook(numbered(1, 10), setOf("Tale 001-003")))
+        // Nothing read ahead: the wide page is known once it loads, with the pages after the first.
+        waitUntil {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+            viewer.items() == 11
+        }
+        assertEquals(11, viewer.items())
     }
 }

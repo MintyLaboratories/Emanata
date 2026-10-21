@@ -165,7 +165,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   issue) show their pages in place. macOS, hidden and empty entries are skipped.
 - **Page modes:** paged (horizontal swipe), vertical (one page per screen) or
   **long strip** (continuous webtoon scrolling, no gaps).
-- **Two-page spread:** facing pages side by side (respects RTL ordering).
+- **Two-page spread:** Off, On or Landscape only; facing pages side by side
+  (respects RTL ordering).
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right or right-to-left (left/right tap zones
@@ -175,8 +176,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
   file or page names (`[Kodansha Comics]`). Manga-style page names
   (`c001 (v01) - p000`) do not decide on their own, as western scans use them
-  too. A short note on open says why ("Right-to-left (from ComicInfo)"). A direction set for the folder always wins; choosing one over a
-  detected direction keeps it for the folder.
+  too. A short note on open says why ("Right-to-left (from ComicInfo)").
+  Choosing a direction keeps it for the book's folder, and only the direction;
+  a folder's direction always wins over detection.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third
   toggles the UI.
@@ -196,13 +198,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Auto-scroll** with adjustable speed (continuous in vertical / long-strip modes,
   timed page turns in paged mode); touching the screen takes over.
 - **Auto-crop** trims blank page borders; pages ahead are **preloaded**.
-- **Chapter list** to jump to any chapter in the folder.
-- **Chapter drawer** (toolbar button): a book's own chapters, its folders or the
-  inner archives of a nested book, with the current one highlighted; tap one to
-  jump to it.
-- **Share** or **save** the current page as an image.
-- **Per-folder layout:** "Remember layout for this folder" stores mode, direction, fit
-  and spread for that folder only.
+- **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in
+  this book* (its folders, or the inner archives of a nested book) and *In this
+  folder* (the files beside it), the current ones highlighted; tap one to go there.
+- **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
+  save the page as an image, crop it, or rotate the screen.
+- **Apply to: This folder / All books** at the top of the reader settings:
+  *This folder* keeps the whole layout (mode, direction, fit, spread, auto-crop,
+  page spacing) for the book's folder; *All books* changes the defaults. Layouts
+  remembered by older versions that matched the defaults keep only their direction.
+- **Book info:** file, folder, format (from the file's leading bytes, e.g.
+  "CBR (ZIP)"), size, pages, the reading direction with where it comes from, and
+  every ComicInfo field.
 - **Adjustments:** brightness, contrast and saturation, each -100..+100, computed
   in OKLab on the GPU in the same pass as the page's scaling (Android 13+), live
   while dragging. Brightness blends toward black or white, contrast scales
@@ -225,19 +232,24 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   going back on a chapter's first page (swipe, tap zone, volume key) shows
   *Swipe back again for the previous chapter*; the last one within 1.5 s of
   the one before opens the previous chapter at its last page or spread.
-- Bookmarks per page, plus a bookmark list to jump between them.
-- The menu adds the open comic, or the folder it is in, to the favorites, or
-  removes it.
+- Bookmarks per page (toolbar button), plus a bookmark list to jump between them.
+- **Favorites ▸** adds the open comic, or the folder it is in, to the favorites,
+  or removes it.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,
   and tap-to-toggle the UI bars. Volume keys turn pages.
-- A reader settings **bottom sheet** exposes every reader option in place, and
-  carries the same settings as the 3-dots menu (Display / Page filter / Reading
-  / Page actions), so both surfaces stay in sync.
+- The **reader settings** sheet holds every reading option in three groups:
+  Layout (page mode, direction, fit, two-page, auto-crop, page spacing), Color
+  (filter, brightness, contrast, saturation, night filter) and Behavior (auto
+  next chapter, auto-scroll speed, keep screen on, fullscreen, orientation).
+  Each single choice is a row of segmented buttons with one always selected. It
+  opens over half the screen, so changes show behind it.
+- The overflow menu stays short: Go to page…, Chapters, Bookmarks, Favorites ▸,
+  Auto-scroll, Page ▸, Book info, Settings.
 - **Resume where I left off:** Ask (default), Yes or No. Ask offers *Resume
   page* or *First page*, with the page number and percentage; ticking
   *Don't ask again* turns the answer into Yes or No. Only a book with a saved
   position asks; a finished book opens at the first page. Chapters opened
-  explicitly (history's Continue reading, bookmark, chapter list, next-chapter)
+  explicitly (history's Continue reading, bookmark, chapter drawer, next-chapter)
   never ask.
 - Per-book reading position is stored in history.
 - Every reader option is written back to preferences, so the mode, fit, filter,
@@ -256,8 +268,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   automatically when a chapter ends, and how many backs on a first page open
   the previous one.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
-  drag, double-tap zoom, and **smooth scrolling (fling)**, off by default: a
-  zoomed page keeps gliding after the finger lifts and stops at its edges).
+  drag, double-tap zoom, and **momentum scrolling**, on by default: zoomed
+  pages keep gliding after a flick and stop at their edges).
 - File-list options (title display, status bar, breadcrumb, quick button).
 - Clear history, clear bookmarks, clear thumbnails, reset all settings; every
   Clear or Reset asks first. Resetting settings keeps per-book adjustments and

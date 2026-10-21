@@ -189,6 +189,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** True when the open book's two-page pairing is shifted by one page. */
     private var shifted = false
+
+    /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
+    private val spreadRotation = SpreadRotation()
     private var mode = MODE_PAGED
     private var twoPage = TwoPage.OFF
 
@@ -604,6 +607,10 @@ class ViewerActivity : AppCompatActivity() {
             if (!autoScrolling) applyKeepScreenOn()
             shown = true
         }
+        if (s.rotateSpreads != old.rotateSpreads) {
+            updateSpreadRotation()
+            shown = true
+        }
         if (s.fullscreen != old.fullscreen) {
             applyFullscreen(s.fullscreen)
             shown = true
@@ -1012,8 +1019,8 @@ class ViewerActivity : AppCompatActivity() {
             if (!done || source !== src || file != book) return@launch
             pageSizes = sizes
             analysis = Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
-            if (buildLayout().sameAs(layout)) return@launch
-            attach()
+            // The same layout may still show a page now known to be wide.
+            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
         }
     }
 
@@ -1045,6 +1052,20 @@ class ViewerActivity : AppCompatActivity() {
         shifted = value
         favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
         if (spread) attach()
+    }
+
+    /** The wide page on screen, shown whole and alone in paged reading; -1 for anything else. */
+    private fun widePageShown(): Int {
+        val a = analysis ?: return -1
+        val count = source?.pageCount ?: return -1
+        if (mode != MODE_PAGED) return -1
+        val part = layout.parts(shownItem(), count).filterNotNull().singleOrNull() ?: return -1
+        return if (part.half == Half.WHOLE && a.wide(part.page)) part.page else -1
+    }
+
+    /** Turns the screen for the wide page on screen, or back, as [spreadRotation] says. */
+    private fun updateSpreadRotation() {
+        spreadRotation.show(widePageShown(), prefs.rotateSpreads)?.let { requestedOrientation = it }
     }
 
     /** True while items show numbers of their own: a page split in halves takes two. */
@@ -1409,6 +1430,7 @@ class ViewerActivity : AppCompatActivity() {
             val item = shownItem()
             seenPages.set(layout.firstPage(item).coerceAtLeast(0), layout.lastPage(item, count) + 1)
         }
+        updateSpreadRotation()
         val onLast = count > 0 && layout.isLastItem(shownItem(), count)
         if (!onLast) landedAtEnd = false
         if (!markedRead && onLast && !landedAtEnd) {
@@ -1930,7 +1952,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun setOrientationLock(value: Int) {
-        requestedOrientation = value
+        requestedOrientation = spreadRotation.choose(value)
         invalidateOptionsMenu()
     }
 
@@ -2018,7 +2040,7 @@ class ViewerActivity : AppCompatActivity() {
                     R.id.btn_orient_portrait to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
                     R.id.btn_orient_landscape to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 ),
-                { requestedOrientation }
+                { spreadRotation.user }
             ) { setOrientationLock(it) }
         )
     }
@@ -2042,7 +2064,10 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(id).setOnCheckedChangeListener { _, checked -> if (!syncingSheet) set(checked) }
         switch(R.id.sheet_auto_crop) { setAutoCrop(it) }
         switch(R.id.sheet_shift) { setShifted(it) }
-        switch(R.id.sheet_rotate_spreads) { prefs.rotateSpreads = it }
+        switch(R.id.sheet_rotate_spreads) {
+            prefs.rotateSpreads = it
+            updateSpreadRotation()
+        }
         switch(R.id.sheet_night) { setNight(it) }
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
         switch(R.id.sheet_keep_on) { setKeepOn(it) }

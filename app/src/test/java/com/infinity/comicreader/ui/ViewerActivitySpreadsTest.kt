@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Looper
 import android.view.View
 import android.widget.TextView
@@ -79,6 +80,12 @@ class ViewerActivitySpreadsTest {
         } while (!condition() && System.currentTimeMillis() < deadline)
     }
 
+    /** Waits for the reader to have read and stored the open book's page sizes. */
+    private fun sizesRead() {
+        waitUntil { File(context.cacheDir, "page-sizes").listFiles()?.any { it.name.endsWith(".bin") } == true }
+        repeat(5) { Thread.sleep(10); idle() }
+    }
+
     private fun ViewerActivity.items() = findViewById<ViewPager2>(R.id.viewer_pager).adapter!!.itemCount
 
     private fun ViewerActivity.indicator() = findViewById<TextView>(R.id.viewer_page_text).text.toString()
@@ -132,7 +139,7 @@ class ViewerActivitySpreadsTest {
     fun mergeShowsAWidePageWhole() {
         prefs.spreads = SpreadDisplay.MERGE
         val viewer = launch(book(numbered(1, 10), setOf("Tale 001-005")))
-        repeat(30) { Thread.sleep(10); idle() }
+        sizesRead()
         assertEquals(10, viewer.items())
     }
 
@@ -162,5 +169,47 @@ class ViewerActivitySpreadsTest {
         sheet.tap(R.id.sheet_shift)
         assertEquals(4, viewer.items())
         assertFalse(Library(context).isShifted(book.absolutePath))
+    }
+
+    @Test
+    fun aWidePageTurnsTheScreenToLandscapeUntilTheNextPage() {
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        // The wide page is known once the sizes are read.
+        sizesRead()
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    @Test
+    fun rotateForSpreadsOffLeavesTheScreenAlone() {
+        prefs.rotateSpreads = false
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    @Test
+    fun splitHalvesNeedNoTurn() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        waitUntil { viewer.items() == 7 }
+        repeat(3) {
+            viewer.next()
+            assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        }
+    }
+
+    @Test
+    fun aWideFirstPageTurnsTheScreenOnceItsSizeIsRead() {
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-001")))
+        sizesRead()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
     }
 }

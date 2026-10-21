@@ -36,7 +36,7 @@ class TiffTest {
         operator fun get(x: Int, y: Int) = pixels[y * width + x]
     }
 
-    private fun decode(bytes: ByteArray, sample: Int = 1, jpeg: Tiff.JpegDecoder = Tiff.JpegDecoder { error("no JPEG expected") }): Image {
+    private fun decode(bytes: ByteArray, sample: Int = 1, jpeg: Tiff.JpegDecoder = Tiff.JpegDecoder { _, _ -> error("no JPEG expected") }): Image {
         val input = Tiff.ByteInput(bytes)
         val page = Tiff.page(input)
         val w = (page.width + sample - 1) / sample
@@ -121,7 +121,7 @@ class TiffTest {
     fun jpegChunksGetTablesAndColorModel() {
         // The decoder is handed whole JPEG streams: SOI, then the shared tables, then the chunk.
         val streams = ArrayList<ByteArray>()
-        val image = decode(fixture("jpeg-rgb.tif"), jpeg = { jpeg ->
+        val image = decode(fixture("jpeg-rgb.tif"), jpeg = { jpeg, _ ->
             streams += jpeg
             Tiff.Raster(37, 16, IntArray(37 * 16) { argb(1, 2, 3) })
         })
@@ -137,6 +137,22 @@ class TiffTest {
             assertEquals(0xDB, s[19].toInt() and 0xFF)
         }
         assertEquals(argb(1, 2, 3), image[36, 22])
+    }
+
+    @Test
+    fun sampledJpegChunksAreReducedByTheDecoder() {
+        // Strips of 16 rows at sample 2: the decoder returns 19 x 8 pixels, each standing for 2 x 2.
+        val samples = ArrayList<Int>()
+        val image = decode(fixture("jpeg-rgb.tif"), sample = 2, jpeg = { _, sample ->
+            samples += sample
+            Tiff.Raster(19, 8, IntArray(19 * 8) { i -> argb(i % 19, i / 19, 0) }, scale = 2)
+        })
+        assertEquals(listOf(2, 2), samples)
+        assertEquals(19, image.width)
+        assertEquals(12, image.height)
+        // Output row 9 is source row 18: the second strip's raster row 1.
+        assertEquals(argb(5, 1, 0), image[5, 9])
+        assertEquals(argb(18, 7, 0), image[18, 7])
     }
 
     @Test
@@ -156,7 +172,7 @@ class TiffTest {
         val page = Tiff.page(input)
         val cut = Tiff.ByteInput(bytes.copyOf(8 + 37 * 3 * 7))
         val rows = HashSet<Int>()
-        Tiff.decode(cut, page, 1, { error("no JPEG") }) { _, y, _, _ -> rows += y }
+        Tiff.decode(cut, page, 1, { _, _ -> error("no JPEG") }) { _, y, _, _ -> rows += y }
         // The first strip whole, and the two rows of the second that are still there.
         assertEquals((0 until 7).toSet(), rows)
     }
@@ -166,7 +182,7 @@ class TiffTest {
         // Only an early end is forgiven: a strip that does not decode fails the page.
         var calls = 0
         val e = assertThrows(DecodeException::class.java) {
-            decode(fixture("jpeg-rgb.tif"), jpeg = {
+            decode(fixture("jpeg-rgb.tif"), jpeg = { _, _ ->
                 if (calls++ > 0) throw DecodeException("bad strip")
                 Tiff.Raster(37, 16, IntArray(37 * 16))
             })

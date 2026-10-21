@@ -53,12 +53,12 @@ object Tiff {
         fun row(x: Int, y: Int, pixels: IntArray, count: Int)
     }
 
-    /** A decoded JPEG chunk: [width] x [height] ARGB [pixels]. */
-    class Raster(val width: Int, val height: Int, val pixels: IntArray)
+    /** A decoded JPEG chunk: [width] x [height] ARGB [pixels], one per [scale] x [scale] chunk pixels. */
+    class Raster(val width: Int, val height: Int, val pixels: IntArray, val scale: Int = 1)
 
-    /** Decodes one complete JPEG stream. */
+    /** Decodes one complete JPEG stream, reduced by up to [sample] (a power of two) when the decoder can. */
     fun interface JpegDecoder {
-        fun decode(jpeg: ByteArray): Raster
+        fun decode(jpeg: ByteArray, sample: Int): Raster
     }
 
     /** The page a decode shows and how it is stored. */
@@ -241,19 +241,22 @@ object Tiff {
         if (size <= 0 || size > MAX_JPEG_CHUNK) throw DecodeException("TIFF JPEG strip has a bad size")
         val data = ByteArray(size.toInt())
         input.read(page.offsets[index], data, 0, data.size)
-        val raster = jpeg.decode(jpegStream(data, page.jpegTables, page.photometric == PHOTO_RGB))
+        val raster = jpeg.decode(jpegStream(data, page.jpegTables, page.photometric == PHOTO_RGB), sample)
+        val scale = raster.scale.coerceAtLeast(1)
         val y0 = cy * page.chunkHeight
-        val rows = minOf(page.chunkHeight, page.height - y0, raster.height)
+        val rows = minOf(page.chunkHeight, page.height - y0)
         val x0 = cx * page.chunkWidth
         val (firstOut, count) = columns(page, cx, sample)
         for (r in 0 until rows) {
             val y = y0 + r
             if (y % sample != 0 || count <= 0) continue
+            val ry = r / scale
+            if (ry >= raster.height) break
             var n = 0
             while (n < count) {
-                val sx = (firstOut + n) * sample - x0
-                if (sx >= raster.width) break
-                out[n] = raster.pixels[r * raster.width + sx]
+                val rx = ((firstOut + n) * sample - x0) / scale
+                if (rx >= raster.width) break
+                out[n] = raster.pixels[ry * raster.width + rx]
                 n++
             }
             if (n > 0) sink.row(firstOut, y / sample, out, n)

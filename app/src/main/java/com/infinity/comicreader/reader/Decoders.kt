@@ -48,7 +48,7 @@ class DecodeException(
  * PNG, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
  *
  * JPEG XL decodes with jxl-coder on every API level, TIFF with the built-in [Tiff]
- * (its cap reduction is point sampling). Other formats use [ImageDecoder] on API 28+
+ * (its cap reduction is point sampling, DCT scaling for JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+
  * (AVIF from API 31), with [BitmapFactory] below that.
  */
 object Decoders {
@@ -234,14 +234,18 @@ object Decoders {
         return bitmap
     }
 
-    private fun tiffJpeg(jpeg: ByteArray): Tiff.Raster {
-        val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+    /** One JPEG strip or tile, reduced by [sample] inside libjpeg-turbo as the cap asks. */
+    private fun tiffJpeg(jpeg: ByteArray, sample: Int): Tiff.Raster {
+        val opts = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = sample
+        }
         val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
             ?: throw DecodeException("Could not decode a JPEG strip of this TIFF image")
         try {
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            return Tiff.Raster(bitmap.width, bitmap.height, pixels)
+            return Tiff.Raster(bitmap.width, bitmap.height, pixels, sample)
         } finally {
             bitmap.recycle()
         }

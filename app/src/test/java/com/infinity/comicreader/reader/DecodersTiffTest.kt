@@ -87,6 +87,20 @@ class DecodersTiffTest {
     }
 
     @Test
+    fun jpegInTiffSampledUnderCap() {
+        // 37 x 23 over a cap of 300: libjpeg-turbo halves each strip, averaging 2 x 2 blocks.
+        val bitmap = Decoders.decode(fixture("jpeg-rgb.tif"), Target(capPixels = 300))
+        assertEquals(19, bitmap.width)
+        assertEquals(12, bitmap.height)
+        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+            val p = bitmap.getPixel(x, y)
+            val got = intArrayOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
+            val want = rgb(2 * x, 2 * y)
+            for (c in 0..2) assertTrue("at $x,$y: ${got.toList()} vs ${want.toList()}", abs(got[c] - want[c]) <= 24)
+        }
+    }
+
+    @Test
     fun unsupportedCompressionSaysWhy() {
         val bytes = fixture("rgb-none-strips.tif")
         // The Compression entry's value (big-endian SHORT) becomes 4, CCITT Group 4.

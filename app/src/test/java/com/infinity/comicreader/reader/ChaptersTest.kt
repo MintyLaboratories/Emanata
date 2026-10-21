@@ -46,6 +46,15 @@ class ChaptersTest {
     }
 
     @Test
+    fun aFolderThatComesBackIsAnotherChapterOfTheSameName() {
+        val paths = listOf("Part 1/01.jpg", "Part 2/01.jpg", "Part 1/02.jpg")
+        assertEquals(
+            listOf(Chapter("Part 1", 0, 1), Chapter("Part 2", 1, 1), Chapter("Part 1", 2, 1)),
+            Chapters.of(paths)
+        )
+    }
+
+    @Test
     fun backslashesSeparateToo() {
         val paths = listOf("Ch 1\\01.jpg", "Ch 2\\01.jpg")
         assertEquals(listOf(Chapter("Ch 1", 0, 1), Chapter("Ch 2", 1, 1)), Chapters.of(paths))

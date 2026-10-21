@@ -203,6 +203,9 @@ class ViewerActivity : AppCompatActivity() {
     /** The reader settings sheet's content while it is open. */
     private var sheet: View? = null
 
+    /** The reader settings sheet while it is open. */
+    private var sheetDialog: BottomSheetDialog? = null
+
     /** True while [syncSheet] sets the sheet's controls, so their listeners stay quiet. */
     private var syncingSheet = false
 
@@ -1116,6 +1119,7 @@ class ViewerActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (source != null && useSpread() != spread) attach()
+        sheetDialog?.behavior?.peekHeight = sheetPeek()
     }
 
     private val singleLayout = PageLayout(spread = false)
@@ -1791,7 +1795,7 @@ class ViewerActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.sheet_reader, null)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(view)
-        dialog.behavior.peekHeight = resources.displayMetrics.heightPixels / 2
+        dialog.behavior.peekHeight = sheetPeek()
         // No scrim: the page behind is what the sheet's colors and layout are judged on.
         dialog.window?.setDimAmount(0f)
         bindSheet(view)
@@ -1801,13 +1805,20 @@ class ViewerActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         dialog.setOnDismissListener {
-            if (sheet === view) sheet = null
+            if (sheet === view) {
+                sheet = null
+                sheetDialog = null
+            }
             persistAdjustments()
         }
         sheet = view
+        sheetDialog = dialog
         syncSheet()
         dialog.show()
     }
+
+    /** The sheet opens over half the screen, in either orientation. */
+    private fun sheetPeek() = resources.displayMetrics.heightPixels / 2
 
     /** One single choice in the sheet: its button [group], each button's value, the value now and how to pick one. */
     private class Segments<T>(

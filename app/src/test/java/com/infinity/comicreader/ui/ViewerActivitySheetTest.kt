@@ -28,6 +28,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
@@ -126,5 +127,17 @@ class ViewerActivitySheetTest {
     fun thePageShowsUndimmedBehindTheSheet() {
         val sheet = ReaderSheet(launch())
         assertEquals(0f, sheet.dialog.window!!.attributes.dimAmount, 0f)
+    }
+
+    @Test
+    fun theSheetKeepsHalfTheScreenWhenTheTabletTurns() {
+        val viewer = launch()
+        val sheet = ReaderSheet(viewer)
+        val portrait = sheet.dialog.behavior.peekHeight
+        RuntimeEnvironment.setQualifiers("land")
+        viewer.onConfigurationChanged(viewer.resources.configuration)
+        val half = viewer.resources.displayMetrics.heightPixels / 2
+        assertNotEquals(portrait, half)
+        assertEquals(half, sheet.dialog.behavior.peekHeight)
     }
 }

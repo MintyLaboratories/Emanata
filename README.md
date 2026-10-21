@@ -166,7 +166,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Page modes:** paged (horizontal swipe), vertical (one page per screen) or
   **long strip** (continuous webtoon scrolling, no gaps).
 - **Two-page spread:** Off, On or Landscape only; facing pages side by side
-  (respects RTL ordering).
+  (respects RTL ordering), paired by their page numbers rather than position.
+  The first page (setting), covers and variant covers, inserted pages (`156b`),
+  wide pages and filename spreads (`-023-024`, `p190-p191`, `22+23`) show alone,
+  and pairing starts over after each; issue-page names (`Title 001-002`) are not
+  spreads. A spread's numbers tell which pages face each other. **Shift pairs by
+  one page** fixes a book that still pairs wrong, and is kept for that book.
+  Page sizes come from image headers, read once per book in the background.
+- **Spreads in one file:** *Merge* shows a wide page whole; *Split* shows it as
+  two pages, each numbered and fitted on its own (one page at a time only).
+- **Rotate for spreads** (on by default): a wide page shown whole turns the
+  screen to landscape, either way up, until a page that is not wide shows; then
+  the reader's own orientation is back.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right or right-to-left (left/right tap zones
@@ -202,15 +213,17 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (0.25 to 45): strips scroll that far each minute; paged mode turns the page
   when one screen height would have scrolled past, a thin bar along the bottom
   edge filling meanwhile. Touching the screen takes over.
-- **Auto-crop** trims blank page borders; pages ahead are **preloaded**.
+- **Auto-crop** trims blank page borders; pages ahead are **preloaded**. Two
+  pages side by side share one top and bottom crop and show at one height,
+  meeting at the gutter; a spread in one file is cropped whole before it is split.
 - **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in
   this book* (its folders, or the inner archives of a nested book) and *In this
   folder* (the files beside it), the current ones highlighted; tap one to go there.
 - **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
   save the page as an image, crop it, or rotate the screen.
 - **Apply to: This folder / All books** at the top of the reader settings:
-  *This folder* keeps the whole layout (mode, direction, fit, spread, auto-crop,
-  page spacing) for the book's folder; *All books* changes the defaults and
+  *This folder* keeps the whole layout (mode, direction, fit, two-page, spreads,
+  auto-crop, page spacing) for the book's folder; *All books* changes the defaults and
   keeps only a direction chosen for the folder. Layouts
   remembered by older versions that matched the defaults keep only their direction.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
@@ -244,9 +257,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,
   and tap-to-toggle the UI bars. Volume keys turn pages.
 - The **reader settings** sheet holds every reading option in three groups:
-  Layout (page mode, direction, fit, two-page, auto-crop, page spacing), Color
-  (filter, brightness, contrast, saturation, night filter) and Behavior (auto
-  next chapter, auto-scroll speed, keep screen on, fullscreen, orientation).
+  Layout (page mode, direction, fit, two-page, shift pairs, spreads, auto-crop,
+  page spacing), Color (filter, brightness, contrast, saturation, night filter)
+  and Behavior (auto next chapter, auto-scroll speed, keep screen on, fullscreen,
+  orientation, rotate for spreads).
   Each single choice is a row of segmented buttons with one always selected. It
   opens over half the screen, so changes show behind it.
 - The overflow menu stays short: Go to page…, Chapters, Bookmarks, Favorites ▸,

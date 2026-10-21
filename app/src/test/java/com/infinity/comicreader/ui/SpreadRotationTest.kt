@@ -86,4 +86,26 @@ class SpreadRotationTest {
         r.show(6, enabled = true, landscape = true)
         assertFalse(r.layoutLandscape(landscape = true))
     }
+
+    @Test
+    fun aRestoredCopyKeepsTheReadersOrientationAndTheHold() {
+        val r = SpreadRotation()
+        r.choose(SCREEN_ORIENTATION_PORTRAIT)
+        r.show(5, enabled = true, landscape = false)
+        val copy = SpreadRotation()
+        copy.restore(r.save())
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, copy.user)
+        assertEquals(5, copy.held)
+        assertFalse(copy.layoutLandscape(landscape = true))
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, copy.show(-1, enabled = true))
+    }
+
+    @Test
+    fun restoringNothingChangesNothing() {
+        val r = SpreadRotation()
+        r.restore(null)
+        r.restore(intArrayOf(1))
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, r.user)
+        assertEquals(-1, r.held)
+    }
 }

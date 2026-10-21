@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
@@ -250,5 +251,18 @@ class ViewerActivitySpreadsTest {
         viewer.turn("land")
         assertTrue(viewer.items() < 8)
         viewer.turn("port")
+    }
+
+    @Test
+    fun aRecreatedReaderKeepsTheOrientationTheReaderPicked() {
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6)).absolutePath)
+        val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
+        waitUntil { controller.get().findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        ReaderSheet(controller.get()).tap(R.id.btn_orient_portrait).dialog.dismiss()
+        controller.recreate()
+        val viewer = controller.get()
+        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        val group = ReaderSheet(viewer).view<MaterialButtonToggleGroup>(R.id.sheet_orientation)
+        assertEquals(R.id.btn_orient_portrait, group.checkedButtonId)
     }
 }

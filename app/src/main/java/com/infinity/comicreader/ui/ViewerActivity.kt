@@ -317,7 +317,8 @@ class ViewerActivity : AppCompatActivity() {
         bindViews()
         applied = settings.reader.value
         loadPrefs()
-        // A recreated reader (theme or language change) continues where it was.
+        // A recreated reader (theme or language change) continues where it was, turned as it was.
+        spreadRotation.restore(savedInstanceState?.getIntArray(STATE_ROTATION))
         savedInstanceState?.getString(STATE_PATH)?.let {
             intent.putExtra(EXTRA_PATH, it).putExtra(EXTRA_PAGE, savedInstanceState.getInt(STATE_PAGE))
         }
@@ -456,6 +457,7 @@ class ViewerActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putIntArray(STATE_ROTATION, spreadRotation.save())
         val f = file ?: return
         if (source == null) return
         outState.putString(STATE_PATH, f.absolutePath)
@@ -2696,6 +2698,7 @@ class ViewerActivity : AppCompatActivity() {
 
         private const val STATE_PATH = "state_path"
         private const val STATE_PAGE = "state_page"
+        private const val STATE_ROTATION = "state_rotation"
 
         /** A start page past any book's end: opens it at its last page. */
         private const val LAST_PAGE = Int.MAX_VALUE

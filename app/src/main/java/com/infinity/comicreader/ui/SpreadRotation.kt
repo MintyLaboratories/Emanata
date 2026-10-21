@@ -9,7 +9,7 @@ import android.content.pm.ActivityInfo
  * reader picks meanwhile wins, and the page it was picked on is not turned for again.
  * While held, the layout follows the orientation that comes back ([layoutLandscape]),
  * so a turn made only for one page never re-pairs the pages around it. Free of the
- * activity, so it can be tested alone.
+ * activity, so it can be tested alone; [save] and [restore] carry it over a recreation.
  */
 class SpreadRotation {
 
@@ -54,6 +54,18 @@ class SpreadRotation {
         user in LANDSCAPES -> true
         user in PORTRAITS -> false
         else -> heldFromLandscape
+    }
+
+    /** All of this, for [restore]. */
+    fun save(): IntArray = intArrayOf(user, held, declined, if (heldFromLandscape) 1 else 0)
+
+    /** Takes back what [save] gave; ignores anything else. */
+    fun restore(saved: IntArray?) {
+        if (saved == null || saved.size != 4) return
+        user = saved[0]
+        held = saved[1]
+        declined = saved[2]
+        heldFromLandscape = saved[3] == 1
     }
 
     /** The reader picks [orientation]: it is requested at once, and a held page is let go. */

@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.LruCache
+import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -113,9 +114,12 @@ class PageAdapter(
     /**
      * Shows every page at the size the layout now asks for, in place: decodes for an
      * old size are dropped and the items rebind on their own holders ([RESIZE]), which
-     * keep their bitmaps until the new ones arrive.
+     * keep their bitmaps until the new ones arrive. Timed by [timing].
      */
     private fun resize() {
+        timing.begin()
+        // Runs once the frame showing the stand-ins is drawn.
+        Choreographer.getInstance().postFrameCallback { mainHandler.post { if (!released) timing.drawn() } }
         // Canceling can complete handlers inline, which edit [pending]: iterate a copy.
         for (entry in pending.values.toList()) {
             if (entry.key != keyFor(entry.key.page)) {
@@ -125,6 +129,9 @@ class PageAdapter(
         }
         notifyItemRangeChanged(0, itemCount, RESIZE)
     }
+
+    /** How long the last [resize] took to show, and to show exactly. */
+    private val timing = ResizeTiming()
 
     /** The page filter, one of [Filters]. */
     var filter: String = Filters.NONE
@@ -507,6 +514,7 @@ class PageAdapter(
             val standIn = cache.snapshot().entries.lastOrNull { it.key.page == pageIndex }
             if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
         }
+        if (holder.shown[slot] == pageIndex) timing.standIn(image)
         if (holder.shown[slot] == pageIndex && details.loaded(detailKey(key))) {
             renderFromDetail(holder, slot, key)
             return
@@ -577,6 +585,7 @@ class PageAdapter(
 
     /** Forgets the decode [slot] was waiting for; abandons it if nobody else wants it. */
     private fun stopWaiting(holder: PageHolder, slot: Int) {
+        timing.done(holder.images[slot])
         holder.waiters[slot]?.cancel()
         holder.waiters[slot] = null
         val entry = holder.decodes[slot] ?: return
@@ -613,6 +622,7 @@ class PageAdapter(
                 image.swapBitmap(bitmap, SlotDetail(holder, key))
             }
         }
+        timing.done(image)
     }
 
     /** Shows [bitmap], decoded for [key]; settled zooms re-render it from the page's full detail. */
@@ -626,6 +636,7 @@ class PageAdapter(
 
     private fun clearImage(holder: PageHolder, slot: Int) {
         val image = holder.images[slot]
+        timing.done(image)
         image.detailSource = null
         image.setImageDrawable(null)
         holder.shown[slot] = NO_PAGE
@@ -633,6 +644,7 @@ class PageAdapter(
 
     private fun applyFailure(holder: PageHolder, slot: Int, failure: Failure) {
         val image = holder.images[slot]
+        timing.done(image)
         image.detailSource = null
         val res = image.resources
         val name = failure.name ?: res.getString(R.string.page_number, failure.index + 1)

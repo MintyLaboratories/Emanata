@@ -20,6 +20,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
+import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -146,6 +148,8 @@ class PageAdapterTargetTest {
         override fun close() {}
     }
 
+    private fun timingLogs() = ShadowLog.getLogsForTag("ResizeTiming").map { it.msg }
+
     private fun shownBitmap(image: ZoomImageView) = (image.drawable as BitmapDrawable).bitmap
 
     @Test
@@ -161,9 +165,13 @@ class PageAdapterTargetTest {
         assertEquals(1848, screen.width)
 
         // Fit height: the same bitmap, on the same holder, enlarged at once while the exact one decodes.
+        ShadowLog.clear()
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
         idle { source.requests.size >= 2 }
+        // The first frame is timed, the page standing in until the exact bitmap arrives.
+        assertTrue(timingLogs().single().matches(Regex("""Resize shown in \d+ ms, 1 page\(s\) standing in""")))
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
         assertSame(screen, shownBitmap(image))
         assertFalse(image.drawsOneToOne)
@@ -175,6 +183,7 @@ class PageAdapterTargetTest {
         assertEquals(0 to Target(0, 2960), source.requests.last())
         assertEquals(2960, shownBitmap(image).height)
         assertTrue(image.drawsOneToOne)
+        assertTrue(timingLogs().last().matches(Regex("""Resize exact in \d+ ms""")))
 
         // Back to fit screen: still cached, so nothing decodes.
         adapter.fitMode = ZoomImageView.FitMode.SCREEN

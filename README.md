@@ -395,6 +395,9 @@ No internet permission is requested.
   (API 31+); on older devices AVIF pages show the error placeholder.
 - Zoom: `LanczosShader` (AGSL) draws while the gesture moves; `DetailTile`,
   `DetailStore` and `PageSource.loadDetail` re-render the settled view.
+- Fit changes are timed: `adb logcat -s ResizeTiming` prints the ms to the
+  first frame and to the last exact bitmap; Perfetto shows the same as the
+  async slices "Resize shown" and "Resize exact" (Android 10+).
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
   loads the current page and its neighbors concurrently, all access to these

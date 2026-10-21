@@ -42,9 +42,5 @@ class RepeatedBack(private val windowMs: Long = WINDOW_MS) {
 
     companion object {
         const val WINDOW_MS = 1500L
-
-        /** The choices of the setting: off, 2 or 3 actions. */
-        val CHOICES = listOf(0, 2, 3)
-        const val DEFAULT = 2
     }
 }

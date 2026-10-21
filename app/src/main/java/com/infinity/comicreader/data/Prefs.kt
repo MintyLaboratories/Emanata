@@ -106,8 +106,8 @@ class Prefs(context: Context) {
      * 0 (off), 2 or 3. Stored as a string by the list preference.
      */
     var prevChapterBacks: Int
-        get() = str(KEY_PREV_CHAPTER_BACKS, "2").toIntOrNull()?.takeIf { it in PREV_CHAPTER_BACKS } ?: 2
-        set(v) = put(KEY_PREV_CHAPTER_BACKS, (v.takeIf { it in PREV_CHAPTER_BACKS } ?: 2).toString())
+        get() = str(KEY_PREV_CHAPTER_BACKS, "").toIntOrNull()?.takeIf { it in PREV_CHAPTER_BACKS } ?: PREV_CHAPTER_BACKS_DEFAULT
+        set(v) = put(KEY_PREV_CHAPTER_BACKS, (v.takeIf { it in PREV_CHAPTER_BACKS } ?: PREV_CHAPTER_BACKS_DEFAULT).toString())
 
     /** Whether a book with a saved position opens there. */
     var resumeMode: ResumeMode
@@ -351,6 +351,7 @@ class Prefs(context: Context) {
         private const val KEY_RESUME_MODE = "pref_resume_mode"
         private const val KEY_PREV_CHAPTER_BACKS = "pref_prev_chapter_backs"
         private val PREV_CHAPTER_BACKS = setOf(0, 2, 3)
+        private const val PREV_CHAPTER_BACKS_DEFAULT = 2
         private const val KEY_TWO_PAGE = "pref_two_page"
         private const val KEY_NIGHT = "pref_night"
         private const val KEY_TAP_ZONE_LAYOUT = "pref_tap_zone_layout"

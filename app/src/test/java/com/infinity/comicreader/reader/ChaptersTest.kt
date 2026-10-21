@@ -1,7 +1,6 @@
 package com.infinity.comicreader.reader
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,9 +67,9 @@ class ChaptersTest {
     @Test
     fun findsTheChapterOfAPage() {
         val chapters = listOf(Chapter("A", 0, 3), Chapter("B", 3, 2))
-        assertEquals("A", Chapters.at(chapters, 2)?.name)
-        assertEquals("B", Chapters.at(chapters, 3)?.name)
+        assertEquals(0, Chapters.indexAt(chapters, 2))
+        assertEquals(1, Chapters.indexAt(chapters, 3))
         assertEquals(4, chapters[1].last)
-        assertNull(Chapters.at(chapters, 5))
+        assertEquals(-1, Chapters.indexAt(chapters, 5))
     }
 }

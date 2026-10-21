@@ -2105,7 +2105,7 @@ class ViewerActivity : AppCompatActivity() {
         dialog.setContentView(view, ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT))
         dialog.setSheetEdge(Gravity.START)
         view.findViewById<TextView>(R.id.chapters_title).text = file?.let { chapterLabel(it) }
-        val current = list.indexOfFirst { currentIndex in it }
+        val current = Chapters.indexAt(list, currentIndex)
         val rv = view.findViewById<RecyclerView>(R.id.chapters_list)
         val lm = LinearLayoutManager(this)
         rv.layoutManager = lm

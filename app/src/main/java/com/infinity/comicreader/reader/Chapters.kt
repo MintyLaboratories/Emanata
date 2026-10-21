@@ -34,8 +34,8 @@ object Chapters {
         return if (out.size < 2) emptyList() else out
     }
 
-    /** The chapter holding [page], or null. */
-    fun at(chapters: List<Chapter>, page: Int): Chapter? = chapters.firstOrNull { page in it }
+    /** The index of the chapter holding [page], or -1. */
+    fun indexAt(chapters: List<Chapter>, page: Int): Int = chapters.indexOfFirst { page in it }
 
     /** The folders above a page, outermost first; `/` and `\` both separate. */
     private fun folders(path: String): List<String> =

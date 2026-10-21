@@ -107,6 +107,25 @@ class LibraryValuesTest {
     }
 
     @Test
+    fun foldersOfLoosePagesHaveALength() {
+        val pages = (1..6).map { "page%02d.jpg".format(it) }
+        assertEquals(6, LibrarySnapshot.looseImages(pages + "notes.cbz"))
+        // Too few pages, or stray pictures without a shared numbered name.
+        assertEquals(-1, LibrarySnapshot.looseImages(pages.take(3)))
+        assertEquals(-1, LibrarySnapshot.looseImages(listOf("cover.jpg", "promo.jpg", "a.png", "b.png", "c.png")))
+        assertEquals(-1, LibrarySnapshot.looseImages(emptyList()))
+
+        val dir = Files.createTempDirectory("loose").toFile()
+        try {
+            val files = pages.map { File(dir, it).apply { writeBytes(ByteArray(1)) } }
+            val entry = LibrarySnapshot().entry(dir, files)
+            assertEquals(6L, EntryValues().of(entry, SortKey.LENGTH))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun snapshotDirections() {
         val snap = LibrarySnapshot(
             directions = mapOf("/b/manga" to ReadingDirection.RTL),

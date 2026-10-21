@@ -120,7 +120,8 @@ class LibrarySnapshot(
 
     /**
      * The entry for [file], a folder holding [children] (the items a user would see)
-     * or a book; [name] is what it is listed as.
+     * or a book; [name] is what it is listed as. A folder of loose page images has
+     * their count as its pages.
      */
     fun entry(file: File, children: List<File>?, name: String = file.name): BookEntry {
         val stat = FileStat.of(file)
@@ -128,6 +129,7 @@ class LibrarySnapshot(
         val isDir = stat.isDirectory
         val history = if (isDir) null else history[path]
         val books = children?.filter { Formats.isOpenable(it.name) }
+        val names = books?.map { it.name }.orEmpty()
         return BookEntry(
             file = file,
             name = name,
@@ -137,7 +139,7 @@ class LibrarySnapshot(
             lastModified = stat.lastModified,
             childCount = children?.size ?: -1,
             readCount = children?.count { it.absolutePath in read } ?: -1,
-            pages = history?.total ?: -1,
+            pages = if (isDir) looseImages(names) else history?.total ?: -1,
             progressPage = history?.page ?: -1,
             favorite = path in favorites,
             read = path in read,
@@ -152,6 +154,10 @@ class LibrarySnapshot(
     }
 
     companion object {
+        /** The page count of a folder of loose page images named [names], or -1 when it is not one. */
+        internal fun looseImages(names: List<String>): Int =
+            if (FavoriteClassifier.isLooseComic(names)) names.count { Formats.isImageName(it) } else -1
+
         fun load(library: Library, prefs: Prefs): LibrarySnapshot {
             val history = library.history()
             val bookmarks = library.bookmarks()

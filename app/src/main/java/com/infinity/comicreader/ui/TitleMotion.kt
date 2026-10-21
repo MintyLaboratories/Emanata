@@ -46,6 +46,20 @@ object TitleMotion {
         }
     }
 
+    /**
+     * Milliseconds from [local] ms into a bounce cycle whose glides take [travelMs]
+     * until a title whose own glide takes [ownMs] next moves: 0 while it moves, else
+     * until its next glide starts or the cycle ends, whichever comes first.
+     */
+    fun bounceStillMs(local: Long, ownMs: Long, travelMs: Long, pauseMs: Long = PAUSE_MS): Long {
+        val own = min(ownMs, travelMs)
+        for (start in longArrayOf(pauseMs, 2 * pauseMs + travelMs)) {
+            if (local < start) return start - local
+            if (local < start + own) return 0L
+        }
+        return max(0L, bounceCycleMs(travelMs, pauseMs) - local)
+    }
+
     /** How far a looping title is scrolled after [elapsed] ms, for a loop of [loop] px (title and separator). */
     fun marqueeOffset(elapsed: Long, speed: Float, loop: Float): Float =
         if (loop <= 0f) 0f else (elapsed * speed) % loop

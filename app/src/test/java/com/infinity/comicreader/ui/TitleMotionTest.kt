@@ -47,6 +47,21 @@ class TitleMotionTest {
     }
 
     @Test
+    fun restingTitlesKnowWhenTheyMoveNext() {
+        // Glides of 1000 ms, this title's own of 500: out at 2000..2500, back at 5000..5500.
+        fun still(t: Long) = TitleMotion.bounceStillMs(t, 500L, 1000L)
+        assertEquals(2000L, still(0))
+        assertEquals(0L, still(2000))
+        assertEquals(0L, still(2499))
+        assertEquals(2500L, still(2500))
+        assertEquals(0L, still(5200))
+        // Done for this cycle: until the next one starts.
+        assertEquals(500L, still(5500))
+        // A title longer than the cycle's glides moves only as long as they do.
+        assertEquals(2000L, TitleMotion.bounceStillMs(3000, 5000L, 1000L))
+    }
+
+    @Test
     fun aMarqueeLoopsLeftward() {
         assertEquals(0f, TitleMotion.marqueeOffset(0, speed, 100f), 0f)
         assertEquals(60f, TitleMotion.marqueeOffset(1000, speed, 100f), 0.01f)

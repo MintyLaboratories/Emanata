@@ -105,6 +105,9 @@ class TitleView @JvmOverloads constructor(
     var travelMs = 0L
         private set
 
+    /** The scroll offset last drawn, NaN before any. */
+    private var drawnOffset = Float.NaN
+
     init {
         val a = context.obtainStyledAttributes(attrs, ATTRS)
         val appearance = a.getResourceId(0, R.style.TextAppearance_ComicReader_ItemTitle)
@@ -255,15 +258,36 @@ class TitleView @JvmOverloads constructor(
         canvas.restore()
     }
 
+    /** How far the moving title is scrolled now by [c]. */
+    private fun offsetAt(c: TitleClock): Float =
+        if (mode == TitleDisplay.MARQUEE) {
+            TitleMotion.marqueeOffset(c.elapsed, c.speed, fullWidth + separatorWidth)
+        } else {
+            TitleMotion.bounceOffset(c.local, overflow, c.speed, c.cycleTravel)
+        }
+
+    /** Redraws when the clock moved the title since it was last drawn. */
+    fun tick() {
+        val c = clock ?: return
+        if (moving && offsetAt(c) != drawnOffset) invalidate()
+    }
+
+    /** Milliseconds until the clock next moves this title: 0 while it moves. */
+    fun stillMs(): Long {
+        val c = clock ?: return Long.MAX_VALUE
+        return when {
+            !moving -> Long.MAX_VALUE
+            mode == TitleDisplay.MARQUEE -> 0L
+            else -> TitleMotion.bounceStillMs(c.local, travelMs, c.cycleTravel)
+        }
+    }
+
     private fun drawMoving(canvas: Canvas, l: Layout, left: Float, top: Float) {
         val c = clock ?: return
         val marquee = mode == TitleDisplay.MARQUEE
         val loop = fullWidth + separatorWidth
-        val offset = if (marquee) {
-            TitleMotion.marqueeOffset(c.elapsed, c.speed, loop)
-        } else {
-            TitleMotion.bounceOffset(c.local, overflow, c.speed, c.cycleTravel)
-        }
+        val offset = offsetAt(c)
+        drawnOffset = offset
         val right = left + areaWidth
         val bottom = top + lineHeight
         val save = canvas.saveLayer(left, top, right, bottom, null)

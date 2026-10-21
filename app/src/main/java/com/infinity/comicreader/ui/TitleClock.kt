@@ -5,7 +5,8 @@ import android.view.Choreographer
 /**
  * One clock for every moving title of a list, so they move in sync. It ticks only
  * while some title moves and the list neither scrolls nor hides; [elapsed] holds
- * still in between, so titles pick up where they stopped.
+ * still in between, so titles pick up where they stopped. Only titles that moved
+ * are redrawn, and while all rest it sleeps until the next one moves.
  */
 class TitleClock(
     /** Glide speed in px per ms. */
@@ -16,6 +17,9 @@ class TitleClock(
     private var elapsedNanos = 0L
     private var lastFrame = 0L
     private var posted = false
+
+    /** The callback posted waits for the end of a rest. */
+    private var delayed = false
     private var cycleStart = 0L
 
     /** Running time in ms. */
@@ -32,14 +36,14 @@ class TitleClock(
     var scrolling = false
         set(value) {
             field = value
-            post()
+            if (paused) cancel() else post()
         }
 
     /** The screen is not showing: titles wait. */
     var stopped = false
         set(value) {
             field = value
-            post()
+            if (paused) cancel() else post()
         }
 
     private val paused get() = scrolling || stopped
@@ -55,15 +59,28 @@ class TitleClock(
         views.remove(view)
     }
 
+    /** Ticks on the next frame; a rest being waited out ends early, still counted. */
     private fun post() {
-        if (posted || paused || views.isEmpty()) return
+        if (paused || views.isEmpty()) return
+        if (posted && !delayed) return
+        val choreographer = Choreographer.getInstance()
+        if (posted) choreographer.removeFrameCallback(this) else lastFrame = 0L
         posted = true
-        lastFrame = 0L
-        Choreographer.getInstance().postFrameCallback(this)
+        delayed = false
+        choreographer.postFrameCallback(this)
+    }
+
+    /** Drops the tick waiting; a pause does not count toward [elapsed]. */
+    private fun cancel() {
+        if (!posted) return
+        Choreographer.getInstance().removeFrameCallback(this)
+        posted = false
+        delayed = false
     }
 
     override fun doFrame(frameTimeNanos: Long) {
         posted = false
+        delayed = false
         if (paused || views.isEmpty()) return
         if (lastFrame != 0L) elapsedNanos += frameTimeNanos - lastFrame
         lastFrame = frameTimeNanos
@@ -71,8 +88,19 @@ class TitleClock(
             cycleStart = elapsed
             cycleTravel = views.maxOf { it.travelMs }
         }
-        views.forEach { it.invalidate() }
+        views.forEach { it.tick() }
+        val still = views.minOf { it.stillMs() }
         posted = true
-        Choreographer.getInstance().postFrameCallback(this)
+        if (still > REST_MIN_MS) {
+            delayed = true
+            Choreographer.getInstance().postFrameCallbackDelayed(this, still)
+        } else {
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
+
+    private companion object {
+        /** Rests shorter than about two frames are ticked through. */
+        const val REST_MIN_MS = 32L
     }
 }

@@ -30,6 +30,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.fakes.RoboMenuItem
+import org.robolectric.shadows.ShadowToast
 import java.io.File
 
 /** "Detect reading direction" in the reader: what decides, and what it never overrides. */
@@ -178,5 +179,6 @@ class ViewerActivityDirectionTest {
         assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
         assertEquals("ltr", library.seriesFor(dir.absolutePath)?.dir)
         assertEquals("ltr", prefs.readingDir)
+        assertEquals(viewer.getString(R.string.direction_kept_for_folder), ShadowToast.getTextOfLatestToast())
     }
 }

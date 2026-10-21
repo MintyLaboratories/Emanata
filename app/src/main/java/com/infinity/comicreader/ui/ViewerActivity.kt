@@ -1711,7 +1711,8 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * The user's choice of direction. Over a detected one it is kept for the folder
-     * (with "Per-folder layout" on), so the detection does not return on the next open.
+     * (with "Per-folder layout" on), so the detection does not return on the next open;
+     * the folder's mode, fit and spread are kept with it, and its books no longer detect.
      */
     private fun setReadingDir(dir: String) {
         if (readingDir == dir) return
@@ -1722,7 +1723,7 @@ class ViewerActivity : AppCompatActivity() {
             detection = null
             if (prefs.perSeries && file?.parentFile != null) {
                 seriesActive = true
-                toast(R.string.series_saved)
+                toast(R.string.direction_kept_for_folder)
                 invalidateOptionsMenu()
             }
         }

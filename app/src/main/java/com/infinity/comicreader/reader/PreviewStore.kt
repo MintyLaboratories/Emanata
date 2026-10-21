@@ -10,6 +10,7 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Page previews ([Previews]) on disk under [dir], one JPEG per page, named by a hash of
@@ -17,7 +18,12 @@ import java.util.concurrent.Executors
  * name, and the preview size, so a changed book or size never reads a stale one.
  * Writes run on [writer], off the decoding thread; a file appears whole or not at all.
  */
-class PreviewStore(val dir: File, private val writer: Executor = WRITER) {
+class PreviewStore(
+    val dir: File,
+    private val writer: Executor = WRITER,
+    private val maxBytes: Long = MAX_BYTES,
+    private val trimEvery: Int = TRIM_EVERY
+) {
 
     /** Keys handed to [put] whose file is not written yet. */
     private val pending: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
@@ -70,7 +76,13 @@ class PreviewStore(val dir: File, private val writer: Executor = WRITER) {
         return true
     }
 
+    /** Writes [preview] to [file], trimming the store every [trimEvery] writes, so a long-running app stays under [maxBytes]. */
     private fun write(file: File, preview: Bitmap) {
+        store(file, preview)
+        if (WRITES.incrementAndGet() % trimEvery == 0) trim(dir, maxBytes)
+    }
+
+    private fun store(file: File, preview: Bitmap) {
         val opaque = if (!preview.hasAlpha()) preview else {
             Bitmap.createBitmap(preview.width, preview.height, Bitmap.Config.ARGB_8888).also {
                 Canvas(it).apply { drawColor(Color.WHITE) }.drawBitmap(preview, 0f, 0f, null)
@@ -95,6 +107,12 @@ class PreviewStore(val dir: File, private val writer: Executor = WRITER) {
 
         /** Previews made on the writer that may wait at once; each holds a half-size page until made. */
         const val MAX_PENDING = 4
+
+        /** Writes between trims of a store ([trim]) while the app runs; it is trimmed at startup too. */
+        const val TRIM_EVERY = 256
+
+        /** Previews written since the app started, by every store. */
+        private val WRITES = AtomicInteger()
 
         /** Upper bound of the store on disk: some ten thousand pages. */
         const val MAX_BYTES = 128L * 1024 * 1024

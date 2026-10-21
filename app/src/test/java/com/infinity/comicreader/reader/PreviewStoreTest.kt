@@ -109,6 +109,16 @@ class PreviewStoreTest {
     }
 
     @Test
+    fun writesKeepTheStoreUnderItsCap() {
+        val dir = File(temp.root, "previews").apply { mkdirs() }
+        val old = File(dir, "old.jpg").apply { writeBytes(ByteArray(4000)); setLastModified(1_000_000L) }
+        val s = PreviewStore(dir, direct, maxBytes = 3000, trimEvery = 1)
+        s.put(PreviewStore.keyOf("b", 0, null), solid(Color.GREEN))
+        assertFalse(old.exists())
+        assertTrue(s.has(PreviewStore.keyOf("b", 0, null)))
+    }
+
+    @Test
     fun clearRemovesTheStore() {
         val s = store()
         s.put(PreviewStore.keyOf("b", 0, null), solid(Color.GREEN))

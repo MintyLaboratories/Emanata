@@ -74,7 +74,12 @@ object FilterDialog {
             root.addView(ChipGroup(context).apply {
                 isSingleSelection = true
                 isSelectionRequired = true
-                val options = listOf(null to R.string.filter_any, ReadingDirection.LTR to R.string.filter_ltr, ReadingDirection.RTL to R.string.filter_rtl)
+                val options = listOf(
+                    null to R.string.filter_any,
+                    ReadingDirection.LTR to R.string.filter_ltr,
+                    ReadingDirection.RTL to R.string.filter_rtl,
+                    ReadingDirection.TTB to R.string.filter_ttb
+                )
                 for ((direction, label) in options) addView(chip(label, filter.direction == direction) { on ->
                     if (on) update(filter.copy(direction = direction))
                 })

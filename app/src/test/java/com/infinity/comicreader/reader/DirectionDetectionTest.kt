@@ -119,4 +119,15 @@ class DirectionDetectionTest {
         // Retired: page names.
         assertNull(Detected.decode(7))
     }
+
+    @Test
+    fun storedNumbersStayAsBeforeTopToBottom() {
+        assertEquals(1, Detected(ReadingDirection.LTR, Source.COMIC_INFO).encode())
+        assertEquals(2, Detected(ReadingDirection.RTL, Source.COMIC_INFO).encode())
+        assertEquals(4, Detected(ReadingDirection.RTL, Source.COVER).encode())
+        assertEquals(6, Detected(ReadingDirection.RTL, Source.PUBLISHER).encode())
+        val slices = Detected(ReadingDirection.TTB, Source.SHAPE)
+        assertEquals(slices, Detected.decode(slices.encode()))
+        assertNull(Detected.decode(64 + 3))
+    }
 }

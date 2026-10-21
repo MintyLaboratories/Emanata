@@ -787,13 +787,21 @@ class ViewerActivity : AppCompatActivity() {
         showHint(getString(R.string.direction_detected, directionName(found.direction.key), detectedFrom(found)), DETECTION_NOTE_MS)
     }
 
-    private fun directionName(dir: String) = getString(if (dir == "rtl") R.string.direction_rtl else R.string.direction_ltr)
+    private fun directionName(dir: String) = getString(
+        when (dir) {
+            "rtl" -> R.string.direction_rtl
+            "ttb" -> R.string.direction_ttb
+            else -> R.string.direction_ltr
+        }
+    )
 
     /** What [found] was read from: "ComicInfo", "the cover", or the publisher's name. */
     private fun detectedFrom(found: DirectionDetection.Detected): String = when (found.source) {
         DirectionDetection.Source.COMIC_INFO -> getString(R.string.direction_from_comic_info)
         DirectionDetection.Source.COVER -> getString(R.string.direction_from_cover)
         DirectionDetection.Source.PUBLISHER -> getString(R.string.direction_from_publisher, found.detail.orEmpty())
+        DirectionDetection.Source.SHAPE -> getString(R.string.direction_from_shape)
+        DirectionDetection.Source.SEAMS -> getString(R.string.direction_from_seams)
     }
 
     /** The direction on screen and where it comes from: the folder, the book's contents, or the default. */

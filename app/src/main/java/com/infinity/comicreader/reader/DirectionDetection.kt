@@ -13,18 +13,33 @@ import java.util.Locale
  */
 object DirectionDetection {
 
-    /** Which signal decided. Key 3, once page names, is retired and decodes to nothing. */
-    enum class Source(val key: Int) { COMIC_INFO(0), COVER(1), PUBLISHER(2) }
+    /**
+     * Which signal decided. Key 3, once page names, is retired and decodes to nothing.
+     * [SHAPE] and [SEAMS] find top-to-bottom slices ([Slices]): their shape alone, or
+     * their shape and seams that run on from one slice to the next.
+     */
+    enum class Source(val key: Int) { COMIC_INFO(0), COVER(1), PUBLISHER(2), SHAPE(4), SEAMS(5) }
 
     /** A detected [direction], from [source]; [detail] names the publisher when that decided. */
     data class Detected(val direction: ReadingDirection, val source: Source, val detail: String? = null) {
-        /** One number for storage: 0 never occurs, so it can stand for "nothing detected". */
-        fun encode(): Int = 1 + direction.ordinal + 2 * source.key
+        /**
+         * One number for storage: 0 never occurs, so it can stand for "nothing detected".
+         * Left-to-right and right-to-left keep their numbers from before top-to-bottom,
+         * which takes [TTB_BASE] and up.
+         */
+        fun encode(): Int =
+            if (direction == ReadingDirection.TTB) TTB_BASE + source.key else 1 + direction.ordinal + 2 * source.key
 
         companion object {
+            private const val TTB_BASE = 64
+
             /** The detection [encode] gave [value]; null for 0 or anything unknown. */
             fun decode(value: Int): Detected? {
                 if (value <= 0) return null
+                if (value >= TTB_BASE) {
+                    val source = Source.entries.firstOrNull { it.key == value - TTB_BASE } ?: return null
+                    return Detected(ReadingDirection.TTB, source)
+                }
                 val direction = ReadingDirection.entries.getOrNull((value - 1) % 2) ?: return null
                 val source = Source.entries.firstOrNull { it.key == (value - 1) / 2 } ?: return null
                 return Detected(direction, source)

@@ -3,7 +3,8 @@ package com.infinity.comicreader.data
 /** The direction a book reads in. */
 enum class ReadingDirection(val key: String) {
     LTR("ltr"),
-    RTL("rtl");
+    RTL("rtl"),
+    TTB("ttb");
 
     companion object {
         fun of(key: String?): ReadingDirection? = entries.firstOrNull { it.key == key }

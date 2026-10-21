@@ -147,5 +147,6 @@ class LibraryFilterTest {
         assertEquals(f, LibraryFilter.decode(f.encode()))
         assertEquals("", LibraryFilter.NONE.encode())
         assertEquals(LibraryFilter.NONE, LibraryFilter.decode("bogus;types=nothing"))
+        assertEquals(LibraryFilter(direction = ReadingDirection.TTB), LibraryFilter.decode("dir=ttb"))
     }
 }

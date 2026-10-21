@@ -29,6 +29,7 @@
     <string name="filter_any">Any</string>
     <string name="filter_ltr">Left to right</string>
     <string name="filter_rtl">Right to left</string>
+    <string name="filter_ttb">Top to bottom</string>
     <string name="filter_status">Read status</string>
     <string name="filter_unread">Unread</string>
     <string name="filter_in_progress">In progress</string>
@@ -304,9 +305,12 @@
     <string name="direction_detected">%1$s (from %2$s)</string>
     <string name="direction_rtl">Right-to-left</string>
     <string name="direction_ltr">Left-to-right</string>
+    <string name="direction_ttb">Top-to-bottom</string>
     <string name="direction_from_comic_info">ComicInfo</string>
     <string name="direction_from_cover">the cover</string>
     <string name="direction_from_publisher">%1$s</string>
+    <string name="direction_from_shape">page shapes</string>
+    <string name="direction_from_seams">page shapes and seams</string>
     <string name="pref_page_mode">Default page mode</string>
     <string name="pref_fit">Default fit mode</string>
     <string name="pref_filter">Default page filter</string>

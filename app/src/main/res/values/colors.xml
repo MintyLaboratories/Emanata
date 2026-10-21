@@ -60,6 +60,9 @@
 
     <!-- Highlights and tracks over the black reader. -->
     <color name="reader_accent">#FFC0C1FF</color>
+    <color name="seek_scrim">#59000000</color>
+    <color name="seek_panel">#E6101014</color>
+    <color name="seek_placeholder">#26FFFFFF</color>
     <color name="pill_track">#4DFFFFFF</color>
 
 </resources>

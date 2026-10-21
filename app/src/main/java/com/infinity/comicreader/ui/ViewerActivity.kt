@@ -25,6 +25,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.CheckBox
@@ -34,6 +35,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -141,12 +143,31 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var btnPrevChapter: ImageButton
     private lateinit var btnNextChapter: ImageButton
     private lateinit var hint: TextView
+    private lateinit var seekScrim: View
+    private lateinit var seekPanel: RecyclerView
     private lateinit var brightnessPill: View
     private lateinit var brightnessText: TextView
     private lateinit var brightnessBar: SignedBar
 
     /** Counts "previous page" actions on the first page, toward the previous chapter. */
     private val repeatedBack = RepeatedBack()
+
+    /** The seek bar's preview strip of the open book, kept between openings ([openSeekPanel]); null until first opened. */
+    private var seekPreviews: SeekPreviewAdapter? = null
+
+    /** Tells a tap-and-hold on the seek bar from a drag. */
+    private lateinit var seekHold: SeekHold
+
+    /** True from a hold opening the strip until that touch lifts: the seek bar sees no more of it. */
+    private var seekHeld = false
+
+    /** The item on screen when the seek bar's touch went down. */
+    private var seekHoldFrom = 0
+
+    /** Back closes the preview strip while it is open. */
+    private val seekBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = closeSeekPanel()
+    }
 
     /** The page [repeatedBack] is counting on; another page starts the count over. */
     private var backPage = -1
@@ -391,6 +412,10 @@ class ViewerActivity : AppCompatActivity() {
             }
         })
 
+        seekHold = SeekHold(ViewConfiguration.get(this).scaledTouchSlop.toFloat())
+        seek.setOnTouchListener { _, e -> onSeekTouch(e) }
+        onBackPressedDispatcher.addCallback(this, seekBack)
+
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
                 if (fromUser) goToItem(value)
@@ -520,6 +545,7 @@ class ViewerActivity : AppCompatActivity() {
         hint.animate().cancel()
         handler.removeCallbacks(hideBrightness)
         brightnessPill.animate().cancel()
+        handler.removeCallbacks(seekHoldUp)
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -558,6 +584,11 @@ class ViewerActivity : AppCompatActivity() {
         endNext = findViewById(R.id.end_next)
         endPrev = findViewById(R.id.end_prev)
         hint = findViewById(R.id.viewer_hint)
+        seekScrim = findViewById(R.id.seek_scrim)
+        seekPanel = findViewById(R.id.seek_panel)
+        seekPanel.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        seekPanel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeSeekPanel() }
+        seekScrim.setOnClickListener { closeSeekPanel() }
         brightnessPill = findViewById(R.id.brightness_pill)
         brightnessText = findViewById(R.id.brightness_text)
         brightnessBar = findViewById(R.id.brightness_bar)
@@ -566,7 +597,16 @@ class ViewerActivity : AppCompatActivity() {
         findViewById<View>(R.id.viewer_root).addOnLayoutChangeListener { root, _, _, _, _, _, _, _, _ ->
             placeEndCard(root.height)
             placeHint(root.height)
+            placeSeekPanel()
         }
+    }
+
+    /** Puts the preview strip just above the bottom bar. */
+    private fun placeSeekPanel() {
+        if (seekPanel.visibility != View.VISIBLE) return
+        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
+        val limit = if (bottomBar.visibility == View.VISIBLE) bottomBar.top else (seekPanel.parent as View).height
+        seekPanel.translationY = (limit - gap - seekPanel.bottom).toFloat()
     }
 
     /** Puts the end card at [EndCard.top] in a root [rootHeight] tall, above the bottom bar while it shows. */
@@ -933,6 +973,7 @@ class ViewerActivity : AppCompatActivity() {
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
+        dropSeekPreviews()
         adapter?.release()
         adapter = null
         stripAheadJob?.cancel()
@@ -1185,6 +1226,8 @@ class ViewerActivity : AppCompatActivity() {
         // seeking past its end would roll on, which the slider should not do by itself.
         seek.max = (layout.itemCount(src.pageCount) - 1).coerceAtLeast(0)
         seek.progress = item
+        // An open preview strip follows the new layout.
+        if (seekPanel.visibility == View.VISIBLE) seekPreviews?.show(seekCells(src), item)
         onPageChanged()
     }
 
@@ -1264,6 +1307,7 @@ class ViewerActivity : AppCompatActivity() {
         val anchor = first.coerceAtLeast(boundary)
         val top = lm?.findViewByPosition(anchor)?.top ?: 0
 
+        dropSeekPreviews()
         source = next
         bookChapters = chaptersOf(next)
         persistAdjustments()
@@ -1492,6 +1536,10 @@ class ViewerActivity : AppCompatActivity() {
             seenPages.set(layout.firstPage(item).coerceAtLeast(0), layout.lastPage(item, count) + 1)
         }
         updateSpreadRotation()
+        if (seekPanel.visibility == View.VISIBLE) {
+            seekPreviews?.highlight(shownItem())
+            centerSeekPanel()
+        }
         val onLast = count > 0 && layout.isLastItem(shownItem(), count)
         if (!onLast) landedAtEnd = false
         if (!markedRead && onLast && !landedAtEnd) {
@@ -1603,6 +1651,109 @@ class ViewerActivity : AppCompatActivity() {
         val name = f.name
         val dot = name.lastIndexOf('.')
         return if (dot > 0) name.substring(0, dot) else name
+    }
+
+    // ------------------------------------------------------------------ seek preview strip
+
+    /**
+     * Watches the seek bar's touches for a hold ([SeekHold]): one that stays still for
+     * [SeekHold.HOLD_MS] opens the preview strip, and the rest of that touch is kept from
+     * the seek bar. A touch that moves seeks as usual.
+     */
+    private fun onSeekTouch(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                seekHeld = false
+                seekHoldFrom = shownItem()
+                seekHold.down(e.x, e.y)
+                handler.removeCallbacks(seekHoldUp)
+                handler.postDelayed(seekHoldUp, SeekHold.HOLD_MS)
+            }
+            MotionEvent.ACTION_MOVE -> if (!seekHold.move(e.x, e.y)) handler.removeCallbacks(seekHoldUp)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                seekHold.up()
+                handler.removeCallbacks(seekHoldUp)
+                if (seekHeld) {
+                    seekHeld = false
+                    return true
+                }
+            }
+        }
+        return seekHeld
+    }
+
+    /** The hold's time is up: the seek bar lets go of the touch, a hold on its thumb keeps the item, and the strip opens. */
+    private val seekHoldUp = Runnable {
+        if (!seekHold.held() || source == null) return@Runnable
+        seekHeld = true
+        val now = SystemClock.uptimeMillis()
+        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        seek.onTouchEvent(cancel)
+        cancel.recycle()
+        val track = seek.width - seek.paddingLeft - seek.paddingRight
+        val thumbHalf = (seek.thumb?.intrinsicWidth ?: 0) / 2
+        if (shownItem() != seekHoldFrom && SeekHold.onThumb(seekHoldFrom, seek.progress, thumbHalf, track, seek.max)) {
+            goToItem(seekHoldFrom)
+        }
+        openSeekPanel()
+    }
+
+    /** The preview strip's cells for [src] as the reader lays its items out now. */
+    private fun seekCells(src: PageSource): List<SeekStrip.Cell> =
+        SeekStrip.cells(layout, src.pageCount, itemNumbers()) { pageSizes.getOrNull(it) ?: src.loadedSize(it) }
+
+    /**
+     * Opens the strip of page previews above the seek bar, the item on screen centered
+     * and highlighted, in reading order, the page behind dimmed.
+     */
+    internal fun openSeekPanel() {
+        val src = source ?: return
+        stopAutoScroll()
+        val a = seekPreviews ?: SeekPreviewAdapter(
+            src,
+            resources.getDimensionPixelSize(R.dimen.seek_thumb_h),
+            prefs.linearLight,
+            exact = src.cheapSizes
+        ) { item ->
+            closeSeekPanel()
+            goToItem(item)
+        }.also { seekPreviews = it }
+        a.show(seekCells(src), shownItem())
+        seekPanel.layoutDirection = if (readingDir == "rtl") View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+        if (seekPanel.adapter !== a) seekPanel.adapter = a
+        seekScrim.visibility = View.VISIBLE
+        seekPanel.visibility = View.VISIBLE
+        seekBack.isEnabled = true
+        centerSeekPanel()
+    }
+
+    /** Scrolls the strip so the item on screen sits in its middle. */
+    private fun centerSeekPanel() {
+        val a = seekPreviews ?: return
+        val item = shownItem()
+        if (item !in 0 until a.itemCount) return
+        val pad = resources.getDimensionPixelSize(R.dimen.seek_cell_pad) + resources.getDimensionPixelSize(R.dimen.seek_frame_pad)
+        // Before its first layout the strip is as wide as the reader.
+        val width = (seekPanel.width.takeIf { it > 0 } ?: (seekPanel.parent as View).width) - seekPanel.paddingLeft - seekPanel.paddingRight
+        (seekPanel.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(item, SeekStrip.centerOffset(width, a.cellWidth(item, 2 * pad)))
+    }
+
+    /** True while the preview strip shows. */
+    internal val seekPanelShown: Boolean get() = seekPanel.visibility == View.VISIBLE
+
+    private fun closeSeekPanel() {
+        seekBack.isEnabled = false
+        if (seekPanel.visibility != View.VISIBLE) return
+        seekPanel.visibility = View.GONE
+        seekScrim.visibility = View.GONE
+    }
+
+    /** Closes the strip and forgets its previews, which belong to the book being closed. */
+    private fun dropSeekPreviews() {
+        closeSeekPanel()
+        seekPanel.adapter = null
+        seekPreviews?.release()
+        seekPreviews = null
     }
 
     // ------------------------------------------------------------------ gestures
@@ -1806,6 +1957,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun toggleBars() {
         barsVisible = !barsVisible
+        if (!barsVisible) closeSeekPanel()
         animateBar(toolbar, barsVisible)
         animateBar(bottomBar, barsVisible)
     }

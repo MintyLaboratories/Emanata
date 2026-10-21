@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One cell of the seek bar's preview strip: its page images left to right as on screen, its number below. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/seek_cell_pad">
+
+    <LinearLayout
+        android:id="@+id/seek_thumb_frame"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layoutDirection="ltr"
+        android:orientation="horizontal"
+        android:padding="@dimen/seek_frame_pad">
+
+        <ImageView
+            android:id="@+id/seek_thumb_0"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@color/seek_placeholder"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+
+        <ImageView
+            android:id="@+id/seek_thumb_1"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@color/seek_placeholder"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/seek_thumb_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/reader_on_surface_dim"
+        android:textSize="13sp"
+        tools:text="12" />
+</LinearLayout>

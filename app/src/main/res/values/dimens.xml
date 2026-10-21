@@ -27,6 +27,10 @@
     <dimen name="chapter_drawer_width">360dp</dimen>
     <!-- Above the bottom bar, or the screen's bottom while the bar is hidden. -->
     <dimen name="reader_hint_gap">16dp</dimen>
+    <!-- Seek bar preview strip: image height, cell padding, current-cell outline. -->
+    <dimen name="seek_thumb_h">168dp</dimen>
+    <dimen name="seek_cell_pad">4dp</dimen>
+    <dimen name="seek_frame_pad">2dp</dimen>
     <!-- Brightness indicator: below the toolbar, or the screen's top while it is hidden. -->
     <dimen name="brightness_pill_gap">24dp</dimen>
 </resources>

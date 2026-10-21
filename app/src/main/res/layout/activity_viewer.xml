@@ -37,6 +37,16 @@
         android:scaleX="0"
         android:visibility="gone" />
 
+    <!-- Dims the page while the seek bar's preview strip is open; a tap closes the strip. -->
+    <View
+        android:id="@+id/seek_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/seek_scrim"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone" />
+
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/viewer_toolbar"
         android:layout_width="match_parent"
@@ -165,6 +175,19 @@
                 app:tint="@android:color/white" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- The seek bar's preview strip, placed just above the bottom bar. -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/seek_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/seek_panel"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:paddingHorizontal="@dimen/space_2"
+        android:paddingVertical="@dimen/space_2"
+        android:visibility="gone" />
 
     <!-- Brightness drag indicator. -->
     <LinearLayout

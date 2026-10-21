@@ -98,6 +98,16 @@ class ViewerActivitySheetTest {
     }
 
     @Test
+    fun aNewFitKeepsThePagesAdapter() {
+        val viewer = launch()
+        val pager = viewer.findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.viewer_pager)
+        val adapter = pager.adapter
+        ReaderSheet(viewer).tap(R.id.btn_fit_height).tap(R.id.btn_fit_width).tap(R.id.btn_fit_stretch)
+        assertEquals("stretch", prefs.fit)
+        assertTrue(pager.adapter === adapter)
+    }
+
+    @Test
     fun aLongStripOffersNoSpreadsCropOrSpacing() {
         val sheet = ReaderSheet(launch())
         assertTrue(sheet.view<View>(R.id.btn_two_on).isEnabled)

@@ -38,6 +38,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.chip.Chip
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
@@ -49,6 +50,7 @@ import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.EntryValues
 import com.infinity.comicreader.data.FileStat
 import com.infinity.comicreader.data.FolderSize
+import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.Years
@@ -94,6 +96,7 @@ class ListActivity : AppCompatActivity() {
     private lateinit var tabs: TabLayout
     private lateinit var pathbar: CrumbBar
     private lateinit var fab: FloatingActionButton
+    private lateinit var filterChip: Chip
 
     /** A detached "Recent" row, measured to size grid rows around the real one. */
     private var headerProbe: View? = null
@@ -181,6 +184,10 @@ class ListActivity : AppCompatActivity() {
         pathbar = findViewById(R.id.pathbar)
         recycler = findViewById(R.id.recycler)
         fab = findViewById(R.id.fab)
+        filterChip = findViewById(R.id.filter_chip)
+        filterChip.setOnClickListener { FilterDialog.show(this, prefs, tabName()) }
+        filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
+        filterChip.closeIconContentDescription = getString(R.string.filter_clear)
         progress = findViewById(R.id.progress)
         emptyView = findViewById(R.id.empty_view)
         emptyIcon = findViewById(R.id.empty_icon)
@@ -304,7 +311,7 @@ class ListActivity : AppCompatActivity() {
             // Coming back to the browse tab, onResume reloads the folder anyway.
             if (mode != TAB_BROWSE || lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
         }
-        if (s.sorts[tabName()] != old.sorts[tabName()]) {
+        if (s.sorts[tabName()] != old.sorts[tabName()] || s.filters[tabName()] != old.filters[tabName()]) {
             applyFilterAndSort()
         } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
             s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
@@ -775,19 +782,22 @@ class ListActivity : AppCompatActivity() {
      */
     private fun applyFilterAndSort(resort: Boolean = true) {
         val deep = deepResults
-        val filtered = when {
+        val searched = when {
             query.isBlank() -> allEntries
             deep != null -> deep
             else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
         }
 
         val sort = prefs.sort(tabName())
+        val filter = prefs.filter(tabName())
         val live = values()
-        val order = sortValues.takeIf { !resort } ?: live.frozen(filtered, sort.keys).also { sortValues = it }
+        val order = sortValues.takeIf { !resort } ?: live.frozen(searched, sort.keys).also { sortValues = it }
+        val passing = if (filter.isActive) searched.filter { filter.accepts(it, live) } else searched
 
         shown.clear()
-        shown.addAll(filtered.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it) })
-        if (resort) scheduleFacts(sort.keys)
+        shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it) })
+        filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
+        if (resort) scheduleFacts(sort.keys + filter.keys)
         adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
         if (mode == TAB_FAVORITES && prefs.groupFavorites) {
             val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
@@ -880,6 +890,8 @@ class ListActivity : AppCompatActivity() {
 
         val (icon, title, sub) = when {
             query.isNotBlank() -> Triple(R.drawable.ic_search, getString(R.string.empty_search), null)
+            prefs.filter(tabName()).isActive && allEntries.isNotEmpty() ->
+                Triple(R.drawable.ic_filter_list, getString(R.string.empty_filtered), null)
             mode == TAB_FAVORITES -> Triple(
                 R.drawable.ic_star_border, getString(R.string.no_favorites),
                 getString(R.string.menu_add_favorite)
@@ -1442,6 +1454,7 @@ class ListActivity : AppCompatActivity() {
         when (item.itemId) {
             R.id.menu_grid -> toggleGrid()
             R.id.menu_sort -> showSortDialog()
+            R.id.menu_filter -> FilterDialog.show(this, prefs, tabName())
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
             R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())

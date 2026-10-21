@@ -58,6 +58,21 @@
             android:paddingStart="10dp"
             android:paddingEnd="10dp" />
 
+        <!-- Shown while the tab's filter hides anything; tap to edit, x to clear. -->
+        <com.google.android.material.chip.Chip
+            android:id="@+id/filter_chip"
+            style="@style/Widget.Material3.Chip.Input"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginBottom="4dp"
+            android:checkable="false"
+            android:text="@string/filtered"
+            android:visibility="gone"
+            app:chipIcon="@drawable/ic_filter_list"
+            app:chipIconVisible="true"
+            app:closeIconVisible="true" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.recyclerview.widget.RecyclerView

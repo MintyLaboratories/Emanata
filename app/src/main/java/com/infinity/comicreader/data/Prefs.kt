@@ -247,6 +247,11 @@ class Prefs(context: Context) {
         e.apply()
     }
 
+    /** What [tab] hides. */
+    fun filter(tab: String): LibraryFilter = LibraryFilter.decode(sp.getString(filterKey(tab), null))
+
+    fun setFilter(tab: String, filter: LibraryFilter) = put(filterKey(tab), filter.encode().ifEmpty { null })
+
     var titleDisplay: TitleDisplay
         get() = TitleDisplay.of(sp.getString(KEY_TITLE_DISPLAY, null))
         set(v) = put(KEY_TITLE_DISPLAY, v.key)
@@ -396,6 +401,9 @@ class Prefs(context: Context) {
 
         /** The key of one [field] of [tab]'s sort, e.g. `pref_sort_browse_by`. */
         private fun sortKey(tab: String, field: String) = "pref_sort_${tab}_$field"
+
+        /** The key of [tab]'s filter; kept out of backups like other browsing state. */
+        private fun filterKey(tab: String) = "pref_library_filter_$tab"
 
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"

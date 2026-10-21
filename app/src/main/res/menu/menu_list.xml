@@ -48,6 +48,9 @@
                 android:id="@+id/menu_sort"
                 android:title="@string/menu_sort" />
             <item
+                android:id="@+id/menu_filter"
+                android:title="@string/menu_filter" />
+            <item
                 android:id="@+id/menu_grid_size"
                 android:title="@string/grid_size" />
             <item

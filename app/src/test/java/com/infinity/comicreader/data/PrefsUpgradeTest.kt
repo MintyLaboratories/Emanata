@@ -60,7 +60,7 @@ class PrefsUpgradeTest {
     }
 
     @Test
-    fun sortsPerTab() {
+    fun sortsAndFiltersPerTab() {
         val prefs = Prefs(context)
         assertEquals(TabSort.defaultFor(Prefs.TAB_HISTORY), prefs.sort(Prefs.TAB_HISTORY))
         val sort = TabSort(SortLevel(SortKey.YEAR, flipped = true), SortLevel(SortKey.LENGTH), foldersFirst = false)
@@ -69,6 +69,13 @@ class PrefsUpgradeTest {
         assertEquals(TabSort.defaultFor(Prefs.TAB_FAVORITES), prefs.sort(Prefs.TAB_FAVORITES))
         prefs.setSort(Prefs.TAB_BROWSE, sort.copy(then = null))
         assertEquals(null, prefs.sort(Prefs.TAB_BROWSE).then)
+
+        val filter = LibraryFilter(statuses = setOf(ReadStatus.UNREAD), minYear = 2000)
+        prefs.setFilter(Prefs.TAB_FAVORITES, filter)
+        assertEquals(filter, prefs.filter(Prefs.TAB_FAVORITES))
+        assertEquals(LibraryFilter.NONE, prefs.filter(Prefs.TAB_BROWSE))
+        prefs.setFilter(Prefs.TAB_FAVORITES, LibraryFilter.NONE)
+        assertFalse(stored().keys.any { it.startsWith("pref_library_filter") })
     }
 
     @Test

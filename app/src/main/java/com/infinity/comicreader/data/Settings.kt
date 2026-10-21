@@ -16,8 +16,9 @@ data class ListSettings(
     val coverShape: CoverShape,
     val thumbFit: ThumbFit,
     val cropAnchor: CropAnchor,
-    /** Each tab's sort, by tab name. */
+    /** Each tab's sort and filter, by tab name. */
     val sorts: Map<String, TabSort>,
+    val filters: Map<String, LibraryFilter>,
     val titleDisplay: TitleDisplay,
     val shortenPrefixes: Boolean,
     val pathView: Boolean,
@@ -36,6 +37,7 @@ data class ListSettings(
             thumbFit = p.thumbFit,
             cropAnchor = p.cropAnchor,
             sorts = Prefs.TABS.associateWith { p.sort(it) },
+            filters = Prefs.TABS.associateWith { p.filter(it) },
             titleDisplay = p.titleDisplay,
             shortenPrefixes = p.shortenPrefixes,
             pathView = p.listPathView,

@@ -59,7 +59,7 @@ class ListActivityPeekTest {
     }
 
     private fun ListActivity.peek(): PeekOverlay {
-        val root = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+        val root = findViewById<ViewGroup>(android.R.id.content)
         return (0 until root.childCount).map { root.getChildAt(it) }.filterIsInstance<PeekOverlay>().single()
     }
 

@@ -35,7 +35,7 @@ class PinchPeek(
     }
 
     init {
-        (activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup)
+        activity.findViewById<ViewGroup>(android.R.id.content)
             .addView(overlay, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val slop = ViewConfiguration.get(activity).scaledTouchSlop * 2f
         recycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {

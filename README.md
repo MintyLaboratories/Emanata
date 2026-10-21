@@ -141,7 +141,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Search subfolders** (menu) looks below the current folder, not just in it.
 - Opening a book resumes at the last page unless it was already finished.
 - Files opened from other apps (`content://`) are copied to the cache and opened.
-- Housekeeping: **duplicate file finder** (content-checked), **largest files** list,
+- Housekeeping: **duplicate file finder** (bit-identical copies, SHA-256
+  verified, shown as one cover with every place a copy is; spread two fingers
+  on it to peek), **largest files** list,
   reading **statistics**, and **backup / restore** of your library and settings
   (Settings → Your data) to a JSON file you choose.
 

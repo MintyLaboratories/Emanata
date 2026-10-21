@@ -111,7 +111,8 @@
     <string name="delete_selected">Delete selected</string>
     <string name="delete_selected_n">Delete %1$d (%2$s)</string>
     <string name="delete_selected_msg">Permanently delete %1$d files?</string>
-    <string name="dupe_group">%1$d identical copies</string>
+    <string name="dupe_group">%1$d identical copies · %2$s each</string>
+    <string name="dupes_identical">Bit-identical copies (SHA-256 verified)</string>
     <string name="cleanup_nothing">Nothing found</string>
     <string name="invalid_name">That name is not allowed</string>
     <string name="op_failed">Operation failed</string>

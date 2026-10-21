@@ -67,8 +67,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * A new fit, page gap or item size shows at once: each page keeps its bitmap, scaled
  * to the new size on the GPU (Lanczos3 when enlarged), while the bitmap for the new
  * size is made in the background, from the page's full detail when a zoom already
- * holds it, and then takes over in place ([ZoomImageView.swapBitmap]). Bitmaps for
- * other sizes stay cached, so going back to one is instant too.
+ * holds it, and then takes over in place ([ZoomImageView.swapBitmap]). The shown pages'
+ * bitmaps for other sizes stay cached while room allows, so going back to a recent size
+ * is instant too.
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
@@ -113,8 +114,9 @@ class PageAdapter(
 
     /**
      * Shows every page at the size the layout now asks for, in place: decodes for an
-     * old size are dropped and the items rebind on their own holders ([RESIZE]), which
-     * keep their bitmaps until the new ones arrive. Timed by [timing].
+     * old size are dropped, as are its cached bitmaps of pages not shown, and the items
+     * rebind on their own holders ([RESIZE]), which keep their bitmaps until the new ones
+     * arrive. Timed by [timing].
      */
     private fun resize() {
         timing.begin()
@@ -126,6 +128,11 @@ class PageAdapter(
                 entry.deferred.cancel()
                 if (pending[entry.key] === entry) pending.remove(entry.key)
             }
+        }
+        // Old sizes of pages off screen make room for preloading at the new one.
+        val shown = images.filter { it.drawable != null }.mapNotNullTo(HashSet()) { pageOf[it] }
+        for (key in cache.snapshot().keys) {
+            if (key.page !in shown && key != keyFor(key.page)) cache.remove(key)
         }
         notifyItemRangeChanged(0, itemCount, RESIZE)
     }

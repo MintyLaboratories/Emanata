@@ -194,7 +194,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered. A new
   fit shows at once, the page rescaled on the GPU, and its exact bitmap takes
-  over in place when ready; each fit's bitmaps stay cached.
+  over in place when ready; recent fits of the pages on screen stay cached.
 - **Page filter:** none, invert, grayscale, high contrast, sepia. Invert flips
   lightness only, in OKLab, so colors keep their hue (Android 13+; an RGB
   invert before).

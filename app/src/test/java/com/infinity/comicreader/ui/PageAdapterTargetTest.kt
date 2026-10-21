@@ -134,6 +134,29 @@ class PageAdapterTargetTest {
         adapter.release()
     }
 
+    @Test
+    fun aNewFitDropsTheOldSizeOfPagesOffScreenOnly() {
+        val source = RecordingSource(6)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 3)
+        val rv = recycler(adapter, 1848, 2960)
+        val screen = Target(1848, 2960)
+        val height = Target(0, 2960)
+        // Page 0 shows, pages 1 to 3 are preloaded.
+        idle { 3 to screen in source.requests }
+
+        adapter.fitMode = ZoomImageView.FitMode.HEIGHT
+        rv.layOut(1848, 2960)
+        idle { 3 to height in source.requests }
+        adapter.fitMode = ZoomImageView.FitMode.SCREEN
+        rv.layOut(1848, 2960)
+        idle { source.requests.count { it == 3 to screen } == 2 }
+        idle()
+        // The page shown kept its bitmap at fit screen; one far off screen is preloaded again.
+        assertEquals(1, source.requests.count { it == 0 to screen })
+        assertEquals(2, source.requests.count { it == 3 to screen })
+        adapter.release()
+    }
+
     /** Like [RecordingSource], but every decode after the first waits for [gate]. */
     private class GatedSource(override val pageCount: Int) : PageSource {
         val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()

@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import org.junit.Assert.assertEquals
@@ -9,8 +10,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.w3c.dom.Element
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
+
+private const val ANDROID = "http://schemas.android.com/apk/res/android"
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -42,6 +46,21 @@ class LauncherLabelTest {
         val pm = context.packageManager
         val launcher = pm.getActivityInfo(ComponentName(context, ListActivity::class.java), 0)
         assertEquals(context.getString(R.string.launcher_name), launcher.loadLabel(pm).toString())
+    }
+
+    /** Robolectric ignores intent-filter labels, so this reads the manifest source. */
+    @Test
+    fun openWithChooserShowsTheAppName() {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }.newDocumentBuilder()
+            .parse(File("src/main/AndroidManifest.xml"))
+        val filters = doc.getElementsByTagName("intent-filter")
+        val labels = (0 until filters.length).map { filters.item(it) as Element }
+            .filter { f ->
+                val actions = f.getElementsByTagName("action")
+                (0 until actions.length).any { (actions.item(it) as Element).getAttributeNS(ANDROID, "name") == Intent.ACTION_VIEW }
+            }
+            .map { it.getAttributeNS(ANDROID, "label") }
+        assertEquals(listOf("@string/app_name"), labels)
     }
 
     @Test

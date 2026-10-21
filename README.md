@@ -54,8 +54,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the series name all items of a Set share (`Lumen - 001.cbz` shows as `001.cbz`).
 - **Detail display** (per tab): Hidden, Comfortable (details on their own line)
   or Dense (right-aligned at the end of the title's last line, in small gray
-  tabular digits: folders `12`, `3/12`; comics `192 · 87 MB`, `40/192 · 87 MB`).
-- **List density** (per tab): Compact, Normal or Large list thumbnails.
+  tabular digits: folders `12`, `3/12`; comics `192 · 87 MB`, `40/192 · 87 MB`;
+  bookmarks their page).
+- **List density** (per tab): Compact, Normal or Large list thumbnails. A
+  progress badge too wide for its thumbnail shows a percentage, or a dot.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
   largest box of that shape that fits the cell, centered.
 - Covers are made at the exact size of their cell (Lanczos3-scaled, drawn 1:1)

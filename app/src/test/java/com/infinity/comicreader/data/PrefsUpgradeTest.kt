@@ -219,10 +219,12 @@ class PrefsUpgradeTest {
 
     @Test
     fun hiddenFileNamesBecomeAHiddenTitle() {
+        val hidden = Prefs.TABS.associate { "pref_view_${it}_detail" to "hidden" }
         assertEquals(
-            mapOf("pref_title_display" to "hidden", "pref_show_filenames" to null),
+            mapOf("pref_title_display" to "hidden") + hidden + mapOf("pref_show_filenames" to null),
             Prefs.upgrade(mapOf("pref_show_filenames" to false))
         )
+        assertEquals(DetailDisplay.COMFORTABLE, Prefs(context).view(Prefs.TAB_HISTORY).detail)
         assertEquals(mapOf("pref_show_filenames" to null), Prefs.upgrade(mapOf("pref_show_filenames" to true)))
         assertEquals(TitleDisplay.DOUBLE, Prefs(context).titleDisplay)
     }

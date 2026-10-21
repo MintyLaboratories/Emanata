@@ -51,6 +51,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   overflowing titles move, at about 30 dp/s, all in sync, paused while
   scrolling, with soft edges; with system animations removed they hold still,
   cut in the middle.
+- **Detail display** (per tab): Hidden, Comfortable (details on their own line)
+  or Dense (right-aligned at the end of the title's last line, in small gray
+  tabular digits: folders `12`, `3/12`; comics `192 · 87 MB`, `40/192 · 87 MB`).
 - **List density** (per tab): Compact, Normal or Large list thumbnails.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
   largest box of that shape that fits the cell, centered.

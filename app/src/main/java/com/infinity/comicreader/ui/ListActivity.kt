@@ -415,7 +415,8 @@ class ListActivity : AppCompatActivity() {
         else -> Prefs.TAB_BROWSE
     }
 
-    private fun rowOptions() = RowOptions(density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay)
+    private fun rowOptions() =
+        RowOptions(density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay, detail = view.detail)
 
     /** The current tab's view settings. */
     private val view: TabView get() = prefs.view(tabName())
@@ -1318,6 +1319,7 @@ class ListActivity : AppCompatActivity() {
             R.id.menu_sort_dir -> toggleSortDirection()
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
+            R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())
             R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }

@@ -42,6 +42,10 @@
     <string name="menu_hide_hidden">Hide hidden files</string>
     <string name="grid_size">Grid dimensions</string>
     <string name="grid_size_auto">Auto</string>
+    <string name="detail_display">Detail display</string>
+    <string name="detail_hidden">Hidden</string>
+    <string name="detail_comfortable">Comfortable</string>
+    <string name="detail_dense">Dense</string>
     <string name="list_density">List density</string>
     <string name="density_compact">Compact</string>
     <string name="density_normal">Normal</string>

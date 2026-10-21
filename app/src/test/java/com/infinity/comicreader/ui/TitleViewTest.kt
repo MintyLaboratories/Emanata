@@ -69,4 +69,34 @@ class TitleViewTest {
         still.heightAt(300)
         assertEquals(0L, still.travelMs)
     }
+
+    @Test
+    fun aDenseDetailSitsBesideTheTitle() {
+        val short = view("Short", TitleDisplay.DOUBLE).apply { detail = "40/192 · 87 MB" }
+        assertEquals(line, short.heightAt(600))
+        val wrapped = view(long, TitleDisplay.DOUBLE).apply { detail = "40/192 · 87 MB" }
+        assertEquals(2 * line, wrapped.heightAt(300))
+        for (mode in listOf(TitleDisplay.SINGLE, TitleDisplay.MIDDLE, TitleDisplay.HIDDEN)) {
+            assertEquals(mode.name, line, view(long, mode).apply { detail = "12" }.heightAt(300))
+        }
+    }
+
+    @Test
+    fun aTitleFillingItsOnlyLinePutsTheDetailBelow() {
+        // The narrowest width that fits the title on one line leaves no room beside it.
+        var w = 50
+        while (view("Twelve Letters", TitleDisplay.DOUBLE).heightAt(w) > line) w++
+        val v = view("Twelve Letters", TitleDisplay.DOUBLE).apply { detail = "3/12" }
+        assertEquals(2 * line, v.heightAt(w))
+    }
+
+    @Test
+    fun movingTitlesScrollInTheSpaceLeftByTheDetail() {
+        val clock = TitleClock(0.06f)
+        val plain = view(long, TitleDisplay.BOUNCE).apply { this.clock = clock }
+        val withDetail = view(long, TitleDisplay.BOUNCE).apply { this.clock = clock; detail = "40/192 · 87 MB" }
+        plain.heightAt(300)
+        withDetail.heightAt(300)
+        assertTrue(withDetail.travelMs > plain.travelMs)
+    }
 }

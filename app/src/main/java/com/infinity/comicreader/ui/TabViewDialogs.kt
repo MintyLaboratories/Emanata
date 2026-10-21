@@ -6,6 +6,7 @@ import android.widget.RadioGroup
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 
@@ -21,12 +22,42 @@ object TabViewDialogs {
         else -> R.string.view_browse
     }
 
-    /** One line naming [tab]'s view: "Grid · 4 × Auto" or "List · Normal". */
+    /** One line naming [tab]'s view: "Grid · 4 × Auto · Dense" or "List · Normal · Comfortable". */
     fun summary(context: Context, prefs: Prefs, tab: String): String {
         val v = prefs.view(tab)
-        if (!v.grid) return context.getString(R.string.view_list_summary, densityLabel(context, v.density))
-        val size = GridPick.label(v.columns, v.rows, context.getString(R.string.grid_size_auto))
-        return context.getString(R.string.view_grid_summary, size)
+        val layout = if (!v.grid) {
+            context.getString(R.string.view_list_summary, densityLabel(context, v.density))
+        } else {
+            context.getString(R.string.view_grid_summary, GridPick.label(v.columns, v.rows, context.getString(R.string.grid_size_auto)))
+        }
+        return "$layout · ${detailLabel(context, v.detail)}"
+    }
+
+    private val DETAIL_BUTTONS = listOf(
+        DetailDisplay.HIDDEN to R.id.detail_hidden,
+        DetailDisplay.COMFORTABLE to R.id.detail_comfortable,
+        DetailDisplay.DENSE to R.id.detail_dense
+    )
+
+    private fun detailLabel(context: Context, detail: DetailDisplay) = context.getString(
+        when (detail) {
+            DetailDisplay.HIDDEN -> R.string.detail_hidden
+            DetailDisplay.COMFORTABLE -> R.string.detail_comfortable
+            DetailDisplay.DENSE -> R.string.detail_dense
+        }
+    )
+
+    /** The "Detail display" choice for [tab]; a pick is written and closes it. */
+    fun showDetail(context: Context, prefs: Prefs, tab: String): AlertDialog {
+        val values = DETAIL_BUTTONS.map { it.first }
+        val labels = values.map { detailLabel(context, it) }.toTypedArray()
+        return AlertDialog.Builder(context)
+            .setTitle(R.string.detail_display)
+            .setSingleChoiceItems(labels, values.indexOf(prefs.view(tab).detail)) { dialog, which ->
+                prefs.setDetail(tab, values[which])
+                dialog.dismiss()
+            }
+            .show()
     }
 
     /** The "Grid dimensions" picker for [tab]; a pick is written and closes it. */
@@ -86,6 +117,12 @@ object TabViewDialogs {
         root.findViewById<GridPicker>(R.id.grid_size).apply {
             select(v.columns, v.rows)
             onPick = { columns, rows -> prefs.setGridSize(tab, columns, rows) }
+        }
+        root.findViewById<RadioGroup>(R.id.detail_group).apply {
+            check(DETAIL_BUTTONS.first { it.first == v.detail }.second)
+            setOnCheckedChangeListener { _, id ->
+                DETAIL_BUTTONS.firstOrNull { it.second == id }?.let { prefs.setDetail(tab, it.first) }
+            }
         }
         root.findViewById<RadioGroup>(R.id.density_group).apply {
             check(DENSITY_BUTTONS.first { it.first == v.density }.second)

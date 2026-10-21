@@ -193,9 +193,12 @@ class Prefs(context: Context) {
             grid = bool(viewKey(tab, VIEW_GRID), def.grid),
             columns = integer(viewKey(tab, VIEW_COLUMNS), def.columns).coerceIn(0, TabView.MAX_CELLS),
             rows = integer(viewKey(tab, VIEW_ROWS), def.rows).coerceIn(0, TabView.MAX_CELLS),
-            density = ListDensity.of(sp.getString(viewKey(tab, VIEW_DENSITY), null))
+            density = ListDensity.of(sp.getString(viewKey(tab, VIEW_DENSITY), null)),
+            detail = DetailDisplay.of(sp.getString(viewKey(tab, VIEW_DETAIL), null))
         )
     }
+
+    fun setDetail(tab: String, detail: DetailDisplay) = put(viewKey(tab, VIEW_DETAIL), detail.key)
 
     fun setDensity(tab: String, density: ListDensity) = put(viewKey(tab, VIEW_DENSITY), density.key)
 
@@ -364,7 +367,8 @@ class Prefs(context: Context) {
         private const val VIEW_COLUMNS = "columns"
         private const val VIEW_ROWS = "rows"
         private const val VIEW_DENSITY = "density"
-        private val VIEW_FIELDS = listOf(VIEW_GRID, VIEW_COLUMNS, VIEW_ROWS, VIEW_DENSITY)
+        private const val VIEW_DETAIL = "detail"
+        private val VIEW_FIELDS = listOf(VIEW_GRID, VIEW_COLUMNS, VIEW_ROWS, VIEW_DENSITY, VIEW_DETAIL)
 
         /** The key of one [field] of [tab]'s view, e.g. `pref_view_browse_grid`. */
         private fun viewKey(tab: String, field: String) = "pref_view_${tab}_$field"
@@ -435,7 +439,7 @@ class Prefs(context: Context) {
         private const val OLD_COLUMNS = "pref_grid_columns"
         private const val OLD_ROWS = "pref_grid_rows"
 
-        /** Replaced by [KEY_TITLE_DISPLAY]: off hid titles and details. */
+        /** Replaced by [KEY_TITLE_DISPLAY] and each tab's detail display: off hid titles and details. */
         private const val OLD_FILENAMES = "pref_show_filenames"
 
         /** The tabs that take over the single grid setting; the others start at their defaults. */
@@ -508,8 +512,12 @@ class Prefs(context: Context) {
                 out[OLD_ROWS] = null
             }
             if (OLD_FILENAMES in stored) {
-                if (stored[OLD_FILENAMES] == false && KEY_TITLE_DISPLAY !in stored) {
-                    out[KEY_TITLE_DISPLAY] = TitleDisplay.HIDDEN.key
+                if (stored[OLD_FILENAMES] == false) {
+                    if (KEY_TITLE_DISPLAY !in stored) out[KEY_TITLE_DISPLAY] = TitleDisplay.HIDDEN.key
+                    for (tab in TABS) {
+                        val key = viewKey(tab, VIEW_DETAIL)
+                        if (key !in stored) out[key] = DetailDisplay.HIDDEN.key
+                    }
                 }
                 out[OLD_FILENAMES] = null
             }

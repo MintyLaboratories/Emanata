@@ -57,6 +57,9 @@
                 android:id="@+id/menu_density"
                 android:title="@string/list_density" />
             <item
+                android:id="@+id/menu_detail"
+                android:title="@string/detail_display" />
+            <item
                 android:id="@+id/menu_show_hidden"
                 android:checkable="true"
                 android:title="@string/menu_show_hidden" />

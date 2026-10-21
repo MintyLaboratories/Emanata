@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverShape
+import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
@@ -34,11 +35,12 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-/** How rows look beyond grid or list: list thumbnail size, cover shape and titles. */
+/** How rows look beyond grid or list: list thumbnail size, cover shape, titles and details. */
 data class RowOptions(
     val density: ListDensity = ListDensity.NORMAL,
     val shape: CoverShape = CoverShape.BOOK,
-    val title: TitleDisplay = TitleDisplay.DOUBLE
+    val title: TitleDisplay = TitleDisplay.DOUBLE,
+    val detail: DetailDisplay = DetailDisplay.COMFORTABLE
 )
 
 /**
@@ -254,11 +256,18 @@ class BookAdapter(
         holder.title.reserve = grid
         holder.title.clock = clock
         holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: item.name
-        holder.title.visibility = if (mode == TitleDisplay.HIDDEN) View.GONE else View.VISIBLE
-        val subtitle = item.subtitle ?: subtitleFor(context, item)
+        val dense = if (options.detail == DetailDisplay.DENSE) {
+            DetailText.dense(item) { FileUtils.formatSize(context, it) }.ifEmpty { null }
+        } else {
+            null
+        }
+        holder.title.detail = dense
+        holder.title.visibility = if (mode == TitleDisplay.HIDDEN && dense == null) View.GONE else View.VISIBLE
+        val comfortable = options.detail == DetailDisplay.COMFORTABLE
+        val subtitle = if (comfortable) item.subtitle ?: subtitleFor(context, item) else ""
         holder.subtitle.text = subtitle
         holder.subtitle.visibility = if (subtitle.isNotEmpty()) View.VISIBLE else View.GONE
-        if (grid) sizeCell(holder, showDetails = true) else sizeThumb(holder)
+        if (grid) sizeCell(holder, comfortable) else sizeThumb(holder)
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }

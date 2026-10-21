@@ -96,7 +96,7 @@ class EntryValues(
         SortKey.ACCESSED -> entry.accessed.takeIf { it > 0 }
         SortKey.SIZE -> if (entry.isDir) folderSizes[entry.path] else entry.size.takeIf { it > 0 }
         SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.pages?.takeIf { it > 0 })?.toLong()
-        SortKey.DIRECTION -> direction(entry)?.ordinal?.toLong()
+        SortKey.DIRECTION -> direction(entry)?.rank?.toLong()
         SortKey.TYPE -> LibrarySort.typeRank(entry)
         SortKey.NAME -> null
     }

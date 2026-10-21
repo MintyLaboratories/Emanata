@@ -55,6 +55,18 @@ class LibrarySortTest {
     }
 
     @Test
+    fun eitherDirectionFirstPutsItsOppositeLast() {
+        val list = listOf(
+            book("down").copy(direction = ReadingDirection.TTB),
+            book("left").copy(direction = ReadingDirection.RTL),
+            book("right").copy(direction = ReadingDirection.LTR)
+        )
+        val v = EntryValues()
+        assertEquals(listOf("right", "down", "left"), list.sorted(TabSort(SortLevel(SortKey.DIRECTION)), v))
+        assertEquals(listOf("left", "down", "right"), list.sorted(TabSort(SortLevel(SortKey.DIRECTION, true)), v))
+    }
+
+    @Test
     fun missingValuesSortLastEitherWay() {
         val list = listOf(book("none"), book("old"), book("new"), book("also none"))
         val v = values(mapOf("old" to mapOf(SortKey.YEAR to 1990L), "new" to mapOf(SortKey.YEAR to 2020L)))

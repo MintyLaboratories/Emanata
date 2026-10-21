@@ -31,7 +31,7 @@ class LibraryFilterTest {
             when (key) {
                 SortKey.YEAR -> item.year
                 SortKey.LENGTH -> item.length
-                SortKey.DIRECTION -> item.direction.ordinal.toLong()
+                SortKey.DIRECTION -> item.direction.rank.toLong()
                 else -> null
             }
         }

@@ -1,10 +1,13 @@
 package com.infinity.comicreader.data
 
-/** The direction a book reads in. */
-enum class ReadingDirection(val key: String) {
-    LTR("ltr"),
-    RTL("rtl"),
-    TTB("ttb");
+/**
+ * The direction a book reads in. [rank] sorts it: top to bottom between the other two, so
+ * either "first" puts its own direction first and the opposite one last.
+ */
+enum class ReadingDirection(val key: String, val rank: Int) {
+    LTR("ltr", 0),
+    RTL("rtl", 2),
+    TTB("ttb", 1);
 
     companion object {
         fun of(key: String?): ReadingDirection? = entries.firstOrNull { it.key == key }
@@ -89,7 +92,7 @@ data class LibraryFilter(
         if (f.types.isNotEmpty() && entry.type !in f.types) return false
         if (browsing && entry.isDir) return true
         if (f.statuses.isNotEmpty() && ReadStatus.of(entry) !in f.statuses) return false
-        if (f.direction != null && values.of(entry, SortKey.DIRECTION) != f.direction.ordinal.toLong()) return false
+        if (f.direction != null && values.of(entry, SortKey.DIRECTION) != f.direction.rank.toLong()) return false
         if (!within(values.of(entry, SortKey.YEAR), f.minYear, f.maxYear)) return false
         if (!within(values.of(entry, SortKey.LENGTH), f.minLength, f.maxLength)) return false
         return true

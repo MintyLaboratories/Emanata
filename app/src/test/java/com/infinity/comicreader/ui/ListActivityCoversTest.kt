@@ -5,11 +5,14 @@ import android.app.Application
 import android.os.Environment
 import android.os.Looper
 import android.view.View
+import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.CoverShape
+import com.infinity.comicreader.data.HistoryItem
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
@@ -21,6 +24,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import kotlin.math.abs
 
@@ -30,6 +34,7 @@ import kotlin.math.abs
 class ListActivityCoversTest {
 
     private lateinit var prefs: Prefs
+    private lateinit var dir: File
 
     @Before
     fun setUp() {
@@ -38,7 +43,7 @@ class ListActivityCoversTest {
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         context.getSharedPreferences("ui", 0).edit().clear().commit()
         prefs = Prefs(context)
-        val dir = File(Environment.getExternalStorageDirectory(), "books").apply { mkdirs() }
+        dir = File(Environment.getExternalStorageDirectory(), "books").apply { mkdirs() }
         (1..3).forEach { File(dir, "Issue $it.cbz").createNewFile() }
         prefs.lastPath = dir.absolutePath
     }
@@ -94,6 +99,26 @@ class ListActivityCoversTest {
         val dp = box.resources.displayMetrics.density
         assertEquals((120 * dp).toInt(), box.height)
         assertEquals((80 * dp).toInt(), box.width)
+    }
+
+    /** The first row's badge in a Browse list at [density], Issue 1 being on page 100 of 400. */
+    private fun badgeAt(density: ListDensity): TextView {
+        val issue = File(dir, "Issue 1.cbz")
+        Library(ApplicationProvider.getApplicationContext()).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L))
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        prefs.setDensity(Prefs.TAB_BROWSE, density)
+        return rows().mapNotNull { it.findViewById<TextView>(R.id.badge) }.first()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun narrowListBadgesShorten() {
+        assertEquals("100 / 400", badgeAt(ListDensity.LARGE).text.toString())
+        for (density in listOf(ListDensity.NORMAL, ListDensity.COMPACT)) {
+            val badge = badgeAt(density)
+            assertEquals(View.VISIBLE, badge.visibility)
+            assertTrue(badge.text.toString(), badge.text.isEmpty() || badge.text.toString() == "25%")
+        }
     }
 
     @Test

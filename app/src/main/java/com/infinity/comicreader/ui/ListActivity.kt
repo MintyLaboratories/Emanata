@@ -1456,14 +1456,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return books.firstOrNull { it.absolutePath !in read }?.let { it to 0 }
     }
 
-    /** Marks the books directly in [dir] read, or unread once confirmed. */
+    /** Marks the books directly in [dir] read or unread once confirmed; either replaces their read marks. */
     private fun markFolder(dir: File, read: Boolean) {
-        if (read) return markFolderNow(dir, true)
         val message = android.text.TextUtils.expandTemplate(
-            getText(R.string.confirm_mark_unread_msg), FolderPicker.describe(this, dir.absolutePath)
+            getText(if (read) R.string.confirm_mark_read_msg else R.string.confirm_mark_unread_msg),
+            FolderPicker.describe(this, dir.absolutePath)
         )
-        confirm(this, R.string.confirm_mark_unread_title, message, R.string.menu_mark_all_unread) {
-            markFolderNow(dir, false)
+        confirm(
+            this,
+            if (read) R.string.confirm_mark_read_title else R.string.confirm_mark_unread_title,
+            message,
+            if (read) R.string.menu_mark_all_read else R.string.menu_mark_all_unread
+        ) {
+            markFolderNow(dir, read)
         }
     }
 

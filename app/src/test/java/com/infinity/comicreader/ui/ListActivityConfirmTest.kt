@@ -109,13 +109,16 @@ class ListActivityConfirmTest {
     }
 
     @Test
-    fun markAllReadNeedsNoConfirmation() {
+    fun markAllReadWaitsForConfirmation() {
         val activity = launch()
-        val shown = ShadowDialog.getShownDialogs().size
-        shadowOf(activity).clickMenuItem(R.id.menu_mark_all_read)
+
+        activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_NEGATIVE)
+        awaitUntil()
+        assertFalse(library.isRead(book.absolutePath))
+
+        activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_POSITIVE)
         awaitUntil { library.isRead(book.absolutePath) }
         assertTrue(library.isRead(book.absolutePath))
-        assertEquals(shown, ShadowDialog.getShownDialogs().size)
     }
 
     /** Long-presses the first History row and picks Clear history from its menu. */

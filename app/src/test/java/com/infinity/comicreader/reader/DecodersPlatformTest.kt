@@ -264,4 +264,43 @@ class DecodersPlatformTest {
         assertEquals(Color.BLACK, left.getPixel(left.width - 1, left.height / 2))
         assertEquals(Color.BLACK, right.getPixel(0, right.height / 2))
     }
+
+    /** A [width] x [height] white PNG with a black block over columns [x0, x1) and rows [y0, y1). */
+    private fun blocked(width: Int, height: Int, x0: Int, y0: Int, x1: Int, y1: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        android.graphics.Canvas(bitmap).drawRect(
+            x0.toFloat(), y0.toFloat(), x1.toFloat(), y1.toFloat(),
+            android.graphics.Paint().apply { color = Color.BLACK }
+        )
+        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
+    @Test
+    fun aSampledMeasureTellsTheCropInTermsOfTheFullImage() {
+        val png = blocked(800, 1200, 100, 150, 700, 1050)
+        var found: Triple<Box, Int, Int>? = null
+        // Past the cap: decoded at half size each way.
+        Decoders.measuring({ box, w, h -> found = Triple(box, w, h) }) {
+            Decoders.decode(png, Target(16, 16, autoCrop = true, capPixels = 300_000))
+        }
+        val (box, w, h) = found!!
+        assertEquals(800, w)
+        assertEquals(1200, h)
+        val px = box.pixels(w, h)
+        // Never inside the block, and its margin about what a full-size measure leaves ([96, 146, 704, 1054]).
+        assertTrue(px.contentToString(), px[0] in 86..99 && px[1] in 136..149 && px[2] in 701..714 && px[3] in 1051..1064)
+    }
+
+    @Test
+    fun aFullSizeMeasureTellsTheExactCrop() {
+        val png = blocked(800, 1200, 100, 150, 700, 1050)
+        var found: Triple<Box, Int, Int>? = null
+        Decoders.measuring({ box, w, h -> found = Triple(box, w, h) }) {
+            Decoders.decode(png, Target(16, 16, autoCrop = true))
+        }
+        val (box, w, h) = found!!
+        assertArrayEquals(intArrayOf(800, 1200), intArrayOf(w, h))
+        // The block with auto-crop's margin of 4 pixels.
+        assertArrayEquals(intArrayOf(96, 146, 704, 1054), box.pixels(w, h))
+    }
 }

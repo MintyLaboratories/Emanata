@@ -64,6 +64,7 @@ object Decoders {
             sinks.set(null)
             sink.encoded(bytes)
         }
+        val source = if (measuresCrop(target)) runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() else null
         return reported(kind) {
             val full = when {
                 kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
@@ -72,7 +73,7 @@ object Decoders {
                     decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), target.capPixels)
                 else -> decodeLegacy(bytes, target.capPixels)
             }
-            fit(full, target)
+            fit(full, target, source)
         }
     }
 
@@ -82,12 +83,14 @@ object Decoders {
     fun decode(file: File, target: Target): Bitmap {
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
         if (kind == ImageKind.TIFF) {
-            return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), target.capPixels) }, target) }
+            val source = if (measuresCrop(target)) size(file) else null
+            return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), target.capPixels) }, target, source) }
         }
         if (kind == ImageKind.JXL || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return file.inputStream().use { decode(it, target) }
         }
-        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target) }
+        val source = if (measuresCrop(target)) size(file) else null
+        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target, source) }
     }
 
     /** What a decode leaves its page preview with ([capturing]). */
@@ -134,6 +137,9 @@ object Decoders {
         }
     }
 
+    /** True when a decode to [target] hands what its auto-crop finds to this thread's [measuring]. */
+    private fun measuresCrop(target: Target) = target.autoCrop && target.box == null && measures.get() != null
+
     /** Hands [box], found on a [w] x [h] image, to this thread's [measuring], if any. */
     internal fun measured(box: Box, w: Int, h: Int) {
         measures.get()?.let { measure ->
@@ -142,8 +148,12 @@ object Decoders {
         }
     }
 
-    /** [full] cropped and resampled to [target]; [full] itself when it already is the result, else recycled. */
-    fun fit(full: Bitmap, target: Target): Bitmap {
+    /**
+     * [full] cropped and resampled to [target]; [full] itself when it already is the result,
+     * else recycled. [source] is the image's own size, when [full] may be a sampled decode
+     * of it: what auto-crop finds is then told in its terms ([SampledCrop]).
+     */
+    fun fit(full: Bitmap, target: Target, source: IntArray? = null): Bitmap {
         val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
             full.recycle()
         }
@@ -153,7 +163,8 @@ object Decoders {
         }
         val bounds = if (target.autoCrop && target.box == null) {
             BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) }.also { found ->
-                measured(Box.of(found, src.width, src.height), src.width, src.height)
+                val (box, size) = SampledCrop.of(found, src.width, src.height, source)
+                measured(box, size[0], size[1])
             }
         } else {
             null

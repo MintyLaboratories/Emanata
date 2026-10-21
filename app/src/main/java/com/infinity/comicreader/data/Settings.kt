@@ -15,6 +15,7 @@ data class ListSettings(
     val views: Map<String, TabView>,
     val coverShape: CoverShape,
     val coverSpacing: Int,
+    val toolbarButtons: ToolbarButtons,
     val thumbFit: ThumbFit,
     val cropAnchor: CropAnchor,
     /** Each tab's sort and filter, by tab name. */
@@ -38,6 +39,7 @@ data class ListSettings(
             views = Prefs.TABS.associateWith { p.view(it) },
             coverShape = p.coverShape,
             coverSpacing = p.coverSpacing,
+            toolbarButtons = p.toolbarButtons,
             thumbFit = p.thumbFit,
             cropAnchor = p.cropAnchor,
             sorts = Prefs.TABS.associateWith { p.sort(it) },

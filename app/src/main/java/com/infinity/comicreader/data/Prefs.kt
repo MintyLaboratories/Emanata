@@ -218,6 +218,11 @@ class Prefs(context: Context) {
     /** How covers are made from their images. */
     val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight)
 
+    /** The library toolbar's buttons, in order. */
+    var toolbarButtons: ToolbarButtons
+        get() = ToolbarButtons.decode(sp.getString(KEY_TOOLBAR_BUTTONS, null))
+        set(v) = put(KEY_TOOLBAR_BUTTONS, v.encode())
+
     /** Space between grid covers, in dp. */
     var coverSpacing: Int
         get() = integer(KEY_COVER_SPACING, COVER_SPACING_DEFAULT).coerceIn(0, COVER_SPACING_MAX)
@@ -454,6 +459,7 @@ class Prefs(context: Context) {
         private const val KEY_THUMBS = "pref_thumbs"
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_COVER_SPACING = "pref_cover_spacing"
+        private const val KEY_TOOLBAR_BUTTONS = "pref_toolbar_buttons"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
         private const val KEY_PINCH_PEEK = "pref_pinch_peek"
@@ -482,7 +488,8 @@ class Prefs(context: Context) {
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
-            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION, KEY_COVER_SPACING
+            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
+            KEY_TOOLBAR_BUTTONS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

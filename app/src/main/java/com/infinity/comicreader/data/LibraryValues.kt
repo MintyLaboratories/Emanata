@@ -63,9 +63,14 @@ class FileStat(val isDirectory: Boolean, val size: Long, val lastModified: Long,
 
 /** The total size of everything below a folder. */
 object FolderSize {
-    /** Blocking; stops early, with what it found, once [alive] turns false. */
+    /**
+     * Blocking; stops early, with what it found, once [alive] turns false. Linked
+     * folders below [dir] are not entered, so a link loop cannot keep it going.
+     */
     fun total(dir: File, alive: () -> Boolean = { true }): Long =
-        dir.walkTopDown().takeWhile { alive() }.filter { it.isFile }.sumOf { it.length() }
+        dir.walkTopDown()
+            .onEnter { it == dir || !Files.isSymbolicLink(it.toPath()) }
+            .takeWhile { alive() }.filter { it.isFile }.sumOf { it.length() }
 }
 
 /** What a book's contents tell: its page count (-1 unknown) and its ComicInfo year (0 none). */

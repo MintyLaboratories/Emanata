@@ -126,6 +126,24 @@ class LibraryValuesTest {
     }
 
     @Test
+    fun folderTotalsSkipLinkedFolders() {
+        val dir = Files.createTempDirectory("total").toFile()
+        val loop = File(dir, "sub/loop").toPath()
+        try {
+            File(dir, "a.cbz").writeBytes(ByteArray(10))
+            File(dir, "sub").mkdirs()
+            File(dir, "sub/b.cbz").writeBytes(ByteArray(5))
+            val linked = runCatching { Files.createSymbolicLink(loop, dir.toPath()) }.isSuccess
+            assertEquals(15L, FolderSize.total(dir))
+            if (!linked) println("Symbolic links unavailable; loop case not exercised")
+        } finally {
+            // The link goes first, so deleting does not follow it round.
+            Files.deleteIfExists(loop)
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun snapshotDirections() {
         val snap = LibrarySnapshot(
             directions = mapOf("/b/manga" to ReadingDirection.RTL),

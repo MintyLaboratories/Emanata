@@ -3,6 +3,7 @@ package com.infinity.comicreader
 import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.util.FileUtils
@@ -20,9 +21,13 @@ class App : Application() {
         cleanCaches()
     }
 
-    /** Drops temporary files left by earlier runs and keeps the cover and nested-archive caches bounded. */
+    /**
+     * Drops temporary files left by earlier runs and files of earlier versions, and keeps
+     * the cover and nested-archive caches bounded.
+     */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
+            runCatching { RetiredFiles.drop(this@App) }
             runCatching {
                 // Only files that are clearly stale: a document another app just handed us
                 // may be copied into the cache while this thread runs.

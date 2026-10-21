@@ -17,9 +17,11 @@ import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
+import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.PeekMode
@@ -51,10 +53,19 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
 
     /** True in debuggable builds, the only ones that time and log how the grid fills ([logFill]). */
     private val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     private val scrim = View(context).apply { setBackgroundColor(Color.BLACK) }
     private val card = FrameLayout(context)
     private val grid = RecyclerView(context)
     private val spinner = ProgressBar(context)
+
+    /** Says why the grid is empty: nothing inside, or it could not be read. */
+    private val message = TextView(context).apply {
+        gravity = Gravity.CENTER
+        visibility = GONE
+        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+        setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+    }
 
     private var entry: BookEntry? = null
     private var source: PageSource? = null
@@ -91,6 +102,10 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         grid.clipToPadding = false
         card.addView(grid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         card.addView(spinner, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        card.addView(message, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply {
+            leftMargin = pad * 2
+            rightMargin = pad * 2
+        })
         addView(card)
         scrim.setOnClickListener { close() }
         // The card swallows taps between pages so they do not reach the scrim.
@@ -138,11 +153,12 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             val opened = withContext(AppDispatchers.io) { runCatching { PageSources.open(entry.file, charset, cacheDir) }.getOrNull() }
             if (opened == null || this@PeekOverlay.entry !== entry) {
                 opened?.let { withContext(AppDispatchers.io) { runCatching { it.close() } } }
-                if (this@PeekOverlay.entry === entry) spinner.visibility = GONE
+                if (this@PeekOverlay.entry === entry) showMessage(R.string.error_open)
                 return@launch
             }
             source = opened
             spinner.visibility = GONE
+            if (opened.pageCount == 0) showMessage(R.string.peek_no_pages)
             val a = ThumbAdapter(opened, entry.progressPage, linear, thumbHeight = (cell * PAGE_ASPECT).roundToInt()) { page ->
                 onOpen?.invoke(entry, page)
                 hide()
@@ -170,10 +186,14 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                emptyList()
+                null
             }
             if (this@PeekOverlay.entry !== entry) return@launch
             spinner.visibility = GONE
+            when {
+                entries == null -> return@launch showMessage(R.string.peek_folder_unreadable)
+                entries.isEmpty() -> return@launch showMessage(R.string.peek_folder_empty)
+            }
             val a = CoverPeekAdapter(context, entries, cells.width, cells.height, folder.style, charset) { picked ->
                 onOpen?.invoke(picked, -1)
                 hide()
@@ -193,6 +213,13 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         if (timing.shown(position, exact, visible, SystemClock.elapsedRealtime())) {
             Log.d(TAG, "${what()}, first image ${timing.first} ms, ${visible.count()} in view ${timing.inView} ms, exact ${timing.exact} ms")
         }
+    }
+
+    /** Shows [text] in place of the grid. */
+    private fun showMessage(text: Int) {
+        spinner.visibility = GONE
+        message.setText(text)
+        message.visibility = VISIBLE
     }
 
     /** Grows or shrinks to [t] of the way from the tile to fully open. */
@@ -254,6 +281,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     }
 
     private fun clear() {
+        message.visibility = GONE
         animator?.cancel()
         animator = null
         loadJob?.cancel()

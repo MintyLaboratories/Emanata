@@ -118,6 +118,9 @@
     <string name="op_failed">Operation failed</string>
 
     <string name="empty_folder">Empty folder</string>
+    <string name="peek_folder_empty">Nothing to show in this folder</string>
+    <string name="peek_folder_unreadable">Could not read this folder</string>
+    <string name="peek_no_pages">No pages in this book</string>
     <string name="no_history">Nothing read yet</string>
     <string name="no_favorites">No favorites yet</string>
     <string name="no_bookmarks">No bookmarks yet</string>

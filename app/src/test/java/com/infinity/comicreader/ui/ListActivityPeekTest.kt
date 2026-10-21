@@ -228,14 +228,16 @@ class ListActivityPeekTest {
         assertFalse(peek.isShowing)
     }
 
-    /** The entries [folder]'s peek shows, opened from the long-press menu. */
-    private fun ListActivity.peekedEntries(folder: File): List<BookEntry> {
+    /** The entries [folder]'s peek shows, opened from the long-press menu; null when it shows no grid. */
+    private fun ListActivity.peekedEntriesOrNull(folder: File): List<BookEntry>? {
         longPress(folder)
         (ShadowDialog.getLatestDialog() as AlertDialog).click("Peek")
         idle(500)
-        val adapter = peek().grid().adapter as CoverPeekAdapter
+        val adapter = peek().grid().adapter as? CoverPeekAdapter ?: return null
         return (0 until adapter.itemCount).map { adapter.entryAt(it) }
     }
+
+    private fun ListActivity.peekedEntries(folder: File): List<BookEntry> = peekedEntriesOrNull(folder)!!
 
     @Test
     fun folderPeekCarriesDetectedDirections() {
@@ -262,6 +264,23 @@ class ListActivityPeekTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         assertEquals(listOf("Part 1.cbz", "Part 2.cbz", "Part 10.cbz"), activity.peekedEntries(extras).map { it.name })
+    }
+
+    /** Visible texts under [view]. */
+    private fun texts(view: View): List<String> = when {
+        view.visibility != View.VISIBLE -> emptyList()
+        view is android.widget.TextView -> listOf(view.text.toString())
+        view is ViewGroup -> (0 until view.childCount).flatMap { texts(view.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    @Test
+    fun peekIntoAnEmptyFolderSaysSo() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val entries = activity.peekedEntriesOrNull(File(book.parentFile, "Extras"))
+        assertNull(entries)
+        assertEquals(listOf(activity.getString(R.string.peek_folder_empty)), texts(activity.peek()))
     }
 
     @Test

@@ -10,9 +10,6 @@ import java.io.InputStream
 
 /** Reads what sorting and filtering need from inside a book: its page count and ComicInfo year. */
 object BookFactsReader {
-    /** Largest ComicInfo.xml read; real ones are a few kilobytes. */
-    private const val MAX_COMIC_INFO_BYTES = 256 * 1024
-
     /**
      * The facts of [file]; pages are -1 when they cannot be counted without copying
      * an inner archive out first. Blocking; throws when the book cannot be opened.
@@ -32,7 +29,7 @@ object BookFactsReader {
     }
 
     /** At most [max] bytes of [input]. */
-    private fun readUpTo(input: InputStream, max: Int): ByteArray {
+    internal fun readUpTo(input: InputStream, max: Int): ByteArray {
         val out = ByteArrayOutputStream()
         val buf = ByteArray(8 * 1024)
         while (out.size() < max) {
@@ -45,28 +42,23 @@ object BookFactsReader {
 
     private fun readArchive(reader: ArchiveReader, file: File, charsetName: String, cacheDir: File): BookFacts {
         val entries = reader.entries.filter { !ArchiveJunk.isJunk(it.path, it.size) }
-        val info = reader.entries.firstOrNull { it.path.substringAfterLast('/').equals(ComicInfo.FILE_NAME, ignoreCase = true) }
-        val year = info?.let { entry ->
-            runCatching { reader.read(entry) { ComicInfo.year(String(readUpTo(it, MAX_COMIC_INFO_BYTES), Charsets.UTF_8)) } }
-                .getOrDefault(0)
-        } ?: 0
+        val info = comicInfo(reader)
         val images = entries.count { Formats.isImageName(it.path) }
         val pages = if (entries.any { Formats.isArchiveName(it.path) }) {
-            // Inner archives count as chapters; only ones already copied out can be counted.
+            // Inner archives count as chapters; only ones already copied out can be counted,
+            // else ComicInfo's own count stands in.
             runCatching { PageSources.open(file, charsetName, cacheDir, copyNested = false).use { it.pageCount } }.getOrDefault(-1)
+                .takeIf { it >= 0 } ?: info?.pageCount?.takeIf { it > 0 } ?: -1
         } else {
             images
         }
-        return BookFacts(pages, year)
+        return BookFacts(pages, info?.year ?: 0)
     }
-}
 
-/** The parts of a ComicInfo.xml the library uses. */
-object ComicInfo {
-    const val FILE_NAME = "ComicInfo.xml"
-
-    private val YEAR = Regex("""<Year>\s*(\d{1,4})\s*</Year>""", RegexOption.IGNORE_CASE)
-
-    /** The `<Year>` of [xml], or 0 when it has none that makes sense. */
-    fun year(xml: String): Int = YEAR.find(xml)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1800..2200 } ?: 0
+    /** The book's ComicInfo.xml: the one nearest the top of [reader]; null when there is none or it cannot be read. */
+    fun comicInfo(reader: ArchiveReader): ComicInfo? {
+        val entry = reader.entries.filter { ComicInfo.isComicInfo(it.path) }
+            .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } } ?: return null
+        return runCatching { reader.read(entry) { ComicInfo.parse(readUpTo(it, ComicInfo.MAX_BYTES)) } }.getOrNull()
+    }
 }

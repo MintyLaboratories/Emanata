@@ -48,10 +48,29 @@ class BookFactsReaderTest {
     }
 
     @Test
-    fun comicInfoYearMustMakeSense() {
-        assertEquals(1999, ComicInfo.year("<ComicInfo><year>1999</year></ComicInfo>"))
-        assertEquals(0, ComicInfo.year("<ComicInfo><Year>0</Year></ComicInfo>"))
-        assertEquals(0, ComicInfo.year("<ComicInfo><Month>3</Month></ComicInfo>"))
+    fun comicInfoPageCountStandsInForUncopiedInnerArchives() {
+        val inner = Fixtures.zipBytes(entry("01.jpg"), entry("02.jpg"))
+        val info = "<ComicInfo><PageCount>24</PageCount></ComicInfo>"
+        val f = Fixtures.zip(File(tmp.root, "omnibus.cbz"), entry("Vol 1.cbz", inner), entry("ComicInfo.xml", info.toByteArray()))
+        assertEquals(24, read(f).pages)
+    }
+
+    @Test
+    fun countedPagesBeatComicInfo() {
+        val info = "<ComicInfo><PageCount>99</PageCount></ComicInfo>"
+        val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), entry("ComicInfo.xml", info.toByteArray()))
+        assertEquals(1, read(f).pages)
+    }
+
+    @Test
+    fun topmostComicInfoWins() {
+        val f = Fixtures.zip(
+            File(tmp.root, "book.cbz"),
+            entry("extras/ComicInfo.xml", "<ComicInfo><Year>1990</Year></ComicInfo>".toByteArray()),
+            entry("comicinfo.xml", "<ComicInfo><Year>2001</Year></ComicInfo>".toByteArray()),
+            entry("01.jpg")
+        )
+        assertEquals(2001, read(f).year)
     }
 
     @Test

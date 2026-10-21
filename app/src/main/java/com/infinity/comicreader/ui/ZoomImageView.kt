@@ -89,8 +89,12 @@ class ZoomImageView @JvmOverloads constructor(
     /** A pan flung by the finger glides on, with inertia, until it stops or meets an edge. */
     var flingEnabled = false
 
-    /** True once this gesture panned the page itself: only such a drag flings. */
-    private var panned = false
+    /**
+     * True once this gesture panned the page itself: only such a drag flings, and a swipe
+     * that began as one is no swipe toward another page or chapter.
+     */
+    var panned = false
+        private set
     private val scroller = OverScroller(context)
 
     /** Moves the page to the fling's next position, frame by frame, until it ends. */

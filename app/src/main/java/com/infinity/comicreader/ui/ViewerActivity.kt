@@ -1988,8 +1988,9 @@ class ViewerActivity : AppCompatActivity() {
                         openNextChapter()
                     }
                     // Backward: rightward in a paged book (leftward in RTL), a flick down for a strip.
+                    // A zoomed page panned on past its edge hands the drag back, pan included.
                     if (tracking && e.actionMasked == MotionEvent.ACTION_UP && -along > across * 2 &&
-                        -along > swipeMinPx() && fromStart && atChapterStart()
+                        -along > swipeMinPx() && fromStart && atChapterStart() && !pannedAt(rv, startX, startY)
                     ) {
                         backAtStart()
                     }
@@ -2003,6 +2004,16 @@ class ViewerActivity : AppCompatActivity() {
         override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) = Unit
 
         override fun onRequestDisallowInterceptTouchEvent(disallow: Boolean) = Unit
+    }
+
+    /** True when the page under ([x], [y]) in [rv] was panned during the current gesture. */
+    private fun pannedAt(rv: RecyclerView, x: Float, y: Float): Boolean =
+        rv.findChildViewUnder(x, y)?.let { anyPanned(it) } == true
+
+    private fun anyPanned(v: View): Boolean = when (v) {
+        is ZoomImageView -> v.panned
+        is ViewGroup -> (0 until v.childCount).any { anyPanned(v.getChildAt(it)) }
+        else -> false
     }
 
     /** True when the reader sits on the last page or at the bottom of a strip. */

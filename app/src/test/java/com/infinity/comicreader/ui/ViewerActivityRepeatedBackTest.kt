@@ -3,10 +3,12 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
@@ -215,6 +217,22 @@ class ViewerActivityRepeatedBackTest {
         viewer.drag(x, rv.height * 0.2f, x, rv.height * 0.8f)
         assertOpensFirstAtItsEnd(viewer.opened())
     }
+
+    @Test
+    fun panningAZoomedFirstPagePastItsEdgeIsNoSwipeBack() {
+        val viewer = launch(second, 0)
+        val rv = viewer.list()
+        val page = descendants(rv.getChildAt(0)).filterIsInstance<ZoomImageView>().first()
+        page.setImageBitmap(Bitmap.createBitmap(rv.width, rv.height, Bitmap.Config.ARGB_8888))
+        page.zoomTo(1.5f, rv.width / 2f, rv.height / 2f)
+        // Pans to the page's left edge, then runs on past it.
+        viewer.swipe()
+        assertEquals(true, page.panned)
+        assertEquals(false, viewer.hintShown())
+    }
+
+    private fun descendants(v: View): List<View> =
+        listOf(v) + ((v as? ViewGroup)?.let { g -> (0 until g.childCount).flatMap { descendants(g.getChildAt(it)) } } ?: emptyList())
 
     @Test
     fun aLateBackStartsOver() {

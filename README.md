@@ -2,8 +2,17 @@
 
 # Emanata Comic Reader
 
-An ad-free comic / PDF reader for Android, written in Kotlin. No ads, no
-analytics, no in-app billing, and no network access.
+An ad-free, offline comic & PDF reader for Android, focused on image quality,
+features and customizability.
+
+- **Formats:** CBZ / CBR / CB7 / CBT / PDF, folders of images; WebP, JPEG XL,
+  AVIF, TIFF and more.
+- **Rendering:** Lanczos3 scaling everywhere, including GPU Lanczos3 while
+  zooming.
+- **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
+- **No required connection:** works offline. No internet permission is
+  requested; network features, once added, will use the network only for what
+  you explicitly set up, never in the background.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -327,9 +336,11 @@ The debug build installs beside the release build (`minty.emanata.debug`).
 
 ## Permissions
 
-- `READ_MEDIA_IMAGES` (Android 13+) / `READ_EXTERNAL_STORAGE` (≤ Android 12)
-- `MANAGE_EXTERNAL_STORAGE` — to browse folders anywhere on internal/external
-  storage. The app prompts for "All files access" on first launch.
+- `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+): browse and
+  open comics in any folder, on SD cards and USB drives; rename and delete
+  them. The app asks on first launch.
+- `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
+  (Android 8–9): the same on older versions.
 
 No internet permission is requested.
 

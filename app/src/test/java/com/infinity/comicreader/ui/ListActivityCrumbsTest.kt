@@ -61,11 +61,40 @@ class ListActivityCrumbsTest {
         assertEquals("attic", parent.text)
         parent.performClick()
         idle()
-        assertEquals(listOf("Device", "attic"), bar.crumbs.map { it.label })
+        // The folder left stays as a forward crumb.
+        assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
+        assertEquals(1, bar.currentIndex)
 
         (bar.getChildAt(0) as TextView).performClick()
         idle()
-        assertEquals(listOf(root.absolutePath), bar.crumbs.map { it.path })
+        assertEquals(root.absolutePath, bar.crumbs[bar.currentIndex].path)
+        assertEquals(0, bar.currentIndex)
+    }
+
+    @Test
+    fun forwardCrumbsReopenAndDropOnAnotherFolder() {
+        File(root, "attic/Other").mkdirs()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
+        (bar.getChildAt(0) as TextView).performClick()
+        idle()
+        assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
+
+        // Separator, "attic", separator, gray "Comics".
+        (bar.row().getChildAt(3) as TextView).performClick()
+        idle()
+        assertEquals(2, bar.currentIndex)
+
+        (bar.row().getChildAt(1) as TextView).performClick()
+        idle()
+        assertEquals(1, bar.currentIndex)
+        // Opening a folder off the trail drops it.
+        val crumbClick = bar.onCrumbClick!!
+        crumbClick(com.infinity.comicreader.data.Crumb("Other", File(root, "attic/Other").absolutePath, false))
+        idle()
+        assertEquals(listOf("Device", "attic", "Other"), bar.crumbs.map { it.label })
+        assertEquals(2, bar.currentIndex)
     }
 
     @Test

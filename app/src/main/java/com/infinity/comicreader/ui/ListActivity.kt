@@ -42,7 +42,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
-import com.infinity.comicreader.data.Crumbs
+import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.FavoriteClassifier
 import com.infinity.comicreader.data.FavoriteKind
@@ -99,6 +99,9 @@ class ListActivity : AppCompatActivity() {
     private lateinit var emptySubtitle: TextView
 
     private var currentDir: File? = null
+
+    /** The deepest folder of the branch browsed, shown as forward crumbs past [currentDir]. */
+    private var trail: String? = null
 
     /** Mounted storage volumes, refreshed whenever the screen resumes. */
     private var roots: List<StorageRoot> = emptyList()
@@ -199,7 +202,7 @@ class ListActivity : AppCompatActivity() {
         updateFabIcon()
         fab.visibility = View.GONE
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
-        pathbar.onCrumbClick = { loadDirectory(File(it.path)) }
+        pathbar.onCrumbClick = { openCrumb(it) }
         pathbar.onRootMenuClick = { showRootChooser() }
         roots = StorageRoots.list(this)
 
@@ -230,6 +233,7 @@ class ListActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_MODE, mode)
         currentDir?.let { outState.putString(STATE_DIR, it.absolutePath) }
+        trail?.let { outState.putString(STATE_TRAIL, it) }
     }
 
     override fun onResume() {
@@ -356,6 +360,7 @@ class ListActivity : AppCompatActivity() {
         val state = restored
         restored = null
         val savedDir = state?.getString(STATE_DIR)?.let { File(it) }?.takeIf { it.isDirectory }
+        trail = state?.getString(STATE_TRAIL)
         val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
         startTab = null
         started = true
@@ -458,6 +463,7 @@ class ListActivity : AppCompatActivity() {
         mode = TAB_BROWSE
         applyView()
         currentDir = dir
+        trail = ForwardCrumbs.next(trail, dir.absolutePath)
         deepJob?.cancel()
         deepResults = null
         prefs.lastPath = dir.absolutePath
@@ -466,7 +472,8 @@ class ListActivity : AppCompatActivity() {
 
         val atRoot = roots.any { it.path == dir.absolutePath }
         supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
-        pathbar.show(Crumbs.of(dir.absolutePath, roots), rootMenu = roots.size > 1)
+        val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
+        pathbar.show(crumbs, rootMenu = roots.size > 1, current = current)
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         invalidateOptionsMenu()
 
@@ -1439,6 +1446,18 @@ class ListActivity : AppCompatActivity() {
         return if (path == root.path) null else dir.parentFile
     }
 
+    /** Opens a crumb's folder; a forward crumb whose folder is gone drops the trail instead. */
+    private fun openCrumb(crumb: com.infinity.comicreader.data.Crumb) {
+        val dir = File(crumb.path)
+        if (!dir.isDirectory) {
+            toast(R.string.folder_gone)
+            trail = null
+            currentDir?.let { loadDirectory(it) }
+            return
+        }
+        loadDirectory(dir)
+    }
+
     /** Lists the mounted storage roots; picking one opens its top folder. */
     private fun showRootChooser() {
         val list = roots
@@ -1471,6 +1490,7 @@ class ListActivity : AppCompatActivity() {
         private const val TAB_BOOKMARKS = 3
         private const val STATE_MODE = "mode"
         private const val STATE_DIR = "dir"
+        private const val STATE_TRAIL = "trail"
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L

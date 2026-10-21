@@ -38,6 +38,7 @@
     <string name="root_device">Device</string>
     <string name="crumb_root_menu">%1$s ▾</string>
     <string name="choose_root">Storage</string>
+    <string name="folder_gone">That folder is gone</string>
     <string name="menu_show_hidden">Show hidden files</string>
     <string name="menu_hide_hidden">Hide hidden files</string>
     <string name="grid_size">Grid dimensions</string>

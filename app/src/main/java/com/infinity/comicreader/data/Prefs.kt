@@ -188,9 +188,9 @@ class Prefs(context: Context) {
         get() = bool(KEY_DOUBLE_TAP, true)
         set(v) = put(KEY_DOUBLE_TAP, v)
 
-    /** A zoomed page keeps gliding after the finger lifts. */
+    /** "Momentum scrolling": a zoomed page keeps gliding after the finger lifts. */
     var fling: Boolean
-        get() = bool(KEY_FLING, false)
+        get() = bool(KEY_FLING, true)
         set(v) = put(KEY_FLING, v)
 
     // ---------------------------------------------------------------- library

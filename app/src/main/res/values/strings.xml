@@ -327,8 +327,8 @@
     <string name="pref_volume_keys">Use volume keys to turn pages</string>
     <string name="pref_brightness_gesture">Swipe vertically to change brightness</string>
     <string name="pref_double_tap">Double-tap to zoom</string>
-    <string name="pref_fling">Smooth scrolling (fling)</string>
-    <string name="pref_fling_desc">A zoomed page keeps gliding after you lift your finger, stopping at its edges</string>
+    <string name="pref_fling">Momentum scrolling</string>
+    <string name="pref_fling_desc">Zoomed pages keep gliding after a flick</string>
 
     <string name="pref_show_hidden">Show hidden files</string>
     <string name="pref_thumbs">Show page thumbnails</string>

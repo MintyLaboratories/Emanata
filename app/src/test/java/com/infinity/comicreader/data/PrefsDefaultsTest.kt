@@ -27,4 +27,9 @@ class PrefsDefaultsTest {
     fun autoNextChapterIsOn() {
         assertTrue(Prefs(context).autoNext)
     }
+
+    @Test
+    fun momentumScrollingIsOn() {
+        assertTrue(Prefs(context).fling)
+    }
 }

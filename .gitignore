@@ -19,3 +19,7 @@ dist/
 
 # Build logs
 *.log
+
+# Icon generator output
+tools/icon/out/
+tools/icon/previews/

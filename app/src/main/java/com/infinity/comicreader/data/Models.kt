@@ -65,14 +65,6 @@ data class Bookmark(
     val time: Long
 )
 
-/** Reader options remembered for one folder ("series"). */
-data class SeriesSettings(
-    val mode: String,
-    val dir: String,
-    val fit: String,
-    val twoPage: Boolean
-)
-
 /** Aggregated reading statistics. */
 data class ReadingStats(
     val seconds: Long,

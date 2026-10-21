@@ -199,9 +199,7 @@
     <string name="menu_save_page">Save page to gallery</string>
     <string name="page_saved">Saved to Pictures/Emanata</string>
     <string name="menu_remember_series">Remember layout for this folder</string>
-    <string name="series_saved">Mode, direction, fit and spread are now remembered for this folder</string>
-    <string name="direction_kept_for_folder">Direction, mode, fit and spread kept for this folder; detection is off here</string>
-    <string name="series_cleared">This folder now uses the default layout</string>
+    <string name="direction_kept_for_folder">Direction kept for this folder; detection is off here</string>
     <string name="chapters_title">Chapters</string>
     <string name="menu_book_chapters">Chapters in this book</string>
     <string name="chapter_loose">Other pages</string>
@@ -357,7 +355,7 @@
     <string name="pref_linear_light">Linear-light scaling</string>
     <string name="pref_linear_light_desc">Shrink pages and covers in linear light: halftones and screentones keep their brightness, thin dark lines come out lighter</string>
     <string name="pref_per_series">Per-folder layout</string>
-    <string name="pref_per_series_desc">Let the reader menu remember mode, direction, fit and spread for a folder</string>
+    <string name="pref_per_series_desc">Keep a direction, or a whole layout, for each folder</string>
     <string name="pref_preload">Preload pages</string>
     <string name="pref_auto_speed">Auto-scroll speed</string>
     <string name="pref_backup">Export backup</string>

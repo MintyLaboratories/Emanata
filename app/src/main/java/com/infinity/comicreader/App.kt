@@ -2,7 +2,9 @@ package com.infinity.comicreader
 
 import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.NestedArchives
@@ -17,6 +19,7 @@ class App : Application() {
         super.onCreate()
         val prefs = Prefs(this)
         prefs.upgrade()
+        Library(this).migrateFolderLayouts(ReaderLayout.of(prefs))
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         cleanCaches()

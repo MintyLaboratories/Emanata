@@ -199,7 +199,7 @@ class LibrarySnapshot(
                 access = AccessTimes.of(
                     history.asSequence().map { it.path to it.time } + bookmarks.asSequence().map { it.path to it.time }
                 ),
-                directions = if (prefs.perSeries) library.seriesDirections() else emptyMap(),
+                directions = if (prefs.perSeries) library.folderDirections() else emptyMap(),
                 defaultDirection = ReadingDirection.of(prefs.readingDir) ?: ReadingDirection.LTR
             )
         }

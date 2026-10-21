@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 
 /**
- * Favorites, read marks, reading history, bookmarks, per-series settings, per-book
+ * Favorites, read marks, reading history, bookmarks, per-folder layouts, per-book
  * color adjustments and reading statistics, persisted as JSON documents in SharedPreferences.
  *
  * Every read tolerates a corrupted document (it yields an empty value instead of
@@ -181,39 +181,40 @@ class Library(context: Context) {
         }
     }
 
-    // ---------------- per-series reader settings ----------------
-    fun seriesFor(folder: String): SeriesSettings? {
-        val o = readObject(KEY_SERIES).optJSONObject(folder) ?: return null
-        return SeriesSettings(
-            mode = o.optString("mode", "paged"),
-            dir = o.optString("dir", "ltr"),
-            fit = o.optString("fit", "screen"),
-            twoPage = o.optBoolean("two", false)
-        )
-    }
+    // ---------------- per-folder reader layouts ----------------
+    /** What [folder] keeps of the reader's layout, or null when it follows the defaults. */
+    fun folderLayout(folder: String): FolderLayout? =
+        readObject(KEY_SERIES).optJSONObject(folder)?.let { FolderLayout.decode(it) }
 
     /** The reading direction set for each folder that has one. */
-    fun seriesDirections(): Map<String, ReadingDirection> {
+    fun folderDirections(): Map<String, ReadingDirection> {
         val all = readObject(KEY_SERIES)
         val out = HashMap<String, ReadingDirection>()
         all.keys().forEach { k -> out[k] = if (all.optJSONObject(k)?.optString("dir") == "rtl") ReadingDirection.RTL else ReadingDirection.LTR }
         return out
     }
 
-    /** Saves the settings for [folder], or forgets them when [settings] is null. */
-    fun setSeries(folder: String, settings: SeriesSettings?) {
+    /** Keeps [layout] for [folder], or forgets the folder's when null. */
+    fun setFolderLayout(folder: String, layout: FolderLayout?) {
         synchronized(LOCK) {
             val all = readObject(KEY_SERIES)
-            if (settings == null) {
-                all.remove(folder)
-            } else {
-                all.put(
-                    folder,
-                    JSONObject().put("mode", settings.mode).put("dir", settings.dir)
-                        .put("fit", settings.fit).put("two", settings.twoPage)
-                )
-            }
+            if (layout == null) all.remove(folder) else all.put(folder, layout.encode())
             sp.edit().putString(KEY_SERIES, all.toString()).apply()
+        }
+    }
+
+    /** Brings folder layouts older versions wrote into today's form ([FolderLayout.migrate]). */
+    fun migrateFolderLayouts(defaults: ReaderLayout) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_SERIES)
+            var changed = false
+            for (k in all.keys().asSequence().toList()) {
+                val o = all.optJSONObject(k) ?: continue
+                if (!FolderLayout.isLegacy(o)) continue
+                all.put(k, FolderLayout.migrate(o, defaults).encode())
+                changed = true
+            }
+            if (changed) sp.edit().putString(KEY_SERIES, all.toString()).apply()
         }
     }
 

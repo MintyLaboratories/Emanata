@@ -10,11 +10,11 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookFactsCache
+import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.ResumeMode
-import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
@@ -134,7 +134,7 @@ class ViewerActivityDirectionTest {
     @Test
     fun aFolderDirectionIsNeverOverridden() {
         val book = book("Series B v01.cbz", rtlInfo)
-        library.setSeries(dir.absolutePath, SeriesSettings("paged", "ltr", "screen", false))
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("ltr"))
         val viewer = launch(book).get()
         awaitOpen(viewer)
         assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
@@ -195,7 +195,7 @@ class ViewerActivityDirectionTest {
         viewer.onOptionsItemSelected(RoboMenuItem(R.id.menu_dir_ltr))
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
-        assertEquals("ltr", library.seriesFor(dir.absolutePath)?.dir)
+        assertEquals(FolderLayout.Direction("ltr"), library.folderLayout(dir.absolutePath))
         assertEquals("ltr", prefs.readingDir)
         assertEquals(viewer.getString(R.string.direction_kept_for_folder), ShadowToast.getTextOfLatestToast())
     }

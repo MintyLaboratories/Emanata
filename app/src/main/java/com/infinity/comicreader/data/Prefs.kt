@@ -94,8 +94,19 @@ class Prefs(context: Context) {
         }
 
     var pageSpacing: Int
-        get() = integer(KEY_SPACING, 0).coerceIn(0, 48)
-        set(v) = put(KEY_SPACING, v.coerceIn(0, 48))
+        get() = integer(KEY_SPACING, 0).coerceIn(0, PAGE_SPACING_MAX)
+        set(v) = put(KEY_SPACING, v.coerceIn(0, PAGE_SPACING_MAX))
+
+    /** Stores [layout] as the defaults, all but its direction, in one write. */
+    fun setLayoutDefaults(layout: ReaderLayout) {
+        sp.edit()
+            .putString(KEY_PAGE_MODE, layout.mode)
+            .putString(KEY_FIT, layout.fit)
+            .putString(KEY_TWO_PAGE, layout.twoPage.key)
+            .putBoolean(KEY_AUTO_CROP, layout.autoCrop)
+            .putInt(KEY_SPACING, layout.spacing.coerceIn(0, PAGE_SPACING_MAX))
+            .apply()
+    }
 
     var autoNext: Boolean
         get() = bool(KEY_AUTO_NEXT, true)
@@ -404,6 +415,9 @@ class Prefs(context: Context) {
         const val TAB_HISTORY = "history"
         const val TAB_BOOKMARKS = "bookmarks"
         val TABS = listOf(TAB_BROWSE, TAB_FAVORITES, TAB_HISTORY, TAB_BOOKMARKS)
+
+        /** The widest page gap, in dp. */
+        const val PAGE_SPACING_MAX = 48
 
         /** Space between grid covers, in dp: the default and the most. */
         const val COVER_SPACING_DEFAULT = 8

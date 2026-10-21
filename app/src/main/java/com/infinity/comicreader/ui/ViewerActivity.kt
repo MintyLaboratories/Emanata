@@ -50,13 +50,14 @@ import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Bookmark
+import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.RemovalNotices
-import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
@@ -176,8 +177,8 @@ class ViewerActivity : AppCompatActivity() {
     private var fit = "screen"
     private var autoCrop = false
 
-    /** True when this folder has its own remembered layout (mode, direction, fit, spread). */
-    private var seriesActive = false
+    /** What the open book's folder keeps of the layout; null when it follows the defaults. */
+    private var folderLayout: FolderLayout? = null
 
     /** The direction the open book's contents suggest, when "Detect reading direction" looked. */
     private var detection: DirectionDetection.Detected? = null
@@ -505,13 +506,8 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun loadPrefs() {
-        mode = prefs.pageMode
-        twoPage = prefs.twoPage
-        readingDir = prefs.readingDir
-        fit = prefs.fit
-        autoCrop = prefs.autoCrop
+        showLayout(ReaderLayout.of(prefs))
         filter = prefs.filter
-        spacingDp = prefs.pageSpacing
         keepOn = prefs.keepScreenOn
         nightFilter = prefs.nightFilter
         applyKeepScreenOn()
@@ -539,10 +535,7 @@ class ViewerActivity : AppCompatActivity() {
             shown = true
         }
         if (s.adjustments != old.adjustments && !ownAdjustments) showAdjustments(s.adjustments)
-        if (s.pageSpacing != old.pageSpacing && s.pageSpacing != spacingDp) {
-            spacingDp = s.pageSpacing
-            adapter?.spacingPx = spacingPx()
-        }
+
         if (s.nightFilter != old.nightFilter && s.nightFilter != nightFilter) {
             nightFilter = s.nightFilter
             applyNight()
@@ -558,10 +551,7 @@ class ViewerActivity : AppCompatActivity() {
             applyFullscreen(s.fullscreen)
             shown = true
         }
-        if (s.autoCrop != old.autoCrop && s.autoCrop != autoCrop) {
-            autoCrop = s.autoCrop
-            rebuild = true
-        }
+
         // Built into the page adapter.
         if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
             s.linearLight != old.linearLight ||
@@ -570,7 +560,8 @@ class ViewerActivity : AppCompatActivity() {
             rebuild = true
         }
         if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
-            s.twoPage != old.twoPage || s.perSeries != old.perSeries || s.detectDirection != old.detectDirection
+            s.twoPage != old.twoPage || s.autoCrop != old.autoCrop || s.pageSpacing != old.pageSpacing ||
+            s.perSeries != old.perSeries || s.detectDirection != old.detectDirection
         ) {
             if (s.readingDir != old.readingDir) directionChoices++
             if (reloadLayout()) rebuild = true
@@ -594,37 +585,49 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Resolves mode, direction, fit and spread again: the folder's remembered layout
-     * when it has one, else the global defaults with the detected direction on top.
-     * Returns true when the adapter must be rebuilt; a fit change alone is applied in place.
+     * Resolves the layout again: the folder's over the global defaults, with the detected
+     * direction on top while the folder has none. Returns true when the adapter must be
+     * rebuilt; fit and page gap alone are applied in place.
      */
     private fun reloadLayout(): Boolean {
-        val oldMode = mode
-        val oldDir = readingDir
-        val oldFit = fit
+        val old = currentLayout()
         resolveLayout()
-        if (mode != oldMode) {
+        if (mode != old.mode) {
             stopAutoScroll()
             // Only the strip modes lay the next chapter in behind this one.
             if (mode == MODE_PAGED) dropStripAhead()
         }
-        if (fit != oldFit) adapter?.fitMode = effectiveFit()
-        return mode != oldMode || readingDir != oldDir || useSpread() != spread
+        if (fit != old.fit) adapter?.fitMode = effectiveFit()
+        if (spacingDp != old.spacing) adapter?.spacingPx = spacingPx()
+        return mode != old.mode || readingDir != old.dir || useSpread() != spread || autoCrop != old.autoCrop
     }
 
     private fun resolveLayout() {
-        mode = prefs.pageMode
-        readingDir = prefs.readingDir
-        fit = prefs.fit
-        twoPage = prefs.twoPage
-        file?.parentFile?.absolutePath?.let { applySeries(it) }
+        folderLayout = layoutFolder()?.let { library.folderLayout(it) }
+        val defaults = ReaderLayout.of(prefs)
+        showLayout(folderLayout?.over(defaults) ?: defaults)
         applyDetection()
     }
+
+    /** The layout the reader shows, its direction perhaps the detected one. */
+    private fun currentLayout() = ReaderLayout(mode, readingDir, fit, twoPage, autoCrop, spacingDp)
+
+    private fun showLayout(l: ReaderLayout) {
+        mode = l.mode.takeIf { it in ReaderLayout.MODES } ?: MODE_PAGED
+        readingDir = if (l.dir == "rtl") "rtl" else "ltr"
+        fit = l.fit
+        twoPage = l.twoPage
+        autoCrop = l.autoCrop
+        spacingDp = l.spacing
+    }
+
+    /** The folder whose layout the open book follows; none with "Per-folder layout" off or for another app's document. */
+    private fun layoutFolder(): String? = if (prefs.perSeries) favoriteFile()?.parent else null
 
     /** Reads in the detected direction unless the folder has its own or detection is off. */
     private fun applyDetection() {
         val found = detection
-        detectedActive = found != null && !seriesActive && prefs.detectDirection
+        detectedActive = found != null && folderLayout == null && prefs.detectDirection
         if (detectedActive && found != null) readingDir = found.direction.key
     }
 
@@ -647,44 +650,36 @@ class ViewerActivity : AppCompatActivity() {
         showHint(getString(R.string.direction_detected, direction, from), DETECTION_NOTE_MS)
     }
 
-    /** Applies the folder's remembered layout, if it has one and the feature is on. */
-    private fun applySeries(folder: String) {
-        val saved = if (prefs.perSeries) library.seriesFor(folder) else null
-        seriesActive = saved != null
-        if (saved == null) return
-        mode = saved.mode.takeIf { it == MODE_PAGED || it == MODE_VERTICAL || it == MODE_LONGSTRIP } ?: MODE_PAGED
-        readingDir = if (saved.dir == "rtl") "rtl" else "ltr"
-        fit = saved.fit
-        twoPage = TwoPage.of(saved.twoPage)
-    }
-
     /**
-     * Stores the layout options: with the folder's own settings when it remembers them,
-     * otherwise as the global defaults.
+     * Stores a layout change: with the folder's layout while it is frozen, else as the
+     * defaults. Directions are stored apart, by [setReadingDir].
      */
     private fun persistLayout() {
-        val folder = file?.parentFile?.absolutePath
-        if (seriesActive && folder != null) {
-            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage != TwoPage.OFF))
+        val folder = layoutFolder()
+        if (folderScope() && folder != null) {
+            setFolder(folder, FolderLayout.Frozen(currentLayout()))
         } else {
-            prefs.pageMode = mode
-            // A detected direction belongs to the book, not to the defaults.
-            if (!detectedActive) prefs.readingDir = readingDir
-            prefs.fit = fit
-            prefs.twoPage = twoPage
+            prefs.setLayoutDefaults(currentLayout())
         }
     }
 
-    private fun toggleSeries() {
-        val folder = file?.parentFile?.absolutePath ?: return
-        seriesActive = !seriesActive
-        if (seriesActive) {
-            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage != TwoPage.OFF))
-            toast(R.string.series_saved)
-        } else {
-            library.setSeries(folder, null)
-            toast(R.string.series_cleared)
-        }
+    private fun setFolder(folder: String, layout: FolderLayout?) {
+        folderLayout = layout
+        library.setFolderLayout(folder, layout)
+    }
+
+    /** True while the folder keeps its whole layout ("Apply to: This folder"). */
+    private fun folderScope() = folderLayout is FolderLayout.Frozen
+
+    /**
+     * "Apply to": [folder] freezes the layout on screen for the book's folder; all books
+     * returns it to the defaults, though the folder keeps its direction.
+     */
+    private fun setFolderScope(folder: Boolean) {
+        val path = layoutFolder() ?: return
+        if (folder == folderScope()) return
+        setFolder(path, if (folder) FolderLayout.Frozen(currentLayout()) else FolderLayout.Direction(readingDir))
+        if (reloadLayout()) attach()
         invalidateOptionsMenu()
     }
 
@@ -716,7 +711,7 @@ class ViewerActivity : AppCompatActivity() {
         lateDetectionJob?.cancel()
         openJob = lifecycleScope.launch {
             // A folder with its own layout keeps its direction: nothing to detect.
-            val detect = prefs.detectDirection && !seriesActive
+            val detect = prefs.detectDirection && folderLayout == null
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -805,7 +800,7 @@ class ViewerActivity : AppCompatActivity() {
                 DirectionDetection.withCover(contents, front)
             }
             if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch
-            if (!prefs.detectDirection || seriesActive || found == detection) return@launch
+            if (!prefs.detectDirection || folderLayout != null || found == detection) return@launch
             detection = found
             if (reloadLayout()) attach()
             invalidateOptionsMenu()
@@ -1601,8 +1596,8 @@ class ViewerActivity : AppCompatActivity() {
             isEnabled = mode != MODE_LONGSTRIP
         }
         menu.findItem(R.id.menu_series)?.apply {
-            isVisible = prefs.perSeries
-            isChecked = seriesActive
+            isVisible = layoutFolder() != null
+            isChecked = folderScope()
         }
         prepareFavorites(menu)
         menu.findItem(R.id.menu_book_chapters)?.isVisible = bookChapters.isNotEmpty()
@@ -1697,7 +1692,7 @@ class ViewerActivity : AppCompatActivity() {
             R.id.menu_auto_next -> { setAutoNext(!prefs.autoNext); true }
             R.id.menu_auto_speed -> { showAutoSpeedDialog(); true }
             R.id.menu_auto_crop -> { toggleAutoCrop(); true }
-            R.id.menu_series -> { toggleSeries(); true }
+            R.id.menu_series -> { setFolderScope(!folderScope()); true }
             R.id.menu_share_page -> { exportPage(share = true); true }
             R.id.menu_save_page -> { exportPage(share = false); true }
             R.id.menu_jump -> { showJumpDialog(); true }
@@ -1743,24 +1738,26 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * The user's choice of direction. Over a detected one it is kept for the folder
-     * (with "Per-folder layout" on), so the detection does not return on the next open;
-     * the folder's mode, fit and spread are kept with it, and its books no longer detect.
+     * The user's choice of direction, kept for the book's folder (with "Per-folder layout"
+     * on): alone, so the folder's other options still follow the defaults, or with its
+     * frozen layout. Its books no longer detect. Without a folder it is the default.
      */
     private fun setReadingDir(dir: String) {
         if (readingDir == dir) return
         readingDir = dir
         directionChoices++
-        if (detectedActive) {
-            detectedActive = false
-            detection = null
-            if (prefs.perSeries && file?.parentFile != null) {
-                seriesActive = true
-                toast(R.string.direction_kept_for_folder)
-                invalidateOptionsMenu()
+        detectedActive = false
+        detection = null
+        val folder = layoutFolder()
+        when {
+            folder == null -> prefs.readingDir = dir
+            folderScope() -> persistLayout()
+            else -> {
+                if (folderLayout == null) toast(R.string.direction_kept_for_folder)
+                setFolder(folder, FolderLayout.Direction(dir))
             }
         }
-        persistLayout()
+        invalidateOptionsMenu()
         attach()
     }
 
@@ -1776,8 +1773,10 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun setSpacingDp(dp: Int) {
-        spacingDp = dp.coerceIn(0, 48)
-        prefs.pageSpacing = spacingDp
+        val value = dp.coerceIn(0, Prefs.PAGE_SPACING_MAX)
+        if (value == spacingDp) return
+        spacingDp = value
+        persistLayout()
         adapter?.spacingPx = spacingPx()
     }
 
@@ -1945,11 +1944,9 @@ class ViewerActivity : AppCompatActivity() {
         autoNextSwitch.setOnCheckedChangeListener { _, checked -> setAutoNext(checked) }
 
         val seriesSwitch = view.findViewById<MaterialSwitch>(R.id.sheet_series)
-        seriesSwitch.visibility = if (prefs.perSeries) View.VISIBLE else View.GONE
-        seriesSwitch.isChecked = seriesActive
-        seriesSwitch.setOnCheckedChangeListener { _, checked ->
-            if (checked != seriesActive) toggleSeries()
-        }
+        seriesSwitch.visibility = if (layoutFolder() != null) View.VISIBLE else View.GONE
+        seriesSwitch.isChecked = folderScope()
+        seriesSwitch.setOnCheckedChangeListener { _, checked -> setFolderScope(checked) }
     }
 
     private fun bindAutoScrollSection(view: View) {
@@ -2144,7 +2141,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun setAutoCrop(enabled: Boolean) {
         if (autoCrop == enabled) return
         autoCrop = enabled
-        prefs.autoCrop = autoCrop
+        persistLayout()
         invalidateOptionsMenu()
         attach()
     }
@@ -2520,8 +2517,8 @@ class ViewerActivity : AppCompatActivity() {
         /** How long, as a share of the screen height, a brightness drag holds at 0. */
         private const val BRIGHTNESS_HOLD = 0.15f
 
-        private const val MODE_PAGED = "paged"
-        private const val MODE_VERTICAL = "vertical"
-        private const val MODE_LONGSTRIP = "longstrip"
+        private const val MODE_PAGED = ReaderLayout.MODE_PAGED
+        private const val MODE_VERTICAL = ReaderLayout.MODE_VERTICAL
+        private const val MODE_LONGSTRIP = ReaderLayout.MODE_LONGSTRIP
     }
 }

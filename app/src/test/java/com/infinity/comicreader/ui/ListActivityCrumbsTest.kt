@@ -56,7 +56,7 @@ class ListActivityCrumbsTest {
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         (bar.getChildAt(0) as TextView).performClick()
         idle()
-        assertTrue(activity.locations.isShowing)
+        assertTrue(activity.locations?.isShowing == true)
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         val row = (0 until list.childCount).map { list.getChildAt(it) }
             .first { it.findViewById<TextView>(R.id.location_name).text == name }
@@ -95,10 +95,29 @@ class ListActivityCrumbsTest {
         assertNotNull(rootCrumb.compoundDrawablesRelative[0])
         rootCrumb.performClick()
         idle()
-        assertEquals(listOf("Device"), activity.locations.shownRoots.map { it.name })
+        assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         // The current location is highlighted.
         assertTrue(list.getChildAt(0).isActivated)
+    }
+
+    @Test
+    fun locationPickerSurvivesRotation() {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        (controller.get().findViewById<CrumbBar>(R.id.pathbar).getChildAt(0) as TextView).performClick()
+        idle()
+        controller.recreate()
+        idle()
+        val sheet = controller.get().locations
+        assertTrue(sheet?.isShowing == true)
+        assertEquals(listOf("Device"), sheet?.shownRoots?.map { it.name })
+        val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
+        // Still highlighted, and picking from the rebuilt sheet reaches the new activity.
+        assertTrue(list.getChildAt(0).isActivated)
+        list.getChildAt(0).performClick()
+        idle()
+        assertEquals(root.absolutePath, controller.get().findViewById<CrumbBar>(R.id.pathbar).let { it.crumbs[it.currentIndex].path })
     }
 
     @Test

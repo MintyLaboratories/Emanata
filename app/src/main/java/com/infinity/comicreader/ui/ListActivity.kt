@@ -87,7 +87,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.hypot
 
-class ListActivity : AppCompatActivity() {
+class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
@@ -171,7 +171,6 @@ class ListActivity : AppCompatActivity() {
     private lateinit var kindCache: FavoriteKindCache
 
     /** The root crumb's location picker. */
-    private lateinit var locationSheet: LocationSheet
 
     /** Follows drives as they are plugged in and pulled out, while started. */
     private lateinit var storageWatcher: StorageWatcher
@@ -262,7 +261,6 @@ class ListActivity : AppCompatActivity() {
         pathbar.onCrumbClick = { openCrumb(it) }
         pathbar.onRootMenuClick = { showRootChooser() }
         roots = StorageRoots.list(this)
-        locationSheet = LocationSheet(this, lifecycleScope) { loadDirectory(File(it.path)) }
         storageWatcher = StorageWatcher(this) { refreshRoots() }
 
         // Settings changed here, in the settings screen or anywhere else apply live;
@@ -327,7 +325,6 @@ class ListActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         peek.hide()
-        locationSheet.dismiss()
         adapter.release()
     }
 
@@ -339,7 +336,7 @@ class ListActivity : AppCompatActivity() {
     private fun refreshRoots(): Boolean {
         val before = roots
         roots = StorageRoots.list(this)
-        locationSheet.update(roots)
+        LocationSheet.find(this)?.update(roots)
         if (roots == before) return false
         val dir = currentDir ?: return false
         val gone = StorageRoot.removed(dir.absolutePath, before, roots)
@@ -1690,13 +1687,17 @@ class ListActivity : AppCompatActivity() {
         pathbar.show(crumbs, rootMenu = true, current = current, rootIcon = LocationSheet.iconOf(kind))
     }
 
-    /** Opens the location picker; picking a root opens its top folder. */
+    /** Opens the location picker; picking a root opens its top folder ([onLocationPicked]). */
     private fun showRootChooser() {
-        locationSheet.show(roots, currentDir?.let { StorageRoot.of(it.absolutePath, roots) })
+        LocationSheet.show(this, currentDir?.let { StorageRoot.of(it.absolutePath, roots) })
     }
 
+    override val locationRoots: List<StorageRoot> get() = roots
+
+    override fun onLocationPicked(root: StorageRoot) = loadDirectory(File(root.path))
+
     /** The open location picker; for tests. */
-    internal val locations: LocationSheet get() = locationSheet
+    internal val locations: LocationSheet? get() = LocationSheet.find(this)
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {

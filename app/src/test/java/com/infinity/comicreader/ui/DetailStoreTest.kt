@@ -152,6 +152,50 @@ class DetailStoreTest {
     }
 
     @Test
+    fun failedLoadOrRenderCallsFailedInstead() {
+        var failed = 0
+        var done = 0
+        store.render("a", listOf("a"), { throw IllegalStateException("synthetic") }, { it }, failed = { failed++ }) { done++ }
+        idle { failed == 1 }
+        store.render("b", listOf("b"), loader("b"), { throw OutOfMemoryError("synthetic") }, failed = { failed++ }) { done++ }
+        idle { failed == 2 }
+        assertEquals(2, failed)
+        assertEquals(0, done)
+    }
+
+    @Test
+    fun pageDroppedBeforeItsRenderStartsCallsFailed() {
+        val proceed = CountDownLatch(1)
+        var failed = 0
+        var done = 0
+        store.render("a", listOf("a"), {
+            proceed.await(5, TimeUnit.SECONDS)
+            FakeDetail("a")
+        }, { it }, failed = { failed++ }) { done++ }
+        store.clear()
+        proceed.countDown()
+        idle { failed == 1 }
+        assertEquals(1, failed)
+        assertEquals(0, done)
+    }
+
+    @Test
+    fun canceledRenderCallsNeitherCallback() {
+        val proceed = CountDownLatch(1)
+        var calls = 0
+        val job = store.render("a", listOf("a"), {
+            proceed.await(5, TimeUnit.SECONDS)
+            FakeDetail("a")
+        }, { it }, failed = { calls++ }) { calls++ }
+        job.cancel()
+        store.clear()
+        proceed.countDown()
+        idle { job.isCompleted }
+        idle()
+        assertEquals(0, calls)
+    }
+
+    @Test
     fun budgetIsASixteenthOfRamWithinBounds() {
         val gib = 1024L * 1024 * 1024
         assertEquals(DetailStore.MAX_BUDGET, DetailStore.budget(8 * gib))

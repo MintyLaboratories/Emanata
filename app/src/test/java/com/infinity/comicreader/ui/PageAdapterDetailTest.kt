@@ -29,9 +29,14 @@ class PageAdapterDetailTest {
 
     private class Detail(val page: Int) : PageDetail {
         @Volatile var released = false
+
+        /** Set to make renders throw, as when memory runs out. */
+        @Volatile var failing = false
         override val byteCount = 0L
-        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap =
-            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+            if (failing) throw OutOfMemoryError("synthetic")
+            return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
 
         override fun release() {
             released = true
@@ -156,6 +161,30 @@ class PageAdapterDetailTest {
         assertEquals(1973, (image.drawable as BitmapDrawable).bitmap.width)
         assertEquals(listOf(Target(1848, 2960)), source.loads.toList())
         assertEquals(1, source.details.size)
+        assertTrue(image.drawsOneToOne)
+        adapter.release()
+    }
+
+    @Test
+    fun aNewFitIsDecodedWhenTheRenderFromTheDetailFails() {
+        val source = DetailSource(1)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = true, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = adapter
+            layOut(1848, 2960)
+        }
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        idle { image.detailSource != null }
+        var tile: Bitmap? = null
+        image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
+        idle { tile != null }
+
+        source.details.single().failing = true
+        adapter.fitMode = ZoomImageView.FitMode.HEIGHT
+        rv.layOut(1848, 2960)
+        idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
+        assertEquals(listOf(Target(1848, 2960), Target(0, 2960)), source.loads.toList())
         assertTrue(image.drawsOneToOne)
         adapter.release()
     }

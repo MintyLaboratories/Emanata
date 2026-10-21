@@ -451,7 +451,7 @@ class PageAdapter(
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
-            val job = details.render(key, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done)
+            val job = details.render(key, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done = done)
             return { job.cancel() }
         }
 
@@ -503,36 +503,51 @@ class PageAdapter(
             renderFromDetail(holder, slot, held, key)
             return
         }
+        decodeInto(holder, slot, key)
+    }
 
+    /** Decodes [key]'s page and shows it in [slot], or why it failed. */
+    private fun decodeInto(holder: PageHolder, slot: Int, key: PageKey) {
         val entry = request(key)
         entry.waiters++
         holder.decodes[slot] = entry
         holder.waiters[slot] = scope.launch {
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
-                failures[pageIndex]?.let { applyFailure(holder, slot, it) }
+                failures[key.page]?.let { applyFailure(holder, slot, it) }
                 return@launch
             }
             showBitmap(holder, slot, key, bitmap)
-            updateLongStripAspect(holder, pageIndex, bitmap)
+            updateLongStripAspect(holder, key.page, bitmap)
         }
     }
 
     /**
      * Makes [key]'s bitmap from the full detail [held] keeps of the page shown in [slot],
-     * as a settled zoom would, instead of decoding the page again.
+     * as a settled zoom would, instead of decoding the page again; decodes it when that
+     * render fails or the detail is dropped first.
      */
     private fun renderFromDetail(holder: PageHolder, slot: Int, held: PageKey, key: PageKey) {
-        val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap ?: return
+        val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap
+        if (shown == null) {
+            decodeInto(holder, slot, key)
+            return
+        }
         val plan = key.target.plan(shown.width.toDouble(), shown.height.toDouble())
         val load = SlotDetail(holder, held).loader()
-        holder.waiters[slot] = details.render(held, detailKeys(holder), load, {
+        // [failed] can run before [DetailStore.render] returns, the decode then waited on.
+        var decoding = false
+        val job = details.render(held, detailKeys(holder), load, {
             frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear))
+        }, failed = {
+            decoding = true
+            decodeInto(holder, slot, key)
         }) { bitmap ->
             holder.waiters[slot] = null
             cache.put(key, bitmap)
             if (holder.shown[slot] == key.page) showBitmap(holder, slot, key, bitmap)
         }
+        if (!decoding) holder.waiters[slot] = job
     }
 
     /**

@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -59,29 +60,46 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /**
      * Renders [request] from [key]'s detail, loading it with [load] first if needed,
      * and hands the result to [done] on the main thread unless the returned job is
-     * canceled first. Drops every page not in [keep]. A failed load or render is
-     * logged and gives nothing.
+     * canceled first. Drops every page not in [keep]. A failed load or render (logged),
+     * or the page dropped before its render starts, calls [failed] instead.
      */
-    fun <R> render(key: K, keep: Collection<K>, load: () -> PageDetail, request: (PageDetail) -> R, done: (R) -> Unit): Job {
+    fun <R> render(
+        key: K,
+        keep: Collection<K>,
+        load: () -> PageDetail,
+        request: (PageDetail) -> R,
+        failed: () -> Unit = {},
+        done: (R) -> Unit
+    ): Job {
         val entry = entry(key, keep, load)
         return scope.launch {
-            val detail = entry.deferred.await() ?: return@launch
-            if (entry.dropped) return@launch
+            val job = coroutineContext.job
+            // A drop cancels the load: that fails this render, unless it was canceled itself.
+            val detail = try {
+                entry.deferred.await()
+            } catch (e: CancellationException) {
+                job.ensureActive()
+                null
+            }
+            if (detail == null || entry.dropped) {
+                failed()
+                return@launch
+            }
             entry.users++
-            try {
-                val job = coroutineContext.job
-                val result = gate.withPermit {
+            val result = try {
+                Result.success(gate.withPermit {
                     withContext(io) { Cancellation.during({ job.isCancelled }) { request(detail) } }
-                }
-                done(result)
+                })
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
                 Log.w(TAG, "Detail render failed", t)
+                Result.failure(t)
             } finally {
                 entry.users--
                 if (entry.dropped && entry.users == 0) free(entry)
             }
+            result.fold(done) { failed() }
         }
     }
 

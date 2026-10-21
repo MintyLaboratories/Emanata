@@ -57,7 +57,7 @@ class PeekGesture(
         const val COLLAPSE_BELOW = 0.2f
 
         /** Spread growth that opens the peek fully, as a share of the screen's shorter side. */
-        const val FULL_SPREAD_SHARE = 0.4f
+        const val FULL_SPREAD_SHARE = 0.3f
 
         fun outcome(progress: Float, mode: PeekMode): Release = when {
             progress < COLLAPSE_BELOW -> Release.COLLAPSE

@@ -177,6 +177,15 @@ class PrefsUpgradeTest {
     }
 
     @Test
+    fun aMissingGridSwitchWasOff() {
+        val out = Prefs.upgrade(mapOf("pref_grid_columns" to "3"))
+        assertEquals(false, out["pref_view_browse_grid"])
+        assertEquals(false, out["pref_view_favorites_grid"])
+        assertEquals(3, out["pref_view_browse_columns"])
+        assertFalse("pref_view_browse_rows" in out)
+    }
+
+    @Test
     fun aTabViewAlreadySetWinsAndUnsetPartsStay() {
         val out = Prefs.upgrade(mapOf("pref_grid" to true, "pref_view_favorites_grid" to false))
         assertEquals(true, out["pref_view_browse_grid"])

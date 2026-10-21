@@ -438,7 +438,7 @@ class Prefs(context: Context) {
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } }
 
-        /** With [OLD_COLUMNS] and [OLD_ROWS], replaced by Browse's and Favorites' own views. */
+        /** With [OLD_COLUMNS] and [OLD_ROWS], replaced by Browse's and Favorites' own views; defaulted off. */
         private const val OLD_GRID = "pref_grid"
 
         /** Stored as strings by the list preferences they came from. */
@@ -504,7 +504,8 @@ class Prefs(context: Context) {
                 out[OLD_ASK_RESUME] = null
             }
             if (OLD_GRID in stored || OLD_COLUMNS in stored || OLD_ROWS in stored) {
-                val grid = stored[OLD_GRID] as? Boolean
+                // A missing grid switch was off, its old default.
+                val grid = stored[OLD_GRID] as? Boolean ?: false
                 val columns = (stored[OLD_COLUMNS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
                 val rows = (stored[OLD_ROWS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
                 for (tab in GRID_HEIRS) {

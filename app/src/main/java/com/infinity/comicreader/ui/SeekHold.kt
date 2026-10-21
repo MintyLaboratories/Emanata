@@ -40,13 +40,16 @@ class SeekHold(private val slop: Float) {
         const val HOLD_MS = 400L
 
         /**
-         * True when a touch that moved the seek bar from item [from] to [to] went down on its
-         * thumb, [thumbHalf] pixels either side of it on a track [track] pixels long for
-         * [max] steps: a hold there keeps the item it started on.
+         * True when a touch at [x] lands on the thumb of a seek bar at [progress] of [max]:
+         * within [thumbHalf] pixels of its center on a track [track] pixels long starting
+         * [start] pixels in, running right to left with [rtl]. Such a touch is kept from
+         * the seek bar until it moves or lifts, so a hold there never moves the page.
          */
-        fun onThumb(from: Int, to: Int, thumbHalf: Int, track: Int, max: Int): Boolean {
+        fun onThumb(x: Float, progress: Int, max: Int, start: Int, track: Int, thumbHalf: Int, rtl: Boolean): Boolean {
             if (max <= 0 || track <= 0) return true
-            return abs(to - from).toFloat() * track / max <= thumbHalf
+            val f = progress.toFloat() / max
+            val center = start + track * (if (rtl) 1f - f else f)
+            return abs(x - center) <= thumbHalf
         }
     }
 }

@@ -34,14 +34,20 @@ class SeekHoldTest {
     }
 
     @Test
-    fun aTouchOnTheThumbKeepsItsItem() {
-        // 1000 px for 100 steps: 10 px a step; the thumb reaches 16 px either side.
-        assertTrue(SeekHold.onThumb(from = 40, to = 41, thumbHalf = 16, track = 1000, max = 100))
-        assertTrue(SeekHold.onThumb(from = 40, to = 40, thumbHalf = 16, track = 1000, max = 100))
-        assertFalse(SeekHold.onThumb(from = 40, to = 42, thumbHalf = 16, track = 1000, max = 100))
-        assertFalse(SeekHold.onThumb(from = 40, to = 10, thumbHalf = 16, track = 1000, max = 100))
-        // A one-page book has nowhere else to go.
-        assertTrue(SeekHold.onThumb(from = 0, to = 0, thumbHalf = 16, track = 1000, max = 0))
+    fun aTouchNearTheThumbsCenterIsOnIt() {
+        // A 1000 px track 20 px in, 100 steps: step 40 is centered at 420 px.
+        fun on(x: Float, rtl: Boolean = false) =
+            SeekHold.onThumb(x, progress = 40, max = 100, start = 20, track = 1000, thumbHalf = 16, rtl = rtl)
+        assertTrue(on(420f))
+        assertTrue(on(436f))
+        assertTrue(on(404f))
+        assertFalse(on(437f))
+        assertFalse(on(120f))
+        // Right to left, step 40 sits 600 px from the start edge.
+        assertTrue(on(620f, rtl = true))
+        assertFalse(on(420f, rtl = true))
+        // A one-item book has nowhere else to go.
+        assertTrue(SeekHold.onThumb(900f, progress = 0, max = 0, start = 20, track = 1000, thumbHalf = 16, rtl = false))
     }
 
     @Test

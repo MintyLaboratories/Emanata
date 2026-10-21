@@ -161,8 +161,8 @@ class ViewerActivity : AppCompatActivity() {
     /** True from a hold opening the strip until that touch lifts: the seek bar sees no more of it. */
     private var seekHeld = false
 
-    /** The item on screen when the seek bar's touch went down. */
-    private var seekHoldFrom = 0
+    /** A touch's down on the seek bar's thumb, kept from the seek bar until the touch moves or lifts before the hold. */
+    private var seekDown: MotionEvent? = null
 
     /** Back closes the preview strip while it is open. */
     private val seekBack = object : OnBackPressedCallback(false) {
@@ -1662,18 +1662,33 @@ class ViewerActivity : AppCompatActivity() {
     /**
      * Watches the seek bar's touches for a hold ([SeekHold]): one that stays still for
      * [SeekHold.HOLD_MS] opens the preview strip, and the rest of that touch is kept from
-     * the seek bar. A touch that moves seeks as usual.
+     * the seek bar. A touch that moves seeks as usual. A touch on the thumb reaches the
+     * seek bar only once it moves or lifts first ([seekDown]), as the seek bar would
+     * otherwise move to the finger at once.
      */
     private fun onSeekTouch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 seekHeld = false
-                seekHoldFrom = shownItem()
+                dropSeekDown()
                 seekHold.down(e.x, e.y)
                 handler.removeCallbacks(seekHoldUp)
                 handler.postDelayed(seekHoldUp, SeekHold.HOLD_MS)
+                val start = seek.paddingLeft
+                val track = seek.width - start - seek.paddingRight
+                val thumbHalf = (seek.thumb?.intrinsicWidth ?: 0) / 2
+                val rtl = seek.layoutDirection == View.LAYOUT_DIRECTION_RTL
+                if (SeekHold.onThumb(e.x, seek.progress, seek.max, start, track, thumbHalf, rtl)) {
+                    seekDown = MotionEvent.obtain(e)
+                    return true
+                }
             }
-            MotionEvent.ACTION_MOVE -> if (!seekHold.move(e.x, e.y)) handler.removeCallbacks(seekHoldUp)
+            MotionEvent.ACTION_MOVE -> if (!seekHold.move(e.x, e.y)) {
+                handler.removeCallbacks(seekHoldUp)
+                releaseSeekDown()
+            } else if (seekDown != null) {
+                return true
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 seekHold.up()
                 handler.removeCallbacks(seekHoldUp)
@@ -1681,23 +1696,36 @@ class ViewerActivity : AppCompatActivity() {
                     seekHeld = false
                     return true
                 }
+                if (e.actionMasked == MotionEvent.ACTION_UP) releaseSeekDown() else dropSeekDown()
             }
         }
         return seekHeld
     }
 
-    /** The hold's time is up: the seek bar lets go of the touch, a hold on its thumb keeps the item, and the strip opens. */
+    /** Hands the seek bar the kept [seekDown], ahead of the touch's event that follows it. */
+    private fun releaseSeekDown() {
+        val down = seekDown ?: return
+        seekDown = null
+        seek.onTouchEvent(down)
+        down.recycle()
+    }
+
+    private fun dropSeekDown() {
+        seekDown?.recycle()
+        seekDown = null
+    }
+
+    /** The hold's time is up: the seek bar lets go of the touch (or never had it, on its thumb) and the strip opens. */
     private val seekHoldUp = Runnable {
         if (!seekHold.held() || source == null) return@Runnable
         seekHeld = true
-        val now = SystemClock.uptimeMillis()
-        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
-        seek.onTouchEvent(cancel)
-        cancel.recycle()
-        val track = seek.width - seek.paddingLeft - seek.paddingRight
-        val thumbHalf = (seek.thumb?.intrinsicWidth ?: 0) / 2
-        if (shownItem() != seekHoldFrom && SeekHold.onThumb(seekHoldFrom, seek.progress, thumbHalf, track, seek.max)) {
-            goToItem(seekHoldFrom)
+        if (seekDown != null) {
+            dropSeekDown()
+        } else {
+            val now = SystemClock.uptimeMillis()
+            val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+            seek.onTouchEvent(cancel)
+            cancel.recycle()
         }
         openSeekPanel()
     }

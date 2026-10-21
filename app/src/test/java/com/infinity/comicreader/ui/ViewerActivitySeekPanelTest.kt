@@ -87,6 +87,40 @@ class ViewerActivitySeekPanelTest {
     }
 
     @Test
+    fun holdingJustOffTheThumbsCenterInALongBookNeverMovesThePage() {
+        val viewer = launch(pages = 400, page = 200)
+        val seek = viewer.seek()
+        val thumbHalf = (seek.thumb?.intrinsicWidth ?: 0) / 2
+        // Off center, yet on the thumb, by more than one item's width of track.
+        val off = (thumbHalf - 1).toFloat()
+        assertTrue(off * seek.max / (seek.width - seek.paddingLeft - seek.paddingRight) > 1f)
+        viewer.touchThumb { x, y, t ->
+            seek.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_MOVE, x + off, y, 0))
+            idle()
+            assertEquals("201 / 400", viewer.pageText())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SeekHold.HOLD_MS + 50))
+            assertTrue(viewer.seekPanelShown)
+            seek.dispatchTouchEvent(MotionEvent.obtain(t, t + 500, MotionEvent.ACTION_UP, x + off, y, 0))
+        }
+        idle()
+        assertEquals("201 / 400", viewer.pageText())
+    }
+
+    @Test
+    fun aDragFromTheThumbStillSeeks() {
+        val viewer = launch(pages = 400, page = 200)
+        val seek = viewer.seek()
+        viewer.touchThumb { x, y, t ->
+            // Past the slop: the kept down goes to the seek bar, which then follows the drag.
+            seek.dispatchTouchEvent(MotionEvent.obtain(t, t + 16, MotionEvent.ACTION_MOVE, x - 60f, y, 0))
+            seek.dispatchTouchEvent(MotionEvent.obtain(t, t + 32, MotionEvent.ACTION_UP, x - 60f, y, 0))
+        }
+        idle()
+        assertFalse(viewer.seekPanelShown)
+        assertTrue(seek.progress < 199)
+    }
+
+    @Test
     fun holdingTheSeekBarStillOpensTheStripAtThePageOnScreen() {
         val viewer = launch()
         assertEquals("6 / 12", viewer.pageText())

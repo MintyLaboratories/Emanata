@@ -162,6 +162,14 @@ class PageAdapterDetailTest {
         assertEquals(listOf(Target(1848, 2960)), source.loads.toList())
         assertEquals(1, source.details.size)
         assertTrue(image.drawsOneToOne)
+
+        // The next zoom, at the new fit, renders from the same detail.
+        tile = null
+        image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
+        idle { tile != null }
+        assertNotNull(tile)
+        assertEquals(1, source.details.size)
+        assertTrue(source.details.none { it.released })
         adapter.release()
     }
 

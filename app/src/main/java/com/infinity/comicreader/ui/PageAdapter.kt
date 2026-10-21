@@ -439,19 +439,28 @@ class PageAdapter(
     /** Memory one item's full-detail pages may take; set from the device's RAM once attached. */
     private var detailBudget = DetailStore.MAX_BUDGET
 
-    /** The pages [holder] shows at full detail, or could. */
+    /** The pages [holder] shows at full detail, or could, by [detailKey]. */
     private fun detailKeys(holder: PageHolder): List<PageKey> =
-        holder.images.mapNotNull { (it.detailSource as? SlotDetail)?.key }
+        holder.images.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey }
+
+    /**
+     * What [key]'s full detail is held by: its page and how it is cropped and scaled, not
+     * its size or fit ([Target.detail]), so a zoom after a new fit finds it still loaded.
+     */
+    private fun detailKey(key: PageKey) =
+        PageKey(key.page, Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels))
 
     /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
     private inner class SlotDetail(private val holder: PageHolder, val key: PageKey) : ZoomImageView.DetailSource {
+        val detailKey = detailKey(key)
+
         override fun prepare() {
-            if (!released) details.prepare(key, detailKeys(holder), loader())
+            if (!released) details.prepare(detailKey, detailKeys(holder), loader())
         }
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
-            val job = details.render(key, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done = done)
+            val job = details.render(detailKey, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done = done)
             return { job.cancel() }
         }
 
@@ -498,9 +507,8 @@ class PageAdapter(
             val standIn = cache.snapshot().entries.lastOrNull { it.key.page == pageIndex }
             if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
         }
-        val held = (image.detailSource as? SlotDetail)?.key?.takeIf { holder.shown[slot] == pageIndex && details.loaded(it) }
-        if (held != null) {
-            renderFromDetail(holder, slot, held, key)
+        if (holder.shown[slot] == pageIndex && details.loaded(detailKey(key))) {
+            renderFromDetail(holder, slot, key)
             return
         }
         decodeInto(holder, slot, key)
@@ -523,21 +531,21 @@ class PageAdapter(
     }
 
     /**
-     * Makes [key]'s bitmap from the full detail [held] keeps of the page shown in [slot],
-     * as a settled zoom would, instead of decoding the page again; decodes it when that
-     * render fails or the detail is dropped first.
+     * Makes [key]'s bitmap from the full detail held for the page shown in [slot], as a
+     * settled zoom would, instead of decoding the page again; decodes it when that render
+     * fails or the detail is dropped first.
      */
-    private fun renderFromDetail(holder: PageHolder, slot: Int, held: PageKey, key: PageKey) {
+    private fun renderFromDetail(holder: PageHolder, slot: Int, key: PageKey) {
         val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap
         if (shown == null) {
             decodeInto(holder, slot, key)
             return
         }
         val plan = key.target.plan(shown.width.toDouble(), shown.height.toDouble())
-        val load = SlotDetail(holder, held).loader()
+        val detail = SlotDetail(holder, key)
         // [failed] can run before [DetailStore.render] returns, the decode then waited on.
         var decoding = false
-        val job = details.render(held, detailKeys(holder), load, {
+        val job = details.render(detail.detailKey, detailKeys(holder), detail.loader(), {
             frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear))
         }, failed = {
             decoding = true

@@ -16,6 +16,7 @@ import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +28,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * Grid of page thumbnails used to jump to a page. Each is made at its view's exact
- * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. [thumbHeight], when
+ * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. Until it is ready the
+ * page's preview stands in, stored or quickly decoded ([PageSource.loadPreview]) and
+ * cropped the same way, so the exact one replaces it in place. [thumbHeight], when
  * above 0, replaces the layout's thumbnail height in pixels.
  */
 class ThumbAdapter(
@@ -40,10 +43,19 @@ class ThumbAdapter(
 
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val cache = object : LruCache<Int, Bitmap>(100) {}
+    private val previews = object : LruCache<Int, Bitmap>(PREVIEW_CACHE_BYTES) {
+        override fun sizeOf(key: Int, value: Bitmap) = value.byteCount
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** Archives are not safe for many parallel reads; a few at a time is plenty for thumbnails. */
     private val gate = Semaphore(2)
+
+    /** Previews are small: more of them at a time, beside the exact thumbnails. */
+    private val previewGate = Semaphore(4)
+
+    /** Called on the main thread as page [Int] shows its preview (false) or exact thumbnail (true). */
+    var onShown: ((Int, Boolean) -> Unit)? = null
 
     class Holder(val root: View, val image: com.google.android.material.imageview.ShapeableImageView, val label: TextView) :
         RecyclerView.ViewHolder(root) {
@@ -105,6 +117,7 @@ class ThumbAdapter(
             return
         }
         holder.job = scope.launch {
+            if (holder.image.drawable == null) showPreview(holder, position)
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
                     try {
@@ -127,9 +140,29 @@ class ThumbAdapter(
         }
     }
 
+    /** Shows page [position]'s preview in [holder], cropped to fill it as the exact thumbnail is, when one is quick to get. */
+    private suspend fun showPreview(holder: Holder, position: Int) {
+        val preview = previews.get(position) ?: withContext(AppDispatchers.io) {
+            previewGate.withPermit {
+                try {
+                    source.loadPreview(position)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    null
+                }
+            }
+        }?.also { previews.put(position, it) } ?: return
+        if (holder.page != position) return
+        holder.image.scaleType = ImageView.ScaleType.CENTER_CROP
+        holder.image.setImageBitmap(preview)
+        onShown?.invoke(position, false)
+    }
+
     private fun show(holder: Holder, bitmap: Bitmap) {
         holder.image.scaleType = ImageView.ScaleType.CENTER
         holder.image.setImageBitmap(bitmap)
+        onShown?.invoke(holder.page, true)
     }
 
     override fun onViewRecycled(holder: Holder) {
@@ -143,9 +176,11 @@ class ThumbAdapter(
     fun release() {
         scope.cancel()
         cache.evictAll()
+        previews.evictAll()
     }
 
     companion object {
         private const val TAG = "ThumbAdapter"
+        private const val PREVIEW_CACHE_BYTES = 16 * 1024 * 1024
     }
 }

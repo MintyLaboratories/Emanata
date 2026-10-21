@@ -7,6 +7,8 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -106,6 +108,8 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         spinner.visibility = VISIBLE
         visibility = VISIBLE
         setProgress(0f)
+        val started = SystemClock.elapsedRealtime()
+        val timing = FillTiming(started)
         loadJob = scope.launch {
             val opened = withContext(AppDispatchers.io) { runCatching { PageSources.open(entry.file, charset, cacheDir) }.getOrNull() }
             if (opened == null || this@PeekOverlay.entry !== entry) {
@@ -119,9 +123,21 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
                 onOpen?.invoke(entry, page)
                 hide()
             }
+            val openMs = SystemClock.elapsedRealtime() - started
+            a.onShown = { position, exact -> logFill(timing, position, exact) { "pages: opened $openMs ms" } }
             adapter = a
             grid.adapter = a
             if (entry.progressPage > 0) grid.scrollToPosition(entry.progressPage)
+        }
+    }
+
+    /** Logs how fast the cells in view filled in, once they all show their exact image. */
+    private fun logFill(timing: FillTiming, position: Int, exact: Boolean, what: () -> String) {
+        val lm = grid.layoutManager as? GridLayoutManager ?: return
+        val first = lm.findFirstVisibleItemPosition()
+        val visible = if (first < 0) IntRange.EMPTY else first..lm.findLastVisibleItemPosition()
+        if (timing.shown(position, exact, visible, SystemClock.elapsedRealtime())) {
+            Log.d(TAG, "${what()}, first image ${timing.first} ms, ${visible.count()} in view ${timing.inView} ms, exact ${timing.exact} ms")
         }
     }
 
@@ -236,6 +252,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     private fun span(ev: MotionEvent) = hypot(ev.getX(0) - ev.getX(1), ev.getY(0) - ev.getY(1))
 
     companion object {
+        private const val TAG = "Peek"
         private const val SCRIM_ALPHA = 0.55f
         private const val ANIMATION_MS = 220L
 

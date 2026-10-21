@@ -6,6 +6,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.ContextThemeWrapper
 import android.view.View
+import android.widget.ImageView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -13,12 +14,16 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -36,11 +41,23 @@ class ThumbAdapterTest {
         override fun close() {}
     }
 
-    @Test
-    fun failedThumbnailShowsPlaceholder() {
+    /** One page whose exact decode waits for [decode]; its preview is ready at once. */
+    private class SlowPageSource : PageSource {
+        val decode = CountDownLatch(1)
+        val preview: Bitmap = Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            decode.await(5, TimeUnit.SECONDS)
+            return Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun loadPreview(index: Int): Bitmap = preview
+        override fun close() {}
+    }
+
+    private fun listShowing(adapter: ThumbAdapter): RecyclerView {
         val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
-        val adapter = ThumbAdapter(BrokenPageSource(), currentPage = 0) {}
-        val list = RecyclerView(context).apply {
+        return RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context)
             this.adapter = adapter
             measure(
@@ -49,14 +66,43 @@ class ThumbAdapterTest {
             )
             layout(0, 0, 400, 2000)
         }
-        fun image(position: Int) =
-            (list.findViewHolderForAdapterPosition(position) as ThumbAdapter.Holder).image
+    }
 
+    private fun waitFor(done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
-        while ((image(0).drawable == null || image(1).drawable == null) && System.currentTimeMillis() < deadline) {
+        while (!done() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
         }
+    }
+
+    @Test
+    fun previewStandsInUntilExactThumbnail() {
+        val source = SlowPageSource()
+        val adapter = ThumbAdapter(source, currentPage = 0) {}
+        val events = ArrayList<Pair<Int, Boolean>>()
+        adapter.onShown = { position, exact -> events += position to exact }
+        val list = listShowing(adapter)
+        val image = (list.findViewHolderForAdapterPosition(0) as ThumbAdapter.Holder).image
+        waitFor { image.drawable != null }
+        assertSame(source.preview, (image.drawable as BitmapDrawable).bitmap)
+        assertEquals(ImageView.ScaleType.CENTER_CROP, image.scaleType)
+        source.decode.countDown()
+        waitFor { (image.drawable as? BitmapDrawable)?.bitmap !== source.preview }
+        assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
+        assertEquals(ImageView.ScaleType.CENTER, image.scaleType)
+        assertEquals(listOf(0 to false, 0 to true), events)
+        adapter.release()
+    }
+
+    @Test
+    fun failedThumbnailShowsPlaceholder() {
+        val adapter = ThumbAdapter(BrokenPageSource(), currentPage = 0) {}
+        val list = listShowing(adapter)
+        fun image(position: Int) =
+            (list.findViewHolderForAdapterPosition(position) as ThumbAdapter.Holder).image
+
+        waitFor { image(0).drawable != null && image(1).drawable != null }
         assertTrue(image(0).drawable is BitmapDrawable)
         assertTrue(image(1).drawable is ErrorPageDrawable)
         adapter.release()

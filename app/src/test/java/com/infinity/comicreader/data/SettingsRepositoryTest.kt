@@ -35,20 +35,19 @@ class SettingsRepositoryTest {
     fun startsWithStoredValues() {
         assertEquals(ListSettings.from(prefs), repo.list.value)
         assertEquals(ReaderSettings.from(prefs), repo.reader.value)
-        assertFalse(repo.list.value.grid)
+        assertTrue(repo.list.value.views.getValue(Prefs.TAB_BROWSE).grid)
+        assertFalse(repo.list.value.views.getValue(Prefs.TAB_HISTORY).grid)
         assertEquals("paged", repo.reader.value.pageMode)
     }
 
     @Test
     fun listChangesArePublished() {
-        prefs.listGrid = true
-        prefs.gridColumns = 4
-        prefs.gridRows = 3
+        prefs.setGrid(Prefs.TAB_HISTORY, true)
+        prefs.setGridSize(Prefs.TAB_HISTORY, 4, 3)
         prefs.thumbnails = false
         val list = repo.list.value
-        assertTrue(list.grid)
-        assertEquals(4, list.gridColumns)
-        assertEquals(3, list.gridRows)
+        assertEquals(TabView(grid = true, columns = 4, rows = 3), list.views[Prefs.TAB_HISTORY])
+        assertEquals(TabView.defaultFor(Prefs.TAB_BROWSE), list.views[Prefs.TAB_BROWSE])
         assertFalse(list.thumbnails)
     }
 
@@ -76,19 +75,19 @@ class SettingsRepositoryTest {
     fun settingsScreenWritesArePublished() {
         // The preference screen writes the store directly, not through Prefs.
         PreferenceManager.getDefaultSharedPreferences(context).edit()
-            .putBoolean("pref_grid", true)
-            .putString("pref_grid_columns", "3")
+            .putBoolean("pref_view_bookmarks_grid", true)
+            .putInt("pref_view_bookmarks_columns", 3)
             .apply()
-        assertTrue(repo.list.value.grid)
-        assertEquals(3, repo.list.value.gridColumns)
+        assertTrue(repo.list.value.views.getValue(Prefs.TAB_BOOKMARKS).grid)
+        assertEquals(3, repo.list.value.views.getValue(Prefs.TAB_BOOKMARKS).columns)
     }
 
     @Test
     fun resetPublishesDefaults() {
-        prefs.listGrid = true
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
         prefs.filter = "sepia"
         prefs.reset()
-        assertFalse(repo.list.value.grid)
+        assertTrue(repo.list.value.views.getValue(Prefs.TAB_BROWSE).grid)
         assertEquals("none", repo.reader.value.filter)
     }
 

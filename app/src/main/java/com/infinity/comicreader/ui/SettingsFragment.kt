@@ -91,6 +91,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
 
+        for (tab in Prefs.TABS) {
+            val pref = findPreference<Preference>("view_$tab") ?: continue
+            pref.summary = TabViewDialogs.summary(requireContext(), prefs, tab)
+            pref.setOnPreferenceClickListener {
+                TabViewDialogs.showTabView(requireContext(), prefs, tab) {
+                    if (isAdded) pref.summary = TabViewDialogs.summary(requireContext(), prefs, tab)
+                }
+                true
+            }
+        }
+
         findPreference<Preference>("pref_backup")?.setOnPreferenceClickListener {
             exportLauncher.launch("emanata-backup.json")
             true

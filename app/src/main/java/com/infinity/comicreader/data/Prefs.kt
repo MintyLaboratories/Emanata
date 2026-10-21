@@ -186,19 +186,25 @@ class Prefs(context: Context) {
         get() = bool(KEY_THUMBS, true)
         set(v) = put(KEY_THUMBS, v)
 
-    var listGrid: Boolean
-        get() = bool(KEY_GRID, false)
-        set(v) = put(KEY_GRID, v)
+    /** How [tab] (one of the `TAB_*` names) shows its entries. */
+    fun view(tab: String): TabView {
+        val def = TabView.defaultFor(tab)
+        return TabView(
+            grid = bool(viewKey(tab, VIEW_GRID), def.grid),
+            columns = integer(viewKey(tab, VIEW_COLUMNS), def.columns).coerceIn(0, TabView.MAX_CELLS),
+            rows = integer(viewKey(tab, VIEW_ROWS), def.rows).coerceIn(0, TabView.MAX_CELLS)
+        )
+    }
 
-    /** 0 = auto */
-    var gridColumns: Int
-        get() = str(KEY_COLUMNS, "0").toIntOrNull()?.coerceIn(0, 6) ?: 0
-        set(v) = put(KEY_COLUMNS, v.toString())
+    fun setGrid(tab: String, grid: Boolean) = put(viewKey(tab, VIEW_GRID), grid)
 
-    /** Grid rows per screen height, 0 = auto (fixed cover height). */
-    var gridRows: Int
-        get() = str(KEY_ROWS, "0").toIntOrNull()?.coerceIn(0, 6) ?: 0
-        set(v) = put(KEY_ROWS, v.toString())
+    /** Grid [columns] across and [rows] per screen height; 0 is auto. */
+    fun setGridSize(tab: String, columns: Int, rows: Int) {
+        sp.edit()
+            .putInt(viewKey(tab, VIEW_COLUMNS), columns.coerceIn(0, TabView.MAX_CELLS))
+            .putInt(viewKey(tab, VIEW_ROWS), rows.coerceIn(0, TabView.MAX_CELLS))
+            .apply()
+    }
 
     var listSort: String
         get() = str(KEY_SORT, "name")
@@ -333,6 +339,15 @@ class Prefs(context: Context) {
         const val TAB_FAVORITES = "favorites"
         const val TAB_HISTORY = "history"
         const val TAB_BOOKMARKS = "bookmarks"
+        val TABS = listOf(TAB_BROWSE, TAB_FAVORITES, TAB_HISTORY, TAB_BOOKMARKS)
+
+        private const val VIEW_GRID = "grid"
+        private const val VIEW_COLUMNS = "columns"
+        private const val VIEW_ROWS = "rows"
+        private val VIEW_FIELDS = listOf(VIEW_GRID, VIEW_COLUMNS, VIEW_ROWS)
+
+        /** The key of one [field] of [tab]'s view, e.g. `pref_view_browse_grid`. */
+        private fun viewKey(tab: String, field: String) = "pref_view_${tab}_$field"
 
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"
@@ -362,9 +377,6 @@ class Prefs(context: Context) {
         private const val KEY_FLING = "pref_fling"
         private const val KEY_SHOW_HIDDEN = "pref_show_hidden"
         private const val KEY_THUMBS = "pref_thumbs"
-        private const val KEY_GRID = "pref_grid"
-        private const val KEY_COLUMNS = "pref_grid_columns"
-        private const val KEY_ROWS = "pref_grid_rows"
         private const val KEY_SORT = "pref_sort"
         private const val KEY_SORT_DIR = "pref_sort_dir"
         private const val KEY_FILENAMES = "pref_show_filenames"
@@ -385,13 +397,23 @@ class Prefs(context: Context) {
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
-            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_GRID,
-            KEY_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
-            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, KEY_ROWS,
+            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, OLD_GRID,
+            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH
-        )
+        ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } }
+
+        /** With [OLD_COLUMNS] and [OLD_ROWS], replaced by Browse's and Favorites' own views. */
+        private const val OLD_GRID = "pref_grid"
+
+        /** Stored as strings by the list preferences they came from. */
+        private const val OLD_COLUMNS = "pref_grid_columns"
+        private const val OLD_ROWS = "pref_grid_rows"
+
+        /** The tabs that take over the single grid setting; the others start at their defaults. */
+        private val GRID_HEIRS = listOf(TAB_BROWSE, TAB_FAVORITES)
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
         private const val OLD_TAP_ZONES = "pref_tap_zones"
@@ -444,6 +466,20 @@ class Prefs(context: Context) {
                 }
                 out[OLD_RESUME] = null
                 out[OLD_ASK_RESUME] = null
+            }
+            if (OLD_GRID in stored || OLD_COLUMNS in stored || OLD_ROWS in stored) {
+                val grid = stored[OLD_GRID] as? Boolean
+                val columns = (stored[OLD_COLUMNS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
+                val rows = (stored[OLD_ROWS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
+                for (tab in GRID_HEIRS) {
+                    for ((field, value) in listOf(VIEW_GRID to grid, VIEW_COLUMNS to columns, VIEW_ROWS to rows)) {
+                        val key = viewKey(tab, field)
+                        if (value != null && key !in stored) out[key] = value
+                    }
+                }
+                out[OLD_GRID] = null
+                out[OLD_COLUMNS] = null
+                out[OLD_ROWS] = null
             }
             return out
         }

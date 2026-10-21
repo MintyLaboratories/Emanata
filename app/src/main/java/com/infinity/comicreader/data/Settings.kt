@@ -11,9 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 data class ListSettings(
     val showHidden: Boolean,
     val thumbnails: Boolean,
-    val grid: Boolean,
-    val gridColumns: Int,
-    val gridRows: Int,
+    /** Each tab's view, by tab name ([Prefs.TABS]). */
+    val views: Map<String, TabView>,
     val sort: String,
     val sortDir: String,
     val showFilenames: Boolean,
@@ -28,9 +27,7 @@ data class ListSettings(
         fun from(p: Prefs) = ListSettings(
             showHidden = p.showHidden,
             thumbnails = p.thumbnails,
-            grid = p.listGrid,
-            gridColumns = p.gridColumns,
-            gridRows = p.gridRows,
+            views = Prefs.TABS.associateWith { p.view(it) },
             sort = p.listSort,
             sortDir = p.listSortDir,
             showFilenames = p.showFilenames,

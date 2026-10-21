@@ -163,4 +163,57 @@ class PrefsUpgradeTest {
         assertEquals(ResumeMode.NO, prefs.resumeMode)
         assertFalse("pref_resume" in stored())
     }
+
+    @Test
+    fun theGridSettingGoesToBrowseAndFavorites() {
+        val gone = mapOf("pref_grid" to null, "pref_grid_columns" to null, "pref_grid_rows" to null)
+        assertEquals(
+            mapOf(
+                "pref_view_browse_grid" to false, "pref_view_browse_columns" to 4, "pref_view_browse_rows" to 2,
+                "pref_view_favorites_grid" to false, "pref_view_favorites_columns" to 4, "pref_view_favorites_rows" to 2
+            ) + gone,
+            Prefs.upgrade(mapOf("pref_grid" to false, "pref_grid_columns" to "4", "pref_grid_rows" to "2"))
+        )
+    }
+
+    @Test
+    fun aTabViewAlreadySetWinsAndUnsetPartsStay() {
+        val out = Prefs.upgrade(mapOf("pref_grid" to true, "pref_view_favorites_grid" to false))
+        assertEquals(true, out["pref_view_browse_grid"])
+        assertFalse("pref_view_favorites_grid" in out)
+        assertFalse("pref_view_browse_columns" in out)
+        assertFalse("pref_view_history_grid" in out)
+    }
+
+    @Test
+    fun upgradedGridKeepsHistoryAndBookmarksAtTheirDefaults() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+            .putBoolean("pref_grid", false).putString("pref_grid_columns", "5").commit()
+        val prefs = Prefs(context)
+        prefs.upgrade()
+        assertEquals(TabView(grid = false, columns = 5), prefs.view(Prefs.TAB_BROWSE))
+        assertEquals(TabView(grid = false, columns = 5), prefs.view(Prefs.TAB_FAVORITES))
+        assertEquals(TabView.defaultFor(Prefs.TAB_HISTORY), prefs.view(Prefs.TAB_HISTORY))
+        assertFalse("pref_grid" in stored())
+    }
+
+    @Test
+    fun tabViewsAreBackedUp() {
+        val prefs = Prefs(context)
+        prefs.setGridSize(Prefs.TAB_BOOKMARKS, 3, 1)
+        val saved = prefs.exportAll()
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        prefs.importAll(saved)
+        assertEquals(3, prefs.view(Prefs.TAB_BOOKMARKS).columns)
+        assertEquals(1, prefs.view(Prefs.TAB_BOOKMARKS).rows)
+    }
+
+    @Test
+    fun anOldBackupRestoresTheGridIntoBrowse() {
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_grid" to false, "pref_grid_rows" to "3"))
+        assertFalse(prefs.view(Prefs.TAB_BROWSE).grid)
+        assertEquals(3, prefs.view(Prefs.TAB_FAVORITES).rows)
+        assertFalse("pref_grid" in stored())
+    }
 }

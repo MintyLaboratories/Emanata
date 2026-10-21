@@ -55,6 +55,7 @@ import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
@@ -157,7 +158,7 @@ class ListActivity : AppCompatActivity() {
         toolbar.setTitle(R.string.app_name)
 
         adapter = BookAdapter(
-            grid = prefs.listGrid,
+            grid = view.grid,
             prefs = prefs,
             onClick = { onEntryClick(it) },
             onLongClick = { onEntryLongClick(it) },
@@ -250,13 +251,7 @@ class ListActivity : AppCompatActivity() {
         val old = applied
         if (old == s) return
         applied = s
-        if (s.grid != old.grid || s.gridColumns != old.gridColumns || s.gridRows != old.gridRows) {
-            adapter.grid = s.grid
-            applyLayoutManager()
-            updateCellSize()
-            updateFabIcon()
-            invalidateOptionsMenu()
-        }
+        if (s.views[tabName()] != old.views[tabName()]) applyView()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
             // Coming back to the browse tab, onResume reloads the folder anyway.
@@ -401,6 +396,26 @@ class ListActivity : AppCompatActivity() {
         if (tabs.selectedTabPosition != index) tabs.getTabAt(index)?.select()
     }
 
+    /** The settings name of tab [index]. */
+    private fun tabName(index: Int = mode): String = when (index) {
+        TAB_FAVORITES -> Prefs.TAB_FAVORITES
+        TAB_HISTORY -> Prefs.TAB_HISTORY
+        TAB_BOOKMARKS -> Prefs.TAB_BOOKMARKS
+        else -> Prefs.TAB_BROWSE
+    }
+
+    /** The current tab's view settings. */
+    private val view: TabView get() = prefs.view(tabName())
+
+    /** Lays the list out as the current tab's view says. */
+    private fun applyView() {
+        adapter.grid = view.grid
+        applyLayoutManager()
+        updateCellSize()
+        updateFabIcon()
+        invalidateOptionsMenu()
+    }
+
     private fun onTabChanged(index: Int) {
         if (index == mode) return
         when (index) {
@@ -418,6 +433,7 @@ class ListActivity : AppCompatActivity() {
 
     private fun loadDirectory(dir: File, highlight: String? = null) {
         mode = TAB_BROWSE
+        applyView()
         currentDir = dir
         deepJob?.cancel()
         deepResults = null
@@ -503,6 +519,7 @@ class ListActivity : AppCompatActivity() {
 
     private fun showFavorites() {
         mode = TAB_FAVORITES
+        applyView()
         adapter.highlightPath = null
         selectTab(TAB_FAVORITES)
         supportActionBar?.title = getString(R.string.menu_favorites)
@@ -579,6 +596,7 @@ class ListActivity : AppCompatActivity() {
 
     private fun showHistory() {
         mode = TAB_HISTORY
+        applyView()
         adapter.highlightPath = null
         selectTab(TAB_HISTORY)
         supportActionBar?.title = getString(R.string.menu_history)
@@ -597,6 +615,7 @@ class ListActivity : AppCompatActivity() {
 
     private fun showBookmarks() {
         mode = TAB_BOOKMARKS
+        applyView()
         adapter.highlightPath = null
         selectTab(TAB_BOOKMARKS)
         supportActionBar?.title = getString(R.string.menu_bookmarks)
@@ -706,7 +725,7 @@ class ListActivity : AppCompatActivity() {
             )
         }
         // Grid rows share the height the header leaves.
-        if (prefs.listGrid && prefs.gridRows > 0) updateCellSize()
+        if (view.grid && view.rows > 0) updateCellSize()
     }
 
     private fun updateEmptyState() {
@@ -830,16 +849,17 @@ class ListActivity : AppCompatActivity() {
 
     /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
     private fun toggleGrid() {
-        prefs.listGrid = !prefs.listGrid
+        prefs.setGrid(tabName(), !view.grid)
     }
 
     private fun updateFabIcon() {
-        fab.setImageResource(if (prefs.listGrid) R.drawable.ic_view_list else R.drawable.ic_grid_view)
-        fab.contentDescription = getString(if (prefs.listGrid) R.string.menu_list_view else R.string.menu_grid)
+        val grid = view.grid
+        fab.setImageResource(if (grid) R.drawable.ic_view_list else R.drawable.ic_grid_view)
+        fab.contentDescription = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
     }
 
     private fun applyLayoutManager() {
-        val grid = prefs.listGrid
+        val grid = view.grid
         val current = recycler.layoutManager
         if (grid && current is GridLayoutManager) {
             current.spanCount = columnCount()
@@ -864,7 +884,7 @@ class ListActivity : AppCompatActivity() {
 
     private fun columnCount(): Int {
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
-        return GridSizing.columns(prefs.gridColumns, widthDp)
+        return GridSizing.columns(view.columns, widthDp)
     }
 
     private fun keyboardVisible(): Boolean =
@@ -872,13 +892,14 @@ class ListActivity : AppCompatActivity() {
 
     /** Sizes grid cells: one column's width, and a height that fits the chosen rows on screen. */
     private fun updateCellSize() {
-        if (!prefs.listGrid) {
+        val view = view
+        if (!view.grid) {
             adapter.setCellSize(0, 0)
             return
         }
         val inner = recycler.width - recycler.paddingLeft - recycler.paddingRight
         val width = inner.coerceAtLeast(0) / columnCount()
-        val rows = prefs.gridRows
+        val rows = view.rows
         val header = if (rows > 0) headerHeight(inner) + sectionHeadersHeight(inner, rows) else 0
         val available = GridSizing.rowSpace(recycler.height, recycler.paddingTop, recycler.paddingBottom, header)
         val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
@@ -1246,10 +1267,9 @@ class ListActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         val browsing = mode == TAB_BROWSE
-        menu.findItem(R.id.menu_grid)?.title =
-            getString(if (prefs.listGrid) R.string.menu_list_view else R.string.menu_grid)
-        menu.findItem(R.id.menu_columns)?.isVisible = prefs.listGrid
-        menu.findItem(R.id.menu_rows)?.isVisible = prefs.listGrid
+        val grid = view.grid
+        menu.findItem(R.id.menu_grid)?.title = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
+        menu.findItem(R.id.menu_grid_size)?.isVisible = grid
         menu.findItem(R.id.menu_show_hidden)?.apply {
             isChecked = prefs.showHidden
             title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
@@ -1280,8 +1300,7 @@ class ListActivity : AppCompatActivity() {
             R.id.menu_grid -> toggleGrid()
             R.id.menu_sort -> showSortDialog()
             R.id.menu_sort_dir -> toggleSortDirection()
-            R.id.menu_columns -> showColumnsDialog()
-            R.id.menu_rows -> showRowsDialog()
+            R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }
@@ -1326,31 +1345,6 @@ class ListActivity : AppCompatActivity() {
         toast(if (prefs.listSortDir == "asc") R.string.menu_ascending else R.string.menu_descending)
     }
 
-    private fun showColumnsDialog() {
-        val values = resources.getStringArray(R.array.columns_values)
-        val labels = resources.getStringArray(R.array.columns_entries)
-        val checked = values.indexOf(prefs.gridColumns.toString()).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.menu_columns)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.gridColumns = values[which].toIntOrNull() ?: 0
-                dialog.dismiss()
-            }
-            .show()
-    }
-
-    private fun showRowsDialog() {
-        val values = resources.getStringArray(R.array.rows_values)
-        val labels = resources.getStringArray(R.array.rows_entries)
-        val checked = values.indexOf(prefs.gridRows.toString()).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.pref_grid_rows)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.gridRows = values[which].toIntOrNull() ?: 0
-                dialog.dismiss()
-            }
-            .show()
-    }
 
     // ------------------------------------------------------------------ back
 

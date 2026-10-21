@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,20 +50,22 @@ class ListActivityLiveSettingsTest {
 
     @Test
     fun gridAppliesWhileVisible() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
         val list = launch()
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
-        prefs.listGrid = true
+        prefs.setGrid(Prefs.TAB_BROWSE, true)
         idle()
         assertTrue(list.recycler().layoutManager is GridLayoutManager)
     }
 
     @Test
     fun gridChangedElsewhereAppliesOnReturn() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
         val list = launch()
         list.pause().stop()
         // As if changed in the settings screen on top of the list.
-        prefs.listGrid = true
-        prefs.gridColumns = 5
+        prefs.setGrid(Prefs.TAB_BROWSE, true)
+        prefs.setGridSize(Prefs.TAB_BROWSE, 5, 0)
         list.start().resume()
         idle()
         val lm = list.recycler().layoutManager
@@ -72,35 +75,32 @@ class ListActivityLiveSettingsTest {
 
     @Test
     fun columnsApplyLive() {
-        prefs.listGrid = true
-        prefs.gridColumns = 3
+        prefs.setGridSize(Prefs.TAB_BROWSE, 3, 0)
         val list = launch()
-        prefs.gridColumns = 4
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
         idle()
         assertEquals(4, (list.recycler().layoutManager as GridLayoutManager).spanCount)
     }
 
     @Test
     fun cellsTakeColumnWidth() {
-        prefs.listGrid = true
-        prefs.gridColumns = 4
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
         val list = launch()
         idle()
         val recycler = list.recycler()
         val adapter = recycler.adapter as BookAdapter
         assertTrue(recycler.width > 0)
         assertEquals((recycler.width - recycler.paddingLeft - recycler.paddingRight) / 4, adapter.cellWidth)
-        prefs.gridColumns = 2
+        prefs.setGridSize(Prefs.TAB_BROWSE, 2, 0)
         idle()
         assertEquals((recycler.width - recycler.paddingLeft - recycler.paddingRight) / 2, adapter.cellWidth)
     }
 
     @Test
     fun backToListApplies() {
-        prefs.listGrid = true
         val list = launch()
         list.pause().stop()
-        prefs.listGrid = false
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
         list.start().resume()
         idle()
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
@@ -109,8 +109,7 @@ class ListActivityLiveSettingsTest {
     @Test
     @Config(qualifiers = "w800dp-h1280dp")
     fun rowsFitAboveTheBottomPadding() {
-        prefs.listGrid = true
-        prefs.gridRows = 2
+        prefs.setGridSize(Prefs.TAB_BROWSE, 0, 2)
         val list = launch()
         idle()
         val recycler = list.recycler()
@@ -121,19 +120,38 @@ class ListActivityLiveSettingsTest {
     }
 
     @Test
-    fun gridRowsAreInTheMenu() {
-        prefs.listGrid = true
+    fun gridDimensionsAreInTheMenu() {
         val list = launch()
         val activity = list.get()
         activity.invalidateOptionsMenu()
         idle()
-        val item = activity.findViewById<MaterialToolbar>(R.id.toolbar).menu.findItem(R.id.menu_rows)
+        val item = activity.findViewById<MaterialToolbar>(R.id.toolbar).menu.findItem(R.id.menu_grid_size)
         assertTrue(item.isVisible)
         activity.onOptionsItemSelected(item)
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        // Entries are Auto, 1, 2, 3, ...
-        dialog.listView.performItemClick(null, 3, 3)
+        val picker = dialog.findViewById<GridPicker>(R.id.grid_size)!!
+        picker.onPick!!.invoke(4, 3)
         idle()
-        assertEquals(3, prefs.gridRows)
+        assertEquals(4, prefs.view(Prefs.TAB_BROWSE).columns)
+        assertEquals(3, prefs.view(Prefs.TAB_BROWSE).rows)
+        assertFalse(dialog.isShowing)
+    }
+
+    @Test
+    fun eachTabKeepsItsOwnView() {
+        val list = launch()
+        idle()
+        assertTrue(list.recycler().layoutManager is GridLayoutManager)
+        list.get().findViewById<com.google.android.material.tabs.TabLayout>(R.id.tabs).getTabAt(2)!!.select()
+        idle()
+        // History starts as a list; the menu's grid toggle changes only History.
+        assertFalse(list.recycler().layoutManager is GridLayoutManager)
+        list.get().findViewById<FloatingActionButton>(R.id.fab).performClick()
+        idle()
+        assertTrue(prefs.view(Prefs.TAB_HISTORY).grid)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        idle()
+        assertTrue(list.recycler().layoutManager is GridLayoutManager)
     }
 }

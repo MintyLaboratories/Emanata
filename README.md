@@ -38,9 +38,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 ## Features
 
 ### File browser
-- Browse local storage by folder; list and grid layouts. **Grid columns** and
-  **Grid rows** (menu → View, or Settings) size the cells; rows share the height
-  below the Recent row and above the floating button.
+- Browse local storage by folder; list and grid layouts.
+- Each tab keeps its own view (menu → View changes the current tab; Settings →
+  Library has one entry per tab). Browse and Favorites start as grids, History
+  and Bookmarks as lists.
+- **Grid dimensions:** columns × rows, each Auto or 1–6, picked on a 7 × 7 table
+  (tap a cell, or drag and release). Rows share the height below the Recent row
+  and above the floating button.
 - Covers are made at the exact size of their cell (cropped and Lanczos3-scaled,
   drawn 1:1) and cached losslessly.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.

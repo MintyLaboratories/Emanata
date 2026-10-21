@@ -108,9 +108,7 @@ class ListActivityFavoritesTest {
         library.toggleFavorite(folder("Solo", "x.cbz").absolutePath)
         library.toggleFavorite(File(root, "a.cbz").apply { createNewFile() }.absolutePath)
         val prefs = Prefs(context)
-        prefs.listGrid = true
-        prefs.gridColumns = 2
-        prefs.gridRows = 2
+        prefs.setGridSize(Prefs.TAB_FAVORITES, 2, 2)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()

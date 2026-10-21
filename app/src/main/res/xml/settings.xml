@@ -220,24 +220,23 @@
             app:defaultValue="true"
             app:key="pref_thumbs"
             app:title="@string/pref_thumbs" />
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:key="pref_grid"
-            app:title="@string/pref_grid" />
-        <ListPreference
-            app:defaultValue="0"
-            app:entries="@array/columns_entries"
-            app:entryValues="@array/columns_values"
-            app:key="pref_grid_columns"
-            app:title="@string/pref_grid_columns"
-            app:useSimpleSummaryProvider="true" />
-        <ListPreference
-            app:defaultValue="0"
-            app:entries="@array/rows_entries"
-            app:entryValues="@array/rows_values"
-            app:key="pref_grid_rows"
-            app:title="@string/pref_grid_rows"
-            app:useSimpleSummaryProvider="true" />
+        <!-- One entry per tab; each opens that tab's view settings. -->
+        <Preference
+            app:key="view_browse"
+            app:persistent="false"
+            app:title="@string/view_browse" />
+        <Preference
+            app:key="view_favorites"
+            app:persistent="false"
+            app:title="@string/view_favorites" />
+        <Preference
+            app:key="view_history"
+            app:persistent="false"
+            app:title="@string/view_history" />
+        <Preference
+            app:key="view_bookmarks"
+            app:persistent="false"
+            app:title="@string/view_bookmarks" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_group_favorites"

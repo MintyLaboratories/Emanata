@@ -40,7 +40,8 @@
     <string name="choose_root">Storage</string>
     <string name="menu_show_hidden">Show hidden files</string>
     <string name="menu_hide_hidden">Hide hidden files</string>
-    <string name="menu_columns">Grid columns</string>
+    <string name="grid_size">Grid dimensions</string>
+    <string name="grid_size_auto">Auto</string>
     <string name="menu_ascending">Ascending</string>
     <string name="menu_descending">Descending</string>
     <string name="menu_mark_read">Mark as read</string>
@@ -168,6 +169,7 @@
     <string name="no_bookmarks_in_book">No bookmarks in this book</string>
     <string name="jump_hint">Page number</string>
     <string name="ok">OK</string>
+    <string name="done">Done</string>
     <string name="cancel">Cancel</string>
     <string name="delete">Delete</string>
     <string name="clear">Clear</string>
@@ -247,9 +249,13 @@
 
     <string name="pref_show_hidden">Show hidden files</string>
     <string name="pref_thumbs">Show page thumbnails</string>
-    <string name="pref_grid">Use grid view</string>
-    <string name="pref_grid_columns">Grid columns</string>
-    <string name="pref_grid_rows">Grid rows</string>
+    <string name="view_browse">Browse view</string>
+    <string name="view_favorites">Favorites view</string>
+    <string name="view_history">History view</string>
+    <string name="view_bookmarks">Bookmarks view</string>
+    <string name="view_grid_summary">Grid · %1$s</string>
+    <string name="layout_grid">Grid</string>
+    <string name="layout_list">List</string>
     <string name="pref_sort">Sort entries by</string>
     <string name="pref_sort_dir">Sort direction</string>
     <string name="pref_show_filenames">Show file names</string>
@@ -517,41 +523,7 @@
         <item>bottom_top</item>
     </string-array>
 
-    <string-array name="columns_entries">
-        <item>Auto</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-        <item>5</item>
-        <item>6</item>
-    </string-array>
-    <string-array name="columns_values">
-        <item>0</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-        <item>5</item>
-        <item>6</item>
-    </string-array>
 
-    <string-array name="rows_entries">
-        <item>Auto</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-        <item>5</item>
-        <item>6</item>
-    </string-array>
-    <string-array name="rows_values">
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-        <item>5</item>
-        <item>6</item>
-    </string-array>
 
     <string-array name="preload_entries">
         <item>Off</item>

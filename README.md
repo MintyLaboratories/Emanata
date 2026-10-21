@@ -115,7 +115,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Page grids show each page's **preview** at once, then the exact page in its
   place. Previews (256 px) are kept on disk whenever a page is decoded, for any
   reason; a page never decoded gets a quick one where its format allows (JPEG
-  at 1/8 scale, WebP scaled while decoding). Folder peeks reuse the library's
+  at 1/8 scale, WebP scaled while decoding, AVIF from an embedded thumbnail or
+  a layered file's small first layer, Android 12+). Folder peeks reuse the library's
   covers and make missing ones nearest the middle of the view first.
 - Incremental search within the current folder.
 - Favorites (star) and reading history, with jump-back to the last page read.

@@ -71,6 +71,35 @@ class QuickPreviewTest {
         assertArrayEquals(jpeg, Decoders.quickBytes(ByteArrayInputStream(jpeg)))
     }
 
+    private fun avif(name: String): ByteArray =
+        javaClass.classLoader!!.getResourceAsStream("avif/$name")!!.use { it.readBytes() }
+
+    @Test
+    fun avifQuickBytesStopAtTheFirstLayer() {
+        val layered = avif("layered.avif")
+        val input = ByteArrayInputStream(layered)
+        val bytes = Decoders.quickBytes(input)
+        // ftyp and meta, then the 1388-byte first layer from 299 on (AvifPreviewTest).
+        assertEquals(299 + 1388, bytes!!.size)
+        assertEquals(layered.size - bytes.size, input.available())
+    }
+
+    @Test
+    fun avifWithoutPreviewIsReadOnlyToItsMetadata() {
+        val single = avif("single.avif")
+        val input = ByteArrayInputStream(single)
+        assertNull(Decoders.quickBytes(input))
+        // ftyp (32) and meta (235).
+        assertEquals(single.size - 267, input.available())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun avifHasNoQuickPreviewBeforeApi31() {
+        assertNull(Decoders.quickBytes(ByteArrayInputStream(avif("layered.avif"))))
+        assertNull(Decoders.preview(avif("layered.avif")))
+    }
+
     @Test
     fun archivePagesPreviewByFormat() {
         val f = Fixtures.zip(

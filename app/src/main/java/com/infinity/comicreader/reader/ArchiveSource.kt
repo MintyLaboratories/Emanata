@@ -26,10 +26,14 @@ class ArchiveSource(
     private val firstPageOnly: Boolean = false,
     private val maxOpenInner: Int = MAX_OPEN_INNER
 ) : PageSource {
-    /** One archive of the book; [copy] is null for the root, which is never closed early. */
+    /**
+     * One archive of the book; [copy] is null for the root, which is never closed early.
+     * [randomAccess] is its reader's, kept once known, as the reader may close for room.
+     */
     private class Slot(val copy: File?, var reader: ArchiveReader?) {
         var users = 0
         var lastUse = 0L
+        var randomAccess: Boolean? = null
     }
 
     private class Page(val path: String, val slot: Slot, val entry: ArchiveEntry)
@@ -78,6 +82,7 @@ class ArchiveSource(
     private fun acquire(slot: Slot): ArchiveReader = synchronized(lock) {
         if (closed) throw IOException("Source closed")
         val reader = slot.reader ?: reopen(slot)
+        if (slot.randomAccess == null) slot.randomAccess = reader.randomAccess
         slot.users++
         slot.lastUse = ++clock
         evict()
@@ -113,7 +118,7 @@ class ArchiveSource(
     override val pageCount: Int get() = pages.size
 
     /** False when any archive holding pages is solid. */
-    override val cheapSizes: Boolean = synchronized(lock) { pages.map { it.slot }.distinct().all { it.reader?.randomAccess != false } }
+    override val cheapSizes: Boolean = synchronized(lock) { pages.map { it.slot }.distinct().all { it.randomAccess == true } }
 
     /** Path of each page, inner archives included as folders, in page order. */
     val pagePaths: List<String> get() = pages.map { it.path }

@@ -136,4 +136,23 @@ class ArchiveSourceTest {
         val f = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg", jpeg))
         open(f).use { src -> assertEquals(listOf(1300, 2000), src.pageSize(0)?.toList()) }
     }
+
+    @Test
+    fun aSolidInnerArchiveClosedForRoomStillMakesSizesCostly() {
+        val solid = Fixtures.sevenZip(File(tmp.root, "a.cb7"), entry("01.jpg"), entry("02.jpg")).readBytes()
+        val plain = { name: String -> Fixtures.zip(File(tmp.root, name), entry("01.jpg"), entry("02.jpg")).readBytes() }
+        val outer = Fixtures.zip(
+            File(tmp.root, "set.cbz"),
+            "a.cb7" to solid, "b.cbz" to plain("b.cbz"), "c.cbz" to plain("c.cbz")
+        )
+        val cache = tmp.newFolder("nested")
+        ArchiveSource(ZipReader(outer, "UTF-8"), NestedArchives.keyOf(outer), NestedArchives(cache, "UTF-8"), maxOpenInner = 1).use { src ->
+            assertEquals(6, src.pageCount)
+            assertFalse(src.cheapSizes)
+        }
+        val zips = Fixtures.zip(File(tmp.root, "zips.cbz"), "b.cbz" to plain("b.cbz"), "c.cbz" to plain("c.cbz"))
+        ArchiveSource(ZipReader(zips, "UTF-8"), NestedArchives.keyOf(zips), NestedArchives(tmp.newFolder("nested2"), "UTF-8"), maxOpenInner = 1).use {
+            assertTrue(it.cheapSizes)
+        }
+    }
 }

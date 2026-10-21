@@ -226,6 +226,7 @@ class ViewerActivityMenuTest {
     @Test
     fun aLongPressOnASpreadNamesThePagePressed() {
         Prefs(context).twoPage = TwoPage.ON
+        Prefs(context).coverAlone = false
         // Left to right, then a right-to-left book (from its ComicInfo), whose first page is on the right.
         for ((comicInfo, leftPage) in listOf(null to 1, info to 2)) {
             val (left, right) = launch(book(comicInfo)).pager(1600, 1000).shownImages()
@@ -249,6 +250,7 @@ class ViewerActivityMenuTest {
     @Test
     fun landscapeOnlyPairsPagesAfterATurnAndPartsThemAfterATurnBack() {
         Prefs(context).twoPage = TwoPage.LANDSCAPE
+        Prefs(context).coverAlone = false
         val viewer = launch(book())
         val pager = viewer.pager()
         assertEquals(4, pager.adapter!!.itemCount)

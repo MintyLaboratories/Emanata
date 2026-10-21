@@ -4,9 +4,9 @@ import org.json.JSONObject
 
 /**
  * How the reader lays pages out: [mode] (paged, vertical or long strip), reading
- * direction [dir] ("ltr" or "rtl"), [fit], [twoPage], [autoCrop] and the page gap
- * [spacing] in dp. Mode and direction stay separate fields, so a later paged /
- * continuous × direction split only changes their values.
+ * direction [dir] ("ltr" or "rtl"), [fit], [twoPage], [autoCrop], the page gap
+ * [spacing] in dp and how [spreads] in one file show. Mode and direction stay separate
+ * fields, so a later paged / continuous × direction split only changes their values.
  */
 data class ReaderLayout(
     val mode: String = MODE_PAGED,
@@ -14,7 +14,8 @@ data class ReaderLayout(
     val fit: String = "screen",
     val twoPage: TwoPage = TwoPage.OFF,
     val autoCrop: Boolean = false,
-    val spacing: Int = 0
+    val spacing: Int = 0,
+    val spreads: SpreadDisplay = SpreadDisplay.MERGE
 ) {
     companion object {
         const val MODE_PAGED = "paged"
@@ -23,7 +24,7 @@ data class ReaderLayout(
         val MODES = listOf(MODE_PAGED, MODE_VERTICAL, MODE_LONGSTRIP)
 
         /** The global defaults in [p]. */
-        fun of(p: Prefs) = ReaderLayout(p.pageMode, p.readingDir, p.fit, p.twoPage, p.autoCrop, p.pageSpacing)
+        fun of(p: Prefs) = ReaderLayout(p.pageMode, p.readingDir, p.fit, p.twoPage, p.autoCrop, p.pageSpacing, p.spreads)
     }
 }
 
@@ -59,7 +60,7 @@ sealed class FolderLayout {
     fun encode(): JSONObject = when (this) {
         is Direction -> JSONObject().put(DIR, dir)
         is Frozen -> JSONObject().put(ALL, true).put(MODE, layout.mode).put(DIR, layout.dir).put(FIT, layout.fit)
-            .put(TWO, layout.twoPage.key).put(CROP, layout.autoCrop).put(GAP, layout.spacing)
+            .put(TWO, layout.twoPage.key).put(CROP, layout.autoCrop).put(GAP, layout.spacing).put(SPREADS, layout.spreads.key)
             .apply { if (!dirChosen) put(CHOSEN, false) }
     }
 
@@ -71,6 +72,7 @@ sealed class FolderLayout {
         private const val TWO = "two"
         private const val CROP = "crop"
         private const val GAP = "gap"
+        private const val SPREADS = "spreads"
         private const val CHOSEN = "chosen"
 
         private fun dirOf(o: JSONObject) = if (o.optString(DIR) == "rtl") "rtl" else "ltr"
@@ -92,7 +94,8 @@ sealed class FolderLayout {
                     fit = o.optString(FIT, "screen").ifEmpty { "screen" },
                     twoPage = if (two is Boolean) TwoPage.of(two) else TwoPage.of(two as? String),
                     autoCrop = o.optBoolean(CROP, defaults.autoCrop),
-                    spacing = o.optInt(GAP, defaults.spacing).coerceIn(0, Prefs.PAGE_SPACING_MAX)
+                    spacing = o.optInt(GAP, defaults.spacing).coerceIn(0, Prefs.PAGE_SPACING_MAX),
+                    spreads = if (o.has(SPREADS)) SpreadDisplay.of(o.optString(SPREADS)) else defaults.spreads
                 ),
                 dirChosen = o.optBoolean(CHOSEN, true)
             )

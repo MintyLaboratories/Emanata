@@ -152,13 +152,21 @@ class PdfSource(file: File) : PageSource {
          * Where [target] lays out a [pw] x [ph]-point page ([vectorTarget]). With auto-crop,
          * [content] finds the content in a first render at the uncropped plan, and the
          * content then fills the target ([cropPlan]); without content found the page does.
+         * [Target.half] then takes one half of that ([halfPlan]).
          */
         fun plan(target: Target, pw: Double, ph: Double, content: (Plan) -> Rect?): Plan {
             val sized = vectorTarget(target, pw)
             val plan = sized.plan(pw, ph)
-            if (!target.autoCrop) return plan
-            val bounds = content(plan) ?: return plan
-            return cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
+            val bounds = if (target.autoCrop) content(plan) else null
+            val cropped = if (bounds == null) plan else cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
+            return if (target.half == Half.WHOLE) cropped else halfPlan(sized, cropped)
+        }
+
+        /** The plan for [Target.half] of what [whole] shows, in the same page points. */
+        fun halfPlan(target: Target, whole: Plan): Plan {
+            val w = whole.spanW / 2
+            val x = if (target.half == Half.RIGHT) whole.x + w else whole.x
+            return target.plan(w, whole.spanH, x, whole.y)
         }
 
         /**

@@ -4,6 +4,9 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
+/** The part of a source a decode shows: all of it, or its left or right half (one page of a spread in one file). */
+enum class Half { WHOLE, LEFT, RIGHT }
+
 /** How a decode maps its source onto the [Target] box. */
 enum class Fit {
     /** Keeps the aspect ratio and fits inside the box, enlarging small images too. */
@@ -29,6 +32,8 @@ enum class Fit {
  * [anchorTop] makes [COVER][Fit.COVER] keep the top of a source too tall for the
  * box, cropping only its bottom; sides are always cropped evenly.
  *
+ * [half] shows one half of the source, split after any auto-crop ([area]).
+ *
  * [linear] shrinks in linear light; enlarging stays in sRGB, where Lanczos halos are
  * fainter. [capPixels] bounds the decoded source: a larger
  * image is first reduced by the decoder's own power-of-two sampling (see [Decoders]).
@@ -43,8 +48,27 @@ data class Target(
     val autoCrop: Boolean = false,
     val linear: Boolean = false,
     val capPixels: Long = DEFAULT_CAP_PIXELS,
-    val anchorTop: Boolean = false
+    val anchorTop: Boolean = false,
+    val half: Half = Half.WHOLE
 ) {
+    /**
+     * `[left, top, right, bottom]` of a [srcW] x [srcH] source that this target shows: the
+     * content [bounds] auto-crop found in the same form (all of it when null), then its
+     * [half], the left one taking the floor of an odd width.
+     */
+    fun area(srcW: Int, srcH: Int, bounds: IntArray? = null): IntArray {
+        var l = bounds?.get(0) ?: 0
+        val t = bounds?.get(1) ?: 0
+        var r = bounds?.get(2) ?: srcW
+        val b = bounds?.get(3) ?: srcH
+        when (half) {
+            Half.LEFT -> r = l + (r - l) / 2
+            Half.RIGHT -> l += (r - l) / 2
+            Half.WHOLE -> Unit
+        }
+        return intArrayOf(l, t, r, b)
+    }
+
     /** What to produce from a [srcW] x [srcH] source region at ([left], [top]), in source pixels. */
     fun plan(srcW: Double, srcH: Double, left: Double = 0.0, top: Double = 0.0): Plan {
         require(srcW > 0 && srcH > 0) { "Empty source" }
@@ -110,7 +134,7 @@ data class Target(
      * the source whole first (up to [capPixels]), beside its crop with auto-crop.
      */
     fun detail(size: IntArray?, maxBytes: Long): Target {
-        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels)
+        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half)
         if (size == null || size[0] <= 0 || size[1] <= 0) return full
         val bytes = size[0].toLong() * size[1] * 4
         if (bytes <= maxBytes) return full

@@ -325,6 +325,15 @@
     <string name="two_page_off">Off</string>
     <string name="two_page_on">On</string>
     <string name="two_page_landscape">Landscape only</string>
+    <string name="menu_shift_pairs">Shift pairs by one page (this book)</string>
+    <string name="menu_spreads">Spreads</string>
+    <string name="spreads_split">Split</string>
+    <string name="spreads_merge">Merge</string>
+    <string name="pref_spreads">Spreads in one file</string>
+    <string name="pref_cover_alone">First page alone</string>
+    <string name="pref_cover_alone_desc">Two-page reading shows the first page or cover on its own</string>
+    <string name="pref_rotate_spreads">Rotate for spreads</string>
+    <string name="pref_rotate_spreads_desc">Turn to landscape while a wide page shows whole</string>
 
     <string name="pref_tap_zones">Tap zones (previous/next)</string>
     <string name="pref_tap_zones_mirror">Mirror left/right zones in right-to-left books</string>
@@ -601,6 +610,14 @@
         <item>off</item>
         <item>on</item>
         <item>landscape</item>
+    </string-array>
+    <string-array name="spreads_entries">
+        <item>@string/spreads_split</item>
+        <item>@string/spreads_merge</item>
+    </string-array>
+    <string-array name="spreads_values">
+        <item>split</item>
+        <item>merge</item>
     </string-array>
     <string-array name="resume_mode_entries">
         <item>@string/resume_ask</item>

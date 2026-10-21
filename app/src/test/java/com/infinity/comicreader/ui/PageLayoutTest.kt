@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.ui.PageLayout.Companion.NONE
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -143,5 +144,59 @@ class PageLayoutTest {
         assertEquals(0, rtl.slotOf(3, 5))
         assertEquals(0, single.slotOf(3, 5))
         assertEquals(-1, ltr.slotOf(7, 5))
+    }
+
+    // ------------------------------------------------------------------ views
+
+    private val pairs = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3), intArrayOf(4, 5)), spread = true, rtl = false)
+
+    @Test
+    fun viewsMapItemsToTheirPages() {
+        assertEquals(4, pairs.itemCount(6))
+        assertEquals(listOf(0, 1, 1, 2, 3, 3), (0 until 6).map { pairs.itemOf(it) })
+        assertEquals(1, pairs.firstPage(1))
+        assertEquals(2, pairs.lastPage(1, 6))
+        assertArrayEquals(intArrayOf(0, NONE), pairs.slots(0, 6))
+        assertArrayEquals(intArrayOf(4, 5), pairs.slots(3, 6))
+        assertTrue(pairs.alone(2, 6))
+        assertFalse(pairs.alone(3, 6))
+        assertTrue(pairs.isLastItem(3, 6))
+        assertFalse(pairs.isLastItem(2, 6))
+        // Out of the book: before the first page, past the last.
+        assertEquals(-1, pairs.firstPage(-1))
+        assertEquals(6, pairs.firstPage(4))
+    }
+
+    @Test
+    fun viewsInRightToLeftPutTheFirstPageOnTheRight() {
+        val rtlPairs = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2)), spread = true, rtl = true)
+        assertArrayEquals(intArrayOf(2, 1), rtlPairs.slots(1, 3))
+        assertArrayEquals(intArrayOf(0, NONE), rtlPairs.slots(0, 3))
+    }
+
+    @Test
+    fun halvesOfAPageTakeTwoItems() {
+        val views = listOf(
+            listOf(PageLayout.Part(0)),
+            listOf(PageLayout.Part(1, Half.LEFT)), listOf(PageLayout.Part(1, Half.RIGHT)),
+            listOf(PageLayout.Part(2))
+        )
+        val split = PageLayout(spread = false, views = views)
+        assertTrue(split.grouped)
+        assertEquals(4, split.itemCount(3))
+        assertEquals(1, split.itemOf(1))
+        assertEquals(2, split.itemOf(PageLayout.Part(1, Half.RIGHT)))
+        assertEquals(1, split.firstPage(2))
+        assertEquals(PageLayout.Part(1, Half.RIGHT), split.parts(2, 3).single())
+        assertEquals(3, split.itemOf(2))
+        assertTrue(split.sameAs(PageLayout(spread = false, views = views)))
+        assertFalse(split.sameAs(PageLayout(spread = false)))
+    }
+
+    @Test
+    fun positionalLayoutsAreNotGrouped() {
+        assertFalse(single.grouped)
+        assertTrue(ltr.grouped)
+        assertTrue(ltr.sameAs(PageLayout(spread = true)))
     }
 }

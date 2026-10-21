@@ -149,4 +149,20 @@ class TargetTest {
         // A cropped page fits the same box, never enlarged.
         assertEquals(1000 to 1500, size(detail.plan(1000.0, 1500.0)))
     }
+
+    @Test
+    fun halvesSplitWhatAutoCropLeaves() {
+        assertEquals(listOf(0, 0, 2000, 1500), Target().area(2000, 1500).toList())
+        assertEquals(listOf(0, 0, 1000, 1500), Target(half = Half.LEFT).area(2000, 1500).toList())
+        assertEquals(listOf(1000, 0, 2000, 1500), Target(half = Half.RIGHT).area(2000, 1500).toList())
+        // Cropped first: the halves meet in the middle of the content, the left taking the floor.
+        val bounds = intArrayOf(101, 20, 1902, 1480)
+        assertEquals(listOf(101, 20, 1001, 1480), Target(half = Half.LEFT).area(2000, 1500, bounds).toList())
+        assertEquals(listOf(1001, 20, 1902, 1480), Target(half = Half.RIGHT).area(2000, 1500, bounds).toList())
+    }
+
+    @Test
+    fun aHalfKeepsItsSideAtFullDetail() {
+        assertEquals(Half.RIGHT, Target(800, 600, half = Half.RIGHT).detail(intArrayOf(4000, 3000), Long.MAX_VALUE).half)
+    }
 }

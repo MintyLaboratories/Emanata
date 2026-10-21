@@ -106,8 +106,24 @@ class Prefs(context: Context) {
             .putString(KEY_TWO_PAGE, layout.twoPage.key)
             .putBoolean(KEY_AUTO_CROP, layout.autoCrop)
             .putInt(KEY_SPACING, layout.spacing.coerceIn(0, PAGE_SPACING_MAX))
+            .putString(KEY_SPREADS, layout.spreads.key)
             .apply()
     }
+
+    /** How paged reading shows a spread in one file. */
+    var spreads: SpreadDisplay
+        get() = SpreadDisplay.of(sp.getString(KEY_SPREADS, null))
+        set(v) = put(KEY_SPREADS, v.key)
+
+    /** Two-page reading shows the first page, or a cover, alone. */
+    var coverAlone: Boolean
+        get() = bool(KEY_COVER_ALONE, true)
+        set(v) = put(KEY_COVER_ALONE, v)
+
+    /** Paged reading in portrait turns the screen to landscape while a wide page shows whole. */
+    var rotateSpreads: Boolean
+        get() = bool(KEY_ROTATE_SPREADS, true)
+        set(v) = put(KEY_ROTATE_SPREADS, v)
 
     var autoNext: Boolean
         get() = bool(KEY_AUTO_NEXT, true)
@@ -494,6 +510,9 @@ class Prefs(context: Context) {
         private const val KEY_PER_SERIES = "pref_per_series"
         private const val KEY_DETECT_DIRECTION = "pref_detect_direction"
         private const val KEY_LINEAR_LIGHT = "pref_linear_light"
+        private const val KEY_SPREADS = "pref_spreads"
+        private const val KEY_COVER_ALONE = "pref_cover_alone"
+        private const val KEY_ROTATE_SPREADS = "pref_rotate_spreads"
 
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -505,7 +524,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS
+            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

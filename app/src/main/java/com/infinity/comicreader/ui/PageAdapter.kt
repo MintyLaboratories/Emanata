@@ -20,6 +20,7 @@ import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Filters
+import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
@@ -73,7 +74,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
- * (linear-light scaling) changes.
+ * (linear-light scaling) changes. Paged items follow [pageLayout] when one is given (the
+ * spread engine's pairs, or pages split in halves), else pages pair by position with
+ * [twoPage].
  *
  * Vertical and long-strip layouts may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
@@ -91,7 +94,8 @@ class PageAdapter(
     private val linear: Boolean = false,
     private val preload: Int = 2,
     private val fling: Boolean = false,
-    private val onLongPress: ((Int) -> Unit)? = null
+    private val onLongPress: ((Int) -> Unit)? = null,
+    pageLayout: PageLayout? = null
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, VERTICAL, LONG_STRIP }
@@ -124,7 +128,7 @@ class PageAdapter(
         Choreographer.getInstance().postFrameCallback { mainHandler.post { if (!released) timing.drawn() } }
         // Canceling can complete handlers inline, which edit [pending]: iterate a copy.
         for (entry in pending.values.toList()) {
-            if (entry.key != keyFor(entry.key.page)) {
+            if (entry.key != keyFor(entry.key.part)) {
                 entry.deferred.cancel()
                 if (pending[entry.key] === entry) pending.remove(entry.key)
             }
@@ -132,7 +136,7 @@ class PageAdapter(
         // Old sizes of pages off screen make room for preloading at the new one.
         val shown = images.filter { it.drawable != null }.mapNotNullTo(HashSet()) { pageOf[it] }
         for (key in cache.snapshot().keys) {
-            if (key.page !in shown && key != keyFor(key.page)) cache.remove(key)
+            if (key.page !in shown && key != keyFor(key.part)) cache.remove(key)
         }
         notifyItemRangeChanged(0, itemCount, RESIZE)
     }
@@ -172,7 +176,13 @@ class PageAdapter(
     }
 
     /** A page decoded for one exact [target]; the same page at another size is another entry. */
-    internal data class PageKey(val page: Int, val target: Target)
+    internal data class PageKey(val page: Int, val target: Target) {
+        /** The part of the layout it shows. */
+        val part: PageLayout.Part get() = PageLayout.Part(page, target.half)
+
+        /** Which part this is, as [PageHolder.shown] keeps it. */
+        val code: Int get() = codeOf(part)
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val gate = Semaphore(DECODE_THREADS)
@@ -205,8 +215,8 @@ class PageAdapter(
     private var layoutListener: View.OnLayoutChangeListener? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val spread = twoPage && mode == Mode.PAGED
-    private val layout = PageLayout(spread, rtl)
+    private val layout = pageLayout?.takeIf { mode == Mode.PAGED } ?: PageLayout(twoPage && mode == Mode.PAGED, rtl)
+    private val spread = layout.spread
 
     /** A chapter's source, open while its pages can be addressed or are decoding. */
     private class Segment(
@@ -237,7 +247,7 @@ class PageAdapter(
         internal val decodes = arrayOfNulls<Pending>(images.size)
         val waiters = arrayOfNulls<Job>(images.size)
 
-        /** The page each image shows, at whatever size, or [NO_PAGE]. */
+        /** The part each image shows ([codeOf]), at whatever size, or [NO_PAGE]. */
         val shown = IntArray(images.size) { NO_PAGE }
     }
 
@@ -365,14 +375,14 @@ class PageAdapter(
     }
 
     override fun onBindViewHolder(holder: PageHolder, position: Int) {
-        val pages = strip.slots(position)
-        for (slot in pages.indices) {
-            val page = pages[slot]
-            // The lone last page of a spread takes the whole row.
-            if (spread) holder.images[slot].visibility = if (page == NO_PAGE) View.GONE else View.VISIBLE
-            bindImage(holder, slot, page)
+        val parts = strip.parts(position)
+        for (slot in parts.indices) {
+            val part = parts[slot]
+            // A lone page of a spread takes the whole row.
+            if (spread) holder.images[slot].visibility = if (part == null) View.GONE else View.VISIBLE
+            bindImage(holder, slot, part)
         }
-        prefetchAfter(strip.lastPage(position))
+        prefetchAfter(position)
     }
 
     /**
@@ -462,7 +472,7 @@ class PageAdapter(
      * its size or fit ([Target.detail]), so a zoom after a new fit finds it still loaded.
      */
     private fun detailKey(key: PageKey) =
-        PageKey(key.page, Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels))
+        PageKey(key.page, Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels, half = key.target.half))
 
     /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
     private inner class SlotDetail(private val holder: PageHolder, val key: PageKey) : ZoomImageView.DetailSource {
@@ -493,18 +503,20 @@ class PageAdapter(
 
     // ------------------------------------------------------------------ binding
 
-    private fun bindImage(holder: PageHolder, slot: Int, pageIndex: Int) {
+    private fun bindImage(holder: PageHolder, slot: Int, part: PageLayout.Part?) {
         val image = holder.images[slot]
         stopWaiting(holder, slot)
+        val pageIndex = part?.page ?: NO_PAGE
         pageOf[image] = pageIndex
-        if (pageIndex < 0 || pageIndex >= end) {
+        if (part == null || pageIndex < 0 || pageIndex >= end) {
             clearImage(holder, slot)
             return
         }
         image.look = look
         prepareContainer(holder, pageIndex)
 
-        val key = keyFor(pageIndex)
+        val key = keyFor(part)
+        val code = key.code
         val cached = cache.get(key)
         if (cached != null) {
             showBitmap(holder, slot, key, cached)
@@ -515,14 +527,14 @@ class PageAdapter(
             return
         }
         // The page at another size stands in, scaled to the new one, until that arrives.
-        if (holder.shown[slot] == pageIndex) {
+        if (holder.shown[slot] == code) {
             image.setFitMode(fitMode)
         } else {
-            val standIn = cache.snapshot().entries.lastOrNull { it.key.page == pageIndex }
+            val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
             if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
         }
-        if (holder.shown[slot] == pageIndex) timing.standIn(image)
-        if (holder.shown[slot] == pageIndex && details.loaded(detailKey(key))) {
+        if (holder.shown[slot] == code) timing.standIn(image)
+        if (holder.shown[slot] == code && details.loaded(detailKey(key))) {
             renderFromDetail(holder, slot, key)
             return
         }
@@ -568,26 +580,32 @@ class PageAdapter(
         }) { bitmap ->
             holder.waiters[slot] = null
             cache.put(key, bitmap)
-            if (holder.shown[slot] == key.page) showBitmap(holder, slot, key, bitmap)
+            if (holder.shown[slot] == key.code) showBitmap(holder, slot, key, bitmap)
         }
         if (!decoding) holder.waiters[slot] = job
     }
 
     /**
-     * The decode [page] needs now: its exact on-screen size for the current item size,
+     * The decode [part] needs now: its exact on-screen size for the current item size,
      * fit mode and place in a spread, so it is drawn at 1:1.
      */
-    private fun keyFor(page: Int): PageKey {
+    private fun keyFor(part: PageLayout.Part): PageKey {
         val (w, h) = itemSize()
         sizedW = w
         sizedH = h
-        val slot = when {
-            !spread || layout.shownAlone(page, end) -> PageTargets.Slot.ALONE
-            layout.slotOf(page, end) == 0 -> PageTargets.Slot.LEFT
-            else -> PageTargets.Slot.RIGHT
+        val slot = if (spread) {
+            val parts = layout.parts(layout.itemOf(part), end)
+            when {
+                parts.count { it != null } <= 1 -> PageTargets.Slot.ALONE
+                parts[0] == part -> PageTargets.Slot.LEFT
+                else -> PageTargets.Slot.RIGHT
+            }
+        } else {
+            PageTargets.Slot.ALONE
         }
         val view = PageTargets.viewSize(mode, spread, w, h, spacingPx, slot)
-        return PageKey(page, PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear))
+        val target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear)
+        return PageKey(part.page, if (part.half == Half.WHOLE) target else target.copy(half = part.half))
     }
 
     /** Forgets the decode [slot] was waiting for; abandons it if nobody else wants it. */
@@ -621,7 +639,7 @@ class PageAdapter(
     private fun showBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
         when {
-            holder.shown[slot] != key.page -> applyBitmap(holder, slot, key, bitmap)
+            holder.shown[slot] != key.code -> applyBitmap(holder, slot, key, bitmap)
             (image.drawable as? BitmapDrawable)?.bitmap === bitmap -> image.setFitMode(fitMode)
             else -> {
                 // A cached bitmap can arrive at once, before the stand-in took the new fit.
@@ -638,7 +656,7 @@ class PageAdapter(
         image.setImageBitmap(bitmap)
         image.setFitMode(fitMode)
         image.detailSource = SlotDetail(holder, key)
-        holder.shown[slot] = key.page
+        holder.shown[slot] = key.code
     }
 
     private fun clearImage(holder: PageHolder, slot: Int) {
@@ -726,15 +744,19 @@ class PageAdapter(
         return entry
     }
 
-    /** Decodes the [preload] pages after [lastShown] into the cache. */
-    private fun prefetchAfter(lastShown: Int) {
-        val ahead = if (mode == Mode.LONG_STRIP) minOf(preload, MAX_STRIP_PRELOAD) else preload
-        for (k in 1..ahead) {
-            val p = lastShown + k
-            if (p >= end) break
-            val key = keyFor(p)
-            if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) continue
-            request(key).prefetch = true
+    /** Decodes the [preload] parts on the items after [position] into the cache. */
+    private fun prefetchAfter(position: Int) {
+        var ahead = if (mode == Mode.LONG_STRIP) minOf(preload, MAX_STRIP_PRELOAD) else preload
+        var item = position + 1
+        while (ahead > 0 && item < itemCount) {
+            for (part in strip.parts(item)) {
+                if (part == null || ahead <= 0) continue
+                ahead--
+                val key = keyFor(part)
+                if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) continue
+                request(key).prefetch = true
+            }
+            item++
         }
     }
 
@@ -807,6 +829,9 @@ class PageAdapter(
         /** Rebinds an item on its own holder, which keeps its bitmaps meanwhile. */
         private val RESIZE = Any()
         private val WHOLE_PAGE = Region(0.0, 0.0, 1.0, 1.0)
+
+        /** [part] as one number: its page and half. */
+        internal fun codeOf(part: PageLayout.Part): Int = part.page * 3 + part.half.ordinal
 
         /**
          * [bitmap] as an immutable bitmap, copied if it is mutable (which it then recycles):

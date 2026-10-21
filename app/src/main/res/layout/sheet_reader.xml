@@ -177,6 +177,32 @@
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_shift"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/menu_shift_pairs" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/menu_spreads" />
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_spreads"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_spreads_split"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/spreads_split" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_spreads_merge"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/spreads_merge" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_auto_crop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -329,6 +355,14 @@
                 style="@style/Widget.ComicReader.SheetSegment"
                 android:text="@string/orientation_landscape" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_rotate_spreads"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_3"
+            android:minHeight="48dp"
+            android:text="@string/pref_rotate_spreads" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_more_settings"

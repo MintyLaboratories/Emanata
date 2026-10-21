@@ -111,4 +111,17 @@ class PdfPlanTest {
         assertEquals(crop.width.toFloat(), pts[2], 0.01f)
         assertEquals(crop.height.toFloat(), pts[3], 0.01f)
     }
+
+    @Test
+    fun aHalfRendersOneSideOfThePageAtTheSizeAskedFor() {
+        val wide = 1224.0
+        val left = PdfSource.plan(Target(900, 1400, half = Half.LEFT), wide, ph) { null }
+        val right = PdfSource.plan(Target(900, 1400, half = Half.RIGHT), wide, ph) { null }
+        assertEquals(0.0, left.x, 1e-9)
+        assertEquals(612.0, left.spanW, 1e-9)
+        assertEquals(612.0, right.x, 1e-9)
+        assertEquals(612.0, right.spanW, 1e-9)
+        assertEquals(left.width, right.width)
+        assertEquals(900, left.width)
+    }
 }

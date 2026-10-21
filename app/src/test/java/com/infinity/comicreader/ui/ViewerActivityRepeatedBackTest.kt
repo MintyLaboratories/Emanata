@@ -333,6 +333,7 @@ class ViewerActivityRepeatedBackTest {
     @Test
     fun inTwoPageModeAtItsLastSpread() {
         prefs.twoPage = TwoPage.ON
+        prefs.coverAlone = false
         // Six pages make three spreads.
         assertEquals(2, launch(first, Int.MAX_VALUE).page())
     }

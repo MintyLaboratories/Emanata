@@ -88,8 +88,8 @@ object Spreads {
     class Analysis(val pages: List<Page>, val landscape: Boolean) {
         val size: Int get() = pages.size
 
-        /** True when page [i] is wide (aspect at least 1). */
-        fun wide(i: Int): Boolean = pages.getOrNull(i)?.let { it.aspect >= 1.0 } == true
+        /** True when page [i] is wider than tall. */
+        fun wide(i: Int): Boolean = pages.getOrNull(i)?.let { it.aspect > 1.0 } == true
 
         /**
          * True when page [i] is a spread in one file that can be shown as its two halves:
@@ -98,7 +98,7 @@ object Spreads {
          */
         fun splittable(i: Int): Boolean {
             val p = pages.getOrNull(i) ?: return false
-            if (landscape || i == 0 || p.cover || p.aspect < 1.0) return false
+            if (landscape || i == 0 || p.cover || p.aspect <= 1.0) return false
             return p.kind == Kind.SPREAD || p.kind == Kind.SPREAD_WIDE || p.kind == Kind.WIDE
         }
     }
@@ -203,13 +203,14 @@ object Spreads {
         // Portrait shape of the book: wide and tall pages are judged against it.
         val portrait = aspects.filter { it > 0 && it < 1.0 }.sorted()
         val m = if (portrait.isEmpty()) 0.66 else portrait[portrait.size / 2]
-        val wideAt = maxOf(1.0, 1.45 * m)
+        // Wider than tall, and clearly wider than the book's pages.
+        val wide = { a: Double -> a > 1.0 && a >= 1.45 * m }
         val known = aspects.count { it > 0 }
-        val landscape = known > 0 && aspects.count { it >= wideAt } * 10 >= known * 6
+        val landscape = known > 0 && aspects.count(wide) * 10 >= known * 6
 
         val kinds = arrayOfNulls<Kind>(n)
         val last = LongArray(n) { -1 }
-        for (f in families) classifyFamily(f, names, aspects, wideAt, kinds, last)
+        for (f in families) classifyFamily(f, names, aspects, wide, kinds, last)
 
         // Pages outside every family.
         val firstAssigned = (0 until n).firstOrNull { familyOf[it] >= 0 } ?: n
@@ -218,7 +219,7 @@ object Spreads {
             if (kinds[i] != null) continue
             val a = aspects[i]
             kinds[i] = when {
-                a >= wideAt -> Kind.WIDE
+                wide(a) -> Kind.WIDE
                 a > 0 && a < 0.4 * m -> Kind.TALL
                 isTrailingTag(i, names, familyOf) -> Kind.TAG
                 !mostlyNumbered -> Kind.STORY
@@ -289,7 +290,7 @@ object Spreads {
         }
     }
 
-    private fun classifyFamily(f: Family, names: List<Name>, aspects: DoubleArray, wideAt: Double, kinds: Array<Kind?>, last: LongArray) {
+    private fun classifyFamily(f: Family, names: List<Name>, aspects: DoubleArray, wide: (Double) -> Boolean, kinds: Array<Kind?>, last: LongArray) {
         val members = f.members
         val withNext = members.filter { it.next != null }
         val constSuffix = members.groupingBy { it.token.suffix }.eachCount()
@@ -319,7 +320,7 @@ object Spreads {
                     last[page] = b!!
                     if (a > 0 && a < 1.0) Kind.HALF_SPREAD else Kind.SPREAD
                 }
-                a >= wideAt && !blockCover -> if (t.value + 1 in values) Kind.WIDE else Kind.SPREAD_WIDE.also { last[page] = t.value + 1 }
+                wide(a) && !blockCover -> if (t.value + 1 in values) Kind.WIDE else Kind.SPREAD_WIDE.also { last[page] = t.value + 1 }
                 blockCover -> if (frontSeen) Kind.VARIANT_COVER else Kind.FRONT_COVER.also { frontSeen = true }
                 keyword && page == lastPage -> Kind.BACK_COVER
                 keyword -> Kind.INTERIOR_COVER

@@ -68,5 +68,6 @@ class PreviewingSource(
     }
 
     /** True when a page made to [target] shows all of the page, uncropped and undistorted. */
-    private fun isWholePage(target: Target) = !target.autoCrop && (target.fit == Fit.INSIDE || target.fit == Fit.SHRINK)
+    private fun isWholePage(target: Target) =
+        !target.autoCrop && target.half == Half.WHOLE && (target.fit == Fit.INSIDE || target.fit == Fit.SHRINK)
 }

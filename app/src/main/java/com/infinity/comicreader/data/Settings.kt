@@ -84,7 +84,10 @@ data class ReaderSettings(
     val brightnessGesture: Boolean,
     val doubleTapZoom: Boolean,
     val fling: Boolean,
-    val charset: String
+    val charset: String,
+    val spreads: SpreadDisplay = SpreadDisplay.MERGE,
+    val coverAlone: Boolean = true,
+    val rotateSpreads: Boolean = true
 ) {
     companion object {
         fun from(p: Prefs) = ReaderSettings(
@@ -112,7 +115,10 @@ data class ReaderSettings(
             brightnessGesture = p.brightnessGesture,
             doubleTapZoom = p.doubleTapZoom,
             fling = p.fling,
-            charset = p.charset
+            charset = p.charset,
+            spreads = p.spreads,
+            coverAlone = p.coverAlone,
+            rotateSpreads = p.rotateSpreads
         )
     }
 }

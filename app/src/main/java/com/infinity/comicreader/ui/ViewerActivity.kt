@@ -62,6 +62,7 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TwoPage
@@ -78,9 +79,13 @@ import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
+import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.PreviewStore
+import com.infinity.comicreader.reader.Spreads
 import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
@@ -165,6 +170,25 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Current page index (always a real page, never a spread index). */
     private var currentIndex = 0
+
+    /** The item on screen in paged reading: a page, a pair, or one half of a page. */
+    private var currentItem = 0
+
+    /** How items map to pages on screen ([buildLayout]). */
+    private var layout = PageLayout(spread = false)
+
+    /** The open book's page names and sizes, null where unknown; what the spread engine reads. */
+    private var pageNames: List<String?> = emptyList()
+    private var pageSizes: Array<IntArray?> = emptyArray()
+
+    /** What the spread engine found in the open book's pages; null until the book is open. */
+    private var analysis: Spreads.Analysis? = null
+
+    /** Reads the open book's missing page sizes in the background ([scanSizes]). */
+    private var sizesJob: Job? = null
+
+    /** True when the open book's two-page pairing is shifted by one page. */
+    private var shifted = false
     private var mode = MODE_PAGED
     private var twoPage = TwoPage.OFF
 
@@ -185,6 +209,7 @@ class ViewerActivity : AppCompatActivity() {
     private var barsVisible = true
     private var fit = "screen"
     private var autoCrop = false
+    private var spreadDisplay = SpreadDisplay.MERGE
 
     /** What the open book's folder keeps of the layout; null when it follows the defaults. */
     private var folderLayout: FolderLayout? = null
@@ -247,7 +272,7 @@ class ViewerActivity : AppCompatActivity() {
     /** The delay the next [autoTick] was posted with. */
     private var autoDelay = FRAME_MS
 
-    /** The page whose time [autoClock] counts in paged reading; another one shown starts it over. */
+    /** The item whose time [autoClock] counts in paged reading; another one shown starts it over. */
     private var autoPage = -1
 
     /** Set when a chapter change should carry the running auto-scroll over. */
@@ -303,6 +328,7 @@ class ViewerActivity : AppCompatActivity() {
 
             override fun onPageSelected(position: Int) {
                 if (mode != MODE_PAGED) return
+                currentItem = position
                 currentIndex = itemToPage(position)
                 seek.progress = position
                 onPageChanged()
@@ -350,7 +376,7 @@ class ViewerActivity : AppCompatActivity() {
 
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
-                if (fromUser) goTo(itemToPage(value))
+                if (fromUser) goToItem(value)
             }
 
             override fun onStartTrackingTouch(sb: SeekBar) {
@@ -592,7 +618,7 @@ class ViewerActivity : AppCompatActivity() {
         }
         if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
             s.twoPage != old.twoPage || s.autoCrop != old.autoCrop || s.pageSpacing != old.pageSpacing ||
-            s.perSeries != old.perSeries || s.detectDirection != old.detectDirection
+            s.perSeries != old.perSeries || s.detectDirection != old.detectDirection || s.spreads != old.spreads
         ) {
             if (s.readingDir != old.readingDir) directionChoices++
             if (reloadLayout()) rebuild = true
@@ -604,6 +630,7 @@ class ViewerActivity : AppCompatActivity() {
             invalidateOptionsMenu()
             return
         }
+        if (s.coverAlone != old.coverAlone && spread) rebuild = true
         if (rebuild) attach()
         if (rebuild || s.autoNext != old.autoNext) {
             if (s.autoNext) prepareStripAhead() else dropStripAhead()
@@ -631,7 +658,8 @@ class ViewerActivity : AppCompatActivity() {
         }
         if (fit != old.fit) adapter?.fitMode = effectiveFit()
         if (spacingDp != old.spacing) adapter?.spacingPx = spacingPx()
-        return mode != old.mode || readingDir != old.dir || useSpread() != spread || autoCrop != old.autoCrop
+        return mode != old.mode || readingDir != old.dir || useSpread() != spread || autoCrop != old.autoCrop ||
+            spreadDisplay != old.spreads
     }
 
     private fun resolveLayout() {
@@ -642,7 +670,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /** The layout the reader shows, its direction perhaps the detected one. */
-    private fun currentLayout() = ReaderLayout(mode, readingDir, fit, twoPage, autoCrop, spacingDp)
+    private fun currentLayout() = ReaderLayout(mode, readingDir, fit, twoPage, autoCrop, spacingDp, spreadDisplay)
 
     private fun showLayout(l: ReaderLayout) {
         mode = l.mode.takeIf { it in ReaderLayout.MODES } ?: MODE_PAGED
@@ -651,6 +679,7 @@ class ViewerActivity : AppCompatActivity() {
         twoPage = l.twoPage
         autoCrop = l.autoCrop
         spacingDp = l.spacing
+        spreadDisplay = l.spreads
     }
 
     /** The folder whose layout the open book follows; none with "Per-folder layout" off or for another app's document. */
@@ -764,6 +793,7 @@ class ViewerActivity : AppCompatActivity() {
         openJob = lifecycleScope.launch {
             // A folder with its own direction keeps it: nothing to detect.
             val detect = prefs.detectDirection && !folderDirection()
+            var known: Pair<List<String?>, Array<IntArray?>>? = null
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -771,6 +801,7 @@ class ViewerActivity : AppCompatActivity() {
                     ensureActive()
                     val siblings = siblingChapters(target)
                     val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
+                    known = s.getOrNull()?.let { knownSizes(target, it) }
                     ensureActive()
                     Triple(s, siblings, found)
                 } catch (e: CancellationException) {
@@ -797,6 +828,7 @@ class ViewerActivity : AppCompatActivity() {
             detection = contents?.detected
             applyDetection()
             source = src
+            known?.let { (names, sizes) -> showPages(names, sizes) }
             setup(src)
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
@@ -866,6 +898,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun closeSource() {
         lateDetectionJob?.cancel()
         lateDetectionJob = null
+        sizesJob?.cancel()
+        sizesJob = null
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
@@ -908,6 +942,7 @@ class ViewerActivity : AppCompatActivity() {
         bookChapters = chaptersOf(src)
         seenPages.clear()
         attach()
+        scanSizes(file!!, src)
         prepareStripAhead()
 
         // Carrying an auto-scroll run into the next chapter must survive the reload.
@@ -940,6 +975,81 @@ class ViewerActivity : AppCompatActivity() {
             .show()
     }
 
+    // ------------------------------------------------------------------ spreads
+
+    /** The page names of [src] and the sizes stored for them, null where unknown. Blocking. */
+    private fun knownSizes(book: File, src: PageSource): Pair<List<String?>, Array<IntArray?>> {
+        val names = List(src.pageCount) { runCatching { src.pageName(it) }.getOrNull() }
+        val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: arrayOfNulls(names.size)
+        return names to sizes
+    }
+
+    /** Takes the page [names] and [sizes] of the open book as what the spread engine reads. */
+    private fun showPages(names: List<String?>, sizes: Array<IntArray?>) {
+        pageNames = names
+        pageSizes = sizes
+        shifted = favoriteFile()?.let { library.isShifted(it.absolutePath) } == true
+        analysis = Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
+    }
+
+    /**
+     * Reads the sizes [book]'s pages lack from their headers, in the background, stores
+     * them, and lays the book out again when they change its spreads. Skipped where that
+     * would unpack the whole book ([PageSource.cheapSizes]).
+     */
+    private fun scanSizes(book: File, src: PageSource) {
+        sizesJob?.cancel()
+        if (!src.cheapSizes || pageSizes.none { it == null }) return
+        val names = pageNames
+        val sizes = pageSizes.copyOf()
+        sizesJob = lifecycleScope.launch {
+            val done = withContext(AppDispatchers.io) {
+                val job = coroutineContext.job
+                PageSizes.scan(src, sizes) { !job.isActive }.also {
+                    if (it) PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
+                }
+            }
+            if (!done || source !== src || file != book) return@launch
+            pageSizes = sizes
+            analysis = Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
+            if (buildLayout().sameAs(layout)) return@launch
+            attach()
+        }
+    }
+
+    /**
+     * How items map to pages: in paged reading, the spread engine's pairs in two-page
+     * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]);
+     * otherwise a page an item.
+     */
+    private fun buildLayout(): PageLayout {
+        val rtl = readingDir == "rtl"
+        val a = analysis
+        if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
+        if (spread) return PageLayout.of(Spreads.pair(a, Spreads.Options(prefs.coverAlone, shifted)), spread = true, rtl = rtl)
+        if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
+            val first = if (rtl) Half.RIGHT else Half.LEFT
+            val second = if (rtl) Half.LEFT else Half.RIGHT
+            val views = (0 until a.size).flatMap { i ->
+                if (a.splittable(i)) listOf(listOf(PageLayout.Part(i, first)), listOf(PageLayout.Part(i, second)))
+                else listOf(listOf(PageLayout.Part(i)))
+            }
+            return PageLayout(false, rtl, views)
+        }
+        return PageLayout(false, rtl)
+    }
+
+    /** Shifts the open book's two-page pairing by one page, or back, and keeps the choice. */
+    private fun setShifted(value: Boolean) {
+        if (shifted == value) return
+        shifted = value
+        favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
+        if (spread) attach()
+    }
+
+    /** True while items show numbers of their own: a page split in halves takes two. */
+    private fun itemNumbers() = mode == MODE_PAGED && !spread && layout.grouped
+
     /**
      * Builds a fresh adapter for the current layout. A [RecyclerView.Adapter] has
      * a fixed item view type, so changing the mode, spread or reading direction
@@ -953,6 +1063,7 @@ class ViewerActivity : AppCompatActivity() {
         adapter?.release(closeSources = false)
 
         spread = useSpread()
+        layout = buildLayout()
         val a = PageAdapter(
             source = src,
             mode = adapterMode(),
@@ -965,7 +1076,8 @@ class ViewerActivity : AppCompatActivity() {
             linear = prefs.linearLight,
             preload = prefs.preload,
             fling = prefs.fling,
-            onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) }
+            onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
+            pageLayout = layout
         )
         a.fitMode = effectiveFit()
         a.filter = filter
@@ -974,6 +1086,7 @@ class ViewerActivity : AppCompatActivity() {
         adapter = a
 
         val item = pageToItem(currentIndex)
+        currentItem = item
         // The roll-on chapter travels with the reader: adapters are rebuilt for
         // every layout change, so the already-opened source is laid in again.
         if (mode != MODE_PAGED) stripAhead?.let { a.append(it) }
@@ -992,7 +1105,7 @@ class ViewerActivity : AppCompatActivity() {
         }
         // The slider stays scoped to this chapter even while the strip holds more:
         // seeking past its end would roll on, which the slider should not do by itself.
-        seek.max = pageToItem((src.pageCount - 1).coerceAtLeast(0))
+        seek.max = (layout.itemCount(src.pageCount) - 1).coerceAtLeast(0)
         seek.progress = item
         onPageChanged()
     }
@@ -1081,6 +1194,15 @@ class ViewerActivity : AppCompatActivity() {
         loadAdjustments()
         // Reopening or recreating the reader must load the chapter now shown.
         intent.putExtra(EXTRA_PATH, nextFile.absolutePath)
+        // Its spreads are read on the next paged layout.
+        sizesJob?.cancel()
+        analysis = null
+        lifecycleScope.launch {
+            val (names, sizes) = withContext(AppDispatchers.io) { knownSizes(nextFile, next) }
+            if (source !== next) return@launch
+            showPages(names, sizes)
+            scanSizes(nextFile, next)
+        }
         currentIndex = (first - boundary).coerceAtLeast(0)
         stripAhead = null
         stripAheadFile = null
@@ -1134,15 +1256,12 @@ class ViewerActivity : AppCompatActivity() {
         sheetDialog?.behavior?.peekHeight = sheetPeek()
     }
 
-    private val singleLayout = PageLayout(spread = false)
-    private val spreadLayout = PageLayout(spread = true)
+    private fun pageToItem(page: Int) = layout.itemOf(page)
 
-    /** Page/item mapping for the current layout; reading direction does not affect it. */
-    private fun pageLayout() = if (spread) spreadLayout else singleLayout
+    private fun itemToPage(item: Int) = layout.firstPage(item)
 
-    private fun pageToItem(page: Int) = pageLayout().itemOf(page)
-
-    private fun itemToPage(item: Int) = pageLayout().firstPage(item)
+    /** The item on screen: tracked in paged reading, where a page can span two; the page's otherwise. */
+    private fun shownItem() = if (mode == MODE_PAGED) currentItem else pageToItem(currentIndex)
 
     private fun brightnessGestureEnabled() = prefs.brightnessGesture && mode == MODE_PAGED
 
@@ -1179,13 +1298,30 @@ class ViewerActivity : AppCompatActivity() {
         }
         currentIndex = page
         val item = pageToItem(currentIndex)
+        currentItem = item
         if (mode == MODE_PAGED) pager.setCurrentItem(item, false) else vertical.scrollToPosition(item)
         seek.progress = item
         onPageChanged()
     }
 
-    /** Moves [delta] items (pages, or spreads in two-page mode) from the current one. */
-    private fun turn(delta: Int) = goTo(pageLayout().step(currentIndex, delta))
+    /** Shows [item]; before the first or past the last it acts as [goTo] does there. */
+    private fun goToItem(item: Int) {
+        val count = source?.pageCount ?: return
+        when {
+            item < 0 -> goTo(-1)
+            item >= layout.itemCount(count) -> goTo(count)
+            else -> {
+                currentItem = item
+                currentIndex = itemToPage(item)
+                if (mode == MODE_PAGED) pager.setCurrentItem(item, false) else vertical.scrollToPosition(item)
+                seek.progress = item
+                onPageChanged()
+            }
+        }
+    }
+
+    /** Moves [delta] items (pages, spreads, or halves of a page) from the current one. */
+    private fun turn(delta: Int) = goToItem(shownItem() + delta)
 
     /** Called when the reader is told to move past the last page. */
     private fun handleAdvance() {
@@ -1264,16 +1400,16 @@ class ViewerActivity : AppCompatActivity() {
             backPage = currentIndex
         }
         val count = source?.pageCount ?: 0
-        pageText.text = getString(R.string.page_indicator, currentIndex + 1, count)
+        pageText.text = if (itemNumbers()) getString(R.string.page_indicator, shownItem() + 1, layout.itemCount(count))
+        else getString(R.string.page_indicator, currentIndex + 1, count)
         chapterText.text = modeLabel()
         updateChapterButtons()
         updateEndCard()
         if (currentIndex in 0 until count) {
-            val layout = pageLayout()
-            val item = layout.itemOf(currentIndex)
-            seenPages.set(layout.firstPage(item), layout.lastPage(item, count) + 1)
+            val item = shownItem()
+            seenPages.set(layout.firstPage(item).coerceAtLeast(0), layout.lastPage(item, count) + 1)
         }
-        val onLast = count > 0 && pageLayout().onLastItem(currentIndex, count)
+        val onLast = count > 0 && layout.isLastItem(shownItem(), count)
         if (!onLast) landedAtEnd = false
         if (!markedRead && onLast && !landedAtEnd) {
             markedRead = true
@@ -1298,7 +1434,7 @@ class ViewerActivity : AppCompatActivity() {
         }
         val atEnd = when (mode) {
             MODE_LONGSTRIP -> !vertical.canScrollVertically(1)
-            else -> pageLayout().onLastItem(currentIndex, src.pageCount)
+            else -> layout.isLastItem(shownItem(), src.pageCount)
         }
         if (!atEnd) {
             endDismissed = false
@@ -1786,6 +1922,13 @@ class ViewerActivity : AppCompatActivity() {
         if (useSpread() != spread) attach()
     }
 
+    private fun setSpreadDisplay(value: SpreadDisplay) {
+        if (spreadDisplay == value) return
+        spreadDisplay = value
+        persistLayout()
+        if (mode == MODE_PAGED && !spread) attach()
+    }
+
     private fun setOrientationLock(value: Int) {
         requestedOrientation = value
         invalidateOptionsMenu()
@@ -1864,6 +2007,11 @@ class ViewerActivity : AppCompatActivity() {
                 { twoPage }
             ) { setTwoPage(it) },
             Segments(
+                R.id.sheet_spreads,
+                listOf(R.id.btn_spreads_split to SpreadDisplay.SPLIT, R.id.btn_spreads_merge to SpreadDisplay.MERGE),
+                { spreadDisplay }
+            ) { setSpreadDisplay(it) },
+            Segments(
                 R.id.sheet_orientation,
                 listOf(
                     R.id.btn_orient_default to ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
@@ -1893,6 +2041,8 @@ class ViewerActivity : AppCompatActivity() {
         fun switch(id: Int, set: (Boolean) -> Unit) =
             view.findViewById<MaterialSwitch>(id).setOnCheckedChangeListener { _, checked -> if (!syncingSheet) set(checked) }
         switch(R.id.sheet_auto_crop) { setAutoCrop(it) }
+        switch(R.id.sheet_shift) { setShifted(it) }
+        switch(R.id.sheet_rotate_spreads) { prefs.rotateSpreads = it }
         switch(R.id.sheet_night) { setNight(it) }
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
         switch(R.id.sheet_keep_on) { setKeepOn(it) }
@@ -1939,6 +2089,12 @@ class ViewerActivity : AppCompatActivity() {
             // "Fit screen" reads as fit width in a strip; spreads are paged only; a long strip neither crops nor spaces.
             view.findViewById<View>(R.id.btn_fit_screen).isEnabled = mode == MODE_PAGED
             setGroupEnabled(view.findViewById(R.id.sheet_two_page), mode == MODE_PAGED)
+            setGroupEnabled(view.findViewById(R.id.sheet_spreads), mode == MODE_PAGED)
+            view.findViewById<MaterialSwitch>(R.id.sheet_shift).apply {
+                isChecked = shifted
+                isEnabled = spread && favoriteFile() != null
+            }
+            view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {
                 isChecked = autoCrop
                 isEnabled = mode != MODE_LONGSTRIP
@@ -2001,7 +2157,7 @@ class ViewerActivity : AppCompatActivity() {
         if (source == null || autoScrolling) return
         autoScrolling = true
         autoClock.reset()
-        autoPage = currentIndex
+        autoPage = shownItem()
         autoLastFrame = SystemClock.uptimeMillis()
         autoDelay = FRAME_MS
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -2035,18 +2191,18 @@ class ViewerActivity : AppCompatActivity() {
             val speed = prefs.autoSpeed
             if (mode == MODE_PAGED) {
                 val count = source?.pageCount ?: return
-                if (currentIndex != autoPage) {
+                if (shownItem() != autoPage) {
                     autoClock.reset()
-                    autoPage = currentIndex
+                    autoPage = shownItem()
                 }
                 if (autoClock.turn(dt, speed)) {
-                    val next = pageLayout().step(currentIndex, 1)
-                    if (next >= count) {
+                    val next = shownItem() + 1
+                    if (next >= layout.itemCount(count)) {
                         finishAutoScroll()
                         return
                     }
-                    goTo(next)
-                    autoPage = currentIndex
+                    goToItem(next)
+                    autoPage = shownItem()
                 }
                 showAutoProgress(autoClock.progress(speed))
                 autoDelay = autoClock.nextTickMs(speed, autoProgress.width)
@@ -2180,7 +2336,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun atChapterEnd(): Boolean {
         val src = source ?: return false
         return when (mode) {
-            MODE_PAGED -> pageLayout().onLastItem(currentIndex, src.pageCount)
+            MODE_PAGED -> layout.isLastItem(shownItem(), src.pageCount)
             else -> !vertical.canScrollVertically(1)
         }
     }
@@ -2189,7 +2345,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun atChapterStart(): Boolean {
         if (source == null) return false
         return when (mode) {
-            MODE_PAGED -> pageLayout().itemOf(currentIndex) == 0
+            MODE_PAGED -> shownItem() == 0
             else -> !vertical.canScrollVertically(-1)
         }
     }
@@ -2443,7 +2599,8 @@ class ViewerActivity : AppCompatActivity() {
             .setView(container)
             .setPositiveButton(R.string.ok) { _, _ ->
                 val n = input.text.toString().toIntOrNull() ?: return@setPositiveButton
-                goTo((n - 1).coerceIn(0, count - 1))
+                if (itemNumbers()) goToItem((n - 1).coerceIn(0, layout.itemCount(count) - 1))
+                else goTo((n - 1).coerceIn(0, count - 1))
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

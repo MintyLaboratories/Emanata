@@ -6,8 +6,9 @@ package com.infinity.comicreader.ui
  * valid across trims; [base] is the page item 0 shows once chapters before it are
  * trimmed away. Positions are adapter item positions, counted from [base].
  *
- * Only single-page layouts hold more than one chapter or are trimmed: a spread
- * layout keeps its one chapter, so [base] stays 0 and items map through [layout].
+ * Only plain single-page layouts hold more than one chapter or are trimmed: a
+ * grouped layout (pairs, or pages split in halves) keeps its one chapter, so [base]
+ * stays 0 and items map through [layout].
  */
 class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
@@ -40,6 +41,9 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
     /** The page each slot of item [position] shows, as [PageLayout.slots]. */
     fun slots(position: Int): IntArray = layout.slots(item(position), end)
 
+    /** The part each slot of item [position] shows, as [PageLayout.parts]. */
+    fun parts(position: Int): Array<PageLayout.Part?> = layout.parts(item(position), end)
+
     /** The last page item [position] shows. */
     fun lastPage(position: Int): Int = layout.lastPage(item(position), end)
 
@@ -48,10 +52,10 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
     /**
      * Lays [count] pages of [value] in behind the last chapter and returns the item
-     * positions they were inserted at, or null when refused (spread layout, no pages).
+     * positions they were inserted at, or null when refused (grouped layout, no pages).
      */
     fun append(value: T, count: Int): IntRange? {
-        if (layout.spread || count <= 0) return null
+        if (layout.grouped || count <= 0) return null
         val start = end - base
         list += Chapter(value, end, count)
         return start until start + count
@@ -59,10 +63,10 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
     /**
      * Forgets every item before [position], leaving item 0 to show that page, and
-     * drops the chapters that end before it. Null when nothing changes or in a spread.
+     * drops the chapters that end before it. Null when nothing changes or when grouped.
      */
     fun dropTo(position: Int): Removal<T>? {
-        if (layout.spread) return null
+        if (layout.grouped) return null
         val keep = (base + position).coerceIn(base, end)
         if (keep == base) return null
         val gone = forget { it.first + it.count <= keep }
@@ -73,10 +77,10 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
 
     /**
      * Throws away every chapter starting at item [position] or later. Null when
-     * nothing changes or in a spread.
+     * nothing changes or when grouped.
      */
     fun dropAfter(position: Int): Removal<T>? {
-        if (layout.spread) return null
+        if (layout.grouped) return null
         val first = base + position
         if (first >= end) return null
         val count = end - first

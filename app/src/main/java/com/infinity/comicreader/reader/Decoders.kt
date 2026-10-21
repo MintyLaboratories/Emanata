@@ -37,7 +37,8 @@ class DecodeException(
  *
  * Every decode produces exactly the [Target] it is given:
  *  1. the image is decoded at full resolution, with no decoder-side scaling;
- *  2. with [Target.autoCrop], blank borders are found on that full image;
+ *  2. with [Target.autoCrop], blank borders are found on that full image, and
+ *     [Target.half] takes one half of what is left;
  *  3. it is resampled with Lanczos3 ([BitmapUtils.resample]) to the target size,
  *     and the full-resolution bitmap is recycled at once.
  *
@@ -124,12 +125,9 @@ object Decoders {
             sinks.set(null)
             sink.decoded(src)
         }
-        val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src) else null
-        val plan = if (bounds != null) {
-            target.plan(bounds.width().toDouble(), bounds.height().toDouble(), bounds.left.toDouble(), bounds.top.toDouble())
-        } else {
-            target.plan(src.width.toDouble(), src.height.toDouble())
-        }
+        val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) } else null
+        val area = target.area(src.width, src.height, bounds)
+        val plan = target.plan((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble(), area[0].toDouble(), area[1].toDouble())
         if (plan.isIdentity(src.width, src.height)) return src
         try {
             return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)

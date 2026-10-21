@@ -244,6 +244,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Whether the adapter on screen pairs pages; [useSpread] says whether it should. */
     private var spread = false
+
+    /** Whether the adapter on screen auto-crops; [cropOn] says whether it should. */
+    private var shownCrop = false
     private var readingDir = "ltr"
     private var filter = Filters.NONE
     private var adjustments = Adjustments.NEUTRAL
@@ -760,7 +763,7 @@ class ViewerActivity : AppCompatActivity() {
         }
         if (fit != old.fit) adapter?.fitMode = effectiveFit()
         if (spacingDp != old.spacing) adapter?.spacingPx = spacingPx()
-        return mode != old.mode || readingDir != old.dir || useSpread() != spread || autoCrop != old.autoCrop ||
+        return mode != old.mode || readingDir != old.dir || useSpread() != spread || cropOn() != shownCrop ||
             spreadDisplay != old.spreads
     }
 
@@ -790,10 +793,16 @@ class ViewerActivity : AppCompatActivity() {
      * bottom, and continuous for detected slices of one strip, unless the folder keeps a
      * whole layout or a layout was picked for the book.
      */
-    private fun shownMode(): String {
-        val sliced = slices != null && prefs.detectDirection && !folderScope() && !layoutPicked
-        return ReaderLayout.shownMode(chosenMode, readingDir, sliced)
-    }
+    private fun shownMode(): String = ReaderLayout.shownMode(chosenMode, readingDir, sliced())
+
+    /** True while detected slices may lay the book out in one column: no frozen folder layout, no layout picked. */
+    private fun sliced() = slices != null && prefs.detectDirection && !folderScope() && !layoutPicked
+
+    /** True while the column on screen shows detected slices, which join only uncropped. */
+    private fun slicesShown() = mode == MODE_CONTINUOUS && readingDir == DIR_TTB && sliced()
+
+    /** Auto-crop as shown: off for detected slices, whose blank bands and widths belong to the strip. */
+    private fun cropOn() = autoCrop && !slicesShown()
 
     /** What decides the detected direction: slices of one strip first, then the book's contents. */
     private fun found(): DirectionDetection.Detected? = slices ?: detection
@@ -1295,6 +1304,7 @@ class ViewerActivity : AppCompatActivity() {
         adapter?.release(closeSources = false)
 
         spread = useSpread()
+        shownCrop = cropOn()
         layout = buildLayout()
         val a = PageAdapter(
             source = src,
@@ -1304,7 +1314,7 @@ class ViewerActivity : AppCompatActivity() {
             twoPage = spread,
             rtl = readingDir == "rtl",
             verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
-            autoCrop = autoCrop,
+            autoCrop = shownCrop,
             linear = prefs.linearLight,
             preload = prefs.preload,
             fling = prefs.fling,
@@ -2562,7 +2572,10 @@ class ViewerActivity : AppCompatActivity() {
                 isEnabled = spread && favoriteFile() != null
             }
             view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
-            view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).isChecked = autoCrop
+            view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {
+                isChecked = autoCrop
+                isEnabled = !slicesShown()
+            }
             view.findViewById<TextView>(R.id.sheet_spacing_value).text = spacingLabel()
             view.findViewById<Slider>(R.id.sheet_spacing).safeSet(spacingDp.toFloat())
             view.findViewById<MaterialSwitch>(R.id.sheet_night).isChecked = nightFilter

@@ -94,7 +94,7 @@ class PageAdapter(
     private val twoPage: Boolean = false,
     private val rtl: Boolean = false,
     private val verticalDrag: ZoomImageView.VerticalDrag? = null,
-    private val autoCrop: Boolean = false,
+    val autoCrop: Boolean = false,
     private val linear: Boolean = false,
     private val preload: Int = 2,
     private val fling: Boolean = false,

@@ -8,7 +8,9 @@ import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
@@ -192,6 +194,30 @@ class ViewerActivitySlicesTest {
         idle()
         assertEquals(false, viewer.continuous())
         assertEquals(FolderLayout.Direction("rtl"), library.folderLayout(dir.absolutePath))
+    }
+
+    private fun ViewerActivity.columnCrops() = (findViewById<RecyclerView>(R.id.viewer_vertical).adapter as PageAdapter).autoCrop
+
+    @Test
+    fun slicesAreNeverAutoCropped() {
+        prefs.autoCrop = true
+        val viewer = launch(shapedBook())
+        assertEquals(true, viewer.continuous())
+        assertEquals(false, viewer.columnCrops())
+        assertEquals(false, ReaderSheet(viewer).view<MaterialSwitch>(R.id.sheet_auto_crop).isEnabled)
+        assertEquals(true, prefs.autoCrop)
+    }
+
+    @Test
+    fun aChosenColumnAutoCropsOrdinaryPages() {
+        prefs.autoCrop = true
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
+        val book = Fixtures.zip(File(dir, "Book 01.cbz"), *(0 until 5).map { Fixtures.entry("p%02d.png".format(it), TestImages.png(200, 300)) }.toTypedArray())
+        val viewer = launch(book)
+        assertEquals(true, viewer.continuous())
+        assertEquals(true, viewer.columnCrops())
+        assertEquals(true, ReaderSheet(viewer).view<MaterialSwitch>(R.id.sheet_auto_crop).isEnabled)
     }
 
     @Test

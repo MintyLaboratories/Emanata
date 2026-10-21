@@ -66,9 +66,12 @@ data class TabSort(val by: SortLevel, val then: SortLevel? = null, val foldersFi
     /** The second level in effect: only after an option with ties, and never the first level again. */
     val thenInEffect: SortLevel? get() = then?.takeIf { by.key.hasTies && it.key != by.key }
 
-    /** Tapping [key] under "Sort by": the selected option flips, another is picked in its first direction. */
+    /**
+     * Tapping [key] under "Sort by": the selected option flips, another is picked in
+     * its first direction with "Then by" back at None.
+     */
     fun tapBy(key: SortKey): TabSort =
-        if (by.key == key) copy(by = by.flip()) else copy(by = SortLevel(key), then = then?.takeIf { it.key != key })
+        if (by.key == key) copy(by = by.flip()) else copy(by = SortLevel(key), then = null)
 
     /** Tapping [key] under "Then by" (null is None): the selected option flips, another is picked. */
     fun tapThen(key: SortKey?): TabSort = when {

@@ -106,8 +106,11 @@ class LibrarySortTest {
         assertEquals(SortLevel(SortKey.LENGTH), then.then)
         assertEquals(SortLevel(SortKey.LENGTH, flipped = true), then.tapThen(SortKey.LENGTH).then)
         assertNull(then.tapThen(null).then)
-        // Picking the second level's option as the first drops the second.
+        // Flipping the first level keeps the second; picking another one starts it at None.
+        assertEquals(SortLevel(SortKey.LENGTH), then.tapBy(SortKey.YEAR).then)
         assertNull(then.tapBy(SortKey.LENGTH).then)
+        assertNull(then.tapBy(SortKey.NAME).tapBy(SortKey.YEAR).then)
+        assertNull(then.tapBy(SortKey.TYPE).then)
     }
 
     @Test

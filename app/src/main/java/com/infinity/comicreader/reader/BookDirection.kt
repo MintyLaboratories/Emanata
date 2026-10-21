@@ -33,21 +33,30 @@ object BookDirection {
 
     /**
      * The sizes of [source]'s first [Slices.SAMPLE] pages: [known] ones, the rest from their
-     * headers when [read], else null. Blocking when [read].
+     * headers when [read], else null; fewer once the first are [Slices.ordinary]. Blocking
+     * when [read].
      */
-    fun sliceSizes(source: PageSource, known: Array<IntArray?>?, read: Boolean): List<IntArray?> =
-        (0 until minOf(source.pageCount, Slices.SAMPLE)).map { i ->
-            known?.getOrNull(i) ?: if (read) runCatching { source.pageSize(i) }.getOrNull() else null
+    fun sliceSizes(source: PageSource, known: Array<IntArray?>?, read: Boolean): List<IntArray?> {
+        val sizes = ArrayList<IntArray?>()
+        for (i in 0 until minOf(source.pageCount, Slices.SAMPLE)) {
+            if (Slices.ordinary(sizes)) break
+            sizes += known?.getOrNull(i) ?: if (read) runCatching { source.pageSize(i) }.getOrNull() else null
         }
+        return sizes
+    }
 
     /**
      * Top to bottom when [source]'s pages are slices of one strip ([Slices]): from [sizes] of
      * its first pages, any missing read now, and, when their shape alone does not settle it,
-     * the seams between them, decoded as thin strips. Null when they are not, or once
-     * [canceled]. Blocking.
+     * the seams between them, decoded as thin strips. Null when they are not, as soon as
+     * the first are [Slices.ordinary], or once [canceled]. Blocking.
      */
     fun slices(source: PageSource, sizes: List<IntArray?>, canceled: () -> Boolean = { false }): DirectionDetection.Detected? {
-        val all = sizes.mapIndexed { i, s -> s ?: if (canceled()) null else runCatching { source.pageSize(i) }.getOrNull() }
+        val all = ArrayList<IntArray?>(sizes.size)
+        for ((i, s) in sizes.withIndex()) {
+            if (Slices.ordinary(all)) return null
+            all += s ?: if (canceled()) null else runCatching { source.pageSize(i) }.getOrNull()
+        }
         val shape = Slices.shape(all)
         if (shape != Slices.Shape.LIKELY) return Slices.verdict(shape)
         val seams = Slices.seamPairs(all).map { k ->

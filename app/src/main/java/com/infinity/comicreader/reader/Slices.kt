@@ -37,6 +37,9 @@ object Slices {
     const val MIN_SEAMS = 5
     const val SEAM_SHARE = 0.7
 
+    /** Leading pages under [MIN_RATIO] that settle a book as not slices, so no more sizes are read. */
+    const val ORDINARY_LEAD = 4
+
     /** What the pages' shape says. */
     enum class Shape {
         /** Not slices. */
@@ -67,6 +70,10 @@ object Slices {
             else -> Shape.NONE
         }
     }
+
+    /** True when the first [ORDINARY_LEAD] of [sizes] are all known and none is tall: ordinary pages, not slices. */
+    fun ordinary(sizes: List<IntArray?>): Boolean =
+        sizes.size >= ORDINARY_LEAD && sizes.take(ORDINARY_LEAD).all { it != null && it.size >= 2 && it[0] > 0 && it[1] > 0 && it[1].toDouble() / it[0] < MIN_RATIO }
 
     /** The tall pages among [known] that share the most common width. */
     private fun slicesOf(known: List<IntArray>): List<IntArray> {

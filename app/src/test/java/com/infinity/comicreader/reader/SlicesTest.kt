@@ -74,6 +74,16 @@ class SlicesTest {
     }
 
     @Test
+    fun fourOrdinaryPagesFirstAreNotSlices() {
+        assertEquals(true, Slices.ordinary(List(4) { intArrayOf(2000, 3000) }))
+        assertEquals(true, Slices.ordinary(sizes(2000 to 3000, 4000 to 3000, 2000 to 3000, 2000 to 3000, 800 to 2400)))
+        // A cover or credits before the slices, an unknown size, or too few pages do not settle it.
+        assertEquals(false, Slices.ordinary(sizes(2000 to 3000, 800 to 2400, 2000 to 3000, 2000 to 3000)))
+        assertEquals(false, Slices.ordinary(listOf(null) + List(4) { intArrayOf(2000, 3000) }))
+        assertEquals(false, Slices.ordinary(List(3) { intArrayOf(2000, 3000) }))
+    }
+
+    @Test
     fun seamsPairNeighboringSlices() {
         val book = sizes(2000 to 3000, 800 to 2400, 800 to 3100, 800 to 1900, 2000 to 3000, 800 to 2400, 800 to 2400)
         assertEquals(listOf(1, 2, 5), Slices.seamPairs(book))

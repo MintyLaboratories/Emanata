@@ -67,6 +67,28 @@ class BookDirectionSlicesTest {
         assertNull(detect(book(listOf(TestImages.png(200, 300), TestImages.png(400, 300), TestImages.png(200, 300), TestImages.png(400, 300)))))
     }
 
+    /** Pages of [sizes] that count how many of their sizes were asked for. */
+    private class Sized(private val sizes: List<IntArray>) : PageSource {
+        var asked = 0
+        override val pageCount = sizes.size
+        override fun loadPage(index: Int, target: Target): Bitmap = throw UnsupportedOperationException()
+        override fun pageSize(index: Int): IntArray = sizes[index].also { asked++ }
+        override fun close() {}
+    }
+
+    @Test
+    fun ordinaryPagesFirstStopTheReading() {
+        val src = Sized(List(30) { intArrayOf(2000, 3000) })
+        assertEquals(Slices.ORDINARY_LEAD, BookDirection.sliceSizes(src, null, read = true).size)
+        assertEquals(Slices.ORDINARY_LEAD, src.asked)
+        val unread = Sized(List(30) { intArrayOf(2000, 3000) })
+        assertNull(BookDirection.slices(unread, List(Slices.SAMPLE) { null }))
+        assertEquals(Slices.ORDINARY_LEAD, unread.asked)
+        // Slices behind a cover are all read.
+        val sliced = Sized(listOf(intArrayOf(2000, 3000)) + List(29) { intArrayOf(800, 2400 + 100 * (it % 5)) })
+        assertEquals(Slices.SAMPLE, BookDirection.sliceSizes(sliced, null, read = true).size)
+    }
+
     @Test
     fun knownSizesAreTakenAsTheyAre() {
         // Headers say ordinary pages; sizes already known say slices.

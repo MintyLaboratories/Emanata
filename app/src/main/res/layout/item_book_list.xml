@@ -63,14 +63,11 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <TextView
+            <com.infinity.comicreader.ui.TitleView
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="middle"
-                android:maxLines="2"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
-                tools:text="One Piece - Chapter 1044.cbz" />
+                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle" />
 
             <TextView
                 android:id="@+id/subtitle"

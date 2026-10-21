@@ -274,7 +274,13 @@
     <string name="layout_list">List</string>
     <string name="pref_sort">Sort entries by</string>
     <string name="pref_sort_dir">Sort direction</string>
-    <string name="pref_show_filenames">Show file names</string>
+    <string name="pref_title_display">Title display</string>
+    <string name="title_hidden">Hidden</string>
+    <string name="title_single">Single line</string>
+    <string name="title_middle">Single line, middle</string>
+    <string name="title_double">Double line</string>
+    <string name="title_bounce">Bounce</string>
+    <string name="title_marquee">Marquee</string>
     <string name="pref_list_pathview">Show path bar</string>
     <string name="pref_list_statusbar">Show status bar in the library</string>
     <string name="pref_list_quickfab">Show the list/grid button</string>
@@ -570,6 +576,23 @@
     <string-array name="crop_anchor_values">
         <item>top</item>
         <item>center</item>
+    </string-array>
+
+    <string-array name="title_display_entries">
+        <item>@string/title_hidden</item>
+        <item>@string/title_single</item>
+        <item>@string/title_middle</item>
+        <item>@string/title_double</item>
+        <item>@string/title_bounce</item>
+        <item>@string/title_marquee</item>
+    </string-array>
+    <string-array name="title_display_values">
+        <item>hidden</item>
+        <item>single</item>
+        <item>middle</item>
+        <item>double</item>
+        <item>bounce</item>
+        <item>marquee</item>
     </string-array>
 
     <string-array name="preload_entries">

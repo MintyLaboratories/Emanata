@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
+import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
@@ -63,7 +64,10 @@ class ListActivityFavoritesTest {
         recycler.measure(0, 0)
         recycler.layout(0, 0, 1000, 20000)
         return (0 until recycler.childCount).map { i ->
-            recycler.getChildAt(i).findViewById<TextView>(R.id.title).text.toString()
+            when (val title = recycler.getChildAt(i).findViewById<View>(R.id.title)) {
+                is TitleView -> title.text.toString()
+                else -> (title as TextView).text.toString()
+            }
         }
     }
 

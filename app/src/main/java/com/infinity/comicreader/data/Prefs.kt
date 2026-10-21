@@ -233,9 +233,9 @@ class Prefs(context: Context) {
         get() = str(KEY_SORT_DIR, "asc")
         set(v) = put(KEY_SORT_DIR, v)
 
-    var showFilenames: Boolean
-        get() = bool(KEY_FILENAMES, true)
-        set(v) = put(KEY_FILENAMES, v)
+    var titleDisplay: TitleDisplay
+        get() = TitleDisplay.of(sp.getString(KEY_TITLE_DISPLAY, null))
+        set(v) = put(KEY_TITLE_DISPLAY, v.key)
 
     var listPathView: Boolean
         get() = bool(KEY_PATHVIEW, true)
@@ -402,7 +402,7 @@ class Prefs(context: Context) {
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
         private const val KEY_SORT = "pref_sort"
         private const val KEY_SORT_DIR = "pref_sort_dir"
-        private const val KEY_FILENAMES = "pref_show_filenames"
+        private const val KEY_TITLE_DISPLAY = "pref_title_display"
         private const val KEY_PATHVIEW = "pref_list_pathview"
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
@@ -421,7 +421,7 @@ class Prefs(context: Context) {
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
-            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
@@ -434,6 +434,9 @@ class Prefs(context: Context) {
         /** Stored as strings by the list preferences they came from. */
         private const val OLD_COLUMNS = "pref_grid_columns"
         private const val OLD_ROWS = "pref_grid_rows"
+
+        /** Replaced by [KEY_TITLE_DISPLAY]: off hid titles and details. */
+        private const val OLD_FILENAMES = "pref_show_filenames"
 
         /** The tabs that take over the single grid setting; the others start at their defaults. */
         private val GRID_HEIRS = listOf(TAB_BROWSE, TAB_FAVORITES)
@@ -503,6 +506,12 @@ class Prefs(context: Context) {
                 out[OLD_GRID] = null
                 out[OLD_COLUMNS] = null
                 out[OLD_ROWS] = null
+            }
+            if (OLD_FILENAMES in stored) {
+                if (stored[OLD_FILENAMES] == false && KEY_TITLE_DISPLAY !in stored) {
+                    out[KEY_TITLE_DISPLAY] = TitleDisplay.HIDDEN.key
+                }
+                out[OLD_FILENAMES] = null
             }
             return out
         }

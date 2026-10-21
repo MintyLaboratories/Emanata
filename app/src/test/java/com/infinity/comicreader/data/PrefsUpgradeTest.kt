@@ -216,4 +216,14 @@ class PrefsUpgradeTest {
         assertEquals(3, prefs.view(Prefs.TAB_FAVORITES).rows)
         assertFalse("pref_grid" in stored())
     }
+
+    @Test
+    fun hiddenFileNamesBecomeAHiddenTitle() {
+        assertEquals(
+            mapOf("pref_title_display" to "hidden", "pref_show_filenames" to null),
+            Prefs.upgrade(mapOf("pref_show_filenames" to false))
+        )
+        assertEquals(mapOf("pref_show_filenames" to null), Prefs.upgrade(mapOf("pref_show_filenames" to true)))
+        assertEquals(TitleDisplay.DOUBLE, Prefs(context).titleDisplay)
+    }
 }

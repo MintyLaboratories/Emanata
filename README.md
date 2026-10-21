@@ -45,6 +45,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Grid dimensions:** columns × rows, each Auto or 1–6, picked on a 7 × 7 table
   (tap a cell, or drag and release). Rows share the height below the Recent row
   and above the floating button.
+- **Title display:** Hidden, Single line (… at the end), Single line, middle
+  (… in the middle, so the year or number stays), Double line (default), Bounce
+  (glides to the end, rests, glides back) or Marquee (loops leftward). Only
+  overflowing titles move, at about 30 dp/s, all in sync, paused while
+  scrolling, with soft edges; with system animations removed they hold still,
+  cut in the middle.
 - **List density** (per tab): Compact, Normal or Large list thumbnails.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
   largest box of that shape that fits the cell, centered.
@@ -185,7 +191,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Gestures (tap zone layout and right-to-left mirroring, volume keys, brightness
   drag, double-tap zoom, and **smooth scrolling (fling)**, off by default: a
   zoomed page keeps gliding after the finger lifts and stops at its edges).
-- File-list options (file names, status bar, breadcrumb, quick button).
+- File-list options (title display, status bar, breadcrumb, quick button).
 - Clear history, clear bookmarks, clear thumbnails, reset all settings; every
   Clear or Reset asks first. Resetting settings keeps per-book adjustments and
   reading progress.

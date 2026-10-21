@@ -241,6 +241,16 @@ class ListActivity : AppCompatActivity() {
         if (mode == TAB_BROWSE) currentDir?.let { loadDirectory(it) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        adapter.stopped = false
+    }
+
+    override fun onStop() {
+        adapter.stopped = true
+        super.onStop()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         adapter.release()
@@ -252,7 +262,7 @@ class ListActivity : AppCompatActivity() {
         if (old == s) return
         applied = s
         if (s.views[tabName()] != old.views[tabName()]) applyView()
-        if (s.coverShape != old.coverShape) adapter.options = rowOptions()
+        if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay) adapter.options = rowOptions()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
             // Coming back to the browse tab, onResume reloads the folder anyway.
@@ -260,7 +270,7 @@ class ListActivity : AppCompatActivity() {
         }
         if (s.sort != old.sort || s.sortDir != old.sortDir) {
             applyFilterAndSort()
-        } else if (s.thumbnails != old.thumbnails || s.showFilenames != old.showFilenames || s.charset != old.charset ||
+        } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
             s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
         ) {
             adapter.notifyDataSetChanged()
@@ -405,7 +415,7 @@ class ListActivity : AppCompatActivity() {
         else -> Prefs.TAB_BROWSE
     }
 
-    private fun rowOptions() = RowOptions(density = view.density, shape = prefs.coverShape)
+    private fun rowOptions() = RowOptions(density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay)
 
     /** The current tab's view settings. */
     private val view: TabView get() = prefs.view(tabName())

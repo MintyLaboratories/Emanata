@@ -76,17 +76,14 @@
             </com.infinity.comicreader.ui.CoverBox>
         </com.infinity.comicreader.ui.CoverFrame>
 
-        <TextView
+        <com.infinity.comicreader.ui.TitleView
             android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="4dp"
             android:layout_marginTop="@dimen/space_2"
-            android:ellipsize="end"
-            android:maxLines="2"
             android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
-            android:textSize="13.5sp"
-            tools:text="One Piece - Chapter 1044" />
+            android:textSize="13.5sp" />
 
         <TextView
             android:id="@+id/subtitle"

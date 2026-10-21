@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
@@ -16,6 +17,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.ListDensity
+import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
@@ -32,10 +34,11 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-/** How rows look beyond grid or list: list thumbnail size and cover shape. */
+/** How rows look beyond grid or list: list thumbnail size, cover shape and titles. */
 data class RowOptions(
     val density: ListDensity = ListDensity.NORMAL,
-    val shape: CoverShape = CoverShape.BOOK
+    val shape: CoverShape = CoverShape.BOOK,
+    val title: TitleDisplay = TitleDisplay.DOUBLE
 )
 
 /**
@@ -92,6 +95,34 @@ class BookAdapter(
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** Moves every scrolling title in sync; made once the list is known. */
+    private var clock: TitleClock? = null
+
+    /** Titles wait while the screen is hidden. */
+    var stopped = false
+        set(value) {
+            field = value
+            clock?.stopped = value
+        }
+
+    private val scrollListener = object : RecyclerView.OnScrollListener() {
+        override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+            clock?.scrolling = newState != RecyclerView.SCROLL_STATE_IDLE
+        }
+    }
+
+    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+        super.onAttachedToRecyclerView(recyclerView)
+        val speed = TitleMotion.SPEED_DP_PER_S * recyclerView.resources.displayMetrics.density / 1000f
+        if (clock == null) clock = TitleClock(speed).also { it.stopped = stopped }
+        recyclerView.addOnScrollListener(scrollListener)
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        recyclerView.removeOnScrollListener(scrollListener)
+        super.onDetachedFromRecyclerView(recyclerView)
+    }
+
     /** Caps concurrent cover decodes; a row scrolled away before its turn is never decoded. */
     private val gate = Semaphore(THUMB_THREADS)
 
@@ -140,7 +171,7 @@ class BookAdapter(
         val thumb: ShapeableImageView = view.findViewById(R.id.thumb)
         val placeholder: ImageView = view.findViewById(R.id.placeholder)
         val badge: TextView = view.findViewById(R.id.badge)
-        val title: TextView = view.findViewById(R.id.title)
+        val title: TitleView = view.findViewById(R.id.title)
         val subtitle: TextView = view.findViewById(R.id.subtitle)
         val star: ImageView = view.findViewById(R.id.star)
         var job: Job? = null
@@ -218,13 +249,16 @@ class BookAdapter(
         val context = holder.itemView.context
         holder.job?.cancel()
 
+        val mode = TitleMotion.effective(options.title, ValueAnimator.areAnimatorsEnabled())
+        holder.title.mode = mode
+        holder.title.reserve = grid
+        holder.title.clock = clock
         holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: item.name
-        val showName = prefs.showFilenames
-        holder.title.visibility = if (showName) View.VISIBLE else View.GONE
+        holder.title.visibility = if (mode == TitleDisplay.HIDDEN) View.GONE else View.VISIBLE
         val subtitle = item.subtitle ?: subtitleFor(context, item)
         holder.subtitle.text = subtitle
-        holder.subtitle.visibility = if (showName && subtitle.isNotEmpty()) View.VISIBLE else View.GONE
-        if (grid) sizeCell(holder, showName) else sizeThumb(holder)
+        holder.subtitle.visibility = if (subtitle.isNotEmpty()) View.VISIBLE else View.GONE
+        if (grid) sizeCell(holder, showDetails = true) else sizeThumb(holder)
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }
@@ -300,7 +334,7 @@ class BookAdapter(
      * as its shape asks for the cell width (a fixed height for the cell's shape) and
      * the card wraps it. Either way the box inside is the cover shape's largest fit.
      */
-    private fun sizeCell(holder: BookHolder, showName: Boolean) {
+    private fun sizeCell(holder: BookHolder, showDetails: Boolean) {
         val cover = holder.cover ?: return
         val ratio = options.shape.ratio
         cover.ratio = ratio
@@ -320,9 +354,8 @@ class BookAdapter(
             if (rows) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
         coverParams.height = if (rows) 0 else ViewGroup.LayoutParams.WRAP_CONTENT
         coverParams.weight = if (rows) 1f else 0f
-        // The same text height in every cell keeps the covers of a row equal.
-        holder.title.minLines = if (rows) holder.title.maxLines else 0
-        if (rows && showName && holder.subtitle.visibility == View.GONE) {
+        // The same text height in every cell keeps the covers of a row equal (titles reserve their lines).
+        if (rows && showDetails && holder.subtitle.visibility == View.GONE) {
             holder.subtitle.visibility = View.INVISIBLE
         }
         card.layoutParams = cardParams

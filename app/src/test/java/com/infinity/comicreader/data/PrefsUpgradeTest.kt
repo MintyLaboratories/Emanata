@@ -378,12 +378,17 @@ class PrefsUpgradeTest {
             mapOf("pref_page_mode" to "paged", "pref_reading_dir" to "ttb"),
             Prefs.upgrade(mapOf("pref_page_mode" to "vertical", "pref_reading_dir" to "rtl"))
         )
-        assertEquals(mapOf("pref_page_mode" to "continuous", "pref_reading_dir" to "ttb"), Prefs.upgrade(mapOf("pref_page_mode" to "longstrip")))
+        assertEquals(
+            mapOf("pref_page_mode" to "continuous", "pref_reading_dir" to "ttb", "pref_auto_crop" to false),
+            Prefs.upgrade(mapOf("pref_page_mode" to "longstrip", "pref_auto_crop" to true))
+        )
         assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_page_mode" to "paged", "pref_reading_dir" to "rtl")))
         val prefs = Prefs(context)
-        prefs.importAll(mapOf("pref_page_mode" to "longstrip", "pref_reading_dir" to "ltr"))
+        prefs.importAll(mapOf("pref_page_mode" to "longstrip", "pref_reading_dir" to "ltr", "pref_auto_crop" to true))
         assertEquals("continuous", prefs.pageMode)
         assertEquals("ttb", prefs.readingDir)
+        // The long strip never cropped, as a folder's never does.
+        assertFalse(prefs.autoCrop)
     }
 
     @Test

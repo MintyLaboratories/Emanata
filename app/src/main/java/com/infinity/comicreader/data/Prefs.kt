@@ -686,6 +686,8 @@ class Prefs(context: Context) {
                 val (layout, dir) = ReaderLayout.migrated(mode as String, null)
                 out[KEY_PAGE_MODE] = layout
                 out[KEY_READING_DIR] = dir
+                // The long strip never cropped; continuous would.
+                if (mode == ReaderLayout.OLD_LONGSTRIP) out[KEY_AUTO_CROP] = false
             }
             val locale = stored[KEY_LOCALE]
             if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]

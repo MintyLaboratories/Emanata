@@ -803,7 +803,7 @@ class ViewerActivity : AppCompatActivity() {
         openJob = lifecycleScope.launch {
             // A folder with its own direction keeps it: nothing to detect.
             val detect = prefs.detectDirection && !folderDirection()
-            var known: Pair<List<String?>, Array<IntArray?>>? = null
+            var known: KnownPages? = null
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -838,7 +838,7 @@ class ViewerActivity : AppCompatActivity() {
             detection = contents?.detected
             applyDetection()
             source = src
-            known?.let { (names, sizes) -> showPages(names, sizes) }
+            known?.let { showPages(it) }
             setup(src)
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
@@ -987,20 +987,27 @@ class ViewerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ spreads
 
-    /** The page names of [src] and the sizes stored for them, null where unknown. Blocking. */
-    private fun knownSizes(book: File, src: PageSource): Pair<List<String?>, Array<IntArray?>> {
+    /** A book's page [names], the [sizes] known of them (null where unknown) and what the spread engine finds in both. */
+    private class KnownPages(val names: List<String?>, val sizes: Array<IntArray?>, val analysis: Spreads.Analysis)
+
+    /** The page names of [src], the sizes stored for them and their [Spreads.classify]. Blocking. */
+    private fun knownSizes(book: File, src: PageSource): KnownPages {
         val names = List(src.pageCount) { runCatching { src.pageName(it) }.getOrNull() }
         val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: arrayOfNulls(names.size)
-        return names to sizes
+        return KnownPages(names, sizes, classify(names, sizes))
     }
 
-    /** Takes the page [names] and [sizes] of the open book as what the spread engine reads. */
-    private fun showPages(names: List<String?>, sizes: Array<IntArray?>) {
+    /** What the spread engine finds in page [names] of [sizes]. Blocking on long books. */
+    private fun classify(names: List<String?>, sizes: Array<IntArray?>): Spreads.Analysis =
+        Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
+
+    /** Takes the [known] pages of the open book as what the spread engine reads. */
+    private fun showPages(known: KnownPages) {
         pageBounds = PageBounds()
-        pageNames = names
-        pageSizes = sizes
+        pageNames = known.names
+        pageSizes = known.sizes
         shifted = favoriteFile()?.let { library.isShifted(it.absolutePath) } == true
-        analysis = Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
+        analysis = known.analysis
     }
 
     /**
@@ -1014,15 +1021,15 @@ class ViewerActivity : AppCompatActivity() {
         val names = pageNames
         val sizes = pageSizes.copyOf()
         sizesJob = lifecycleScope.launch {
-            val done = withContext(AppDispatchers.io) {
+            val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                PageSizes.scan(src, sizes) { !job.isActive }.also {
-                    if (it) PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
-                }
+                if (!PageSizes.scan(src, sizes) { !job.isActive }) return@withContext null
+                PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
+                classify(names, sizes)
             }
-            if (!done || source !== src || file != book) return@launch
+            if (found == null || source !== src || file != book) return@launch
             pageSizes = sizes
-            analysis = Spreads.classify(names.map { it.orEmpty() }, sizes.toList())
+            analysis = found
             // The same layout may still show a page now known to be wide.
             if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
         }
@@ -1224,9 +1231,9 @@ class ViewerActivity : AppCompatActivity() {
         sizesJob?.cancel()
         analysis = null
         lifecycleScope.launch {
-            val (names, sizes) = withContext(AppDispatchers.io) { knownSizes(nextFile, next) }
+            val known = withContext(AppDispatchers.io) { knownSizes(nextFile, next) }
             if (source !== next) return@launch
-            showPages(names, sizes)
+            showPages(known)
             scanSizes(nextFile, next)
         }
         currentIndex = (first - boundary).coerceAtLeast(0)

@@ -169,6 +169,12 @@ class ListActivity : AppCompatActivity() {
     /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
     private var listJob: Job? = null
     private lateinit var kindCache: FavoriteKindCache
+
+    /** The root crumb's location picker. */
+    private lateinit var locationSheet: LocationSheet
+
+    /** Follows drives as they are plugged in and pulled out, while started. */
+    private lateinit var storageWatcher: StorageWatcher
     private val shown = ArrayList<BookEntry>()
 
     /** The series name left out of titles in the Set browsed, or null. */
@@ -256,6 +262,8 @@ class ListActivity : AppCompatActivity() {
         pathbar.onCrumbClick = { openCrumb(it) }
         pathbar.onRootMenuClick = { showRootChooser() }
         roots = StorageRoots.list(this)
+        locationSheet = LocationSheet(this, lifecycleScope) { loadDirectory(File(it.path)) }
+        storageWatcher = StorageWatcher(this) { refreshRoots() }
 
         // Settings changed here, in the settings screen or anywhere else apply live;
         // changes made while this screen was stopped arrive when it starts again.
@@ -290,7 +298,8 @@ class ListActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         applyStatusBarSetting()
-        roots = StorageRoots.list(this)
+        // A drive may have come or gone while stopped.
+        if (refreshRoots()) return
         if (!hasStorageAccess()) return
         if (!resumedOnce) {
             // Right after onCreate's listing, or after access was granted to start up with.
@@ -306,17 +315,46 @@ class ListActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         adapter.stopped = false
+        storageWatcher.start()
     }
 
     override fun onStop() {
         adapter.stopped = true
+        storageWatcher.stop()
         super.onStop()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         peek.hide()
+        locationSheet.dismiss()
         adapter.release()
+    }
+
+    /**
+     * Lists the storage roots again. When the drive of the folder being browsed is
+     * gone, says so and goes to the device's storage; returns true then. Otherwise
+     * the crumbs and an open location picker follow the new list.
+     */
+    private fun refreshRoots(): Boolean {
+        val before = roots
+        roots = StorageRoots.list(this)
+        locationSheet.update(roots)
+        if (roots == before) return false
+        val dir = currentDir ?: return false
+        val gone = StorageRoot.removed(dir.absolutePath, before, roots)
+        if (gone != null) {
+            toast(getString(R.string.location_removed, gone.name))
+            trail = null
+            currentDir = null
+            if (mode == TAB_BROWSE && hasStorageAccess()) {
+                loadDirectory(File(roots.first().path))
+                return true
+            }
+            return false
+        }
+        if (mode == TAB_BROWSE) showCrumbs(dir)
+        return false
     }
 
     /** Re-applies whatever changed since the settings last shown. */
@@ -526,8 +564,7 @@ class ListActivity : AppCompatActivity() {
 
         val atRoot = roots.any { it.path == dir.absolutePath }
         supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
-        val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
-        pathbar.show(crumbs, rootMenu = roots.size > 1, current = current)
+        showCrumbs(dir)
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         invalidateOptionsMenu()
 
@@ -1646,18 +1683,20 @@ class ListActivity : AppCompatActivity() {
         loadDirectory(dir)
     }
 
-    /** Lists the mounted storage roots; picking one opens its top folder. */
-    private fun showRootChooser() {
-        val list = roots
-        val current = currentDir?.let { StorageRoot.of(it.absolutePath, list) }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.choose_root)
-            .setSingleChoiceItems(list.map { it.name }.toTypedArray(), list.indexOf(current)) { dialog, which ->
-                dialog.dismiss()
-                loadDirectory(File(list[which].path))
-            }
-            .show()
+    /** The crumbs of [dir], the root one with its location's icon and the picker's marker. */
+    private fun showCrumbs(dir: File) {
+        val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
+        val kind = StorageRoot.bound(dir.absolutePath, roots)?.kind ?: StorageRoot.Kind.REMOVABLE
+        pathbar.show(crumbs, rootMenu = true, current = current, rootIcon = LocationSheet.iconOf(kind))
     }
+
+    /** Opens the location picker; picking a root opens its top folder. */
+    private fun showRootChooser() {
+        locationSheet.show(roots, currentDir?.let { StorageRoot.of(it.absolutePath, roots) })
+    }
+
+    /** The open location picker; for tests. */
+    internal val locations: LocationSheet get() = locationSheet
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {

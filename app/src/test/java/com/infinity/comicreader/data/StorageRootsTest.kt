@@ -30,4 +30,18 @@ class StorageRootsTest {
     @Test
     @Config(sdk = [34])
     fun deviceStorageComesFirstWithVolumeApi() = assertDeviceFirst()
+
+    @Test
+    fun orderedByKind() {
+        val share = StorageRoot("/shares/a", "Share A", StorageRoot.Kind.SHARE)
+        val usb = StorageRoot("/storage/1A2B-3C4D", "Drive A", StorageRoot.Kind.USB)
+        val card = StorageRoot("/storage/1234-ABCD", "Card", StorageRoot.Kind.REMOVABLE)
+        val device = StorageRoot("/storage/emulated/0", "Device", StorageRoot.Kind.DEVICE)
+        assertEquals(listOf(device, card, usb, share), StorageRoots.ordered(listOf(share, usb, card, device)))
+    }
+
+    @Test
+    fun spaceOfAnUnreachableRootIsUnknown() {
+        assertEquals(null, StorageRoots.space(StorageRoot("/no/such/root", "Gone", StorageRoot.Kind.USB)))
+    }
 }

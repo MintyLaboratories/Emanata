@@ -8,6 +8,8 @@ import android.view.View
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.DrawableRes
+import androidx.core.widget.TextViewCompat
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Crumb
@@ -61,9 +63,10 @@ class CrumbBar @JvmOverloads constructor(
 
     /**
      * Shows [list] with the current folder at [current] (default: the last crumb);
-     * [rootMenu] marks the root crumb as opening a menu of roots.
+     * [rootMenu] marks the root crumb as opening a menu of roots, and [rootIcon] (0 for
+     * none) shows before its name.
      */
-    fun show(list: List<Crumb>, rootMenu: Boolean, current: Int = list.lastIndex) {
+    fun show(list: List<Crumb>, rootMenu: Boolean, current: Int = list.lastIndex, @DrawableRes rootIcon: Int = 0) {
         crumbs = list
         currentIndex = current
         row.removeAllViews()
@@ -71,7 +74,11 @@ class CrumbBar @JvmOverloads constructor(
         val root = list.firstOrNull() ?: return
         val atRoot = current == 0
         rootCrumb.text = if (rootMenu) context.getString(R.string.crumb_root_menu, root.label) else root.label
+        rootCrumb.contentDescription = if (rootMenu) context.getString(R.string.crumb_root_description, root.label) else null
+        rootCrumb.setCompoundDrawablesRelativeWithIntrinsicBounds(rootIcon, 0, 0, 0)
         style(rootCrumb, if (atRoot && !rootMenu) Kind.CURRENT else Kind.BEHIND)
+        // The icon takes the crumb's color.
+        TextViewCompat.setCompoundDrawableTintList(rootCrumb, rootCrumb.textColors)
         rootCrumb.setOnClickListener(
             when {
                 rootMenu -> View.OnClickListener { onRootMenuClick?.invoke(root) }
@@ -114,6 +121,7 @@ class CrumbBar @JvmOverloads constructor(
         setTextAppearance(R.style.TextAppearance_ComicReader_Crumb)
         maxLines = 1
         minHeight = dp(MIN_TOUCH_DP)
+        compoundDrawablePadding = dp(8)
         val h = dp(12)
         val v = dp(8)
         setPadding(h, v, h, v)

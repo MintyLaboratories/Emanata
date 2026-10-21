@@ -52,9 +52,11 @@ import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderSettings
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
-import com.infinity.comicreader.data.ReadingDirection
+import com.infinity.comicreader.data.StorageRoot
+import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.Chapter
@@ -177,6 +179,11 @@ class ViewerActivity : AppCompatActivity() {
     /** The folder and detection last noted on open, so each folder's note shows once. */
     private var notedDetection: Pair<String?, DirectionDetection.Detected>? = null
 
+    /** The storage roots when the book was opened, to tell when its drive is pulled out. */
+    internal var bookRoots: List<StorageRoot> = emptyList()
+
+    private val storageWatcher = StorageWatcher(this) { checkStorage() }
+
     private var openJob: Job? = null
     private var endDismissed = false
     private var markedRead = false
@@ -237,6 +244,7 @@ class ViewerActivity : AppCompatActivity() {
 
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
+        storageWatcher.start()
 
         // Page-change callbacks are registered once: they outlive adapter swaps.
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
@@ -376,6 +384,20 @@ class ViewerActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         sessionStart = SystemClock.elapsedRealtime()
+        // The drive may have gone while the reader was away.
+        checkStorage()
+    }
+
+    /** Closes the book, saying why, once the drive it is read from is gone from [now]. */
+    internal fun checkStorage(now: List<StorageRoot> = StorageRoots.list(this)) {
+        val path = file?.absolutePath ?: return
+        val gone = StorageRoot.removed(path, bookRoots, now) ?: return
+        if (isFinishing) return
+        saveHistory()
+        openJob?.cancel()
+        closeSource()
+        toast(getString(R.string.book_storage_removed, gone.name))
+        finish()
     }
 
     override fun onStop() {
@@ -399,6 +421,7 @@ class ViewerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        storageWatcher.stop()
         handler.removeCallbacks(hideHint)
         hint.animate().cancel()
         stopAutoScroll()
@@ -655,6 +678,7 @@ class ViewerActivity : AppCompatActivity() {
         val target = File(path)
         persistAdjustments()
         file = target
+        bookRoots = StorageRoots.list(this)
         refreshFavorites()
         loadAdjustments()
         toolbar.title = chapterLabel(target)

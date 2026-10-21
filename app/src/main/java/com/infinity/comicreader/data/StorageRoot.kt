@@ -6,7 +6,8 @@ package com.infinity.comicreader.data
  * without a trailing slash; [name] stands in for it in crumbs and labels.
  */
 data class StorageRoot(val path: String, val name: String, val kind: Kind) {
-    enum class Kind { DEVICE, REMOVABLE, SHARE }
+    /** Where a root lives; [REMOVABLE] is an SD card, or any removable volume not known to be USB. */
+    enum class Kind { DEVICE, REMOVABLE, USB, SHARE }
 
     fun contains(p: String): Boolean =
         p == path || (p.length > path.length && p.startsWith(path) && (isSeparator(p[path.length]) || isSeparator(path.last())))
@@ -19,6 +20,16 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
         /** The innermost of [roots] holding [path], or null when none does. */
         fun of(path: String, roots: List<StorageRoot>): StorageRoot? =
             roots.filter { it.contains(path) }.maxByOrNull { it.path.length }
+
+        /**
+         * The removable root of [path] among [before] that [now] no longer lists (a drive
+         * pulled out); null while it is mounted, or when [path] is not on a removable one.
+         */
+        fun removed(path: String, before: List<StorageRoot>, now: List<StorageRoot>): StorageRoot? {
+            val root = of(path, before) ?: return null
+            if (root.kind != Kind.REMOVABLE && root.kind != Kind.USB) return null
+            return root.takeIf { r -> now.none { it.path == r.path } }
+        }
 
         /**
          * The top [path] may be browsed up to: its root in [roots], else the first

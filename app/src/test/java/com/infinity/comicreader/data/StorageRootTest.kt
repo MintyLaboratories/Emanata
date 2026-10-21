@@ -89,4 +89,16 @@ class StorageRootTest {
         assertNull(StorageRoot.bound("/storage/emulated", roots))
         assertNull(StorageRoot.bound("/", roots))
     }
+
+    @Test
+    fun removedDrives() {
+        val usb = StorageRoot("/storage/1A2B-3C4D", "Drive A", StorageRoot.Kind.USB)
+        val before = listOf(device, card, usb)
+        assertEquals(usb, StorageRoot.removed("/storage/1A2B-3C4D/books/a.cbz", before, listOf(device, card)))
+        assertEquals(card, StorageRoot.removed("/storage/1234-ABCD/a.cbz", before, listOf(device, usb)))
+        // Still mounted, on the device itself, or on no root at all.
+        assertEquals(null, StorageRoot.removed("/storage/1A2B-3C4D/a.cbz", before, before))
+        assertEquals(null, StorageRoot.removed("/storage/emulated/0/a.cbz", before, emptyList()))
+        assertEquals(null, StorageRoot.removed("/mnt/elsewhere/a.cbz", before, emptyList()))
+    }
 }

@@ -1,11 +1,13 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FavoriteLabels
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.MissingFolder
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
@@ -53,9 +55,20 @@ class FolderPicker(
         }
     }
 
-    /** Lists the folders inside [dir]; tapping one goes into it, "Choose" picks [dir]. */
+    /**
+     * Lists the folders inside [dir]; tapping one goes into it, "Choose" picks [dir]. A
+     * [dir] gone by then lists its nearest existing parent instead, saying so.
+     */
     private fun browse(dir: File) {
         scope.launch {
+            val found = withContext(AppDispatchers.io) {
+                if (dir.isDirectory) dir else MissingFolder.nearest(dir.absolutePath, roots) { File(it).isDirectory }?.let { File(it) }
+            }
+            if (found != dir) {
+                Toast.makeText(context, R.string.folder_gone, Toast.LENGTH_SHORT).show()
+                if (found != null) browse(found)
+                return@launch
+            }
             val folders = withContext(AppDispatchers.io) {
                 dir.listFiles()
                     ?.filter { it.isDirectory && !it.name.startsWith(".") }

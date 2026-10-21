@@ -15,6 +15,9 @@ object StartupLocation {
      * - [RECENT_FAVORITE]: the favorite folder holding the most recently read book,
      *   else the most recently added favorite folder ([added] is newest first);
      * - [CUSTOM]: [custom].
+     *
+     * [last] and [custom] are kept while [reachable] (by default [isDir]) says they or a
+     * parent within their root exist, so Browse can go to that parent and say the folder is gone.
      */
     fun resolve(
         choice: String,
@@ -23,8 +26,10 @@ object StartupLocation {
         shown: () -> List<String>,
         added: () -> List<String>,
         history: () -> List<String>,
+        reachable: ((String) -> Boolean)? = null,
         isDir: (String) -> Boolean
     ): String? {
+        val keep = reachable ?: isDir
         val picked = when (choice) {
             FIRST_FAVORITE -> shown().firstOrNull(isDir)
             RECENT_FAVORITE -> {
@@ -33,10 +38,10 @@ object StartupLocation {
                     folders.filter { isUnder(book, it) }.maxByOrNull { it.length }
                 } ?: folders.firstOrNull()
             }
-            CUSTOM -> custom?.takeIf(isDir)
+            CUSTOM -> custom?.takeIf(keep)
             else -> null
         }
-        return picked ?: last?.takeIf(isDir)
+        return picked ?: last?.takeIf(keep)
     }
 
     private fun isUnder(path: String, dir: String): Boolean =

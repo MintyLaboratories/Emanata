@@ -62,4 +62,16 @@ class StartupLocationTest {
         assertEquals("/r/last", resolve(RECENT_FAVORITE, added = emptyList()))
         assertNull(resolve(LAST, last = "/gone"))
     }
+
+    @Test
+    fun aMissingCustomOrLastFolderWithAParentLeftIsKeptForBrowseToClimbOutOf() {
+        val reachable = { p: String -> p.startsWith("/r/") }
+        fun resolveReachable(choice: String, custom: String?, last: String?) =
+            StartupLocation.resolve(choice, custom, last, { emptyList() }, { emptyList() }, { emptyList() }, reachable) { it in dirs }
+        assertEquals("/r/custom/gone", resolveReachable(CUSTOM, "/r/custom/gone", "/r/last"))
+        assertEquals("/r/last/gone", resolveReachable(LAST, null, "/r/last/gone"))
+        // Nothing of it left: the last folder seen, else nothing.
+        assertEquals("/r/last", resolveReachable(CUSTOM, "/unplugged/x", "/r/last"))
+        assertNull(resolveReachable(LAST, null, "/unplugged/x"))
+    }
 }

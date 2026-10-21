@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowToast
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -156,6 +157,36 @@ class ListActivityCrumbsTest {
         idle()
         assertEquals(listOf("Device", "attic", "Other"), bar.crumbs.map { it.label })
         assertEquals(2, bar.currentIndex)
+    }
+
+    @Test
+    fun aForwardCrumbToAFolderNowGoneOpensItsNearestParentAndDropsThePastCrumbs() {
+        File(root, "attic/Comics/Series/Volume").mkdirs()
+        Prefs(ApplicationProvider.getApplicationContext()).lastPath = File(root, "attic/Comics/Series/Volume").absolutePath
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
+        pickLocation(activity, "Device")
+        assertEquals(listOf("Device", "attic", "Comics", "Series", "Volume"), bar.crumbs.map { it.label })
+
+        File(root, "attic/Comics/Series").deleteRecursively()
+        // Separator, "Device", separator, "attic", separator, "Comics", separator, gray "Series".
+        (bar.row().getChildAt(7) as TextView).performClick()
+        idle()
+        assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
+        assertEquals(2, bar.currentIndex)
+        assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun aStartupFolderNowGoneOpensItsNearestParent() {
+        Prefs(ApplicationProvider.getApplicationContext()).lastPath = File(root, "attic/Comics/Gone/Deeper").absolutePath
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
+        assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
+        assertEquals(2, bar.currentIndex)
+        assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
     }
 
     @Test

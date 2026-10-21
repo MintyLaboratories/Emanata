@@ -61,6 +61,7 @@ import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
+import com.infinity.comicreader.data.MissingFolder
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
@@ -495,7 +496,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             shown = { LibraryOrder.favorites(this, prefs, roots).map { it.path } },
             added = { library.favorites() },
             history = { library.history().map { it.path } },
-            isDir = { File(it).isDirectory }
+            isDir = { File(it).isDirectory },
+            reachable = { nearestFolder(it) != null }
         )
         return path?.let { File(it) } ?: Environment.getExternalStorageDirectory()
     }
@@ -557,7 +559,21 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     // ------------------------------------------------------------------ listing
 
+    /** [path] when it is a folder, else its nearest existing parent within its root; null when none is left. */
+    private fun nearestFolder(path: String): String? = MissingFolder.nearest(path, roots) { File(it).isDirectory }
+
+    /**
+     * Browses [dir], or when it no longer exists its nearest existing parent (the device's
+     * storage when none is left), saying so and dropping the forward crumbs through it.
+     */
     private fun loadDirectory(dir: File, highlight: String? = null) {
+        if (!dir.isDirectory) {
+            val missing = dir.absolutePath
+            toast(R.string.folder_gone)
+            trail = MissingFolder.trailAfter(trail, missing)
+            val instead = nearestFolder(missing)?.let { File(it) } ?: Environment.getExternalStorageDirectory()
+            if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead)
+        }
         mode = TAB_BROWSE
         applyView()
         currentDir = dir
@@ -999,6 +1015,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun onEntryClick(entry: BookEntry) {
         when {
             entry.isDir -> loadDirectory(entry.file)
+            // A favorite folder that is gone: browse what is left of it.
+            mode == TAB_FAVORITES && !Formats.isOpenable(entry.name) && !entry.file.exists() -> loadDirectory(entry.file)
             mode == TAB_HISTORY -> {
                 // The reader decides where to start (ResumeMode.start).
                 if (entry.file.exists()) openViewer(entry.file, -1) else toast(R.string.open_location_failed)
@@ -1219,14 +1237,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         refreshCurrent()
     }
 
+    /** Browses the folder holding [file], highlighting it; [loadDirectory] climbs out of a folder that is gone. */
     private fun openLocation(file: File) {
         val dir = file.parentFile
-        if (dir == null || !dir.isDirectory) {
+        if (dir == null) {
             toast(R.string.open_location_failed)
             return
         }
+        val found = dir.isDirectory
         loadDirectory(dir, highlight = file.absolutePath)
-        toast(R.string.menu_open_location)
+        if (found) toast(R.string.menu_open_location)
     }
 
     private fun renameEntry(file: File) {
@@ -1690,17 +1710,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return if (path == root.path) null else dir.parentFile
     }
 
-    /** Opens a crumb's folder; a forward crumb whose folder is gone drops the trail instead. */
-    private fun openCrumb(crumb: Crumb) {
-        val dir = File(crumb.path)
-        if (!dir.isDirectory) {
-            toast(R.string.folder_gone)
-            trail = null
-            currentDir?.let { loadDirectory(it) }
-            return
-        }
-        loadDirectory(dir)
-    }
+    /** Opens a crumb's folder; [loadDirectory] climbs out of one that is gone. */
+    private fun openCrumb(crumb: Crumb) = loadDirectory(File(crumb.path))
 
     /** The crumbs of [dir], with the forward crumbs browsed past it. */
     private fun showCrumbs(dir: File) {

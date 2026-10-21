@@ -4,6 +4,9 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
@@ -16,6 +19,7 @@ import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -90,6 +94,84 @@ class ListActivityPeekTest {
         assertEquals(View.GONE, peek.visibility)
         // Back closed the peek, not the folder.
         assertEquals(book.parentFile!!.absolutePath, Prefs(activity).lastPath)
+    }
+
+    /** A touch with a finger at each of [points]. */
+    private fun touch(action: Int, vararg points: Pair<Float, Float>): MotionEvent {
+        val properties = Array(points.size) { i ->
+            MotionEvent.PointerProperties().apply {
+                id = i
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            }
+        }
+        val coords = Array(points.size) { i ->
+            MotionEvent.PointerCoords().apply {
+                x = points[i].first
+                y = points[i].second
+                pressure = 1f
+                size = 1f
+            }
+        }
+        val now = SystemClock.uptimeMillis()
+        return MotionEvent.obtain(now, now, action, points.size, properties, coords, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+    }
+
+    private val secondDown = MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+    private val secondUp = MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+
+    /** Puts two fingers 10 px apart on [file]'s tile, then spreads them to [spread] px apart and lifts one. */
+    private fun ListActivity.spread(file: File, spread: Float?) {
+        val recycler = findViewById<RecyclerView>(R.id.recycler)
+        val position = (recycler.adapter as BookAdapter).positionOf(file.absolutePath)
+        val tile = recycler.findViewHolderForAdapterPosition(position)!!.itemView
+        val x = tile.left + tile.width / 2f
+        val y = tile.top + tile.height / 2f
+        recycler.dispatchTouchEvent(touch(MotionEvent.ACTION_DOWN, x to y))
+        idle(50)
+        recycler.dispatchTouchEvent(touch(secondDown, x to y, x + 10 to y))
+        // Past the long-press timeout: the tile no longer has the touch.
+        idle(1000)
+        var end = x + 10
+        if (spread != null) {
+            for (step in 1..4) {
+                end = x + 10 + (spread - 10) * step / 4
+                recycler.dispatchTouchEvent(touch(MotionEvent.ACTION_MOVE, x to y, end to y))
+            }
+        }
+        recycler.dispatchTouchEvent(touch(secondUp, x to y, end to y))
+        recycler.dispatchTouchEvent(touch(MotionEvent.ACTION_UP, x to y))
+        idle(500)
+    }
+
+    @Test
+    fun spreadingPartWayKeepsAPeekOpenWithoutALongPress() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.spread(book, spread = 130f)
+        assertNull(ShadowDialog.getLatestDialog())
+        assertTrue(activity.peek().isShowing)
+        assertNull(shadowOf(activity).nextStartedActivity)
+    }
+
+    @Test
+    fun spreadingFullyOpensTheBook() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.spread(book, spread = 2000f)
+        val started = shadowOf(activity).nextStartedActivity
+        assertEquals(ViewerActivity::class.java.name, started?.component?.className)
+        assertEquals(book.absolutePath, started?.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertFalse(activity.peek().isShowing)
+    }
+
+    @Test
+    fun twoFingersThatDoNotSpreadDoNothing() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        activity.spread(book, spread = null)
+        assertNull(ShadowDialog.getLatestDialog())
+        assertFalse(activity.peek().isShowing)
+        assertNull(shadowOf(activity).nextStartedActivity)
     }
 
     @Test

@@ -1023,7 +1023,11 @@ class ListActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ peek
 
-    /** Spreading two fingers on a comic grows a grid of its pages out of it ([PeekGesture]). */
+    /**
+     * Spreading two fingers on a comic grows a grid of its pages out of it
+     * ([PeekGesture]). The second finger landing on a comic takes the touch from its
+     * tile, so the tile neither clicks nor opens its long-press menu.
+     */
     private fun setUpPeek() {
         peek = PeekOverlay(this).apply {
             elevation = PEEK_ELEVATION_DP * resources.displayMetrics.density
@@ -1037,40 +1041,29 @@ class ListActivity : AppCompatActivity() {
             private var target: Pair<BookEntry, View>? = null
 
             override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2 && !peek.isShowing && applied.pinchPeek != PeekMode.OFF) {
-                        val midX = (e.getX(0) + e.getX(1)) / 2
-                        val midY = (e.getY(0) + e.getY(1)) / 2
-                        target = peekTarget(midX, midY) ?: peekTarget(e.getX(0), e.getY(0))
-                        gesture = if (target == null) null else PeekGesture(slop, fullSpread()).also { it.begin(span(e)) }
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val g = gesture ?: return false
-                        val t = target ?: return false
-                        if (e.pointerCount >= 2 && g.move(span(e))) {
-                            startPeek(t.first, t.second)
-                            peek.setProgress(g.progress)
-                            return true
-                        }
-                    }
-                    MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        gesture = null
-                        target = null
-                    }
-                }
-                return false
+                if (e.actionMasked != MotionEvent.ACTION_POINTER_DOWN || e.pointerCount != 2) return false
+                if (peek.isShowing || applied.pinchPeek == PeekMode.OFF || rv.scrollState != RecyclerView.SCROLL_STATE_IDLE) return false
+                val midX = (e.getX(0) + e.getX(1)) / 2
+                val midY = (e.getY(0) + e.getY(1)) / 2
+                val t = peekTarget(midX, midY) ?: peekTarget(e.getX(0), e.getY(0)) ?: return false
+                target = t
+                gesture = PeekGesture(slop, fullSpread()).also { it.begin(span(e)) }
+                return true
             }
 
             override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
                 val g = gesture ?: return
                 when (e.actionMasked) {
                     MotionEvent.ACTION_MOVE -> if (e.pointerCount >= 2) {
-                        g.move(span(e))
-                        peek.setProgress(g.progress)
+                        val t = target ?: return
+                        if (g.move(span(e))) startPeek(t.first, t.second)
+                        if (g.peeking) peek.setProgress(g.progress)
                     }
                     MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        val outcome = if (e.actionMasked == MotionEvent.ACTION_CANCEL) PeekGesture.Release.COLLAPSE else g.release(applied.pinchPeek)
-                        peek.release(outcome)
+                        if (g.peeking) {
+                            val outcome = if (e.actionMasked == MotionEvent.ACTION_CANCEL) PeekGesture.Release.COLLAPSE else g.release(applied.pinchPeek)
+                            peek.release(outcome)
+                        }
                         gesture = null
                         target = null
                     }

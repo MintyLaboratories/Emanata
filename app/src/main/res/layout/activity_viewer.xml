@@ -233,7 +233,6 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginHorizontal="@dimen/end_card_margin"
-        android:layout_marginBottom="@dimen/reader_hint_bottom"
         android:background="@drawable/bg_reader_bottom"
         android:gravity="center"
         android:paddingHorizontal="@dimen/space_5"

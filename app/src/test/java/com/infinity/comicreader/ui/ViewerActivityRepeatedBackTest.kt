@@ -247,6 +247,20 @@ class ViewerActivityRepeatedBackTest {
     }
 
     @Test
+    fun theHintSitsAboveTheBottomBarOrTheScreensBottom() {
+        val viewer = launch(second, 0)
+        viewer.back()
+        val hint = viewer.findViewById<View>(R.id.viewer_hint)
+        val bar = viewer.findViewById<View>(R.id.viewer_bottom)
+        val gap = viewer.resources.getDimensionPixelSize(R.dimen.reader_hint_gap).toFloat()
+        assertTrue(bar.top > 0)
+        assertEquals(bar.top - gap, hint.bottom + hint.translationY, 0.5f)
+        bar.visibility = View.GONE
+        idle()
+        assertEquals(viewer.findViewById<View>(R.id.viewer_root).height - gap, hint.bottom + hint.translationY, 0.5f)
+    }
+
+    @Test
     fun aLateBackStartsOver() {
         val viewer = launch(second, 0)
         viewer.back()

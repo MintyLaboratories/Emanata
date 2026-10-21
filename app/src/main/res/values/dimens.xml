@@ -23,6 +23,6 @@
     <dimen name="reader_indicator_min_w">84dp</dimen>
     <dimen name="end_card_margin">32dp</dimen>
     <dimen name="chapter_drawer_width">360dp</dimen>
-    <!-- Clear of the bottom bar. -->
-    <dimen name="reader_hint_bottom">140dp</dimen>
+    <!-- Above the bottom bar, or the screen's bottom while the bar is hidden. -->
+    <dimen name="reader_hint_gap">16dp</dimen>
 </resources>

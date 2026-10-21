@@ -423,9 +423,10 @@ class ViewerActivity : AppCompatActivity() {
         endPrev = findViewById(R.id.end_prev)
         hint = findViewById(R.id.viewer_hint)
         vertical.layoutManager = LinearLayoutManager(this)
-        // Any relayout (rotation, the card's buttons, the bars) places the card again.
+        // Any relayout (rotation, the card's buttons, the bars) places the card and the hint again.
         findViewById<View>(R.id.viewer_root).addOnLayoutChangeListener { root, _, _, _, _, _, _, _, _ ->
             placeEndCard(root.height)
+            placeHint(root.height)
         }
     }
 
@@ -435,6 +436,14 @@ class ViewerActivity : AppCompatActivity() {
         val margin = resources.getDimensionPixelSize(R.dimen.end_card_margin)
         val limit = if (bottomBar.visibility == View.VISIBLE) bottomBar.top else rootHeight
         endCard.translationY = (EndCard.top(rootHeight, endCard.height, margin, limit) - endCard.top).toFloat()
+    }
+
+    /** Puts the hint just above the bottom bar while it shows, else above the bottom of a root [rootHeight] tall. */
+    private fun placeHint(rootHeight: Int) {
+        if (hint.visibility != View.VISIBLE) return
+        val gap = resources.getDimensionPixelSize(R.dimen.reader_hint_gap)
+        val limit = if (bottomBar.visibility == View.VISIBLE) bottomBar.top else rootHeight
+        hint.translationY = (limit - gap - hint.bottom).toFloat()
     }
 
     private fun loadPrefs() {

@@ -377,7 +377,7 @@
     <string name="confirm_clear_bookmarks_title">Clear all bookmarks?</string>
     <string name="confirm_clear_bookmarks_msg">Removes every bookmark in every book.</string>
     <string name="confirm_clear_thumbs_title">Clear thumbnail cache?</string>
-    <string name="confirm_clear_thumbs_msg">Deletes the saved covers. They are made again as you browse.</string>
+    <string name="confirm_clear_thumbs_msg">Deletes the saved covers and page previews. They are made again as you browse.</string>
     <string name="confirm_reset_title">Reset all settings?</string>
     <string name="confirm_reset_msg">Returns every setting to its default, including theme, language and startup location. Per-book adjustments and reading progress are kept, as are favorites, history, bookmarks and folder layouts.</string>
     <string name="confirm_reset_stats_title">Reset reading statistics?</string>

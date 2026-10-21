@@ -81,10 +81,31 @@ object Decoders {
         return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target) }
     }
 
+    /** Where this thread's next full-size decode goes before it is cropped and resampled ([capturing]). */
+    private val fullSink = ThreadLocal<((Bitmap) -> Unit)?>()
+
+    /**
+     * Runs [block], handing the first image decoded in it on this thread to [sink] at its
+     * decoded size, before any crop or resampling. [sink] must leave the bitmap as it is.
+     */
+    fun <T> capturing(sink: (Bitmap) -> Unit, block: () -> T): T {
+        val outer = fullSink.get()
+        fullSink.set(sink)
+        try {
+            return block()
+        } finally {
+            if (outer == null) fullSink.remove() else fullSink.set(outer)
+        }
+    }
+
     /** [full] cropped and resampled to [target]; [full] itself when it already is the result, else recycled. */
     fun fit(full: Bitmap, target: Target): Bitmap {
         val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
             full.recycle()
+        }
+        fullSink.get()?.let { sink ->
+            fullSink.set(null)
+            sink(src)
         }
         val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src) else null
         val plan = if (bounds != null) {

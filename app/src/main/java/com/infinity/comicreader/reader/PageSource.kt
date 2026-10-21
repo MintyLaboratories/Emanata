@@ -27,6 +27,12 @@ interface PageSource : Closeable {
     fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail =
         BitmapDetail(loadPage(index, target.detail(pageSize(index), maxBytes)))
 
+    /**
+     * A quick preview of page [index] fitting [Previews.BOX] ([Previews.TARGET]), when its
+     * format decodes one much faster than the whole page; null otherwise. Blocking.
+     */
+    fun loadPreview(index: Int): Bitmap? = null
+
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 

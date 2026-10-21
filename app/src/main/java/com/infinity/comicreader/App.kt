@@ -6,6 +6,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.NestedArchives
+import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Locales
 import java.io.File
@@ -23,7 +24,7 @@ class App : Application() {
 
     /**
      * Drops temporary files left by earlier runs and files of earlier versions, and keeps
-     * the cover and nested-archive caches bounded.
+     * the cover, page-preview and nested-archive caches bounded.
      */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
@@ -38,6 +39,7 @@ class App : Application() {
                 }
                 File(cacheDir, "crop_src.png").takeIf { it.lastModified() < cutoff }?.delete()
                 Thumbs.trim(this)
+                PreviewStore.trim(PreviewStore.dirIn(cacheDir))
                 NestedArchives.trim(NestedArchives.dirIn(cacheDir))
             }
         }

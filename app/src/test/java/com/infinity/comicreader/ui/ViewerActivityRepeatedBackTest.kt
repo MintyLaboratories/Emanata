@@ -4,11 +4,14 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.widget.SeekBar
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.TestImages
@@ -93,6 +96,35 @@ class ViewerActivityRepeatedBackTest {
         idle()
     }
 
+    /** The page list touches go to: the pager's own list, or the strip. */
+    private fun ViewerActivity.list(): RecyclerView =
+        if (prefs.pageMode == "paged") findViewById<ViewPager2>(R.id.viewer_pager).getChildAt(0) as RecyclerView
+        else findViewById(R.id.viewer_vertical)
+
+    /** A one-finger drag across the page list from ([x0], [y0]) to ([x1], [y1]), then lifted. */
+    private fun ViewerActivity.drag(x0: Float, y0: Float, x1: Float, y1: Float) {
+        val rv = list()
+        val t = SystemClock.uptimeMillis()
+        rv.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x0, y0, 0))
+        val steps = 10
+        for (i in 1..steps) {
+            val f = i / steps.toFloat()
+            rv.dispatchTouchEvent(
+                MotionEvent.obtain(t, t + 16L * i, MotionEvent.ACTION_MOVE, x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, 0)
+            )
+        }
+        rv.dispatchTouchEvent(MotionEvent.obtain(t, t + 16L * (steps + 1), MotionEvent.ACTION_UP, x1, y1, 0))
+        idle()
+    }
+
+    /** A swipe across most of the page's width: rightward, or leftward when [leftward]. */
+    private fun ViewerActivity.swipe(leftward: Boolean = false) {
+        val rv = list()
+        val y = rv.height / 2f
+        val (from, to) = rv.width * 0.1f to rv.width * 0.9f
+        if (leftward) drag(to, y, from, y) else drag(from, y, to, y)
+    }
+
     private fun ViewerActivity.page(): Int = findViewById<SeekBar>(R.id.viewer_seek).progress
 
     private fun ViewerActivity.hintShown() = findViewById<View>(R.id.viewer_hint).visibility == View.VISIBLE
@@ -141,6 +173,46 @@ class ViewerActivityRepeatedBackTest {
         assertEquals(true, viewer.hintShown())
         assertNull(viewer.opened())
         viewer.back()
+        assertOpensFirstAtItsEnd(viewer.opened())
+    }
+
+    @Test
+    fun twoSwipesBackOnTheFirstPageOpenThePreviousChapter() {
+        val viewer = launch(second, 0)
+        viewer.swipe()
+        assertEquals(true, viewer.hintShown())
+        assertNull(viewer.opened())
+        viewer.swipe()
+        assertOpensFirstAtItsEnd(viewer.opened())
+    }
+
+    @Test
+    fun swipingForwardOnTheFirstPageDoesNotCount() {
+        prefs.autoNext = false
+        val viewer = launch(second, 0)
+        viewer.swipe(leftward = true)
+        assertEquals(false, viewer.hintShown())
+    }
+
+    @Test
+    fun rightToLeftSwipesBackLeftward() {
+        prefs.readingDir = "rtl"
+        val viewer = launch(second, 0)
+        viewer.swipe(leftward = true)
+        assertEquals(true, viewer.hintShown())
+        viewer.swipe(leftward = true)
+        assertOpensFirstAtItsEnd(viewer.opened())
+    }
+
+    @Test
+    fun aStripSwipesBackWithAFlickDown() {
+        prefs.pageMode = "longstrip"
+        val viewer = launch(second, 0)
+        val rv = viewer.list()
+        val x = rv.width / 2f
+        viewer.drag(x, rv.height * 0.2f, x, rv.height * 0.8f)
+        assertEquals(true, viewer.hintShown())
+        viewer.drag(x, rv.height * 0.2f, x, rv.height * 0.8f)
         assertOpensFirstAtItsEnd(viewer.opened())
     }
 

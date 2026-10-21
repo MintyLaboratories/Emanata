@@ -144,6 +144,22 @@ class ViewerActivitySeekPanelTest {
     }
 
     @Test
+    fun aTapOnTheToolbarClosesItToo() {
+        val viewer = launch()
+        viewer.openSeekPanel()
+        val bar = viewer.findViewById<View>(R.id.viewer_toolbar)
+        val at = IntArray(2).also { bar.getLocationOnScreen(it) }
+        val x = at[0] + bar.width / 2f
+        val y = at[1] + bar.height / 2f
+        val t = SystemClock.uptimeMillis()
+        viewer.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0))
+        viewer.dispatchTouchEvent(MotionEvent.obtain(t, t + 50, MotionEvent.ACTION_UP, x, y, 0))
+        idle()
+        assertFalse(viewer.seekPanelShown)
+        assertEquals(View.GONE, viewer.findViewById<View>(R.id.seek_scrim).visibility)
+    }
+
+    @Test
     fun tappingAThumbnailJumpsThere() {
         val viewer = launch()
         viewer.openSeekPanel()

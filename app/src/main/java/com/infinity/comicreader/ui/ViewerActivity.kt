@@ -1741,6 +1741,24 @@ class ViewerActivity : AppCompatActivity() {
     /** True while the preview strip shows. */
     internal val seekPanelShown: Boolean get() = seekPanel.visibility == View.VISIBLE
 
+    /** A touch on the bars, which sit above the strip's scrim, closes the strip and goes on to the bars. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && seekPanelShown && !hits(seekPanel, ev) &&
+            (hits(toolbar, ev) || hits(bottomBar, ev))
+        ) {
+            closeSeekPanel()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** True when [ev] lands on [view] as it shows on screen. */
+    private fun hits(view: View, ev: MotionEvent): Boolean {
+        if (view.visibility != View.VISIBLE) return false
+        val at = IntArray(2)
+        view.getLocationOnScreen(at)
+        return ev.rawX >= at[0] && ev.rawX < at[0] + view.width && ev.rawY >= at[1] && ev.rawY < at[1] + view.height
+    }
+
     /** Hides the strip; detaching its adapter recycles the cells, which stops their loads but keeps the caches. */
     private fun closeSeekPanel() {
         seekBack.isEnabled = false

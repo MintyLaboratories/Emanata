@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
@@ -126,11 +127,12 @@ class LibrarySnapshot(
         val path = file.absolutePath
         val isDir = stat.isDirectory
         val history = if (isDir) null else history[path]
+        val books = children?.filter { Formats.isOpenable(it.name) }
         return BookEntry(
             file = file,
             name = name,
             isDir = isDir,
-            type = if (isDir) EntryType.FOLDER else com.infinity.comicreader.util.Formats.typeOf(file.name),
+            type = if (isDir) EntryType.FOLDER else Formats.typeOf(file.name),
             size = stat.size,
             lastModified = stat.lastModified,
             childCount = children?.size ?: -1,
@@ -143,7 +145,9 @@ class LibrarySnapshot(
             added = stat.created,
             accessed = access[path] ?: 0,
             year = if (isDir) Years.ofFolder(file.name, children.orEmpty().map { it.name }) else Years.fromName(file.name),
-            direction = directionOf(path, isDir)
+            direction = directionOf(path, isDir),
+            bookCount = books?.size ?: -1,
+            begunCount = books?.count { it.absolutePath in this.history || it.absolutePath in read } ?: -1
         )
     }
 

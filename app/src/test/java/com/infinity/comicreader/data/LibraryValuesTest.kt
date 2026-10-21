@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 
 class LibraryValuesTest {
 
@@ -83,6 +84,26 @@ class LibraryValuesTest {
         assertEquals(50L, live.of(book, SortKey.LENGTH))
         // Entries not frozen have no value yet, so they sort last.
         assertNull(frozen.of(entry("new.cbz"), SortKey.LENGTH))
+    }
+
+    @Test
+    fun folderEntriesCountTheirBooks() {
+        val dir = Files.createTempDirectory("values").toFile()
+        try {
+            val books = listOf("1.cbz", "2.cbz", "3.cbz").map { File(dir, it).apply { writeBytes(ByteArray(1)) } }
+            val sub = File(dir, "Extras").apply { mkdirs() }
+            val snap = LibrarySnapshot(
+                read = setOf(books[0].absolutePath),
+                history = mapOf(books[1].absolutePath to HistoryItem(books[1].absolutePath, "2.cbz", 3, 20, 1))
+            )
+            val entry = snap.entry(dir, books + sub)
+            assertEquals(4, entry.childCount)
+            assertEquals(3, entry.bookCount)
+            assertEquals(2, entry.begunCount)
+            assertEquals(ReadStatus.IN_PROGRESS, ReadStatus.of(entry))
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     @Test

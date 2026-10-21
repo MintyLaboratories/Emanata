@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -72,19 +73,30 @@ class LibraryFilterTest {
 
     @Test
     fun byReadStatus() {
-        assertEquals(listOf("zipped", "folder"), items.passing(LibraryFilter(statuses = setOf(ReadStatus.UNREAD))))
+        // The folder was not looked into, so its status is unknown.
+        assertEquals(listOf("zipped"), items.passing(LibraryFilter(statuses = setOf(ReadStatus.UNREAD))))
         assertEquals(listOf("image", "manga"), items.passing(LibraryFilter(statuses = setOf(ReadStatus.IN_PROGRESS))))
         assertEquals(listOf("pdf"), items.passing(LibraryFilter(statuses = setOf(ReadStatus.FINISHED))))
     }
 
     @Test
-    fun folderStatusFromItsReadCount() {
-        fun folder(read: Int, count: Int) =
-            BookEntry(File("/f"), "f", true, EntryType.FOLDER, 0, 0, childCount = count, readCount = read)
+    fun folderStatusFromItsBooks() {
+        fun folder(read: Int, books: Int, begun: Int = read, children: Int = books) = BookEntry(
+            File("/f"), "f", true, EntryType.FOLDER, 0, 0,
+            childCount = children, readCount = read, bookCount = books, begunCount = begun
+        )
         assertEquals(ReadStatus.UNREAD, ReadStatus.of(folder(0, 4)))
         assertEquals(ReadStatus.IN_PROGRESS, ReadStatus.of(folder(1, 4)))
         assertEquals(ReadStatus.FINISHED, ReadStatus.of(folder(4, 4)))
-        assertEquals(ReadStatus.UNREAD, ReadStatus.of(folder(0, 0)))
+        // Opened but none finished.
+        assertEquals(ReadStatus.IN_PROGRESS, ReadStatus.of(folder(0, 4, begun = 2)))
+        // Subfolders do not keep its books from being finished.
+        assertEquals(ReadStatus.FINISHED, ReadStatus.of(folder(4, 4, children = 6)))
+        // No books, or not looked into: unknown, so a status rule drops it.
+        assertNull(ReadStatus.of(folder(0, 0, children = 3)))
+        assertNull(ReadStatus.of(folder(-1, -1)))
+        assertEquals(emptyList<String>(), listOf(Item(folder(0, 0, children = 3), null, null, ReadingDirection.LTR))
+            .passing(LibraryFilter(statuses = setOf(ReadStatus.UNREAD))))
     }
 
     @Test

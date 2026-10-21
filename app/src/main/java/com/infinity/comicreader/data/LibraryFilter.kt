@@ -20,13 +20,15 @@ enum class ReadStatus(val key: String) {
         fun of(key: String?): ReadStatus? = entries.firstOrNull { it.key == key }
 
         /**
-         * A book: finished when marked read, in progress once opened. A folder:
-         * finished when all its items are read, in progress when some are.
+         * A book: finished when marked read, in progress once opened. A folder, by
+         * the books directly in it: finished when all are read, in progress once
+         * any is opened, unknown (null) when it holds none.
          */
-        fun of(entry: BookEntry): ReadStatus = if (entry.isDir) {
+        fun of(entry: BookEntry): ReadStatus? = if (entry.isDir) {
             when {
-                entry.childCount > 0 && entry.readCount >= entry.childCount -> FINISHED
-                entry.readCount > 0 -> IN_PROGRESS
+                entry.bookCount <= 0 -> null
+                entry.readCount >= entry.bookCount -> FINISHED
+                entry.readCount > 0 || entry.begunCount > 0 -> IN_PROGRESS
                 else -> UNREAD
             }
         } else {
@@ -42,8 +44,8 @@ enum class ReadStatus(val key: String) {
 /**
  * One tab's filter: entries of [types], reading in [direction], with a status in
  * [statuses], a year and a length within the bounds (inclusive). Empty sets and
- * null bounds let everything through; an entry without a year or length fails a
- * bound on it.
+ * null bounds let everything through; an entry without a status, year or length
+ * fails a rule on it.
  */
 data class LibraryFilter(
     val types: Set<EntryType> = emptySet(),

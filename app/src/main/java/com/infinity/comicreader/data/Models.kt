@@ -38,7 +38,11 @@ data class BookEntry(
     /** Its year as its name gives it; a folder's is its earliest child's (0 = none). */
     val year: Int = 0,
     /** The direction it reads in: set for its folder, or the default (null = unknown). */
-    val direction: ReadingDirection? = null
+    val direction: ReadingDirection? = null,
+    /** For folders: how many direct children are books or images (-1 = unknown). */
+    val bookCount: Int = -1,
+    /** For folders: how many of those books were opened or read (-1 = unknown). */
+    val begunCount: Int = -1
 ) {
     val path: String get() = file.absolutePath
 }

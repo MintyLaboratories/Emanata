@@ -217,4 +217,82 @@ class PageAdapterTargetTest {
         assertEquals(2, source.requests.size)
         adapter.release()
     }
+
+    /** Shows page 0 at fit screen on a portrait screen, the next decodes held by [GatedSource.gate]. */
+    private fun shownAtFitScreen(source: GatedSource, adapter: PageAdapter): Pair<RecyclerView, ZoomImageView> {
+        val rv = recycler(adapter, 1848, 2960)
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        idle { image.drawable != null }
+        return rv to image
+    }
+
+    @Test
+    fun aNewPageGapRescalesTheShownBitmapThenSwapsInItsExactSize() {
+        val source = GatedSource(1)
+        val adapter = adapter(source)
+        val (rv, image) = shownAtFitScreen(source, adapter)
+        val holder = rv.findViewHolderForAdapterPosition(0)
+        val screen = shownBitmap(image)
+
+        adapter.spacingPx = 20
+        rv.layOut(1848, 2960)
+        idle { source.requests.size >= 2 }
+        assertSame(holder, rv.findViewHolderForAdapterPosition(0))
+        assertSame(screen, shownBitmap(image))
+        assertEquals(0 to Target(1808, 2920), source.requests.last())
+
+        source.gate.countDown()
+        idle { shownBitmap(image) !== screen }
+        assertEquals(1808, shownBitmap(image).width)
+        assertTrue(image.drawsOneToOne)
+        adapter.release()
+    }
+
+    @Test
+    fun rotatingRescalesTheShownBitmapThenSwapsInItsExactSize() {
+        val source = GatedSource(1)
+        val adapter = adapter(source)
+        val (rv, image) = shownAtFitScreen(source, adapter)
+        val holder = rv.findViewHolderForAdapterPosition(0)
+        val portrait = shownBitmap(image)
+
+        rv.layOut(2960, 1848)
+        idle()
+        rv.layOut(2960, 1848)
+        idle { source.requests.size >= 2 }
+        assertSame(holder, rv.findViewHolderForAdapterPosition(0))
+        assertSame(portrait, shownBitmap(image))
+        assertEquals(0 to Target(2960, 1848), source.requests.last())
+
+        source.gate.countDown()
+        idle { shownBitmap(image) !== portrait }
+        assertEquals(1848, shownBitmap(image).height)
+        assertTrue(image.drawsOneToOne)
+        adapter.release()
+    }
+
+    @Test
+    fun aNewFitLeavesLongStripsAsTheyAre() {
+        val source = RecordingSource(2)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.LONG_STRIP, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context)
+            this.adapter = adapter
+            layOut(1848, 2960)
+        }
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        idle { image.drawable != null }
+        rv.layOut(1848, 2960)
+        idle()
+        val shown = shownBitmap(image)
+        val requests = source.requests.toList()
+
+        adapter.fitMode = ZoomImageView.FitMode.HEIGHT
+        rv.layOut(1848, 2960)
+        idle()
+        assertSame(shown, shownBitmap(image))
+        assertEquals(requests, source.requests.toList())
+        assertTrue(requests.all { it.second == Target(1848, 0) })
+        adapter.release()
+    }
 }

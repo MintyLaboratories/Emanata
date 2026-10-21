@@ -196,4 +196,31 @@ class PageAdapterDetailTest {
         assertTrue(image.drawsOneToOne)
         adapter.release()
     }
+
+    @Test
+    fun aNewFitRendersBothHalvesOfASpreadFromTheirDetail() {
+        val source = DetailSource(2)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = true, twoPage = true, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = adapter
+            layOut(2960, 1848)
+        }
+        val images = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images
+        idle { images.all { it.detailSource != null } }
+        val tiles = arrayOfNulls<Bitmap>(2)
+        images.forEachIndexed { i, image -> image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tiles[i] = it } }
+        idle { tiles.all { it != null } }
+
+        // Fit width: each 1480 px half shows its 2:3 page 2220 px tall.
+        adapter.fitMode = ZoomImageView.FitMode.WIDTH
+        rv.layOut(2960, 1848)
+        idle { images.all { (it.drawable as BitmapDrawable).bitmap.height == 2220 } }
+        assertTrue(images.all { (it.drawable as BitmapDrawable).bitmap.width == 1480 })
+        assertTrue(images.all { it.drawsOneToOne })
+        assertEquals(listOf(Target(1480, 1848), Target(1480, 1848)), source.loads.toList())
+        assertEquals(2, source.details.size)
+        assertTrue(source.details.none { it.released })
+        adapter.release()
+    }
 }

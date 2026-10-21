@@ -662,7 +662,8 @@ class ListActivity : AppCompatActivity() {
                 favoriteKinds = favoriteKinds + found
                 found.clear()
                 shownAt = now
-                if (mode == TAB_FAVORITES) applyFilterAndSort()
+                // Sections fill in without re-sorting rows by values found since.
+                if (mode == TAB_FAVORITES) applyFilterAndSort(resort = false)
             }
         }
     }

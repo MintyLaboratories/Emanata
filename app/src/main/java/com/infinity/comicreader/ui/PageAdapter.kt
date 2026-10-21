@@ -127,7 +127,8 @@ class PageAdapter(
      * Shows every page at the size the layout now asks for, in place: decodes for an
      * old size are dropped, as are its cached bitmaps of pages not shown, and the items
      * rebind on their own holders ([RESIZE]), which keep their bitmaps until the new ones
-     * arrive. Timed by [timing].
+     * arrive. Meanwhile [ZoomImageView] draws a kept bitmap enlarged through Lanczos3 and
+     * shrunk bilinear, which aliases less than the shader at source size. Timed by [timing].
      */
     private fun resize() {
         timing.begin()

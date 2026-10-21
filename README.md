@@ -412,6 +412,10 @@ No internet permission is requested.
 - Fit changes are timed: `adb logcat -s ResizeTiming` prints the ms to the
   first frame and to the last exact bitmap; Perfetto shows the same as the
   async slices "Resize shown" and "Resize exact" (Android 10+).
+- On a fit change the bitmap on screen stands in at the new size until the
+  exact Lanczos3 rendering replaces it: enlarged through the GPU Lanczos3
+  shader, shrunk bilinear. Shrinking through the shader at source size would
+  alias, and the stand-in shows only for a fraction of a second.
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
   loads the current page and its neighbors concurrently, all access to these

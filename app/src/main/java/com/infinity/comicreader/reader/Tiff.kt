@@ -513,22 +513,27 @@ object Tiff {
         private var bufLen = 0
 
         override fun read(): Int {
-            val one = ByteArray(1)
-            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xFF
+            if (pos >= end) return -1
+            fill()
+            return buf[(pos++ - bufStart).toInt()].toInt() and 0xFF
         }
 
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (len == 0) return 0
             if (pos >= end) return -1
-            if (pos < bufStart || pos >= bufStart + bufLen) {
-                bufStart = pos
-                bufLen = minOf(BLOCK.toLong(), end - pos).toInt()
-                input.read(pos, buf, 0, bufLen)
-            }
+            fill()
             val n = minOf(len.toLong(), bufStart + bufLen - pos).toInt()
             System.arraycopy(buf, (pos - bufStart).toInt(), b, off, n)
             pos += n
             return n
+        }
+
+        /** Loads the block holding [pos] unless it already is in [buf]. */
+        private fun fill() {
+            if (pos >= bufStart && pos < bufStart + bufLen) return
+            bufStart = pos
+            bufLen = minOf(BLOCK.toLong(), end - pos).toInt()
+            input.read(pos, buf, 0, bufLen)
         }
 
         private companion object {

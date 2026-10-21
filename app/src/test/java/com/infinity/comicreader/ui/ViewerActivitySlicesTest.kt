@@ -87,9 +87,9 @@ class ViewerActivitySlicesTest {
         return viewer
     }
 
-    /** Waits up to a few seconds for [done]. */
-    private fun await(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
+    /** Waits up to [ms] for [done]. */
+    private fun await(ms: Long = 5_000, done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + ms
         while (!done() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             idle()
@@ -169,6 +169,29 @@ class ViewerActivitySlicesTest {
         await { viewer.continuous() }
         assertEquals(true, viewer.continuous())
         assertEquals(null, library.folderLayout(dir.absolutePath))
+    }
+
+    @Test
+    fun aDirectionPickedWithoutAFolderStays() {
+        prefs.perSeries = false
+        val viewer = launch(shapedBook())
+        assertEquals(true, viewer.continuous())
+        ReaderSheet(viewer).tap(R.id.btn_dir_rtl)
+        await(500) { false }
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        assertEquals(false, viewer.continuous())
+        assertEquals(View.VISIBLE, pager.visibility)
+        assertEquals(ViewPager2.ORIENTATION_HORIZONTAL, pager.orientation)
+        assertEquals("rtl", prefs.readingDir)
+    }
+
+    @Test
+    fun aDirectionPickedForTheFolderStays() {
+        val viewer = launch(shapedBook())
+        ReaderSheet(viewer).tap(R.id.btn_dir_rtl)
+        idle()
+        assertEquals(false, viewer.continuous())
+        assertEquals(FolderLayout.Direction("rtl"), library.folderLayout(dir.absolutePath))
     }
 
     @Test

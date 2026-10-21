@@ -2281,12 +2281,14 @@ class ViewerActivity : AppCompatActivity() {
         directionChoices++
         detectedActive = false
         detection = null
+        val folder = layoutFolder()
+        // Without a folder to hold the choice, slices would take the direction back on the next layout.
+        if (folder == null && dir != DIR_TTB) slices = null
         mode = shownMode()
         if (mode != oldMode) {
             stopAutoScroll()
             if (mode == MODE_PAGED) dropStripAhead()
         }
-        val folder = layoutFolder()
         when {
             folder == null -> prefs.readingDir = dir
             folderScope() -> persistLayout(dirChosen = true)

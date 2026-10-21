@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
@@ -95,6 +96,14 @@ class ListActivitySortFilterTest {
         assertEquals(LibraryFilter.NONE, prefs.filter(Prefs.TAB_BROWSE))
         assertEquals(View.GONE, chip.visibility)
         assertEquals(4, activity.shown().size)
+    }
+
+    @Test
+    fun browsingKeepsFoldersReachable() {
+        prefs.setFilter(Prefs.TAB_BROWSE, LibraryFilter(minLength = 1, direction = ReadingDirection.RTL))
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(listOf("z extras"), activity.shown())
     }
 
     @Test

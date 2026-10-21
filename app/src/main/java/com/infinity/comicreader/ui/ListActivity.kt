@@ -799,7 +799,8 @@ class ListActivity : AppCompatActivity() {
         val filter = prefs.filter(tabName())
         val live = values()
         val order = sortValues.takeIf { !resort } ?: live.frozen(searched, sort.keys).also { sortValues = it }
-        val passing = if (filter.isActive) searched.filter { filter.accepts(it, live) } else searched
+        val browsing = mode == TAB_BROWSE
+        val passing = if (filter.isActive) searched.filter { filter.accepts(it, live, browsing) } else searched
 
         shown.clear()
         shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it) })

@@ -24,7 +24,7 @@ class LibraryFilterTest {
 
     class Item(val entry: BookEntry, val year: Long?, val length: Long?, val direction: ReadingDirection)
 
-    private fun List<Item>.passing(filter: LibraryFilter): List<String> {
+    private fun List<Item>.passing(filter: LibraryFilter, browsing: Boolean = false): List<String> {
         val byEntry = associateBy { it.entry }
         val values = SortValues { e, key ->
             val item = byEntry.getValue(e)
@@ -35,7 +35,7 @@ class LibraryFilterTest {
                 else -> null
             }
         }
-        return filter { filter.accepts(it.entry, values) }.map { it.entry.name }
+        return filter { filter.accepts(it.entry, values, browsing) }.map { it.entry.name }
     }
 
     private val items = listOf(
@@ -110,6 +110,20 @@ class LibraryFilterTest {
     fun lengthRangeAndSwappedBounds() {
         assertEquals(listOf("pdf", "image"), items.passing(LibraryFilter(minLength = 50, maxLength = 1)))
         assertEquals(listOf("zipped"), items.passing(LibraryFilter(minLength = 100)))
+    }
+
+    @Test
+    fun browsingFoldersFaceOnlyTheTypeRule() {
+        val rest = LibraryFilter(
+            direction = ReadingDirection.RTL, statuses = setOf(ReadStatus.FINISHED),
+            minYear = 2030, minLength = 1000
+        )
+        val folder = items.single { it.entry.isDir }
+        assertEquals(emptyList<String>(), listOf(folder).passing(rest))
+        assertEquals(listOf("folder"), listOf(folder).passing(rest, browsing = true))
+        assertEquals(emptyList<String>(), listOf(folder).passing(rest.copy(types = setOf(EntryType.PDF)), browsing = true))
+        // Books still face every rule.
+        assertEquals(emptyList<String>(), items.filter { !it.entry.isDir }.passing(rest, browsing = true))
     }
 
     @Test

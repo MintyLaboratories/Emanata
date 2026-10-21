@@ -79,9 +79,14 @@ data class LibraryFilter(
             SortKey.DIRECTION.takeIf { direction != null }
         )
 
-    fun accepts(entry: BookEntry, values: SortValues): Boolean {
+    /**
+     * True when [entry] passes. While [browsing], folders face only the type rule,
+     * so the books below them stay reachable.
+     */
+    fun accepts(entry: BookEntry, values: SortValues, browsing: Boolean = false): Boolean {
         val f = normalized()
         if (f.types.isNotEmpty() && entry.type !in f.types) return false
+        if (browsing && entry.isDir) return true
         if (f.statuses.isNotEmpty() && ReadStatus.of(entry) !in f.statuses) return false
         if (f.direction != null && values.of(entry, SortKey.DIRECTION) != f.direction.ordinal.toLong()) return false
         if (!within(values.of(entry, SortKey.YEAR), f.minYear, f.maxYear)) return false

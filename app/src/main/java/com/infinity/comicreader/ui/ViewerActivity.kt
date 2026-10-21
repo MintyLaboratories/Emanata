@@ -621,10 +621,13 @@ class ViewerActivity : AppCompatActivity() {
         if (detectedActive && found != null) readingDir = found.direction.key
     }
 
-    /** Says on open which direction was detected and why, when it is not the default; once per folder. */
+    /**
+     * Says on open which direction was detected and why, when it is not the default; once
+     * per folder. Only paged reading turns left or right, so the other modes say nothing.
+     */
     private fun noteDetection() {
         val found = detection ?: return
-        if (!detectedActive || found.direction.key == prefs.readingDir) return
+        if (!detectedActive || found.direction.key == prefs.readingDir || mode != MODE_PAGED) return
         val noted = file?.parent to found
         if (notedDetection == noted) return
         notedDetection = noted

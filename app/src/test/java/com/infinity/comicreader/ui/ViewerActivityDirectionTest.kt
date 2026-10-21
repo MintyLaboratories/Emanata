@@ -123,6 +123,14 @@ class ViewerActivityDirectionTest {
     }
 
     @Test
+    fun noNoteWhereLeftAndRightDoNothing() {
+        prefs.pageMode = "longstrip"
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertNotEquals(View.VISIBLE, viewer.hint().visibility)
+    }
+
+    @Test
     fun settingOffReadsTheDefault() {
         prefs.detectDirection = false
         val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()

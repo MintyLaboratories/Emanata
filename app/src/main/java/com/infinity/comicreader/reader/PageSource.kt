@@ -30,6 +30,9 @@ interface PageSource : Closeable {
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 
-    /** The book's ComicInfo.xml; null when it has none. Blocking. */
-    fun comicInfo(): ComicInfo? = null
+    /**
+     * The book's ComicInfo.xml; null when it has none. Blocking. With [cheapOnly], also
+     * null when reading it would first unpack pages the first one does not need.
+     */
+    fun comicInfo(cheapOnly: Boolean = false): ComicInfo? = null
 }

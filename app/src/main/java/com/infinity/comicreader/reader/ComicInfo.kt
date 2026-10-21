@@ -90,10 +90,14 @@ data class ComicInfo(
             }
         }
 
-        /** The ComicInfo.xml nearest the top of [reader]; null when there is none or it cannot be read. */
-        fun read(reader: ArchiveReader): ComicInfo? {
+        /**
+         * The ComicInfo.xml nearest the top of [reader]; null when there is none or it cannot
+         * be read, or when it is not stored before entry index [before].
+         */
+        fun read(reader: ArchiveReader, before: Int = Int.MAX_VALUE): ComicInfo? {
             val entry = reader.entries.filter { isComicInfo(it.path) }
                 .minByOrNull { e -> e.path.count { it == '/' || it == '\\' } } ?: return null
+            if (entry.index >= before) return null
             return runCatching { reader.read(entry) { parse(readUpTo(it, MAX_BYTES)) } }.getOrNull()
         }
 

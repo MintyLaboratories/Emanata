@@ -8,10 +8,14 @@ import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFacts
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.SeriesSettings
+import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -95,6 +99,17 @@ class ViewerActivityDirectionTest {
         awaitOpen(viewer)
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
         assertEquals("Right-to-left (from Kodansha)", viewer.hint().text.toString())
+    }
+
+    @Test
+    fun theLibraryFactsOfABookAnswerWithoutReadingIt() {
+        // Facts read for the library say right to left; the book itself carries nothing.
+        val book = book("Series A 001.cbz")
+        val facts = BookFacts(4, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER))
+        BookFactsCache(ApplicationProvider.getApplicationContext()).put(book.absolutePath, book.length(), facts)
+        val viewer = launch(book).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
     }
 
     @Test

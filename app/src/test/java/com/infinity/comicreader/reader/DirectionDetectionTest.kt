@@ -50,6 +50,18 @@ class DirectionDetectionTest {
     }
 
     @Test
+    fun coverAddedLaterKeepsItsRank() {
+        val publisher = DirectionDetection.fromContents(null, "Series B v01 [Kodansha Comics].cbz", plainPages)
+        assertEquals(Source.PUBLISHER, publisher?.source)
+        assertEquals(Detected(ReadingDirection.LTR, Source.COVER), DirectionDetection.withCover(publisher, Wraparound.Half.RIGHT))
+        assertEquals(publisher, DirectionDetection.withCover(publisher, null))
+        val comicInfo = Detected(ReadingDirection.RTL, Source.COMIC_INFO)
+        assertTrue(DirectionDetection.outranksCover(comicInfo))
+        assertEquals(comicInfo, DirectionDetection.withCover(comicInfo, Wraparound.Half.RIGHT))
+        assertEquals(Detected(ReadingDirection.RTL, Source.COVER), DirectionDetection.withCover(null, Wraparound.Half.LEFT))
+    }
+
+    @Test
     fun publisherFromComicInfoOrTags() {
         assertEquals(
             Detected(ReadingDirection.RTL, Source.PUBLISHER, "VIZ"),

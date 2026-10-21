@@ -50,6 +50,22 @@ class ArchiveSourceTest {
     }
 
     @Test
+    fun cheapComicInfoOnlyAheadOfTheFirstPageInSolidArchives() {
+        val info = entry("ComicInfo.xml", "<ComicInfo><Year>2004</Year></ComicInfo>".toByteArray())
+        // 7z: stored after the pages, so reading it would unpack them first.
+        val after = Fixtures.sevenZip(File(tmp.root, "after.cb7"), entry("01.jpg"), entry("02.jpg"), info)
+        open(after).use { src ->
+            assertNull(src.comicInfo(cheapOnly = true))
+            assertEquals(2004, src.comicInfo()?.year)
+        }
+        val before = Fixtures.sevenZip(File(tmp.root, "before.cb7"), info, entry("01.jpg"), entry("02.jpg"))
+        open(before).use { assertEquals(2004, it.comicInfo(cheapOnly = true)?.year) }
+        // Zip reads any entry directly.
+        val zip = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), info)
+        open(zip).use { assertEquals(2004, it.comicInfo(cheapOnly = true)?.year) }
+    }
+
+    @Test
     fun zipNamedCbrOpensAsZip() {
         val f = Fixtures.zip(File(tmp.root, "book.cbr"), entry("001.jpg"), entry("002.jpg"))
         assertTrue(ArchiveReader.open(f, "UTF-8") is ZipReader)

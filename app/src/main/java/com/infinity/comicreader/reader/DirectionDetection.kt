@@ -43,15 +43,27 @@ object DirectionDetection {
         pageNames: List<String>,
         cover: () -> Wraparound.Half? = { null }
     ): Detected? {
+        val contents = fromContents(info, fileName, pageNames)
+        return if (outranksCover(contents)) contents else withCover(contents, cover())
+    }
+
+    /** What the book's ComicInfo and names alone tell: every signal but the cover. */
+    fun fromContents(info: ComicInfo?, fileName: String, pageNames: List<String>): Detected? {
         if (info?.manga == ComicInfo.Manga.YES_RTL) return Detected(ReadingDirection.RTL, Source.COMIC_INFO)
-        when (cover()) {
-            Wraparound.Half.LEFT -> return Detected(ReadingDirection.RTL, Source.COVER)
-            Wraparound.Half.RIGHT -> return Detected(ReadingDirection.LTR, Source.COVER)
-            null -> Unit
-        }
         val publisher = MangaPublishers.match(info?.publisher)
             ?: (sequenceOf(fileName) + pageNames.asSequence()).flatMap { bracketTags(it) }.firstNotNullOfOrNull { MangaPublishers.match(it) }
         return publisher?.let { Detected(ReadingDirection.RTL, Source.PUBLISHER, it) }
+    }
+
+    /** True when [contents] already decides, so the cover need not be looked at. */
+    fun outranksCover(contents: Detected?): Boolean = contents?.source == Source.COMIC_INFO
+
+    /** [contents] with the wraparound cover's [front] half in its place among the signals. */
+    fun withCover(contents: Detected?, front: Wraparound.Half?): Detected? = when {
+        outranksCover(contents) -> contents
+        front == Wraparound.Half.LEFT -> Detected(ReadingDirection.RTL, Source.COVER)
+        front == Wraparound.Half.RIGHT -> Detected(ReadingDirection.LTR, Source.COVER)
+        else -> contents
     }
 
     private val BRACKETS = Regex("""\[([^\[\]]{2,60})]""")

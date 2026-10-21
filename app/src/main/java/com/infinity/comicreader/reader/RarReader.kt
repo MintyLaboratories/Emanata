@@ -13,6 +13,8 @@ class RarReader(file: File) : ArchiveReader {
 
     override val entries: List<ArchiveEntry>
 
+    override val randomAccess: Boolean get() = false
+
     init {
         try {
             native = archive.fileHeaders.filter { !it.isDirectory }

@@ -13,6 +13,8 @@ class SevenZipReader(file: File) : ArchiveReader {
 
     override val entries: List<ArchiveEntry>
 
+    override val randomAccess: Boolean get() = false
+
     init {
         try {
             val list = ArrayList<SevenZArchiveEntry>()

@@ -53,8 +53,22 @@ object Thumbs {
         return Wraparound.Half.entries.getOrNull(known)
     }
 
-    private fun key(entry: BookEntry): String =
-        "${entry.path}|${entry.size}|${entry.lastModified}|${entry.isDir}"
+    /** True once the front half of [file]'s cover was looked for this session, whatever was found. */
+    fun frontKnown(file: File): Boolean = fronts.get(key(file)) != null
+
+    /** The front half of [file]'s wraparound cover as found this session; null when unknown or none. */
+    fun knownFront(file: File): Wraparound.Half? = fronts.get(key(file))?.let { Wraparound.Half.entries.getOrNull(it) }
+
+    /** Remembers [front] as what [file]'s cover shows, so neither covers nor the reader scan it again. */
+    fun rememberFront(file: File, front: Wraparound.Half?) {
+        fronts.put(key(file), front?.ordinal ?: NO_FRONT)
+    }
+
+    private fun key(entry: BookEntry): String = key(entry.path, entry.size, entry.lastModified, entry.isDir)
+
+    private fun key(file: File): String = key(file.absolutePath, file.length(), file.lastModified(), false)
+
+    private fun key(path: String, size: Long, lastModified: Long, isDir: Boolean): String = "$path|$size|$lastModified|$isDir"
 
     /**
      * The cover of [entry], exactly [width] x [height]. Blocking — call from a background

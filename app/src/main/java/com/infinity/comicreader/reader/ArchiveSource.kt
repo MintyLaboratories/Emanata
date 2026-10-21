@@ -151,12 +151,17 @@ class ArchiveSource(
 
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
 
-    /** The outer archive's ComicInfo.xml; inner archives' own are not read. */
-    override fun comicInfo(): ComicInfo? {
+    /**
+     * The outer archive's ComicInfo.xml; inner archives' own are not read. In a solid
+     * archive, [cheapOnly] reads it only when it is stored before the first page.
+     */
+    override fun comicInfo(cheapOnly: Boolean): ComicInfo? {
         val root = slots[0]
         val reader = acquire(root)
         try {
-            return ComicInfo.read(reader)
+            if (!cheapOnly || reader.randomAccess) return ComicInfo.read(reader)
+            val first = pages.firstOrNull()?.takeIf { it.slot === root }?.entry?.index ?: return null
+            return ComicInfo.read(reader, before = first)
         } finally {
             release(root)
         }

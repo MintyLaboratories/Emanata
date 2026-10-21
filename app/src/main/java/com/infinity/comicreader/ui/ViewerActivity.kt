@@ -47,6 +47,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
@@ -57,6 +58,7 @@ import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.Chapter
@@ -185,6 +187,15 @@ class ViewerActivity : AppCompatActivity() {
     private val storageWatcher = StorageWatcher(this) { checkStorage() }
 
     private var openJob: Job? = null
+
+    /** Looks for the open book's wraparound cover front after it shows ([scanCover]). */
+    private var coverJob: Job? = null
+
+    /** Counts the reader's own direction choices, so a late cover finding never undoes one. */
+    private var directionChoices = 0
+
+    /** The library's facts of books, which already hold what their contents tell of direction. */
+    private val factsCache by lazy { BookFactsCache(this) }
     private var endDismissed = false
     private var markedRead = false
 
@@ -553,6 +564,7 @@ class ViewerActivity : AppCompatActivity() {
         if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
             s.twoPage != old.twoPage || s.perSeries != old.perSeries || s.detectDirection != old.detectDirection
         ) {
+            if (s.readingDir != old.readingDir) directionChoices++
             if (reloadLayout()) rebuild = true
             shown = true
         }
@@ -691,21 +703,24 @@ class ViewerActivity : AppCompatActivity() {
         detection = null
         resolveLayout()
 
+        coverJob?.cancel()
         openJob = lifecycleScope.launch {
-            val detect = prefs.detectDirection
+            // A folder with its own layout keeps its direction: nothing to detect.
+            val detect = prefs.detectDirection && !seriesActive
             val (opened, siblings, detected) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, cancelled = { !job.isActive }) }
-                val siblings = siblingChapters(target)
-                val found = if (detect) s.getOrNull()?.let { runCatching { BookDirection.detect(target, it, siblings) }.getOrNull() } else null
                 try {
                     ensureActive()
+                    val siblings = siblingChapters(target)
+                    val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
+                    ensureActive()
+                    Triple(s, siblings, found)
                 } catch (e: CancellationException) {
                     // A newer open() replaced this one: do not leak the file handle.
                     runCatching { s.getOrNull()?.close() }
                     throw e
                 }
-                Triple(s, siblings, found)
             }
             progress.visibility = View.GONE
             chapters = siblings
@@ -727,10 +742,53 @@ class ViewerActivity : AppCompatActivity() {
             source = src
             setup(src)
             noteDetection()
+            if (detect && BookDirection.hasCover(target) && !Thumbs.frontKnown(target) && !DirectionDetection.outranksCover(detected)) {
+                scanCover(target, src)
+            }
+        }
+    }
+
+    /**
+     * What decides the direction before the first page shows, without decoding a page:
+     * the library's facts of the book when it has them, else its cheap contents, then the
+     * cover's front half when this session already found it. Blocking.
+     */
+    private fun detectBeforeOpen(target: File, src: PageSource, siblings: List<File>): DirectionDetection.Detected? {
+        if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
+        factsCache.load()
+        val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(target.absolutePath, target.length()))
+        return DirectionDetection.withCover(contents, Thumbs.knownFront(target))
+    }
+
+    /**
+     * Looks for a wraparound cover's front half once the book shows, and turns the book to
+     * the direction it gives while the reader is still where it opened and has not chosen
+     * a direction; otherwise the finding waits for the next open.
+     */
+    private fun scanCover(book: File, src: PageSource) {
+        val openedAt = currentIndex
+        val choices = directionChoices
+        coverJob = lifecycleScope.launch {
+            val front = withContext(AppDispatchers.io) {
+                runCatching { BookDirection.coverFront(src) }.getOrNull().also {
+                    ensureActive()
+                    Thumbs.rememberFront(book, it)
+                }
+            }
+            if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch
+            if (!prefs.detectDirection || seriesActive) return@launch
+            val found = DirectionDetection.withCover(detection, front)
+            if (found == detection) return@launch
+            detection = found
+            if (reloadLayout()) attach()
+            invalidateOptionsMenu()
+            noteDetection()
         }
     }
 
     private fun closeSource() {
+        coverJob?.cancel()
+        coverJob = null
         adapter?.release()
         adapter = null
         stripAheadJob?.cancel()
@@ -1655,6 +1713,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun setReadingDir(dir: String) {
         if (readingDir == dir) return
         readingDir = dir
+        directionChoices++
         if (detectedActive) {
             detectedActive = false
             detection = null

@@ -12,6 +12,12 @@ interface ArchiveReader : Closeable {
     /** Files only; directories are left out. */
     val entries: List<ArchiveEntry>
 
+    /**
+     * False when reading an entry may unpack every entry stored before it (a solid
+     * block), so reading out of [ArchiveEntry.index] order is costly.
+     */
+    val randomAccess: Boolean get() = true
+
     /** Runs [block] on the contents of [entry]; implementations serialize this where the backend needs it. */
     fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T
 

@@ -32,9 +32,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 |---|---|---|
 | ![Library](screenshots/library.png) | ![Chapters](screenshots/chapters.png) | ![Reader paged](screenshots/reader-paged.jpg) |
 
-| Reader — long strip (webtoon) | End of chapter | Reader settings |
+| Reader — continuous (webtoon) | End of chapter | Reader settings |
 |---|---|---|
-| ![Long strip](screenshots/reader-longstrip.jpg) | ![End of chapter](screenshots/end-of-chapter.jpg) | ![Reader settings](screenshots/reader-settings.png) |
+| ![Continuous](screenshots/reader-longstrip.jpg) | ![End of chapter](screenshots/end-of-chapter.jpg) | ![Reader settings](screenshots/reader-settings.png) |
 
 | Two-page spread (RTL manga) | Favorites | History |
 |---|---|---|
@@ -167,8 +167,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Archives:** recognized by content, so a `.cbr` that is really a zip opens.
   Pages in subfolders keep folder order. Archives inside an archive (one per
   issue) show their pages in place. macOS, hidden and empty entries are skipped.
-- **Page modes:** paged (horizontal swipe), vertical (one page per screen) or
-  **long strip** (continuous webtoon scrolling, no gaps).
+- **Layout × direction:** *Paged* or *Continuous*, read *Left to right*,
+  *Right to left* or *Top to bottom*. Paged top to bottom swipes up, one page a
+  screen, snapping. Continuous reads top to bottom only: one scrolling column
+  with a **page gap** (0 for webtoons) and optional auto-crop. Two-page and
+  split spreads are for paging left or right. The older Vertical mode reads as
+  Paged top to bottom, Long strip as Continuous top to bottom, per folder too.
 - **Two-page spread:** Off, On or Landscape only; facing pages side by side
   (respects RTL ordering), paired by their page numbers rather than position.
   The first page (setting), covers and variant covers, inserted pages (`156b`),
@@ -184,20 +188,26 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the reader's own orientation is back.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
-- **Reading direction:** left-to-right or right-to-left (left/right tap zones
-  follow unless mirroring is turned off). **Detect reading direction** (on by
-  default) reads a book right to left from, in order: ComicInfo
+- **Reading direction:** left-to-right, right-to-left (left/right tap zones
+  follow unless mirroring is turned off) or top-to-bottom. **Detect reading
+  direction** (on by default) first reads slices of one tall strip (webtoons,
+  manhua) top to bottom in one column: pages two to ten times as tall as wide,
+  of one width, from their headers; varying heights settle it alone, otherwise
+  the seams must run on (the bottom rows of one slice against the top rows of
+  the next, decoded as thin strips; blank seams are skipped). It then reads a
+  book right to left from, in order: ComicInfo
   `Manga=YesAndRightToLeft`; a wraparound cover's front half (found by its
   barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
   file or page names (`[Kodansha Comics]`). Manga-style page names
   (`c001 (v01) - p000`) do not decide on their own, as western scans use them
   too. A short note on open says why ("Right-to-left (from ComicInfo)").
   Choosing a direction keeps it for the book's folder, and only the direction;
-  a folder's direction always wins over detection. **Auto** hands it back to
-  detection and the default.
+  a folder's direction always wins over detection (a folder read top to bottom
+  still shows slices in one column). **Auto** hands it back to detection and the
+  default. "Apply to: This folder" keeps its layout as it is.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third
-  toggles the UI.
+  toggles the UI. Until one is chosen, books read top to bottom take top/bottom.
 - **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
   While moving, the page is drawn through a Lanczos3 GPU shader with an
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
@@ -226,8 +236,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
   save the page as an image, crop it, or rotate the screen.
 - **Apply to: This folder / All books** at the top of the reader settings:
-  *This folder* keeps the whole layout (mode, direction, fit, two-page, spreads,
-  auto-crop, page spacing) for the book's folder; *All books* changes the defaults and
+  *This folder* keeps the whole layout (paged or continuous, direction, fit,
+  two-page, spreads, auto-crop, page gap) for the book's folder; *All books* changes the defaults and
   keeps only a direction chosen for the folder. Layouts
   remembered by older versions that matched the defaults keep only their direction.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
@@ -239,7 +249,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   lightness about mid-gray, saturation scales chroma within the sRGB gamut.
   Changes are per book with a reset to the defaults set in Settings. A **night**
   filter sits on top.
-- **Brightness drag:** in paged mode, drag up for brighter, down for darker.
+- **Brightness drag:** paging left or right, drag up for brighter, down for darker.
   Crossing 0 holds there for 15% of the screen height. A drag locks to its first
   direction: vertical never turns the page, horizontal never changes brightness.
   A pill near the top shows the value (`Brightness +12`) over a -100..+100 bar,
@@ -250,13 +260,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   and split spreads their halves, numbered as the reader numbers them. Scroll
   it sideways, tap a page to jump there; a tap outside, Back or hiding the UI
   closes it. Dragging the seek bar right away seeks as usual.
-- **Page spacing** slider for vertical and long-strip modes.
+- **Page gap** slider: a margin around each paged page, or the gap between the
+  pages of a column.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
   direct link to the next chapter, centered at 75% of the screen height.
 - **Auto next chapter** (on by default): reaching the last page rolls straight
   into the next chapter and the end-of-chapter card is skipped entirely (it still appears
-  when the setting is off, or on the last chapter of a folder). In **long strip**
-  and **vertical** modes the next chapter's pages are already laid into the strip,
+  when the setting is off, or on the last chapter of a folder). In a
+  **continuous** column the next chapter's pages are already laid into the strip,
   so scrolling (or an upward flick) simply continues into them the way page-to-page
   scrolling does inside a single archive - no stop, no reload, no end card.
 - **Previous chapter on repeated back** (Disabled, 2 or 3 swipes; default 2):
@@ -270,8 +281,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,
   and tap-to-toggle the UI bars. Volume keys turn pages.
 - The **reader settings** sheet holds every reading option in three groups:
-  Layout (page mode, direction, fit, two-page, shift pairs, spreads, auto-crop,
-  page spacing), Color (filter, brightness, contrast, saturation, night filter)
+  Layout (paged or continuous, direction, fit, two-page, shift pairs, spreads,
+  auto-crop, page gap), Color (filter, brightness, contrast, saturation, night filter)
   and Behavior (auto next chapter, auto-scroll speed, keep screen on, fullscreen,
   orientation, rotate for spreads).
   Each single choice is a row of segmented buttons with one always selected. It
@@ -285,14 +296,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   explicitly (history's Continue reading, bookmark, chapter drawer, next-chapter)
   never ask.
 - Per-book reading position is stored in history.
-- Every reader option is written back to preferences, so the mode, fit, filter,
+- Every reader option is written back to preferences, so the layout, fit, filter,
   spacing, direction and toggles **persist across chapters and app restarts**.
 
 ### Settings
 - Theme: system / light / dark.
 - Per-app language: system or English (Simplified, en-US).
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).
-- Default reading direction, page mode, fit, filter, page spacing.
+- Default reading direction, layout, fit, filter, page gap.
 - Default adjustments (brightness, contrast, saturation) for every book.
 - **Linear-light scaling** (off by default): pages and covers are shrunk in
   linear light, so halftones and screentones keep their brightness; thin dark

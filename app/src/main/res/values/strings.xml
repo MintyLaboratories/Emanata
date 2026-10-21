@@ -301,7 +301,7 @@
     <string name="pref_keep_on">Keep the screen on while reading</string>
     <string name="pref_reading_dir">Default reading direction</string>
     <string name="pref_detect_direction">Detect reading direction</string>
-    <string name="pref_detect_direction_desc">Read manga right to left from ComicInfo, the cover or the publisher, unless the folder has its own direction</string>
+    <string name="pref_detect_direction_desc">Read webtoon slices top to bottom from their shape and seams, and manga right to left from ComicInfo, the cover or the publisher, unless the folder has its own direction</string>
     <string name="direction_detected">%1$s (from %2$s)</string>
     <string name="direction_rtl">Right-to-left</string>
     <string name="direction_ltr">Left-to-right</string>

@@ -157,7 +157,10 @@ object Spreads {
             .replace(SPACES, " ").trimEnd()
 
     private class Name(val dir: String, val stem: String, val tokens: List<Token>) {
-        fun key(i: Int) = dir + '\u0000' + prefixKey(stem.substring(0, tokens[i].start))
+        private val keys = arrayOfNulls<String>(tokens.size)
+
+        /** The family key of token [i]: [dir] and the normalized text before it, made once. */
+        fun key(i: Int): String = keys[i] ?: (dir + '\u0000' + prefixKey(stem.substring(0, tokens[i].start))).also { keys[i] = it }
     }
 
     /** The token right after [i] in [n] when the two read as one range (`23-24`, `p190-p191`, `22+23`). */

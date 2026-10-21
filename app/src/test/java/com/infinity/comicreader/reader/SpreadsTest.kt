@@ -415,6 +415,22 @@ class SpreadsTest {
     }
 
     @Test
+    fun wideCoverIsAloneWithFirstPageAloneOff() {
+        val paths = book(run("Fold Test 02 - ", 0..9))
+        val sizes = sizes(paths, setOf("Fold Test 02 - 000"))
+        assertEquals(Kind.FRONT_COVER, page(paths, "Fold Test 02 - 000", sizes).kind)
+        assertTrue(screens(paths, "Fold Test 02 - ", sizes, Spreads.Options(coverAlone = false)).startsWith("[000][001|002]"))
+    }
+
+    @Test
+    fun widePageNamedAsCoverIsAloneWithFirstPageAloneOff() {
+        val paths = book(listOf("Fold Test 03 - 01 cover.jpg"), run("Fold Test 03 - ", 2..9, pad = 2))
+        val sizes = sizes(paths, setOf("Fold Test 03 - 01 cover"))
+        assertEquals(Kind.FRONT_COVER, page(paths, "Fold Test 03 - 01 cover", sizes).kind)
+        assertTrue(screens(paths, "Fold Test 03 - ", sizes, Spreads.Options(coverAlone = false)).startsWith("[01 cover][02|03]"))
+    }
+
+    @Test
     fun folderChangeBreaksPairing() {
         val paths = book(run("one/page", 1..3, pad = 2), run("two/page", 1..4, pad = 2))
         val views = Spreads.pair(Spreads.classify(paths), Spreads.Options(coverAlone = false))

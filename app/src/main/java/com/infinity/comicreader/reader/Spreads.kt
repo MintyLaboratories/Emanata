@@ -350,6 +350,8 @@ object Spreads {
             val k = pages[i].kind
             when {
                 i == 0 && options.coverAlone -> false
+                // A wide page is alone whatever its kind, a wraparound cover too.
+                pages[i].aspect > 1.0 -> false
                 k == Kind.STORY -> true
                 !options.coverAlone && (k == Kind.FRONT_COVER || k == Kind.VARIANT_COVER) -> true
                 else -> false

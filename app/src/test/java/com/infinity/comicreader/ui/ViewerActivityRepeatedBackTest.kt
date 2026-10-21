@@ -7,11 +7,15 @@ import android.os.Looper
 import android.view.View
 import android.widget.SeekBar
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -50,16 +54,22 @@ class ViewerActivityRepeatedBackTest {
         second = book(dir, "b.cbz", pages = 5)
     }
 
-    private fun book(dir: File, name: String, pages: Int): File {
+    private fun book(dir: File, name: String, pages: Int, image: ByteArray = byteArrayOf(0)): File {
         val f = File(dir, name)
         ZipOutputStream(f.outputStream()).use { zip ->
             repeat(pages) {
                 zip.putNextEntry(ZipEntry("p%02d.png".format(it)))
-                zip.write(byteArrayOf(0))
+                zip.write(image)
                 zip.closeEntry()
             }
         }
         return f
+    }
+
+    /** A chapter after [first] whose pages are far taller than the screen in a strip. */
+    private fun tallSecond(): File {
+        second.delete()
+        return book(first.parentFile!!, "b.cbz", pages = 3, image = TestImages.png(10, 80))
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -111,6 +121,24 @@ class ViewerActivityRepeatedBackTest {
         assertEquals(0, viewer.page())
         assertEquals(false, viewer.hintShown())
         viewer.back()
+        assertNull(viewer.opened())
+        viewer.back()
+        assertOpensFirstAtItsEnd(viewer.opened())
+    }
+
+    @Test
+    fun inAStripTheBackThatScrollsTheFirstPageToItsTopDoesNotCount() {
+        prefs.pageMode = "longstrip"
+        val viewer = launch(tallSecond(), 0)
+        val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
+        strip.scrollBy(0, 100)
+        idle()
+        assertTrue(strip.canScrollVertically(-1))
+        viewer.back()
+        assertFalse(strip.canScrollVertically(-1))
+        assertEquals(false, viewer.hintShown())
+        viewer.back()
+        assertEquals(true, viewer.hintShown())
         assertNull(viewer.opened())
         viewer.back()
         assertOpensFirstAtItsEnd(viewer.opened())

@@ -922,8 +922,11 @@ class ViewerActivity : AppCompatActivity() {
     private fun goTo(page: Int) {
         val count = source?.pageCount ?: return
         if (page < 0) {
+            // Only a back made at the very start counts; one that scrolls a strip's
+            // first page up to its top does not.
+            val atStart = atChapterStart()
             goTo(0)
-            backAtStart()
+            if (atStart) backAtStart()
             return
         }
         if (page >= count) {

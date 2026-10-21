@@ -122,7 +122,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward
   crumbs**; opening another folder drops them.
-- **Locations:** the root crumb (`[icon] Device ▾`) opens a sheet of every
+- **Locations:** the crumbs start with the app's icon in the theme's color
+  (`[icon] / Device / Comics`); it opens a sheet of every
   location with its free space: the device, SD cards and **USB-OTG drives**
   (Android 11+, with all-files access). Drives appear and disappear live;
   pulling one out while a book on it is open closes the book and says why.

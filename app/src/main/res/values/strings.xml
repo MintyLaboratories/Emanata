@@ -56,9 +56,7 @@
     <string name="menu_refresh">Refresh</string>
     <string name="menu_new_folder">New folder</string>
     <string name="root_device">Device</string>
-    <string name="crumb_root_menu">%1$s ▾</string>
     <string name="choose_root">Locations</string>
-    <string name="crumb_root_description">Location: %1$s. Choose another location</string>
     <string name="location_free">%1$s free of %2$s</string>
     <string name="location_removed">%1$s was removed</string>
     <string name="book_storage_removed">%1$s was removed, so the book was closed</string>

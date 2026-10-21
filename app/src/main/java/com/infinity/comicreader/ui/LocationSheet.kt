@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The location picker the root crumb opens: every storage root with its icon, name
+ * The location picker the app icon crumb opens: every storage root with its icon, name
  * and free space, the current one highlighted. Tapping one hands it to the [Host]
  * activity. [update] redraws an open sheet as drives come and go; the sheet comes
  * back after a rotation. Free space is read off the main thread.

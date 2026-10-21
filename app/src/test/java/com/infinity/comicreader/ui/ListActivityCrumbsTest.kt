@@ -51,10 +51,10 @@ class ListActivityCrumbsTest {
 
     private fun CrumbBar.row(): LinearLayout = (getChildAt(1) as HorizontalScrollView).getChildAt(0) as LinearLayout
 
-    /** Taps the root crumb, then the location named [name] in the picker it opens. */
+    /** Taps the app icon crumb, then the location named [name] in the picker it opens. */
     private fun pickLocation(activity: ListActivity, name: String) {
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
-        (bar.getChildAt(0) as TextView).performClick()
+        bar.locationsButton.performClick()
         idle()
         assertTrue(activity.locations?.isShowing == true)
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
@@ -71,8 +71,8 @@ class ListActivityCrumbsTest {
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
 
-        // Separator, "attic", separator, "Comics".
-        val parent = bar.row().getChildAt(1) as TextView
+        // Separator, "Device", separator, "attic", separator, "Comics".
+        val parent = bar.row().getChildAt(3) as TextView
         assertEquals("attic", parent.text)
         parent.performClick()
         idle()
@@ -86,14 +86,27 @@ class ListActivityCrumbsTest {
     }
 
     @Test
-    fun rootCrumbOpensTheLocationPicker() {
+    fun rootCrumbNavigatesToTheRoot() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
-        val rootCrumb = activity.findViewById<CrumbBar>(R.id.pathbar).getChildAt(0) as TextView
-        assertEquals("Device ▾", rootCrumb.text.toString())
-        // The location's icon leads.
-        assertNotNull(rootCrumb.compoundDrawablesRelative[0])
+        val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
+        val rootCrumb = bar.row().getChildAt(1) as TextView
+        assertEquals("Device", rootCrumb.text.toString())
         rootCrumb.performClick()
+        idle()
+        assertEquals(0, bar.currentIndex)
+        assertEquals(root.absolutePath, bar.crumbs[0].path)
+        assertTrue(activity.locations?.isShowing != true)
+    }
+
+    @Test
+    fun appIconCrumbOpensTheLocationPicker() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val icon = activity.findViewById<CrumbBar>(R.id.pathbar).locationsButton
+        assertNotNull(icon.drawable)
+        assertEquals(activity.getString(R.string.choose_root), icon.contentDescription)
+        icon.performClick()
         idle()
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
@@ -105,7 +118,7 @@ class ListActivityCrumbsTest {
     fun locationPickerSurvivesRotation() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
         idle()
-        (controller.get().findViewById<CrumbBar>(R.id.pathbar).getChildAt(0) as TextView).performClick()
+        controller.get().findViewById<CrumbBar>(R.id.pathbar).locationsButton.performClick()
         idle()
         controller.recreate()
         idle()
@@ -129,12 +142,12 @@ class ListActivityCrumbsTest {
         pickLocation(activity, "Device")
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
 
-        // Separator, "attic", separator, gray "Comics".
-        (bar.row().getChildAt(3) as TextView).performClick()
+        // Separator, "Device", separator, "attic", separator, gray "Comics".
+        (bar.row().getChildAt(5) as TextView).performClick()
         idle()
         assertEquals(2, bar.currentIndex)
 
-        (bar.row().getChildAt(1) as TextView).performClick()
+        (bar.row().getChildAt(3) as TextView).performClick()
         idle()
         assertEquals(1, bar.currentIndex)
         // Opening a folder off the trail drops it.

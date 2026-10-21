@@ -171,8 +171,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private var listJob: Job? = null
     private lateinit var kindCache: FavoriteKindCache
 
-    /** The root crumb's location picker. */
-
     /** Follows drives as they are plugged in and pulled out, while started. */
     private lateinit var storageWatcher: StorageWatcher
     private val shown = ArrayList<BookEntry>()
@@ -260,7 +258,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         fab.visibility = View.GONE
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         pathbar.onCrumbClick = { openCrumb(it) }
-        pathbar.onRootMenuClick = { showRootChooser() }
+        pathbar.onLocationsClick = { showRootChooser() }
         roots = StorageRoots.list(this)
         storageWatcher = StorageWatcher(this) { refreshRoots() }
 
@@ -1685,14 +1683,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         loadDirectory(dir)
     }
 
-    /** The crumbs of [dir], the root one with its location's icon and the picker's marker. */
+    /** The crumbs of [dir], with the forward crumbs browsed past it. */
     private fun showCrumbs(dir: File) {
         val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
-        val kind = StorageRoot.bound(dir.absolutePath, roots)?.kind ?: StorageRoot.Kind.REMOVABLE
-        pathbar.show(crumbs, rootMenu = true, current = current, rootIcon = LocationSheet.iconOf(kind))
+        pathbar.show(crumbs, current = current)
     }
 
-    /** Opens the location picker; picking a root opens its top folder ([onLocationPicked]). */
+    /** Opens the location picker from the app icon crumb; picking a root opens its top folder ([onLocationPicked]). */
     private fun showRootChooser() {
         LocationSheet.show(this, currentDir?.let { StorageRoot.of(it.absolutePath, roots) })
     }

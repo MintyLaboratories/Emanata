@@ -1,37 +1,41 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Matrix
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.annotation.DrawableRes
-import androidx.core.widget.TextViewCompat
+import androidx.core.content.ContextCompat
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Crumb
 
 /**
- * The location as tappable crumbs, `Device / Comics / Series`: the root crumb stays
- * pinned at the start while the folders after it scroll, kept scrolled so the
- * current folder is always visible. The current folder is not tappable; forward
- * crumbs after it (a deeper folder browsed before going up) are gray and tappable.
+ * The location as tappable crumbs, `[app icon] / Device / Comics / Series`: the
+ * app's one-color icon stays pinned at the start and opens the locations, while
+ * the crumbs after it scroll, kept scrolled so the current folder is always
+ * visible. The current folder is not tappable; forward crumbs after it (a deeper
+ * folder browsed before going up) are gray and tappable.
  */
 class CrumbBar @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : LinearLayout(context, attrs) {
 
-    /** Tapped a folder crumb, or the root crumb when it has no menu. */
+    /** Tapped a folder crumb, the root one included. */
     var onCrumbClick: ((Crumb) -> Unit)? = null
 
-    /** Tapped the root crumb while it shows its menu marker. */
-    var onRootMenuClick: ((Crumb) -> Unit)? = null
+    /** Tapped the app icon before the crumbs. */
+    var onLocationsClick: (() -> Unit)? = null
 
-    private val rootCrumb: TextView
+    /** The app's icon in one color, opening the locations. */
+    val locationsButton: ImageView = ImageView(context)
     private val scroll = HorizontalScrollView(context)
     private val row = LinearLayout(context)
 
@@ -48,8 +52,20 @@ class CrumbBar @JvmOverloads constructor(
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        rootCrumb = crumbView()
-        addView(rootCrumb, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        locationsButton.apply {
+            setImageDrawable(ContextCompat.getDrawable(context, R.drawable.ic_launcher_monochrome))
+            scaleType = ImageView.ScaleType.MATRIX
+            imageTintList = ColorStateList.valueOf(MaterialColors.getColor(this@CrumbBar, androidx.appcompat.R.attr.colorPrimary))
+            val pad = dp(ICON_PADDING_DP)
+            setPadding(pad, pad, pad, pad)
+            contentDescription = context.getString(R.string.choose_root)
+            val ripple = TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            setOnClickListener { onLocationsClick?.invoke() }
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitGlyph() }
+        }
+        addView(locationsButton, LayoutParams(dp(MIN_TOUCH_DP), dp(MIN_TOUCH_DP)))
         scroll.isHorizontalScrollBarEnabled = false
         scroll.isFillViewport = false
         row.orientation = HORIZONTAL
@@ -61,35 +77,13 @@ class CrumbBar @JvmOverloads constructor(
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> scrollToEnd() }
     }
 
-    /**
-     * Shows [list] with the current folder at [current] (default: the last crumb);
-     * [rootMenu] marks the root crumb as opening a menu of roots, and [rootIcon] (0 for
-     * none) shows before its name.
-     */
-    fun show(list: List<Crumb>, rootMenu: Boolean, current: Int = list.lastIndex, @DrawableRes rootIcon: Int = 0) {
+    /** Shows [list] with the current folder at [current] (default: the last crumb). */
+    fun show(list: List<Crumb>, current: Int = list.lastIndex) {
         crumbs = list
         currentIndex = current
         row.removeAllViews()
         currentView = null
-        val root = list.firstOrNull() ?: return
-        val atRoot = current == 0
-        rootCrumb.text = if (rootMenu) context.getString(R.string.crumb_root_menu, root.label) else root.label
-        rootCrumb.contentDescription = if (rootMenu) context.getString(R.string.crumb_root_description, root.label) else null
-        rootCrumb.setCompoundDrawablesRelativeWithIntrinsicBounds(rootIcon, 0, 0, 0)
-        style(rootCrumb, if (atRoot && !rootMenu) Kind.CURRENT else Kind.BEHIND)
-        // The icon takes the crumb's color.
-        TextViewCompat.setCompoundDrawableTintList(rootCrumb, rootCrumb.textColors)
-        rootCrumb.setOnClickListener(
-            when {
-                rootMenu -> View.OnClickListener { onRootMenuClick?.invoke(root) }
-                atRoot -> null
-                else -> View.OnClickListener { onCrumbClick?.invoke(root) }
-            }
-        )
-        rootCrumb.isClickable = rootMenu || !atRoot
-        if (atRoot) currentView = rootCrumb
         for ((i, crumb) in list.withIndex()) {
-            if (i == 0) continue
             val kind = when {
                 i < current -> Kind.BEHIND
                 i == current -> Kind.CURRENT
@@ -109,7 +103,7 @@ class CrumbBar @JvmOverloads constructor(
     /** Scrolls the current crumb, and a little of any forward crumbs, into view. */
     private fun scrollToEnd() {
         val view = currentView
-        if (view == null || view === rootCrumb || currentIndex == crumbs.lastIndex) {
+        if (view == null || currentIndex == crumbs.lastIndex) {
             // Clamped to the scroll range.
             scroll.scrollTo(row.width, 0)
             return
@@ -117,11 +111,27 @@ class CrumbBar @JvmOverloads constructor(
         scroll.scrollTo((view.right + dp(FORWARD_PEEK_DP) - scroll.width).coerceAtLeast(0), 0)
     }
 
+    /**
+     * Scales the adaptive icon's monochrome layer so its safe zone, where the glyph
+     * lives, fills the button's padded box.
+     */
+    private fun fitGlyph() {
+        val icon = locationsButton.drawable ?: return
+        val box = locationsButton.width - locationsButton.paddingLeft - locationsButton.paddingRight
+        val full = icon.intrinsicWidth
+        if (box <= 0 || full <= 0) return
+        val scale = box / (full * SAFE_ZONE / ADAPTIVE_SIZE)
+        val offset = full * (ADAPTIVE_SIZE - SAFE_ZONE) / 2f / ADAPTIVE_SIZE * scale
+        locationsButton.imageMatrix = Matrix().apply {
+            setScale(scale, scale)
+            postTranslate(-offset, -offset)
+        }
+    }
+
     private fun crumbView(): TextView = TextView(context).apply {
         setTextAppearance(R.style.TextAppearance_ComicReader_Crumb)
         maxLines = 1
         minHeight = dp(MIN_TOUCH_DP)
-        compoundDrawablePadding = dp(8)
         val h = dp(12)
         val v = dp(8)
         setPadding(h, v, h, v)
@@ -161,6 +171,13 @@ class CrumbBar @JvmOverloads constructor(
     private companion object {
         /** Crumbs are at least this tall, to be easy to hit. */
         const val MIN_TOUCH_DP = 48
+
+        /** Room around the 24 dp app icon in its 48 dp button. */
+        const val ICON_PADDING_DP = 12
+
+        /** An adaptive icon's size and its safe zone's diameter, in dp. */
+        const val ADAPTIVE_SIZE = 108f
+        const val SAFE_ZONE = 66f
 
         /** How much of the forward crumbs shows beyond the current one when they overflow. */
         const val FORWARD_PEEK_DP = 72

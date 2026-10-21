@@ -47,6 +47,29 @@ class PreviewStore(val dir: File, private val writer: Executor = WRITER) {
         }
     }
 
+    /** True when [key] has no preview yet and the writer has room for one more ([MAX_PENDING]). */
+    fun wants(key: String): Boolean = pending.size < MAX_PENDING && !has(key)
+
+    /**
+     * Makes [key]'s preview with [make] on the writer and stores it, unless [wants] says
+     * no; false then, and [make] never runs. What [make] returns is recycled once written.
+     */
+    fun putMade(key: String, make: () -> Bitmap?): Boolean {
+        if (!wants(key) || !pending.add(key)) return false
+        writer.execute {
+            try {
+                val preview = runCatching { make() }.getOrNull()
+                if (preview != null) {
+                    write(fileOf(key), preview)
+                    preview.recycle()
+                }
+            } finally {
+                pending.remove(key)
+            }
+        }
+        return true
+    }
+
     private fun write(file: File, preview: Bitmap) {
         val opaque = if (!preview.hasAlpha()) preview else {
             Bitmap.createBitmap(preview.width, preview.height, Bitmap.Config.ARGB_8888).also {
@@ -69,6 +92,9 @@ class PreviewStore(val dir: File, private val writer: Executor = WRITER) {
         private const val PART_SUFFIX = ".part"
         private const val QUALITY = 85
         private const val STALE_PART_MS = 10L * 60 * 1000
+
+        /** Previews made on the writer that may wait at once; each holds a half-size page until made. */
+        const val MAX_PENDING = 4
 
         /** Upper bound of the store on disk: some ten thousand pages. */
         const val MAX_BYTES = 128L * 1024 * 1024

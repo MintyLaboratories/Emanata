@@ -53,16 +53,25 @@ object Previews {
     fun sizeOf(w: Int, h: Int): IntArray = TARGET.plan(w.toDouble(), h.toDouble()).let { intArrayOf(it.width, it.height) }
 
     /**
-     * The preview of [page]: halved by the platform's bilinear filter (an exact 2x2
-     * average at that scale) while it stays twice the preview size, then Lanczos3.
-     * Leaves [page] as it is; never returns it.
+     * The first step of [make] for a [page] about to be freed: [page] halved once when
+     * [make] would halve it, else a copy. Cheap next to the rest, which can run later
+     * on it with the page's own preview size ([sizeOf]).
      */
-    fun make(page: Bitmap): Bitmap {
+    fun firstStep(page: Bitmap): Bitmap {
         val size = sizeOf(page.width, page.height)
+        return if (halvings(page.width, page.height, size[0], size[1]) > 0) halve(page) else page.copy(Bitmap.Config.ARGB_8888, false)
+    }
+
+    /**
+     * The [size] preview of [page] (by default its own, [sizeOf]): halved by the
+     * platform's bilinear filter (an exact 2x2 average at that scale) while it stays
+     * twice the preview size, then Lanczos3. Leaves [page] as it is; never returns it.
+     */
+    fun make(page: Bitmap, size: IntArray = sizeOf(page.width, page.height)): Bitmap {
         var src = page
         try {
             repeat(halvings(page.width, page.height, size[0], size[1])) {
-                val half = Bitmap.createScaledBitmap(src, (src.width / 2).coerceAtLeast(1), (src.height / 2).coerceAtLeast(1), true)
+                val half = halve(src)
                 if (src !== page) src.recycle()
                 src = half
             }
@@ -76,6 +85,9 @@ object Previews {
             if (src !== page) src.recycle()
         }
     }
+
+    private fun halve(src: Bitmap): Bitmap =
+        Bitmap.createScaledBitmap(src, (src.width / 2).coerceAtLeast(1), (src.height / 2).coerceAtLeast(1), true)
 
     private fun ceilDiv(a: Int, b: Int) = (a + b - 1) / b
 }

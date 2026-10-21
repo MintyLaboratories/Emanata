@@ -58,6 +58,10 @@ object Decoders {
 
     fun decode(bytes: ByteArray, target: Target): Bitmap {
         val kind = ImageKind.sniff(bytes)
+        if (kind in QUICK_ENCODED) sinks.get()?.let { sink ->
+            sinks.set(null)
+            sink.encoded(bytes)
+        }
         return reported(kind) {
             val full = when {
                 kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
@@ -84,20 +88,29 @@ object Decoders {
         return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target) }
     }
 
-    /** Where this thread's next full-size decode goes before it is cropped and resampled ([capturing]). */
-    private val fullSink = ThreadLocal<((Bitmap) -> Unit)?>()
+    /** What a decode leaves its page preview with ([capturing]). */
+    interface PreviewSink {
+        /** The encoded image, for a format whose quick preview ([preview]) is a proper one; [decoded] is not called then. */
+        fun encoded(bytes: ByteArray)
+
+        /** The image at its decoded size, before any crop or resampling; must leave it as it is. */
+        fun decoded(full: Bitmap)
+    }
+
+    /** Where this thread's next decode leaves its preview ([capturing]). */
+    private val sinks = ThreadLocal<PreviewSink?>()
 
     /**
-     * Runs [block], handing the first image decoded in it on this thread to [sink] at its
-     * decoded size, before any crop or resampling. [sink] must leave the bitmap as it is.
+     * Runs [block], handing the first image decoded in it on this thread to [sink]:
+     * JPEG and WebP bytes as they are, other formats at their decoded size.
      */
-    fun <T> capturing(sink: (Bitmap) -> Unit, block: () -> T): T {
-        val outer = fullSink.get()
-        fullSink.set(sink)
+    fun <T> capturing(sink: PreviewSink, block: () -> T): T {
+        val outer = sinks.get()
+        sinks.set(sink)
         try {
             return block()
         } finally {
-            if (outer == null) fullSink.remove() else fullSink.set(outer)
+            if (outer == null) sinks.remove() else sinks.set(outer)
         }
     }
 
@@ -106,9 +119,9 @@ object Decoders {
         val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
             full.recycle()
         }
-        fullSink.get()?.let { sink ->
-            fullSink.set(null)
-            sink(src)
+        sinks.get()?.let { sink ->
+            sinks.set(null)
+            sink.decoded(src)
         }
         val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src) else null
         val plan = if (bounds != null) {
@@ -206,6 +219,9 @@ object Decoders {
      * (jxl-coder has no progressive pass), AVIF, PNG and TIFF decode whole.
      */
     private val QUICK = setOf(ImageKind.JPEG, ImageKind.WEBP)
+
+    /** Kinds whose quick preview is as good as one made from the full decode, so a capture takes their bytes. */
+    private val QUICK_ENCODED = setOf(ImageKind.JPEG, ImageKind.WEBP)
 
     /**
      * All of [input] when it holds an image with a quick preview ([preview]); otherwise

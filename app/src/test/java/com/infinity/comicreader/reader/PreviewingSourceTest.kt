@@ -42,12 +42,12 @@ class PreviewingSourceTest {
     private val writer = CountingWriter()
     private val store by lazy { PreviewStore(File(temp.root, "previews"), writer) }
 
-    /** A [w] x [h] page: a white margin around a dark block, as PNG. */
-    private fun framedPage(w: Int, h: Int): ByteArray {
+    /** A [w] x [h] page: a white margin around a dark block, encoded as [format]. */
+    private fun framedPage(w: Int, h: Int, format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG): ByteArray {
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         bitmap.eraseColor(Color.WHITE)
         Canvas(bitmap).drawRect(w * 0.2f, h * 0.2f, w * 0.8f, h * 0.8f, Paint().apply { color = Color.rgb(20, 20, 60) })
-        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        return ByteArrayOutputStream().also { bitmap.compress(format, 90, it) }.toByteArray()
     }
 
     /** Pages decoded from encoded bytes, as archives decode them. */
@@ -96,10 +96,34 @@ class PreviewingSourceTest {
     }
 
     @Test
-    fun detailLoadsLeavePreviews() {
+    fun detailLoadsLeaveNoPreview() {
         val source = PreviewingSource(EncodedPages(listOf(framedPage(300, 450))), store, "book")
         source.loadDetail(0, Target(100, 100), Long.MAX_VALUE).release()
-        assertNotNull(store.get(key(0)))
+        assertNull(store.get(key(0)))
+    }
+
+    @Test
+    fun jpegPreviewIsDecodedFromItsBytes() {
+        val jpeg = framedPage(400, 600, Bitmap.CompressFormat.JPEG)
+        val source = PreviewingSource(EncodedPages(listOf(jpeg)), store, "book")
+        source.loadPage(0, Target(50, 50, Fit.COVER, autoCrop = true))
+        val preview = store.get(key(0))
+        assertNotNull(preview)
+        assertArrayEquals(intArrayOf(171, 256), intArrayOf(preview!!.width, preview.height))
+        assertTrue(Color.red(preview.getPixel(2, 2)) > 240)
+    }
+
+    @Test
+    fun busyWriterSkipsPreviewsInsteadOfHoldingPages() {
+        val queued = ArrayList<Runnable>()
+        val slow = PreviewStore(File(temp.root, "slow"), Executor { queued += it })
+        val pages = List(PreviewStore.MAX_PENDING + 2) { framedPage(300, 450) }
+        val source = PreviewingSource(EncodedPages(pages), slow, "book")
+        pages.indices.forEach { source.loadPage(it, Target(30, 30)) }
+        assertEquals(PreviewStore.MAX_PENDING, queued.size)
+        queued.forEach { it.run() }
+        assertNotNull(slow.get(key(0)))
+        assertNull(slow.get(key(pages.size - 1)))
     }
 
     @Test
@@ -145,8 +169,17 @@ class PreviewingSourceTest {
     fun captureTakesOnlyTheFirstDecodeAndRestoresTheOuterSink() {
         val png = framedPage(40, 60)
         val seen = ArrayList<String>()
-        Decoders.capturing({ seen += "outer ${it.width}" }) {
-            Decoders.capturing({ seen += "inner ${it.width}" }) {
+        fun sink(name: String) = object : Decoders.PreviewSink {
+            override fun encoded(bytes: ByteArray) {
+                seen += "$name bytes"
+            }
+
+            override fun decoded(full: Bitmap) {
+                seen += "$name ${full.width}"
+            }
+        }
+        Decoders.capturing(sink("outer")) {
+            Decoders.capturing(sink("inner")) {
                 Decoders.decode(png, Target(10, 10))
                 Decoders.decode(png, Target(10, 10))
             }

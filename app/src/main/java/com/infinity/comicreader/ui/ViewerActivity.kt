@@ -2237,7 +2237,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             row(R.string.info_file, f.name)
             f.parent?.let { row(R.string.info_folder, it) }
-            row(R.string.info_format, BookInfo.format(f.name, kind))
+            row(R.string.info_format, BookInfo.format(f.name, kind, getString(R.string.info_format_mismatch)))
             row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, size))
             row(R.string.info_pages, pages.toString())
             row(R.string.menu_reading_dir, direction)

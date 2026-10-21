@@ -15,17 +15,32 @@ object BookInfo {
         ArchiveKind.PDF -> "PDF"
     }
 
+    /** The container the lowercase extension [ext] promises, or null for one that promises none. */
+    fun promised(ext: String): ArchiveKind? = when (ext) {
+        "zip", "cbz" -> ArchiveKind.ZIP
+        "rar", "cbr" -> ArchiveKind.RAR
+        "7z", "cb7" -> ArchiveKind.SEVEN_ZIP
+        "tar", "cbt" -> ArchiveKind.TAR
+        "pdf" -> ArchiveKind.PDF
+        else -> null
+    }
+
     /**
      * The format of the book [fileName]: its extension, and what its leading bytes say it
-     * is ([kind]) when that is another name, as in "CBR (ZIP)" for a zip named `.cbr`.
+     * is ([kind]) when that is another name, as in "CBZ (ZIP)". An extension promising
+     * another container is shown through [mismatch] (extension, then container), as in
+     * "CBR (actually ZIP)".
      */
-    fun format(fileName: String, kind: ArchiveKind?): String {
-        val ext = Formats.ext(fileName).uppercase(Locale.ROOT)
-        val actual = kind?.let { kindName(it) } ?: return ext
+    fun format(fileName: String, kind: ArchiveKind?, mismatch: String): String {
+        val ext = Formats.ext(fileName).lowercase(Locale.ROOT)
+        val shown = ext.uppercase(Locale.ROOT)
+        val actual = kind?.let { kindName(it) } ?: return shown
+        val promised = promised(ext)
         return when {
             ext.isEmpty() -> actual
-            ext.equals(actual, ignoreCase = true) -> ext
-            else -> "$ext ($actual)"
+            ext.equals(actual, ignoreCase = true) -> actual
+            promised != null && promised != kind -> String.format(Locale.ROOT, mismatch, shown, actual)
+            else -> "$shown ($actual)"
         }
     }
 }

@@ -165,6 +165,7 @@
     <string name="info_file">File</string>
     <string name="info_folder">Folder</string>
     <string name="info_format">Format</string>
+    <string name="info_format_mismatch">%1$s (actually %2$s)</string>
     <string name="info_size">Size</string>
     <string name="info_pages">Pages</string>
     <string name="info_comic_info">ComicInfo</string>

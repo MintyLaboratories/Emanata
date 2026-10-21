@@ -121,7 +121,7 @@ class ViewerActivityMenuTest {
         val book = book()
         val text = launch(book).bookInfo()
         assertTrue(text, text.contains(book.name))
-        assertTrue(text, text.contains("CBR (ZIP)"))
+        assertTrue(text, text.contains("CBR (actually ZIP)"))
         assertTrue(text, text.contains("\n4\n"))
         assertTrue(text, text.contains("Right-to-left (from ComicInfo)"))
         assertTrue(text, text.contains("Series: Series C\nNumber: 1\nManga: YesAndRightToLeft"))

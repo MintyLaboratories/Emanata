@@ -210,8 +210,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   keeps only a direction chosen for the folder. Layouts
   remembered by older versions that matched the defaults keep only their direction.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
-  "CBR (ZIP)"), size, pages, the reading direction with where it comes from, and
-  every ComicInfo field.
+  "CBZ (ZIP)", or "CBR (actually ZIP)" for a misnamed one), size, pages, the
+  reading direction with where it comes from, and every ComicInfo field.
 - **Adjustments:** brightness, contrast and saturation, each -100..+100, computed
   in OKLab on the GPU in the same pass as the page's scaling (Android 13+), live
   while dragging. Brightness blends toward black or white, contrast scales

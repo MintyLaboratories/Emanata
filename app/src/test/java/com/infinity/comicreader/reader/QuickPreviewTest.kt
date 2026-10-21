@@ -19,6 +19,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import kotlin.math.abs
 
 /** [Decoders.preview] and the sources' quick previews, on the real platform decoders. */
@@ -82,6 +83,33 @@ class QuickPreviewTest {
             assertNull(src.loadPreview(1))
             assertNull(src.loadPreview(2))
         }
+    }
+
+    /** Counts the entries read. */
+    private class CountingReader(private val inner: ArchiveReader) : ArchiveReader by inner {
+        val read = ArrayList<String>()
+        override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T {
+            synchronized(read) { read += entry.path }
+            return inner.read(entry, block)
+        }
+    }
+
+    @Test
+    fun pagesWithoutQuickFormatAreNeverRead() {
+        val f = Fixtures.zip(
+            File(temp.root, "book.cbz"),
+            entry("01.png", encoded(400, 600, Bitmap.CompressFormat.PNG)),
+            entry("02.jpg", encoded(400, 600, Bitmap.CompressFormat.PNG)),
+            entry("03.jpg", encoded(400, 600, Bitmap.CompressFormat.JPEG))
+        )
+        val reader = CountingReader(ArchiveReader.open(f, "UTF-8")!!)
+        ArchiveSource(reader).use { src ->
+            assertNull(src.loadPreview(0))
+            // Named JPEG, holds PNG: read once, then JPEG names are not read again in this book.
+            assertNull(src.loadPreview(1))
+            assertNull(src.loadPreview(2))
+        }
+        assertEquals(listOf("02.jpg"), reader.read)
     }
 
     @Test

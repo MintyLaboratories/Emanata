@@ -220,6 +220,9 @@ object Decoders {
      */
     private val QUICK = setOf(ImageKind.JPEG, ImageKind.WEBP)
 
+    /** File extensions of the [QUICK] kinds, for judging pages before reading them ([QuickPreviews]). */
+    val QUICK_EXTENSIONS = setOf("jpg", "jpeg", "webp")
+
     /** Kinds whose quick preview is as good as one made from the full decode, so a capture takes their bytes. */
     private val QUICK_ENCODED = setOf(ImageKind.JPEG, ImageKind.WEBP)
 

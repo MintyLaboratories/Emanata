@@ -142,11 +142,19 @@ class ArchiveSource(
         }
     }
 
-    /** Reads page [index] only past its header when its format has a quick preview ([Decoders.preview]). */
+    /** Which pages are worth reading for a quick preview. */
+    private val quick = QuickPreviews()
+
+    /**
+     * Reads page [index] only when its name allows a quick preview ([QuickPreviews]),
+     * and only past its header when its format has one ([Decoders.preview]).
+     */
     override fun loadPreview(index: Int): Bitmap? {
-        if (index !in pages.indices) return null
-        val bytes = readPage(index) { Decoders.quickBytes(it) } ?: return null
-        return Decoders.preview(bytes)
+        val path = pages.getOrNull(index)?.path ?: return null
+        if (!quick.worthReading(path)) return null
+        val bytes = readPage(index) { Decoders.quickBytes(it) }
+        quick.found(path, bytes != null)
+        return bytes?.let { Decoders.preview(it) }
     }
 
     override fun pageSize(index: Int): IntArray? {

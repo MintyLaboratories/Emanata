@@ -10,8 +10,10 @@ class ImageSource(private val file: File) : PageSource {
     override fun loadPage(index: Int, target: Target): Bitmap =
         Decoders.decode(file, target)
 
-    override fun loadPreview(index: Int): Bitmap? =
-        file.inputStream().use { Decoders.quickBytes(it) }?.let { Decoders.preview(it) }
+    override fun loadPreview(index: Int): Bitmap? {
+        if (!QuickPreviews().worthReading(file.name)) return null
+        return file.inputStream().use { Decoders.quickBytes(it) }?.let { Decoders.preview(it) }
+    }
 
     override fun pageSize(index: Int): IntArray? = Decoders.size(file)
 

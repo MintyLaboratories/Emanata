@@ -55,8 +55,15 @@ class TitleViewTest {
     }
 
     @Test
+    fun aGridCellHoldsAnUnknownDetailsLine() {
+        assertEquals(line, view(long, TitleDisplay.HIDDEN, reserve = true).apply { detail = "" }.heightAt(300))
+        assertEquals(0, view(long, TitleDisplay.HIDDEN, reserve = true).heightAt(300))
+    }
+
+    @Test
     fun aHiddenTitleTakesNoSpace() {
         assertEquals(0, view(long, TitleDisplay.HIDDEN).heightAt(300))
+        assertEquals(0, view(long, TitleDisplay.HIDDEN).apply { detail = "" }.heightAt(300))
     }
 
     @Test

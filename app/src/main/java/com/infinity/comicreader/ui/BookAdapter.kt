@@ -259,8 +259,9 @@ class BookAdapter(
         holder.title.reserve = grid
         holder.title.clock = clock
         holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: shortName(item)
+        // Empty while unknown: grid cells still hold its line so covers stay even.
         val dense = if (options.detail == DetailDisplay.DENSE) {
-            DetailText.dense(item) { FileUtils.formatSize(context, it) }.ifEmpty { null }
+            DetailText.dense(item) { FileUtils.formatSize(context, it) }.ifEmpty { if (grid) "" else null }
         } else {
             null
         }

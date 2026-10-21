@@ -30,7 +30,8 @@ import kotlin.math.ceil
  * - moving titles scroll in their own area, faded at the cut edges, while the
  *   detail stays put; only titles that overflow move, all off one [clock];
  * - a hidden title leaves the detail alone, right-aligned.
- * With [reserve] the view is always as tall as the mode's lines, so grid cells match.
+ * With [reserve] the view is always as tall as the mode's lines, so grid cells match;
+ * an empty (not null) [detail] then holds a hidden title's line.
  */
 class TitleView @JvmOverloads constructor(
     context: Context,
@@ -131,7 +132,10 @@ class TitleView @JvmOverloads constructor(
     private val lineHeight: Int get() = titlePaint.getFontMetricsInt(null)
 
     private val lines: Int get() = when (mode) {
-        TitleDisplay.HIDDEN -> if (detail.isNullOrEmpty()) 0 else 1
+        TitleDisplay.HIDDEN -> {
+            val d = detail
+            if (d == null || (d.isEmpty() && !reserve)) 0 else 1
+        }
         TitleDisplay.DOUBLE -> 2
         else -> 1
     }

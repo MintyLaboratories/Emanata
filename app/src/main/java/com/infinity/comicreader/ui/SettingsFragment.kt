@@ -102,6 +102,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
+        findPreference<Preference>("toolbar_buttons")?.let { pref ->
+            pref.summary = ToolbarButtonsDialog.summary(requireContext(), prefs)
+            pref.setOnPreferenceClickListener {
+                ToolbarButtonsDialog.show(requireContext(), prefs) {
+                    if (isAdded) pref.summary = ToolbarButtonsDialog.summary(requireContext(), prefs)
+                }
+                true
+            }
+        }
+
         findPreference<Preference>("pref_backup")?.setOnPreferenceClickListener {
             exportLauncher.launch("emanata-backup.json")
             true

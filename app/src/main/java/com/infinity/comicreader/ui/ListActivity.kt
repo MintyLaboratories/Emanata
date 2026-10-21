@@ -73,6 +73,7 @@ import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
+import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.util.AppDispatchers
@@ -139,6 +140,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** A folder handed in by another app, browsed by the first [startUp] instead of the startup location. */
     private var incomingDir: File? = null
+    /** The options menu shown, so searching can hide the other toolbar buttons without rebuilding it. */
+    private var menu: Menu? = null
+
+    /** The search field is open. */
+    private var searching = false
     private var deepJob: Job? = null
     private var deepResults: List<BookEntry>? = null
     private val allEntries = ArrayList<BookEntry>()
@@ -386,6 +392,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
         }
         if (s.statusBar != old.statusBar) applyStatusBarSetting()
+        if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
         if (s.quickFab != old.quickFab) {
             fab.visibility = if (shown.isNotEmpty() && s.quickFab) View.VISIBLE else View.GONE
         }
@@ -1525,8 +1532,42 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_list, menu)
-        val search = menu.findItem(R.id.menu_search)
-        val searchView = search.actionView as? SearchView ?: return true
+        this.menu = menu
+        searching = false
+        for ((order, button) in prefs.toolbarButtons.visible.withIndex()) addToolbarButton(menu, button, order)
+        return true
+    }
+
+    /** Adds [button] to the toolbar at [order] among the buttons. */
+    private fun addToolbarButton(menu: Menu, button: ToolbarButton, order: Int) {
+        val (id, icon) = when (button) {
+            ToolbarButton.SORT -> R.id.menu_bar_sort to R.drawable.ic_sort
+            ToolbarButton.FILTER -> R.id.menu_bar_filter to R.drawable.ic_filter_list
+            ToolbarButton.FAVORITE -> R.id.menu_bar_favorite to R.drawable.ic_star_border
+            ToolbarButton.SEARCH -> R.id.menu_search to R.drawable.ic_search
+        }
+        val item = menu.add(Menu.NONE, id, order, ToolbarButtonsDialog.label(this, button)).setIcon(icon)
+        if (button != ToolbarButton.SEARCH) {
+            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            return
+        }
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS or MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW)
+        val searchView = SearchView(toolbar.context)
+        item.actionView = searchView
+        // The other buttons make room for the search field while it is open.
+        item.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
+            override fun onMenuItemActionExpand(item: MenuItem): Boolean {
+                searching = true
+                updateToolbarButtons()
+                return true
+            }
+
+            override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
+                searching = false
+                updateToolbarButtons()
+                return true
+            }
+        })
         searchView.queryHint = getString(R.string.search_hint)
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(q: String?): Boolean {
@@ -1537,7 +1578,20 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
             override fun onQueryTextChange(q: String?): Boolean = applyQuery(q)
         })
-        return true
+    }
+
+    /** Shows the toolbar buttons that apply here, hidden while searching; the star tells whether the folder is a favorite. */
+    private fun updateToolbarButtons() {
+        val menu = menu ?: return
+        menu.findItem(R.id.menu_bar_sort)?.isVisible = !searching
+        menu.findItem(R.id.menu_bar_filter)?.isVisible = !searching
+        menu.findItem(R.id.menu_bar_favorite)?.apply {
+            val dir = currentDir
+            val favorite = dir != null && library.isFavorite(dir.absolutePath)
+            isVisible = !searching && mode == TAB_BROWSE && dir != null
+            setIcon(if (favorite) R.drawable.ic_star else R.drawable.ic_star_border)
+            title = getString(if (favorite) R.string.menu_remove_favorite else R.string.menu_add_favorite)
+        }
     }
 
     /** Filters and re-sorts the list for [q], live as the user types and on submit. */
@@ -1592,7 +1646,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             isChecked = prefs.showHidden
             title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
         }
-        menu.findItem(R.id.menu_add_favorite)?.isVisible = browsing
+        val buttons = prefs.toolbarButtons.visible
+        // The menu keeps what the toolbar does not show.
+        menu.findItem(R.id.menu_sort)?.isVisible = ToolbarButton.SORT !in buttons
+        menu.findItem(R.id.menu_filter)?.isVisible = ToolbarButton.FILTER !in buttons
+        menu.findItem(R.id.menu_add_favorite)?.isVisible = browsing && ToolbarButton.FAVORITE !in buttons
         menu.findItem(R.id.menu_add_favorite)?.title =
             getString(
                 if (currentDir?.let { library.isFavorite(it.absolutePath) } == true)
@@ -1608,14 +1666,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             isVisible = browsing
             isChecked = prefs.deepSearch
         }
+        updateToolbarButtons()
         return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.menu_grid -> toggleGrid()
-            R.id.menu_sort -> showSortDialog()
-            R.id.menu_filter -> TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName())
+            R.id.menu_sort, R.id.menu_bar_sort -> showSortDialog()
+            R.id.menu_filter, R.id.menu_bar_filter -> TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName())
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
             R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())
@@ -1635,7 +1694,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             R.id.menu_stats -> showStats()
             R.id.menu_dupes -> openCleanup(CleanupActivity.MODE_DUPES)
             R.id.menu_large -> openCleanup(CleanupActivity.MODE_LARGE)
-            R.id.menu_add_favorite -> toggleFavorite(currentDir?.absolutePath)
+            R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavorite(currentDir?.absolutePath)
             R.id.menu_refresh -> refreshCurrent()
             R.id.menu_settings -> startActivity(Intent(this, SettingsActivity::class.java))
             R.id.menu_about -> startActivity(Intent(this, AboutActivity::class.java))

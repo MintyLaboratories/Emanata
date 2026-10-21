@@ -2,17 +2,11 @@
 <!--
   The library's overflow menu. Browsing and housekeeping actions stay at the top
   level; the presentation knobs (sort, grid dimensions, hidden files) and the bulk tools
-  live in two submenus so the list never needs a scroll.
+  live in two submenus so the list never needs a scroll. The toolbar buttons (Sort,
+  Filter, Favorite, Search) are added in code, in the order the settings give.
 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
-    <item
-        android:id="@+id/menu_search"
-        android:icon="@drawable/ic_search"
-        android:title="@string/menu_search"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"
-        app:showAsAction="ifRoom|collapseActionView" />
 
     <item
         android:id="@+id/menu_grid"

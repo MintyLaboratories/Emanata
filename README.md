@@ -82,9 +82,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Wraparound covers** (front and back side by side) show their front: the half
   without the barcode. Without a barcode the whole cover is fitted over a blur.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
+- **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
+  Search; the others step aside while searching. Settings → **Toolbar
+  buttons** shows, hides and reorders them (checkboxes and drag handles); a
+  hidden one stays in the menu.
 - A **Recent** row sits above the browsing list and opens the folder holding the
   last chapter you read.
-- **Sort** (menu → View, per tab): Name, Year, Added, Accessed, Size, Length,
+- **Sort** (toolbar, per tab): Name, Year, Added, Accessed, Size, Length,
   File type or Reading direction, each named by its direction (`newest first`);
   tap the selected option to flip it. Changes apply live; tap outside to close.
   Year, File type and Reading direction take a **Then by** level; Name A → Z

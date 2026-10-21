@@ -8,6 +8,7 @@ import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.reader.Wraparound
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
@@ -39,6 +40,17 @@ object Thumbs {
         return (max / 8L).toInt().coerceIn(8 * 1024 * 1024, 96 * 1024 * 1024)
     }
 
+    /** Each wraparound's front half, by [key]; [NO_FRONT] when its barcode tells nothing. */
+    private val fronts = LruCache<String, Int>(1024)
+    private const val NO_FRONT = -1
+
+    /** The front half of wraparound cover [src] of [entry], found once per cover file. */
+    private fun frontOf(entry: BookEntry, src: Bitmap): Wraparound.Half? {
+        val k = key(entry)
+        val known = fronts.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { fronts.put(k, it) }
+        return Wraparound.Half.entries.getOrNull(known)
+    }
+
     private fun key(entry: BookEntry): String =
         "${entry.path}|${entry.size}|${entry.lastModified}|${entry.isDir}"
 
@@ -62,7 +74,7 @@ object Thumbs {
 
         val full = generate(entry, charset, context.cacheDir) ?: return null
         val bitmap = try {
-            CoverArt.compose(full, width, height, style)
+            CoverArt.cover(full, width, height, style) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
             return null
         } finally {
@@ -100,6 +112,7 @@ object Thumbs {
 
     fun clear(context: Context) {
         memory.evictAll()
+        fronts.evictAll()
         runCatching { File(context.cacheDir, DISK_DIR).deleteRecursively() }
     }
 

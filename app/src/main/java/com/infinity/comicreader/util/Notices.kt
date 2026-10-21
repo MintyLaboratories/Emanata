@@ -141,6 +141,7 @@ object Notices {
             "LLVM C++ runtime", "$APACHE_2 with LLVM Exceptions", "https://llvm.org/",
             listOf(APACHE_TEXT, "llvm-exception.txt"), note = "libc++abi and libunwind, bundled in jxl-coder."
         ),
+        Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )
 

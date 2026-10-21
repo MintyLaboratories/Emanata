@@ -126,6 +126,7 @@ dependencies {
     implementation("org.tukaani:xz:1.9")
     implementation("org.slf4j:slf4j-nop:2.0.17")              // silence junrar/slf4j on Android
     implementation("io.github.awxkee:jxl-coder:2.6.1")         // JPEG XL decoding
+    implementation("com.google.zxing:core:3.5.3")             // barcodes on wraparound covers
     // PDF uses the platform android.graphics.pdf.PdfRenderer (no dependency)
 
     testImplementation("junit:junit:4.13.2")

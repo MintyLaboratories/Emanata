@@ -54,6 +54,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
   (default) or the center of a cover cropped for height.
+- **Wraparound covers** (front and back side by side) show their front: the half
+  without the barcode. Without a barcode the whole cover is fitted over a blur.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - A **Recent** row sits above the browsing list and opens the folder holding the
   last chapter you read.
@@ -328,6 +330,7 @@ license and NOTICE text under Settings → About (files in
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
 | Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
 | LLVM libc++abi, libunwind (in jxl-coder) | Apache-2.0 with LLVM Exceptions |
+| [ZXing](https://github.com/zxing/zxing) (`core`) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 
 Dual-licensed components are used under Apache-2.0.

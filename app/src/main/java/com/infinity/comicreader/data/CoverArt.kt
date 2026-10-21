@@ -9,6 +9,7 @@ import com.infinity.comicreader.reader.Blur
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.reader.Wraparound
 
 /**
  * Makes a cover of exactly the box size from a full-size image: cropped to fill
@@ -24,6 +25,43 @@ object CoverArt {
 
     /** Darkens the background a little, so the cover's own edges show. */
     private const val BACKGROUND_DIM = 0x33000000
+
+    /**
+     * [src] as a [width] x [height] cover. A wraparound shows the half [front] names
+     * (worked out by [frontOf] when asked), or all of it over a blurred copy when
+     * neither half is known to be the front.
+     */
+    fun cover(src: Bitmap, width: Int, height: Int, style: CoverStyle, front: (Bitmap) -> Wraparound.Half? = ::frontOf): Bitmap {
+        if (!Wraparound.isWraparound(src.width, src.height)) return compose(src, width, height, style)
+        val half = src.width / 2
+        return when (front(src)) {
+            Wraparound.Half.LEFT -> compose(src, width, height, style, Rect(0, 0, half, src.height))
+            Wraparound.Half.RIGHT -> compose(src, width, height, style, Rect(src.width - half, 0, src.width, src.height))
+            null -> compose(src, width, height, style, fit = true)
+        }
+    }
+
+    /** The front half of wraparound [src], from where its barcode is; null when that tells nothing. */
+    fun frontOf(src: Bitmap): Wraparound.Half? {
+        val scan = if (src.height > Wraparound.SCAN_HEIGHT) {
+            render(src, Target(0, Wraparound.SCAN_HEIGHT).plan(src.width.toDouble(), src.height.toDouble()), false)
+        } else {
+            src
+        }
+        try {
+            val w = scan.width
+            val h = scan.height
+            val luminance = ByteArray(w * h)
+            val row = IntArray(w)
+            for (y in 0 until h) {
+                scan.getPixels(row, 0, w, 0, y, w, 1)
+                Wraparound.luminance(row, w, luminance, y * w)
+            }
+            return Wraparound.front(luminance, w, h)
+        } finally {
+            if (scan !== src) scan.recycle()
+        }
+    }
 
     /**
      * [region] of [src] (all of it when null) as a [width] x [height] cover; [fit]

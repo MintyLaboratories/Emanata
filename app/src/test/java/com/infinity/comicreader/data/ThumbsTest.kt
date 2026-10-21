@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -92,6 +94,42 @@ class ThumbsTest {
         Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FILL))
         Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FIT))
         assertEquals(2, File(context.cacheDir, "thumbnails").listFiles()!!.size)
+    }
+
+    /** A 1300 x 1000 wraparound: a white back with an EAN-13 barcode beside a red front, or two red halves. */
+    private fun wraparound(barcodeLeft: Boolean, name: String): BookEntry {
+        val bitmap = Bitmap.createBitmap(1300, 1000, Bitmap.Config.ARGB_8888)
+        val back = if (barcodeLeft) 0..649 else 650..1299
+        for (y in 0 until 1000) for (x in 0 until 1300) bitmap.setPixel(x, y, if (x in back) Color.WHITE else Color.RED)
+        val matrix = MultiFormatWriter().encode("9780201379624", BarcodeFormat.EAN_13, 300, 120)
+        for (y in 0 until matrix.height) for (x in 0 until matrix.width) {
+            if (matrix.get(x, y)) bitmap.setPixel(back.first + 100 + x, 800 + y, Color.BLACK)
+        }
+        val file = File(context.cacheDir, name)
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
+    }
+
+    @Test
+    fun aWraparoundShowsTheHalfWithoutTheBarcode() {
+        for (left in listOf(true, false)) {
+            val thumb = Thumbs.load(context, wraparound(left, "wrap$left.png"), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+            assertEquals(Color.RED, thumb.getPixel(5, 5))
+            assertEquals(Color.RED, thumb.getPixel(125, 195))
+        }
+    }
+
+    @Test
+    fun aWraparoundWithoutBarcodeIsFittedWhole() {
+        val bitmap = Bitmap.createBitmap(1300, 1000, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.RED)
+        val file = File(context.cacheDir, "plain.png")
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
+        val thumb = Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        // Whole and centered: red across the middle, the dimmed blur above it.
+        assertEquals(Color.RED, thumb.getPixel(65, 100))
+        assertTrue(Color.red(thumb.getPixel(65, 5)) < 230)
     }
 
     @Test

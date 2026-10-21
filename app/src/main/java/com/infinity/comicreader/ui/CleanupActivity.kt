@@ -51,7 +51,7 @@ class CleanupActivity : AppCompatActivity() {
         class Single(val file: File, val size: Long) : Row()
 
         /** Copies of one content, [size] bytes each, shown as [entry]'s cover; [places] names each copy's folder. */
-        class Group(val size: Long, val files: MutableList<File>, val entry: BookEntry, val places: Map<File, String>) : Row()
+        class Group(val size: Long, val files: MutableList<File>, var entry: BookEntry, val places: Map<File, String>) : Row()
     }
 
     private lateinit var library: Library
@@ -250,7 +250,12 @@ class CleanupActivity : AppCompatActivity() {
     /** Drops the [deleted] files, groups left with fewer than two copies, and a header left with nothing below it. */
     private fun forget(deleted: Set<String>) {
         rows.removeAll { it is Row.Single && it.file.absolutePath in deleted }
-        for (row in rows) if (row is Row.Group) row.files.removeAll { it.absolutePath in deleted }
+        for (row in rows) if (row is Row.Group) {
+            row.files.removeAll { it.absolutePath in deleted }
+            // The cover and title move to a copy that is left.
+            val kept = row.files.firstOrNull()
+            if (kept != null && row.entry.path in deleted) row.entry = row.entry.copy(file = kept, name = kept.name)
+        }
         val left = rows.filter { it !is Row.Group || it.files.size >= 2 }
         rows.clear()
         if (left.any { it !is Row.Section }) rows.addAll(left)

@@ -105,6 +105,21 @@ class CleanupActivityTest {
         assertEquals(0, list.adapter!!.itemCount)
     }
 
+    @Test
+    fun deletingTheShownCopyKeepsTheGroupOnTheOthers() {
+        val (activity, list) = launch()
+        list.row(1).findViewById<LinearLayout>(R.id.locations).getChildAt(0).performClick()
+        activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        idle()
+        assertFalse(copies[0].exists())
+        list.layout(0, 0, 1200, 2400)
+        val places = list.row(1).findViewById<LinearLayout>(R.id.locations)
+        assertEquals(2, places.childCount)
+        assertTrue(places.getChildAt(0).findViewById<TextView>(R.id.title).text.endsWith("second"))
+        assertEquals("Tale.cbz", list.row(1).findViewById<TextView>(R.id.title).text.toString())
+    }
+
     /** A touch with fingers at [xs], all at height [y]. */
     private fun touch(action: Int, y: Float, vararg xs: Float): MotionEvent {
         val properties = Array(xs.size) { i ->

@@ -4,6 +4,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
@@ -47,6 +48,9 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     var onOpen: ((BookEntry, Int) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
+
+    /** True in debuggable builds, the only ones that time and log how the grid fills ([logFill]). */
+    private val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     private val scrim = View(context).apply { setBackgroundColor(Color.BLACK) }
     private val card = FrameLayout(context)
     private val grid = RecyclerView(context)
@@ -144,7 +148,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
                 hide()
             }
             val openMs = SystemClock.elapsedRealtime() - started
-            a.onShown = { position, exact -> logFill(timing, position, exact) { "pages: opened $openMs ms" } }
+            if (debuggable) a.onShown = { position, exact -> logFill(timing, position, exact) { "pages: opened $openMs ms" } }
             adapter = a
             grid.adapter = a
             if (entry.progressPage > 0) grid.scrollToPosition(entry.progressPage)
@@ -175,7 +179,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
                 hide()
             }
             val listMs = SystemClock.elapsedRealtime() - started
-            a.onShown = { position, exact -> logFill(timing, position, exact) { "covers: listed ${entries.size} in $listMs ms" } }
+            if (debuggable) a.onShown = { position, exact -> logFill(timing, position, exact) { "covers: listed ${entries.size} in $listMs ms" } }
             covers = a
             grid.adapter = a
         }

@@ -84,7 +84,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   in the background; page counts fill in without moving rows.
 - **Filter** (per tab): file type, reading direction, read status, year and
   length ranges. A **Filtered** chip shows while anything is hidden; tap it to
-  edit, × to clear.
+  edit, × to clear. While browsing, folders face only the file type rule, so
+  the books below them stay reachable. A folder's read status comes from the
+  books directly in it; a folder of loose page images counts them as its length.
 - **Peek:** spread two fingers on a comic and a grid of its pages grows out of
   it; pinch back to collapse, release part-way to keep it open (scroll, tap a
   page to open there), release fully spread to open the book. Settings →

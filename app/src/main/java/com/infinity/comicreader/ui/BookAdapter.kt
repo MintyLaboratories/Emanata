@@ -405,14 +405,15 @@ class BookAdapter(
     }
 
     /**
-     * The read or progress pill on the cover. A list thumbnail too narrow for the
-     * text gets the percentage, or a bare dot.
+     * The read or progress pill on the cover; none on bookmarks, whose page is drawn
+     * there. A list thumbnail too narrow for the text gets the percentage, or a bare dot.
      */
     private fun bindBadge(badge: TextView, item: BookEntry) {
         val context = badge.context
         val hasProgress = item.pages > 0 && item.progressPage > 0
         val folderDone = item.isDir && item.childCount > 0 && item.readCount >= item.childCount
         val forms = when {
+            item.bookmarkPage >= 0 -> emptyList()
             item.read || folderDone -> {
                 setPill(badge, R.color.md_secondary, R.color.md_on_secondary)
                 listOf(context.getString(R.string.read_badge))

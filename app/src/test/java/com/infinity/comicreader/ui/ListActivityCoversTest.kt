@@ -10,6 +10,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
@@ -56,10 +57,14 @@ class ListActivityCoversTest {
     /** The titles on screen, after a layout of the list. */
     private fun titles(): List<String> = rows().mapNotNull { it.findViewById<TitleView>(R.id.title)?.text?.toString() }
 
-    /** The rows on screen, after a layout of the list. */
-    private fun rows(): List<View> {
+    /** The rows on screen, after a layout of the list, on tab [tab]. */
+    private fun rows(tab: Int = 0): List<View> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
+        if (tab != 0) {
+            activity.findViewById<com.google.android.material.tabs.TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
+            idle()
+        }
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         recycler.measure(
             View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),
@@ -119,6 +124,17 @@ class ListActivityCoversTest {
             assertEquals(View.VISIBLE, badge.visibility)
             assertTrue(badge.text.toString(), badge.text.isEmpty() || badge.text.toString() == "25%")
         }
+    }
+
+    @Test
+    fun bookmarksShowNoBadgeOverTheirPage() {
+        val issue = File(dir, "Issue 1.cbz")
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        Library(context).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L))
+        Library(context).addBookmark(Bookmark(issue.absolutePath, issue.name, 40, "", 1L))
+        val badges = rows(tab = 3).mapNotNull { it.findViewById<TextView>(R.id.badge) }
+        assertEquals(1, badges.size)
+        assertEquals(View.GONE, badges[0].visibility)
     }
 
     @Test

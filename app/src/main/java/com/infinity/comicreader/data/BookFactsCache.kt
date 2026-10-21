@@ -1,70 +1,96 @@
 package com.infinity.comicreader.data
 
+import android.content.ContentValues
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Remembers each book's [BookFacts] with the file size they were read at; a
- * different size means the book changed and its facts are stale. Kept in memory
- * once loaded, and on disk across launches.
+ * different size means the book changed and its facts are stale. Stored one row
+ * per book in a small database, and held in memory once [load]ed.
  */
 class BookFactsCache(context: Context) {
-    private val sp = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    private val store = storeFor(context.applicationContext)
 
-    /** The facts stored for [path] at [size], or null when unknown or stale. */
+    /** The facts stored for [path] at [size]; null when unknown, stale, or not [load]ed yet. Never blocks. */
     fun get(path: String, size: Long): BookFacts? {
-        val (known, facts) = memory()[path] ?: return null
+        val (known, facts) = store.loaded?.get(path) ?: return null
         return facts.takeIf { known == size }
     }
 
-    /** Stores the facts of several books at once, by path, with the size each was read at. */
-    fun putAll(found: Map<String, Pair<Long, BookFacts>>) {
-        if (found.isEmpty()) return
-        memory().putAll(found)
-        val e = sp.edit()
-        for ((path, value) in found) e.putString(path, encode(value.first, value.second))
-        e.apply()
-    }
+    /** True once [load] has run, so [get] answers from everything stored. */
+    val isLoaded: Boolean get() = store.loaded != null
 
-    /** Loads the stored facts, so later lookups do not read the disk. */
-    fun warm() {
-        memory()
-    }
-
-    private fun memory(): MutableMap<String, Pair<Long, BookFacts>> {
-        loaded?.let { return it }
-        synchronized(LOCK) {
-            loaded?.let { return it }
+    /** Reads every stored row into memory. Blocking; does nothing once loaded. */
+    fun load() {
+        if (store.loaded != null) return
+        synchronized(store) {
+            if (store.loaded != null) return
             val map = ConcurrentHashMap<String, Pair<Long, BookFacts>>()
-            for ((path, value) in sp.all) decode(value as? String)?.let { map[path] = it }
-            loaded = map
-            return map
+            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR), null, null, null, null, null).use { c ->
+                while (c.moveToNext()) map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3))
+            }
+            store.loaded = map
         }
+    }
+
+    /** Stores [facts] of [path], read at [size]. Blocking. */
+    fun put(path: String, size: Long, facts: BookFacts) {
+        load()
+        store.loaded?.put(path, size to facts)
+        val row = ContentValues(4).apply {
+            put(PATH, path)
+            put(SIZE, size)
+            put(PAGES, facts.pages)
+            put(YEAR, facts.year)
+        }
+        store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** One database file, opened once, and its rows once loaded. */
+    private class Store(val file: String, val helper: Helper) {
+        @Volatile
+        var loaded: MutableMap<String, Pair<Long, BookFacts>>? = null
+    }
+
+    private class Helper(context: Context) : SQLiteOpenHelper(context, FILE, null, 1) {
+        override fun onCreate(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE $TABLE ($PATH TEXT PRIMARY KEY, $SIZE INTEGER NOT NULL, $PAGES INTEGER NOT NULL, $YEAR INTEGER NOT NULL)")
+        }
+
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
     }
 
     companion object {
-        private const val FILE = "book_facts"
+        private const val FILE = "book_facts.db"
+        private const val TABLE = "facts"
+        private const val PATH = "path"
+        private const val SIZE = "size"
+        private const val PAGES = "pages"
+        private const val YEAR = "year"
         private val LOCK = Any()
 
-        /** Shared by every instance: one process, one file. */
+        /** Shared by every instance: one process, one database (a new one when its file moves, as between tests). */
         @Volatile
-        private var loaded: MutableMap<String, Pair<Long, BookFacts>>? = null
+        private var shared: Store? = null
 
-        /** `size:pages:year`. */
-        internal fun encode(size: Long, facts: BookFacts) = "$size:${facts.pages}:${facts.year}"
-
-        internal fun decode(value: String?): Pair<Long, BookFacts>? {
-            val parts = value?.split(':') ?: return null
-            if (parts.size != 3) return null
-            val size = parts[0].toLongOrNull() ?: return null
-            val pages = parts[1].toIntOrNull() ?: return null
-            val year = parts[2].toIntOrNull() ?: return null
-            return size to BookFacts(pages, year)
+        private fun storeFor(context: Context): Store {
+            val file = context.getDatabasePath(FILE).path
+            shared?.takeIf { it.file == file }?.let { return it }
+            synchronized(LOCK) {
+                shared?.let { if (it.file == file) return it else it.helper.close() }
+                return Store(file, Helper(context)).also { shared = it }
+            }
         }
 
-        /** Forgets the in-memory copy; tests start each case from disk. */
+        /** Forgets the in-memory copy and closes the database; tests start each case from disk. */
         internal fun reset() {
-            loaded = null
+            synchronized(LOCK) {
+                shared?.helper?.close()
+                shared = null
+            }
         }
     }
 }

@@ -45,7 +45,6 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
-import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.EntryType
@@ -182,7 +181,11 @@ class ListActivity : AppCompatActivity() {
         settings = SettingsRepository.get(this)
         kindCache = FavoriteKindCache(this)
         factsCache = BookFactsCache(this)
-        lifecycleScope.launch(AppDispatchers.io) { factsCache.warm() }
+        lifecycleScope.launch {
+            withContext(AppDispatchers.io) { factsCache.load() }
+            // A list shown before the facts were in sorts again with them.
+            if (allEntries.isNotEmpty()) applyFilterAndSort()
+        }
         applied = settings.list.value
         setContentView(R.layout.activity_list)
 
@@ -833,26 +836,25 @@ class ListActivity : AppCompatActivity() {
         val needSizes = SortKey.SIZE in keys
         if (!needFacts && !needSizes) return
         val entries = allEntries.toList()
-        val books = if (!needFacts) emptyList() else entries.filter {
-            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && factsCache.get(it.path, it.size) == null &&
-                factsFailed[it.path] != it.size
+        fun unknown(e: BookEntry) = factsCache.get(e.path, e.size) == null && factsFailed[e.path] != e.size
+        val candidates = if (!needFacts) emptyList() else entries.filter {
+            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && (!factsCache.isLoaded || unknown(it))
         }
         val folders = if (!needSizes) emptyList() else entries.filter { it.isDir && it.path !in folderSizes }
-        if (books.isEmpty() && folders.isEmpty()) return
+        if (candidates.isEmpty() && folders.isEmpty()) return
         factsJob?.cancel()
         factsJob = lifecycleScope.launch {
+            if (!factsCache.isLoaded) withContext(AppDispatchers.io) { factsCache.load() }
+            val books = candidates.filter { unknown(it) }
             val charset = prefs.charset
-            val found = HashMap<String, Pair<Long, BookFacts>>()
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in books.withIndex()) {
-                val facts = withContext(AppDispatchers.io) {
-                    runCatching { BookFactsReader.read(e.file, charset, cacheDir) }.getOrNull()
+                val read = withContext(AppDispatchers.io) {
+                    runCatching { factsCache.put(e.path, e.size, BookFactsReader.read(e.file, charset, cacheDir)) }.isSuccess
                 }
-                if (facts != null) found[e.path] = e.size to facts else factsFailed[e.path] = e.size
+                if (!read) factsFailed[e.path] = e.size
                 val now = SystemClock.uptimeMillis()
                 if (i < books.lastIndex && now - shownAt < FACTS_PUBLISH_MS) continue
-                factsCache.putAll(found)
-                found.clear()
                 shownAt = now
                 applyFilterAndSort(resort = false)
             }

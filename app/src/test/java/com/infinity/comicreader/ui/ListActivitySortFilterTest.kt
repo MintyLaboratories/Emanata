@@ -115,7 +115,8 @@ class ListActivitySortFilterTest {
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
         Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
-        assertNull(BookFactsCache(ApplicationProvider.getApplicationContext()).get(junk.absolutePath, junk.length()))
+        val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
+        assertNull(cache.get(junk.absolutePath, junk.length()))
     }
 
     @Test

@@ -57,12 +57,15 @@ class FolderPicker(
 
     /**
      * Lists the folders inside [dir]; tapping one goes into it, "Choose" picks [dir]. A
-     * [dir] gone by then lists its nearest existing parent instead, saying so.
+     * [dir] gone by then lists its nearest existing parent instead, saying so, or the
+     * first storage root when its whole root is gone.
      */
     private fun browse(dir: File) {
         scope.launch {
             val found = withContext(AppDispatchers.io) {
-                if (dir.isDirectory) dir else MissingFolder.nearest(dir.absolutePath, roots) { File(it).isDirectory }?.let { File(it) }
+                if (dir.isDirectory) dir
+                else MissingFolder.nearest(dir.absolutePath, roots) { File(it).isDirectory }?.let { File(it) }
+                    ?: File(roots.first().path).takeIf { it.isDirectory }
             }
             if (found != dir) {
                 Toast.makeText(context, R.string.folder_gone, Toast.LENGTH_SHORT).show()

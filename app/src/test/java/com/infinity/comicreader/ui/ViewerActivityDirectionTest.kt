@@ -203,6 +203,15 @@ class ViewerActivityDirectionTest {
         assertEquals(viewer.getString(R.string.direction_kept_for_folder), ShadowToast.getTextOfLatestToast())
     }
 
+    @Test
+    fun topToBottomForTheFolderSaysSlicesStillShowInOneColumn() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        ReaderSheet(viewer).tap(R.id.btn_dir_ttb)
+        assertEquals(FolderLayout.Direction("ttb"), library.folderLayout(dir.absolutePath))
+        assertEquals(viewer.getString(R.string.direction_kept_for_folder_ttb), ShadowToast.getTextOfLatestToast())
+    }
+
     private fun folder() = library.folderLayout(dir.absolutePath)
 
     @Test

@@ -2303,7 +2303,8 @@ class ViewerActivity : AppCompatActivity() {
             folder == null -> prefs.readingDir = dir
             folderScope() -> persistLayout(dirChosen = true)
             else -> {
-                if (folderLayout == null) toast(R.string.direction_kept_for_folder)
+                // Slices are still found in a folder read top to bottom ([maySlice]).
+                if (folderLayout == null) toast(if (dir == DIR_TTB) R.string.direction_kept_for_folder_ttb else R.string.direction_kept_for_folder)
                 setFolder(folder, FolderLayout.Direction(dir))
             }
         }

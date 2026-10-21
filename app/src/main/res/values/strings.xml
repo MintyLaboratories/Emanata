@@ -228,6 +228,7 @@
     <string name="menu_save_page">Save page to gallery</string>
     <string name="page_saved">Saved to Pictures/Emanata</string>
     <string name="direction_kept_for_folder">Direction kept for this folder; detection is off here</string>
+    <string name="direction_kept_for_folder_ttb">Direction kept for this folder; slices still show in one column</string>
     <string name="chapters_title">Chapters</string>
     <string name="chapters_in_book">Chapters in this book</string>
     <string name="chapters_in_folder">In this folder</string>

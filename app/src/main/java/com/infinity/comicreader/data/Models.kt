@@ -28,7 +28,17 @@ data class BookEntry(
     /** Shown instead of [name] where same-name favorites need telling apart. */
     val label: FavoriteLabel? = null,
     /** For bookmarks: the page drawn in front of the cover (-1 = none). */
-    val bookmarkPage: Int = -1
+    val bookmarkPage: Int = -1,
+    /** True once the book was opened (it has a history entry). */
+    val begun: Boolean = false,
+    /** When it was added: creation time where known, else modification time (0 = unknown). */
+    val added: Long = 0,
+    /** Its latest access in the app's history or bookmarks; a folder's is the latest inside it (0 = never). */
+    val accessed: Long = 0,
+    /** Its year as its name gives it; a folder's is its earliest child's (0 = none). */
+    val year: Int = 0,
+    /** The direction it reads in: set for its folder, or the default (null = unknown). */
+    val direction: ReadingDirection? = null
 ) {
     val path: String get() = file.absolutePath
 }

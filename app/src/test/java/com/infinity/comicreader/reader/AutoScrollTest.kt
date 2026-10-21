@@ -82,6 +82,37 @@ class AutoScrollTest {
     }
 
     @Test
+    fun pagedTicksComeOncePerBarPixelAFewTimesASecond() {
+        val clock = AutoScrollClock()
+        // 0.25 screens a minute: 240 s a page, a pixel of a 1848 px bar every 129 ms.
+        assertEquals(129L, clock.nextTickMs(0.25f, 1848))
+        // Fast speeds tick at most 10 times a second; narrow bars and unknown widths 4 times.
+        assertEquals(AutoScroll.MIN_TICK_MS, clock.nextTickMs(45f, 1848))
+        assertEquals(AutoScroll.MAX_TICK_MS, clock.nextTickMs(0.25f, 100))
+        assertEquals(AutoScroll.MAX_TICK_MS, clock.nextTickMs(3f, 0))
+        // The last tick lands on the turn.
+        clock.turn(19_950, 3f)
+        assertEquals(50L, clock.nextTickMs(3f, 1848))
+    }
+
+    @Test
+    fun ticksAtTheirOwnPaceStillTurnOnTime() {
+        val clock = AutoScrollClock()
+        var at = 0L
+        var ticks = 0
+        val times = ArrayList<Long>()
+        while (at < 40_000L) {
+            val dt = clock.nextTickMs(3f, 1848)
+            at += dt
+            ticks++
+            if (clock.turn(dt, 3f)) times += at
+        }
+        assertEquals(listOf(20_000L, 40_000L), times)
+        // About 10 ticks a second, against 2500 frames at 16 ms.
+        assertEquals(400, ticks)
+    }
+
+    @Test
     fun oldStepsMapToTheStripSpeedTheyHadOnATablet() {
         // 30 dp/s per step on a screen 1480 dp tall.
         assertEquals(1f, AutoScroll.fromOldStep(1), 0f)

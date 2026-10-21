@@ -15,6 +15,12 @@ object AutoScroll {
 
     const val DEFAULT = 3f
 
+    /** Quickest paged tick, in ms: the bar updates at most 10 times a second. */
+    const val MIN_TICK_MS = 100L
+
+    /** Slowest paged tick, in ms: the bar updates at least 4 times a second. */
+    const val MAX_TICK_MS = 250L
+
     /** Strip speed per step of the old 1..10 scale, in dp/s. */
     private const val OLD_DP_PER_STEP = 30f
 
@@ -77,6 +83,18 @@ class AutoScrollClock {
         // A speed raised mid-page turns once, not once per page it overshot.
         elapsedMs = (elapsedMs - page).takeIf { it < page } ?: 0L
         return true
+    }
+
+    /**
+     * The ms until the next paged tick at [speed], for a bar [barPx] wide: once the bar
+     * has grown a pixel, within [AutoScroll.MIN_TICK_MS] to [AutoScroll.MAX_TICK_MS],
+     * and exactly when the page's time is up if that comes first.
+     */
+    fun nextTickMs(speed: Float, barPx: Int): Long {
+        val page = AutoScroll.pageMs(speed)
+        val pixel = if (barPx > 0) page / barPx else AutoScroll.MAX_TICK_MS
+        val left = (page - elapsedMs).coerceAtLeast(1L)
+        return minOf(pixel.coerceIn(AutoScroll.MIN_TICK_MS, AutoScroll.MAX_TICK_MS), left)
     }
 
     /** How much of the page's time at [speed] has passed, 0 to 1. */

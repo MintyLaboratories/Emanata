@@ -84,9 +84,11 @@ class ViewerActivityAutoScrollTest {
         // A page turned by hand gets its full time.
         pass(6_000)
         viewer.findViewById<View>(R.id.btn_prev_page).performClick()
-        pass(100)
+        pass(5_000)
         assertEquals(0, pager.currentItem)
-        assertEquals(0.01f, bar.scaleX, 0.02f)
+        assertEquals(0.5f, bar.scaleX, 0.02f)
+        pass(5_200)
+        assertEquals(1, pager.currentItem)
 
         shadowOf(viewer).clickMenuItem(R.id.menu_auto_scroll)
         assertEquals(View.GONE, bar.visibility)

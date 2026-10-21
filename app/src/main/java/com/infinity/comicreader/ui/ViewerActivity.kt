@@ -244,6 +244,9 @@ class ViewerActivity : AppCompatActivity() {
     private val autoClock = AutoScrollClock()
     private var autoLastFrame = 0L
 
+    /** The delay the next [autoTick] was posted with. */
+    private var autoDelay = FRAME_MS
+
     /** The page whose time [autoClock] counts in paged reading; another one shown starts it over. */
     private var autoPage = -1
 
@@ -2000,6 +2003,7 @@ class ViewerActivity : AppCompatActivity() {
         autoClock.reset()
         autoPage = currentIndex
         autoLastFrame = SystemClock.uptimeMillis()
+        autoDelay = FRAME_MS
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (barsVisible) toggleBars()
         handler.post(autoTick)
@@ -2016,15 +2020,17 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * One frame of auto-scroll at [Prefs.autoSpeed]: a strip scrolls on; a page turns once
-     * its time is up, a thin bar along the bottom edge filling meanwhile. A page turned by
-     * hand gets its full time.
+     * One tick of auto-scroll at [Prefs.autoSpeed]: a strip scrolls on every frame; a page
+     * turns once its time is up, a thin bar along the bottom edge filling meanwhile, a few
+     * times a second ([AutoScrollClock.nextTickMs]) so the still page is not redrawn every
+     * frame. A page turned by hand gets its full time.
      */
     private val autoTick = object : Runnable {
         override fun run() {
             if (!autoScrolling) return
             val now = SystemClock.uptimeMillis()
-            val dt = (now - autoLastFrame).coerceAtMost(100L)
+            // A stalled main thread does not jump the run ahead.
+            val dt = (now - autoLastFrame).coerceAtMost(autoDelay + MAX_LATE_MS)
             autoLastFrame = now
             val speed = prefs.autoSpeed
             if (mode == MODE_PAGED) {
@@ -2043,6 +2049,7 @@ class ViewerActivity : AppCompatActivity() {
                     autoPage = currentIndex
                 }
                 showAutoProgress(autoClock.progress(speed))
+                autoDelay = autoClock.nextTickMs(speed, autoProgress.width)
             } else {
                 autoProgress.visibility = View.GONE
                 val px = autoClock.scroll(dt, speed, vertical.height)
@@ -2051,8 +2058,9 @@ class ViewerActivity : AppCompatActivity() {
                     finishAutoScroll()
                     return
                 }
+                autoDelay = FRAME_MS
             }
-            handler.postDelayed(this, FRAME_MS)
+            handler.postDelayed(this, autoDelay)
         }
     }
 
@@ -2508,6 +2516,9 @@ class ViewerActivity : AppCompatActivity() {
         private const val EXPORT_H = 3200
         private const val MAX_SESSION_SECONDS = 4L * 3600
         private const val FRAME_MS = 16L
+
+        /** How much later than posted an auto-scroll tick may count. */
+        private const val MAX_LATE_MS = 100L
 
         /** How long, as a share of the screen height, a brightness drag holds at 0. */
         private const val BRIGHTNESS_HOLD = 0.15f

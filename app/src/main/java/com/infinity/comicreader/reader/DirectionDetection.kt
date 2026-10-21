@@ -7,14 +7,14 @@ import java.util.Locale
  * Works out a book's reading direction from what it carries, strongest signal first:
  *  1. ComicInfo `Manga=YesAndRightToLeft`;
  *  2. a wraparound cover: the front half on the left reads right to left, on the right left to right;
- *  3. a manga publisher, from ComicInfo `Publisher` or a bracketed tag in the file or page names;
- *  4. manga-style page names (`c001 (v01) - p000`), as a last resort.
- * Null when nothing tells. Free of Android types.
+ *  3. a manga publisher, from ComicInfo `Publisher` or a bracketed tag in the file or page names.
+ * Null when nothing tells. Manga-style page names (`c001 (v01) - p000`) never decide
+ * alone: western scans use them too. Free of Android types.
  */
 object DirectionDetection {
 
-    /** Which signal decided. */
-    enum class Source(val key: Int) { COMIC_INFO(0), COVER(1), PUBLISHER(2), NAMING(3) }
+    /** Which signal decided. Key 3, once page names, is retired and decodes to nothing. */
+    enum class Source(val key: Int) { COMIC_INFO(0), COVER(1), PUBLISHER(2) }
 
     /** A detected [direction], from [source]; [detail] names the publisher when that decided. */
     data class Detected(val direction: ReadingDirection, val source: Source, val detail: String? = null) {
@@ -51,9 +51,7 @@ object DirectionDetection {
         }
         val publisher = MangaPublishers.match(info?.publisher)
             ?: (sequenceOf(fileName) + pageNames.asSequence()).flatMap { bracketTags(it) }.firstNotNullOfOrNull { MangaPublishers.match(it) }
-        if (publisher != null) return Detected(ReadingDirection.RTL, Source.PUBLISHER, publisher)
-        if (isMangaNaming(pageNames)) return Detected(ReadingDirection.RTL, Source.NAMING)
-        return null
+        return publisher?.let { Detected(ReadingDirection.RTL, Source.PUBLISHER, it) }
     }
 
     private val BRACKETS = Regex("""\[([^\[\]]{2,60})]""")
@@ -62,17 +60,6 @@ object DirectionDetection {
     internal fun bracketTags(path: String): Sequence<String> =
         BRACKETS.findAll(path.substringAfterLast('/').substringAfterLast('\\')).map { it.groupValues[1] }
 
-    /** A chapter number, then later a page number: `c012 (v02) - p034`, `c012.5 - p001`. */
-    private val MANGA_NAME = Regex("""(?i)(?:^|[^a-z0-9])c\d{1,4}(?:[.x]\d+)?(?:[^a-z0-9]).*(?:^|[^a-z0-9])p\d{1,4}(?:[^0-9]|$)""")
-
-    /** True when most page names, at least [MIN_NAMED_PAGES], follow manga scan naming. */
-    fun isMangaNaming(pageNames: List<String>): Boolean {
-        if (pageNames.size < MIN_NAMED_PAGES) return false
-        val named = pageNames.count { MANGA_NAME.containsMatchIn(it.substringAfterLast('/').substringAfterLast('\\')) }
-        return named >= MIN_NAMED_PAGES && named * 2 > pageNames.size
-    }
-
-    private const val MIN_NAMED_PAGES = 3
 }
 
 /**

@@ -145,9 +145,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   default) reads a book right to left from, in order: ComicInfo
   `Manga=YesAndRightToLeft`; a wraparound cover's front half (found by its
   barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
-  file or page names (`[Kodansha Comics]`); manga-style page names
-  (`c001 (v01) - p000`). A short note on open says why ("Right-to-left (from
-  ComicInfo)"). A direction set for the folder always wins; choosing one over a
+  file or page names (`[Kodansha Comics]`). Manga-style page names
+  (`c001 (v01) - p000`) do not decide on their own, as western scans use them
+  too. A short note on open says why ("Right-to-left (from ComicInfo)"). A direction set for the folder always wins; choosing one over a
   detected direction keeps it for the folder.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third

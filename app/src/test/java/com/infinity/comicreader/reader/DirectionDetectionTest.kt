@@ -73,23 +73,9 @@ class DirectionDetectionTest {
     }
 
     @Test
-    fun mangaNamingIsTheLastResort() {
-        assertEquals(Detected(ReadingDirection.RTL, Source.NAMING), detect(pages = mangaPages))
-        // A publisher tag among them names the source instead.
+    fun mangaNamingAloneDecidesNothing() {
+        assertNull(detect(pages = mangaPages))
         assertEquals(Source.PUBLISHER, detect(pages = mangaPages + "c001 (v01) - p999 [VIZ Media].jpg")?.source)
-    }
-
-    @Test
-    fun mangaNaming() {
-        assertTrue(DirectionDetection.isMangaNaming(mangaPages))
-        assertTrue(DirectionDetection.isMangaNaming(listOf("c012.5 - p001.png", "c012.5 - p002.png", "c012.5 - p003.png")))
-        assertFalse(DirectionDetection.isMangaNaming(mangaPages.take(2)))
-        assertFalse(DirectionDetection.isMangaNaming(plainPages))
-        // Issue-page names and c2c tags are not chapter numbers.
-        assertFalse(DirectionDetection.isMangaNaming(listOf("Series A 001-002.jpg", "Series A 001-003.jpg", "Series A 001-004.jpg")))
-        assertFalse(DirectionDetection.isMangaNaming(listOf("Series A (c2c) p01.jpg", "Series A (c2c) p02.jpg", "Series A (c2c) p03.jpg")))
-        // Mostly: a few tagged pages do not count.
-        assertFalse(DirectionDetection.isMangaNaming(plainPages + mangaPages.take(4)))
     }
 
     @Test
@@ -115,5 +101,7 @@ class DirectionDetectionTest {
         }
         assertNull(Detected.decode(0))
         assertNull(Detected.decode(99))
+        // Retired: page names.
+        assertNull(Detected.decode(7))
     }
 }

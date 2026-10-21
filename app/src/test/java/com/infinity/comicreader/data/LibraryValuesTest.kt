@@ -148,7 +148,7 @@ class LibraryValuesTest {
 
     @Test
     fun detectedDirectionUnlessTheFolderHasOne() {
-        val rtl = BookFacts(10, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.NAMING))
+        val rtl = BookFacts(10, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER))
         val book = entry("a.cbz").copy(direction = ReadingDirection.LTR)
         val rtlKey = ReadingDirection.RTL.ordinal.toLong()
         val ltrKey = ReadingDirection.LTR.ordinal.toLong()

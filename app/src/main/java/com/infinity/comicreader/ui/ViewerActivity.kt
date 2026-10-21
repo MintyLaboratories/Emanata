@@ -621,7 +621,6 @@ class ViewerActivity : AppCompatActivity() {
             DirectionDetection.Source.COMIC_INFO -> getString(R.string.direction_from_comic_info)
             DirectionDetection.Source.COVER -> getString(R.string.direction_from_cover)
             DirectionDetection.Source.PUBLISHER -> getString(R.string.direction_from_publisher, found.detail.orEmpty())
-            DirectionDetection.Source.NAMING -> getString(R.string.direction_from_naming)
         }
         showHint(getString(R.string.direction_detected, direction, from), DETECTION_NOTE_MS)
     }

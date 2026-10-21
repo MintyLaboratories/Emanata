@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
@@ -58,5 +59,21 @@ class BackupTest {
     fun rejectsOtherApps() {
         assertFalse(Backup.import(context, backup("SomethingElse")))
         assertTrue(Library(context).favorites().isEmpty())
+    }
+
+    @Test
+    fun restoredLegacyFolderLayoutsAreSortedAgainstTheRestoredDefaults() {
+        fun legacy(fit: String) = JSONObject().put("mode", "paged").put("dir", "rtl").put("fit", fit).put("two", false)
+        val json = JSONObject()
+            .put("app", "Emanata")
+            .put("version", 1)
+            .put("library", JSONObject().put("series", JSONObject().put("/books/a", legacy("width")).put("/books/b", legacy("height"))))
+            .put("prefs", JSONObject().put("pref_fit", "width"))
+            .toString()
+        assertTrue(Backup.import(context, json))
+        val library = Library(context)
+        assertEquals(FolderLayout.Direction("rtl"), library.folderLayout("/books/a"))
+        assertTrue(library.folderLayout("/books/b") is FolderLayout.Frozen)
+        assertFalse(FolderLayout.isLegacy(JSONObject(context.getSharedPreferences("library", Context.MODE_PRIVATE).getString("series", "{}")!!).getJSONObject("/books/b")))
     }
 }

@@ -3,6 +3,7 @@ package com.infinity.comicreader.util
 import android.content.Context
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderLayout
 import org.json.JSONObject
 
 /**
@@ -40,7 +41,8 @@ object Backup {
         if (root.optString("app") !in APPS || root.optInt("version", 0) !in 1..VERSION) return false
         val lib = root.optJSONObject("library") ?: return false
 
-        Library(context).importAll(lib)
+        val library = Library(context)
+        library.importAll(lib)
 
         root.optJSONObject("prefs")?.let { p ->
             val values = HashMap<String, Any>()
@@ -51,6 +53,8 @@ object Backup {
             }
             Prefs(context).importAll(values)
         }
+        // Folder layouts of older versions, judged against the defaults just restored.
+        library.migrateFolderLayouts(ReaderLayout.of(Prefs(context)))
         return true
     }
 }

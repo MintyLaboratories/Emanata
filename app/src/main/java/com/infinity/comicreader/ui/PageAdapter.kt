@@ -17,13 +17,16 @@ import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.Box
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
+import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.PairCrop
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
@@ -76,7 +79,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
  * (linear-light scaling) changes. Paged items follow [pageLayout] when one is given (the
  * spread engine's pairs, or pages split in halves), else pages pair by position with
- * [twoPage].
+ * [twoPage]. With [autoCrop], the two pages of a pair share one top and bottom crop and
+ * show at one height ([PairCrop]), from what auto-crop found on each, kept in [bounds];
+ * a page not measured yet is measured first. Paired pages meet at the gutter.
  *
  * Vertical and long-strip layouts may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
@@ -95,7 +100,8 @@ class PageAdapter(
     private val preload: Int = 2,
     private val fling: Boolean = false,
     private val onLongPress: ((Int) -> Unit)? = null,
-    pageLayout: PageLayout? = null
+    pageLayout: PageLayout? = null,
+    private val bounds: PageBounds = PageBounds()
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, VERTICAL, LONG_STRIP }
@@ -472,7 +478,10 @@ class PageAdapter(
      * its size or fit ([Target.detail]), so a zoom after a new fit finds it still loaded.
      */
     private fun detailKey(key: PageKey) =
-        PageKey(key.page, Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels, half = key.target.half))
+        PageKey(
+            key.page,
+            Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels, half = key.target.half, box = key.target.box)
+        )
 
     /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
     private inner class SlotDetail(private val holder: PageHolder, val key: PageKey) : ZoomImageView.DetailSource {
@@ -515,8 +524,20 @@ class PageAdapter(
         image.look = look
         prepareContainer(holder, pageIndex)
 
+        val code = codeOf(part)
+        val slotType = slotOf(part)
         val key = keyFor(part)
-        val code = key.code
+        if (key == null) {
+            // The pair's shared crop waits for what auto-crop finds on both pages.
+            measureItem(part)
+            image.setFitGeometry(null, alignOf(slotType))
+            if (holder.shown[slot] != code) {
+                val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
+                if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
+            }
+            return
+        }
+        image.setFitGeometry(fitBoxOf(key, slotType), alignOf(slotType))
         val cached = cache.get(key)
         if (cached != null) {
             showBitmap(holder, slot, key, cached)
@@ -585,28 +606,105 @@ class PageAdapter(
         if (!decoding) holder.waiters[slot] = job
     }
 
+    /** Where [part] sits in its item: alone, or on the left or right of a pair. */
+    private fun slotOf(part: PageLayout.Part): PageTargets.Slot {
+        if (!spread) return PageTargets.Slot.ALONE
+        val parts = layout.parts(layout.itemOf(part), end)
+        return when {
+            parts.count { it != null } <= 1 -> PageTargets.Slot.ALONE
+            parts[0] == part -> PageTargets.Slot.LEFT
+            else -> PageTargets.Slot.RIGHT
+        }
+    }
+
+    /** Paired pages meet at the gutter; a page alone is centered. */
+    private fun alignOf(slot: PageTargets.Slot): Float = when (slot) {
+        PageTargets.Slot.LEFT -> 1f
+        PageTargets.Slot.RIGHT -> 0f
+        PageTargets.Slot.ALONE -> 0.5f
+    }
+
+    /** The box a paired page with a shared crop fits into at fit screen: its target, of the pair's one height. */
+    private fun fitBoxOf(key: PageKey, slot: PageTargets.Slot): IntArray? {
+        val t = key.target
+        if (slot == PageTargets.Slot.ALONE || fitMode != ZoomImageView.FitMode.SCREEN || t.box == null) return null
+        return if (t.width > 0 && t.height > 0) intArrayOf(t.width, t.height) else null
+    }
+
     /**
      * The decode [part] needs now: its exact on-screen size for the current item size,
-     * fit mode and place in a spread, so it is drawn at 1:1.
+     * fit mode and place in a spread, so it is drawn at 1:1. With auto-crop, a paired page
+     * takes the crop it shares with its partner ([PairCrop]) and, at fit screen, the pair's
+     * one height; null until both pages are measured ([measureItem]).
      */
-    private fun keyFor(part: PageLayout.Part): PageKey {
+    private fun keyFor(part: PageLayout.Part): PageKey? {
         val (w, h) = itemSize()
         sizedW = w
         sizedH = h
-        val slot = if (spread) {
-            val parts = layout.parts(layout.itemOf(part), end)
-            when {
-                parts.count { it != null } <= 1 -> PageTargets.Slot.ALONE
-                parts[0] == part -> PageTargets.Slot.LEFT
-                else -> PageTargets.Slot.RIGHT
-            }
-        } else {
-            PageTargets.Slot.ALONE
-        }
+        val slot = slotOf(part)
         val view = PageTargets.viewSize(mode, spread, w, h, spacingPx, slot)
-        val target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear)
-        return PageKey(part.page, if (part.half == Half.WHOLE) target else target.copy(half = part.half))
+        var target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear)
+        if (part.half != Half.WHOLE) target = target.copy(half = part.half)
+        if (slot == PageTargets.Slot.ALONE || !autoCrop || fitMode == ZoomImageView.FitMode.STRETCH) return PageKey(part.page, target)
+        val parts = layout.parts(layout.itemOf(part), end)
+        val left = parts[0] ?: return PageKey(part.page, target)
+        val right = parts[1] ?: return PageKey(part.page, target)
+        val foundLeft = bounds[left.page] ?: return null
+        val foundRight = bounds[right.page] ?: return null
+        val (boxLeft, boxRight) = PairCrop.boxes(foundLeft.box, foundRight.box, spread = false)
+        if (fitMode == ZoomImageView.FitMode.SCREEN) {
+            val la = foundLeft.aspect(boxLeft)
+            val ra = foundRight.aspect(boxRight)
+            if (la > 0 && ra > 0) target = target.copy(height = PageTargets.pairHeight(w, h, la, ra))
+        }
+        return PageKey(part.page, target.copy(box = if (slot == PageTargets.Slot.LEFT) boxLeft else boxRight))
     }
+
+    /** Pages whose crop [measure] is finding. */
+    private val measuring = HashSet<Int>()
+
+    /** Measures the crop of each page of [part]'s item that has none yet. */
+    private fun measureItem(part: PageLayout.Part) {
+        for (p in layout.parts(layout.itemOf(part), end)) if (p != null && bounds[p.page] == null) measure(p.page)
+    }
+
+    /**
+     * Finds what auto-crop takes off [page], with a decode to a tiny bitmap that is thrown
+     * away, then binds its item again. A page with no blank border, or one that does not
+     * decode, crops alone.
+     */
+    private fun measure(page: Int) {
+        if (released || !measuring.add(page)) return
+        val chapter = strip.chapterOf(page)
+        val seg = chapter.value
+        seg.loads.incrementAndGet()
+        scope.launch {
+            try {
+                withContext(AppDispatchers.io) {
+                    gate.withPermit {
+                        runCatching {
+                            Decoders.measuring({ box, w, h -> bounds[page] = PageBounds.Found(box, w, h) }) {
+                                seg.source.loadPage(page - chapter.first, MEASURE).recycle()
+                            }
+                        }
+                    }
+                }
+            } finally {
+                releaseLoad(seg)
+                measuring.remove(page)
+            }
+            if (bounds[page] == null) bounds[page] = PageBounds.Found(Box.FULL, 0, 0)
+            notifyItemChanged(layout.itemOf(PageLayout.Part(page)), RESIZE)
+        }
+    }
+
+    /** Runs a decode of [key], keeping what its auto-crop finds for pairs to share. */
+    private fun <T> learning(key: PageKey, decode: () -> T): T =
+        if (mode == Mode.PAGED && key.target.autoCrop && key.target.box == null) {
+            Decoders.measuring({ box, w, h -> bounds[key.page] = PageBounds.Found(box, w, h) }, decode)
+        } else {
+            decode()
+        }
 
     /** Forgets the decode [slot] was waiting for; abandons it if nobody else wants it. */
     private fun stopWaiting(holder: PageHolder, slot: Int) {
@@ -725,7 +823,7 @@ class PageAdapter(
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
                 val job = coroutineContext.job
-                val bitmap = decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                val bitmap = learning(key) { decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled } }
                     ?.let { frozen(it) }
                 if (bitmap != null && bitmap.width > 0) {
                     cache.put(key, bitmap)
@@ -753,6 +851,10 @@ class PageAdapter(
                 if (part == null || ahead <= 0) continue
                 ahead--
                 val key = keyFor(part)
+                if (key == null) {
+                    measureItem(part)
+                    continue
+                }
                 if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) continue
                 request(key).prefetch = true
             }
@@ -829,6 +931,9 @@ class PageAdapter(
         /** Rebinds an item on its own holder, which keeps its bitmaps meanwhile. */
         private val RESIZE = Any()
         private val WHOLE_PAGE = Region(0.0, 0.0, 1.0, 1.0)
+
+        /** A decode that only measures a page's crop. */
+        private val MEASURE = Target(16, 16, autoCrop = true)
 
         /** [part] as one number: its page and half. */
         internal fun codeOf(part: PageLayout.Part): Int = part.page * 3 + part.half.ordinal

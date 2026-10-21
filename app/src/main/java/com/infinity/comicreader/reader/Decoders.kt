@@ -116,6 +116,32 @@ object Decoders {
         }
     }
 
+    /** Where this thread's next auto-crop leaves what it found ([measuring]). */
+    private val measures = ThreadLocal<((Box, Int, Int) -> Unit)?>()
+
+    /**
+     * Runs [block], handing what the first auto-crop in it on this thread finds to
+     * [measure]: the content as a [Box] (all of the image when it has no blank border),
+     * and the size of the image it was found on.
+     */
+    fun <T> measuring(measure: (Box, Int, Int) -> Unit, block: () -> T): T {
+        val outer = measures.get()
+        measures.set(measure)
+        try {
+            return block()
+        } finally {
+            if (outer == null) measures.remove() else measures.set(outer)
+        }
+    }
+
+    /** Hands [box], found on a [w] x [h] image, to this thread's [measuring], if any. */
+    internal fun measured(box: Box, w: Int, h: Int) {
+        measures.get()?.let { measure ->
+            measures.set(null)
+            measure(box, w, h)
+        }
+    }
+
     /** [full] cropped and resampled to [target]; [full] itself when it already is the result, else recycled. */
     fun fit(full: Bitmap, target: Target): Bitmap {
         val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
@@ -125,7 +151,13 @@ object Decoders {
             sinks.set(null)
             sink.decoded(src)
         }
-        val bounds = if (target.autoCrop) BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) } else null
+        val bounds = if (target.autoCrop && target.box == null) {
+            BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) }.also { found ->
+                measured(Box.of(found, src.width, src.height), src.width, src.height)
+            }
+        } else {
+            null
+        }
         val area = target.area(src.width, src.height, bounds)
         val plan = target.plan((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble(), area[0].toDouble(), area[1].toDouble())
         if (plan.isIdentity(src.width, src.height)) return src

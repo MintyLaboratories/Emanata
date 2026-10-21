@@ -64,4 +64,14 @@ class PageTargetsTest {
             }
         }
     }
+
+    @Test
+    fun aPairShowsAtTheTallestHeightBothHalvesFit() {
+        // Portrait: the wider page limits both.
+        assertEquals(1428, PageTargets.pairHeight(2000, 3000, 0.66, 0.70))
+        // Landscape: the screen's height does.
+        assertEquals(2000, PageTargets.pairHeight(3000, 2000, 0.66, 0.70))
+        // An odd width: the right half is a pixel wider.
+        assertEquals(1001, PageTargets.pairHeight(2001, 3000, 0.5, 1.0))
+    }
 }

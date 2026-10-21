@@ -220,4 +220,48 @@ class DecodersPlatformTest {
         }
         assertEquals(100, Decoders.decode(png, Target(100, 0)).width)
     }
+
+    /** A [w] x [h] white page with a black block over columns [x0, x1) and rows [y0, y1), as PNG. */
+    private fun block(w: Int, h: Int, x0: Int, y0: Int, x1: Int, y1: Int): ByteArray {
+        val page = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        for (y in y0 until y1) for (x in x0 until x1) page.setPixel(x, y, Color.BLACK)
+        return ByteArrayOutputStream().also { page.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
+    @Test
+    fun measuringHandsOnWhatAutoCropFound() {
+        var found: Triple<Box, Int, Int>? = null
+        Decoders.measuring({ box, w, h -> found = Triple(box, w, h) }) {
+            Decoders.decode(block(200, 200, 40, 20, 160, 180), Target(16, 16, autoCrop = true))
+        }
+        val (box, w, h) = found!!
+        assertEquals(200, w)
+        assertEquals(200, h)
+        // The content plus the crop's small margin.
+        assertEquals(listOf(36, 16, 164, 184), box.pixels(w, h).toList())
+        // Without auto-crop there is nothing to hand on.
+        found = null
+        Decoders.measuring({ b, x, y -> found = Triple(b, x, y) }) { Decoders.decode(block(200, 200, 40, 20, 160, 180), Target(16, 16)) }
+        assertEquals(null, found)
+    }
+
+    @Test
+    fun aBoxCropsInPlaceOfTheContent() {
+        val out = Decoders.decode(block(200, 200, 40, 20, 160, 180), Target(autoCrop = true, box = Box(0.0, 0.0, 0.5, 1.0)))
+        assertEquals(100, out.width)
+        assertEquals(200, out.height)
+        assertEquals(Color.WHITE, out.getPixel(10, 10))
+    }
+
+    @Test
+    fun aSpreadInOneFileIsCroppedBeforeItIsSplit() {
+        // Content 40..360 of 400: the halves meet at 200, the middle of the content, not of the margins.
+        val spread = block(400, 200, 40, 20, 360, 180)
+        val left = Decoders.decode(spread, Target(autoCrop = true, half = Half.LEFT))
+        val right = Decoders.decode(spread, Target(autoCrop = true, half = Half.RIGHT))
+        assertEquals(left.width, right.width)
+        assertEquals(left.height, right.height)
+        assertEquals(Color.BLACK, left.getPixel(left.width - 1, left.height / 2))
+        assertEquals(Color.BLACK, right.getPixel(0, right.height / 2))
+    }
 }

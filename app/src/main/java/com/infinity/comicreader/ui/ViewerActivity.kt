@@ -184,6 +184,9 @@ class ViewerActivity : AppCompatActivity() {
     /** What the spread engine found in the open book's pages; null until the book is open. */
     private var analysis: Spreads.Analysis? = null
 
+    /** What auto-crop found on the open book's pages, for pairs to share; kept across adapters. */
+    private var pageBounds = PageBounds()
+
     /** Reads the open book's missing page sizes in the background ([scanSizes]). */
     private var sizesJob: Job? = null
 
@@ -993,6 +996,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Takes the page [names] and [sizes] of the open book as what the spread engine reads. */
     private fun showPages(names: List<String?>, sizes: Array<IntArray?>) {
+        pageBounds = PageBounds()
         pageNames = names
         pageSizes = sizes
         shifted = favoriteFile()?.let { library.isShifted(it.absolutePath) } == true
@@ -1098,7 +1102,8 @@ class ViewerActivity : AppCompatActivity() {
             preload = prefs.preload,
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
-            pageLayout = layout
+            pageLayout = layout,
+            bounds = pageBounds
         )
         a.fitMode = effectiveFit()
         a.filter = filter

@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Target
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -49,6 +50,18 @@ object PageTargets {
         fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear)
         fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear)
         else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear)
+    }
+
+    /**
+     * The one height the two pages of an [itemW] x [itemH] spread row show at with fit
+     * screen: the tallest at which each, of width / height [leftAspect] and [rightAspect],
+     * fits its half of the row ([viewSize]). Whole pixels, so a page decoded into its half
+     * at that height comes out exactly that tall.
+     */
+    fun pairHeight(itemW: Int, itemH: Int, leftAspect: Double, rightAspect: Double): Int {
+        val left = itemW / 2
+        val right = itemW - left
+        return floor(minOf(itemH.toDouble(), left / leftAspect, right / rightAspect)).toInt().coerceAtLeast(1)
     }
 
     /**

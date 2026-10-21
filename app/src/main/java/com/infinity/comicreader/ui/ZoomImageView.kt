@@ -208,6 +208,32 @@ class ZoomImageView @JvmOverloads constructor(
         fit(mode)
     }
 
+    /** Where a page narrower than the view sits across it: 0 at its left edge, 1 at its right, 0.5 centered. */
+    var alignX = 0.5f
+        private set
+
+    /**
+     * The box a page fits into at [FitMode.SCREEN] in place of the view's own size, so the
+     * two pages of a spread row fit to one height; null fits the view.
+     */
+    var fitBox: IntArray? = null
+        private set
+
+    /** Sets [fitBox] and [alignX], fitting again when either changes. */
+    fun setFitGeometry(box: IntArray?, align: Float) {
+        if (align == alignX && box.contentEquals(fitBox)) return
+        fitBox = box
+        alignX = align
+        fit()
+    }
+
+    /** The fitted scale of a [w] x [h] page in [mode]: into [fitBox] at fit screen when set, else into the view. */
+    private fun fitScale(mode: FitMode, w: Float, h: Float): Float {
+        val box = fitBox?.takeIf { mode == FitMode.SCREEN }
+        return if (box != null) fittedScale(mode, box[0].toFloat(), box[1].toFloat(), w, h)
+        else fittedScale(mode, width.toFloat(), height.toFloat(), w, h)
+    }
+
     fun fit(mode: FitMode = fitMode) {
         stopFling()
         val drawable = drawable ?: return
@@ -229,7 +255,7 @@ class ZoomImageView @JvmOverloads constructor(
             return
         }
 
-        val scale = fittedScale(mode, viewW, viewH, drawableW, drawableH)
+        val scale = fitScale(mode, drawableW, drawableH)
         baseMatrix.reset()
         baseMatrix.postScale(scale, scale)
         val scaledW = drawableW * scale
@@ -237,7 +263,7 @@ class ZoomImageView @JvmOverloads constructor(
         // Center what fits; when a page is taller (or wider) than the view start at its
         // top (left) edge so reading begins at the beginning and the rest can be panned to.
         // Whole-pixel offsets, so a page at 1:1 lands on the pixel grid.
-        val startX = if (scaledW > viewW) 0f else ((viewW - scaledW) / 2f).roundToInt().toFloat()
+        val startX = if (scaledW > viewW) 0f else ((viewW - scaledW) * alignX).roundToInt().toFloat()
         val startY = if (scaledH > viewH) 0f else ((viewH - scaledH) / 2f).roundToInt().toFloat()
         baseMatrix.postTranslate(startX, startY)
         matrix.set(baseMatrix)
@@ -290,7 +316,7 @@ class ZoomImageView @JvmOverloads constructor(
             minScale = 1f
             maxScale = 1f
         } else {
-            minScale = fittedScale(fitMode, viewW, viewH, w, h)
+            minScale = fitScale(fitMode, w, h)
             maxScale = minScale * 8f
             currentScale = minScale * zoom
             scaleX = currentScale
@@ -328,7 +354,7 @@ class ZoomImageView @JvmOverloads constructor(
 
         var dx = 0f
         if (drawableW <= viewW) {
-            dx = (viewW - drawableW) / 2f - transX
+            dx = (viewW - drawableW) * alignX - transX
         } else {
             val minX = viewW - drawableW
             if (transX > 0f) dx = -transX else if (transX < minX) dx = minX - transX

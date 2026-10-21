@@ -165,4 +165,21 @@ class TargetTest {
     fun aHalfKeepsItsSideAtFullDetail() {
         assertEquals(Half.RIGHT, Target(800, 600, half = Half.RIGHT).detail(intArrayOf(4000, 3000), Long.MAX_VALUE).half)
     }
+
+    @Test
+    fun boxesCoverTheWholePixelsTheyTouch() {
+        assertEquals(listOf(100, 200, 900, 1800), Box(0.1, 0.1, 0.9, 0.9).pixels(1000, 2000).toList())
+        assertEquals(listOf(0, 0, 1000, 2000), Box.FULL.pixels(1000, 2000).toList())
+        assertEquals(listOf(100, 200, 901, 1801), Box(0.1004, 0.1001, 0.9004, 0.9001).pixels(1000, 2000).toList())
+        assertEquals(Box(0.25, 0.5, 0.75, 1.0), Box.of(intArrayOf(100, 200, 300, 400), 400, 400))
+        assertEquals(Box.FULL, Box.of(null, 400, 400))
+    }
+
+    @Test
+    fun aBoxTakesThePlaceOfTheAutoCrop() {
+        val t = Target(autoCrop = true, box = Box(0.1, 0.1, 0.9, 0.9))
+        assertEquals(listOf(100, 100, 900, 900), t.area(1000, 1000, intArrayOf(0, 0, 500, 500)).toList())
+        assertEquals(listOf(500, 100, 900, 900), t.copy(half = Half.RIGHT).area(1000, 1000).toList())
+        assertEquals(t.box, t.detail(intArrayOf(1000, 1000), Long.MAX_VALUE).box)
+    }
 }

@@ -1,11 +1,39 @@
 package com.infinity.comicreader.reader
 
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** The part of a source a decode shows: all of it, or its left or right half (one page of a spread in one file). */
 enum class Half { WHOLE, LEFT, RIGHT }
+
+/** A rectangle of a source as fractions of its width and height. */
+data class Box(val left: Double, val top: Double, val right: Double, val bottom: Double) {
+    val width: Double get() = right - left
+    val height: Double get() = bottom - top
+
+    /** `[left, top, right, bottom]` in the pixels of a [w] x [h] source: the whole pixels it touches, at least one each way. */
+    fun pixels(w: Int, h: Int): IntArray {
+        val l = floor(left * w + EPSILON).toInt().coerceIn(0, w - 1)
+        val t = floor(top * h + EPSILON).toInt().coerceIn(0, h - 1)
+        val r = ceil(right * w - EPSILON).toInt().coerceIn(l + 1, w)
+        val b = ceil(bottom * h - EPSILON).toInt().coerceIn(t + 1, h)
+        return intArrayOf(l, t, r, b)
+    }
+
+    companion object {
+        val FULL = Box(0.0, 0.0, 1.0, 1.0)
+
+        /** Rounding noise a fraction may carry without taking in another pixel. */
+        private const val EPSILON = 1e-9
+
+        /** [bounds] (`[left, top, right, bottom]` pixels) of a [w] x [h] source as fractions; all of it when null. */
+        fun of(bounds: IntArray?, w: Int, h: Int): Box =
+            if (bounds == null || w <= 0 || h <= 0) FULL
+            else Box(bounds[0].toDouble() / w, bounds[1].toDouble() / h, bounds[2].toDouble() / w, bounds[3].toDouble() / h)
+    }
+}
 
 /** How a decode maps its source onto the [Target] box. */
 enum class Fit {
@@ -32,7 +60,9 @@ enum class Fit {
  * [anchorTop] makes [COVER][Fit.COVER] keep the top of a source too tall for the
  * box, cropping only its bottom; sides are always cropped evenly.
  *
- * [half] shows one half of the source, split after any auto-crop ([area]).
+ * [half] shows one half of the source, split after any auto-crop ([area]). [box], when
+ * set, is the crop to show in place of the one auto-crop would find: two pages side by
+ * side share their top and bottom crop this way.
  *
  * [linear] shrinks in linear light; enlarging stays in sRGB, where Lanczos halos are
  * fainter. [capPixels] bounds the decoded source: a larger
@@ -49,18 +79,20 @@ data class Target(
     val linear: Boolean = false,
     val capPixels: Long = DEFAULT_CAP_PIXELS,
     val anchorTop: Boolean = false,
-    val half: Half = Half.WHOLE
+    val half: Half = Half.WHOLE,
+    val box: Box? = null
 ) {
     /**
-     * `[left, top, right, bottom]` of a [srcW] x [srcH] source that this target shows: the
-     * content [bounds] auto-crop found in the same form (all of it when null), then its
-     * [half], the left one taking the floor of an odd width.
+     * `[left, top, right, bottom]` of a [srcW] x [srcH] source that this target shows: its
+     * [box], else the content [bounds] auto-crop found in the same form (all of it when
+     * null), then its [half], the left one taking the floor of an odd width.
      */
     fun area(srcW: Int, srcH: Int, bounds: IntArray? = null): IntArray {
-        var l = bounds?.get(0) ?: 0
-        val t = bounds?.get(1) ?: 0
-        var r = bounds?.get(2) ?: srcW
-        val b = bounds?.get(3) ?: srcH
+        val crop = box?.pixels(srcW, srcH) ?: bounds
+        var l = crop?.get(0) ?: 0
+        val t = crop?.get(1) ?: 0
+        var r = crop?.get(2) ?: srcW
+        val b = crop?.get(3) ?: srcH
         when (half) {
             Half.LEFT -> r = l + (r - l) / 2
             Half.RIGHT -> l += (r - l) / 2
@@ -134,7 +166,7 @@ data class Target(
      * the source whole first (up to [capPixels]), beside its crop with auto-crop.
      */
     fun detail(size: IntArray?, maxBytes: Long): Target {
-        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half)
+        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half, box = box)
         if (size == null || size[0] <= 0 || size[1] <= 0) return full
         val bytes = size[0].toLong() * size[1] * 4
         if (bytes <= maxBytes) return full

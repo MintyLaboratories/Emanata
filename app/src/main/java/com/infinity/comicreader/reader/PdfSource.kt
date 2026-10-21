@@ -151,14 +151,29 @@ class PdfSource(file: File) : PageSource {
         /**
          * Where [target] lays out a [pw] x [ph]-point page ([vectorTarget]). With auto-crop,
          * [content] finds the content in a first render at the uncropped plan, and the
-         * content then fills the target ([cropPlan]); without content found the page does.
+         * content then fills the target ([cropPlan]), and is handed to [Decoders.measuring];
+         * without content found the page does. [Target.box] takes the place of that search.
          * [Target.half] then takes one half of that ([halfPlan]).
          */
         fun plan(target: Target, pw: Double, ph: Double, content: (Plan) -> Rect?): Plan {
             val sized = vectorTarget(target, pw)
             val plan = sized.plan(pw, ph)
-            val bounds = if (target.autoCrop) content(plan) else null
-            val cropped = if (bounds == null) plan else cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height())
+            val box = target.box
+            val cropped = when {
+                box != null -> sized.plan(box.width * pw, box.height * ph, box.left * pw, box.top * ph)
+                target.autoCrop -> {
+                    val bounds = content(plan)
+                    if (bounds == null) {
+                        Decoders.measured(Box.FULL, pw.roundToInt(), ph.roundToInt())
+                        plan
+                    } else {
+                        cropPlan(sized, plan, bounds.left, bounds.top, bounds.width(), bounds.height()).also {
+                            Decoders.measured(Box(it.x / pw, it.y / ph, (it.x + it.spanW) / pw, (it.y + it.spanH) / ph), pw.roundToInt(), ph.roundToInt())
+                        }
+                    }
+                }
+                else -> plan
+            }
             return if (target.half == Half.WHOLE) cropped else halfPlan(sized, cropped)
         }
 

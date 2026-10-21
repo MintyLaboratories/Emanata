@@ -24,6 +24,8 @@ class BadgeFitTest {
     fun percentRoundsDownAndStaysInRange() {
         assertEquals(20, BadgeFit.percent(39, 192))
         assertEquals(100, BadgeFit.percent(191, 192))
+        // A book begun never shows 0%.
+        assertEquals(1, BadgeFit.percent(1, 222))
         assertEquals(0, BadgeFit.percent(5, 0))
     }
 }

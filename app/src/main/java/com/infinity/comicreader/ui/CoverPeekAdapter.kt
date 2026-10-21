@@ -51,6 +51,9 @@ class CoverPeekAdapter(
     /** Positions whose cover is not made yet, and those that have none; main thread only. */
     private val missing = LinkedHashSet<Int>()
     private val coverless = HashSet<Int>()
+
+    /** Positions whose cover a maker is on; it shows the cover wherever the cell is bound by then. */
+    private val making = HashSet<Int>()
     private var generators = 0
     private var recycler: RecyclerView? = null
 
@@ -108,7 +111,7 @@ class CoverPeekAdapter(
             }
             if (cached != null) {
                 if (holder.bound == position) show(holder, position, cached)
-            } else {
+            } else if (position !in making) {
                 missing += position
                 generate()
             }
@@ -124,9 +127,14 @@ class CoverPeekAdapter(
                     while (true) {
                         val position = NearestFirst.pick(missing, middle()) ?: break
                         missing -= position
+                        making += position
                         val entry = entries[position]
-                        val made = withContext(AppDispatchers.io) {
-                            runCatching { Thumbs.load(appContext, entry, charset, coverWidth, coverHeight, style) }.getOrNull()
+                        val made = try {
+                            withContext(AppDispatchers.io) {
+                                runCatching { Thumbs.load(appContext, entry, charset, coverWidth, coverHeight, style) }.getOrNull()
+                            }
+                        } finally {
+                            making -= position
                         }
                         if (made == null) coverless += position
                         val holder = recycler?.findViewHolderForAdapterPosition(position) as? Holder

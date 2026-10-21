@@ -565,7 +565,7 @@ class Prefs(context: Context) {
         /** Replaced by [KEY_TWO_PAGE]: on meant [TwoPage.ON]. */
         private const val OLD_TWO_PAGE = "pref_two_page"
 
-        /** Replaced by [KEY_AUTO_SPEED]: 1..10, each step 30 dp/s of strip scrolling ([AutoScroll.fromOldStep]). */
+        /** Replaced by [KEY_AUTO_SPEED]: a 1..10 scale, not converted; the speed starts over at [AutoScroll.DEFAULT]. */
         private const val OLD_AUTO_SPEED = "pref_auto_speed"
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
@@ -656,11 +656,7 @@ class Prefs(context: Context) {
                 }
                 out[OLD_FILENAMES] = null
             }
-            if (OLD_AUTO_SPEED in stored) {
-                val old = stored[OLD_AUTO_SPEED] as? Int
-                if (KEY_AUTO_SPEED !in stored && old != null) out[KEY_AUTO_SPEED] = AutoScroll.format(AutoScroll.fromOldStep(old))
-                out[OLD_AUTO_SPEED] = null
-            }
+            if (OLD_AUTO_SPEED in stored) out[OLD_AUTO_SPEED] = null
             if (OLD_TWO_PAGE in stored) {
                 val on = stored[OLD_TWO_PAGE] as? Boolean
                 if (KEY_TWO_PAGE !in stored && on != null) out[KEY_TWO_PAGE] = TwoPage.of(on).key

@@ -321,9 +321,9 @@ class PrefsUpgradeTest {
     }
 
     @Test
-    fun oldAutoScrollStepBecomesScreensPerMinute() {
+    fun oldAutoScrollStepIsDroppedForTheNewDefault() {
         assertEquals(
-            mapOf("pref_auto_scroll_speed" to "6", "pref_auto_speed" to null),
+            mapOf("pref_auto_speed" to null),
             Prefs.upgrade(mapOf("pref_auto_speed" to 5))
         )
         // A speed already set wins.
@@ -343,10 +343,10 @@ class PrefsUpgradeTest {
     }
 
     @Test
-    fun anOldBackupRestoresTheAutoScrollSpeed() {
+    fun anOldBackupStartsTheAutoScrollSpeedOverAtTheDefault() {
         val prefs = Prefs(context)
         prefs.importAll(mapOf("pref_auto_speed" to 10))
-        assertEquals(12f, prefs.autoSpeed, 0f)
+        assertEquals(3f, prefs.autoSpeed, 0f)
         assertFalse("pref_auto_speed" in stored())
     }
 

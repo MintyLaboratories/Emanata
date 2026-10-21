@@ -113,15 +113,6 @@ class AutoScrollTest {
     }
 
     @Test
-    fun oldStepsMapToTheStripSpeedTheyHadOnATablet() {
-        // 30 dp/s per step on a screen 1480 dp tall.
-        assertEquals(1f, AutoScroll.fromOldStep(1), 0f)
-        assertEquals(6f, AutoScroll.fromOldStep(5), 0f)
-        assertEquals(12f, AutoScroll.fromOldStep(10), 0f)
-        assertEquals(12f, AutoScroll.fromOldStep(99), 0f)
-    }
-
-    @Test
     fun storedSpeedsRoundTripAndOddOnesFallBack() {
         for (speed in AutoScroll.SPEEDS) assertEquals(speed, AutoScroll.parse(AutoScroll.format(speed)), 0f)
         assertEquals("0.25", AutoScroll.format(0.25f))

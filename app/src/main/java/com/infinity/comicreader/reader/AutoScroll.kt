@@ -21,20 +21,11 @@ object AutoScroll {
     /** Slowest paged tick, in ms: the bar updates at least 4 times a second. */
     const val MAX_TICK_MS = 250L
 
-    /** Strip speed per step of the old 1..10 scale, in dp/s. */
-    private const val OLD_DP_PER_STEP = 30f
-
-    /** Height, in dp, of the portrait tablet screen the old scale is converted for. */
-    private const val OLD_SCREEN_DP = 1480f
-
     /** Index in [SPEEDS] of the speed nearest [speed]. */
     fun indexOf(speed: Float): Int = SPEEDS.indices.minBy { abs(SPEEDS[it] - speed) }
 
     /** The offered speed nearest [speed]. */
     fun nearest(speed: Float): Float = SPEEDS[indexOf(speed)]
-
-    /** The speed nearest a step of the old 1..10 scale, which scrolled strips 30 dp/s per step. */
-    fun fromOldStep(step: Int): Float = nearest(step.coerceIn(1, 10) * OLD_DP_PER_STEP * 60f / OLD_SCREEN_DP)
 
     /** How long a page stays in paged reading at [speed], in ms. */
     fun pageMs(speed: Float): Long = (60_000f / speed).roundToLong().coerceAtLeast(1L)

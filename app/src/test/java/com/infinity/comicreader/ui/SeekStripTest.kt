@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.reader.Half
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class SeekStripTest {
@@ -63,6 +64,26 @@ class SeekStripTest {
         assertEquals(SeekStrip.DEFAULT_ASPECT, SeekStrip.partAspect(PageLayout.Part(0), intArrayOf(0, 10)), 0f)
         assertEquals(SeekStrip.MAX_ASPECT, SeekStrip.partAspect(PageLayout.Part(0), intArrayOf(9000, 1000)), 0f)
         assertEquals(SeekStrip.MIN_ASPECT, SeekStrip.partAspect(PageLayout.Part(0), intArrayOf(100, 5000)), 0f)
+    }
+
+    @Test
+    fun aGuessedShapeIsRefinedOnceItsPageIsKnown() {
+        val layout = PageLayout.of(listOf(intArrayOf(0, 1)), spread = true, rtl = false)
+        val cell = SeekStrip.cells(layout, 2, numbered = false) { if (it == 0) portrait else null }.single()
+        assertEquals(listOf(false, true), cell.guessed)
+        assertEquals(listOf(2f / 3f, SeekStrip.DEFAULT_ASPECT), cell.aspects)
+        val refined = SeekStrip.refined(cell) { if (it == 1) wide else intArrayOf(1, 1) }
+        // A known part keeps its shape, even where another size is offered.
+        assertEquals(listOf(2f / 3f, 4f / 3f), refined.aspects)
+        assertEquals(listOf(false, false), refined.guessed)
+        assertSame(refined, SeekStrip.refined(refined) { wide })
+        assertSame(cell, SeekStrip.refined(cell) { if (it == 1) intArrayOf(0, 0) else null })
+    }
+
+    @Test
+    fun aGuessedHalfTakesHalfItsPage() {
+        val cell = SeekStrip.cells(PageLayout.split(1, rtl = false) { true }, 1, numbered = true) { null }.first()
+        assertEquals(2f / 3f, SeekStrip.refined(cell) { wide }.aspect, 1e-6f)
     }
 
     @Test

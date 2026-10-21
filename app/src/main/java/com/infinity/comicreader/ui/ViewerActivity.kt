@@ -164,6 +164,9 @@ class ViewerActivity : AppCompatActivity() {
     /** A touch's down on the seek bar's thumb, kept from the seek bar until the touch moves or lifts before the hold. */
     private var seekDown: MotionEvent? = null
 
+    /** True once the open preview strip is scrolled by hand: it is no longer centered for the reader. */
+    private var seekPanelScrolled = false
+
     /** Back closes the preview strip while it is open. */
     private val seekBack = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = closeSeekPanel()
@@ -592,6 +595,11 @@ class ViewerActivity : AppCompatActivity() {
             // A new width (a turn of the screen) centers the item on screen again.
             if (r - l != oldR - oldL) seekPanel.post { if (seekPanelShown) centerSeekPanel() }
         }
+        seekPanel.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) seekPanelScrolled = true
+            }
+        })
         seekScrim.setOnClickListener { closeSeekPanel() }
         brightnessPill = findViewById(R.id.brightness_pill)
         brightnessText = findViewById(R.id.brightness_text)
@@ -1749,7 +1757,12 @@ class ViewerActivity : AppCompatActivity() {
         ) { item ->
             closeSeekPanel()
             goToItem(item)
-        }.also { seekPreviews = it }
+        }.also { strip ->
+            seekPreviews = strip
+            // Cells reshaped by their previews push the item on screen aside, until the strip is scrolled.
+            strip.onResized = { if (!seekPanelScrolled) seekPanel.post { if (seekPanelShown && !seekPanelScrolled) centerSeekPanel() } }
+        }
+        seekPanelScrolled = false
         a.show(seekCells(src), shownItem())
         seekPanel.layoutDirection = if (readingDir == "rtl") View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         if (seekPanel.adapter !== a) seekPanel.adapter = a

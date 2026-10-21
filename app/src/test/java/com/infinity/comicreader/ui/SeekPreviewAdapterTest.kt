@@ -42,8 +42,9 @@ class SeekPreviewAdapterTest {
         override fun close() {}
     }
 
+    /** Page [page]'s cell, its size unknown. */
     private fun cell(page: Int) =
-        SeekStrip.Cell(listOf(PageLayout.Part(page, Half.WHOLE)), "${page + 1}", listOf(SeekStrip.DEFAULT_ASPECT))
+        SeekStrip.Cell(listOf(PageLayout.Part(page, Half.WHOLE)), "${page + 1}", listOf(SeekStrip.DEFAULT_ASPECT), listOf(true))
 
     private fun stripShowing(adapter: SeekPreviewAdapter): RecyclerView {
         val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
@@ -81,6 +82,33 @@ class SeekPreviewAdapterTest {
         assertEquals(90, bitmap.height)
         assertEquals(ImageView.ScaleType.CENTER, strip.image(0).scaleType)
         assertEquals(0, source.loads.get())
+        adapter.release()
+    }
+
+    @Test
+    fun aCellOfUnknownSizeTakesItsPreviewsShape() {
+        val source = SolidSource(previewW = 60, previewH = 30)
+        val adapter = SeekPreviewAdapter(source, thumbHeight = 90, linear = false, exact = false) {}
+        var resized = 0
+        adapter.onResized = { resized++ }
+        adapter.show(List(3) { cell(it) }, current = 0)
+        val strip = stripShowing(adapter)
+        waitFor { adapter.cells[0].aspects[0] == 2f }
+        assertEquals(listOf(false), adapter.cells[0].guessed)
+        assertTrue(resized > 0)
+        waitFor {
+            strip.measure(
+                View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            strip.layout(0, 0, 2000, strip.measuredHeight)
+            (strip.image(0).drawable as? BitmapDrawable)?.bitmap?.width == 180
+        }
+        assertEquals(180, strip.image(0).width)
+        assertEquals(90, (strip.image(0).drawable as BitmapDrawable).bitmap.height)
+        // Shown again, as on the strip's next opening, the shape is kept.
+        adapter.show(List(3) { cell(it) }, current = 0)
+        assertEquals(2f, adapter.cells[0].aspects[0], 0f)
         adapter.release()
     }
 

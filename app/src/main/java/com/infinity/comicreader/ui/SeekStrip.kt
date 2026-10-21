@@ -16,8 +16,16 @@ object SeekStrip {
     const val MIN_ASPECT = 0.4f
     const val MAX_ASPECT = 2f
 
-    /** One cell: the [parts] it shows left to right, each [aspects] wide over its height, and its [label]. */
-    data class Cell(val parts: List<PageLayout.Part>, val label: String, val aspects: List<Float>) {
+    /**
+     * One cell: the [parts] it shows left to right, each [aspects] wide over its height,
+     * and its [label]. A part [guessed] true has [DEFAULT_ASPECT], its page's size unknown.
+     */
+    data class Cell(
+        val parts: List<PageLayout.Part>,
+        val label: String,
+        val aspects: List<Float>,
+        val guessed: List<Boolean> = parts.map { false }
+    ) {
         /** The cell's width over its height. */
         val aspect: Float get() = aspects.sum()
     }
@@ -32,8 +40,30 @@ object SeekStrip {
         List(layout.itemCount(pageCount)) { item ->
             val parts = layout.parts(item, pageCount).filterNotNull()
             val label = if (numbered) "${item + 1}" else pagesLabel(parts)
-            Cell(parts, label, parts.map { partAspect(it, sizeOf(it.page)) })
+            val sizes = parts.map { sizeOf(it.page)?.takeIf(::known) }
+            Cell(parts, label, parts.zip(sizes) { part, size -> partAspect(part, size) }, sizes.map { it == null })
         }
+
+    /**
+     * [cell] with the aspect of each [guessed][Cell.guessed] part whose page [sizeOf] now
+     * knows; [cell] itself when there is none.
+     */
+    fun refined(cell: Cell, sizeOf: (Int) -> IntArray?): Cell {
+        var aspects: MutableList<Float>? = null
+        var guessed: MutableList<Boolean>? = null
+        for ((i, part) in cell.parts.withIndex()) {
+            if (!cell.guessed.getOrElse(i) { false }) continue
+            val size = sizeOf(part.page)?.takeIf(::known) ?: continue
+            if (aspects == null) aspects = cell.aspects.toMutableList()
+            if (guessed == null) guessed = cell.guessed.toMutableList()
+            aspects[i] = partAspect(part, size)
+            guessed[i] = false
+        }
+        return if (aspects == null || guessed == null) cell else cell.copy(aspects = aspects, guessed = guessed)
+    }
+
+    /** True for a `[width, height]` with both above 0. */
+    private fun known(size: IntArray): Boolean = size.size >= 2 && size[0] > 0 && size[1] > 0
 
     /** "6" for one page, "6–7" for two: the 1-based pages [parts] show, lowest first. */
     fun pagesLabel(parts: List<PageLayout.Part>): String {
@@ -47,7 +77,7 @@ object SeekStrip {
 
     /** Width over height of [part] of a page [size] (`[width, height]`, null when unknown): a half is half as wide. */
     fun partAspect(part: PageLayout.Part, size: IntArray?): Float {
-        val whole = if (size != null && size.size >= 2 && size[0] > 0 && size[1] > 0) size[0].toFloat() / size[1] else null
+        val whole = if (size != null && known(size)) size[0].toFloat() / size[1] else null
         val aspect = when {
             whole == null -> DEFAULT_ASPECT
             part.half == Half.WHOLE -> whole

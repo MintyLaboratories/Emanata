@@ -76,16 +76,24 @@ class SeekPreviewAdapter(
 
     class Holder(val root: View, val frame: View, val slots: List<Slot>, val label: TextView) : RecyclerView.ViewHolder(root)
 
-    var cells: List<SeekStrip.Cell> = emptyList()
-        private set
+    private val shown = ArrayList<SeekStrip.Cell>()
+
+    val cells: List<SeekStrip.Cell> get() = shown
+
+    /** Sizes of pages learned from their previews, for cells laid out before their pages' sizes were known. */
+    private val learned = HashMap<Int, IntArray>()
+
+    /** Called after cells take their pages' shapes from previews, which moves the cells after them. */
+    var onResized: (() -> Unit)? = null
 
     /** The highlighted cell. */
     var current = -1
         private set
 
-    /** Shows [cells] with [current] highlighted. */
+    /** Shows [cells] with [current] highlighted, shaped as their pages' previews have shown them. */
     fun show(cells: List<SeekStrip.Cell>, current: Int) {
-        this.cells = cells
+        shown.clear()
+        cells.mapTo(shown) { SeekStrip.refined(it) { page -> learned[page] } }
         this.current = current
         @Suppress("NotifyDataSetChanged")
         notifyDataSetChanged()
@@ -140,7 +148,7 @@ class SeekPreviewAdapter(
                 slot.image.layoutParams.width = width
                 slot.image.requestLayout()
             }
-            load(slot, PartKey(part.page, part.half, width, thumbHeight))
+            load(slot, PartKey(part.page, part.half, width, thumbHeight), position)
         }
     }
 
@@ -153,7 +161,7 @@ class SeekPreviewAdapter(
     }
 
     /** Shows [key] in [slot]: its rendering when cached, else its preview, then the rendering. */
-    private fun load(slot: Slot, key: PartKey) {
+    private fun load(slot: Slot, key: PartKey, position: Int) {
         if (slot.key == key) return
         clear(slot)
         slot.key = key
@@ -164,6 +172,9 @@ class SeekPreviewAdapter(
             if (preview != null) {
                 slot.image.scaleType = ImageView.ScaleType.CENTER_CROP
                 slot.image.setImageBitmap(preview)
+                // A cell given its page's shape is bound again at its new size.
+                val whole = previews.get(PartKey(key.page, Half.WHOLE))
+                if (whole != null && position in learn(key.page, whole)) return@launch
             }
             val render = withContext(AppDispatchers.io) {
                 try {
@@ -205,6 +216,28 @@ class SeekPreviewAdapter(
     private fun showRender(slot: Slot, bitmap: Bitmap) {
         slot.image.scaleType = ImageView.ScaleType.CENTER
         slot.image.setImageBitmap(bitmap)
+    }
+
+    /**
+     * Takes page [page]'s shape from its [preview] for the cells that had to guess it, and
+     * rebinds them; the positions of those cells.
+     */
+    private fun learn(page: Int, preview: Bitmap): Set<Int> {
+        if (page in learned) return emptySet()
+        learned[page] = intArrayOf(preview.width, preview.height)
+        val changed = HashSet<Int>()
+        for (i in shown.indices) {
+            val cell = shown[i]
+            if (cell.parts.none { it.page == page }) continue
+            val refined = SeekStrip.refined(cell) { learned[it] }
+            if (refined === cell) continue
+            shown[i] = refined
+            if (refined.aspects == cell.aspects) continue
+            changed += i
+            notifyItemChanged(i)
+        }
+        if (changed.isNotEmpty()) onResized?.invoke()
+        return changed
     }
 
     /** The preview of [key]'s part: cached, or the page's, cut to its half. */

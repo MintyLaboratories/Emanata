@@ -190,7 +190,10 @@ class Library(context: Context) {
     fun folderDirections(): Map<String, ReadingDirection> {
         val all = readObject(KEY_SERIES)
         val out = HashMap<String, ReadingDirection>()
-        all.keys().forEach { k -> out[k] = if (all.optJSONObject(k)?.optString("dir") == "rtl") ReadingDirection.RTL else ReadingDirection.LTR }
+        all.keys().forEach { k ->
+            val layout = all.optJSONObject(k)?.let { FolderLayout.decode(it) } ?: return@forEach
+            if (layout.dirChosen) out[k] = if (layout.dir == "rtl") ReadingDirection.RTL else ReadingDirection.LTR
+        }
         return out
     }
 

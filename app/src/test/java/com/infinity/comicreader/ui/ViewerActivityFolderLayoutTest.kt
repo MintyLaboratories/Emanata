@@ -98,7 +98,7 @@ class ViewerActivityFolderLayoutTest {
         prefs.fit = "height"
         val viewer = launch()
         val sheet = ReaderSheet(viewer).tap(R.id.btn_scope_folder)
-        assertEquals(FolderLayout.Frozen(ReaderLayout(fit = "height")), folder())
+        assertEquals(FolderLayout.Frozen(ReaderLayout(fit = "height"), dirChosen = false), folder())
         assertEquals(viewer.getString(R.string.scope_folder_hint), sheet.view<TextView>(R.id.sheet_scope_hint).text.toString())
         // Changes now stay with the folder.
         sheet.tap(R.id.btn_fit_width)

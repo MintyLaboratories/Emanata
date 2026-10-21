@@ -34,8 +34,22 @@ class FolderLayoutTest {
     }
 
     @Test
+    fun aFrozenLayoutWithoutAChosenDirectionTakesTheDefaultOne() {
+        val unchosen = FolderLayout.Frozen(frozen, dirChosen = false)
+        assertEquals(frozen.copy(dir = defaults.dir), unchosen.over(defaults))
+        assertFalse(unchosen.dirChosen)
+    }
+
+    @Test
+    fun thawingKeepsOnlyAChosenDirection() {
+        assertEquals(FolderLayout.Direction("rtl"), FolderLayout.Frozen(frozen).thawed())
+        assertNull(FolderLayout.Frozen(frozen, dirChosen = false).thawed())
+    }
+
+    @Test
     fun bothFormsReadBackAsWritten() {
-        for (layout in listOf(FolderLayout.Direction("rtl"), FolderLayout.Direction("ltr"), FolderLayout.Frozen(frozen))) {
+        val forms = listOf(FolderLayout.Direction("rtl"), FolderLayout.Direction("ltr"), FolderLayout.Frozen(frozen), FolderLayout.Frozen(frozen, false))
+        for (layout in forms) {
             val stored = JSONObject(layout.encode().toString())
             assertFalse(FolderLayout.isLegacy(stored))
             assertEquals(layout, FolderLayout.decode(stored))
@@ -85,6 +99,8 @@ class FolderLayoutTest {
         assertEquals(FolderLayout.Frozen(ReaderLayout("longstrip", "rtl", "width", TwoPage.OFF, true, 8)), library.folderLayout("/b"))
         assertEquals(FolderLayout.Frozen(frozen), library.folderLayout("/c"))
         assertEquals(ReadingDirection.RTL, library.folderDirections()["/a"])
+        library.setFolderLayout("/d", FolderLayout.Frozen(frozen, dirChosen = false))
+        assertFalse("/d" in library.folderDirections())
         library.setFolderLayout("/a", null)
         assertNull(library.folderLayout("/a"))
     }

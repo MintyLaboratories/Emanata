@@ -34,23 +34,33 @@ data class ReaderLayout(
 sealed class FolderLayout {
     abstract val dir: String
 
+    /** True when the folder decides the direction; false leaves it to detection and the defaults. */
+    abstract val dirChosen: Boolean
+
     /** The layout a book in the folder shows, given the global [defaults]. */
     abstract fun over(defaults: ReaderLayout): ReaderLayout
 
     data class Direction(override val dir: String) : FolderLayout() {
+        override val dirChosen: Boolean get() = true
+
         override fun over(defaults: ReaderLayout) = defaults.copy(dir = dir)
     }
 
-    data class Frozen(val layout: ReaderLayout) : FolderLayout() {
+    /** The whole [layout]; its direction only while [dirChosen], else the default one, which detection may replace. */
+    data class Frozen(val layout: ReaderLayout, override val dirChosen: Boolean = true) : FolderLayout() {
         override val dir: String get() = layout.dir
 
-        override fun over(defaults: ReaderLayout) = layout
+        override fun over(defaults: ReaderLayout) = if (dirChosen) layout else layout.copy(dir = defaults.dir)
+
+        /** What "Apply to: All books" leaves the folder: its direction when chosen, else nothing. */
+        fun thawed(): FolderLayout? = if (dirChosen) Direction(dir) else null
     }
 
     fun encode(): JSONObject = when (this) {
         is Direction -> JSONObject().put(DIR, dir)
         is Frozen -> JSONObject().put(ALL, true).put(MODE, layout.mode).put(DIR, layout.dir).put(FIT, layout.fit)
             .put(TWO, layout.twoPage.key).put(CROP, layout.autoCrop).put(GAP, layout.spacing)
+            .apply { if (!dirChosen) put(CHOSEN, false) }
     }
 
     companion object {
@@ -61,6 +71,7 @@ sealed class FolderLayout {
         private const val TWO = "two"
         private const val CROP = "crop"
         private const val GAP = "gap"
+        private const val CHOSEN = "chosen"
 
         private fun dirOf(o: JSONObject) = if (o.optString(DIR) == "rtl") "rtl" else "ltr"
 
@@ -82,7 +93,8 @@ sealed class FolderLayout {
                     twoPage = if (two is Boolean) TwoPage.of(two) else TwoPage.of(two as? String),
                     autoCrop = o.optBoolean(CROP, defaults.autoCrop),
                     spacing = o.optInt(GAP, defaults.spacing).coerceIn(0, Prefs.PAGE_SPACING_MAX)
-                )
+                ),
+                dirChosen = o.optBoolean(CHOSEN, true)
             )
         }
 

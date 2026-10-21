@@ -13,12 +13,14 @@ import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -195,5 +197,38 @@ class ViewerActivityDirectionTest {
         assertEquals(FolderLayout.Direction("ltr"), library.folderLayout(dir.absolutePath))
         assertEquals("ltr", prefs.readingDir)
         assertEquals(viewer.getString(R.string.direction_kept_for_folder), ShadowToast.getTextOfLatestToast())
+    }
+
+    private fun folder() = library.folderLayout(dir.absolutePath)
+
+    @Test
+    fun thisFolderThenAllBooksHandsTheDirectionBackToDetection() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_scope_folder)
+        assertEquals(false, folder()?.dirChosen)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        sheet.tap(R.id.btn_scope_all)
+        assertNull(folder())
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+    }
+
+    @Test
+    fun aFrozenFolderWithoutAChosenDirectionStillDetects() {
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout(fit = "width"), dirChosen = false))
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+    }
+
+    @Test
+    fun aDirectionChosenInAFrozenFolderOutlastsAllBooks() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_scope_folder).tap(R.id.btn_dir_ltr)
+        assertEquals(true, folder()?.dirChosen)
+        sheet.tap(R.id.btn_scope_all)
+        assertEquals(FolderLayout.Direction("ltr"), folder())
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
     }
 }

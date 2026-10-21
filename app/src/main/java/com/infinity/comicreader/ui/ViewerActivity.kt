@@ -638,10 +638,13 @@ class ViewerActivity : AppCompatActivity() {
     /** The folder whose layout the open book follows; none with "Per-folder layout" off or for another app's document. */
     private fun layoutFolder(): String? = if (prefs.perSeries) favoriteFile()?.parent else null
 
+    /** True while the folder decides the direction, so its books do not detect one. */
+    private fun folderDirection() = folderLayout?.dirChosen == true
+
     /** Reads in the detected direction unless the folder has its own or detection is off. */
     private fun applyDetection() {
         val found = detection
-        detectedActive = found != null && folderLayout == null && prefs.detectDirection
+        detectedActive = found != null && !folderDirection() && prefs.detectDirection
         if (detectedActive && found != null) readingDir = found.direction.key
     }
 
@@ -672,7 +675,7 @@ class ViewerActivity : AppCompatActivity() {
         val found = detection
         val name = directionName(readingDir)
         return when {
-            folderLayout != null -> getString(R.string.direction_info, name, getString(R.string.direction_source_folder))
+            folderDirection() -> getString(R.string.direction_info, name, getString(R.string.direction_source_folder))
             detectedActive && found != null -> getString(R.string.direction_detected, name, detectedFrom(found))
             else -> getString(R.string.direction_info, name, getString(R.string.direction_source_default))
         }
@@ -682,10 +685,10 @@ class ViewerActivity : AppCompatActivity() {
      * Stores a layout change: with the folder's layout while it is frozen, else as the
      * defaults. Directions are stored apart, by [setReadingDir].
      */
-    private fun persistLayout() {
+    private fun persistLayout(dirChosen: Boolean = folderDirection()) {
         val folder = layoutFolder()
         if (folderScope() && folder != null) {
-            setFolder(folder, FolderLayout.Frozen(currentLayout()))
+            setFolder(folder, FolderLayout.Frozen(currentLayout(), dirChosen))
         } else {
             prefs.setLayoutDefaults(currentLayout())
         }
@@ -701,12 +704,13 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * "Apply to": [folder] freezes the layout on screen for the book's folder; all books
-     * returns it to the defaults, though the folder keeps its direction.
+     * returns it to the defaults, though the folder keeps a direction it was given.
      */
     private fun setFolderScope(folder: Boolean) {
         val path = layoutFolder() ?: return
-        if (folder == folderScope()) return
-        setFolder(path, if (folder) FolderLayout.Frozen(currentLayout()) else FolderLayout.Direction(readingDir))
+        val now = folderLayout
+        if (folder == now is FolderLayout.Frozen) return
+        setFolder(path, if (now is FolderLayout.Frozen) now.thawed() else FolderLayout.Frozen(currentLayout(), folderDirection()))
         if (reloadLayout()) attach()
         invalidateOptionsMenu()
     }
@@ -738,8 +742,8 @@ class ViewerActivity : AppCompatActivity() {
 
         lateDetectionJob?.cancel()
         openJob = lifecycleScope.launch {
-            // A folder with its own layout keeps its direction: nothing to detect.
-            val detect = prefs.detectDirection && folderLayout == null
+            // A folder with its own direction keeps it: nothing to detect.
+            val detect = prefs.detectDirection && !folderDirection()
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -828,7 +832,7 @@ class ViewerActivity : AppCompatActivity() {
                 DirectionDetection.withCover(contents, front)
             }
             if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch
-            if (!prefs.detectDirection || folderLayout != null || found == detection) return@launch
+            if (!prefs.detectDirection || folderDirection() || found == detection) return@launch
             detection = found
             if (reloadLayout()) attach()
             invalidateOptionsMenu()
@@ -1672,7 +1676,7 @@ class ViewerActivity : AppCompatActivity() {
         val folder = layoutFolder()
         when {
             folder == null -> prefs.readingDir = dir
-            folderScope() -> persistLayout()
+            folderScope() -> persistLayout(dirChosen = true)
             else -> {
                 if (folderLayout == null) toast(R.string.direction_kept_for_folder)
                 setFolder(folder, FolderLayout.Direction(dir))

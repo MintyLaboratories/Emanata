@@ -45,4 +45,19 @@ class CoverGeometryTest {
         assertArrayEquals(intArrayOf(32, 48), CoverGeometry.listBoxDp(ListDensity.COMPACT, CoverShape.BOOK))
         assertArrayEquals(intArrayOf(80, 120), CoverGeometry.listBoxDp(ListDensity.LARGE, CoverShape.BOOK))
     }
+
+    @Test
+    fun densityStepsGrowFromTinyToHugeWithLargeAtStepThree() {
+        val heights = ListDensity.entries.map { CoverGeometry.listHeightDp(it) }
+        assertEquals(6, heights.size)
+        assertEquals(heights.sorted().distinct(), heights)
+        assertEquals(ListDensity.TINY, ListDensity.ofStep(0))
+        assertEquals(3, ListDensity.LARGE.step)
+        assertEquals(ListDensity.HUGE, ListDensity.ofStep(5))
+        assertEquals(ListDensity.HUGE, ListDensity.ofStep(9))
+        assertEquals(ListDensity.TINY, ListDensity.ofStep(-1))
+        // Stored keys survive, so earlier choices keep their size.
+        for (d in ListDensity.entries) assertEquals(d, ListDensity.of(d.key))
+        assertEquals(ListDensity.NORMAL, ListDensity.of("unknown"))
+    }
 }

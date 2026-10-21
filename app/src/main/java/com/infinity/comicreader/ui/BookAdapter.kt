@@ -389,6 +389,11 @@ class BookAdapter(
         params.width = width
         params.height = height
         box.layoutParams = params
+        // The type icon shrinks to fit the tiniest thumbnails.
+        val icon = holder.placeholder.layoutParams
+        icon.width = minOf((PLACEHOLDER_DP * dp).toInt(), width - (PLACEHOLDER_MARGIN_DP * dp).toInt())
+        icon.height = icon.width
+        holder.placeholder.layoutParams = icon
     }
 
     private fun shortName(item: BookEntry): String {
@@ -495,5 +500,9 @@ class BookAdapter(
         const val VIEW_GRID = 1
         const val VIEW_HEADER = 2
         const val VIEW_SECTION = 3
+
+        /** The type icon's size on a placeholder thumbnail, and the least room left beside it. */
+        const val PLACEHOLDER_DP = 26
+        const val PLACEHOLDER_MARGIN_DP = 4
     }
 }

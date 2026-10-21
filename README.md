@@ -65,7 +65,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   or Dense (right-aligned at the end of the title's last line, in small gray
   tabular digits: folders `12`, `3/12`; comics `192 · 87 MB`, `40/192 · 87 MB`;
   bookmarks their page).
-- **List density** (per tab): Compact, Normal or Large list thumbnails. A
+- **List density** (per tab): list thumbnail size on a six-step slider, Tiny,
+  Compact, Normal (default), Large, Extra large or Huge, applied live. A
   progress badge too wide for its thumbnail shows a percentage, or a dot.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
   largest box of that shape that fits the cell, centered.

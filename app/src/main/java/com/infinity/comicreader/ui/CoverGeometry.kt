@@ -29,9 +29,12 @@ object CoverGeometry {
 
     /** Height of a list row's thumbnail, in dp. */
     fun listHeightDp(density: ListDensity): Int = when (density) {
+        ListDensity.TINY -> 36
         ListDensity.COMPACT -> 48
         ListDensity.NORMAL -> 72
         ListDensity.LARGE -> 120
+        ListDensity.EXTRA_LARGE -> 176
+        ListDensity.HUGE -> 240
     }
 
     /** `[width, height]` of a list row's thumbnail, in dp. */

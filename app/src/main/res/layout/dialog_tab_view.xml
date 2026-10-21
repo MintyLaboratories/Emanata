@@ -54,36 +54,7 @@
             android:text="@string/list_density"
             android:textAppearance="?attr/textAppearanceTitleSmall" />
 
-        <RadioGroup
-            android:id="@+id/density_group"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/density_compact"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:minHeight="48dp"
-                android:text="@string/density_compact" />
-
-            <RadioButton
-                android:id="@+id/density_normal"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:minHeight="48dp"
-                android:text="@string/density_normal" />
-
-            <RadioButton
-                android:id="@+id/density_large"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:minHeight="48dp"
-                android:text="@string/density_large" />
-        </RadioGroup>
+        <include layout="@layout/view_density" />
 
         <TextView
             android:layout_width="match_parent"

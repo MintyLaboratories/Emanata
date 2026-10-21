@@ -70,9 +70,12 @@
     <string name="detail_comfortable">Comfortable</string>
     <string name="detail_dense">Dense</string>
     <string name="list_density">List density</string>
+    <string name="density_tiny">Tiny</string>
     <string name="density_compact">Compact</string>
     <string name="density_normal">Normal</string>
     <string name="density_large">Large</string>
+    <string name="density_extra_large">Extra large</string>
+    <string name="density_huge">Huge</string>
     <string name="pref_cover_shape">Cover shape</string>
     <string name="cover_shape_book">2:3</string>
     <string name="cover_shape_wide">3:4</string>

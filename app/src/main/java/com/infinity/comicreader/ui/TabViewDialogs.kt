@@ -2,13 +2,17 @@ package com.infinity.comicreader.ui
 
 import android.content.Context
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.RadioGroup
+import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
+import kotlin.math.roundToInt
 
 /** Dialogs that change one library tab's view; every choice is written at once. */
 object TabViewDialogs {
@@ -79,30 +83,44 @@ object TabViewDialogs {
         return dialog
     }
 
-    private val DENSITY_BUTTONS = listOf(
-        ListDensity.COMPACT to R.id.density_compact,
-        ListDensity.NORMAL to R.id.density_normal,
-        ListDensity.LARGE to R.id.density_large
-    )
-
     private fun densityLabel(context: Context, density: ListDensity) = context.getString(
         when (density) {
+            ListDensity.TINY -> R.string.density_tiny
             ListDensity.COMPACT -> R.string.density_compact
             ListDensity.NORMAL -> R.string.density_normal
             ListDensity.LARGE -> R.string.density_large
+            ListDensity.EXTRA_LARGE -> R.string.density_extra_large
+            ListDensity.HUGE -> R.string.density_huge
         }
     )
 
-    /** The "List density" choice for [tab]; a pick is written and closes it. */
+    /** Sets up the density slider in [root] for [tab]: each step is written at once, so the list follows live. */
+    private fun bindDensity(root: View, prefs: Prefs, tab: String) {
+        val slider = root.findViewById<Slider>(R.id.density_slider)
+        val label = root.findViewById<TextView>(R.id.density_value)
+        val context = root.context
+        val current = prefs.view(tab).density
+        slider.valueFrom = 0f
+        slider.valueTo = ListDensity.entries.lastIndex.toFloat()
+        slider.value = current.step.toFloat()
+        label.text = densityLabel(context, current)
+        slider.addOnChangeListener { _, value, _ ->
+            val density = ListDensity.ofStep(value.roundToInt())
+            label.text = densityLabel(context, density)
+            if (prefs.view(tab).density != density) prefs.setDensity(tab, density)
+        }
+    }
+
+    /** The "List density" slider for [tab]; the list follows as it moves. */
     fun showDensity(context: Context, prefs: Prefs, tab: String): AlertDialog {
-        val values = DENSITY_BUTTONS.map { it.first }
-        val labels = values.map { densityLabel(context, it) }.toTypedArray()
+        val root = LayoutInflater.from(context).inflate(R.layout.view_density, null)
+        val pad = (context.resources.displayMetrics.density * 24).toInt()
+        root.setPadding(pad, pad / 2, pad, 0)
+        bindDensity(root, prefs, tab)
         return AlertDialog.Builder(context)
             .setTitle(R.string.list_density)
-            .setSingleChoiceItems(labels, values.indexOf(prefs.view(tab).density)) { dialog, which ->
-                prefs.setDensity(tab, values[which])
-                dialog.dismiss()
-            }
+            .setView(root)
+            .setPositiveButton(R.string.done, null)
             .show()
     }
 
@@ -124,12 +142,7 @@ object TabViewDialogs {
                 DETAIL_BUTTONS.firstOrNull { it.second == id }?.let { prefs.setDetail(tab, it.first) }
             }
         }
-        root.findViewById<RadioGroup>(R.id.density_group).apply {
-            check(DENSITY_BUTTONS.first { it.first == v.density }.second)
-            setOnCheckedChangeListener { _, id ->
-                DENSITY_BUTTONS.firstOrNull { it.second == id }?.let { prefs.setDensity(tab, it.first) }
-            }
-        }
+        bindDensity(root, prefs, tab)
         return AlertDialog.Builder(context)
             .setTitle(titleOf(tab))
             .setView(root)

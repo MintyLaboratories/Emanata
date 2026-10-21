@@ -1,13 +1,22 @@
 package com.infinity.comicreader.data
 
-/** Thumbnail size of list rows; [NORMAL] is 72 dp tall. */
+/** Thumbnail size of list rows, smallest first, one slider step each; [NORMAL] is 72 dp tall. */
 enum class ListDensity(val key: String) {
+    TINY("tiny"),
     COMPACT("compact"),
     NORMAL("normal"),
-    LARGE("large");
+    LARGE("large"),
+    EXTRA_LARGE("extra_large"),
+    HUGE("huge");
+
+    /** Position on the density slider, 0 for [TINY]. */
+    val step: Int get() = ordinal
 
     companion object {
         fun of(key: String?): ListDensity = entries.firstOrNull { it.key == key } ?: NORMAL
+
+        /** The density at slider [step], clamped to the ends. */
+        fun ofStep(step: Int): ListDensity = entries[step.coerceIn(0, entries.lastIndex)]
     }
 }
 

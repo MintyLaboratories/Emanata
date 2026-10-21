@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.app.Application
 import android.os.Looper
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
@@ -11,6 +12,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.slider.Slider
+import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -135,6 +138,28 @@ class ListActivityLiveSettingsTest {
         assertEquals(4, prefs.view(Prefs.TAB_BROWSE).columns)
         assertEquals(3, prefs.view(Prefs.TAB_BROWSE).rows)
         assertFalse(dialog.isShowing)
+    }
+
+    @Test
+    fun densitySliderAppliesLive() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        val list = launch()
+        val activity = list.get()
+        activity.invalidateOptionsMenu()
+        idle()
+        val item = activity.findViewById<MaterialToolbar>(R.id.toolbar).menu.findItem(R.id.menu_density)
+        assertTrue(item.isVisible)
+        activity.onOptionsItemSelected(item)
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val slider = dialog.findViewById<Slider>(R.id.density_slider)!!
+        assertEquals(ListDensity.NORMAL.step.toFloat(), slider.value)
+        slider.value = ListDensity.HUGE.step.toFloat()
+        idle()
+        assertEquals(ListDensity.HUGE, prefs.view(Prefs.TAB_BROWSE).density)
+        assertEquals(ListDensity.HUGE, (list.recycler().adapter as BookAdapter).options.density)
+        assertEquals(activity.getString(R.string.density_huge), dialog.findViewById<TextView>(R.id.density_value)!!.text.toString())
+        // Still open: the next step applies as well.
+        assertTrue(dialog.isShowing)
     }
 
     @Test

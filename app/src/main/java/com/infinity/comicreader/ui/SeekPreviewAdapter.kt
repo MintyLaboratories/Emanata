@@ -11,6 +11,8 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.CoverArt
+import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.PageSource
@@ -21,6 +23,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -29,10 +33,10 @@ import kotlinx.coroutines.withContext
 /**
  * The seek bar's strip of page previews ([SeekStrip.Cell] each), [thumbHeight] pixels
  * tall, the [current] cell highlighted. A part shows its page's stored or quick preview
- * ([PageSource.loadPreview]) at once, then, with [exact], its Lanczos3 rendering at the
- * part's exact size; without [exact] (a book whose pages are costly to reach) the
- * rendering is made only for a page with no preview. Both are cached while the adapter
- * lives, so the strip opens again at once.
+ * ([PageSource.loadPreview]) at once, then its Lanczos3 rendering at the part's exact
+ * size: with [exact] from the page, without it (a book whose pages are costly to reach)
+ * from the preview, the page read only when it has none. Both are cached while the
+ * adapter lives, so the strip opens again at once.
  */
 class SeekPreviewAdapter(
     private val source: PageSource,
@@ -57,6 +61,9 @@ class SeekPreviewAdapter(
     /** One rendering at a time: the reader's own pages come first. */
     private val renderGate = Semaphore(1)
     private val previewGate = Semaphore(2)
+
+    /** Scaling previews reads no pages, so it runs beside the reader. */
+    private val scaleGate = Semaphore(2)
 
     /** What a part shows: [page]'s [half] at [width] x [height] (0 x 0 for a preview). */
     private data class PartKey(val page: Int, val half: Half, val width: Int = 0, val height: Int = 0)
@@ -157,22 +164,30 @@ class SeekPreviewAdapter(
             if (preview != null) {
                 slot.image.scaleType = ImageView.ScaleType.CENTER_CROP
                 slot.image.setImageBitmap(preview)
-                if (!exact) return@launch
             }
             val render = withContext(AppDispatchers.io) {
-                renderGate.withPermit {
-                    try {
+                try {
+                    // Without [exact], the preview itself is scaled: no page is read.
+                    if (preview != null && !exact) scaleGate.withPermit { scaled(preview, key) }
+                    else renderGate.withPermit {
                         source.loadPage(key.page, Target(key.width, key.height, Fit.COVER, linear = linear, half = key.half))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (t: Throwable) {
-                        null
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    null
                 }
             } ?: return@launch
             renders.put(key, render)
             if (slot.key == key) showRender(slot, render)
         }
+    }
+
+    /** [preview] cropped and Lanczos3-scaled to fill [key]'s size; stops early once this coroutine is canceled. */
+    private suspend fun scaled(preview: Bitmap, key: PartKey): Bitmap {
+        val job = currentCoroutineContext().job
+        val plan = Target(key.width, key.height, Fit.COVER).plan(preview.width.toDouble(), preview.height.toDouble())
+        return Cancellation.during({ !job.isActive }) { CoverArt.render(preview, plan, linear) }
     }
 
     private fun showRender(slot: Slot, bitmap: Bitmap) {

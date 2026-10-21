@@ -245,6 +245,7 @@
     <string name="next_page">Next page</string>
     <string name="page_mode_paged">Paged</string>
     <string name="page_mode_continuous">Continuous</string>
+    <string name="pref_page_mode_continuous">Continuous (top to bottom only)</string>
     <string name="orientation_default">System</string>
     <string name="orientation_portrait">Portrait</string>
     <string name="orientation_landscape">Landscape</string>
@@ -572,7 +573,7 @@
 
     <string-array name="page_mode_entries">
         <item>@string/page_mode_paged</item>
-        <item>@string/page_mode_continuous</item>
+        <item>@string/pref_page_mode_continuous</item>
     </string-array>
     <string-array name="page_mode_values">
         <item>paged</item>

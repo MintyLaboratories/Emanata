@@ -92,7 +92,7 @@ class ViewerActivityConfirmTest {
         return latestDialog()
     }
 
-    /** Opens the adjustments dialog, taps its Reset, and returns the dialog showing afterwards. */
+    /** Opens the adjustments dialog, taps its Reset, and returns the dialog showing afterward. */
     private fun ViewerActivity.tapResetAdjustments(): Pair<AlertDialog, AlertDialog> {
         val panel = menu(R.id.menu_adjustments)
         panel.findViewById<View>(R.id.adjust_reset)!!.performClick()

@@ -14,9 +14,7 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
-import android.view.MotionEvent
 import android.view.View
-import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
@@ -63,7 +61,6 @@ import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
-import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
@@ -87,7 +84,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.hypot
 
 class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
@@ -105,6 +101,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private lateinit var fab: FloatingActionButton
     private lateinit var filterChip: Chip
     private lateinit var peek: PeekOverlay
+    private lateinit var pinch: PinchPeek
 
     /** A detached "Recent" row, measured to size grid rows around the real one. */
     private var headerProbe: View? = null
@@ -1082,60 +1079,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     // ------------------------------------------------------------------ peek
 
-    /**
-     * Spreading two fingers on a comic grows a grid of its pages out of it
-     * ([PeekGesture]). The second finger landing on a comic takes the touch from its
-     * tile, so the tile neither clicks nor opens its long-press menu.
-     */
+    /** Spreading two fingers on a comic grows a grid of its pages out of it ([PinchPeek]). */
     private fun setUpPeek() {
-        peek = PeekOverlay(this).apply {
-            elevation = PEEK_ELEVATION_DP * resources.displayMetrics.density
-            onOpen = { entry, page -> openViewer(entry.file, page) }
-        }
-        (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup)
-            .addView(peek, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val slop = ViewConfiguration.get(this).scaledTouchSlop * 2f
-        recycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-            private var gesture: PeekGesture? = null
-            private var target: Pair<BookEntry, View>? = null
-
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                if (e.actionMasked != MotionEvent.ACTION_POINTER_DOWN || e.pointerCount != 2) return false
-                if (peek.isShowing || applied.pinchPeek == PeekMode.OFF || rv.scrollState != RecyclerView.SCROLL_STATE_IDLE) return false
-                val midX = (e.getX(0) + e.getX(1)) / 2
-                val midY = (e.getY(0) + e.getY(1)) / 2
-                val t = peekTarget(midX, midY) ?: peekTarget(e.getX(0), e.getY(0)) ?: return false
-                target = t
-                gesture = PeekGesture(slop, fullSpread()).also { it.begin(span(e)) }
-                return true
-            }
-
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
-                val g = gesture ?: return
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_MOVE -> if (e.pointerCount >= 2) {
-                        val t = target ?: return
-                        if (g.move(span(e))) startPeek(t.first, t.second)
-                        if (g.peeking) peek.setProgress(g.progress)
-                    }
-                    MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (g.peeking) {
-                            val outcome = if (e.actionMasked == MotionEvent.ACTION_CANCEL) PeekGesture.Release.COLLAPSE else g.release(applied.pinchPeek)
-                            peek.release(outcome)
-                        }
-                        gesture = null
-                        target = null
-                    }
-                }
-            }
-        })
+        pinch = PinchPeek(this, recycler, { applied.pinchPeek }, ::peekTarget) { entry, page -> openViewer(entry.file, page) }
+        peek = pinch.overlay
     }
-
-    private fun span(e: MotionEvent) = hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1))
-
-    /** Spread growth that opens a peek fully. */
-    private fun fullSpread(): Float =
-        minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * PeekGesture.FULL_SPREAD_SHARE
 
     /** The comic under list point ([x], [y]) and the view its cover is drawn in, or null. */
     private fun peekTarget(x: Float, y: Float): Pair<BookEntry, View>? {
@@ -1147,31 +1095,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     private fun canPeek(entry: BookEntry) = !entry.isDir && Formats.isOpenable(entry.name) && entry.file.isFile
 
-    /** Starts a peek into [entry] growing out of [tileView]. */
-    private fun startPeek(entry: BookEntry, tileView: View?) {
-        val full = boxOf(recycler).let {
-            val inset = PEEK_INSET_DP * resources.displayMetrics.density
-            Box(it.left + inset, it.top + inset, it.width - 2 * inset, it.height - 2 * inset)
-        }
-        val tile = tileView?.let { boxOf(it) } ?: Box(full.left + full.width / 2, full.top + full.height / 2, 1f, 1f)
-        peek.begin(entry, tile, full, lifecycleScope, prefs.charset, cacheDir, prefs.linearLight)
-    }
-
-    /** [view]'s bounds in the peek overlay's coordinates. */
-    private fun boxOf(view: View): Box {
-        val at = IntArray(2)
-        val origin = IntArray(2)
-        view.getLocationInWindow(at)
-        peek.getLocationInWindow(origin)
-        return Box((at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat(), view.width.toFloat(), view.height.toFloat())
-    }
-
     /** Peeks into [entry] from the long-press menu: the grid grows out of its tile and stays open. */
     private fun peekFromMenu(entry: BookEntry) {
         val position = adapter.positionOf(entry.path)
         val tile = recycler.findViewHolderForAdapterPosition(position)?.itemView?.let { it.findViewById<View>(R.id.box) ?: it }
-        startPeek(entry, tile)
-        peek.release(PeekGesture.Release.KEEP_OPEN)
+        pinch.open(entry, tile)
     }
 
     /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
@@ -1802,12 +1730,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val DEEP_SEARCH_DELAY_MS = 300L
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
-
-        /** Room between an open peek and the list's edges. */
-        private const val PEEK_INSET_DP = 12
-
-        /** Above the list, the app bar and the button. */
-        private const val PEEK_ELEVATION_DP = 16
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

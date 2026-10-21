@@ -28,6 +28,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    override fun loadPreview(index: Int): Bitmap? {
+        if (!enter()) return null
+        try {
+            return inner.loadPreview(index)
+        } finally {
+            exit()
+        }
+    }
+
     override fun pageSize(index: Int): IntArray? {
         if (!enter()) return null
         try {

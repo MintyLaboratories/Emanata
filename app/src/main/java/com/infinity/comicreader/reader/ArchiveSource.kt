@@ -142,6 +142,13 @@ class ArchiveSource(
         }
     }
 
+    /** Reads page [index] only past its header when its format has a quick preview ([Decoders.preview]). */
+    override fun loadPreview(index: Int): Bitmap? {
+        if (index !in pages.indices) return null
+        val bytes = readPage(index) { Decoders.quickBytes(it) } ?: return null
+        return Decoders.preview(bytes)
+    }
+
     override fun pageSize(index: Int): IntArray? {
         if (index !in pages.indices) return null
         return runCatching {

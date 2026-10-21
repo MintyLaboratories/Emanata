@@ -47,6 +47,9 @@ class DecodeException(
  * libjpeg-turbo's DCT scaling for JPEG, an area average for WebP, point sampling for
  * PNG, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
  *
+ * Quick previews ([preview]) are the one exception: JPEG and WebP decode already
+ * shrunk toward [Previews.TARGET], to stand in until the exact page is ready.
+ *
  * JPEG XL decodes with jxl-coder on every API level, TIFF with the built-in [Tiff]
  * (its cap reduction is point sampling, DCT scaling for JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+
  * (AVIF from API 31), with [BitmapFactory] below that.
@@ -193,6 +196,88 @@ object Decoders {
         var sample = 1
         while (w.toLong() * h.toLong() / (sample.toLong() * sample.toLong()) > capPixels) sample *= 2
         return sample
+    }
+
+    // ------------------------------------------------------------------ quick previews
+
+    /**
+     * Kinds whose decoders shrink while decoding, far faster than a full decode:
+     * libjpeg-turbo's DCT scaling (down to 1/8) and libwebp's scaled output. JPEG XL
+     * (jxl-coder has no progressive pass), AVIF, PNG and TIFF decode whole.
+     */
+    private val QUICK = setOf(ImageKind.JPEG, ImageKind.WEBP)
+
+    /**
+     * All of [input] when it holds an image with a quick preview ([preview]); otherwise
+     * null, having read only its first [ImageKind.HEADER_BYTES].
+     */
+    fun quickBytes(input: InputStream): ByteArray? {
+        val head = ByteArray(ImageKind.HEADER_BYTES)
+        var n = 0
+        while (n < head.size) {
+            val read = input.read(head, n, head.size - n)
+            if (read < 0) break
+            n += read
+        }
+        if (ImageKind.sniff(head, n) !in QUICK) return null
+        return head.copyOf(n) + BitmapUtils.readCapped(input)
+    }
+
+    /**
+     * The preview ([Previews.TARGET]) of [bytes], decoded at reduced size, or null when
+     * its format has no quick path. Throws [DecodeException] when it does not decode.
+     */
+    fun preview(bytes: ByteArray): Bitmap? {
+        val kind = ImageKind.sniff(bytes)
+        if (kind !in QUICK) return null
+        return reported(kind) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                quickPlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), kind == ImageKind.JPEG)
+            } else {
+                quickLegacy(bytes)
+            }
+        }
+    }
+
+    /** JPEG at the largest DCT scaling that still covers the preview; WebP straight at the preview size. */
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun quickPlatform(source: ImageDecoder.Source, jpeg: Boolean): Bitmap {
+        var size = intArrayOf(0, 0)
+        val reduced = eightBit(ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val w = info.size.width
+            val h = info.size.height
+            size = Previews.sizeOf(w, h)
+            if (jpeg) decoder.setTargetSampleSize(Previews.sampleFor(w, h, size[0], size[1]))
+            else decoder.setTargetSize(size[0], size[1])
+            decoder.setOnPartialImageListener {
+                it.error == ImageDecoder.DecodeException.SOURCE_INCOMPLETE ||
+                    it.error == ImageDecoder.DecodeException.SOURCE_MALFORMED_DATA
+            }
+        })
+        return finishPreview(reduced, size)
+    }
+
+    private fun quickLegacy(bytes: ByteArray): Bitmap {
+        val bounds = legacyBounds { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+            ?: throw DecodeException("Unsupported image format on this Android version")
+        val size = Previews.sizeOf(bounds[0], bounds[1])
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = Previews.sampleFor(bounds[0], bounds[1], size[0], size[1])
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val reduced = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: throw DecodeException("Could not decode image")
+        return finishPreview(reduced, size)
+    }
+
+    /** [reduced] when the decoder already made it [size], else its preview, recycling [reduced]. */
+    private fun finishPreview(reduced: Bitmap, size: IntArray): Bitmap {
+        if (reduced.width == size[0] && reduced.height == size[1] && reduced.config == Bitmap.Config.ARGB_8888) return reduced
+        try {
+            return Previews.make(reduced)
+        } finally {
+            reduced.recycle()
+        }
     }
 
     // ------------------------------------------------------------------ JPEG XL

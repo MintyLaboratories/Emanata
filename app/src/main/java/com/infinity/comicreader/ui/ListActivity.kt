@@ -755,7 +755,7 @@ class ListActivity : AppCompatActivity() {
             name = file.name.ifEmpty { bookmark.name },
             isDir = false,
             type = Formats.typeOf(file.name),
-            size = 0,
+            size = stat?.size ?: 0,
             lastModified = bookmark.time,
             pages = snap.history[bookmark.path]?.total ?: -1,
             progressPage = bookmark.page,

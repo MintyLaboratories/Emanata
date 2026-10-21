@@ -10,7 +10,9 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.chip.Chip
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
@@ -93,6 +95,22 @@ class ListActivitySortFilterTest {
         assertEquals(LibraryFilter.NONE, prefs.filter(Prefs.TAB_BROWSE))
         assertEquals(View.GONE, chip.visibility)
         assertEquals(4, activity.shown().size)
+    }
+
+    @Test
+    fun bookmarksSortBySize() {
+        File(dir, "a (2001).cbz").writeBytes(ByteArray(10))
+        File(dir, "b (2010).cbz").writeBytes(ByteArray(30))
+        File(dir, "c.pdf").writeBytes(ByteArray(20))
+        val library = Library(ApplicationProvider.getApplicationContext())
+        for ((i, name) in listOf("a (2001).cbz", "b (2010).cbz", "c.pdf").withIndex()) {
+            library.addBookmark(Bookmark(File(dir, name).absolutePath, name, 0, "", 1000L + i))
+        }
+        prefs.startupTab = Prefs.TAB_BOOKMARKS
+        prefs.setSort(Prefs.TAB_BOOKMARKS, TabSort(SortLevel(SortKey.SIZE)))
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(listOf("b (2010).cbz", "c.pdf", "a (2001).cbz"), activity.shown())
     }
 
     @Test

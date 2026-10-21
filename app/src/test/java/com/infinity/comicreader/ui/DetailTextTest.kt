@@ -38,6 +38,14 @@ class DetailTextTest {
     }
 
     @Test
+    fun bookmarksShowTheirPage() {
+        // A bookmark in a finished book still shows its own page.
+        assertEquals("41/192 · 87 MB", DetailText.dense(book(progress = 40, read = true, bookmark = 40), mb))
+        // With no total known, the page alone.
+        assertEquals("41", DetailText.dense(book(pages = -1, progress = 40, size = 0, bookmark = 40), mb))
+    }
+
+    @Test
     fun unknownPartsAreLeftOut() {
         assertEquals("87 MB", DetailText.dense(book(pages = -1, progress = 5), mb))
         assertEquals("40/192", DetailText.dense(book(progress = 39, size = 0), mb))

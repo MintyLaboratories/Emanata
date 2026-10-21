@@ -126,6 +126,17 @@ class ViewerActivityMenuTest {
     }
 
     @Test
+    fun theBookmarkButtonIsARibbonFilledOnABookmarkedPage() {
+        val viewer = launch(book())
+        val ribbon = { shadowOf(viewer.menu().findItem(R.id.menu_bookmark).icon).createdFromResId }
+        assertEquals(R.drawable.ic_bookmark_border, ribbon())
+        shadowOf(viewer).clickMenuItem(R.id.menu_bookmark)
+        viewer.invalidateOptionsMenu()
+        idle()
+        assertEquals(R.drawable.ic_bookmark, ribbon())
+    }
+
+    @Test
     fun bookInfoShowsTheFileItsContentsAndTheDirection() {
         val book = book()
         val text = launch(book).bookInfo()

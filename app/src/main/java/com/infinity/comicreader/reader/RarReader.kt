@@ -13,7 +13,8 @@ class RarReader(file: File) : ArchiveReader {
 
     override val entries: List<ArchiveEntry>
 
-    override val randomAccess: Boolean get() = false
+    /** False for a solid archive, where each entry unpacks those stored before it. */
+    override val randomAccess: Boolean = runCatching { !archive.mainHeader.isSolid }.getOrDefault(false)
 
     init {
         try {

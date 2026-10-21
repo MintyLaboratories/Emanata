@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The reader's overflow menu. Everything a reader reaches constantly — moving
-  between pages and chapters, bookmarks and the two auto modes — sits at the top
-  level, so nothing important needs a scroll. Reading options live in the reader
-  settings sheet only.
+  The reader's toolbar and overflow menu. The toolbar holds what is reached while
+  reading: the page's bookmark, the chapter drawer and the reader settings sheet,
+  where every reading option lives. The overflow stays short: going somewhere,
+  favorites, auto-scroll, the page's actions (also on a long-press of the page),
+  the book's details and Settings.
 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
@@ -33,11 +34,6 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_pages"
-        android:title="@string/menu_pages"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/menu_chapters"
         android:title="@string/chapters_title"
         android:visible="false"
@@ -49,24 +45,20 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_favorite"
-        android:title="@string/menu_add_favorite"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/menu_favorite_folder"
-        android:title="@string/menu_add_folder_favorite"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/menu_prev_chapter"
-        android:title="@string/menu_prev_chapter"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/menu_next_chapter"
-        android:title="@string/menu_next_chapter"
-        app:showAsAction="never" />
+        android:id="@+id/menu_favorites"
+        android:title="@string/menu_favorites"
+        app:showAsAction="never">
+        <menu>
+            <item
+                android:id="@+id/menu_favorite"
+                android:checkable="true"
+                android:title="@string/favorite_this_comic" />
+            <item
+                android:id="@+id/menu_favorite_folder"
+                android:checkable="true"
+                android:title="@string/favorite_this_folder" />
+        </menu>
+    </item>
 
     <item
         android:id="@+id/menu_auto_scroll"
@@ -75,19 +67,10 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_auto_next"
-        android:checkable="true"
-        android:title="@string/menu_auto_next"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/menu_page_tools"
         android:title="@string/menu_group_page"
         app:showAsAction="never">
         <menu>
-            <item
-                android:id="@+id/menu_crop"
-                android:title="@string/menu_crop" />
             <item
                 android:id="@+id/menu_share_page"
                 android:title="@string/menu_share_page" />
@@ -95,9 +78,22 @@
                 android:id="@+id/menu_save_page"
                 android:title="@string/menu_save_page" />
             <item
+                android:id="@+id/menu_crop"
+                android:title="@string/menu_crop" />
+            <item
                 android:id="@+id/menu_rotate"
                 android:title="@string/menu_rotate" />
         </menu>
     </item>
+
+    <item
+        android:id="@+id/menu_book_info"
+        android:title="@string/menu_book_info"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_settings"
+        android:title="@string/menu_settings"
+        app:showAsAction="never" />
 
 </menu>

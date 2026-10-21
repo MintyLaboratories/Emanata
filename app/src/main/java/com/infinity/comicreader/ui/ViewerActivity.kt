@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -13,6 +14,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.Menu
@@ -56,7 +60,6 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
-import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StorageRoot
@@ -64,10 +67,13 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.ArchiveKind
+import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.reader.Chapter
 import com.infinity.comicreader.reader.Chapters
+import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
@@ -77,6 +83,7 @@ import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
+import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import kotlinx.coroutines.CancellationException
@@ -648,13 +655,27 @@ class ViewerActivity : AppCompatActivity() {
         val noted = file?.parent to found
         if (notedDetection == noted) return
         notedDetection = noted
-        val direction = getString(if (found.direction == ReadingDirection.RTL) R.string.direction_rtl else R.string.direction_ltr)
-        val from = when (found.source) {
-            DirectionDetection.Source.COMIC_INFO -> getString(R.string.direction_from_comic_info)
-            DirectionDetection.Source.COVER -> getString(R.string.direction_from_cover)
-            DirectionDetection.Source.PUBLISHER -> getString(R.string.direction_from_publisher, found.detail.orEmpty())
+        showHint(getString(R.string.direction_detected, directionName(found.direction.key), detectedFrom(found)), DETECTION_NOTE_MS)
+    }
+
+    private fun directionName(dir: String) = getString(if (dir == "rtl") R.string.direction_rtl else R.string.direction_ltr)
+
+    /** What [found] was read from: "ComicInfo", "the cover", or the publisher's name. */
+    private fun detectedFrom(found: DirectionDetection.Detected): String = when (found.source) {
+        DirectionDetection.Source.COMIC_INFO -> getString(R.string.direction_from_comic_info)
+        DirectionDetection.Source.COVER -> getString(R.string.direction_from_cover)
+        DirectionDetection.Source.PUBLISHER -> getString(R.string.direction_from_publisher, found.detail.orEmpty())
+    }
+
+    /** The direction on screen and where it comes from: the folder, the book's contents, or the default. */
+    private fun directionInfo(): String {
+        val found = detection
+        val name = directionName(readingDir)
+        return when {
+            folderLayout != null -> getString(R.string.direction_info, name, getString(R.string.direction_source_folder))
+            detectedActive && found != null -> getString(R.string.direction_detected, name, detectedFrom(found))
+            else -> getString(R.string.direction_info, name, getString(R.string.direction_source_default))
         }
-        showHint(getString(R.string.direction_detected, direction, from), DETECTION_NOTE_MS)
     }
 
     /**
@@ -1543,37 +1564,33 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(R.id.menu_bookmark)?.setIcon(
-            if (file?.let { library.isBookmarked(it.absolutePath, currentIndex) } == true)
-                R.drawable.ic_bookmark else R.drawable.ic_bookmark_border
-        )
+        val marked = file?.let { library.isBookmarked(it.absolutePath, currentIndex) } == true
+        menu.findItem(R.id.menu_bookmark)?.apply {
+            setIcon(if (marked) R.drawable.ic_bookmark else R.drawable.ic_bookmark_border)
+            setTitle(if (marked) R.string.menu_bookmark_remove else R.string.menu_bookmark_add)
+        }
         menu.findItem(R.id.menu_auto_scroll)?.isChecked = autoScrolling
-        menu.findItem(R.id.menu_auto_next)?.isChecked = prefs.autoNext
         prepareFavorites(menu)
         val drawer = ChapterDrawer.hasEntries(bookChapters, chapters)
         menu.findItem(R.id.menu_book_chapters)?.isVisible = drawer
         menu.findItem(R.id.menu_chapters)?.isVisible = drawer
-        menu.findItem(R.id.menu_prev_chapter)?.isEnabled = prevChapter() != null
-        menu.findItem(R.id.menu_next_chapter)?.isEnabled = nextChapter() != null
         return super.onPrepareOptionsMenu(menu)
     }
 
     /**
-     * The open comic's and its folder's favorite items, each adding or removing; hidden
+     * Favorites ▸ this comic and this folder, each checked while it is a favorite; hidden
      * for a document another app handed over, which only has a copy in the cache.
      */
     private fun prepareFavorites(menu: Menu) {
         val f = favoriteFile()
-        val folder = f?.parentFile
+        menu.findItem(R.id.menu_favorites)?.isVisible = f != null
         menu.findItem(R.id.menu_favorite)?.apply {
             isVisible = f != null
-            if (f != null) setTitle(if (favoriteBook) R.string.menu_remove_favorite else R.string.menu_add_favorite)
+            isChecked = favoriteBook
         }
         menu.findItem(R.id.menu_favorite_folder)?.apply {
-            isVisible = folder != null
-            if (folder != null) {
-                setTitle(if (favoriteFolder) R.string.menu_remove_folder_favorite else R.string.menu_add_folder_favorite)
-            }
+            isVisible = f?.parentFile != null
+            isChecked = favoriteFolder
         }
     }
 
@@ -1602,7 +1619,8 @@ class ViewerActivity : AppCompatActivity() {
             R.id.menu_tune -> { showReaderSheet(); true }
             R.id.menu_chapters, R.id.menu_book_chapters -> { showChapterDrawer(); true }
             R.id.menu_auto_scroll -> { toggleAutoScroll(); true }
-            R.id.menu_auto_next -> { setAutoNext(!prefs.autoNext); true }
+            R.id.menu_book_info -> { showBookInfo(); true }
+            R.id.menu_settings -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
             R.id.menu_share_page -> { exportPage(share = true); true }
             R.id.menu_save_page -> { exportPage(share = false); true }
             R.id.menu_jump -> { showJumpDialog(); true }
@@ -1617,10 +1635,7 @@ class ViewerActivity : AppCompatActivity() {
                 toggleFavorite(file?.parent, R.string.folder_favorite_added, R.string.folder_favorite_removed)
                 true
             }
-            R.id.menu_pages -> { openPages(); true }
             R.id.menu_crop -> { startCrop(); true }
-            R.id.menu_prev_chapter -> { openPrevChapter(); true }
-            R.id.menu_next_chapter -> { openNextChapter(); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -2101,6 +2116,48 @@ class ViewerActivity : AppCompatActivity() {
         // Two rows of context above the current chapter.
         if (current > 2) lm.scrollToPositionWithOffset(current - 2, 0)
         dialog.show()
+    }
+
+    // ------------------------------------------------------------------ book info
+
+    /**
+     * Book info: the file, its format (from its leading bytes), size and pages, the
+     * direction on screen with where it comes from, and every ComicInfo field.
+     */
+    private fun showBookInfo() {
+        val f = file ?: return
+        val pages = source?.pageCount ?: return
+        val charset = prefs.charset
+        val direction = directionInfo()
+        lifecycleScope.launch {
+            val (kind, info) = withContext(AppDispatchers.io) {
+                val kind = runCatching { ArchiveKind.detect(f) }.getOrNull()
+                val info = runCatching { ArchiveReader.open(f, charset, kind)?.use { ComicInfo.read(it) } }.getOrNull()
+                kind to info
+            }
+            if (isFinishing || file != f) return@launch
+            val text = SpannableStringBuilder()
+            fun row(label: Int, value: String) {
+                if (text.isNotEmpty()) text.append("\n\n")
+                val start = text.length
+                text.append(getString(label))
+                text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.append('\n').append(value)
+            }
+            row(R.string.info_file, f.name)
+            f.parent?.let { row(R.string.info_folder, it) }
+            row(R.string.info_format, BookInfo.format(f.name, kind))
+            row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, f.length()))
+            row(R.string.info_pages, pages.toString())
+            row(R.string.menu_reading_dir, direction)
+            val fields = info?.fields.orEmpty()
+            if (fields.isNotEmpty()) row(R.string.info_comic_info, fields.joinToString("\n") { (k, v) -> "$k: $v" })
+            AlertDialog.Builder(this@ViewerActivity)
+                .setTitle(chapterLabel(f))
+                .setMessage(text)
+                .setPositiveButton(R.string.close, null)
+                .show()
+        }
     }
 
     // ------------------------------------------------------------------ share / save page

@@ -24,7 +24,9 @@ data class ComicInfo(
     val manga: Manga = Manga.UNKNOWN,
     /** Pages as ComicInfo counts them; 0 when absent. */
     val pageCount: Int = 0,
-    val pages: List<Page> = emptyList()
+    val pages: List<Page> = emptyList(),
+    /** Every field of the root with a value, named as in the file, in file order. */
+    val fields: List<Pair<String, String>> = emptyList()
 ) {
     /** The `<Manga>` value: whether the book is manga, and whether it reads right to left. */
     enum class Manga { UNKNOWN, NO, YES, YES_RTL }
@@ -127,6 +129,7 @@ data class ComicInfo(
     private class Handler : DefaultHandler() {
         private val text = StringBuilder()
         private val values = HashMap<String, String>()
+        private val fields = ArrayList<Pair<String, String>>()
         private val pages = ArrayList<Page>()
         private var depth = 0
 
@@ -146,9 +149,9 @@ data class ComicInfo(
         override fun endElement(uri: String?, localName: String?, qName: String?) {
             // Only the root's own children are fields.
             if (depth == 2) {
-                val name = (localName?.takeIf { it.isNotEmpty() } ?: qName ?: "").lowercase(Locale.ROOT)
+                val named = localName?.takeIf { it.isNotEmpty() } ?: qName ?: ""
                 val value = text.toString().trim()
-                if (value.isNotEmpty()) values.putIfAbsent(name, value)
+                if (value.isNotEmpty() && values.putIfAbsent(named.lowercase(Locale.ROOT), value) == null) fields += named to value
             }
             text.setLength(0)
             depth--
@@ -165,7 +168,8 @@ data class ComicInfo(
             publisher = values["publisher"],
             manga = mangaOf(values["manga"]),
             pageCount = values["pagecount"]?.toIntOrNull()?.takeIf { it > 0 } ?: 0,
-            pages = pages
+            pages = pages,
+            fields = fields
         )
     }
 }

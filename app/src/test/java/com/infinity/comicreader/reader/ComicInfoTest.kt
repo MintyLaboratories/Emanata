@@ -42,6 +42,11 @@ class ComicInfoTest {
             ),
             info.pages
         )
+        // Every field with a value, for Book info: named as written, in file order, Pages left out.
+        assertEquals(
+            listOf("Title" to "Chapter One", "Series" to "Series & Sons", "Number" to "12.5", "Year" to "2014", "Publisher" to "Publisher A", "PageCount" to "3", "Manga" to "YesAndRightToLeft"),
+            info.fields
+        )
     }
 
     @Test

@@ -27,7 +27,7 @@ import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** The reader's menu favorites the open comic and the folder it is in. */
+/** The reader's Favorites ▸ this comic and this folder, each checked while it is a favorite. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ViewerActivityFavoritesTest {
@@ -80,7 +80,7 @@ class ViewerActivityFavoritesTest {
         return findViewById<Toolbar>(R.id.viewer_toolbar).menu.findItem(id)
     }
 
-    private fun ViewerActivity.title(id: Int): String = item(id).title.toString()
+    private fun ViewerActivity.checked(id: Int): Boolean = item(id).isChecked
 
     private fun ViewerActivity.click(id: Int) {
         shadowOf(this).clickMenuItem(id)
@@ -90,11 +90,12 @@ class ViewerActivityFavoritesTest {
     @Test
     fun comicIsAddedAndRemoved() {
         val viewer = launch()
-        assertEquals(context.getString(R.string.menu_add_favorite), viewer.title(R.id.menu_favorite))
+        assertEquals(context.getString(R.string.favorite_this_comic), viewer.item(R.id.menu_favorite).title.toString())
+        assertFalse(viewer.checked(R.id.menu_favorite))
         viewer.click(R.id.menu_favorite)
         assertTrue(library.isFavorite(book.absolutePath))
         assertFalse(library.isFavorite(book.parent!!))
-        assertEquals(context.getString(R.string.menu_remove_favorite), viewer.title(R.id.menu_favorite))
+        assertTrue(viewer.checked(R.id.menu_favorite))
         viewer.click(R.id.menu_favorite)
         assertFalse(library.isFavorite(book.absolutePath))
     }
@@ -105,6 +106,7 @@ class ViewerActivityFavoritesTest {
         write(copy)
         try {
             val viewer = launch(copy)
+            assertFalse(viewer.item(R.id.menu_favorites).isVisible)
             assertFalse(viewer.item(R.id.menu_favorite).isVisible)
             assertFalse(viewer.item(R.id.menu_favorite_folder).isVisible)
         } finally {
@@ -117,18 +119,18 @@ class ViewerActivityFavoritesTest {
         library.toggleFavorite(book.absolutePath)
         library.toggleFavorite(book.parent!!)
         val viewer = launch()
-        assertEquals(context.getString(R.string.menu_remove_favorite), viewer.title(R.id.menu_favorite))
-        assertEquals(context.getString(R.string.menu_remove_folder_favorite), viewer.title(R.id.menu_favorite_folder))
+        assertTrue(viewer.checked(R.id.menu_favorite))
+        assertTrue(viewer.checked(R.id.menu_favorite_folder))
     }
 
     @Test
     fun folderIsAddedAndRemoved() {
         val viewer = launch()
-        assertEquals(context.getString(R.string.menu_add_folder_favorite), viewer.title(R.id.menu_favorite_folder))
+        assertFalse(viewer.checked(R.id.menu_favorite_folder))
         viewer.click(R.id.menu_favorite_folder)
         assertTrue(library.isFavorite(book.parent!!))
         assertFalse(library.isFavorite(book.absolutePath))
-        assertEquals(context.getString(R.string.menu_remove_folder_favorite), viewer.title(R.id.menu_favorite_folder))
+        assertTrue(viewer.checked(R.id.menu_favorite_folder))
         viewer.click(R.id.menu_favorite_folder)
         assertFalse(library.isFavorite(book.parent!!))
     }

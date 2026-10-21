@@ -2,7 +2,7 @@ package com.infinity.comicreader.reader
 
 /** Encoded image formats a page can hold, as told by its leading bytes. */
 enum class ImageKind {
-    JPEG, PNG, GIF, BMP, WEBP, AVIF, HEIF, JXL;
+    JPEG, PNG, GIF, BMP, WEBP, AVIF, HEIF, JXL, TIFF;
 
     companion object {
         /** Bytes [sniff] needs to recognise every kind, ISO-BMFF compatible brands included. */
@@ -15,6 +15,9 @@ enum class ImageKind {
         private val BMP_SIG = "BM".toByteArray(Charsets.US_ASCII)
         private val JXL_CODESTREAM = bytes(0xFF, 0x0A)
         private val JXL_CONTAINER = bytes(0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A)
+
+        /** Classic TIFF and BigTIFF, little- and big-endian. */
+        private val TIFF_SIGS = listOf(bytes(0x49, 0x49, 0x2A, 0x00), bytes(0x4D, 0x4D, 0x00, 0x2A), bytes(0x49, 0x49, 0x2B, 0x00), bytes(0x4D, 0x4D, 0x00, 0x2B))
 
         private val AVIF_BRANDS = setOf("avif", "avis")
         private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1")
@@ -32,6 +35,7 @@ enum class ImageKind {
                 has(JXL_CODESTREAM) || has(JXL_CONTAINER) -> JXL
                 ascii(0) == "RIFF" && ascii(8) == "WEBP" -> WEBP
                 ascii(4) == "ftyp" -> isoBrand(header, n)
+                TIFF_SIGS.any { has(it) } -> TIFF
                 // Checked last: "BM" is the weakest signature.
                 has(BMP_SIG) -> BMP
                 else -> null

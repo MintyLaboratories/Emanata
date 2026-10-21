@@ -14,6 +14,7 @@ import com.awxkee.jxlcoder.ScaleMode
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Semaphore
@@ -46,8 +47,9 @@ class DecodeException(
  * libjpeg-turbo's DCT scaling for JPEG, an area average for WebP, point sampling for
  * PNG, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
  *
- * JPEG XL decodes with jxl-coder on every API level. Other formats use
- * [ImageDecoder] on API 28+ (AVIF from API 31), with [BitmapFactory] below that.
+ * JPEG XL decodes with jxl-coder on every API level, TIFF with the built-in [Tiff]
+ * (its cap reduction is point sampling). Other formats use [ImageDecoder] on API 28+
+ * (AVIF from API 31), with [BitmapFactory] below that.
  */
 object Decoders {
 
@@ -56,6 +58,7 @@ object Decoders {
         return reported(kind) {
             val full = when {
                 kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
+                kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), target.capPixels)
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
                     decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), target.capPixels)
                 else -> decodeLegacy(bytes, target.capPixels)
@@ -69,6 +72,9 @@ object Decoders {
     /** Streams [file] to the platform decoder; JPEG XL, and any image below API 28, is read whole first. */
     fun decode(file: File, target: Target): Bitmap {
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
+        if (kind == ImageKind.TIFF) {
+            return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), target.capPixels) }, target) }
+        }
         if (kind == ImageKind.JXL || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return file.inputStream().use { decode(it, target) }
         }
@@ -100,6 +106,7 @@ object Decoders {
     fun size(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
         ImageKind.PNG -> pngSize(bytes) { platformSize(bytes) }
         ImageKind.JXL -> jxlSize(bytes)
+        ImageKind.TIFF -> Tiff.size(Tiff.ByteInput(bytes))
         else -> platformSize(bytes)
     }
 
@@ -111,6 +118,7 @@ object Decoders {
         when (ImageKind.sniff(head)) {
             ImageKind.PNG -> pngSize(head) { platformSize(file) }
             ImageKind.JXL -> ImageHeaders.jxlSize(head) ?: file.inputStream().use { jxlSize(BitmapUtils.readCapped(it)) }
+            ImageKind.TIFF -> RandomAccessFile(file, "r").use { Tiff.size(Tiff.FileInput(it)) }
             else -> platformSize(file)
         }
     }.getOrNull()
@@ -206,6 +214,38 @@ object Decoders {
         } catch (e: LinkageError) {
             null
         }
+
+    // ------------------------------------------------------------------ TIFF
+
+    /** The first page, point-sampled under [capPixels]; JPEG strips and tiles go to the platform decoder. */
+    private fun decodeTiff(input: Tiff.Input, capPixels: Long): Bitmap {
+        val page = Tiff.page(input)
+        val sample = capSample(page.width, page.height, capPixels)
+        val bitmap = Bitmap.createBitmap(
+            (page.width + sample - 1) / sample, (page.height + sample - 1) / sample, Bitmap.Config.ARGB_8888
+        )
+        try {
+            Tiff.decode(input, page, sample, ::tiffJpeg) { x, y, pixels, count -> bitmap.setPixels(pixels, 0, count, x, y, count, 1) }
+        } catch (t: Throwable) {
+            bitmap.recycle()
+            throw t
+        }
+        bitmap.setHasAlpha(page.hasAlpha)
+        return bitmap
+    }
+
+    private fun tiffJpeg(jpeg: ByteArray): Tiff.Raster {
+        val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+            ?: throw DecodeException("Could not decode a JPEG strip of this TIFF image")
+        try {
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            return Tiff.Raster(bitmap.width, bitmap.height, pixels)
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     // ------------------------------------------------------------------ platform
 

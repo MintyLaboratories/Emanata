@@ -121,10 +121,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (Settings → Your data) to a JSON file you choose.
 
 ### Reader
-- **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`,
-  `heic`/`heif`, `jxl`) and archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`,
-  `tar`/`cbt`, plus `pdf`. The extension decides which images are listed; their content decides
-  how they are decoded.
+- **Formats:** images (`jpg`, `jpeg`, `png`, `gif` (first frame), `bmp`, `webp`,
+  `avif`, `heic`/`heif`, `jxl`, `tif`/`tiff` (first page)) and archives
+  `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, `tar`/`cbt`, plus `pdf`. The extension
+  decides which images are listed; their content decides how they are decoded.
 - **Broken pages** show a placeholder naming the page and the reason.
 - **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
   Pages in subfolders keep folder order. Archives inside an archive (one per
@@ -228,6 +228,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 |---|---|---|
 | jpg/jpeg/png/gif/bmp/webp/avif/heic/heif | `ImageSource` | platform `ImageDecoder` (`BitmapFactory` below API 28) |
 | jxl | `ImageSource` | jxl-coder (libjxl) |
+| tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
 | rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
@@ -237,8 +238,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - The backend is picked from the file's magic bytes (`ArchiveKind`), the
   extension only when they match nothing.
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
-  decoder from the magic bytes (`ImageKind`). PNG and JPEG XL sizes come from
-  the header alone (`ImageHeaders`).
+  decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
+  from the header alone (`ImageHeaders`, `Tiff`).
 - Images decode at full resolution, then Lanczos3 (`Lanczos`, pure Kotlin,
   parallel) scales them to the exact size they are shown at. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound

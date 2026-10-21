@@ -1,6 +1,8 @@
 package com.infinity.comicreader.reader
 
 import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.CRC32
@@ -37,6 +39,38 @@ object Fixtures {
         }
         return file
     }
+
+    /** A POSIX (ustar) tar; [posix] false writes pre-POSIX headers, which carry no magic. */
+    fun tarBytes(vararg entries: Pair<String, ByteArray>, posix: Boolean = true): ByteArray {
+        val out = ByteArrayOutputStream()
+        TarArchiveOutputStream(out).use { tar ->
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
+            for ((path, content) in entries) {
+                val e = TarArchiveEntry(path)
+                e.size = content.size.toLong()
+                tar.putArchiveEntry(e)
+                tar.write(content)
+                tar.closeArchiveEntry()
+            }
+        }
+        val bytes = out.toByteArray()
+        if (!posix) {
+            // Blanks every header's magic and version, then writes its checksum again.
+            var at = 0
+            for ((_, content) in entries) {
+                for (i in 257 until 265) bytes[at + i] = 0
+                for (i in 148 until 156) bytes[at + i] = ' '.code.toByte()
+                val sum = (0 until 512).sumOf { bytes[at + it].toInt() and 0xFF }
+                "%06o".format(sum).toByteArray().copyInto(bytes, at + 148)
+                bytes[at + 154] = 0
+                at += 512 + (content.size + 511) / 512 * 512
+            }
+        }
+        return bytes
+    }
+
+    fun tar(file: File, vararg entries: Pair<String, ByteArray>): File =
+        file.apply { writeBytes(tarBytes(*entries)) }
 
     /** A RAR 4 archive with every entry stored (method 0x30), per the RAR 2.9-4.x format notes. */
     fun rar4Bytes(vararg entries: Pair<String, ByteArray>): ByteArray {

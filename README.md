@@ -122,8 +122,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 
 ### Reader
 - **Formats:** images (`jpg`, `jpeg`, `png`, `gif`, `bmp`, `webp`, `avif`,
-  `heic`/`heif`, `jxl`) and archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, plus
-  `pdf`. The extension decides which images are listed; their content decides
+  `heic`/`heif`, `jxl`) and archives `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`,
+  `tar`/`cbt`, plus `pdf`. The extension decides which images are listed; their content decides
   how they are decoded.
 - **Broken pages** show a placeholder naming the page and the reason.
 - **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
@@ -231,6 +231,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
 | rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
+| tar / cbt | `ArchiveSource` + `TarReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
 
 - The backend is picked from the file's magic bytes (`ArchiveKind`), the

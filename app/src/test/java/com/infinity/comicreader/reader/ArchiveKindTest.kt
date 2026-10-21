@@ -38,6 +38,22 @@ class ArchiveKindTest {
     }
 
     @Test
+    fun tarMagicAtOffset257() {
+        val tar = Fixtures.tarBytes(Fixtures.entry("001.jpg"))
+        assertEquals(ArchiveKind.TAR, ArchiveKind.sniff(tar))
+        assertNull(ArchiveKind.sniff(tar, length = 261))
+        assertNull(ArchiveKind.sniff(Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)))
+    }
+
+    @Test
+    fun tarByContentOrExtension() {
+        val f = File(tmp.root, "book.cbz").apply { writeBytes(Fixtures.tarBytes(Fixtures.entry("001.jpg"))) }
+        assertEquals(ArchiveKind.TAR, ArchiveKind.detect(f))
+        val old = File(tmp.root, "old.cbt").apply { writeBytes(Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)) }
+        assertEquals(ArchiveKind.TAR, ArchiveKind.detect(old))
+    }
+
+    @Test
     fun shortOrUnknownHeaders() {
         assertNull(ArchiveKind.sniff(ByteArray(0)))
         assertNull(ArchiveKind.sniff(bytes(0x50, 0x4B, 0x03)))

@@ -6,11 +6,14 @@ import java.io.IOException
 
 /** Container formats a book file can hold, as told by its leading bytes. */
 enum class ArchiveKind {
-    ZIP, RAR, SEVEN_ZIP, PDF;
+    ZIP, RAR, SEVEN_ZIP, TAR, PDF;
 
     companion object {
-        /** Bytes [sniff] needs to recognise every kind. */
-        const val HEADER_BYTES = 8
+        /** Bytes [sniff] needs to recognise every kind: a tar's magic ends at byte 262. */
+        const val HEADER_BYTES = 262
+
+        /** POSIX and GNU tar headers carry `ustar` here; pre-POSIX ones carry nothing. */
+        private const val TAR_MAGIC_AT = 257
 
         private val ZIP_LOCAL = bytes(0x50, 0x4B, 0x03, 0x04)
         private val ZIP_EMPTY = bytes(0x50, 0x4B, 0x05, 0x06)
@@ -20,15 +23,18 @@ enum class ArchiveKind {
         private val RAR5 = bytes(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00)
         private val SEVEN_ZIP_SIG = bytes(0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C)
         private val PDF_SIG = bytes(0x25, 0x50, 0x44, 0x46)
+        private val TAR_MAGIC = "ustar".toByteArray(Charsets.US_ASCII)
 
         /** Kind named by the first [length] bytes of [header], or null when none matches. */
         fun sniff(header: ByteArray, length: Int = header.size): ArchiveKind? {
-            fun has(sig: ByteArray) = length >= sig.size && sig.indices.all { header[it] == sig[it] }
+            val n = minOf(length, header.size)
+            fun has(sig: ByteArray, at: Int = 0) = n >= at + sig.size && sig.indices.all { header[at + it] == sig[it] }
             return when {
                 has(ZIP_LOCAL) || has(ZIP_EMPTY) || has(ZIP_SPANNED) || has(ZIP_SPANNED_SINGLE) -> ZIP
                 has(RAR4) || has(RAR5) -> RAR
                 has(SEVEN_ZIP_SIG) -> SEVEN_ZIP
                 has(PDF_SIG) -> PDF
+                has(TAR_MAGIC, TAR_MAGIC_AT) -> TAR
                 else -> null
             }
         }
@@ -54,6 +60,7 @@ enum class ArchiveKind {
             in Formats.ZIP -> ZIP
             in Formats.RAR -> RAR
             in Formats.SEVEN_ZIP -> SEVEN_ZIP
+            in Formats.TAR -> TAR
             in Formats.PDF -> PDF
             else -> null
         }

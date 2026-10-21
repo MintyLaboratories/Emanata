@@ -4,7 +4,7 @@ import com.infinity.comicreader.data.EntryType
 
 /**
  * Recognised formats: images (jpg/jpeg/png/gif/bmp/webp/avif/heic/heif/jxl), the
- * archives zip/cbz, rar/cbr, 7z/cb7, plus pdf. Extensions only pick what to list;
+ * archives zip/cbz, rar/cbr, 7z/cb7, tar/cbt, plus pdf. Extensions only pick what to list;
  * the bytes decide how a file is read ([com.infinity.comicreader.reader.ImageKind]).
  */
 object Formats {
@@ -12,7 +12,8 @@ object Formats {
     val ZIP = setOf("zip", "cbz")
     val RAR = setOf("rar", "cbr")
     val SEVEN_ZIP = setOf("7z", "cb7")
-    val ARCHIVE = ZIP + RAR + SEVEN_ZIP
+    val TAR = setOf("tar", "cbt")
+    val ARCHIVE = ZIP + RAR + SEVEN_ZIP + TAR
     val PDF = setOf("pdf")
 
     fun ext(name: String): String {

@@ -47,6 +47,7 @@
                 <data android:mimeType="application/x-cbz" />
                 <data android:mimeType="application/x-cbr" />
                 <data android:mimeType="application/x-cb7" />
+                <data android:mimeType="application/x-cbt" />
                 <data android:mimeType="application/zip" />
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="image/*" />

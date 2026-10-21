@@ -77,6 +77,27 @@ class NestedArchivesTest {
     }
 
     @Test
+    fun tarInsideZipAndZipInsideTar() {
+        val book = Fixtures.zip(
+            File(tmp.root, "set.cbz"),
+            entry("Issue 1.cbt", Fixtures.tarBytes(entry("01.jpg", "tar/01".toByteArray()))),
+            entry("Issue 2.cbz", Fixtures.zipBytes(entry("01.jpg", "zip/01".toByteArray())))
+        )
+        open(book).use { src ->
+            assertEquals(listOf("Issue 1.cbt/01.jpg", "Issue 2.cbz/01.jpg"), src.pagePaths)
+            assertEquals("tar/01", src.text(0))
+        }
+        val tar = Fixtures.tar(
+            File(tmp.root, "set.cbt"),
+            entry("Issue 1.cbz", Fixtures.zipBytes(entry("01.jpg", "zip/01".toByteArray())))
+        )
+        ArchiveSource(TarReader(tar, "UTF-8"), NestedArchives.keyOf(tar), nested()).use { src ->
+            assertEquals(listOf("Issue 1.cbz/01.jpg"), src.pagePaths)
+            assertEquals("zip/01", src.text(0))
+        }
+    }
+
+    @Test
     fun innerArchiveBesideLooseImagesSortsByName() {
         val f = Fixtures.zip(
             File(tmp.root, "book.cbz"),

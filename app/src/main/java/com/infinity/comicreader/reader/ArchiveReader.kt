@@ -25,6 +25,7 @@ interface ArchiveReader : Closeable {
             ArchiveKind.ZIP -> ZipReader(file, charsetName)
             ArchiveKind.RAR -> RarReader(file)
             ArchiveKind.SEVEN_ZIP -> SevenZipReader(file)
+            ArchiveKind.TAR -> TarReader(file, charsetName)
             ArchiveKind.PDF, null -> null
         }
     }

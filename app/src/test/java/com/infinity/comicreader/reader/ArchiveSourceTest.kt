@@ -66,6 +66,30 @@ class ArchiveSourceTest {
     }
 
     @Test
+    fun tarPages() {
+        val f = Fixtures.tar(
+            File(tmp.root, "book.cbt"),
+            entry("b/2.jpg"), entry("a/10.jpg"), entry("a/9.jpg"), entry("._a.jpg"), entry("a/x.txt")
+        )
+        assertTrue(ArchiveReader.open(f, "UTF-8") is TarReader)
+        open(f).use { src ->
+            assertEquals(listOf("a/9.jpg", "a/10.jpg", "b/2.jpg"), src.pagePaths)
+            // Random access: a later page, then an earlier one.
+            assertEquals("b/2.jpg", src.text(2))
+            assertEquals("a/9.jpg", src.text(0))
+        }
+    }
+
+    @Test
+    fun preposixTarOpensByExtension() {
+        val f = File(tmp.root, "old.cbt").apply { writeBytes(Fixtures.tarBytes(entry("1.jpg"), entry("2.jpg"), posix = false)) }
+        open(f).use { src ->
+            assertEquals(listOf("1.jpg", "2.jpg"), src.pagePaths)
+            assertEquals("2.jpg", src.text(1))
+        }
+    }
+
+    @Test
     fun nonArchiveHasNoReader() {
         val f = File(tmp.root, "book.cbz").apply { writeText("plain text") }
         assertNull(ArchiveReader.open(f, "UTF-8", ArchiveKind.sniff(f)))

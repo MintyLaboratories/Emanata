@@ -15,6 +15,7 @@ import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -132,6 +133,25 @@ class PageAdapterPairCropTest {
         idle(rv) { rv.images().first().bitmap() != null }
         assertEquals(listOf(0 to Target(1200, 800, autoCrop = true)), source.requests.toList())
         assertEquals(0.5f, rv.images().first().alignX)
+        adapter.release()
+    }
+
+    @Test
+    fun theNextPairIsPreloadedOnceMeasured() {
+        val pages = List(4) { page(40, 60 + it * 10, 360, 540 - it * 10) }
+        val source = PngSource(pages)
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            twoPage = true, autoCrop = true, preload = 2
+        )
+        val rv = recycler(adapter, 1200, 800)
+        // Only the first screen is bound; the pages of the next are decoded for the screen anyway.
+        idle(rv) { (0 until 4).all { p -> source.requests.any { it.first == p && it.second.box != null } } }
+        for (p in 0 until 4) assertTrue("page $p", source.requests.any { it.first == p && it.second.box != null })
+        // A measure works on a sampled decode, never on the page at full size.
+        val measures = source.requests.filter { it.second.width == 16 }
+        assertTrue(measures.isNotEmpty())
+        assertTrue(measures.all { it.second.capPixels < Target.DEFAULT_CAP_PIXELS })
         adapter.release()
     }
 }

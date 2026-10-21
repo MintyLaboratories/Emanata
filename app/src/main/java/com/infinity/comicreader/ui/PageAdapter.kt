@@ -670,8 +670,9 @@ class PageAdapter(
     }
 
     /**
-     * Finds what auto-crop takes off [page], with a decode to a tiny bitmap that is thrown
-     * away, then binds its item again. A page with no blank border, or one that does not
+     * Finds what auto-crop takes off [page], with a decode sampled down to about
+     * [MEASURE_PIXELS] and then to a tiny bitmap that is thrown away; then binds its item
+     * again. A page with no blank border, or one that does not
      * decode, crops alone.
      */
     private fun measure(page: Int) {
@@ -936,8 +937,14 @@ class PageAdapter(
         private val RESIZE = Any()
         private val WHOLE_PAGE = Region(0.0, 0.0, 1.0, 1.0)
 
+        /**
+         * Pixels a decode that only measures a page's crop works on, sampled down by a power
+         * of two: about half the size each way for most pages.
+         */
+        private const val MEASURE_PIXELS = 4_000_000L
+
         /** A decode that only measures a page's crop. */
-        private val MEASURE = Target(16, 16, autoCrop = true)
+        private val MEASURE = Target(16, 16, autoCrop = true, capPixels = MEASURE_PIXELS)
 
         /** [part] as one number: its page and half. */
         internal fun codeOf(part: PageLayout.Part): Int = part.page * 3 + part.half.ordinal

@@ -24,6 +24,16 @@ class TitlePrefixTest {
     }
 
     @Test
+    fun neverCutsIntoANumber() {
+        assertEquals("Lumen ", TitlePrefix.common(listOf("Lumen 2019-01.cbz", "Lumen 2019-02.cbz")))
+        assertEquals("Lumen ", TitlePrefix.common(listOf("Lumen v1.1.cbz", "Lumen v1.2.cbz")))
+        assertEquals("Lumen ", TitlePrefix.common(listOf("Lumen 2019 01.cbz", "Lumen 2019 02.cbz")))
+        // A number followed by a lone separator ends the name.
+        assertEquals("Lumen 2 - ", TitlePrefix.common(listOf("Lumen 2 - 001.cbz", "Lumen 2 - 002.cbz")))
+        assertNull(TitlePrefix.common(listOf("2019-01.cbz", "2019-02.cbz")))
+    }
+
+    @Test
     fun noTitleIsLeftEmpty() {
         assertNull(TitlePrefix.common(listOf("Lumen - ", "Lumen - 2.cbz")))
     }

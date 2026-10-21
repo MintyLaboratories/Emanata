@@ -304,9 +304,16 @@ class PrefsUpgradeTest {
     }
 
     @Test
+    fun languageEntryShowsItsCodeUnderneath() {
+        val entries = context.resources.getTextArray(R.array.locale_entries).map { it.toString() }
+        assertEquals("English (Simplified)\nen-US", entries[Prefs.LOCALES.indexOf("en-US")])
+    }
+
+    @Test
     fun untranslatedLanguageFallsBackToSystem() {
         assertEquals(mapOf("pref_locale" to null), Prefs.upgrade(mapOf("pref_locale" to "ko")))
-        assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_locale" to "en")))
+        assertEquals(mapOf("pref_locale" to "en-US"), Prefs.upgrade(mapOf("pref_locale" to "en")))
+        assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_locale" to "en-US")))
         assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_locale" to "system")))
         val prefs = Prefs(context)
         prefs.importAll(mapOf("pref_locale" to "ru"))

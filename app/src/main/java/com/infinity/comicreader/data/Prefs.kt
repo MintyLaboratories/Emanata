@@ -504,8 +504,11 @@ class Prefs(context: Context) {
         /** The tabs that take over the single grid and sort settings; the others start at their defaults. */
         private val GRID_HEIRS = listOf(TAB_BROWSE, TAB_FAVORITES)
 
-        /** The Language setting's values (`locale_values`); any other stored tag falls back to the system's. */
-        internal val LOCALES = listOf("system", "en")
+        /** The Language setting's values (`locale_values`); other stored tags move per [OLD_LOCALES] or fall back to the system's. */
+        internal val LOCALES = listOf("system", "en-US")
+
+        /** Retired language tags and the [LOCALES] value that replaced each. */
+        private val OLD_LOCALES = mapOf("en" to "en-US")
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
         private const val OLD_TAP_ZONES = "pref_tap_zones"
@@ -596,7 +599,7 @@ class Prefs(context: Context) {
                 out[OLD_FILENAMES] = null
             }
             val locale = stored[KEY_LOCALE]
-            if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = null
+            if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]
             return out
         }
     }

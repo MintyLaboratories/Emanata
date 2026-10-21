@@ -42,7 +42,16 @@ class ArchiveKindTest {
         val tar = Fixtures.tarBytes(Fixtures.entry("001.jpg"))
         assertEquals(ArchiveKind.TAR, ArchiveKind.sniff(tar))
         assertNull(ArchiveKind.sniff(tar, length = 261))
-        assertNull(ArchiveKind.sniff(Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)))
+    }
+
+    @Test
+    fun preposixTarByItsHeaderChecksum() {
+        val old = Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)
+        assertEquals(ArchiveKind.TAR, ArchiveKind.sniff(old))
+        // A whole header is needed, and its checksum must match.
+        assertNull(ArchiveKind.sniff(old, length = 511))
+        assertNull(ArchiveKind.sniff(old.copyOf().also { it[0] = (it[0] + 1).toByte() }))
+        assertNull(ArchiveKind.sniff(ByteArray(512)))
     }
 
     @Test
@@ -51,6 +60,8 @@ class ArchiveKindTest {
         assertEquals(ArchiveKind.TAR, ArchiveKind.detect(f))
         val old = File(tmp.root, "old.cbt").apply { writeBytes(Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)) }
         assertEquals(ArchiveKind.TAR, ArchiveKind.detect(old))
+        val misnamed = File(tmp.root, "old.cbz").apply { writeBytes(Fixtures.tarBytes(Fixtures.entry("001.jpg"), posix = false)) }
+        assertEquals(ArchiveKind.TAR, ArchiveKind.detect(misnamed))
     }
 
     @Test

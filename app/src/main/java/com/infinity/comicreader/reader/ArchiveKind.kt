@@ -9,11 +9,16 @@ enum class ArchiveKind {
     ZIP, RAR, SEVEN_ZIP, TAR, PDF;
 
     companion object {
-        /** Bytes [sniff] needs to recognise every kind: a tar's magic ends at byte 262. */
-        const val HEADER_BYTES = 262
+        private const val TAR_HEADER = 512
+
+        /** Bytes [sniff] needs to recognise every kind: a whole tar header. */
+        const val HEADER_BYTES = TAR_HEADER
 
         /** POSIX and GNU tar headers carry `ustar` here; pre-POSIX ones carry nothing. */
         private const val TAR_MAGIC_AT = 257
+
+        private const val TAR_CHECKSUM_AT = 148
+        private const val TAR_CHECKSUM_BYTES = 8
 
         private val ZIP_LOCAL = bytes(0x50, 0x4B, 0x03, 0x04)
         private val ZIP_EMPTY = bytes(0x50, 0x4B, 0x05, 0x06)
@@ -35,8 +40,30 @@ enum class ArchiveKind {
                 has(SEVEN_ZIP_SIG) -> SEVEN_ZIP
                 has(PDF_SIG) -> PDF
                 has(TAR_MAGIC, TAR_MAGIC_AT) -> TAR
+                isTarHeader(header, n) -> TAR
                 else -> null
             }
+        }
+
+        /**
+         * True when the first [n] bytes of [header] hold a whole tar header, pre-POSIX
+         * included: a name, and the octal checksum it stores matches its bytes (summed
+         * with the checksum field as spaces, unsigned as POSIX says or signed as some
+         * old writers did).
+         */
+        private fun isTarHeader(header: ByteArray, n: Int): Boolean {
+            if (n < TAR_HEADER || header[0] == 0.toByte()) return false
+            val field = String(header, TAR_CHECKSUM_AT, TAR_CHECKSUM_BYTES, Charsets.US_ASCII).trim(' ', '\u0000')
+            if (field.isEmpty() || field.any { it !in '0'..'7' }) return false
+            val stored = field.toLong(8)
+            var unsigned = 0L
+            var signed = 0L
+            for (i in 0 until TAR_HEADER) {
+                val b = if (i - TAR_CHECKSUM_AT in 0 until TAR_CHECKSUM_BYTES) ' '.code.toByte() else header[i]
+                unsigned += b.toInt() and 0xFF
+                signed += b
+            }
+            return stored == unsigned || stored == signed
         }
 
         /** Kind from the leading bytes of [file]; null when unreadable or unrecognised. */

@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DirectionDetection
+import com.infinity.comicreader.reader.Slices
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -45,6 +46,20 @@ class BookFactsCacheTest {
         BookFactsCache.reset()
         val cache = BookFactsCache(context).apply { load() }
         assertEquals(BookFacts(20, 0, detected), cache.get("/b/m.cbz", 5))
+    }
+
+    @Test
+    fun slicesAreKeptUncheckedNoneOrFound() {
+        val seams = Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SEAMS))
+        val cache = BookFactsCache(context)
+        cache.put("/b/unchecked.cbz", 1L, BookFacts(5, 0))
+        cache.put("/b/none.cbz", 1L, BookFacts(5, 0, slices = Slices.Checked(null)))
+        cache.put("/b/strip.cbz", 1L, BookFacts(5, 0, slices = seams))
+        BookFactsCache.reset()
+        val read = BookFactsCache(context).apply { load() }
+        assertNull(read.get("/b/unchecked.cbz", 1)?.slices)
+        assertEquals(Slices.Checked(null), read.get("/b/none.cbz", 1)?.slices)
+        assertEquals(seams, read.get("/b/strip.cbz", 1)?.slices)
     }
 
     @Test

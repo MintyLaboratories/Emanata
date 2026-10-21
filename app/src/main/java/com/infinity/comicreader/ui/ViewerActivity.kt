@@ -1026,11 +1026,19 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    /** What [book]'s pages were found to be when checked for slices before; null when never. Blocking. */
-    private fun keptSlices(book: File): Slices.Checked? = BookDirection.checkedSlices(book)
+    /** What [book]'s pages were found to be when checked for slices before, here or by the library; null when never. Blocking. */
+    private fun keptSlices(book: File): Slices.Checked? {
+        BookDirection.checkedSlices(book)?.let { return it }
+        factsCache.load()
+        return factsCache.get(book.absolutePath, book.length())?.slices
+    }
 
-    /** Keeps what [book]'s pages were found to be, so the next open needs no check. Blocking. */
-    private fun keepSlices(book: File, checked: Slices.Checked) = BookDirection.rememberSlices(book, checked)
+    /** Keeps what [book]'s pages were found to be, also with the library's facts of it, so the next open needs no check. Blocking. */
+    private fun keepSlices(book: File, checked: Slices.Checked) {
+        BookDirection.rememberSlices(book, checked)
+        val facts = factsCache.get(book.absolutePath, book.length()) ?: return
+        if (facts.slices != checked) factsCache.put(book.absolutePath, book.length(), facts.copy(slices = checked))
+    }
 
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
@@ -1069,7 +1077,8 @@ class ViewerActivity : AppCompatActivity() {
                     val facts = runCatching { BookFactsReader.read(book, charset, cacheDir) }.getOrNull()
                     ensureActive()
                     if (facts != null) {
-                        factsCache.put(book.absolutePath, book.length(), facts)
+                        // Seams checked this session settle what headers alone left open.
+                        factsCache.put(book.absolutePath, book.length(), facts.copy(slices = facts.slices ?: BookDirection.checkedSlices(book)))
                         contents = facts.detected
                     }
                 }

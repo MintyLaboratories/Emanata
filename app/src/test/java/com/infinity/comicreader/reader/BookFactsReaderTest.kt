@@ -75,6 +75,19 @@ class BookFactsReaderTest {
     }
 
     @Test
+    fun slicesTellByTheirHeaders() {
+        val heights = listOf(300, 380, 260, 450, 320)
+        val strip = Fixtures.zip(File(tmp.root, "strip.cbz"), *heights.mapIndexed { i, h -> entry("p%02d.png".format(i), TestImages.png(100, h)) }.toTypedArray())
+        assertEquals(Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SHAPE)), read(strip).slices)
+        assertEquals(ReadingDirection.TTB, read(strip).direction)
+        val pages = Fixtures.zip(File(tmp.root, "pages.cbz"), *(0 until 6).map { entry("p%02d.png".format(it), TestImages.png(200, 300)) }.toTypedArray())
+        assertEquals(Slices.Checked(null), read(pages).slices)
+        // Uniform slices wait for the reader to check their seams.
+        val uniform = Fixtures.zip(File(tmp.root, "uniform.cbz"), *(0 until 6).map { entry("p%02d.png".format(it), TestImages.png(100, 400)) }.toTypedArray())
+        assertEquals(null, read(uniform).slices)
+    }
+
+    @Test
     fun topmostComicInfoWins() {
         val f = Fixtures.zip(
             File(tmp.root, "book.cbz"),

@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.infinity.comicreader.reader.DirectionDetection
+import com.infinity.comicreader.reader.Slices
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -30,9 +31,9 @@ class BookFactsCache(context: Context) {
         synchronized(store) {
             if (store.loaded != null) return
             val map = ConcurrentHashMap<String, Pair<Long, BookFacts>>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR, DIRECTION), null, null, null, null, null).use { c ->
+            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR, DIRECTION, SLICES), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) {
-                    map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3), DirectionDetection.Detected.decode(c.getInt(4)))
+                    map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3), DirectionDetection.Detected.decode(c.getInt(4)), decodeSlices(c.getInt(5)))
                 }
             }
             store.loaded = map
@@ -43,12 +44,13 @@ class BookFactsCache(context: Context) {
     fun put(path: String, size: Long, facts: BookFacts) {
         load()
         store.loaded?.put(path, size to facts)
-        val row = ContentValues(5).apply {
+        val row = ContentValues(6).apply {
             put(PATH, path)
             put(SIZE, size)
             put(PAGES, facts.pages)
             put(YEAR, facts.year)
             put(DIRECTION, facts.detected?.encode() ?: 0)
+            put(SLICES, encodeSlices(facts.slices))
         }
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -63,7 +65,7 @@ class BookFactsCache(context: Context) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE $TABLE ($PATH TEXT PRIMARY KEY, $SIZE INTEGER NOT NULL, $PAGES INTEGER NOT NULL, " +
-                    "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0)"
+                    "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0, $SLICES INTEGER NOT NULL DEFAULT $UNCHECKED)"
             )
         }
 
@@ -82,9 +84,21 @@ class BookFactsCache(context: Context) {
         private const val PAGES = "pages"
         private const val YEAR = "year"
         private const val DIRECTION = "direction"
+        private const val SLICES = "slices"
 
-        /** 2 added the detected direction; 3 drops directions from page names alone or since-dropped publishers. */
-        private const val VERSION = 3
+        /** [SLICES] of a book not checked for slices; 0 is one whose pages are not. */
+        private const val UNCHECKED = -1
+
+        /**
+         * 2 added the detected direction; 3 drops directions from page names alone or
+         * since-dropped publishers; 4 added slices.
+         */
+        private const val VERSION = 4
+
+        private fun encodeSlices(checked: Slices.Checked?): Int = checked?.let { it.found?.encode() ?: 0 } ?: UNCHECKED
+
+        private fun decodeSlices(value: Int): Slices.Checked? =
+            if (value == 0) Slices.Checked(null) else DirectionDetection.Detected.decode(value)?.let { Slices.Checked(it) }
         private val LOCK = Any()
 
         /** Shared by every instance: one process, one database (a new one when its file moves, as between tests). */

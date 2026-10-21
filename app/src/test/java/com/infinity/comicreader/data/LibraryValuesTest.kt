@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import com.infinity.comicreader.reader.DirectionDetection
+import com.infinity.comicreader.reader.Slices
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -144,6 +145,16 @@ class LibraryValuesTest {
             Files.deleteIfExists(loop)
             dir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun slicesOutrankTheDetectedDirection() {
+        val rtl = DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.COMIC_INFO)
+        val shape = Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SHAPE))
+        val book = entry("a.cbz").copy(direction = ReadingDirection.LTR)
+        assertEquals(ReadingDirection.TTB.rank.toLong(), EntryValues(detect = true) { BookFacts(10, 0, rtl, shape) }.of(book, SortKey.DIRECTION))
+        assertEquals(ReadingDirection.RTL.rank.toLong(), EntryValues(detect = true) { BookFacts(10, 0, rtl, Slices.Checked(null)) }.of(book, SortKey.DIRECTION))
+        assertEquals(ReadingDirection.LTR.rank.toLong(), EntryValues(detect = true) { BookFacts(10, 0, rtl, shape) }.of(book.copy(directionSet = true), SortKey.DIRECTION))
     }
 
     @Test

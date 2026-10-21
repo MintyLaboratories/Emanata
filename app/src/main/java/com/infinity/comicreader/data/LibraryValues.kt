@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import com.infinity.comicreader.reader.DirectionDetection
+import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.nio.file.Files
@@ -75,10 +76,19 @@ object FolderSize {
 }
 
 /**
- * What a book's contents tell: its page count (-1 unknown), its ComicInfo year (0 none)
- * and the reading direction they suggest (null when nothing does).
+ * What a book's contents tell: its page count (-1 unknown), its ComicInfo year (0 none),
+ * the reading direction they suggest (null when nothing does) and whether its pages are
+ * [slices] of one strip (null until checked), which outrank [detected] as in the reader.
  */
-data class BookFacts(val pages: Int, val year: Int, val detected: DirectionDetection.Detected? = null)
+data class BookFacts(
+    val pages: Int,
+    val year: Int,
+    val detected: DirectionDetection.Detected? = null,
+    val slices: Slices.Checked? = null
+) {
+    /** The direction found: top to bottom for slices, else [detected]'s. */
+    val direction: ReadingDirection? get() = slices?.found?.direction ?: detected?.direction
+}
 
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found
@@ -104,7 +114,7 @@ class EntryValues(
     /** The direction set for the entry's folder, else the detected one when asked for, else the default. */
     private fun direction(entry: BookEntry): ReadingDirection? {
         if (entry.isDir || entry.directionSet || !detect) return entry.direction
-        return facts(entry)?.detected?.direction ?: entry.direction
+        return facts(entry)?.direction ?: entry.direction
     }
 
     /** These values frozen for [entries] and [keys], so later findings do not reorder a list already shown. */

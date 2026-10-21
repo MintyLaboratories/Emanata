@@ -12,6 +12,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFacts
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -133,6 +135,16 @@ class ViewerActivitySlicesTest {
         val again = launch(book)
         assertEquals(true, again.continuous())
         assertEquals("Top-to-bottom (from page shapes and seams)", again.hint().text.toString())
+    }
+
+    @Test
+    fun seamsFoundAreKeptWithTheLibrarysFacts() {
+        val book = seamedBook()
+        val facts = BookFactsCache(ApplicationProvider.getApplicationContext())
+        facts.put(book.absolutePath, book.length(), BookFacts(7, 0))
+        val viewer = launch(book)
+        await { viewer.continuous() }
+        assertEquals(DirectionDetection.Source.SEAMS, facts.get(book.absolutePath, book.length())?.slices?.found?.source)
     }
 
     @Test

@@ -3,13 +3,14 @@ package com.infinity.comicreader.reader
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
 import java.io.IOException
 
 /**
  * Reads what sorting and filtering need from inside a book: its page count, ComicInfo
- * year and the reading direction its contents tell ([DirectionDetection], without the
- * cover, which would take a decode).
+ * year, the reading direction its contents tell ([DirectionDetection], without the
+ * cover, which would take a decode) and whether its pages' headers tell slices ([Slices]).
  */
 object BookFactsReader {
     /**
@@ -34,7 +35,8 @@ object BookFactsReader {
         val entries = reader.entries.filter { !ArchiveJunk.isJunk(it.path, it.size) }
         val info = ComicInfo.read(reader)
         val images = entries.filter { Formats.isImageName(it.path) }
-        val pages = if (entries.any { Formats.isArchiveName(it.path) }) {
+        val nested = entries.any { Formats.isArchiveName(it.path) }
+        val pages = if (nested) {
             // Inner archives count as chapters; only ones already copied out can be counted,
             // else ComicInfo's own count stands in.
             runCatching { PageSources.open(file, charsetName, cacheDir, copyNested = false).use { it.pageCount } }.getOrDefault(-1)
@@ -44,6 +46,22 @@ object BookFactsReader {
         }
         // Inner archives' names carry tags as page names do.
         val names = entries.filter { Formats.isImageName(it.path) || Formats.isArchiveName(it.path) }.map { it.path }
-        return BookFacts(pages, info?.year ?: 0, DirectionDetection.detect(info, file.name, names))
+        val slices = if (nested) null else runCatching { slicesOf(reader, images) }.getOrNull()
+        return BookFacts(pages, info?.year ?: 0, DirectionDetection.detect(info, file.name, names), slices)
+    }
+
+    /**
+     * What the headers of the first [images], in page order, settle of slices
+     * ([Slices.settled]); null when the seams must tell, or where reading an entry
+     * unpacks those before it.
+     */
+    private fun slicesOf(reader: ArchiveReader, images: List<ArchiveEntry>): Slices.Checked? {
+        if (!reader.randomAccess) return null
+        val sizes = ArrayList<IntArray?>()
+        for (entry in images.sortedWith(compareBy(NaturalOrder) { it.path }).take(Slices.SAMPLE)) {
+            if (Slices.ordinary(sizes)) break
+            sizes += runCatching { reader.read(entry) { Decoders.headerSize(it) } }.getOrNull()
+        }
+        return Slices.settled(sizes)
     }
 }

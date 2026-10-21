@@ -265,4 +265,15 @@ class ViewerActivitySpreadsTest {
         val group = ReaderSheet(viewer).view<MaterialButtonToggleGroup>(R.id.sheet_orientation)
         assertEquals(R.id.btn_orient_portrait, group.checkedButtonId)
     }
+
+    @Test
+    fun spreadsSplitOrMergeIsOffInTwoPageReading() {
+        prefs.twoPage = TwoPage.ON
+        val sheet = ReaderSheet(launch(book(numbered(1, 6))))
+        assertFalse(sheet.view<View>(R.id.btn_spreads_split).isEnabled)
+        assertFalse(sheet.view<View>(R.id.btn_spreads_merge).isEnabled)
+        assertTrue(sheet.view<View>(R.id.btn_two_off).isEnabled)
+        sheet.tap(R.id.btn_two_off)
+        assertTrue(sheet.view<View>(R.id.btn_spreads_split).isEnabled)
+    }
 }

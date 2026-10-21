@@ -1288,7 +1288,10 @@ class ViewerActivity : AppCompatActivity() {
     /** "Landscape only" pairs pages after a turn to landscape and parts them after a turn back. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (source != null && useSpread() != spread) attach()
+        if (source != null && useSpread() != spread) {
+            attach()
+            syncSheet()
+        }
         sheetDialog?.behavior?.peekHeight = sheetPeek()
     }
 
@@ -2126,10 +2129,11 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<TextView>(R.id.sheet_dir_hint).text = directionInfo()
             view.findViewById<TextView>(R.id.sheet_scope_hint)
                 .setText(if (folderScope()) R.string.scope_folder_hint else R.string.scope_all_hint)
-            // "Fit screen" reads as fit width in a strip; spreads are paged only; a long strip neither crops nor spaces.
+            // "Fit screen" reads as fit width in a strip; spreads are paged only, split or merged one page a screen;
+            // a long strip neither crops nor spaces.
             view.findViewById<View>(R.id.btn_fit_screen).isEnabled = mode == MODE_PAGED
             setGroupEnabled(view.findViewById(R.id.sheet_two_page), mode == MODE_PAGED)
-            setGroupEnabled(view.findViewById(R.id.sheet_spreads), mode == MODE_PAGED)
+            setGroupEnabled(view.findViewById(R.id.sheet_spreads), mode == MODE_PAGED && !spread)
             view.findViewById<MaterialSwitch>(R.id.sheet_shift).apply {
                 isChecked = shifted
                 isEnabled = spread && favoriteFile() != null

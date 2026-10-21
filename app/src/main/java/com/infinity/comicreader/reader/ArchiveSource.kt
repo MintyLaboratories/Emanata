@@ -112,6 +112,9 @@ class ArchiveSource(
 
     override val pageCount: Int get() = pages.size
 
+    /** False when any archive holding pages is solid. */
+    override val cheapSizes: Boolean = synchronized(lock) { pages.map { it.slot }.distinct().all { it.reader?.randomAccess != false } }
+
     /** Path of each page, inner archives included as folders, in page order. */
     val pagePaths: List<String> get() = pages.map { it.path }
 

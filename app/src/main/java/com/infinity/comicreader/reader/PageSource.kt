@@ -21,6 +21,12 @@ interface PageSource : Closeable {
     fun pageSize(index: Int): IntArray? = null
 
     /**
+     * True when [pageSize] of every page in turn is cheap enough to ask for all of them:
+     * false where reading one entry unpacks those before it (a solid archive).
+     */
+    val cheapSizes: Boolean get() = true
+
+    /**
      * Page [index] at full detail, laid out as [target] lays it out, holding about
      * [maxBytes] at most: decoded whole at its full size, or reduced to fit.
      */

@@ -14,7 +14,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="6dp">
+        android:padding="4dp">
 
         <!-- The cover area; the box inside is the largest of the cover shape that fits. -->
         <com.infinity.comicreader.ui.CoverFrame

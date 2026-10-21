@@ -154,6 +154,12 @@ class ListActivity : AppCompatActivity() {
     /** Finds values the sort needs in the background ([scheduleFacts]). */
     private var factsJob: Job? = null
 
+    /** What [factsJob] covers while it runs. */
+    private var factsWork: FactsWork? = null
+
+    /** Counts listings shown, so background work knows which one it serves. */
+    private var listing = 0
+
     /** The values the list was last sorted by. */
     private var sortValues: SortValues? = null
 
@@ -770,6 +776,7 @@ class ListActivity : AppCompatActivity() {
     }
 
     private fun displayEntries(list: List<BookEntry>) {
+        listing++
         allEntries.clear()
         allEntries.addAll(list)
         applyFilterAndSort()
@@ -829,12 +836,15 @@ class ListActivity : AppCompatActivity() {
      * Finds the values [keys] need that are not known yet, in the background: page
      * counts and ComicInfo years of books, and folder totals. Books fill in as they
      * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
-     * reorder the list once all are in.
+     * reorder the list once all are in. Work already running for the same listing
+     * goes on undisturbed.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys
         val needSizes = SortKey.SIZE in keys
         if (!needFacts && !needSizes) return
+        val work = FactsWork(listing, needFacts, needSizes)
+        if (factsJob?.isActive == true && factsWork?.covers(work) == true) return
         val entries = allEntries.toList()
         fun unknown(e: BookEntry) = factsCache.get(e.path, e.size) == null && factsFailed[e.path] != e.size
         val candidates = if (!needFacts) emptyList() else entries.filter {
@@ -843,6 +853,7 @@ class ListActivity : AppCompatActivity() {
         val folders = if (!needSizes) emptyList() else entries.filter { it.isDir && it.path !in folderSizes }
         if (candidates.isEmpty() && folders.isEmpty()) return
         factsJob?.cancel()
+        factsWork = work
         factsJob = lifecycleScope.launch {
             if (!factsCache.isLoaded) withContext(AppDispatchers.io) { factsCache.load() }
             val books = candidates.filter { unknown(it) }

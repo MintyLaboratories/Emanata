@@ -68,7 +68,6 @@ import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.ArchiveKind
-import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.reader.Chapter
@@ -208,6 +207,12 @@ class ViewerActivity : AppCompatActivity() {
     private var syncingSheet = false
 
     private var openJob: Job? = null
+
+    /** Gathers Book info's facts; a tap while it runs is ignored. */
+    private var bookInfoJob: Job? = null
+
+    /** The open book's ComicInfo once Book info has read it, with the source it came from. */
+    private var bookComicInfo: Pair<PageSource, ComicInfo?>? = null
 
     /** Finishes the open book's direction detection after it shows ([detectAfterOpen]). */
     private var lateDetectionJob: Job? = null
@@ -846,6 +851,9 @@ class ViewerActivity : AppCompatActivity() {
     private fun closeSource() {
         lateDetectionJob?.cancel()
         lateDetectionJob = null
+        bookInfoJob?.cancel()
+        bookInfoJob = null
+        bookComicInfo = null
         adapter?.release()
         adapter = null
         stripAheadJob?.cancel()
@@ -2183,17 +2191,27 @@ class ViewerActivity : AppCompatActivity() {
      * direction on screen with where it comes from, and every ComicInfo field.
      */
     private fun showBookInfo() {
+        if (bookInfoJob?.isActive == true) return
         val f = file ?: return
-        val pages = source?.pageCount ?: return
-        val charset = prefs.charset
+        val src = source ?: return
+        val pages = src.pageCount
         val direction = directionInfo()
-        lifecycleScope.launch {
-            val (kind, info) = withContext(AppDispatchers.io) {
-                val kind = runCatching { ArchiveKind.detect(f) }.getOrNull()
-                val info = runCatching { ArchiveReader.open(f, charset, kind)?.use { ComicInfo.read(it) } }.getOrNull()
-                kind to info
+        val known = bookComicInfo?.takeIf { it.first === src }
+        progress.visibility = View.VISIBLE
+        bookInfoJob = lifecycleScope.launch {
+            val facts = try {
+                withContext(AppDispatchers.io) {
+                    val kind = runCatching { ArchiveKind.detect(f) }.getOrNull()
+                    // Through the open book: no second handle, and a solid archive's ComicInfo is read once.
+                    val info = if (known != null) known.second else runCatching { src.comicInfo() }.getOrNull()
+                    Triple(kind, info, f.length())
+                }
+            } finally {
+                if (source === src) progress.visibility = View.GONE
             }
-            if (isFinishing || file != f) return@launch
+            val (kind, info, size) = facts
+            if (isFinishing || source !== src) return@launch
+            bookComicInfo = src to info
             val text = SpannableStringBuilder()
             fun row(label: Int, value: String) {
                 if (text.isNotEmpty()) text.append("\n\n")
@@ -2205,7 +2223,7 @@ class ViewerActivity : AppCompatActivity() {
             row(R.string.info_file, f.name)
             f.parent?.let { row(R.string.info_folder, it) }
             row(R.string.info_format, BookInfo.format(f.name, kind))
-            row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, f.length()))
+            row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, size))
             row(R.string.info_pages, pages.toString())
             row(R.string.menu_reading_dir, direction)
             val fields = info?.fields.orEmpty()

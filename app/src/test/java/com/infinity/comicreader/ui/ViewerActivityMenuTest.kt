@@ -139,6 +139,35 @@ class ViewerActivityMenuTest {
     }
 
     @Test
+    fun bookInfoReadsAComicInfoStoredAfterTheSolidPages() {
+        val pages = (0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
+        val book = Fixtures.sevenZip(File(dir, "Series C 001.cb7"), *(pages + Fixtures.entry("ComicInfo.xml", info.toByteArray())).toTypedArray())
+        val text = launch(book).bookInfo()
+        assertTrue(text, text.contains("Series: Series C\nNumber: 1"))
+    }
+
+    @Test
+    fun bookInfoOfALoneImage() {
+        val image = File(dir, "Page 01.png").apply { writeBytes(byteArrayOf(0)) }
+        val text = launch(image).bookInfo()
+        assertTrue(text, text.contains("PNG"))
+        assertTrue(text, text.contains("\n1\n"))
+        assertTrue(text, !text.contains(context.getString(R.string.info_comic_info)))
+    }
+
+    @Test
+    fun aSecondTapWhileBookInfoReadsIsIgnored() {
+        val viewer = launch(book())
+        val before = ShadowDialog.getShownDialogs().size
+        // Two taps, then a third inside bookInfo(), all before the first read is done.
+        shadowOf(viewer).clickMenuItem(R.id.menu_book_info)
+        shadowOf(viewer).clickMenuItem(R.id.menu_book_info)
+        viewer.bookInfo()
+        idle()
+        assertEquals(before + 1, ShadowDialog.getShownDialogs().size)
+    }
+
+    @Test
     fun aLongPressOnAPageOffersItsActions() {
         val viewer = launch(book())
         val pager = viewer.findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.viewer_pager)

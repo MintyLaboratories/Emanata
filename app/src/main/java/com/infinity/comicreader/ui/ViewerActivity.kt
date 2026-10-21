@@ -779,11 +779,15 @@ class ViewerActivity : AppCompatActivity() {
             source = src
             setup(src)
             noteDetection()
-            if (contents != null && BookDirection.hasCover(target)) {
-                val coverPending = !Thumbs.frontKnown(target) && !DirectionDetection.outranksCover(contents.detected)
-                if (!contents.complete || coverPending) detectAfterOpen(target, src, contents)
-            }
+            if (contents != null) detectLater(target, src, contents)
         }
+    }
+
+    /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
+    private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
+        if (!BookDirection.hasCover(book)) return
+        val coverPending = !Thumbs.frontKnown(book) && !DirectionDetection.outranksCover(contents.detected)
+        if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }
 
     /**
@@ -834,9 +838,7 @@ class ViewerActivity : AppCompatActivity() {
             if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch
             if (!prefs.detectDirection || folderDirection() || found == detection) return@launch
             detection = found
-            if (reloadLayout()) attach()
-            invalidateOptionsMenu()
-            syncSheet()
+            showDetection()
             noteDetection()
         }
     }
@@ -1668,7 +1670,9 @@ class ViewerActivity : AppCompatActivity() {
      * frozen layout. Its books no longer detect. Without a folder it is the default.
      */
     private fun setReadingDir(dir: String) {
-        if (readingDir == dir) return
+        // The direction on screen may still be chosen, to keep it from detection and the defaults.
+        val changed = readingDir != dir
+        if (!changed && (layoutFolder() == null || folderDirection())) return
         readingDir = dir
         directionChoices++
         detectedActive = false
@@ -1683,7 +1687,49 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
         invalidateOptionsMenu()
-        attach()
+        if (changed) attach()
+    }
+
+    /**
+     * "Auto": the folder gives its direction back, keeping a frozen layout's other options,
+     * so the book detects its direction again or reads the default.
+     */
+    private fun setAutoDirection() {
+        val folder = layoutFolder() ?: return
+        val now = folderLayout ?: return
+        if (!now.dirChosen) return
+        setFolder(folder, if (now is FolderLayout.Frozen) now.copy(dirChosen = false) else null)
+        directionChoices++
+        redetect()
+    }
+
+    /** Detects the open book's direction again, as on open, and shows what it finds. */
+    private fun redetect() {
+        lateDetectionJob?.cancel()
+        val src = source
+        val book = file
+        if (src == null || book == null || !prefs.detectDirection) {
+            detection = null
+            showDetection()
+            return
+        }
+        val choices = directionChoices
+        val siblings = chapters
+        lateDetectionJob = lifecycleScope.launch {
+            val contents = withContext(AppDispatchers.io) { runCatching { detectBeforeOpen(book, src, siblings) }.getOrNull() }
+            if (source !== src || choices != directionChoices || folderDirection()) return@launch
+            detection = contents?.detected
+            showDetection()
+            noteDetection()
+            if (contents != null) detectLater(book, src, contents)
+        }
+    }
+
+    /** Lays the book out again with the direction detection gave it. */
+    private fun showDetection() {
+        if (reloadLayout()) attach()
+        invalidateOptionsMenu()
+        syncSheet()
     }
 
     private fun setPageMode(newMode: String) {
@@ -1769,7 +1815,11 @@ class ViewerActivity : AppCompatActivity() {
                 listOf(R.id.btn_mode_paged to MODE_PAGED, R.id.btn_mode_vertical to MODE_VERTICAL, R.id.btn_mode_longstrip to MODE_LONGSTRIP),
                 { mode }
             ) { setPageMode(it) },
-            Segments(R.id.sheet_dir, listOf(R.id.btn_dir_ltr to "ltr", R.id.btn_dir_rtl to "rtl"), { readingDir }) { setReadingDir(it) },
+            Segments(
+                R.id.sheet_dir,
+                listOf(R.id.btn_dir_ltr to "ltr", R.id.btn_dir_rtl to "rtl", R.id.btn_dir_auto to DIR_AUTO),
+                { if (layoutFolder() != null && !folderDirection()) DIR_AUTO else readingDir }
+            ) { if (it == DIR_AUTO) setAutoDirection() else setReadingDir(it) },
             Segments(
                 R.id.sheet_fit,
                 listOf(R.id.btn_fit_screen to "screen", R.id.btn_fit_width to "width", R.id.btn_fit_height to "height", R.id.btn_fit_stretch to "stretch"),
@@ -1844,6 +1894,9 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<ChipGroup>(R.id.sheet_filter).check(chip)
             val scoped = layoutFolder() != null
             view.findViewById<View>(R.id.sheet_scope_row).visibility = if (scoped) View.VISIBLE else View.GONE
+            // Auto hands a folder's direction back; without a folder there is none to hand back.
+            view.findViewById<View>(R.id.btn_dir_auto).visibility = if (scoped) View.VISIBLE else View.GONE
+            view.findViewById<TextView>(R.id.sheet_dir_hint).text = directionInfo()
             view.findViewById<TextView>(R.id.sheet_scope_hint)
                 .setText(if (folderScope()) R.string.scope_folder_hint else R.string.scope_all_hint)
             // "Fit screen" reads as fit width in a strip; spreads are paged only; a long strip neither crops nor spaces.
@@ -2380,6 +2433,9 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long the detected-direction note shows on open. */
         private const val DETECTION_NOTE_MS = 3_000L
+
+        /** The sheet's "Auto" direction: none of the folder's own. */
+        private const val DIR_AUTO = "auto"
 
         private const val SHARE_DIR = "shared"
         private const val EXPORT_W = 2400

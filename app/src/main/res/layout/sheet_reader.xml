@@ -108,7 +108,20 @@
                 android:id="@+id/btn_dir_rtl"
                 style="@style/Widget.ComicReader.SheetSegment"
                 android:text="@string/reading_rtl" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_dir_auto"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/reading_auto" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <TextView
+            android:id="@+id/sheet_dir_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            tools:text="@string/direction_info" />
 
         <TextView
             style="@style/Widget.ComicReader.SheetLabel"

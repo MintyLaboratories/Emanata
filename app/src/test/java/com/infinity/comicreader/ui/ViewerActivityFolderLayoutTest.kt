@@ -126,6 +126,7 @@ class ViewerActivityFolderLayoutTest {
         val viewer = launch()
         val sheet = ReaderSheet(viewer)
         assertEquals(View.GONE, sheet.view<View>(R.id.sheet_scope_row).visibility)
+        assertEquals(View.GONE, sheet.view<View>(R.id.btn_dir_auto).visibility)
         sheet.tap(R.id.btn_dir_rtl)
         assertEquals("rtl", prefs.readingDir)
         assertNull(folder())

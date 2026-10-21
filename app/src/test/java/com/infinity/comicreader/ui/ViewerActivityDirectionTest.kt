@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookFactsCache
@@ -230,5 +231,69 @@ class ViewerActivityDirectionTest {
         sheet.tap(R.id.btn_scope_all)
         assertEquals(FolderLayout.Direction("ltr"), folder())
         assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+    }
+
+    private fun awaitDirection(viewer: ViewerActivity, direction: Int) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (viewer.pagerDirection() != direction && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        assertEquals(direction, viewer.pagerDirection())
+    }
+
+    @Test
+    fun autoIsSelectedWhileTheFolderHasNoDirection() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        val sheet = ReaderSheet(viewer)
+        assertEquals(R.id.btn_dir_auto, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_dir).checkedButtonId)
+        assertEquals("Right-to-left (from ComicInfo)", sheet.view<TextView>(R.id.sheet_dir_hint).text.toString())
+    }
+
+    @Test
+    fun autoHandsTheFolderDirectionBackToDetection() {
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("ltr"))
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        val sheet = ReaderSheet(viewer)
+        assertEquals(R.id.btn_dir_ltr, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_dir).checkedButtonId)
+        sheet.tap(R.id.btn_dir_auto)
+        assertNull(folder())
+        awaitDirection(viewer, View.LAYOUT_DIRECTION_RTL)
+        assertEquals(R.id.btn_dir_auto, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_dir).checkedButtonId)
+    }
+
+    @Test
+    fun autoInAFrozenFolderKeepsTheRestFrozen() {
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout(dir = "ltr", fit = "width")))
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+        ReaderSheet(viewer).tap(R.id.btn_dir_auto)
+        assertEquals(FolderLayout.Frozen(ReaderLayout(dir = "ltr", fit = "width"), dirChosen = false), folder())
+        awaitDirection(viewer, View.LAYOUT_DIRECTION_RTL)
+    }
+
+    @Test
+    fun autoWithDetectionOffReadsTheDefault() {
+        prefs.detectDirection = false
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("rtl"))
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        ReaderSheet(viewer).tap(R.id.btn_dir_auto)
+        assertNull(folder())
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+    }
+
+    @Test
+    fun choosingTheDirectionOnScreenKeepsItForTheFolder() {
+        val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
+        awaitOpen(viewer)
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_dir_rtl)
+        assertEquals(FolderLayout.Direction("rtl"), folder())
+        assertEquals(R.id.btn_dir_rtl, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_dir).checkedButtonId)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
     }
 }

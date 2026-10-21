@@ -178,7 +178,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (`c001 (v01) - p000`) do not decide on their own, as western scans use them
   too. A short note on open says why ("Right-to-left (from ComicInfo)").
   Choosing a direction keeps it for the book's folder, and only the direction;
-  a folder's direction always wins over detection.
+  a folder's direction always wins over detection. **Auto** hands it back to
+  detection and the default.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third
   toggles the UI.
@@ -205,7 +206,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   save the page as an image, crop it, or rotate the screen.
 - **Apply to: This folder / All books** at the top of the reader settings:
   *This folder* keeps the whole layout (mode, direction, fit, spread, auto-crop,
-  page spacing) for the book's folder; *All books* changes the defaults. Layouts
+  page spacing) for the book's folder; *All books* changes the defaults and
+  keeps only a direction chosen for the folder. Layouts
   remembered by older versions that matched the defaults keep only their direction.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
   "CBR (ZIP)"), size, pages, the reading direction with where it comes from, and

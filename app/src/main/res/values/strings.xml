@@ -227,6 +227,7 @@
 
     <string name="reading_ltr">Left to right</string>
     <string name="reading_rtl">Right to left</string>
+    <string name="reading_auto">Auto</string>
     <string name="previous_page">Previous page</string>
     <string name="next_page">Next page</string>
     <string name="page_mode_paged">Paged</string>

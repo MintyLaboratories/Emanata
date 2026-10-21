@@ -576,14 +576,6 @@ class ListActivity : AppCompatActivity() {
     /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
     private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
 
-    /** Items a user would see inside [dir]: sub-folders and openable files, minus hidden ones. */
-    private fun visibleChildren(dir: File): List<File> {
-        val showHidden = prefs.showHidden
-        return dir.listFiles()?.filter {
-            (showHidden || !it.name.startsWith(".")) && (it.isDirectory || Formats.isOpenable(it.name))
-        } ?: emptyList()
-    }
-
     private fun buildDirectoryEntries(dir: File): List<BookEntry> {
         val files = dir.listFiles() ?: return emptyList()
         val showHidden = prefs.showHidden
@@ -598,8 +590,7 @@ class ListActivity : AppCompatActivity() {
         return out
     }
 
-    private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry =
-        snap.entry(file, if (file.isDirectory) visibleChildren(file) else null)
+    private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry = snap.entry(file, prefs.showHidden)
 
     private fun showFavorites() {
         mode = TAB_FAVORITES

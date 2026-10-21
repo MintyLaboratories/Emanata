@@ -22,7 +22,7 @@ object LibraryOrder {
     /**
      * The favorites, labeled, in Favorites tab order: sections by their cached kind
      * when grouped (unknown ones under Sets), sorted inside by the tab's sort with
-     * the values their entries hold.
+     * the values their entries and folder contents hold.
      */
     fun favorites(context: Context, prefs: Prefs, roots: List<StorageRoot>): List<BookEntry> {
         val library = Library(context)
@@ -32,7 +32,7 @@ object LibraryOrder {
         val snap = LibrarySnapshot.load(library, prefs)
         val entries = paths.map { path ->
             val label = labels[path]
-            snap.entry(File(path), children = null, name = label?.name ?: File(path).name).copy(label = label)
+            snap.entry(File(path), prefs.showHidden).let { it.copy(name = label?.name ?: it.name, label = label) }
         }
         val sorted = entries.sortedWith(LibrarySort.comparator(prefs.sort(Prefs.TAB_FAVORITES), EntryValues()))
         if (!prefs.groupFavorites) return sorted

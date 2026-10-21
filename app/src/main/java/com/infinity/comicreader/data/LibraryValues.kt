@@ -153,7 +153,17 @@ class LibrarySnapshot(
         )
     }
 
+    /** The entry for [file] as listed: a folder with the items a user would see in it, or a book. */
+    fun entry(file: File, showHidden: Boolean): BookEntry =
+        entry(file, if (file.isDirectory) visibleChildren(file, showHidden) else null)
+
     companion object {
+        /** Items a user would see inside [dir]: sub-folders and openable files, minus hidden ones unless [showHidden]. */
+        fun visibleChildren(dir: File, showHidden: Boolean): List<File> =
+            dir.listFiles()?.filter {
+                (showHidden || !it.name.startsWith(".")) && (it.isDirectory || Formats.isOpenable(it.name))
+            } ?: emptyList()
+
         /** The page count of a folder of loose page images named [names], or -1 when it is not one. */
         internal fun looseImages(names: List<String>): Int =
             if (FavoriteClassifier.isLooseComic(names)) names.count { Formats.isImageName(it) } else -1

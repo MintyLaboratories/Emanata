@@ -83,7 +83,7 @@ class BookFactsCache(context: Context) {
         private const val YEAR = "year"
         private const val DIRECTION = "direction"
 
-        /** 2 added the detected direction; 3 drops directions page names alone gave. */
+        /** 2 added the detected direction; 3 drops directions from page names alone or since-dropped publishers. */
         private const val VERSION = 3
         private val LOCK = Any()
 

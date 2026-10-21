@@ -59,10 +59,10 @@ class DirectionDetectionTest {
             Detected(ReadingDirection.RTL, Source.PUBLISHER, "Kodansha"),
             detect(file = "Series B v01 (2018) (Digital) [Kodansha Comics].cbz")
         )
-        val tagged = plainPages + "Series B v01 - p001 [Yen Press] [Scanner].jpg"
-        assertEquals("Yen Press", detect(pages = tagged)?.detail)
+        val tagged = plainPages + "Series B v01 - p001 [Square Enix] [Scanner].jpg"
+        assertEquals("Square Enix", detect(pages = tagged)?.detail)
         // A folder path is not a tag of the page.
-        assertNull(detect(pages = listOf("[Seven Seas]/001.jpg", "[Seven Seas]/002.jpg")))
+        assertNull(detect(pages = listOf("[Square Enix]/001.jpg", "[Square Enix]/002.jpg")))
     }
 
     @Test
@@ -82,7 +82,10 @@ class DirectionDetectionTest {
     fun publisherWordsMatchFromTheStart() {
         assertEquals("VIZ", MangaPublishers.match("VIZ Media"))
         assertEquals("Kodansha", MangaPublishers.match("Kodansha USA Publishing"))
-        assertEquals("Seven Seas", MangaPublishers.match("seven-seas entertainment"))
+        assertEquals("Ghost Ship", MangaPublishers.match("ghost-ship press"))
+        // Large manhwa and webtoon lines: left out.
+        assertNull(MangaPublishers.match("Yen Press"))
+        assertNull(MangaPublishers.match("Seven Seas Entertainment"))
         assertEquals("Vertical", MangaPublishers.match("Vertical Comics"))
         assertNull(MangaPublishers.match("Vertigo"))
         assertNull(MangaPublishers.match("Digital"))

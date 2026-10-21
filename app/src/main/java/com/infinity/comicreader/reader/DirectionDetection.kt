@@ -65,14 +65,15 @@ object DirectionDetection {
 /**
  * Publishers of manga (read right to left), matched by whole words from the start
  * of a name, without regard to case or punctuation: "VIZ" matches `VIZ Media LLC`,
- * "Kodansha" matches `[Kodansha Comics]`. Publishers that also print western
- * comics, or Korean and Chinese comics (read left to right), are left out.
+ * "Kodansha" matches `[Kodansha Comics]`. Publishers with large left-to-right lines
+ * (western comics, Korean manhwa, webtoons) are left out, such as Yen Press, Seven
+ * Seas and Tokyopop.
  */
 object MangaPublishers {
     val NAMES = listOf(
         // English-language
-        "Kodansha", "VIZ", "Shonen Jump", "Yen Press", "Yen On", "Seven Seas", "Ghost Ship", "Vertical",
-        "Square Enix", "Tokyopop", "Del Rey Manga", "Digital Manga", "SuBLime", "One Peace Books",
+        "Kodansha", "VIZ", "Shonen Jump", "Ghost Ship", "Vertical",
+        "Square Enix", "Del Rey Manga", "Digital Manga", "SuBLime", "One Peace Books",
         "Denpa", "J-Novel Club", "Kaiten Books", "Glacier Bay Books", "Manga Planet", "Azuki",
         "Dark Horse Manga", "Titan Manga",
         // Japanese

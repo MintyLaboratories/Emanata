@@ -121,4 +121,10 @@ class ViewerActivitySheetTest {
         sheet.tap(R.id.sheet_keep_on)
         assertTrue(prefs.keepScreenOn)
     }
+
+    @Test
+    fun thePageShowsUndimmedBehindTheSheet() {
+        val sheet = ReaderSheet(launch())
+        assertEquals(0f, sheet.dialog.window!!.attributes.dimAmount, 0f)
+    }
 }

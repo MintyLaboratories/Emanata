@@ -1792,6 +1792,8 @@ class ViewerActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(view)
         dialog.behavior.peekHeight = resources.displayMetrics.heightPixels / 2
+        // No scrim: the page behind is what the sheet's colors and layout are judged on.
+        dialog.window?.setDimAmount(0f)
         bindSheet(view)
         bindAdjustments(view)
         view.findViewById<View>(R.id.sheet_more_settings).setOnClickListener {

@@ -108,9 +108,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   books directly in it; a folder of loose page images counts them as its length.
 - **Peek:** spread two fingers on a comic and a grid of its pages grows out of
   it; pinch back to collapse, release part-way to keep it open (scroll, tap a
-  page to open there), release fully spread to open the book. Settings →
-  **Pinch to peek**: Off, Peek or Peek & open (default); also in the long-press
-  menu.
+  page to open there), release fully spread to open the book. On a folder the
+  grid shows the covers inside (tap one to open it; fully spread opens the
+  folder). Settings → **Pinch to peek**: Off, Peek or Peek & open (default);
+  also in the long-press menu.
+- Page grids show each page's **preview** at once, then the exact page in its
+  place. Previews (256 px) are kept on disk whenever a page is decoded, for any
+  reason; a page never decoded gets a quick one where its format allows (JPEG
+  at 1/8 scale, WebP scaled while decoding). Folder peeks reuse the library's
+  covers and make missing ones nearest the middle of the view first.
 - Incremental search within the current folder.
 - Favorites (star) and reading history, with jump-back to the last page read.
   Every history entry shows its **parent folder below the name**, so bare
@@ -281,6 +287,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   memory.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
+- Page previews (`PreviewStore`) live in `cacheDir/previews` as JPEGs keyed by
+  the book's path, size and time, the page and the preview size; least recently
+  used evicted past 128 MiB. Every page source leaves one per decoded page
+  (`PreviewingSource`), made from the full-size decode before any crop.
 - Nested archives (up to two levels) are copied to `cacheDir/nested`
   (`NestedArchives`): reused across opens, least recently used evicted past
   2 GiB (never while a book holds them), inner archives over 1 GiB or past the

@@ -117,7 +117,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   reason; a page never decoded gets a quick one where its format allows (JPEG
   at 1/8 scale, WebP scaled while decoding, AVIF from an embedded thumbnail or
   a layered file's small first layer, Android 12+). Folder peeks reuse the library's
-  covers and make missing ones nearest the middle of the view first.
+  covers and make missing ones nearest the middle of the view first; from list
+  view at the size the grid last drew them.
 - Incremental search within the current folder.
 - Favorites (star) and reading history, with jump-back to the last page read.
   Every history entry shows its **parent folder below the name**, so bare
@@ -137,6 +138,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward
   crumbs**; opening another folder drops them.
+- A folder that no longer exists (crumb, favorite, History's Show in folder,
+  startup location, folder picker) opens its nearest existing parent with a
+  note; forward crumbs past it are dropped.
 - **Locations:** the crumbs start with the app's icon in the theme's color
   (`[icon] / Device / Comics`); it opens a sheet of every
   location with its free space: the device, SD cards and **USB-OTG drives**
@@ -238,6 +242,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Brightness drag:** in paged mode, drag up for brighter, down for darker.
   Crossing 0 holds there for 15% of the screen height. A drag locks to its first
   direction: vertical never turns the page, horizontal never changes brightness.
+  A pill near the top shows the value (`Brightness +12`) over a -100..+100 bar,
+  ticks and highlights 0 on snapping there, and fades a second after release.
+- **Seek bar previews:** hold the seek bar still for 0.4 s and a strip of
+  numbered page previews opens above it, the current page centered and
+  outlined, in reading order, the page behind dimmed. Pairs show both pages
+  and split spreads their halves, numbered as the reader numbers them. Scroll
+  it sideways, tap a page to jump there; a tap outside, Back or hiding the UI
+  closes it. Dragging the seek bar right away seeks as usual.
 - **Page spacing** slider for vertical and long-strip modes.
 - **Next / previous chapter** buttons, plus an **end-of-chapter card** with a
   direct link to the next chapter, centered at 75% of the screen height.
@@ -251,7 +263,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   going back on a chapter's first page (swipe, tap zone, volume key) shows
   *Swipe back again for the previous chapter*; the last one within 1.5 s of
   the one before opens the previous chapter at its last page or spread.
-- Bookmarks per page (toolbar button), plus a bookmark list to jump between them.
+- Bookmarks per page (toolbar ribbon button, filled on a bookmarked page), plus a
+  bookmark list to jump between them.
 - **Favorites ▸** adds the open comic, or the folder it is in, to the favorites,
   or removes it.
 - Go-to-page, orientation lock, rotate, keep-screen-on, immersive fullscreen,

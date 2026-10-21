@@ -167,14 +167,14 @@ class SeekPreviewAdapter(
         slot.key = key
         renders.get(key)?.let { return showRender(slot, it) }
         slot.job = scope.launch {
+            val bound = shown.getOrNull(position)?.aspects
             val preview = previewOf(key)
             if (slot.key != key) return@launch
             if (preview != null) {
                 slot.image.scaleType = ImageView.ScaleType.CENTER_CROP
                 slot.image.setImageBitmap(preview)
                 // A cell given its page's shape is bound again at its new size.
-                val whole = previews.get(PartKey(key.page, Half.WHOLE))
-                if (whole != null && position in learn(key.page, whole)) return@launch
+                if (shown.getOrNull(position)?.aspects != bound) return@launch
             }
             val render = withContext(AppDispatchers.io) {
                 try {
@@ -218,14 +218,11 @@ class SeekPreviewAdapter(
         slot.image.setImageBitmap(bitmap)
     }
 
-    /**
-     * Takes page [page]'s shape from its [preview] for the cells that had to guess it, and
-     * rebinds them; the positions of those cells.
-     */
-    private fun learn(page: Int, preview: Bitmap): Set<Int> {
-        if (page in learned) return emptySet()
+    /** Takes page [page]'s shape from its [preview] for the cells that had to guess it, and rebinds them. */
+    private fun learn(page: Int, preview: Bitmap) {
+        if (page in learned) return
         learned[page] = intArrayOf(preview.width, preview.height)
-        val changed = HashSet<Int>()
+        var changed = false
         for (i in shown.indices) {
             val cell = shown[i]
             if (cell.parts.none { it.page == page }) continue
@@ -233,11 +230,10 @@ class SeekPreviewAdapter(
             if (refined === cell) continue
             shown[i] = refined
             if (refined.aspects == cell.aspects) continue
-            changed += i
+            changed = true
             notifyItemChanged(i)
         }
-        if (changed.isNotEmpty()) onResized?.invoke()
-        return changed
+        if (changed) onResized?.invoke()
     }
 
     /** The preview of [key]'s part: cached, or the page's, cut to its half. */
@@ -254,7 +250,11 @@ class SeekPreviewAdapter(
                     null
                 }
             }
-        }?.also { previews.put(PartKey(key.page, Half.WHOLE), it) } ?: return null
+        }?.also {
+            previews.put(PartKey(key.page, Half.WHOLE), it)
+            // Past the read, so never inside a layout: the reshaped cells can be rebound.
+            learn(key.page, it)
+        } ?: return null
         if (key.half == Half.WHOLE) return whole
         val w = (whole.width / 2).coerceAtLeast(1)
         val x = if (key.half == Half.LEFT) 0 else whole.width - w

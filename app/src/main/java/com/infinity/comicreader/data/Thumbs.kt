@@ -12,9 +12,9 @@ import com.infinity.comicreader.reader.PdfSource
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.Hashes
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
@@ -32,7 +32,6 @@ object Thumbs {
     /** Covers decode at full size below this; larger sources take the decoder's coarse reduction first. */
     private const val THUMB_CAP_PIXELS = 16_000_000L
     private const val MAX_DISK_BYTES = 160L * 1024 * 1024
-    private const val HEX_DIGITS = "0123456789abcdef"
 
     private val memory = object : LruCache<String, Bitmap>(maxBytes()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -220,21 +219,5 @@ object Thumbs {
     }
 
     private fun diskFile(context: Context, key: String): File =
-        File(File(context.cacheDir, DISK_DIR), sha256(key) + if (LOSSLESS == Bitmap.CompressFormat.PNG) ".png" else ".webp")
-
-    /**
-     * Cache-file name for [value]. This is only used to build a collision-resistant
-     * file name, but SHA-256 is used so the code does not rely on a weak hash
-     * (Sonar S4790) and the hex is built without a locale-sensitive formatter.
-     */
-    private fun sha256(value: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-        val hex = CharArray(bytes.size * 2)
-        for (i in bytes.indices) {
-            val b = bytes[i].toInt() and 0xFF
-            hex[i * 2] = HEX_DIGITS[b ushr 4]
-            hex[i * 2 + 1] = HEX_DIGITS[b and 0x0F]
-        }
-        return String(hex)
-    }
+        File(File(context.cacheDir, DISK_DIR), Hashes.sha256Hex(key) + if (LOSSLESS == Bitmap.CompressFormat.PNG) ".png" else ".webp")
 }

@@ -2,11 +2,11 @@ package com.infinity.comicreader.reader
 
 import android.util.Log
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.Hashes
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import java.security.MessageDigest
 
 /**
  * Opens archives stored inside an archive (a `.cbr` holding one `.cbz` per issue).
@@ -135,7 +135,6 @@ class NestedArchives(
         private const val PART_SUFFIX = ".part"
         private const val STALE_PART_MS = 60L * 60 * 1000
         private const val TAG = "NestedArchives"
-        private const val HEX_DIGITS = "0123456789abcdef"
 
         /** Copies held by open books, by path, with their holder count; guarded by itself. */
         private val HELD = HashMap<String, Hold>()
@@ -219,15 +218,6 @@ class NestedArchives(
             throw StorageException("Could not write nested archive copy", e)
         }
 
-        private fun hash(value: String): String {
-            val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-            val hex = CharArray(32)
-            for (i in 0 until 16) {
-                val b = bytes[i].toInt() and 0xFF
-                hex[i * 2] = HEX_DIGITS[b ushr 4]
-                hex[i * 2 + 1] = HEX_DIGITS[b and 0x0F]
-            }
-            return String(hex)
-        }
+        private fun hash(value: String): String = Hashes.sha256Hex(value, bytes = 16)
     }
 }

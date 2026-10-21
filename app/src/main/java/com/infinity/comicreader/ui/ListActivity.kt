@@ -42,10 +42,13 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.BookFacts
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.EntryValues
 import com.infinity.comicreader.data.FileStat
+import com.infinity.comicreader.data.FolderSize
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.Years
@@ -58,10 +61,13 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.SortKey
+import com.infinity.comicreader.data.SortValues
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
+import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
@@ -131,6 +137,17 @@ class ListActivity : AppCompatActivity() {
     private var favoriteKinds: Map<String, FavoriteKind> = emptyMap()
     private var classifyJob: Job? = null
 
+    private lateinit var factsCache: BookFactsCache
+
+    /** Folder totals found so far, by path. */
+    private val folderSizes = HashMap<String, Long>()
+
+    /** Finds values the sort needs in the background ([scheduleFacts]). */
+    private var factsJob: Job? = null
+
+    /** The values the list was last sorted by. */
+    private var sortValues: SortValues? = null
+
     /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
     private var listJob: Job? = null
     private lateinit var kindCache: FavoriteKindCache
@@ -154,6 +171,8 @@ class ListActivity : AppCompatActivity() {
         library = Library(this)
         settings = SettingsRepository.get(this)
         kindCache = FavoriteKindCache(this)
+        factsCache = BookFactsCache(this)
+        lifecycleScope.launch(AppDispatchers.io) { factsCache.warm() }
         applied = settings.list.value
         setContentView(R.layout.activity_list)
 
@@ -534,6 +553,7 @@ class ListActivity : AppCompatActivity() {
     private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
         listJob?.cancel()
         classifyJob?.cancel()
+        factsJob?.cancel()
         listJob = lifecycleScope.launch(block = load)
     }
 
@@ -745,7 +765,15 @@ class ListActivity : AppCompatActivity() {
         if (query.isNotBlank()) scheduleDeepSearch()
     }
 
-    private fun applyFilterAndSort() {
+    /** Sort and filter values as found so far: folder totals and what books' contents told. */
+    private fun values() = EntryValues(folderSizes) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
+
+    /**
+     * Shows the entries matching the search in the tab's order. Unless [resort], the
+     * order uses the values the list was last sorted by, so values found since fill
+     * in without moving rows.
+     */
+    private fun applyFilterAndSort(resort: Boolean = true) {
         val deep = deepResults
         val filtered = when {
             query.isBlank() -> allEntries
@@ -753,10 +781,13 @@ class ListActivity : AppCompatActivity() {
             else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
         }
 
-        val comparator = LibrarySort.comparator(prefs.sort(tabName()), EntryValues())
+        val sort = prefs.sort(tabName())
+        val live = values()
+        val order = sortValues.takeIf { !resort } ?: live.frozen(filtered, sort.keys).also { sortValues = it }
 
         shown.clear()
-        shown.addAll(filtered.sortedWith(comparator))
+        shown.addAll(filtered.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it) })
+        if (resort) scheduleFacts(sort.keys)
         adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
         if (mode == TAB_FAVORITES && prefs.groupFavorites) {
             val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
@@ -770,6 +801,54 @@ class ListActivity : AppCompatActivity() {
         updateRecentHeader()
         updateEmptyState()
         updateFabIcon()
+    }
+
+    /** [entry] with the page count read from its book when it has none of its own. */
+    private fun withFacts(entry: BookEntry): BookEntry {
+        if (entry.isDir || entry.pages > 0) return entry
+        val pages = factsCache.get(entry.path, entry.size)?.pages ?: return entry
+        return if (pages > 0) entry.copy(pages = pages) else entry
+    }
+
+    /**
+     * Finds the values [keys] need that are not known yet, in the background: page
+     * counts and ComicInfo years of books, and folder totals. Books fill in as they
+     * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
+     * reorder the list once all are in.
+     */
+    private fun scheduleFacts(keys: Set<SortKey>) {
+        val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys
+        val needSizes = SortKey.SIZE in keys
+        if (!needFacts && !needSizes) return
+        val entries = allEntries.toList()
+        val books = if (!needFacts) emptyList() else entries.filter {
+            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && factsCache.get(it.path, it.size) == null
+        }
+        val folders = if (!needSizes) emptyList() else entries.filter { it.isDir && it.path !in folderSizes }
+        if (books.isEmpty() && folders.isEmpty()) return
+        factsJob?.cancel()
+        factsJob = lifecycleScope.launch {
+            val charset = prefs.charset
+            val found = HashMap<String, Pair<Long, BookFacts>>()
+            var shownAt = SystemClock.uptimeMillis()
+            for ((i, e) in books.withIndex()) {
+                val facts = withContext(AppDispatchers.io) {
+                    runCatching { BookFactsReader.read(e.file, charset, cacheDir) }.getOrElse { BookFacts(-1, 0) }
+                }
+                found[e.path] = e.size to facts
+                val now = SystemClock.uptimeMillis()
+                if (i < books.lastIndex && now - shownAt < FACTS_PUBLISH_MS) continue
+                factsCache.putAll(found)
+                found.clear()
+                shownAt = now
+                applyFilterAndSort(resort = false)
+            }
+            if (folders.isEmpty()) return@launch
+            for (f in folders) {
+                folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
+            }
+            applyFilterAndSort()
+        }
     }
 
     /**
@@ -1472,6 +1551,7 @@ class ListActivity : AppCompatActivity() {
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L
         private const val CLASSIFY_PUBLISH_MS = 250L
+        private const val FACTS_PUBLISH_MS = 250L
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

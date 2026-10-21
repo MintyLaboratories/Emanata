@@ -15,12 +15,11 @@ class PageTargetsTest {
     fun singlePageViewIsTheItemLessItsSpacing() {
         assertArrayEquals(intArrayOf(1848, 2960), PageTargets.viewSize(Mode.PAGED, false, 1848, 2960, 0, Slot.ALONE))
         assertArrayEquals(intArrayOf(1828, 2940), PageTargets.viewSize(Mode.PAGED, false, 1848, 2960, 10, Slot.ALONE))
-        assertArrayEquals(intArrayOf(1828, 2940), PageTargets.viewSize(Mode.VERTICAL, false, 1848, 2960, 10, Slot.ALONE))
     }
 
     @Test
-    fun longStripsAreNeverPadded() {
-        assertArrayEquals(intArrayOf(1848, 2960), PageTargets.viewSize(Mode.LONG_STRIP, false, 1848, 2960, 10, Slot.ALONE))
+    fun aColumnPageTakesTheWholeWidth() {
+        assertArrayEquals(intArrayOf(1848, 2960), PageTargets.viewSize(Mode.CONTINUOUS, false, 1848, 2960, 10, Slot.ALONE))
     }
 
     @Test
@@ -40,12 +39,20 @@ class PageTargetsTest {
         assertEquals(Target(0, 2960), PageTargets.target(Mode.PAGED, FitMode.HEIGHT, 1848, 2960))
         assertEquals(Target(1848, 2960, Fit.STRETCH), PageTargets.target(Mode.PAGED, FitMode.STRETCH, 1848, 2960))
         assertEquals(Target(1848, 0, autoCrop = true, linear = true),
-            PageTargets.target(Mode.VERTICAL, FitMode.WIDTH, 1848, 2960, autoCrop = true, linear = true))
+            PageTargets.target(Mode.PAGED, FitMode.WIDTH, 1848, 2960, autoCrop = true, linear = true))
     }
 
     @Test
-    fun longStripsFitTheWidthUncropped() {
-        assertEquals(Target(1848, 0), PageTargets.target(Mode.LONG_STRIP, FitMode.HEIGHT, 1848, 2960, autoCrop = true))
+    fun aColumnFitsTheWidthCroppedWhenAsked() {
+        assertEquals(Target(1848, 0), PageTargets.target(Mode.CONTINUOUS, FitMode.HEIGHT, 1848, 2960))
+        assertEquals(Target(1848, 0, autoCrop = true), PageTargets.target(Mode.CONTINUOUS, FitMode.SCREEN, 1848, 2960, autoCrop = true))
+    }
+
+    @Test
+    fun aColumnItemHoldsItsGapBelowThePage() {
+        assertEquals(3000, PageTargets.stripHeight(2000, 1.5f))
+        assertEquals(3024, PageTargets.stripHeight(2000, 1.5f, gapPx = 24))
+        assertEquals(3000, PageTargets.stripHeight(2000, 1.5f, gapPx = -5))
     }
 
     @Test

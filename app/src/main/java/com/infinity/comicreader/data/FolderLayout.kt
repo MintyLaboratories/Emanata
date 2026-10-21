@@ -3,14 +3,15 @@ package com.infinity.comicreader.data
 import org.json.JSONObject
 
 /**
- * How the reader lays pages out: [mode] (paged, vertical or long strip), reading
- * direction [dir] ("ltr" or "rtl"), [fit], [twoPage], [autoCrop], the page gap
- * [spacing] in dp and how [spreads] in one file show. Mode and direction stay separate
- * fields, so a later paged / continuous × direction split only changes their values.
+ * How the reader lays pages out: the layout [mode] (paged or continuous), the reading
+ * direction [dir] (left to right, right to left or top to bottom), [fit], [twoPage],
+ * [autoCrop], the page gap [spacing] in dp and how [spreads] in one file show. Only top
+ * to bottom reads as one continuous column; continuous with a left or right direction
+ * pages ([shownMode]), so the mode stays as chosen for books that read top to bottom.
  */
 data class ReaderLayout(
     val mode: String = MODE_PAGED,
-    val dir: String = "ltr",
+    val dir: String = DIR_LTR,
     val fit: String = "screen",
     val twoPage: TwoPage = TwoPage.OFF,
     val autoCrop: Boolean = false,
@@ -19,9 +20,43 @@ data class ReaderLayout(
 ) {
     companion object {
         const val MODE_PAGED = "paged"
-        const val MODE_VERTICAL = "vertical"
-        const val MODE_LONGSTRIP = "longstrip"
-        val MODES = listOf(MODE_PAGED, MODE_VERTICAL, MODE_LONGSTRIP)
+        const val MODE_CONTINUOUS = "continuous"
+        val MODES = listOf(MODE_PAGED, MODE_CONTINUOUS)
+
+        const val DIR_LTR = "ltr"
+        const val DIR_RTL = "rtl"
+        const val DIR_TTB = "ttb"
+        val DIRS = listOf(DIR_LTR, DIR_RTL, DIR_TTB)
+
+        /** Retired modes, both read top to bottom: one page a screen, and one column. */
+        internal const val OLD_VERTICAL = "vertical"
+        internal const val OLD_LONGSTRIP = "longstrip"
+
+        /** [value] when it names a mode, else paged. */
+        fun modeOf(value: String?): String = value?.takeIf { it in MODES } ?: MODE_PAGED
+
+        /** [value] when it names a direction, else left to right. */
+        fun dirOf(value: String?): String = value?.takeIf { it in DIRS } ?: DIR_LTR
+
+        /**
+         * The mode and direction a stored [mode] and [dir] stand for today: the retired
+         * vertical pages top to bottom, the retired long strip is continuous top to bottom.
+         */
+        fun migrated(mode: String?, dir: String?): Pair<String, String> = when (mode) {
+            OLD_VERTICAL -> MODE_PAGED to DIR_TTB
+            OLD_LONGSTRIP -> MODE_CONTINUOUS to DIR_TTB
+            else -> modeOf(mode) to dirOf(dir)
+        }
+
+        /**
+         * The mode a book shows in: continuous only when it reads top to bottom, and then
+         * also when [sliced] (detected slices of one tall strip) though [mode] is paged.
+         */
+        fun shownMode(mode: String, dir: String, sliced: Boolean = false): String = when {
+            dir != DIR_TTB -> MODE_PAGED
+            sliced -> MODE_CONTINUOUS
+            else -> modeOf(mode)
+        }
 
         /** The global defaults in [p]. */
         fun of(p: Prefs) = ReaderLayout(p.pageMode, p.readingDir, p.fit, p.twoPage, p.autoCrop, p.pageSpacing, p.spreads)
@@ -75,29 +110,37 @@ sealed class FolderLayout {
         private const val SPREADS = "spreads"
         private const val CHOSEN = "chosen"
 
-        private fun dirOf(o: JSONObject) = if (o.optString(DIR) == "rtl") "rtl" else "ltr"
 
         /** True for an entry older versions wrote: mode, direction, fit and spread, all kept. */
         fun isLegacy(o: JSONObject): Boolean = !o.has(ALL) && o.has(MODE)
 
+        /** True for an entry whose mode is a retired one, which [decode] reads as today's. */
+        fun hasRetiredMode(o: JSONObject): Boolean =
+            o.optString(MODE).let { it == ReaderLayout.OLD_VERTICAL || it == ReaderLayout.OLD_LONGSTRIP }
+
         /**
          * [o] read back. A legacy entry reads as frozen, filling auto-crop and the gap from
-         * [defaults], so nothing it held is lost before [migrate] sorts it.
+         * [defaults], so nothing it held is lost before [migrate] sorts it. A retired mode
+         * reads as top to bottom ([ReaderLayout.migrated]), its direction chosen with it;
+         * a retired long strip never cropped, so it keeps auto-crop off.
          */
         fun decode(o: JSONObject, defaults: ReaderLayout = ReaderLayout()): FolderLayout {
-            if (!o.has(ALL) && !o.has(MODE)) return Direction(dirOf(o))
+            if (!o.has(ALL) && !o.has(MODE)) return Direction(ReaderLayout.dirOf(o.optString(DIR)))
             val two = o.opt(TWO)
+            val oldMode = o.optString(MODE)
+            val (mode, dir) = ReaderLayout.migrated(oldMode, o.optString(DIR))
+            val retired = oldMode == ReaderLayout.OLD_VERTICAL || oldMode == ReaderLayout.OLD_LONGSTRIP
             return Frozen(
                 ReaderLayout(
-                    mode = o.optString(MODE).takeIf { it in ReaderLayout.MODES } ?: ReaderLayout.MODE_PAGED,
-                    dir = dirOf(o),
+                    mode = mode,
+                    dir = dir,
                     fit = o.optString(FIT, "screen").ifEmpty { "screen" },
                     twoPage = if (two is Boolean) TwoPage.of(two) else TwoPage.of(two as? String),
-                    autoCrop = o.optBoolean(CROP, defaults.autoCrop),
+                    autoCrop = oldMode != ReaderLayout.OLD_LONGSTRIP && o.optBoolean(CROP, defaults.autoCrop),
                     spacing = o.optInt(GAP, defaults.spacing).coerceIn(0, Prefs.PAGE_SPACING_MAX),
                     spreads = if (o.has(SPREADS)) SpreadDisplay.of(o.optString(SPREADS)) else defaults.spreads
                 ),
-                dirChosen = o.optBoolean(CHOSEN, true)
+                dirChosen = retired || o.optBoolean(CHOSEN, true)
             )
         }
 

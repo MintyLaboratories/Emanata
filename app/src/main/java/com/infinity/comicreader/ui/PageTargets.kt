@@ -17,8 +17,9 @@ object PageTargets {
 
     /**
      * `[width, height]` of the image view showing a page in [slot] of an [itemW] x [itemH]
-     * item. A single page's container is padded by [spacingPx] on every side, except in
-     * long strips; a spread row is not padded, and splits its width the way equal
+     * item. A paged single page's container is padded by [spacingPx] on every side; a
+     * continuous column's page takes the whole width, its gap below it ([stripHeight]); a
+     * spread row is not padded, and splits its width the way equal
      * [android.widget.LinearLayout] weights do, the left half taking the floor. A lone
      * page of a spread takes the whole row.
      */
@@ -26,7 +27,7 @@ object PageTargets {
         val size = when {
             slot == Slot.LEFT -> intArrayOf(itemW / 2, itemH)
             slot == Slot.RIGHT -> intArrayOf(itemW - itemW / 2, itemH)
-            spread || mode == PageAdapter.Mode.LONG_STRIP -> intArrayOf(itemW, itemH)
+            spread || mode == PageAdapter.Mode.CONTINUOUS -> intArrayOf(itemW, itemH)
             else -> intArrayOf(itemW - 2 * spacingPx, itemH - 2 * spacingPx)
         }
         return intArrayOf(size[0].coerceAtLeast(1), size[1].coerceAtLeast(1))
@@ -34,8 +35,8 @@ object PageTargets {
 
     /**
      * What a page shown in a [viewW] x [viewH] view needs for [fit]: the box [ZoomImageView]
-     * fits it into, so its fitted scale comes out at exactly 1. Long strips always fit
-     * the width and are never auto-cropped, since their gaps belong to the art.
+     * fits it into, so its fitted scale comes out at exactly 1. A continuous column always
+     * fits the width.
      */
     fun target(
         mode: PageAdapter.Mode,
@@ -45,7 +46,7 @@ object PageTargets {
         autoCrop: Boolean = false,
         linear: Boolean = false
     ): Target = when {
-        mode == PageAdapter.Mode.LONG_STRIP -> Target(viewW, 0, linear = linear)
+        mode == PageAdapter.Mode.CONTINUOUS -> Target(viewW, 0, autoCrop = autoCrop, linear = linear)
         fit == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = autoCrop, linear = linear)
         fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear)
         fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear)
@@ -65,8 +66,10 @@ object PageTargets {
     }
 
     /**
-     * Height of a long-strip item [width] wide showing a page of height / width [aspect]:
-     * rounded, so a page decoded at that width gets back its exact bitmap height.
+     * Height of a continuous column's item [width] wide showing a page of height / width
+     * [aspect], with the page gap [gapPx] below it: the page's height rounded, so a page
+     * decoded at that width gets back its exact bitmap height.
      */
-    fun stripHeight(width: Int, aspect: Float): Int = (width * aspect).roundToInt().coerceAtLeast(1)
+    fun stripHeight(width: Int, aspect: Float, gapPx: Int = 0): Int =
+        (width * aspect).roundToInt().coerceAtLeast(1) + gapPx.coerceAtLeast(0)
 }

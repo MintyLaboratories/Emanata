@@ -11,7 +11,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.FolderLayout
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
@@ -108,17 +111,35 @@ class ViewerActivitySheetTest {
     }
 
     @Test
-    fun aLongStripOffersNoSpreadsCropOrSpacing() {
-        val sheet = ReaderSheet(launch())
+    fun continuousIsOfferedTopToBottomOnly() {
+        val viewer = launch()
+        val sheet = ReaderSheet(viewer)
         assertTrue(sheet.view<View>(R.id.btn_two_on).isEnabled)
-        sheet.tap(R.id.btn_mode_longstrip)
-        assertEquals("longstrip", prefs.pageMode)
+        assertFalse(sheet.view<View>(R.id.btn_mode_continuous).isEnabled)
+        sheet.tap(R.id.btn_dir_ttb)
+        assertEquals(FolderLayout.Direction("ttb"), Library(context).folderLayout(book.parent!!))
+        // Paged top to bottom: an upright pager, no two-page or split spreads.
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        assertEquals(View.VISIBLE, pager.visibility)
+        assertEquals(ViewPager2.ORIENTATION_VERTICAL, pager.orientation)
         assertFalse(sheet.view<View>(R.id.btn_two_on).isEnabled)
+        assertFalse(sheet.view<View>(R.id.btn_spreads_split).isEnabled)
+        assertTrue(sheet.view<View>(R.id.btn_mode_continuous).isEnabled)
+        sheet.tap(R.id.btn_mode_continuous)
+        assertEquals("continuous", prefs.pageMode)
+        assertEquals(View.VISIBLE, viewer.findViewById<View>(R.id.viewer_vertical).visibility)
         assertFalse(sheet.view<View>(R.id.btn_fit_screen).isEnabled)
-        assertFalse(sheet.view<View>(R.id.sheet_auto_crop).isEnabled)
-        assertFalse(sheet.view<View>(R.id.sheet_spacing).isEnabled)
-        // Fit screen reads as fit width in a strip.
+        // A column crops and spaces its pages as it is told.
+        assertTrue(sheet.view<View>(R.id.sheet_auto_crop).isEnabled)
+        assertTrue(sheet.view<View>(R.id.sheet_spacing).isEnabled)
+        // Fit screen reads as fit width in a column.
         assertEquals(R.id.btn_fit_width, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_fit).checkedButtonId)
+        // Left to right pages again, keeping continuous for books read top to bottom.
+        sheet.tap(R.id.btn_dir_ltr)
+        assertEquals(View.VISIBLE, pager.visibility)
+        assertEquals(ViewPager2.ORIENTATION_HORIZONTAL, pager.orientation)
+        assertEquals("continuous", prefs.pageMode)
+        assertEquals(R.id.btn_mode_paged, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_page_mode).checkedButtonId)
     }
 
     @Test

@@ -144,11 +144,14 @@ class ViewerActivityDirectionTest {
     }
 
     @Test
-    fun noNoteWhereLeftAndRightDoNothing() {
-        prefs.pageMode = "longstrip"
+    fun aDetectedDirectionPagesOverATopToBottomDefault() {
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
         val viewer = launch(book("Series B v01.cbz", rtlInfo)).get()
         awaitOpen(viewer)
-        assertNotEquals(View.VISIBLE, viewer.hint().visibility)
+        assertEquals(View.VISIBLE, viewer.findViewById<View>(R.id.viewer_pager).visibility)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+        assertEquals("Right-to-left (from ComicInfo)", viewer.hint().text.toString())
     }
 
     @Test

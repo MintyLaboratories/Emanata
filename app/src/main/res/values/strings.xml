@@ -178,7 +178,7 @@
     <string name="menu_keep_on">Keep screen on</string>
     <string name="menu_night">Night filter</string>
     <string name="menu_reading_dir">Reading direction</string>
-    <string name="menu_page_mode">Page mode</string>
+    <string name="menu_page_mode">Layout</string>
     <string name="menu_fullscreen">Fullscreen</string>
     <string name="menu_jump">Go to page…</string>
     <string name="menu_orientation">Orientation lock</string>
@@ -197,7 +197,7 @@
     <string name="fit_width_short">Width</string>
     <string name="fit_height_short">Height</string>
     <string name="menu_filters">Page filter</string>
-    <string name="menu_page_spacing">Page spacing</string>
+    <string name="menu_page_spacing">Page gap</string>
     <string name="menu_adjustments">Adjustments</string>
     <string name="adjust_brightness">Brightness</string>
     <string name="adjust_contrast">Contrast</string>
@@ -238,12 +238,12 @@
 
     <string name="reading_ltr">Left to right</string>
     <string name="reading_rtl">Right to left</string>
+    <string name="reading_ttb">Top to bottom</string>
     <string name="reading_auto">Auto</string>
     <string name="previous_page">Previous page</string>
     <string name="next_page">Next page</string>
     <string name="page_mode_paged">Paged</string>
-    <string name="page_mode_vertical">Vertical</string>
-    <string name="page_mode_longstrip">Long strip</string>
+    <string name="page_mode_continuous">Continuous</string>
     <string name="orientation_default">System</string>
     <string name="orientation_portrait">Portrait</string>
     <string name="orientation_landscape">Landscape</string>
@@ -311,11 +311,11 @@
     <string name="direction_from_publisher">%1$s</string>
     <string name="direction_from_shape">page shapes</string>
     <string name="direction_from_seams">page shapes and seams</string>
-    <string name="pref_page_mode">Default page mode</string>
+    <string name="pref_page_mode">Default layout</string>
     <string name="pref_fit">Default fit mode</string>
     <string name="pref_filter">Default page filter</string>
     <string name="pref_cat_adjustments">Default adjustments</string>
-    <string name="pref_page_spacing">Page spacing</string>
+    <string name="pref_page_spacing">Page gap</string>
     <string name="pref_auto_next">Auto next chapter</string>
     <string name="pref_auto_next_desc">Open the next chapter automatically when a chapter ends, without the end-of-chapter prompt</string>
     <string name="pref_resume">Resume where I left off</string>
@@ -394,7 +394,7 @@
     <string name="section_comics">Comics</string>
 
     <string name="pref_cat_data">Your data</string>
-    <string name="pref_auto_crop_desc">Trim blank borders in paged and vertical modes</string>
+    <string name="pref_auto_crop_desc">Trim blank borders from pages</string>
     <string name="pref_linear_light">Linear-light scaling</string>
     <string name="pref_linear_light_desc">Shrink pages and covers in linear light: halftones and screentones keep their brightness, thin dark lines come out lighter</string>
     <string name="pref_per_series">Per-folder layout</string>
@@ -561,21 +561,21 @@
     <string-array name="reading_dir_entries">
         <item>@string/reading_ltr</item>
         <item>@string/reading_rtl</item>
+        <item>@string/reading_ttb</item>
     </string-array>
     <string-array name="reading_dir_values">
         <item>ltr</item>
         <item>rtl</item>
+        <item>ttb</item>
     </string-array>
 
     <string-array name="page_mode_entries">
         <item>@string/page_mode_paged</item>
-        <item>@string/page_mode_vertical</item>
-        <item>@string/page_mode_longstrip</item>
+        <item>@string/page_mode_continuous</item>
     </string-array>
     <string-array name="page_mode_values">
         <item>paged</item>
-        <item>vertical</item>
-        <item>longstrip</item>
+        <item>continuous</item>
     </string-array>
 
     <string-array name="fit_entries">

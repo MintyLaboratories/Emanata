@@ -39,14 +39,14 @@ class PageAdapterReleaseTest {
     fun rebuildKeepsChaptersOpen() {
         val source = FakeSource(4)
         val ahead = FakeSource(3)
-        val old = adapter(source, PageAdapter.Mode.LONG_STRIP)
+        val old = adapter(source, PageAdapter.Mode.CONTINUOUS)
         old.append(ahead)
         old.release(closeSources = false)
         assertFalse(source.closed)
         assertFalse(ahead.closed)
 
         // The replacement takes the same chapters over and closes them in the end.
-        val next = adapter(source, PageAdapter.Mode.LONG_STRIP)
+        val next = adapter(source, PageAdapter.Mode.CONTINUOUS)
         next.append(ahead)
         next.release()
         assertTrue(source.closed)

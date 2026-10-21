@@ -64,6 +64,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SpreadDisplay
@@ -110,8 +111,9 @@ import kotlin.math.abs
 /**
  * The reader.
  *
- * Page layout is one of three modes — paged, vertical or long strip — and every
- * reader option (mode, fit, filter, spacing, direction, two-page, night filter,
+ * Pages are laid out paged (swiped sideways, or up when reading top to bottom) or in
+ * one continuous column (top to bottom only), and every
+ * reader option (layout, fit, filter, spacing, direction, two-page, night filter,
  * keep-on, fullscreen) is read from and written back to [Prefs], so the choices
  * survive chapter changes and app restarts. Color adjustments are per book, in
  * [Library], falling back to the defaults in [Prefs]. Changes made elsewhere,
@@ -180,7 +182,7 @@ class ViewerActivity : AppCompatActivity() {
     private var file: File? = null
 
     /**
-     * The next chapter, opened ahead so a vertical or long-strip reader rolls
+     * The next chapter, opened ahead so a continuous reader rolls
      * straight into it instead of stopping at the chapter's end. While it is
      * pending it is simply appended to the strip ([stripAheadFile] tracks the
      * chapter it belongs to, since [file] still points at the one being read).
@@ -229,7 +231,15 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
     private val spreadRotation = SpreadRotation()
+
+    /** The layout on screen: [chosenMode], unless the direction pages or detected slices run on ([shownMode]). */
     private var mode = MODE_PAGED
+
+    /** The layout the settings or the folder chose, kept as the default while the direction overrides it. */
+    private var chosenMode = MODE_PAGED
+
+    /** True once a layout is picked for the open book, so detected slices no longer make it continuous. */
+    private var layoutPicked = false
     private var twoPage = TwoPage.OFF
 
     /** Whether the adapter on screen pairs pages; [useSpread] says whether it should. */
@@ -411,7 +421,7 @@ class ViewerActivity : AppCompatActivity() {
                     seek.progress = pos
                     onPageChanged()
                 }
-                if (mode == MODE_LONGSTRIP) updateEndCard()
+                if (mode == MODE_CONTINUOUS) updateEndCard()
             }
         })
 
@@ -732,7 +742,7 @@ class ViewerActivity : AppCompatActivity() {
         resolveLayout()
         if (mode != old.mode) {
             stopAutoScroll()
-            // Only the strip modes lay the next chapter in behind this one.
+            // Only a continuous column lays the next chapter in behind this one.
             if (mode == MODE_PAGED) dropStripAhead()
         }
         if (fit != old.fit) adapter?.fitMode = effectiveFit()
@@ -752,14 +762,28 @@ class ViewerActivity : AppCompatActivity() {
     private fun currentLayout() = ReaderLayout(mode, readingDir, fit, twoPage, autoCrop, spacingDp, spreadDisplay)
 
     private fun showLayout(l: ReaderLayout) {
-        mode = l.mode.takeIf { it in ReaderLayout.MODES } ?: MODE_PAGED
-        readingDir = if (l.dir == "rtl") "rtl" else "ltr"
+        chosenMode = ReaderLayout.modeOf(l.mode)
+        readingDir = ReaderLayout.dirOf(l.dir)
+        mode = shownMode()
         fit = l.fit
         twoPage = l.twoPage
         autoCrop = l.autoCrop
         spacingDp = l.spacing
         spreadDisplay = l.spreads
     }
+
+    /**
+     * The layout for [chosenMode] and the direction on screen: paged unless reading top to
+     * bottom, and continuous for detected slices of one strip, unless the folder keeps a
+     * whole layout or a layout was picked for the book.
+     */
+    private fun shownMode(): String {
+        val sliced = detectedActive && detection?.direction == ReadingDirection.TTB && !folderScope() && !layoutPicked
+        return ReaderLayout.shownMode(chosenMode, readingDir, sliced)
+    }
+
+    /** True while pages read top to bottom, paged or continuous. */
+    private fun topToBottom() = readingDir == DIR_TTB
 
     /** The folder whose layout the open book follows; none with "Per-folder layout" off or for another app's document. */
     private fun layoutFolder(): String? = if (prefs.perSeries) favoriteFile()?.parent else null
@@ -772,15 +796,13 @@ class ViewerActivity : AppCompatActivity() {
         val found = detection
         detectedActive = found != null && !folderDirection() && prefs.detectDirection
         if (detectedActive && found != null) readingDir = found.direction.key
+        mode = shownMode()
     }
 
-    /**
-     * Says on open which direction was detected and why, when it is not the default; once
-     * per folder. Only paged reading turns left or right, so the other modes say nothing.
-     */
+    /** Says on open which direction was detected and why, when it is not the default; once per folder. */
     private fun noteDetection() {
         val found = detection ?: return
-        if (!detectedActive || found.direction.key == prefs.readingDir || mode != MODE_PAGED) return
+        if (!detectedActive || found.direction.key == prefs.readingDir) return
         val noted = file?.parent to found
         if (notedDetection == noted) return
         notedDetection = noted
@@ -822,11 +844,15 @@ class ViewerActivity : AppCompatActivity() {
     private fun persistLayout(dirChosen: Boolean = folderDirection()) {
         val folder = layoutFolder()
         if (folderScope() && folder != null) {
-            setFolder(folder, FolderLayout.Frozen(currentLayout(), dirChosen))
+            setFolder(folder, FolderLayout.Frozen(keptLayout(), dirChosen))
         } else {
-            prefs.setLayoutDefaults(currentLayout())
+            // The defaults keep the layout chosen, not one detected slices show.
+            prefs.setLayoutDefaults(currentLayout().copy(mode = chosenMode))
         }
     }
+
+    /** What a folder freezes: the layout on screen, the chosen one where a left or right direction pages. */
+    private fun keptLayout() = currentLayout().copy(mode = if (mode == MODE_CONTINUOUS) mode else chosenMode)
 
     private fun setFolder(folder: String, layout: FolderLayout?) {
         folderLayout = layout
@@ -844,7 +870,7 @@ class ViewerActivity : AppCompatActivity() {
         val path = layoutFolder() ?: return
         val now = folderLayout
         if (folder == now is FolderLayout.Frozen) return
-        setFolder(path, if (now is FolderLayout.Frozen) now.thawed() else FolderLayout.Frozen(currentLayout(), folderDirection()))
+        setFolder(path, if (now is FolderLayout.Frozen) now.thawed() else FolderLayout.Frozen(keptLayout(), folderDirection()))
         val oldMode = mode
         if (reloadLayout()) attach()
         if (mode != oldMode) prepareStripAhead()
@@ -874,6 +900,7 @@ class ViewerActivity : AppCompatActivity() {
         hideHintNow()
         backPage = -1
         detection = null
+        layoutPicked = false
         resolveLayout()
 
         lateDetectionJob?.cancel()
@@ -1148,15 +1175,15 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * How items map to pages: in paged reading, the spread engine's pairs in two-page
-     * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]);
-     * otherwise a page an item.
+     * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]),
+     * left or right; otherwise a page an item.
      */
     private fun buildLayout(): PageLayout {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
         if (spread) return PageLayout.of(Spreads.pair(a, Spreads.Options(prefs.coverAlone, shifted)), spread = true, rtl = rtl)
-        if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
+        if (spreadDisplay == SpreadDisplay.SPLIT && !topToBottom() && (0 until a.size).any { a.splittable(it) }) {
             return PageLayout.split(a.size, rtl) { a.splittable(it) }
         }
         return PageLayout(false, rtl)
@@ -1190,7 +1217,8 @@ class ViewerActivity : AppCompatActivity() {
     /**
      * Builds a fresh adapter for the current layout. A [RecyclerView.Adapter] has
      * a fixed item view type, so changing the mode, spread or reading direction
-     * requires a new instance. These are only emitted from the UI thread.
+     * requires a new instance. Paged reading top to bottom turns the pager upright.
+     * These are only emitted from the UI thread.
      */
     private fun attach() {
         val src = source ?: return
@@ -1230,6 +1258,7 @@ class ViewerActivity : AppCompatActivity() {
         // every layout change, so the already-opened source is laid in again.
         if (mode != MODE_PAGED) stripAhead?.let { a.append(it) }
         if (mode == MODE_PAGED) {
+            pager.orientation = if (topToBottom()) ViewPager2.ORIENTATION_VERTICAL else ViewPager2.ORIENTATION_HORIZONTAL
             pager.layoutDirection =
                 if (readingDir == "rtl") View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             vertical.visibility = View.GONE
@@ -1257,7 +1286,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun chapterPages() = source?.pageCount ?: 0
 
     /**
-     * Opens the chapter after this one so vertical and long-strip reading can be
+     * Opens the chapter after this one so continuous reading can be
      * rolled straight into it. Nothing is on screen yet: once its pages are open
      * they are laid in behind the current chapter's, and scrolling simply reaches
      * them, exactly like scrolling between two pages of one archive.
@@ -1381,14 +1410,14 @@ class ViewerActivity : AppCompatActivity() {
         updateEndCard()
     }
 
-    private fun adapterMode(): PageAdapter.Mode = when (mode) {
-        MODE_VERTICAL -> PageAdapter.Mode.VERTICAL
-        MODE_LONGSTRIP -> PageAdapter.Mode.LONG_STRIP
-        else -> PageAdapter.Mode.PAGED
-    }
+    private fun adapterMode(): PageAdapter.Mode =
+        if (mode == MODE_CONTINUOUS) PageAdapter.Mode.CONTINUOUS else PageAdapter.Mode.PAGED
 
-    /** Two-page reading for the orientation pages are laid out for: while turned for a wide page, the one that comes back. */
-    private fun useSpread() = mode == MODE_PAGED && twoPage.spread(spreadRotation.layoutLandscape(landscape()))
+    /**
+     * Two-page reading, paged left or right only, for the orientation pages are laid out
+     * for: while turned for a wide page, the one that comes back.
+     */
+    private fun useSpread() = mode == MODE_PAGED && !topToBottom() && twoPage.spread(spreadRotation.layoutLandscape(landscape()))
 
     private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -1409,7 +1438,8 @@ class ViewerActivity : AppCompatActivity() {
     /** The item on screen: tracked in paged reading, where a page can span two; the page's otherwise. */
     private fun shownItem() = if (mode == MODE_PAGED) currentItem else pageToItem(currentIndex)
 
-    private fun brightnessGestureEnabled() = prefs.brightnessGesture && mode == MODE_PAGED
+    /** Brightness by vertical drag, in pages swiped sideways: swiping up turns the page top to bottom. */
+    private fun brightnessGestureEnabled() = prefs.brightnessGesture && mode == MODE_PAGED && !topToBottom()
 
     private fun spacingPx(): Int =
         (spacingDp * resources.displayMetrics.density).toInt()
@@ -1490,9 +1520,13 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    /** A tap at ([x], [y]), as fractions of the page view: turns a page or spread, or toggles the UI. */
+    /**
+     * A tap at ([x], [y]), as fractions of the page view: turns a page or spread, or toggles
+     * the UI. A continuous column only toggles it; top to bottom takes top / bottom zones
+     * unless the setting names others ([TapZones.forBook]).
+     */
     private fun onTap(x: Float, y: Float) {
-        val zones = if (mode == MODE_LONGSTRIP) TapZones.DISABLED else TapZones.of(prefs.tapZones)
+        val zones = if (mode == MODE_CONTINUOUS) TapZones.DISABLED else prefs.tapZonesFor(topToBottom())
         val rtl = readingDir == "rtl" && mode == MODE_PAGED
         when (zones.action(x, y, rtl, prefs.mirrorTapZones)) {
             TapZones.Action.PREVIOUS -> turn(-1)
@@ -1569,11 +1603,8 @@ class ViewerActivity : AppCompatActivity() {
         invalidateOptionsMenu()
     }
 
-    private fun modeLabel(): String = when (mode) {
-        MODE_VERTICAL -> getString(R.string.page_mode_vertical)
-        MODE_LONGSTRIP -> getString(R.string.page_mode_longstrip)
-        else -> getString(R.string.page_mode_paged)
-    }
+    private fun modeLabel(): String =
+        getString(if (mode == MODE_CONTINUOUS) R.string.page_mode_continuous else R.string.page_mode_paged)
 
     private fun updateEndCard() {
         val src = source ?: return
@@ -1584,7 +1615,7 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
         val atEnd = when (mode) {
-            MODE_LONGSTRIP -> !vertical.canScrollVertically(1)
+            MODE_CONTINUOUS -> !vertical.canScrollVertically(1)
             else -> layout.isLastItem(shownItem(), src.pageCount)
         }
         if (!atEnd) {
@@ -2171,16 +2202,23 @@ class ViewerActivity : AppCompatActivity() {
     /**
      * The user's choice of direction, kept for the book's folder (with "Per-folder layout"
      * on): alone, so the folder's other options still follow the defaults, or with its
-     * frozen layout. Its books no longer detect. Without a folder it is the default.
+     * frozen layout. Its books no longer detect. Without a folder it is the default. Top to
+     * bottom shows the chosen layout; left and right page.
      */
     private fun setReadingDir(dir: String) {
         // The direction on screen may still be chosen, to keep it from detection and the defaults.
         val changed = readingDir != dir
         if (!changed && (layoutFolder() == null || folderDirection())) return
+        val oldMode = mode
         readingDir = dir
         directionChoices++
         detectedActive = false
         detection = null
+        mode = shownMode()
+        if (mode != oldMode) {
+            stopAutoScroll()
+            if (mode == MODE_PAGED) dropStripAhead()
+        }
         val folder = layoutFolder()
         when {
             folder == null -> prefs.readingDir = dir
@@ -2191,7 +2229,8 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
         invalidateOptionsMenu()
-        if (changed) attach()
+        if (changed || mode != oldMode) attach()
+        if (mode != oldMode) prepareStripAhead()
     }
 
     /**
@@ -2231,18 +2270,25 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Lays the book out again with the direction detection gave it. */
     private fun showDetection() {
+        val oldMode = mode
         if (reloadLayout()) attach()
+        if (mode != oldMode) prepareStripAhead()
         invalidateOptionsMenu()
         syncSheet()
     }
 
+    /** The layout picked in the sheet: kept, and shown while the direction allows it (continuous reads top to bottom only). */
     private fun setPageMode(newMode: String) {
-        if (newMode == mode) return
-        stopAutoScroll()
-        mode = newMode
-        // Only the strip modes lay the next chapter in behind this one.
-        if (mode == MODE_PAGED) dropStripAhead()
+        if (newMode == chosenMode && newMode == mode) return
+        chosenMode = newMode
+        layoutPicked = true
+        val oldMode = mode
+        mode = shownMode()
         persistLayout()
+        if (mode == oldMode) return
+        stopAutoScroll()
+        // Only a continuous column lays the next chapter in behind this one.
+        if (mode == MODE_PAGED) dropStripAhead()
         attach()
         prepareStripAhead()
     }
@@ -2256,7 +2302,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun setTwoPage(value: TwoPage) {
-        if (mode != MODE_PAGED) {
+        if (mode != MODE_PAGED || topToBottom()) {
             toast(R.string.menu_spread)
             return
         }
@@ -2332,12 +2378,12 @@ class ViewerActivity : AppCompatActivity() {
             Segments(R.id.sheet_scope, listOf(R.id.btn_scope_folder to true, R.id.btn_scope_all to false), { folderScope() }) { setFolderScope(it) },
             Segments(
                 R.id.sheet_page_mode,
-                listOf(R.id.btn_mode_paged to MODE_PAGED, R.id.btn_mode_vertical to MODE_VERTICAL, R.id.btn_mode_longstrip to MODE_LONGSTRIP),
+                listOf(R.id.btn_mode_paged to MODE_PAGED, R.id.btn_mode_continuous to MODE_CONTINUOUS),
                 { mode }
             ) { setPageMode(it) },
             Segments(
                 R.id.sheet_dir,
-                listOf(R.id.btn_dir_ltr to "ltr", R.id.btn_dir_rtl to "rtl", R.id.btn_dir_auto to DIR_AUTO),
+                listOf(R.id.btn_dir_ltr to "ltr", R.id.btn_dir_rtl to "rtl", R.id.btn_dir_ttb to DIR_TTB, R.id.btn_dir_auto to DIR_AUTO),
                 { if (layoutFolder() != null && !folderDirection()) DIR_AUTO else readingDir }
             ) { if (it == DIR_AUTO) setAutoDirection() else setReadingDir(it) },
             Segments(
@@ -2433,25 +2479,21 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<TextView>(R.id.sheet_dir_hint).text = directionInfo()
             view.findViewById<TextView>(R.id.sheet_scope_hint)
                 .setText(if (folderScope()) R.string.scope_folder_hint else R.string.scope_all_hint)
-            // "Fit screen" reads as fit width in a strip; spreads are paged only, split or merged one page a screen;
-            // a long strip neither crops nor spaces.
+            // "Fit screen" reads as fit width in a column, which reads top to bottom only; two-page and
+            // spreads in one file are paged left or right only, split or merged one page a screen.
             view.findViewById<View>(R.id.btn_fit_screen).isEnabled = mode == MODE_PAGED
-            setGroupEnabled(view.findViewById(R.id.sheet_two_page), mode == MODE_PAGED)
-            setGroupEnabled(view.findViewById(R.id.sheet_spreads), mode == MODE_PAGED && !spread)
+            view.findViewById<View>(R.id.btn_mode_continuous).isEnabled = topToBottom()
+            val sideways = mode == MODE_PAGED && !topToBottom()
+            setGroupEnabled(view.findViewById(R.id.sheet_two_page), sideways)
+            setGroupEnabled(view.findViewById(R.id.sheet_spreads), sideways && !spread)
             view.findViewById<MaterialSwitch>(R.id.sheet_shift).apply {
                 isChecked = shifted
                 isEnabled = spread && favoriteFile() != null
             }
             view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
-            view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {
-                isChecked = autoCrop
-                isEnabled = mode != MODE_LONGSTRIP
-            }
+            view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).isChecked = autoCrop
             view.findViewById<TextView>(R.id.sheet_spacing_value).text = spacingLabel()
-            view.findViewById<Slider>(R.id.sheet_spacing).apply {
-                safeSet(spacingDp.toFloat())
-                isEnabled = mode != MODE_LONGSTRIP
-            }
+            view.findViewById<Slider>(R.id.sheet_spacing).safeSet(spacingDp.toFloat())
             view.findViewById<MaterialSwitch>(R.id.sheet_night).isChecked = nightFilter
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_next).isChecked = prefs.autoNext
             view.findViewById<TextView>(R.id.sheet_auto_speed_value).text = autoSpeedLabel()
@@ -2600,7 +2642,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * When on, reaching the end of a chapter opens the next one directly instead of
-     * offering the end-of-chapter prompt. In the strip modes the next chapter is
+     * offering the end-of-chapter prompt. In a continuous column the next chapter is
      * also opened right away and laid in behind this one, so reading never stops at
      * the boundary in the first place.
      */
@@ -2641,17 +2683,17 @@ class ViewerActivity : AppCompatActivity() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val dx = e.x - startX
                     val dy = e.y - startY
-                    val strip = mode != MODE_PAGED
-                    // "Forward" is leftward in a paged book (rightward in RTL) and
-                    // downward in the finger, i.e. a flick up, for a strip.
-                    val along = if (strip) -dy else if (readingDir == "rtl") dx else -dx
-                    val across = if (strip) abs(dx) else abs(dy)
+                    val upright = mode != MODE_PAGED || topToBottom()
+                    // "Forward" is leftward in a paged book (rightward in RTL) and a
+                    // flick up for a book read top to bottom, paged or continuous.
+                    val along = if (upright) -dy else if (readingDir == "rtl") dx else -dx
+                    val across = if (upright) abs(dx) else abs(dy)
                     if (tracking && along > across * 2 && along > swipeMinPx() &&
                         autoAdvance() && atChapterEnd()
                     ) {
                         openNextChapter()
                     }
-                    // Backward: rightward in a paged book (leftward in RTL), a flick down for a strip.
+                    // Backward: rightward in a paged book (leftward in RTL), a flick down top to bottom.
                     // A zoomed page panned on past its edge hands the drag back, pan included.
                     if (tracking && e.actionMasked == MotionEvent.ACTION_UP && -along > across * 2 &&
                         -along > swipeMinPx() && fromStart && atChapterStart() && !pannedAt(rv, startX, startY)
@@ -3033,7 +3075,7 @@ class ViewerActivity : AppCompatActivity() {
         private const val BRIGHTNESS_HOLD = 0.15f
 
         private const val MODE_PAGED = ReaderLayout.MODE_PAGED
-        private const val MODE_VERTICAL = ReaderLayout.MODE_VERTICAL
-        private const val MODE_LONGSTRIP = ReaderLayout.MODE_LONGSTRIP
+        private const val MODE_CONTINUOUS = ReaderLayout.MODE_CONTINUOUS
+        private const val DIR_TTB = ReaderLayout.DIR_TTB
     }
 }

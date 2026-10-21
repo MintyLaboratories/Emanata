@@ -89,8 +89,12 @@ class ViewerActivityFolderLayoutTest {
         sheet.tap(R.id.btn_fit_width)
         assertEquals("width", prefs.fit)
         assertEquals(FolderLayout.Direction("rtl"), folder())
-        prefs.pageMode = "longstrip"
+        prefs.pageMode = "continuous"
         idle()
+        // Left and right always page; the default layout shows once the folder reads top to bottom.
+        assertEquals(true, viewer.paged())
+        sheet.tap(R.id.btn_dir_ttb)
+        assertEquals(FolderLayout.Direction("ttb"), folder())
         assertEquals(false, viewer.paged())
     }
 
@@ -105,19 +109,21 @@ class ViewerActivityFolderLayoutTest {
         sheet.tap(R.id.btn_fit_width)
         assertEquals("height", prefs.fit)
         assertEquals("width", (folder() as FolderLayout.Frozen).layout.fit)
-        // And the defaults no longer reach it.
-        prefs.pageMode = "longstrip"
+        // And the default layout no longer reaches it, though the default direction does.
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
         idle()
         assertEquals(true, viewer.paged())
+        assertEquals(androidx.viewpager2.widget.ViewPager2.ORIENTATION_VERTICAL, viewer.findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.viewer_pager).orientation)
     }
 
     @Test
     fun allBooksReturnsToTheDefaultsButKeepsTheDirection() {
-        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout("longstrip", "rtl", "width", TwoPage.ON, true, 16)))
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout("continuous", "ttb", "width", TwoPage.ON, true, 16)))
         val viewer = launch()
         assertEquals(false, viewer.paged())
         ReaderSheet(viewer).tap(R.id.btn_scope_all)
-        assertEquals(FolderLayout.Direction("rtl"), folder())
+        assertEquals(FolderLayout.Direction("ttb"), folder())
         assertEquals(true, viewer.paged())
     }
 
@@ -134,10 +140,11 @@ class ViewerActivityFolderLayoutTest {
     }
 
     @Test
-    fun allBooksIntoALongStripLaysTheNextChapterInBehind() {
+    fun allBooksIntoAColumnLaysTheNextChapterInBehind() {
         Fixtures.zip(File(dir, "Series A 002.cbz"), *(0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }.toTypedArray())
-        prefs.pageMode = "longstrip"
-        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout()))
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout(), dirChosen = false))
         val viewer = launch()
         assertEquals(true, viewer.paged())
         ReaderSheet(viewer).tap(R.id.btn_scope_all)

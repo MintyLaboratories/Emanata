@@ -59,14 +59,15 @@ class Prefs(context: Context) {
         get() = bool(KEY_KEEP_ON, false)
         set(v) = put(KEY_KEEP_ON, v)
 
+    /** ltr | rtl | ttb ([ReaderLayout.DIRS]) */
     var readingDir: String
-        get() = str(KEY_READING_DIR, "ltr")
-        set(v) = put(KEY_READING_DIR, v)
+        get() = ReaderLayout.dirOf(sp.getString(KEY_READING_DIR, null))
+        set(v) = put(KEY_READING_DIR, ReaderLayout.dirOf(v))
 
-    /** paged | vertical | longstrip */
+    /** The layout: paged | continuous ([ReaderLayout.MODES]); continuous reads top to bottom only. */
     var pageMode: String
-        get() = str(KEY_PAGE_MODE, "paged")
-        set(v) = put(KEY_PAGE_MODE, v)
+        get() = ReaderLayout.modeOf(sp.getString(KEY_PAGE_MODE, null))
+        set(v) = put(KEY_PAGE_MODE, ReaderLayout.modeOf(v))
 
     /** screen | width | height | stretch */
     var fit: String
@@ -151,7 +152,7 @@ class Prefs(context: Context) {
         get() = bool(KEY_NIGHT, false)
         set(v) = put(KEY_NIGHT, v)
 
-    /** Trim blank borders from pages in paged and vertical modes. */
+    /** Trim blank borders from pages. */
     var autoCrop: Boolean
         get() = bool(KEY_AUTO_CROP, false)
         set(v) = put(KEY_AUTO_CROP, v)
@@ -187,6 +188,9 @@ class Prefs(context: Context) {
     var tapZones: String
         get() = TapZones.of(sp.getString(KEY_TAP_ZONE_LAYOUT, null)).value
         set(v) = put(KEY_TAP_ZONE_LAYOUT, TapZones.of(v).value)
+
+    /** The tap zones a book that reads [topToBottom] or not uses ([TapZones.forBook]). */
+    fun tapZonesFor(topToBottom: Boolean): TapZones = TapZones.forBook(sp.getString(KEY_TAP_ZONE_LAYOUT, null), topToBottom)
 
     /** Swap the left and right tap zones in right-to-left books. */
     var mirrorTapZones: Boolean
@@ -675,6 +679,13 @@ class Prefs(context: Context) {
                 val on = stored[OLD_TWO_PAGE] as? Boolean
                 if (KEY_TWO_PAGE !in stored && on != null) out[KEY_TWO_PAGE] = TwoPage.of(on).key
                 out[OLD_TWO_PAGE] = null
+            }
+            val mode = stored[KEY_PAGE_MODE]
+            if (mode == ReaderLayout.OLD_VERTICAL || mode == ReaderLayout.OLD_LONGSTRIP) {
+                // Both read top to bottom: vertical pages, the long strip is continuous.
+                val (layout, dir) = ReaderLayout.migrated(mode as String, null)
+                out[KEY_PAGE_MODE] = layout
+                out[KEY_READING_DIR] = dir
             }
             val locale = stored[KEY_LOCALE]
             if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]

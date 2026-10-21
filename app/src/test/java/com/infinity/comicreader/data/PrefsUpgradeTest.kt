@@ -371,4 +371,24 @@ class PrefsUpgradeTest {
         assertFalse(TwoPage.OFF.spread(landscape = true))
         assertEquals(TwoPage.entries.map { it.key }, context.resources.getStringArray(R.array.two_page_values).toList())
     }
+
+    @Test
+    fun retiredPageModesReadTopToBottom() {
+        assertEquals(
+            mapOf("pref_page_mode" to "paged", "pref_reading_dir" to "ttb"),
+            Prefs.upgrade(mapOf("pref_page_mode" to "vertical", "pref_reading_dir" to "rtl"))
+        )
+        assertEquals(mapOf("pref_page_mode" to "continuous", "pref_reading_dir" to "ttb"), Prefs.upgrade(mapOf("pref_page_mode" to "longstrip")))
+        assertEquals(emptyMap<String, Any?>(), Prefs.upgrade(mapOf("pref_page_mode" to "paged", "pref_reading_dir" to "rtl")))
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_page_mode" to "longstrip", "pref_reading_dir" to "ltr"))
+        assertEquals("continuous", prefs.pageMode)
+        assertEquals("ttb", prefs.readingDir)
+    }
+
+    @Test
+    fun layoutsAndDirectionsMatchTheirSettings() {
+        assertEquals(ReaderLayout.MODES, context.resources.getStringArray(R.array.page_mode_values).toList())
+        assertEquals(ReaderLayout.DIRS, context.resources.getStringArray(R.array.reading_dir_values).toList())
+    }
 }

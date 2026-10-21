@@ -220,15 +220,22 @@ class Library(context: Context) {
         }
     }
 
-    /** Brings folder layouts older versions wrote into today's form ([FolderLayout.migrate]). */
+    /**
+     * Brings folder layouts older versions wrote into today's form ([FolderLayout.migrate]),
+     * and retired modes into today's layout and direction ([FolderLayout.decode]).
+     */
     fun migrateFolderLayouts(defaults: ReaderLayout) {
         synchronized(LOCK) {
             val all = readObject(KEY_SERIES)
             var changed = false
             for (k in all.keys().asSequence().toList()) {
                 val o = all.optJSONObject(k) ?: continue
-                if (!FolderLayout.isLegacy(o)) continue
-                all.put(k, FolderLayout.migrate(o, defaults).encode())
+                val now = when {
+                    FolderLayout.isLegacy(o) -> FolderLayout.migrate(o, defaults)
+                    FolderLayout.hasRetiredMode(o) -> FolderLayout.decode(o, defaults)
+                    else -> continue
+                }
+                all.put(k, now.encode())
                 changed = true
             }
             if (changed) sp.edit().putString(KEY_SERIES, all.toString()).apply()

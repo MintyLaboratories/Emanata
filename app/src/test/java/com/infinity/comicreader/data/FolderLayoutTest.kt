@@ -20,7 +20,7 @@ class FolderLayoutTest {
 
     private val defaults = ReaderLayout(fit = "width", autoCrop = true, spacing = 8)
 
-    private val frozen = ReaderLayout("vertical", "rtl", "height", TwoPage.LANDSCAPE, autoCrop = false, spacing = 12)
+    private val frozen = ReaderLayout("paged", "rtl", "height", TwoPage.LANDSCAPE, autoCrop = false, spacing = 12)
 
     @Test
     fun aDirectionOverridesOnlyTheDirection() {
@@ -48,7 +48,11 @@ class FolderLayoutTest {
 
     @Test
     fun bothFormsReadBackAsWritten() {
-        val forms = listOf(FolderLayout.Direction("rtl"), FolderLayout.Direction("ltr"), FolderLayout.Frozen(frozen), FolderLayout.Frozen(frozen, false))
+        val column = ReaderLayout("continuous", "ttb", "width", spacing = 0)
+        val forms = listOf(
+            FolderLayout.Direction("rtl"), FolderLayout.Direction("ltr"), FolderLayout.Direction("ttb"),
+            FolderLayout.Frozen(frozen), FolderLayout.Frozen(frozen, false), FolderLayout.Frozen(column)
+        )
         for (layout in forms) {
             val stored = JSONObject(layout.encode().toString())
             assertFalse(FolderLayout.isLegacy(stored))
@@ -70,9 +74,33 @@ class FolderLayoutTest {
     fun aLegacyEntryReadsAsFrozenWithTheDefaultsFilledIn() {
         assertTrue(FolderLayout.isLegacy(legacy()))
         assertEquals(
-            FolderLayout.Frozen(ReaderLayout("vertical", "rtl", "width", TwoPage.ON, autoCrop = true, spacing = 8)),
+            FolderLayout.Frozen(ReaderLayout("paged", "rtl", "width", TwoPage.ON, autoCrop = true, spacing = 8)),
+            FolderLayout.decode(legacy(two = true), defaults)
+        )
+    }
+
+    @Test
+    fun retiredModesReadTopToBottomWithTheDirectionChosen() {
+        // Vertical paged one page a screen; the long strip was one column that never cropped.
+        assertEquals(
+            FolderLayout.Frozen(ReaderLayout("paged", "ttb", "width", TwoPage.ON, autoCrop = true, spacing = 8)),
             FolderLayout.decode(legacy(mode = "vertical", two = true), defaults)
         )
+        assertEquals(
+            FolderLayout.Frozen(ReaderLayout("continuous", "ttb", "width", autoCrop = false, spacing = 8)),
+            FolderLayout.decode(legacy(mode = "longstrip"), defaults)
+        )
+        val unchosen = JSONObject().put("all", true).put("mode", "longstrip").put("dir", "rtl").put("chosen", false)
+        assertTrue(FolderLayout.hasRetiredMode(unchosen))
+        assertFalse(FolderLayout.isLegacy(unchosen))
+        assertEquals(FolderLayout.Frozen(ReaderLayout("continuous", "ttb")), FolderLayout.decode(unchosen))
+    }
+
+    @Test
+    fun aRetiredModeMatchingTheDefaultsKeepsOnlyTopToBottom() {
+        val column = ReaderLayout("continuous", "ttb", "width")
+        assertEquals(FolderLayout.Direction("ttb"), FolderLayout.migrate(legacy(mode = "longstrip"), column))
+        assertEquals(FolderLayout.Direction("ttb"), FolderLayout.migrate(legacy(mode = "vertical"), column.copy(mode = "paged")))
     }
 
     @Test
@@ -91,13 +119,22 @@ class FolderLayoutTest {
     fun theLibraryMigratesOnlyLegacyEntries() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit()
-            .putString("series", JSONObject().put("/a", legacy()).put("/b", legacy(mode = "longstrip")).put("/c", FolderLayout.Frozen(frozen).encode()).toString())
+            .putString(
+                "series",
+                JSONObject().put("/a", legacy()).put("/b", legacy(mode = "longstrip")).put("/c", FolderLayout.Frozen(frozen).encode())
+                    .put("/e", JSONObject().put("all", true).put("mode", "vertical").put("dir", "ltr").put("fit", "screen")).toString()
+            )
             .commit()
         val library = Library(context)
         library.migrateFolderLayouts(defaults)
         assertEquals(FolderLayout.Direction("rtl"), library.folderLayout("/a"))
-        assertEquals(FolderLayout.Frozen(ReaderLayout("longstrip", "rtl", "width", TwoPage.OFF, true, 8)), library.folderLayout("/b"))
+        assertEquals(FolderLayout.Frozen(ReaderLayout("continuous", "ttb", "width", TwoPage.OFF, false, 8)), library.folderLayout("/b"))
         assertEquals(FolderLayout.Frozen(frozen), library.folderLayout("/c"))
+        // A frozen entry in a retired mode is written again in today's form.
+        val stored = JSONObject(context.getSharedPreferences("library", Context.MODE_PRIVATE).getString("series", null)!!)
+        assertEquals("paged", stored.getJSONObject("/e").getString("mode"))
+        assertEquals("ttb", stored.getJSONObject("/e").getString("dir"))
+        assertEquals(ReadingDirection.TTB, library.folderDirections()["/e"])
         assertEquals(ReadingDirection.RTL, library.folderDirections()["/a"])
         library.setFolderLayout("/d", FolderLayout.Frozen(frozen, dirChosen = false))
         assertFalse("/d" in library.folderDirections())

@@ -164,7 +164,8 @@ class ViewerActivityRepeatedBackTest {
 
     @Test
     fun inAStripTheBackThatScrollsTheFirstPageToItsTopDoesNotCount() {
-        prefs.pageMode = "longstrip"
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
         val viewer = launch(tallSecond(), 0)
         val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
         strip.scrollBy(0, 100)
@@ -210,7 +211,8 @@ class ViewerActivityRepeatedBackTest {
 
     @Test
     fun aStripSwipesBackWithAFlickDown() {
-        prefs.pageMode = "longstrip"
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
         val viewer = launch(second, 0)
         val rv = viewer.list()
         val x = rv.width / 2f

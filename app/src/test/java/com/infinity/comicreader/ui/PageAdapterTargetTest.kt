@@ -272,9 +272,9 @@ class PageAdapterTargetTest {
     }
 
     @Test
-    fun aNewFitLeavesLongStripsAsTheyAre() {
+    fun aNewFitLeavesAColumnAsItIs() {
         val source = RecordingSource(2)
-        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.LONG_STRIP, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.CONTINUOUS, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val rv = RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context)
             this.adapter = adapter
@@ -293,6 +293,24 @@ class PageAdapterTargetTest {
         assertSame(shown, shownBitmap(image))
         assertEquals(requests, source.requests.toList())
         assertTrue(requests.all { it.second == Target(1848, 0) })
+        adapter.release()
+    }
+
+    @Test
+    fun aColumnLeavesThePageGapBelowEachPage() {
+        val adapter = PageAdapter(source = RecordingSource(2), mode = PageAdapter.Mode.CONTINUOUS, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        adapter.spacingPx = 24
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context)
+            this.adapter = adapter
+            layOut(2000, 3000)
+        }
+        val holder = rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder
+        idle { holder.images[0].drawable != null }
+        rv.layOut(2000, 3000)
+        assertEquals(3000 + 24, holder.container.layoutParams.height)
+        assertEquals(24, holder.container.paddingBottom)
+        assertEquals(0, holder.container.paddingTop)
         adapter.release()
     }
 }

@@ -38,5 +38,12 @@ enum class TapZones(val value: String) {
         val DEFAULT = LEFT_RIGHT
 
         fun of(value: String?): TapZones = entries.firstOrNull { it.value == value } ?: DEFAULT
+
+        /**
+         * The zones a book uses with the [stored] setting: top / bottom, the natural ones,
+         * for a book that reads [topToBottom] while none is set; else the setting's.
+         */
+        fun forBook(stored: String?, topToBottom: Boolean): TapZones =
+            if (topToBottom && entries.none { it.value == stored }) TOP_BOTTOM else of(stored)
     }
 }

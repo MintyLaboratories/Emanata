@@ -52,18 +52,17 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Renders [PageSource] pages into zoomable images.
  *
- * Three layouts share one adapter:
- *  - [Mode.PAGED]     horizontal [androidx.viewpager2.widget.ViewPager2], one page
- *                     (or a two-page spread) at a time;
- *  - [Mode.VERTICAL]  vertical list, one full-height page per screen;
- *  - [Mode.LONG_STRIP] continuous vertical strip sized from each page's aspect
- *                     ratio with no gaps, as used by webtoons/manhwa.
+ * Two layouts share one adapter:
+ *  - [Mode.PAGED]      a [androidx.viewpager2.widget.ViewPager2], one page (or a
+ *                      two-page spread) at a time, swiped sideways or up;
+ *  - [Mode.CONTINUOUS] one column read top to bottom, each item sized from its page's
+ *                      aspect ratio with the page gap below it (none for webtoons).
  *
  * Decoding happens off the main thread, at most [DECODE_THREADS] pages at a time.
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
  * the next [preload] pages are decoded ahead of time. With [autoCrop] blank borders
- * are trimmed (never in long-strip mode, where the gaps belong to the art). A page
+ * are trimmed. A page
  * that fails to decode shows an [ErrorPageDrawable] naming it and why, and is not
  * retried until the decode size changes; one that failed for lack of memory or a
  * read error is tried again the next time it is shown.
@@ -83,7 +82,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * show at one height ([PairCrop]), from what auto-crop found on each, kept in [bounds];
  * a page not measured yet is measured first. Paired pages meet at the gutter.
  *
- * Vertical and long-strip layouts may hold more than one chapter ([append]), with
+ * A continuous column may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
  * their absolute number in the strip, so the cache survives trims untouched.
  */
@@ -105,9 +104,9 @@ class PageAdapter(
     private val onLoaded: ((Int) -> Unit)? = null
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
-    enum class Mode { PAGED, VERTICAL, LONG_STRIP }
+    enum class Mode { PAGED, CONTINUOUS }
 
-    /** Margin between pages; ignored for long strips, which must be contiguous. */
+    /** Margin around each paged page, or the gap below each page of a continuous column. */
     var spacingPx: Int = 0
         set(value) {
             if (field != value) {
@@ -235,8 +234,8 @@ class PageAdapter(
     )
 
     /**
-     * The chapters currently in the strip, in reading order. A vertical or long-strip
-     * reader with "auto next chapter" on appends the following chapter, so scrolling
+     * The chapters currently in the strip, in reading order. A continuous reader with
+     * "auto next chapter" on appends the following chapter, so scrolling
      * simply continues into it instead of stopping at the chapter's end. Chapters
      * already read past are trimmed away without renumbering the decoded-page cache.
      *
@@ -280,7 +279,7 @@ class PageAdapter(
         }
         layoutListener = listener
         recyclerView.addOnLayoutChangeListener(listener)
-        if (mode == Mode.LONG_STRIP) learnAspect()
+        if (mode == Mode.CONTINUOUS) learnAspect()
     }
 
     override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
@@ -725,11 +724,11 @@ class PageAdapter(
         }
     }
 
-    /** Applies the per-mode container geometry (long-strip height, or page spacing). */
+    /** Applies the per-mode container geometry: a column item's height with its gap below, or page spacing. */
     private fun prepareContainer(holder: PageHolder, pageIndex: Int) {
-        if (mode == Mode.LONG_STRIP) {
+        if (mode == Mode.CONTINUOUS) {
             applyHeight(holder.container, longStripHeight(pageIndex))
-            holder.container.setPadding(0, 0, 0, 0)
+            holder.container.setPadding(0, 0, 0, spacingPx)
         } else if (holder.container is FrameLayout) {
             holder.container.setPadding(spacingPx, spacingPx, spacingPx, spacingPx)
         }
@@ -856,7 +855,7 @@ class PageAdapter(
     /** Decodes the [preload] parts on the items after [position] into the cache. */
     private fun prefetchAfter(position: Int) {
         prefetchFrom = position
-        var ahead = if (mode == Mode.LONG_STRIP) minOf(preload, MAX_STRIP_PRELOAD) else preload
+        var ahead = if (mode == Mode.CONTINUOUS) minOf(preload, MAX_STRIP_PRELOAD) else preload
         var item = position + 1
         while (ahead > 0 && item < itemCount) {
             for (part in strip.parts(item)) {
@@ -874,11 +873,11 @@ class PageAdapter(
         }
     }
 
-    // ------------------------------------------------------------------ long strip
+    // ------------------------------------------------------------------ continuous
 
-    /** Learns each page's real aspect ratio once its bitmap arrives, for long strips. */
+    /** Learns each page's real aspect ratio once its bitmap arrives, for a continuous column. */
     private fun updateLongStripAspect(holder: PageHolder, pageIndex: Int, bitmap: Bitmap) {
-        if (mode != Mode.LONG_STRIP || bitmap.width <= 0) return
+        if (mode != Mode.CONTINUOUS || bitmap.width <= 0) return
         if (pageIndex == 0) learnedAspect = bitmap.height.toFloat() / bitmap.width.toFloat()
         applyHeight(holder.container, longStripHeight(pageIndex))
     }
@@ -895,7 +894,7 @@ class PageAdapter(
 
     private fun longStripHeight(page: Int): Int {
         val width = itemSize()[0]
-        return PageTargets.stripHeight(width, aspects[page] ?: learnedAspect)
+        return PageTargets.stripHeight(width, aspects[page] ?: learnedAspect, spacingPx)
     }
 
     private fun learnAspect() {

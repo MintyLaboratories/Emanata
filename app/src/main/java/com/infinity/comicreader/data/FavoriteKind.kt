@@ -68,6 +68,17 @@ object FavoriteClassifier {
         return if (deeper > comics) FavoriteKind.LIBRARY else FavoriteKind.SET
     }
 
+    /**
+     * The kind of a folder with [books] books, [images] images and [folders]
+     * subfolders when that alone settles it, without looking inside: a root, or too
+     * few images for loose pages and no more subfolders than books (a Set). Else null.
+     */
+    fun quickKind(books: Int, images: Int, folders: Int, isRoot: Boolean): FavoriteKind? = when {
+        isRoot -> FavoriteKind.LIBRARY
+        images < MIN_PAGES && folders <= books -> FavoriteKind.SET
+        else -> null
+    }
+
     /** True when [files] are the pages of one comic. */
     fun isLooseComic(files: List<String>): Boolean {
         val images = files.filter { Formats.isImageName(it) }

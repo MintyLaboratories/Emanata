@@ -33,6 +33,16 @@ class FavoriteKindTest {
     private fun kind(dir: Dir, root: Boolean = false) = FavoriteClassifier.classifyFolder(dir, root)
 
     @Test
+    fun theTopLevelAloneSettlesRootsAndPlainSets() {
+        assertEquals(FavoriteKind.LIBRARY, FavoriteClassifier.quickKind(0, 0, 9, isRoot = true))
+        assertEquals(FavoriteKind.SET, FavoriteClassifier.quickKind(3, 1, 3, isRoot = false))
+        assertEquals(FavoriteKind.SET, kind(Dir(issues(3) + "cover.jpg", List(3) { Dir(issues(9)) })))
+        // More subfolders than books, or enough images for loose pages: look inside.
+        assertNull(FavoriteClassifier.quickKind(2, 0, 3, isRoot = false))
+        assertNull(FavoriteClassifier.quickKind(3, 5, 0, isRoot = false))
+    }
+
+    @Test
     fun loosePagesAreAComic() {
         assertEquals(FavoriteKind.COMIC, kind(Dir(pages(5))))
         assertEquals(FavoriteKind.COMIC, kind(Dir(pages(12) + "ComicInfo.xml" + "cover.jpg")))

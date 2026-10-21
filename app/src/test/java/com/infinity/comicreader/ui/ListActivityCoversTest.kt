@@ -137,6 +137,38 @@ class ListActivityCoversTest {
         assertEquals(View.GONE, badges[0].visibility)
     }
 
+    /** The titles shown once a background look into the folder has landed. */
+    private fun settledTitles(): List<String> {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        repeat(20) {
+            idle()
+            Thread.sleep(20)
+        }
+        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        recycler.measure(
+            View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY)
+        )
+        recycler.layout(0, 0, 1600, 2400)
+        return (0 until recycler.childCount).mapNotNull {
+            recycler.getChildAt(it).findViewById<TitleView>(R.id.title)?.text?.toString()
+        }
+    }
+
+    @Test
+    fun aSetWithManySubfoldersIsShortenedOnceLookedInto() {
+        for (name in listOf("Issue A", "Issue B", "Issue C", "Issue D")) File(dir, name).mkdirs()
+        assertTrue(settledTitles().containsAll(listOf("1.cbz", "A")))
+    }
+
+    @Test
+    fun aLibraryKeepsItsTitles() {
+        for (name in listOf("Issue A", "Issue B", "Issue C", "Issue D")) {
+            File(File(dir, name).apply { mkdirs() }, "one.cbz").createNewFile()
+        }
+        assertTrue(settledTitles().containsAll(listOf("Issue 1.cbz", "Issue A")))
+    }
+
     @Test
     fun titlesInsideASetLeaveOutTheSeriesName() {
         assertEquals(listOf("1.cbz", "2.cbz", "3.cbz"), titles())

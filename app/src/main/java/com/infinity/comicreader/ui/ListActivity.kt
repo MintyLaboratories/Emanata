@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.SystemClock
+import android.util.LruCache
 import android.provider.Settings
 import android.text.InputType
 import android.view.Menu
@@ -127,8 +128,11 @@ class ListActivity : AppCompatActivity() {
     private lateinit var kindCache: FavoriteKindCache
     private val shown = ArrayList<BookEntry>()
 
-    /** What [setPrefixOf] found for the folder browsed. */
+    /** The series name left out of titles in the Set browsed, or null. */
     private var setPrefix: String? = null
+
+    /** Kinds of folders browsed that their listing did not settle, with the modification time found at. */
+    private val folderKinds = LruCache<String, Pair<Long, FavoriteKind>>(256)
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -468,26 +472,50 @@ class ListActivity : AppCompatActivity() {
 
         showProgress(true)
         launchListing {
-            val (list, prefix) = withContext(AppDispatchers.io) {
+            val (list, prefix, kind) = withContext(AppDispatchers.io) {
                 val entries = buildDirectoryEntries(dir)
-                entries to setPrefixOf(dir, entries)
+                val prefix = sharedPrefixOf(entries)
+                Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
             }
-            setPrefix = prefix
+            setPrefix = prefix.takeIf { kind == FavoriteKind.SET }
             progress.visibility = View.GONE
             displayEntries(list)
             if (highlight != null) scrollToHighlight(highlight)
+            // A folder its listing does not settle is looked into after it shows.
+            if (prefix != null && kind == null) {
+                val found = withContext(AppDispatchers.io) {
+                    val time = dir.lastModified()
+                    FavoriteClassifier.classify(dir, isRoot = atRoot).also { folderKinds.put(dir.absolutePath, time to it) }
+                }
+                if (found == FavoriteKind.SET) {
+                    setPrefix = prefix
+                    applyFilterAndSort()
+                }
+            }
         }
     }
 
     /**
-     * The series name every item of [dir] starts with, to leave out of their titles,
-     * when [dir] is a Set and the setting asks for it. Loose images are left out.
+     * The series name every item of a folder listed as [entries] starts with, to
+     * leave out of their titles inside a Set, when the setting asks for it. Loose
+     * images are left out.
      */
-    private fun setPrefixOf(dir: File, entries: List<BookEntry>): String? {
+    private fun sharedPrefixOf(entries: List<BookEntry>): String? {
         if (!prefs.shortenPrefixes) return null
-        val prefix = TitlePrefix.common(entries.filter { it.type != EntryType.IMAGE }.map { it.name }) ?: return null
-        val isRoot = roots.any { it.path == dir.absolutePath }
-        return prefix.takeIf { FavoriteClassifier.classify(dir, isRoot) == FavoriteKind.SET }
+        return TitlePrefix.common(entries.filter { it.type != EntryType.IMAGE }.map { it.name })
+    }
+
+    /** The kind of [dir] listed as [entries] when known without looking into its subfolders. */
+    private fun knownKindOf(dir: File, entries: List<BookEntry>): FavoriteKind? {
+        val path = dir.absolutePath
+        folderKinds.get(path)?.let { (time, kind) -> if (time == dir.lastModified()) return kind }
+        val visible = entries.filter { !it.name.startsWith(".") }
+        return FavoriteClassifier.quickKind(
+            books = visible.count { it.type == EntryType.ARCHIVE || it.type == EntryType.PDF },
+            images = visible.count { it.type == EntryType.IMAGE },
+            folders = visible.count { it.isDir },
+            isRoot = roots.any { it.path == path }
+        )
     }
 
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */

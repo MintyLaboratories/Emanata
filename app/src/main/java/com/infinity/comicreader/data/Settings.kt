@@ -19,6 +19,7 @@ data class ListSettings(
     /** Each tab's sort and filter, by tab name. */
     val sorts: Map<String, TabSort>,
     val filters: Map<String, LibraryFilter>,
+    val pinchPeek: PeekMode,
     val titleDisplay: TitleDisplay,
     val shortenPrefixes: Boolean,
     val pathView: Boolean,
@@ -38,6 +39,7 @@ data class ListSettings(
             cropAnchor = p.cropAnchor,
             sorts = Prefs.TABS.associateWith { p.sort(it) },
             filters = Prefs.TABS.associateWith { p.filter(it) },
+            pinchPeek = p.pinchPeek,
             titleDisplay = p.titleDisplay,
             shortenPrefixes = p.shortenPrefixes,
             pathView = p.listPathView,

@@ -271,6 +271,13 @@
             app:key="pref_group_favorites"
             app:summary="@string/pref_group_favorites_desc"
             app:title="@string/pref_group_favorites" />
+        <ListPreference
+            app:defaultValue="peek_open"
+            app:entries="@array/pinch_peek_entries"
+            app:entryValues="@array/pinch_peek_values"
+            app:key="pref_pinch_peek"
+            app:title="@string/pref_pinch_peek"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_data">

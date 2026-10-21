@@ -79,6 +79,13 @@ class PrefsUpgradeTest {
     }
 
     @Test
+    fun pinchToPeekDefaultsToPeekAndOpen() {
+        assertEquals(PeekMode.PEEK_OPEN, Prefs(context).pinchPeek)
+        Prefs(context).pinchPeek = PeekMode.OFF
+        assertEquals(PeekMode.OFF, Prefs(context).pinchPeek)
+    }
+
+    @Test
     fun tapZonesSwitchBecomesALayout() {
         assertEquals(
             mapOf("pref_tap_zone_layout" to "left_right", "pref_tap_zones" to null),

@@ -163,6 +163,9 @@ class BookAdapter(
     fun isFullWidth(position: Int): Boolean =
         (position == 0 && header != null) || items.getOrNull(position - itemOffset) is SectionRow
 
+    /** The entry at adapter [position], or null for a header or section row. */
+    fun entryAt(position: Int): BookEntry? = items.getOrNull(position - itemOffset) as? BookEntry
+
     /** Adapter position of the entry at [path], or -1. */
     fun positionOf(path: String): Int {
         val i = items.indexOfFirst { it is BookEntry && it.path == path }

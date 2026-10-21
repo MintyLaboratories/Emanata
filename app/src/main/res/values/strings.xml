@@ -367,6 +367,11 @@
     <string name="confirm_mark_unread_title">Mark all as unread?</string>
     <string name="confirm_mark_unread_msg">Clears the read mark of every book directly in ^1. Reading progress is kept.</string>
 
+    <string name="pref_pinch_peek">Pinch to peek</string>
+    <string name="peek_off">Off</string>
+    <string name="peek_only">Peek</string>
+    <string name="peek_open">Peek &amp; open</string>
+    <string name="menu_peek">Peek</string>
     <string name="sort_by">Sort by</string>
     <string name="sort_then">Then by</string>
     <string name="sort_none">None</string>
@@ -433,6 +438,17 @@
         <item>first_favorite</item>
         <item>recent_favorite</item>
         <item>custom</item>
+    </string-array>
+
+    <string-array name="pinch_peek_entries">
+        <item>@string/peek_off</item>
+        <item>@string/peek_only</item>
+        <item>@string/peek_open</item>
+    </string-array>
+    <string-array name="pinch_peek_values">
+        <item>off</item>
+        <item>peek</item>
+        <item>peek_open</item>
     </string-array>
 
     <string-array name="theme_entries">

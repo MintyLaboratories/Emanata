@@ -252,6 +252,11 @@ class Prefs(context: Context) {
 
     fun setFilter(tab: String, filter: LibraryFilter) = put(filterKey(tab), filter.encode().ifEmpty { null })
 
+    /** What spreading two fingers on a comic in the library does. */
+    var pinchPeek: PeekMode
+        get() = PeekMode.of(sp.getString(KEY_PINCH_PEEK, null))
+        set(v) = put(KEY_PINCH_PEEK, v.key)
+
     var titleDisplay: TitleDisplay
         get() = TitleDisplay.of(sp.getString(KEY_TITLE_DISPLAY, null))
         set(v) = put(KEY_TITLE_DISPLAY, v.key)
@@ -436,6 +441,7 @@ class Prefs(context: Context) {
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
+        private const val KEY_PINCH_PEEK = "pref_pinch_peek"
         private const val KEY_TITLE_DISPLAY = "pref_title_display"
         private const val KEY_SHORTEN_PREFIXES = "pref_shorten_prefixes"
         private const val KEY_PATHVIEW = "pref_list_pathview"
@@ -456,7 +462,7 @@ class Prefs(context: Context) {
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
-            OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, KEY_PINCH_PEEK, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,

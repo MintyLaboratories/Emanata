@@ -14,7 +14,9 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
@@ -53,6 +55,7 @@ import com.infinity.comicreader.data.FolderSize
 import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
+import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.data.FavoriteClassifier
 import com.infinity.comicreader.data.FavoriteKind
@@ -97,6 +100,7 @@ class ListActivity : AppCompatActivity() {
     private lateinit var pathbar: CrumbBar
     private lateinit var fab: FloatingActionButton
     private lateinit var filterChip: Chip
+    private lateinit var peek: PeekOverlay
 
     /** A detached "Recent" row, measured to size grid rows around the real one. */
     private var headerProbe: View? = null
@@ -208,6 +212,7 @@ class ListActivity : AppCompatActivity() {
         adapter.onSectionClick = { toggleSection(it.kind) }
         recycler.adapter = adapter
         applyLayoutManager()
+        setUpPeek()
         recycler.setHasFixedSize(false)
         recycler.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val widthChanged = right - left != oldRight - oldLeft
@@ -295,6 +300,7 @@ class ListActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        peek.hide()
         adapter.release()
     }
 
@@ -558,6 +564,7 @@ class ListActivity : AppCompatActivity() {
 
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
     private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
+        if (peek.isShowing) peek.hide()
         listJob?.cancel()
         classifyJob?.cancel()
         factsJob?.cancel()
@@ -955,6 +962,7 @@ class ListActivity : AppCompatActivity() {
                 openViewer(entry.file, library.pageFor(path))
             }
         }
+        if (canPeek(entry)) add(getString(R.string.menu_peek)) { peekFromMenu(entry) }
         if (mode == TAB_BOOKMARKS) {
             add(getString(R.string.menu_remove_favorite)) {
                 library.removeBookmark(path, entry.progressPage)
@@ -1001,6 +1009,107 @@ class ListActivity : AppCompatActivity() {
             .setTitle(entry.name)
             .setItems(labels.toTypedArray()) { _, which -> actions[which].invoke() }
             .show()
+    }
+
+    // ------------------------------------------------------------------ peek
+
+    /** Spreading two fingers on a comic grows a grid of its pages out of it ([PeekGesture]). */
+    private fun setUpPeek() {
+        peek = PeekOverlay(this).apply {
+            elevation = PEEK_ELEVATION_DP * resources.displayMetrics.density
+            onOpen = { entry, page -> openViewer(entry.file, page) }
+        }
+        (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup)
+            .addView(peek, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val slop = ViewConfiguration.get(this).scaledTouchSlop * 2f
+        recycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            private var gesture: PeekGesture? = null
+            private var target: Pair<BookEntry, View>? = null
+
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2 && !peek.isShowing && applied.pinchPeek != PeekMode.OFF) {
+                        val midX = (e.getX(0) + e.getX(1)) / 2
+                        val midY = (e.getY(0) + e.getY(1)) / 2
+                        target = peekTarget(midX, midY) ?: peekTarget(e.getX(0), e.getY(0))
+                        gesture = if (target == null) null else PeekGesture(slop, fullSpread()).also { it.begin(span(e)) }
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val g = gesture ?: return false
+                        val t = target ?: return false
+                        if (e.pointerCount >= 2 && g.move(span(e))) {
+                            startPeek(t.first, t.second)
+                            peek.setProgress(g.progress)
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        gesture = null
+                        target = null
+                    }
+                }
+                return false
+            }
+
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+                val g = gesture ?: return
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_MOVE -> if (e.pointerCount >= 2) {
+                        g.move(span(e))
+                        peek.setProgress(g.progress)
+                    }
+                    MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val outcome = if (e.actionMasked == MotionEvent.ACTION_CANCEL) PeekGesture.Release.COLLAPSE else g.release(applied.pinchPeek)
+                        peek.release(outcome)
+                        gesture = null
+                        target = null
+                    }
+                }
+            }
+        })
+    }
+
+    private fun span(e: MotionEvent) = kotlin.math.hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1))
+
+    /** Spread growth that opens a peek fully. */
+    private fun fullSpread(): Float =
+        minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * PeekGesture.FULL_SPREAD_SHARE
+
+    /** The comic under list point ([x], [y]) and the view its cover is drawn in, or null. */
+    private fun peekTarget(x: Float, y: Float): Pair<BookEntry, View>? {
+        val child = recycler.findChildViewUnder(x, y) ?: return null
+        val entry = adapter.entryAt(recycler.getChildAdapterPosition(child)) ?: return null
+        if (!canPeek(entry)) return null
+        return entry to (child.findViewById<View>(R.id.box) ?: child)
+    }
+
+    private fun canPeek(entry: BookEntry) = !entry.isDir && Formats.isOpenable(entry.name) && entry.file.isFile
+
+    /** Starts a peek into [entry] growing out of [tileView]. */
+    private fun startPeek(entry: BookEntry, tileView: View?) {
+        val full = boxOf(recycler).let {
+            val inset = PEEK_INSET_DP * resources.displayMetrics.density
+            Box(it.left + inset, it.top + inset, it.width - 2 * inset, it.height - 2 * inset)
+        }
+        val tile = tileView?.let { boxOf(it) } ?: Box(full.left + full.width / 2, full.top + full.height / 2, 1f, 1f)
+        peek.begin(entry, tile, full, lifecycleScope, prefs.charset, cacheDir, prefs.linearLight)
+    }
+
+    /** [view]'s bounds in the peek overlay's coordinates. */
+    private fun boxOf(view: View): Box {
+        val at = IntArray(2)
+        val origin = IntArray(2)
+        view.getLocationInWindow(at)
+        peek.getLocationInWindow(origin)
+        return Box((at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat(), view.width.toFloat(), view.height.toFloat())
+    }
+
+    /** Peeks into [entry] from the long-press menu: the grid grows out of its tile and stays open. */
+    private fun peekFromMenu(entry: BookEntry) {
+        val position = adapter.positionOf(entry.path)
+        val tile = recycler.findViewHolderForAdapterPosition(position)?.itemView?.let { it.findViewById<View>(R.id.box) ?: it }
+        startPeek(entry, tile)
+        peek.release(PeekGesture.Release.KEEP_OPEN)
     }
 
     /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
@@ -1542,6 +1651,10 @@ class ListActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (peek.isShowing) {
+            peek.close()
+            return
+        }
         if (!navigateUp()) {
             @Suppress("DEPRECATION")
             super.onBackPressed()
@@ -1565,6 +1678,12 @@ class ListActivity : AppCompatActivity() {
         private const val DEEP_SEARCH_DELAY_MS = 300L
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
+
+        /** Room between an open peek and the list's edges. */
+        private const val PEEK_INSET_DP = 12
+
+        /** Above the list, the app bar and the button. */
+        private const val PEEK_ELEVATION_DP = 16
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

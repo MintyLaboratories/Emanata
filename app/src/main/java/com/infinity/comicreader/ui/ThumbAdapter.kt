@@ -27,12 +27,14 @@ import kotlinx.coroutines.withContext
 
 /**
  * Grid of page thumbnails used to jump to a page. Each is made at its view's exact
- * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1.
+ * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. [thumbHeight], when
+ * above 0, replaces the layout's thumbnail height in pixels.
  */
 class ThumbAdapter(
     private val source: PageSource,
     private val currentPage: Int,
     private val linear: Boolean = false,
+    private val thumbHeight: Int = 0,
     private val onPick: (Int) -> Unit
 ) : RecyclerView.Adapter<ThumbAdapter.Holder>() {
 
@@ -62,6 +64,7 @@ class ThumbAdapter(
             view.findViewById(R.id.thumb_image),
             view.findViewById(R.id.thumb_label)
         )
+        if (thumbHeight > 0) holder.image.layoutParams.height = thumbHeight
         holder.image.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             if (r - l != oldR - oldL || b - t != oldB - oldT) requestThumb(holder)
         }

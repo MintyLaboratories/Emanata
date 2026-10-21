@@ -154,4 +154,30 @@ class PageAdapterPairCropTest {
         assertTrue(measures.all { it.second.capPixels < Target.DEFAULT_CAP_PIXELS })
         adapter.release()
     }
+
+    @Test
+    fun rightToLeftPairsShareTheirCropWithTheFirstPageOnTheRight() {
+        val pages = listOf(page(40, 60, 360, 540), page(20, 120, 380, 480))
+        val source = PngSource(pages)
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            twoPage = true, rtl = true, autoCrop = true, preload = 0
+        )
+        val rv = recycler(adapter, 1200, 800)
+        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        val shown = source.requests.filter { it.second.box != null }.associate { it.first to it.second }
+        val first = shown.getValue(0)
+        val second = shown.getValue(1)
+        assertEquals(first.box!!.top, second.box!!.top, 0.0)
+        assertEquals(first.box!!.bottom, second.box!!.bottom, 0.0)
+        assertEquals(56.0 / 600, first.box!!.top, 1e-9)
+        assertEquals(first.height, second.height)
+        // The second page on the left, against the gutter; the first on the right.
+        val (l, r) = rv.images()
+        assertEquals(Decoders.decode(pages[1], second).width, l.bitmap()!!.width)
+        assertEquals(Decoders.decode(pages[0], first).width, r.bitmap()!!.width)
+        assertEquals(1f, l.alignX)
+        assertEquals(0f, r.alignX)
+        adapter.release()
+    }
 }

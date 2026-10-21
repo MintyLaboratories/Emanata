@@ -17,6 +17,8 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.reader.BookDirection
+import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticStrips
 import com.infinity.comicreader.reader.TestImages
@@ -118,6 +120,28 @@ class ViewerActivitySlicesTest {
         await { viewer.continuous() }
         assertEquals(true, viewer.continuous())
         assertEquals("Top-to-bottom (from page shapes and seams)", viewer.hint().text.toString())
+    }
+
+    @Test
+    fun seamsFoundOnceShowTheNextOpenInOneColumnAtOnce() {
+        val book = seamedBook()
+        val first = launch(book)
+        await { first.continuous() }
+        assertEquals(DirectionDetection.Source.SEAMS, BookDirection.checkedSlices(book)?.found?.source)
+        first.finish()
+        idle()
+        val again = launch(book)
+        assertEquals(true, again.continuous())
+        assertEquals("Top-to-bottom (from page shapes and seams)", again.hint().text.toString())
+    }
+
+    @Test
+    fun turningAPageWhileSeamsAreCheckedStillShowsOneColumn() {
+        val viewer = launch(seamedBook())
+        viewer.findViewById<ViewPager2>(R.id.viewer_pager).setCurrentItem(1, false)
+        idle()
+        await { viewer.continuous() }
+        assertEquals(true, viewer.continuous())
     }
 
     @Test

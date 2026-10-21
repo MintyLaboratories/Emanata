@@ -84,6 +84,16 @@ class SlicesTest {
     }
 
     @Test
+    fun shapesSettleWhatTheyCan() {
+        assertEquals(Slices.Checked(Detected(ReadingDirection.TTB, Source.SHAPE)), Slices.settled(sliced))
+        assertEquals(Slices.Checked(null), Slices.settled(List(4) { intArrayOf(2000, 3000) }))
+        assertEquals(Slices.Checked(null), Slices.settled(sizes(2000 to 3000, 800 to 2400, 2000 to 3000)))
+        // Uniform slices wait for their seams, unknown sizes for their headers.
+        assertNull(Slices.settled(List(8) { intArrayOf(800, 4000) }))
+        assertNull(Slices.settled(listOf(null, intArrayOf(2000, 3000), intArrayOf(2000, 3000))))
+    }
+
+    @Test
     fun seamsPairNeighboringSlices() {
         val book = sizes(2000 to 3000, 800 to 2400, 800 to 3100, 800 to 1900, 2000 to 3000, 800 to 2400, 800 to 2400)
         assertEquals(listOf(1, 2, 5), Slices.seamPairs(book))

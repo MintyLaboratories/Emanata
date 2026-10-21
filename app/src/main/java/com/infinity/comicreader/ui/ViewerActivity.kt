@@ -945,6 +945,7 @@ class ViewerActivity : AppCompatActivity() {
             var known: KnownPages? = null
             var sliceSizes: List<IntArray?> = emptyList()
             var sliced: DirectionDetection.Detected? = null
+            var sliceSettled = false
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -953,10 +954,14 @@ class ViewerActivity : AppCompatActivity() {
                     val siblings = siblingChapters(target)
                     val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
                     known = s.getOrNull()?.let { knownSizes(target, it) }
-                    // Slices whose shape alone tells read as one column from the first page; seams wait.
+                    // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.
                     s.getOrNull()?.takeIf { slice }?.let { src ->
-                        sliceSizes = BookDirection.sliceSizes(src, known?.sizes, read = src.cheapSizes)
-                        if (Slices.shape(sliceSizes) == Slices.Shape.SURE) sliced = Slices.verdict(Slices.Shape.SURE)
+                        val checked = keptSlices(target) ?: run {
+                            sliceSizes = BookDirection.sliceSizes(src, known?.sizes, read = src.cheapSizes)
+                            Slices.settled(sliceSizes)?.also { keepSlices(target, it) }
+                        }
+                        sliced = checked?.found
+                        sliceSettled = checked != null
                     }
                     ensureActive()
                     Triple(s, siblings, found)
@@ -990,38 +995,42 @@ class ViewerActivity : AppCompatActivity() {
             setup(src)
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
-            if (slice && sliced == null && (Slices.shape(sliceSizes) == Slices.Shape.LIKELY || sliceSizes.any { it == null })) {
-                detectSlicesLater(target, src, sliceSizes)
-            }
+            if (slice && !sliceSettled) detectSlicesLater(target, src, sliceSizes)
         }
     }
 
     /**
      * Checks [book]'s pages for slices once it shows: the seams of a shape that alone does
-     * not settle it, or the sizes not known on open. The book turns to one column top to
-     * bottom when they are, while the reader is still where it was and has not chosen a
-     * direction; otherwise the finding is dropped. [sizes] null reads them all now.
+     * not settle it, or the sizes not known on open. The finding is kept for the book
+     * ([keepSlices]); slices turn it to one column top to bottom at the page on screen,
+     * unless a direction was chosen meanwhile. [sizes] null reads them all now.
      */
     private fun detectSlicesLater(book: File, src: PageSource, sizes: List<IntArray?>?) {
         slicesJob?.cancel()
         slicesChecked = true
-        val at = currentIndex
         val choices = directionChoices
         val known = pageSizes
         slicesJob = lifecycleScope.launch {
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                runCatching {
+                val checked = keptSlices(book) ?: runCatching {
                     BookDirection.slices(src, sizes ?: BookDirection.sliceSizes(src, known, read = true)) { !job.isActive }
-                }.getOrNull()
+                }.getOrNull()?.also { if (job.isActive) keepSlices(book, it) }
+                checked?.found
             }
-            if (found == null || source !== src || file != book || choices != directionChoices || currentIndex != at) return@launch
+            if (found == null || source !== src || file != book || choices != directionChoices) return@launch
             if (!maySlice()) return@launch
             slices = found
             showDetection()
             noteDetection()
         }
     }
+
+    /** What [book]'s pages were found to be when checked for slices before; null when never. Blocking. */
+    private fun keptSlices(book: File): Slices.Checked? = BookDirection.checkedSlices(book)
+
+    /** Keeps what [book]'s pages were found to be, so the next open needs no check. Blocking. */
+    private fun keepSlices(book: File, checked: Slices.Checked) = BookDirection.rememberSlices(book, checked)
 
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {

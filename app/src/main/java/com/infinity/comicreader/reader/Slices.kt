@@ -40,6 +40,9 @@ object Slices {
     /** Leading pages under [MIN_RATIO] that settle a book as not slices, so no more sizes are read. */
     const val ORDINARY_LEAD = 4
 
+    /** A book checked for slices: [found] how they were told, or null when its pages are not slices. */
+    data class Checked(val found: DirectionDetection.Detected?)
+
     /** What the pages' shape says. */
     enum class Shape {
         /** Not slices. */
@@ -74,6 +77,20 @@ object Slices {
     /** True when the first [ORDINARY_LEAD] of [sizes] are all known and none is tall: ordinary pages, not slices. */
     fun ordinary(sizes: List<IntArray?>): Boolean =
         sizes.size >= ORDINARY_LEAD && sizes.take(ORDINARY_LEAD).all { it != null && it.size >= 2 && it[0] > 0 && it[1] > 0 && it[1].toDouble() / it[0] < MIN_RATIO }
+
+    /**
+     * What [sizes] of the first pages settle without seams: slices by their shape, or none
+     * when the first are [ordinary] or every size is known and the shape says none. Null
+     * while seams or unknown sizes must decide.
+     */
+    fun settled(sizes: List<IntArray?>): Checked? {
+        if (ordinary(sizes)) return Checked(null)
+        return when (shape(sizes)) {
+            Shape.SURE -> Checked(verdict(Shape.SURE))
+            Shape.NONE -> Checked(null).takeIf { sizes.none { it == null } }
+            Shape.LIKELY -> null
+        }
+    }
 
     /** The tall pages among [known] that share the most common width. */
     private fun slicesOf(known: List<IntArray>): List<IntArray> {

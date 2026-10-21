@@ -46,27 +46,44 @@ object BookDirection {
     }
 
     /**
-     * Top to bottom when [source]'s pages are slices of one strip ([Slices]): from [sizes] of
-     * its first pages, any missing read now, and, when their shape alone does not settle it,
-     * the seams between them, decoded as thin strips. Null when they are not, as soon as
-     * the first are [Slices.ordinary], or once [canceled]. Blocking.
+     * Whether [source]'s pages are slices of one strip ([Slices]): from [sizes] of its first
+     * pages, any missing read now (none once the first are [Slices.ordinary]), and, when
+     * their shape alone does not settle it, the seams between them, decoded as thin strips.
+     * Null when it stays open: sizes that cannot be read, or once [canceled]. Blocking.
      */
-    fun slices(source: PageSource, sizes: List<IntArray?>, canceled: () -> Boolean = { false }): DirectionDetection.Detected? {
+    fun slices(source: PageSource, sizes: List<IntArray?>, canceled: () -> Boolean = { false }): Slices.Checked? {
         val all = ArrayList<IntArray?>(sizes.size)
         for ((i, s) in sizes.withIndex()) {
-            if (Slices.ordinary(all)) return null
-            all += s ?: if (canceled()) null else runCatching { source.pageSize(i) }.getOrNull()
+            if (Slices.ordinary(all)) break
+            if (canceled()) return null
+            all += s ?: runCatching { source.pageSize(i) }.getOrNull()
         }
-        val shape = Slices.shape(all)
-        if (shape != Slices.Shape.LIKELY) return Slices.verdict(shape)
+        Slices.settled(all)?.let { return it }
+        if (Slices.shape(all) != Slices.Shape.LIKELY) return null
         val seams = Slices.seamPairs(all).map { k ->
             if (canceled()) return null
             val bottom = runCatching { source.edge(k, bottom = true) }.getOrNull() ?: return@map null
             val top = runCatching { source.edge(k + 1, bottom = false) }.getOrNull() ?: return@map null
             Seams.runsOn(bottom, top)
         }
-        return Slices.verdict(shape, seams)
+        return Slices.Checked(Slices.verdict(Slices.Shape.LIKELY, seams))
     }
+
+    /** Books checked for slices this session, by [checkKey], the least recently used dropped first. */
+    private val checked = object : LinkedHashMap<String, Slices.Checked>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Slices.Checked>?) = size > KEPT_CHECKS
+    }
+    private const val KEPT_CHECKS = 512
+
+    /** What [file]'s pages were found to be this session ([rememberSlices]); null when not checked. */
+    fun checkedSlices(file: File): Slices.Checked? = synchronized(checked) { checked[checkKey(file)] }
+
+    /** Keeps what [file]'s pages were found to be, so opening it again needs no check. */
+    fun rememberSlices(file: File, found: Slices.Checked) {
+        synchronized(checked) { checked[checkKey(file)] = found }
+    }
+
+    private fun checkKey(file: File) = "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 
     /** The typical shape of [source]'s first few pages after the cover ([Wraparound.innerRatio]); null without any. */
     fun innerRatio(source: PageSource): Double? = Wraparound.innerRatio(

@@ -220,6 +220,13 @@
             app:defaultValue="true"
             app:key="pref_thumbs"
             app:title="@string/pref_thumbs" />
+        <ListPreference
+            app:defaultValue="2:3"
+            app:entries="@array/cover_shape_entries"
+            app:entryValues="@array/cover_shape_values"
+            app:key="pref_cover_shape"
+            app:title="@string/pref_cover_shape"
+            app:useSimpleSummaryProvider="true" />
         <!-- One entry per tab; each opens that tab's view settings. -->
         <Preference
             app:key="view_browse"

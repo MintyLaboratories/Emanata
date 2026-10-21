@@ -15,11 +15,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:minHeight="76dp"
         android:orientation="horizontal"
         android:padding="8dp">
 
-        <FrameLayout
+        <com.infinity.comicreader.ui.CoverBox
+            android:id="@+id/box"
             android:layout_width="@dimen/list_thumb_w"
             android:layout_height="@dimen/list_thumb_h"
             android:background="@drawable/bg_thumb_placeholder">
@@ -42,6 +42,7 @@
 
             <TextView
                 android:id="@+id/badge"
+                android:maxLines="1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="bottom|end"
@@ -53,7 +54,7 @@
                 android:visibility="gone"
                 tools:text="12/40"
                 tools:visibility="visible" />
-        </FrameLayout>
+        </com.infinity.comicreader.ui.CoverBox>
 
         <LinearLayout
             android:layout_width="0dp"

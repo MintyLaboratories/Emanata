@@ -42,6 +42,14 @@
     <string name="menu_hide_hidden">Hide hidden files</string>
     <string name="grid_size">Grid dimensions</string>
     <string name="grid_size_auto">Auto</string>
+    <string name="list_density">List density</string>
+    <string name="density_compact">Compact</string>
+    <string name="density_normal">Normal</string>
+    <string name="density_large">Large</string>
+    <string name="pref_cover_shape">Cover shape</string>
+    <string name="cover_shape_book">2:3</string>
+    <string name="cover_shape_wide">3:4</string>
+    <string name="cover_shape_cell">Cell shape</string>
     <string name="menu_ascending">Ascending</string>
     <string name="menu_descending">Descending</string>
     <string name="menu_mark_read">Mark as read</string>
@@ -254,6 +262,7 @@
     <string name="view_history">History view</string>
     <string name="view_bookmarks">Bookmarks view</string>
     <string name="view_grid_summary">Grid · %1$s</string>
+    <string name="view_list_summary">List · %1$s</string>
     <string name="layout_grid">Grid</string>
     <string name="layout_list">List</string>
     <string name="pref_sort">Sort entries by</string>
@@ -524,6 +533,17 @@
     </string-array>
 
 
+
+    <string-array name="cover_shape_entries">
+        <item>@string/cover_shape_book</item>
+        <item>@string/cover_shape_wide</item>
+        <item>@string/cover_shape_cell</item>
+    </string-array>
+    <string-array name="cover_shape_values">
+        <item>2:3</item>
+        <item>3:4</item>
+        <item>cell</item>
+    </string-array>
 
     <string-array name="preload_entries">
         <item>Off</item>

@@ -13,6 +13,7 @@ data class ListSettings(
     val thumbnails: Boolean,
     /** Each tab's view, by tab name ([Prefs.TABS]). */
     val views: Map<String, TabView>,
+    val coverShape: CoverShape,
     val sort: String,
     val sortDir: String,
     val showFilenames: Boolean,
@@ -28,6 +29,7 @@ data class ListSettings(
             showHidden = p.showHidden,
             thumbnails = p.thumbnails,
             views = Prefs.TABS.associateWith { p.view(it) },
+            coverShape = p.coverShape,
             sort = p.listSort,
             sortDir = p.listSortDir,
             showFilenames = p.showFilenames,

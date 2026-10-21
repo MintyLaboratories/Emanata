@@ -45,6 +45,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Grid dimensions:** columns × rows, each Auto or 1–6, picked on a 7 × 7 table
   (tap a cell, or drag and release). Rows share the height below the Recent row
   and above the floating button.
+- **List density** (per tab): Compact, Normal or Large list thumbnails.
+- **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
+  largest box of that shape that fits the cell, centered.
 - Covers are made at the exact size of their cell (cropped and Lanczos3-scaled,
   drawn 1:1) and cached losslessly.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.

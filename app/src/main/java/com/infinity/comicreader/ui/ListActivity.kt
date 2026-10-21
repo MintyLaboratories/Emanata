@@ -252,6 +252,7 @@ class ListActivity : AppCompatActivity() {
         if (old == s) return
         applied = s
         if (s.views[tabName()] != old.views[tabName()]) applyView()
+        if (s.coverShape != old.coverShape) adapter.options = rowOptions()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
             // Coming back to the browse tab, onResume reloads the folder anyway.
@@ -404,12 +405,15 @@ class ListActivity : AppCompatActivity() {
         else -> Prefs.TAB_BROWSE
     }
 
+    private fun rowOptions() = RowOptions(density = view.density, shape = prefs.coverShape)
+
     /** The current tab's view settings. */
     private val view: TabView get() = prefs.view(tabName())
 
     /** Lays the list out as the current tab's view says. */
     private fun applyView() {
         adapter.grid = view.grid
+        adapter.options = rowOptions()
         applyLayoutManager()
         updateCellSize()
         updateFabIcon()
@@ -1270,6 +1274,7 @@ class ListActivity : AppCompatActivity() {
         val grid = view.grid
         menu.findItem(R.id.menu_grid)?.title = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
         menu.findItem(R.id.menu_grid_size)?.isVisible = grid
+        menu.findItem(R.id.menu_density)?.isVisible = !grid
         menu.findItem(R.id.menu_show_hidden)?.apply {
             isChecked = prefs.showHidden
             title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
@@ -1301,6 +1306,7 @@ class ListActivity : AppCompatActivity() {
             R.id.menu_sort -> showSortDialog()
             R.id.menu_sort_dir -> toggleSortDirection()
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
+            R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
             R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }

@@ -6,6 +6,7 @@ import android.widget.RadioGroup
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 
 /** Dialogs that change one library tab's view; every choice is written at once. */
@@ -20,10 +21,10 @@ object TabViewDialogs {
         else -> R.string.view_browse
     }
 
-    /** One line naming [tab]'s view: "Grid · 4 × Auto" or "List". */
+    /** One line naming [tab]'s view: "Grid · 4 × Auto" or "List · Normal". */
     fun summary(context: Context, prefs: Prefs, tab: String): String {
         val v = prefs.view(tab)
-        if (!v.grid) return context.getString(R.string.layout_list)
+        if (!v.grid) return context.getString(R.string.view_list_summary, densityLabel(context, v.density))
         val size = GridPick.label(v.columns, v.rows, context.getString(R.string.grid_size_auto))
         return context.getString(R.string.view_grid_summary, size)
     }
@@ -47,6 +48,33 @@ object TabViewDialogs {
         return dialog
     }
 
+    private val DENSITY_BUTTONS = listOf(
+        ListDensity.COMPACT to R.id.density_compact,
+        ListDensity.NORMAL to R.id.density_normal,
+        ListDensity.LARGE to R.id.density_large
+    )
+
+    private fun densityLabel(context: Context, density: ListDensity) = context.getString(
+        when (density) {
+            ListDensity.COMPACT -> R.string.density_compact
+            ListDensity.NORMAL -> R.string.density_normal
+            ListDensity.LARGE -> R.string.density_large
+        }
+    )
+
+    /** The "List density" choice for [tab]; a pick is written and closes it. */
+    fun showDensity(context: Context, prefs: Prefs, tab: String): AlertDialog {
+        val values = DENSITY_BUTTONS.map { it.first }
+        val labels = values.map { densityLabel(context, it) }.toTypedArray()
+        return AlertDialog.Builder(context)
+            .setTitle(R.string.list_density)
+            .setSingleChoiceItems(labels, values.indexOf(prefs.view(tab).density)) { dialog, which ->
+                prefs.setDensity(tab, values[which])
+                dialog.dismiss()
+            }
+            .show()
+    }
+
     /** All of [tab]'s view settings; [onDismiss] runs when it closes. */
     fun showTabView(context: Context, prefs: Prefs, tab: String, onDismiss: () -> Unit = {}): AlertDialog {
         val root = LayoutInflater.from(context).inflate(R.layout.dialog_tab_view, null)
@@ -58,6 +86,12 @@ object TabViewDialogs {
         root.findViewById<GridPicker>(R.id.grid_size).apply {
             select(v.columns, v.rows)
             onPick = { columns, rows -> prefs.setGridSize(tab, columns, rows) }
+        }
+        root.findViewById<RadioGroup>(R.id.density_group).apply {
+            check(DENSITY_BUTTONS.first { it.first == v.density }.second)
+            setOnCheckedChangeListener { _, id ->
+                DENSITY_BUTTONS.firstOrNull { it.second == id }?.let { prefs.setDensity(tab, it.first) }
+            }
         }
         return AlertDialog.Builder(context)
             .setTitle(titleOf(tab))

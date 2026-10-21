@@ -1,0 +1,92 @@
+package com.infinity.comicreader.ui
+
+import android.Manifest
+import android.app.Application
+import android.os.Environment
+import android.os.Looper
+import android.view.View
+import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.R
+import com.infinity.comicreader.data.CoverShape
+import com.infinity.comicreader.data.ListDensity
+import com.infinity.comicreader.data.Prefs
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.io.File
+import kotlin.math.abs
+
+/** Cover boxes take the cover shape inside grid cells and the density's size in list rows. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29], qualifiers = "w800dp-h1280dp")
+class ListActivityCoversTest {
+
+    private lateinit var prefs: Prefs
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        shadowOf(context).grantPermissions(Manifest.permission.READ_EXTERNAL_STORAGE)
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        context.getSharedPreferences("ui", 0).edit().clear().commit()
+        prefs = Prefs(context)
+        val dir = File(Environment.getExternalStorageDirectory(), "books").apply { mkdirs() }
+        (1..3).forEach { File(dir, "Issue $it.cbz").createNewFile() }
+        prefs.lastPath = dir.absolutePath
+    }
+
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    /** The cover boxes on screen, after a layout of the list. */
+    private fun boxes(): List<View> {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        recycler.measure(
+            View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY)
+        )
+        recycler.layout(0, 0, 1600, 2400)
+        return (0 until recycler.childCount).mapNotNull { recycler.getChildAt(it).findViewById(R.id.box) }
+    }
+
+    private fun ratio(v: View) = v.width.toFloat() / v.height
+
+    @Test
+    fun gridCoversAreTwoByThreeByDefault() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 3, 0)
+        val boxes = boxes()
+        assertEquals(3, boxes.size)
+        boxes.forEach { assertTrue("${it.width}x${it.height}", abs(ratio(it) - 2f / 3f) < 0.01f) }
+    }
+
+    @Test
+    fun fixedRowsCenterTheShapeInTheCell() {
+        prefs.coverShape = CoverShape.WIDE
+        prefs.setGridSize(Prefs.TAB_BROWSE, 2, 3)
+        val box = boxes().first()
+        val cover = box.parent as View
+        assertTrue(abs(ratio(box) - 0.75f) < 0.01f)
+        // The largest 3:4 box in a wide cover area: full height, centered across.
+        assertEquals(cover.height, box.height)
+        assertTrue(abs((cover.width - box.width) / 2 - box.left) <= 1)
+    }
+
+    @Test
+    fun listThumbnailsFollowTheDensity() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        prefs.setDensity(Prefs.TAB_BROWSE, ListDensity.LARGE)
+        val box = boxes().first()
+        val dp = box.resources.displayMetrics.density
+        assertEquals((120 * dp).toInt(), box.height)
+        assertEquals((80 * dp).toInt(), box.width)
+    }
+}

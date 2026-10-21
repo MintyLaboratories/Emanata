@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.CoverShape
+import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
@@ -29,6 +31,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+
+/** How rows look beyond grid or list: list thumbnail size and cover shape. */
+data class RowOptions(
+    val density: ListDensity = ListDensity.NORMAL,
+    val shape: CoverShape = CoverShape.BOOK
+)
 
 /**
  * Library rows. Each entry shows a cover thumbnail (page 1 for books, first image
@@ -46,6 +54,14 @@ class BookAdapter(
 
     /** Grid cells or list rows; switching rebinds every row with the other layout. */
     var grid: Boolean = grid
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
+
+    /** Rebinds every row when it changes. */
+    var options = RowOptions()
         set(value) {
             if (field == value) return
             field = value
@@ -119,7 +135,8 @@ class BookAdapter(
 
     class BookHolder(view: View) : RecyclerView.ViewHolder(view) {
         val card: MaterialCardView? = view as? MaterialCardView
-        val cover: View? = view.findViewById(R.id.cover)
+        val cover: CoverFrame? = view.findViewById(R.id.cover)
+        val box: CoverBox = view.findViewById(R.id.box)
         val thumb: ShapeableImageView = view.findViewById(R.id.thumb)
         val placeholder: ImageView = view.findViewById(R.id.placeholder)
         val badge: TextView = view.findViewById(R.id.badge)
@@ -207,7 +224,7 @@ class BookAdapter(
         val subtitle = item.subtitle ?: subtitleFor(context, item)
         holder.subtitle.text = subtitle
         holder.subtitle.visibility = if (showName && subtitle.isNotEmpty()) View.VISIBLE else View.GONE
-        if (grid) sizeCell(holder, showName)
+        if (grid) sizeCell(holder, showName) else sizeThumb(holder)
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }
@@ -279,11 +296,16 @@ class BookAdapter(
 
     /**
      * With a row count set, the card takes the cell height and the cover gets what
-     * the text below leaves; the text keeps its size. Otherwise the cover has its
-     * fixed height and the card wraps it.
+     * the text below leaves; the text keeps its size. Otherwise the cover is as tall
+     * as its shape asks for the cell width (a fixed height for the cell's shape) and
+     * the card wraps it. Either way the box inside is the cover shape's largest fit.
      */
     private fun sizeCell(holder: BookHolder, showName: Boolean) {
         val cover = holder.cover ?: return
+        val ratio = options.shape.ratio
+        cover.ratio = ratio
+        cover.freeHeight = cover.resources.getDimensionPixelSize(R.dimen.grid_thumb_h)
+        holder.box.ratio = ratio
         val card = holder.itemView
         val cardParams = card.layoutParams as? ViewGroup.MarginLayoutParams ?: return
         val coverParams = cover.layoutParams as LinearLayout.LayoutParams
@@ -296,7 +318,7 @@ class BookAdapter(
         }
         body.layoutParams.height =
             if (rows) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
-        coverParams.height = if (rows) 0 else card.resources.getDimensionPixelSize(R.dimen.grid_thumb_h)
+        coverParams.height = if (rows) 0 else ViewGroup.LayoutParams.WRAP_CONTENT
         coverParams.weight = if (rows) 1f else 0f
         // The same text height in every cell keeps the covers of a row equal.
         holder.title.minLines = if (rows) holder.title.maxLines else 0
@@ -304,6 +326,20 @@ class BookAdapter(
             holder.subtitle.visibility = View.INVISIBLE
         }
         card.layoutParams = cardParams
+    }
+
+    /** A list row's thumbnail: the density's height, the cover shape's width. */
+    private fun sizeThumb(holder: BookHolder) {
+        val box = holder.box
+        val (w, h) = CoverGeometry.listBoxDp(options.density, options.shape)
+        val dp = box.resources.displayMetrics.density
+        val params = box.layoutParams
+        val width = (w * dp).toInt()
+        val height = (h * dp).toInt()
+        if (params.width == width && params.height == height) return
+        params.width = width
+        params.height = height
+        box.layoutParams = params
     }
 
     private fun applyHighlight(holder: BookHolder, item: BookEntry) {

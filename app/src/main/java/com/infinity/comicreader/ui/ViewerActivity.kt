@@ -587,7 +587,11 @@ class ViewerActivity : AppCompatActivity() {
         seekScrim = findViewById(R.id.seek_scrim)
         seekPanel = findViewById(R.id.seek_panel)
         seekPanel.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
-        seekPanel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeSeekPanel() }
+        seekPanel.addOnLayoutChangeListener { _, l, _, r, _, oldL, _, oldR, _ ->
+            placeSeekPanel()
+            // A new width (a turn of the screen) centers the item on screen again.
+            if (r - l != oldR - oldL) seekPanel.post { if (seekPanelShown) centerSeekPanel() }
+        }
         seekScrim.setOnClickListener { closeSeekPanel() }
         brightnessPill = findViewById(R.id.brightness_pill)
         brightnessText = findViewById(R.id.brightness_text)

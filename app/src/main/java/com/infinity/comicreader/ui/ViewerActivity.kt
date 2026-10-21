@@ -169,6 +169,9 @@ class ViewerActivity : AppCompatActivity() {
     private var endDismissed = false
     private var markedRead = false
 
+    /** True while the reader stays on the last page it was opened at from the next chapter: not yet read. */
+    private var landedAtEnd = false
+
     // auto-scroll
     private val handler = Handler(Looper.getMainLooper())
     private var autoScrolling = false
@@ -603,6 +606,7 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
+        landedAtEnd = false
         bookChapters = emptyList()
         repeatedBack.reset()
         backPage = -1
@@ -672,8 +676,12 @@ class ViewerActivity : AppCompatActivity() {
         val saved = library.pageFor(path)
         val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = library.isRead(path))
         currentIndex = start.page.coerceIn(0, src.pageCount - 1)
-        // Come back to from the next chapter: the end card waits for a move past the end.
-        if (requested == LAST_PAGE) endDismissed = true
+        // Come back to from the next chapter: the end card waits for a move past the end,
+        // and the chapter counts as read only once its last page is reached again.
+        if (requested == LAST_PAGE) {
+            endDismissed = true
+            landedAtEnd = true
+        }
         bookChapters = chaptersOf(src)
         seenPages.clear()
         attach()
@@ -852,6 +860,7 @@ class ViewerActivity : AppCompatActivity() {
         stripAheadFile = null
         seenPages.clear()
         markedRead = false
+        landedAtEnd = false
         toolbar.title = chapterLabel(nextFile)
 
         a.dropTo(boundary)
@@ -1027,7 +1036,9 @@ class ViewerActivity : AppCompatActivity() {
             val item = layout.itemOf(currentIndex)
             seenPages.set(layout.firstPage(item), layout.lastPage(item, count) + 1)
         }
-        if (!markedRead && count > 0 && pageLayout().onLastItem(currentIndex, count)) {
+        val onLast = count > 0 && pageLayout().onLastItem(currentIndex, count)
+        if (!onLast) landedAtEnd = false
+        if (!markedRead && onLast && !landedAtEnd) {
             markedRead = true
             file?.absolutePath?.let { library.setRead(it, true) }
         }

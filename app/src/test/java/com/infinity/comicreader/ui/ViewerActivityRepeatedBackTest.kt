@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
@@ -289,6 +290,18 @@ class ViewerActivityRepeatedBackTest {
         viewer.findViewById<View>(R.id.btn_next_page).performClick()
         idle()
         assertEquals(View.VISIBLE, card.visibility)
+    }
+
+    @Test
+    fun landingAtThePreviousChaptersEndDoesNotMarkItRead() {
+        val library = Library(context)
+        val viewer = launch(first, Int.MAX_VALUE)
+        assertFalse(library.isRead(first.absolutePath))
+        viewer.back()
+        assertFalse(library.isRead(first.absolutePath))
+        viewer.findViewById<View>(R.id.btn_next_page).performClick()
+        idle()
+        assertTrue(library.isRead(first.absolutePath))
     }
 
     @Test

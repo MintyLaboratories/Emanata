@@ -107,7 +107,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Favorites (star) and reading history, with jump-back to the last page read.
   Every history entry shows its **parent folder below the name**, so bare
   chapters like "Chapter 1" stay recognizable. Tapping a history entry opens
-  the folder that contains that chapter.
+  the book as **Resume where I left off** says; its long-press menu adds
+  **Show in folder** next to **Continue reading**.
 - **Favorites** are grouped into collapsible **Libraries**, **Sets** and
   **Comics** by what they hold (a folder of comics is a Set, comics two or more
   levels down make a Library); "Group favorites" turns this off. Favorites with
@@ -116,7 +117,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Startup tab** and **startup location** (last seen, first or most recent
   favorite folder, or a custom folder picked from the favorites).
 - Long-press a file or folder to favorite it, make a folder the startup folder,
-  open its location, rename, mark read/unread or delete it.
+  show it in its folder, rename, mark read/unread or delete it.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward
@@ -218,7 +219,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page* or *First page*, with the page number and percentage; ticking
   *Don't ask again* turns the answer into Yes or No. Only a book with a saved
   position asks; a finished book opens at the first page. Chapters opened
-  explicitly (history, bookmark, chapter list, next-chapter) never ask.
+  explicitly (history's Continue reading, bookmark, chapter list, next-chapter)
+  never ask.
 - Per-book reading position is stored in history.
 - Every reader option is written back to preferences, so the mode, fit, filter,
   spacing, direction and toggles **persist across chapters and app restarts**.

@@ -17,6 +17,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override val pageCount: Int get() = inner.pageCount
 
+    override val isVector: Boolean get() = inner.isVector
+
     override fun loadPage(index: Int, target: Target): Bitmap {
         if (!enter()) throw IOException("Source closed")
         try {

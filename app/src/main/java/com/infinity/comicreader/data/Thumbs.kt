@@ -7,6 +7,7 @@ import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.PdfSource
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
 import com.infinity.comicreader.util.Formats
@@ -18,8 +19,9 @@ import java.security.MessageDigest
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
  * render their first page; folders fall back to the first image/openable file
  * found a couple of levels deep. Covers are made at exactly the size of the view
- * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]), then made into
- * the box by [CoverArt] as the [CoverStyle] says, so the view draws them 1:1. They
+ * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]; a PDF rendered
+ * just covering the box), then made into the box by [CoverArt] as the [CoverStyle]
+ * says, so the view draws them 1:1. They
  * are cached per size and style in memory (bounded by heap) and losslessly on disk
  * under `cacheDir/thumbnails`. A bookmark's cover has its page in front ([CoverArt.withPage]).
  */
@@ -73,7 +75,7 @@ object Thumbs {
             }
         }
 
-        val full = generate(entry, charset, context.cacheDir) ?: return null
+        val full = generate(entry, charset, context.cacheDir, width, height) ?: return null
         val cover = try {
             CoverArt.cover(full, width, height, style) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
@@ -124,25 +126,32 @@ object Thumbs {
 
     // ------------------------------------------------------------------ internals
 
-    /** The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS]. */
-    private fun generate(entry: BookEntry, charset: String, cacheDir: File): Bitmap? = try {
+    /**
+     * The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS]; a PDF's
+     * rendered just large enough for a [width] x [height] box.
+     */
+    private fun generate(entry: BookEntry, charset: String, cacheDir: File, width: Int, height: Int): Bitmap? = try {
         val target = Target(capPixels = THUMB_CAP_PIXELS)
         when {
-            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, target) }
+            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, width, height) }
             entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target)
-            else -> coverOf(entry.file, charset, cacheDir, target)
+            else -> coverOf(entry.file, charset, cacheDir, width, height)
         }
     } catch (t: Throwable) {
         null
     }
 
-    private fun coverOf(file: File, charset: String, cacheDir: File, target: Target): Bitmap? {
+    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int): Bitmap? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
+        val full = Target(capPixels = THUMB_CAP_PIXELS)
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
-            return Decoders.decode(file, target)
+            return Decoders.decode(file, full)
         }
         val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
         return try {
+            val target = if (!source.isVector) full else {
+                source.pageSize(0)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
+            }
             if (source.pageCount <= 0) null else source.loadPage(0, target)
         } catch (t: Throwable) {
             null

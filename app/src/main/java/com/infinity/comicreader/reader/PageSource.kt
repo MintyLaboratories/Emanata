@@ -7,6 +7,9 @@ import java.io.Closeable
 interface PageSource : Closeable {
     val pageCount: Int
 
+    /** True when pages are drawn from vectors at any size, so none is native ([PdfSource]). */
+    val isVector: Boolean get() = false
+
     /** Render page [index] at exactly the size [target] gives for it. */
     fun loadPage(index: Int, target: Target): Bitmap
 

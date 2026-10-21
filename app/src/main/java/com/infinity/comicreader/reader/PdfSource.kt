@@ -8,6 +8,8 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.File
+import kotlin.math.ceil
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** Renders PDF pages with the platform [PdfRenderer]. */
@@ -23,6 +25,8 @@ class PdfSource(file: File) : PageSource {
     }
 
     override val pageCount: Int get() = renderer.pageCount
+
+    override val isVector: Boolean get() = true
 
     /**
      * [PdfRenderer] allows only one open [PdfRenderer.Page] at a time and is not
@@ -129,6 +133,19 @@ class PdfSource(file: File) : PageSource {
         fun vectorTarget(target: Target, pw: Double): Target {
             val t = if (target.fit == Fit.SHRINK) target.copy(fit = Fit.INSIDE) else target
             return if (t.width <= 0 && t.height <= 0) t.copy(width = (pw * NATIVE_SCALE).roundToInt()) else t
+        }
+
+        /**
+         * The whole [pw] x [ph]-point page at the smallest scale that covers a
+         * [width] x [height] box, so a cover made from it never enlarges; a wraparound
+         * no smaller than [NATIVE_SCALE], for its barcode to be found.
+         */
+        fun coverTarget(pw: Int, ph: Int, width: Int, height: Int, capPixels: Long): Target {
+            var scale = max(width.toDouble() / pw, height.toDouble() / ph)
+            if (Wraparound.isWraparound(pw, ph)) scale = max(scale, NATIVE_SCALE.toDouble())
+            // Rounding noise must not add a pixel.
+            fun side(points: Int) = ceil(points * scale - 1e-6).toInt()
+            return Target(side(pw), side(ph), Fit.INSIDE, capPixels = capPixels)
         }
 
         /**

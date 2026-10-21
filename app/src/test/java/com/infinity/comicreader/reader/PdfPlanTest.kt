@@ -19,6 +19,18 @@ class PdfPlanTest {
     private fun plan(target: Target) = PdfSource.vectorTarget(target, pw).plan(pw, ph)
 
     @Test
+    fun aCoverRendersJustCoveringItsBox() {
+        // Height limits a letter page in a 2:3 box: 1800 x 2700 needs 2700 / 792 px per point.
+        val t = PdfSource.coverTarget(612, 792, 1800, 2700, 1L)
+        assertEquals(2087, t.width)
+        assertEquals(2700, t.height)
+        assertEquals(Fit.INSIDE, t.fit)
+        // Small boxes render small; a wraparound no smaller than the native scale.
+        assertEquals(100, PdfSource.coverTarget(612, 792, 64, 100, 1L).height)
+        assertEquals(1224 * 2, PdfSource.coverTarget(1224, 792, 64, 96, 1L).width)
+    }
+
+    @Test
     fun shrinkStillEnlargesAVectorPage() {
         val plan = plan(Target(2400, 3200, Fit.SHRINK))
         assertEquals(2400, plan.width)

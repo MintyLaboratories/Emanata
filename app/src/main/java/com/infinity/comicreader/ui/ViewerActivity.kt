@@ -68,6 +68,8 @@ import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.ArchiveKind
+import com.infinity.comicreader.reader.AutoScroll
+import com.infinity.comicreader.reader.AutoScrollClock
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.reader.Chapter
@@ -122,6 +124,7 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var pageText: TextView
     private lateinit var chapterText: TextView
     private lateinit var nightOverlay: View
+    private lateinit var autoProgress: View
     private lateinit var progress: android.widget.ProgressBar
     private lateinit var endCard: View
     private lateinit var endSubtitle: TextView
@@ -238,8 +241,11 @@ class ViewerActivity : AppCompatActivity() {
     // auto-scroll
     private val handler = Handler(Looper.getMainLooper())
     private var autoScrolling = false
-    private var autoRemainder = 0f
+    private val autoClock = AutoScrollClock()
     private var autoLastFrame = 0L
+
+    /** The page whose time [autoClock] counts in paged reading; another one shown starts it over. */
+    private var autoPage = -1
 
     /** Set when a chapter change should carry the running auto-scroll over. */
     private var keepAutoScroll = false
@@ -496,6 +502,7 @@ class ViewerActivity : AppCompatActivity() {
         pageText = findViewById(R.id.viewer_page_text)
         chapterText = findViewById(R.id.viewer_chapter_text)
         nightOverlay = findViewById(R.id.night_overlay)
+        autoProgress = findViewById(R.id.auto_progress)
         progress = findViewById(R.id.viewer_progress)
         endCard = findViewById(R.id.viewer_end)
         endSubtitle = findViewById(R.id.end_subtitle)
@@ -1892,10 +1899,14 @@ class ViewerActivity : AppCompatActivity() {
             setSpacingDp(value.toInt())
             syncSheet()
         }
-        view.findViewById<Slider>(R.id.sheet_auto_speed).addOnChangeListener { _, value, fromUser ->
-            if (!fromUser) return@addOnChangeListener
-            prefs.autoSpeed = value.toInt()
-            syncSheet()
+        view.findViewById<Slider>(R.id.sheet_auto_speed).apply {
+            valueTo = (AutoScroll.SPEEDS.size - 1).toFloat()
+            setLabelFormatter { AutoScroll.format(speedAt(it)) }
+            addOnChangeListener { _, value, fromUser ->
+                if (!fromUser) return@addOnChangeListener
+                prefs.autoSpeed = speedAt(value)
+                syncSheet()
+            }
         }
     }
 
@@ -1937,7 +1948,7 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(R.id.sheet_night).isChecked = nightFilter
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_next).isChecked = prefs.autoNext
             view.findViewById<TextView>(R.id.sheet_auto_speed_value).text = autoSpeedLabel()
-            view.findViewById<Slider>(R.id.sheet_auto_speed).safeSet(prefs.autoSpeed.toFloat())
+            view.findViewById<Slider>(R.id.sheet_auto_speed).safeSet(AutoScroll.indexOf(prefs.autoSpeed).toFloat())
             view.findViewById<MaterialSwitch>(R.id.sheet_keep_on).isChecked = keepOn
             view.findViewById<MaterialSwitch>(R.id.sheet_fullscreen).isChecked = prefs.fullscreen
         } finally {
@@ -1960,8 +1971,10 @@ class ViewerActivity : AppCompatActivity() {
         getString(R.string.menu_page_spacing) + " · $spacingDp dp"
 
     private fun autoSpeedLabel(): String =
-        getString(R.string.pref_auto_speed) + " · " +
-            getString(R.string.auto_speed_short, prefs.autoSpeed)
+        getString(R.string.pref_auto_speed) + " · " + AutoScrollText.of(resources, prefs.autoSpeed)
+
+    /** The speed at a position of the sheet's slider, which steps through [AutoScroll.SPEEDS]. */
+    private fun speedAt(position: Float): Float = AutoScroll.SPEEDS[position.toInt().coerceIn(0, AutoScroll.SPEEDS.size - 1)]
 
     /** Snaps a value onto the slider's step grid before assigning it. */
     private fun Slider.safeSet(value: Float) {
@@ -1984,7 +1997,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun startAutoScroll() {
         if (source == null || autoScrolling) return
         autoScrolling = true
-        autoRemainder = 0f
+        autoClock.reset()
+        autoPage = currentIndex
         autoLastFrame = SystemClock.uptimeMillis()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (barsVisible) toggleBars()
@@ -1996,38 +2010,57 @@ class ViewerActivity : AppCompatActivity() {
         if (!autoScrolling) return
         autoScrolling = false
         handler.removeCallbacks(autoTick)
+        autoProgress.visibility = View.GONE
         applyKeepScreenOn()
         invalidateOptionsMenu()
     }
 
+    /**
+     * One frame of auto-scroll at [Prefs.autoSpeed]: a strip scrolls on; a page turns once
+     * its time is up, a thin bar along the bottom edge filling meanwhile. A page turned by
+     * hand gets its full time.
+     */
     private val autoTick = object : Runnable {
         override fun run() {
             if (!autoScrolling) return
+            val now = SystemClock.uptimeMillis()
+            val dt = (now - autoLastFrame).coerceAtMost(100L)
+            autoLastFrame = now
+            val speed = prefs.autoSpeed
             if (mode == MODE_PAGED) {
                 val count = source?.pageCount ?: return
-                val next = pageLayout().step(currentIndex, 1)
-                if (next >= count) {
-                    finishAutoScroll()
-                    return
+                if (currentIndex != autoPage) {
+                    autoClock.reset()
+                    autoPage = currentIndex
                 }
-                goTo(next)
-                handler.postDelayed(this, PAGE_INTERVAL_MS_BASE / prefs.autoSpeed)
+                if (autoClock.turn(dt, speed)) {
+                    val next = pageLayout().step(currentIndex, 1)
+                    if (next >= count) {
+                        finishAutoScroll()
+                        return
+                    }
+                    goTo(next)
+                    autoPage = currentIndex
+                }
+                showAutoProgress(autoClock.progress(speed))
             } else {
-                val now = SystemClock.uptimeMillis()
-                val dt = (now - autoLastFrame).coerceAtMost(100L)
-                autoLastFrame = now
-                autoRemainder += prefs.autoSpeed * DP_PER_SECOND_PER_STEP *
-                    resources.displayMetrics.density * dt / 1000f
-                val px = autoRemainder.toInt()
-                autoRemainder -= px
+                autoProgress.visibility = View.GONE
+                val px = autoClock.scroll(dt, speed, vertical.height)
                 if (px > 0) vertical.scrollBy(0, px)
                 if (!vertical.canScrollVertically(1)) {
                     finishAutoScroll()
                     return
                 }
-                handler.postDelayed(this, FRAME_MS)
             }
+            handler.postDelayed(this, FRAME_MS)
         }
+    }
+
+    /** Fills [fraction] of the bottom edge, from where the reading direction starts. */
+    private fun showAutoProgress(fraction: Float) {
+        autoProgress.pivotX = if (readingDir == "rtl") autoProgress.width.toFloat() else 0f
+        autoProgress.scaleX = fraction
+        autoProgress.visibility = View.VISIBLE
     }
 
     /**
@@ -2474,8 +2507,6 @@ class ViewerActivity : AppCompatActivity() {
         private const val EXPORT_W = 2400
         private const val EXPORT_H = 3200
         private const val MAX_SESSION_SECONDS = 4L * 3600
-        private const val PAGE_INTERVAL_MS_BASE = 13_000L
-        private const val DP_PER_SECOND_PER_STEP = 30f
         private const val FRAME_MS = 16L
 
         /** How long, as a share of the screen height, a brightness drag holds at 0. */

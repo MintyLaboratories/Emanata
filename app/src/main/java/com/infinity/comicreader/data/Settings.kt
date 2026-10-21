@@ -75,7 +75,7 @@ data class ReaderSettings(
     val autoCrop: Boolean,
     val linearLight: Boolean,
     val preload: Int,
-    val autoSpeed: Int,
+    val autoSpeed: Float,
     val perSeries: Boolean,
     val detectDirection: Boolean,
     val tapZones: String,

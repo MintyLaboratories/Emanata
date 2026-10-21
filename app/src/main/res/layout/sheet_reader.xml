@@ -281,16 +281,16 @@
             android:id="@+id/sheet_auto_speed_value"
             style="@style/Widget.ComicReader.SheetLabel"
             android:text="@string/pref_auto_speed"
-            tools:text="Auto-scroll speed · 5 / 10" />
+            tools:text="Auto-scroll speed · 3 screens/min · 20 s a page" />
 
         <com.google.android.material.slider.Slider
             android:id="@+id/sheet_auto_speed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:stepSize="1"
-            android:value="5"
-            android:valueFrom="1"
-            android:valueTo="10" />
+            android:value="6"
+            android:valueFrom="0"
+            android:valueTo="16" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_keep_on"

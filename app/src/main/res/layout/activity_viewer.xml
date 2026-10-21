@@ -28,6 +28,15 @@
         android:clickable="false"
         android:visibility="gone" />
 
+    <View
+        android:id="@+id/auto_progress"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:layout_gravity="bottom"
+        android:background="@color/auto_progress"
+        android:scaleX="0"
+        android:visibility="gone" />
+
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/viewer_toolbar"
         android:layout_width="match_parent"

@@ -321,6 +321,36 @@ class PrefsUpgradeTest {
     }
 
     @Test
+    fun oldAutoScrollStepBecomesScreensPerMinute() {
+        assertEquals(
+            mapOf("pref_auto_scroll_speed" to "6", "pref_auto_speed" to null),
+            Prefs.upgrade(mapOf("pref_auto_speed" to 5))
+        )
+        // A speed already set wins.
+        assertEquals(
+            mapOf("pref_auto_speed" to null),
+            Prefs.upgrade(mapOf("pref_auto_speed" to 5, "pref_auto_scroll_speed" to "0.5"))
+        )
+    }
+
+    @Test
+    fun autoScrollSpeedDefaultsToThreeScreensAMinuteAndSnapsToASpeedOffered() {
+        val prefs = Prefs(context)
+        assertEquals(3f, prefs.autoSpeed, 0f)
+        prefs.autoSpeed = 0.3f
+        assertEquals(0.25f, prefs.autoSpeed, 0f)
+        assertEquals("0.25", stored()["pref_auto_scroll_speed"])
+    }
+
+    @Test
+    fun anOldBackupRestoresTheAutoScrollSpeed() {
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_auto_speed" to 10))
+        assertEquals(12f, prefs.autoSpeed, 0f)
+        assertFalse("pref_auto_speed" in stored())
+    }
+
+    @Test
     fun twoPageSwitchBecomesOnOrOff() {
         assertEquals(mapOf("pref_two_page_mode" to "on", "pref_two_page" to null), Prefs.upgrade(mapOf("pref_two_page" to true)))
         assertEquals(mapOf("pref_two_page_mode" to "off", "pref_two_page" to null), Prefs.upgrade(mapOf("pref_two_page" to false)))

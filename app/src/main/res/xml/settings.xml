@@ -154,13 +154,11 @@
             app:key="pref_preload"
             app:title="@string/pref_preload"
             app:useSimpleSummaryProvider="true" />
-        <SeekBarPreference
-            android:max="10"
-            app:defaultValue="5"
-            app:key="pref_auto_speed"
-            app:min="1"
-            app:showSeekBarValue="true"
-            app:title="@string/pref_auto_speed" />
+        <ListPreference
+            app:defaultValue="3"
+            app:key="pref_auto_scroll_speed"
+            app:title="@string/pref_auto_speed"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_cat_adjustments">

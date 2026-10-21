@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Backup
@@ -91,6 +92,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
+
+        findPreference<ListPreference>("pref_auto_scroll_speed")?.apply {
+            entries = AutoScroll.SPEEDS.map { AutoScrollText.of(resources, it) }.toTypedArray()
+            entryValues = AutoScroll.SPEEDS.map { AutoScroll.format(it) }.toTypedArray()
+            value = AutoScroll.format(prefs.autoSpeed)
+        }
 
         for (tab in Prefs.TABS) {
             val pref = findPreference<Preference>("view_$tab") ?: continue

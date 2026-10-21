@@ -101,10 +101,10 @@ class SettingsRepositoryTest {
     @Test
     fun unrelatedWritesKeepTheSameSnapshot() {
         val before = repo.list.value
-        prefs.autoSpeed = 9
+        prefs.autoSpeed = 8f
         // A data-class snapshot that did not change compares equal, so collectors skip it.
         assertEquals(before, repo.list.value)
-        assertEquals(9, repo.reader.value.autoSpeed)
+        assertEquals(8f, repo.reader.value.autoSpeed, 0f)
     }
 
     @Test

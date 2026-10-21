@@ -198,8 +198,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Page filter:** none, invert, grayscale, high contrast, sepia. Invert flips
   lightness only, in OKLab, so colors keep their hue (Android 13+; an RGB
   invert before).
-- **Auto-scroll** with adjustable speed (continuous in vertical / long-strip modes,
-  timed page turns in paged mode); touching the screen takes over.
+- **Auto-scroll** at one speed for every mode, in screen heights per minute
+  (0.25 to 45): strips scroll that far each minute; paged mode turns the page
+  when one screen height would have scrolled past, a thin bar along the bottom
+  edge filling meanwhile. Touching the screen takes over.
 - **Auto-crop** trims blank page borders; pages ahead are **preloaded**.
 - **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in
   this book* (its folders, or the inner archives of a nested book) and *In this

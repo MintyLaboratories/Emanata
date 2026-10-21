@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
@@ -167,13 +169,13 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             duration = (ANIMATION_MS * kotlin.math.abs(target - from)).toLong().coerceAtLeast(1)
             interpolator = DecelerateInterpolator()
             addUpdateListener { setProgress(it.animatedValue as Float) }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
+            addListener(object : AnimatorListenerAdapter() {
                 private var cancelled = false
-                override fun onAnimationCancel(animation: android.animation.Animator) {
+                override fun onAnimationCancel(animation: Animator) {
                     cancelled = true
                 }
 
-                override fun onAnimationEnd(animation: android.animation.Animator) {
+                override fun onAnimationEnd(animation: Animator) {
                     if (!cancelled) end()
                 }
             })

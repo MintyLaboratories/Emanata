@@ -46,23 +46,24 @@ import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookFactsCache
-import com.infinity.comicreader.data.ForwardCrumbs
+import com.infinity.comicreader.data.Bookmark
+import com.infinity.comicreader.data.Crumb
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.EntryValues
-import com.infinity.comicreader.data.FileStat
-import com.infinity.comicreader.data.FolderSize
-import com.infinity.comicreader.data.LibraryFilter
-import com.infinity.comicreader.data.LibrarySnapshot
-import com.infinity.comicreader.data.LibrarySort
-import com.infinity.comicreader.data.PeekMode
-import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.data.FavoriteClassifier
 import com.infinity.comicreader.data.FavoriteKind
 import com.infinity.comicreader.data.FavoriteKindCache
 import com.infinity.comicreader.data.FavoriteLabels
+import com.infinity.comicreader.data.FileStat
+import com.infinity.comicreader.data.FolderSize
+import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LibraryFilter
+import com.infinity.comicreader.data.LibrarySnapshot
+import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
+import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
@@ -71,6 +72,7 @@ import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
+import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
@@ -83,6 +85,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.hypot
 
 class ListActivity : AppCompatActivity() {
 
@@ -751,7 +754,7 @@ class ListActivity : AppCompatActivity() {
         )
     }
 
-    private fun entryForBookmark(bookmark: com.infinity.comicreader.data.Bookmark, snap: LibrarySnapshot): BookEntry {
+    private fun entryForBookmark(bookmark: Bookmark, snap: LibrarySnapshot): BookEntry {
         val file = File(bookmark.path)
         val stat = if (file.exists()) FileStat.of(file) else null
         return BookEntry(
@@ -1072,7 +1075,7 @@ class ListActivity : AppCompatActivity() {
         })
     }
 
-    private fun span(e: MotionEvent) = kotlin.math.hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1))
+    private fun span(e: MotionEvent) = hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1))
 
     /** Spread growth that opens a peek fully. */
     private fun fullSpread(): Float =
@@ -1628,7 +1631,7 @@ class ListActivity : AppCompatActivity() {
     }
 
     /** Opens a crumb's folder; a forward crumb whose folder is gone drops the trail instead. */
-    private fun openCrumb(crumb: com.infinity.comicreader.data.Crumb) {
+    private fun openCrumb(crumb: Crumb) {
         val dir = File(crumb.path)
         if (!dir.isDirectory) {
             toast(R.string.folder_gone)

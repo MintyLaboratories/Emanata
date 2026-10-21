@@ -3,7 +3,10 @@ package com.infinity.comicreader.reader
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.util.Formats
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 
 /** Reads what sorting and filtering need from inside a book: its page count and ComicInfo year. */
 object BookFactsReader {
@@ -21,16 +24,16 @@ object BookFactsReader {
             if (kind == ArchiveKind.PDF) {
                 PdfSource(file).use { BookFacts(it.pageCount, 0) }
             } else {
-                val reader = ArchiveReader.open(file, charsetName, kind) ?: throw java.io.IOException("Not an archive")
+                val reader = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
             }
         }
-        else -> throw java.io.IOException("Not a book")
+        else -> throw IOException("Not a book")
     }
 
     /** At most [max] bytes of [input]. */
-    private fun readUpTo(input: java.io.InputStream, max: Int): ByteArray {
-        val out = java.io.ByteArrayOutputStream()
+    private fun readUpTo(input: InputStream, max: Int): ByteArray {
+        val out = ByteArrayOutputStream()
         val buf = ByteArray(8 * 1024)
         while (out.size() < max) {
             val n = input.read(buf, 0, minOf(buf.size, max - out.size()))

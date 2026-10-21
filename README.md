@@ -8,7 +8,7 @@ features and customizability.
 - **Formats:** CBZ / CBR / CB7 / CBT / PDF, folders of images; WebP, JPEG XL,
   AVIF, TIFF and more.
 - **Rendering:** Lanczos3 scaling everywhere, including GPU Lanczos3 while
-  zooming.
+  zooming (Android 13+).
 - **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
 - **No required connection:** works offline. No internet permission is
   requested; network features, once added, will use the network only for what

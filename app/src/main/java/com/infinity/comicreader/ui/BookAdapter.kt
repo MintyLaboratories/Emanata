@@ -68,6 +68,9 @@ class BookAdapter(
             notifyDataSetChanged()
         }
 
+    /** Called with the cover size (width, height) each grid cell asks a cover at. */
+    var onGridCover: ((Int, Int) -> Unit)? = null
+
     /** Rebinds every row when it changes. */
     var options = RowOptions()
         set(value) {
@@ -315,6 +318,7 @@ class BookAdapter(
         val size = (w.toLong() shl 32) or h.toLong()
         if (holder.requested == size) return
         holder.requested = size
+        if (grid) onGridCover?.invoke(w, h)
         holder.job?.cancel()
         val appContext = holder.itemView.context.applicationContext
         val charset = prefs.charset

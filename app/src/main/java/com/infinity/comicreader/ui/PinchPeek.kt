@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import android.content.res.Configuration
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -95,7 +96,11 @@ class PinchPeek(
         val folder = if (!entry.isDir) null else {
             // The library's own cover size, so the covers it made are reused as they are.
             val cover = tileView?.findViewById<View>(R.id.thumb)?.takeIf { it.width > 0 && it.height > 0 }
-            PeekOverlay.Folder(cover?.let { intArrayOf(it.width, it.height) }, prefs.coverStyle, folderEntries, prefs.thumbnails)
+            val landscape = activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            PeekOverlay.Folder(
+                cover?.let { intArrayOf(it.width, it.height) }, prefs.coverStyle, folderEntries, prefs.thumbnails,
+                gridCover = prefs.gridCover(landscape)
+            )
         }
         overlay.begin(entry, tile, full, activity.lifecycleScope, prefs.charset, activity.cacheDir, prefs.linearLight, folder)
     }

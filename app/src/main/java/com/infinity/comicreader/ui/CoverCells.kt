@@ -12,12 +12,16 @@ data class CoverCells(val columns: Int, val width: Int, val height: Int) {
          * Cells across [avail] pixels, each with [pad] pixels on either side of its cover.
          * Covers take the library's [tile] size (width, height) when it is at least
          * [minWidth] wide, so covers it already made show 1:1; smaller tiles (list rows)
-         * grow to cells about [cellWidth] wide in the tile's shape. At most [maxColumns].
+         * grow to cells about [cellWidth] wide in the tile's shape, unless the library's
+         * [grid] cover size (the last one its grid drew) fits, whose covers it may have
+         * made already. At most [maxColumns].
          */
-        fun of(avail: Int, tile: IntArray?, minWidth: Int, cellWidth: Int, pad: Int, maxColumns: Int): CoverCells {
-            if (tile != null && tile[0] >= minWidth && tile[1] > 0 && tile[0] + 2 * pad <= avail) {
-                val columns = (avail / (tile[0] + 2 * pad)).coerceIn(1, maxColumns)
-                return CoverCells(columns, tile[0], tile[1])
+        fun of(avail: Int, tile: IntArray?, minWidth: Int, cellWidth: Int, pad: Int, maxColumns: Int, grid: IntArray? = null): CoverCells {
+            for (cover in listOf(tile, grid)) {
+                if (cover != null && cover[0] >= minWidth && cover[1] > 0 && cover[0] + 2 * pad <= avail) {
+                    val columns = (avail / (cover[0] + 2 * pad)).coerceIn(1, maxColumns)
+                    return CoverCells(columns, cover[0], cover[1])
+                }
             }
             val columns = (avail / cellWidth.coerceAtLeast(1)).coerceIn(2, maxColumns)
             val width = (avail / columns - 2 * pad).coerceAtLeast(1)

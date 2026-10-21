@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.os.Build
@@ -233,6 +234,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             onStarClick = { toggleFavorite(it.file.absolutePath) }
         )
         adapter.onSectionClick = { toggleSection(it.kind) }
+        // Folder peeks from list rows reuse the grid's covers at this size.
+        adapter.onGridCover = { w, h -> prefs.setGridCover(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE, w, h) }
         recycler.adapter = adapter
         applyLayoutManager()
         setUpPeek()

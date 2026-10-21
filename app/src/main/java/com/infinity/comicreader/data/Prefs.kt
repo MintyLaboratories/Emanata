@@ -338,6 +338,20 @@ class Prefs(context: Context) {
         get() = ui.getString("last_path", null)
         set(v) = ui.edit().putString("last_path", v).apply()
 
+    /** `[width, height]` in pixels of the covers the library's grid last drew in [landscape] or portrait; null before any. */
+    fun gridCover(landscape: Boolean): IntArray? =
+        ui.getString(gridCoverKey(landscape), null)?.split('x')?.mapNotNull { it.toIntOrNull() }
+            ?.takeIf { it.size == 2 && it[0] > 0 && it[1] > 0 }?.toIntArray()
+
+    /** Keeps the grid's cover size for [gridCover]; writes only a change. */
+    fun setGridCover(landscape: Boolean, width: Int, height: Int) {
+        val key = gridCoverKey(landscape)
+        val value = "${width}x$height"
+        if (ui.getString(key, null) != value) ui.edit().putString(key, value).apply()
+    }
+
+    private fun gridCoverKey(landscape: Boolean) = if (landscape) "grid_cover_landscape" else "grid_cover_portrait"
+
     /** One of [StartupLocation]'s choices; a home folder set by an older version counts as custom. */
     var startupLocation: String
         get() = sp.getString(KEY_STARTUP_LOCATION, null)

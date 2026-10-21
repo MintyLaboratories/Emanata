@@ -20,6 +20,16 @@ class CoverCellsTest {
     }
 
     @Test
+    fun listThumbnailsTakeTheGridCoverSizeWhenKnown() {
+        assertEquals(CoverCells(4, 200, 300), CoverCells.of(1000, intArrayOf(80, 120), 150, 280, 4, 12, grid = intArrayOf(200, 300)))
+        // A grid tile is used as it is, the grid size only stands in for a list row.
+        assertEquals(CoverCells(3, 300, 450), CoverCells.of(1000, intArrayOf(300, 450), 150, 280, 4, 12, grid = intArrayOf(200, 300)))
+        // A grid cover too small or too wide to use: list thumbnails grow as before.
+        assertEquals(325, CoverCells.of(1000, intArrayOf(80, 120), 150, 280, 4, 12, grid = intArrayOf(100, 150)).width)
+        assertEquals(325, CoverCells.of(1000, intArrayOf(80, 120), 150, 280, 4, 12, grid = intArrayOf(1200, 1800)).width)
+    }
+
+    @Test
     fun withoutATileCoversArePortrait() {
         val cells = CoverCells.of(600, null, 150, 280, 0, 12)
         assertEquals(CoverCells(2, 300, 450), cells)

@@ -96,13 +96,25 @@ class ViewerActivityTopToBottomTest {
     }
 
     @Test
-    fun zonesSetInSettingsStay() {
+    fun theDefaultLeftAndRightTurnTopAndBottom() {
         prefs.tapZones = "left_right"
+        val pager = launch().pager()
+        pager.shownImage().onTap!!(0.9f, 0.5f)
+        idle()
+        assertEquals(0, pager.currentItem)
+        pager.shownImage().onTap!!(0.5f, 0.9f)
+        idle()
+        assertEquals(1, pager.currentItem)
+    }
+
+    @Test
+    fun otherZonesSetInSettingsStay() {
+        prefs.tapZones = "right_left"
         val pager = launch().pager()
         pager.shownImage().onTap!!(0.5f, 0.9f)
         idle()
         assertEquals(0, pager.currentItem)
-        pager.shownImage().onTap!!(0.9f, 0.5f)
+        pager.shownImage().onTap!!(0.1f, 0.5f)
         idle()
         assertEquals(1, pager.currentItem)
     }

@@ -207,7 +207,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   default. "Apply to: This folder" keeps its layout as it is.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
   thirds turn the page (a whole spread in two-page mode), the middle third
-  toggles the UI. Until one is chosen, books read top to bottom take top/bottom.
+  toggles the UI. Books read top to bottom take top/bottom in place of the
+  default left/right.
 - **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
   While moving, the page is drawn through a Lanczos3 GPU shader with an
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,

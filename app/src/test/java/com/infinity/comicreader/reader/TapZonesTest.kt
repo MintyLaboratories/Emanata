@@ -69,12 +69,15 @@ class TapZonesTest {
     }
 
     @Test
-    fun topToBottomTakesTopAndBottomUntilAZoneIsSet() {
+    fun topToBottomTakesTopAndBottomInPlaceOfTheDefault() {
         assertEquals(TapZones.TOP_BOTTOM, TapZones.forBook(null, topToBottom = true))
         assertEquals(TapZones.TOP_BOTTOM, TapZones.forBook("bogus", topToBottom = true))
+        assertEquals(TapZones.TOP_BOTTOM, TapZones.forBook("left_right", topToBottom = true))
         assertEquals(TapZones.LEFT_RIGHT, TapZones.forBook(null, topToBottom = false))
-        assertEquals(TapZones.LEFT_RIGHT, TapZones.forBook("left_right", topToBottom = true))
+        assertEquals(TapZones.LEFT_RIGHT, TapZones.forBook("left_right", topToBottom = false))
+        // Other zones stay as set.
+        assertEquals(TapZones.RIGHT_LEFT, TapZones.forBook("right_left", topToBottom = true))
         assertEquals(TapZones.DISABLED, TapZones.forBook("disabled", topToBottom = true))
-        assertEquals(TapZones.BOTTOM_TOP, TapZones.forBook("bottom_top", topToBottom = false))
+        assertEquals(TapZones.BOTTOM_TOP, TapZones.forBook("bottom_top", topToBottom = true))
     }
 }

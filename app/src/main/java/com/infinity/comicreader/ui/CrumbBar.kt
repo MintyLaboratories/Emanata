@@ -89,8 +89,9 @@ class CrumbBar @JvmOverloads constructor(
     private fun crumbView(): TextView = TextView(context).apply {
         setTextAppearance(R.style.TextAppearance_ComicReader_Crumb)
         maxLines = 1
-        val h = dp(6)
-        val v = dp(10)
+        minHeight = dp(MIN_TOUCH_DP)
+        val h = dp(12)
+        val v = dp(8)
         setPadding(h, v, h, v)
         gravity = Gravity.CENTER_VERTICAL
     }
@@ -115,4 +116,9 @@ class CrumbBar @JvmOverloads constructor(
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        /** Crumbs are at least this tall, to be easy to hit. */
+        const val MIN_TOUCH_DP = 48
+    }
 }

@@ -42,7 +42,7 @@
 
     <style name="TextAppearance.ComicReader.Crumb" parent="TextAppearance.Material3.BodyMedium">
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">17sp</item>
     </style>
 
     <style name="TextAppearance.ComicReader.Label" parent="TextAppearance.Material3.LabelLarge">

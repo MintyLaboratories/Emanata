@@ -290,8 +290,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/previews` as JPEGs keyed by
   the book's path, size and time, the page and the preview size; least recently
-  used evicted past 128 MiB. Every page source leaves one per decoded page
-  (`PreviewingSource`), made from the full-size decode before any crop.
+  used evicted past 128 MiB. Every page source leaves one per loaded page
+  (`PreviewingSource`), made on a background writer: JPEG and WebP from the
+  page's bytes, other formats from the full-size decode halved once before any
+  crop. Detail (zoom) loads leave none.
 - Nested archives (up to two levels) are copied to `cacheDir/nested`
   (`NestedArchives`): reused across opens, least recently used evicted past
   2 GiB (never while a book holds them), inner archives over 1 GiB or past the

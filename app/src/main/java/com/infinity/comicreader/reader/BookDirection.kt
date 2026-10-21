@@ -31,6 +31,34 @@ object BookDirection {
         return Contents(DirectionDetection.fromContents(source.comicInfo(cheapOnly = true), file.name, names), !source.comicInfoCostly())
     }
 
+    /**
+     * The sizes of [source]'s first [Slices.SAMPLE] pages: [known] ones, the rest from their
+     * headers when [read], else null. Blocking when [read].
+     */
+    fun sliceSizes(source: PageSource, known: Array<IntArray?>?, read: Boolean): List<IntArray?> =
+        (0 until minOf(source.pageCount, Slices.SAMPLE)).map { i ->
+            known?.getOrNull(i) ?: if (read) runCatching { source.pageSize(i) }.getOrNull() else null
+        }
+
+    /**
+     * Top to bottom when [source]'s pages are slices of one strip ([Slices]): from [sizes] of
+     * its first pages, any missing read now, and, when their shape alone does not settle it,
+     * the seams between them, decoded as thin strips. Null when they are not, or once
+     * [canceled]. Blocking.
+     */
+    fun slices(source: PageSource, sizes: List<IntArray?>, canceled: () -> Boolean = { false }): DirectionDetection.Detected? {
+        val all = sizes.mapIndexed { i, s -> s ?: if (canceled()) null else runCatching { source.pageSize(i) }.getOrNull() }
+        val shape = Slices.shape(all)
+        if (shape != Slices.Shape.LIKELY) return Slices.verdict(shape)
+        val seams = Slices.seamPairs(all).map { k ->
+            if (canceled()) return null
+            val bottom = runCatching { source.edge(k, bottom = true) }.getOrNull() ?: return@map null
+            val top = runCatching { source.edge(k + 1, bottom = false) }.getOrNull() ?: return@map null
+            Seams.runsOn(bottom, top)
+        }
+        return Slices.verdict(shape, seams)
+    }
+
     /** The typical shape of [source]'s first few pages after the cover ([Wraparound.innerRatio]); null without any. */
     fun innerRatio(source: PageSource): Double? = Wraparound.innerRatio(
         (1 until minOf(source.pageCount, 1 + Wraparound.INNER_SAMPLE)).mapNotNull { runCatching { source.pageSize(it) }.getOrNull() }

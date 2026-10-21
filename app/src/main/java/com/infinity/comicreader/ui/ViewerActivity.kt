@@ -64,7 +64,6 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
-import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SpreadDisplay
@@ -90,6 +89,7 @@ import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PreviewStore
+import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.reader.Spreads
 import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
@@ -297,6 +297,19 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Finishes the open book's direction detection after it shows ([detectAfterOpen]). */
     private var lateDetectionJob: Job? = null
+
+    /**
+     * Top to bottom when the open book's pages are slices of one strip ([Slices]), found on
+     * open or after it ([detectSlicesLater]). It outranks [detection], and shows them in one
+     * continuous column, also in a folder set to top to bottom.
+     */
+    private var slices: DirectionDetection.Detected? = null
+
+    /** True once the open book's pages were checked for slices, or are being. */
+    private var slicesChecked = false
+
+    /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
+    private var slicesJob: Job? = null
 
     /** Counts the reader's own direction choices, so a late cover finding never undoes one. */
     private var directionChoices = 0
@@ -778,9 +791,18 @@ class ViewerActivity : AppCompatActivity() {
      * whole layout or a layout was picked for the book.
      */
     private fun shownMode(): String {
-        val sliced = detectedActive && detection?.direction == ReadingDirection.TTB && !folderScope() && !layoutPicked
+        val sliced = slices != null && prefs.detectDirection && !folderScope() && !layoutPicked
         return ReaderLayout.shownMode(chosenMode, readingDir, sliced)
     }
+
+    /** What decides the detected direction: slices of one strip first, then the book's contents. */
+    private fun found(): DirectionDetection.Detected? = slices ?: detection
+
+    /**
+     * True when the open book's pages may be checked for slices: detection is on, and the
+     * folder keeps neither a whole layout nor a direction other than top to bottom.
+     */
+    private fun maySlice() = prefs.detectDirection && !folderScope() && (!folderDirection() || folderLayout?.dir == DIR_TTB)
 
     /** True while pages read top to bottom, paged or continuous. */
     private fun topToBottom() = readingDir == DIR_TTB
@@ -793,16 +815,16 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Reads in the detected direction unless the folder has its own or detection is off. */
     private fun applyDetection() {
-        val found = detection
+        val found = found()
         detectedActive = found != null && !folderDirection() && prefs.detectDirection
         if (detectedActive && found != null) readingDir = found.direction.key
         mode = shownMode()
     }
 
-    /** Says on open which direction was detected and why, when it is not the default; once per folder. */
+    /** Says on open which direction was detected and why, when it or the layout it brings is not the default; once per folder. */
     private fun noteDetection() {
-        val found = detection ?: return
-        if (!detectedActive || found.direction.key == prefs.readingDir) return
+        val found = found() ?: return
+        if (!detectedActive || (found.direction.key == prefs.readingDir && mode == chosenMode)) return
         val noted = file?.parent to found
         if (notedDetection == noted) return
         notedDetection = noted
@@ -828,7 +850,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /** The direction on screen and where it comes from: the folder, the book's contents, or the default. */
     private fun directionInfo(): String {
-        val found = detection
+        val found = found()
         val name = directionName(readingDir)
         return when {
             folderDirection() -> getString(R.string.direction_info, name, getString(R.string.direction_source_folder))
@@ -900,14 +922,20 @@ class ViewerActivity : AppCompatActivity() {
         hideHintNow()
         backPage = -1
         detection = null
+        slices = null
+        slicesChecked = false
         layoutPicked = false
         resolveLayout()
 
         lateDetectionJob?.cancel()
+        slicesJob?.cancel()
         openJob = lifecycleScope.launch {
             // A folder with its own direction keeps it: nothing to detect.
             val detect = prefs.detectDirection && !folderDirection()
+            val slice = maySlice()
             var known: KnownPages? = null
+            var sliceSizes: List<IntArray?> = emptyList()
+            var sliced: DirectionDetection.Detected? = null
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
@@ -916,6 +944,11 @@ class ViewerActivity : AppCompatActivity() {
                     val siblings = siblingChapters(target)
                     val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
                     known = s.getOrNull()?.let { knownSizes(target, it) }
+                    // Slices whose shape alone tells read as one column from the first page; seams wait.
+                    s.getOrNull()?.takeIf { slice }?.let { src ->
+                        sliceSizes = BookDirection.sliceSizes(src, known?.sizes, read = src.cheapSizes)
+                        if (Slices.shape(sliceSizes) == Slices.Shape.SURE) sliced = Slices.verdict(Slices.Shape.SURE)
+                    }
                     ensureActive()
                     Triple(s, siblings, found)
                 } catch (e: CancellationException) {
@@ -940,12 +973,44 @@ class ViewerActivity : AppCompatActivity() {
                 return@launch
             }
             detection = contents?.detected
+            slices = sliced
+            slicesChecked = slice
             applyDetection()
             source = src
             known?.let { showPages(it) }
             setup(src)
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
+            if (slice && sliced == null && (Slices.shape(sliceSizes) == Slices.Shape.LIKELY || sliceSizes.any { it == null })) {
+                detectSlicesLater(target, src, sliceSizes)
+            }
+        }
+    }
+
+    /**
+     * Checks [book]'s pages for slices once it shows: the seams of a shape that alone does
+     * not settle it, or the sizes not known on open. The book turns to one column top to
+     * bottom when they are, while the reader is still where it was and has not chosen a
+     * direction; otherwise the finding is dropped. [sizes] null reads them all now.
+     */
+    private fun detectSlicesLater(book: File, src: PageSource, sizes: List<IntArray?>?) {
+        slicesJob?.cancel()
+        slicesChecked = true
+        val at = currentIndex
+        val choices = directionChoices
+        val known = pageSizes
+        slicesJob = lifecycleScope.launch {
+            val found = withContext(AppDispatchers.io) {
+                val job = coroutineContext.job
+                runCatching {
+                    BookDirection.slices(src, sizes ?: BookDirection.sliceSizes(src, known, read = true)) { !job.isActive }
+                }.getOrNull()
+            }
+            if (found == null || source !== src || file != book || choices != directionChoices || currentIndex != at) return@launch
+            if (!maySlice()) return@launch
+            slices = found
+            showDetection()
+            noteDetection()
         }
     }
 
@@ -1012,6 +1077,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun closeSource() {
         lateDetectionJob?.cancel()
         lateDetectionJob = null
+        slicesJob?.cancel()
+        slicesJob = null
         sizesJob?.cancel()
         sizesJob = null
         learnJob?.cancel()
@@ -2258,6 +2325,8 @@ class ViewerActivity : AppCompatActivity() {
         }
         val choices = directionChoices
         val siblings = chapters
+        // A folder that kept a left or right direction never checked its pages for slices.
+        if (!slicesChecked && maySlice()) detectSlicesLater(book, src, null)
         lateDetectionJob = lifecycleScope.launch {
             val contents = withContext(AppDispatchers.io) { runCatching { detectBeforeOpen(book, src, siblings) }.getOrNull() }
             if (source !== src || choices != directionChoices || folderDirection()) return@launch

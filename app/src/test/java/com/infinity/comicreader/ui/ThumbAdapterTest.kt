@@ -55,6 +55,22 @@ class ThumbAdapterTest {
         override fun close() {}
     }
 
+    /** One page whose preview waits for [preview]; its exact decode is ready at once. */
+    private class SlowPreviewSource : PageSource {
+        val preview = CountDownLatch(1)
+        val previewDone = CountDownLatch(1)
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, target: Target): Bitmap =
+            Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
+
+        override fun loadPreview(index: Int): Bitmap {
+            preview.await(5, TimeUnit.SECONDS)
+            return Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888).also { previewDone.countDown() }
+        }
+
+        override fun close() {}
+    }
+
     private fun listShowing(adapter: ThumbAdapter): RecyclerView {
         val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
         return RecyclerView(context).apply {
@@ -68,8 +84,8 @@ class ThumbAdapterTest {
         }
     }
 
-    private fun waitFor(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
+    private fun waitFor(ms: Long = 5_000, done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + ms
         while (!done() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
@@ -92,6 +108,25 @@ class ThumbAdapterTest {
         assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
         assertEquals(ImageView.ScaleType.CENTER, image.scaleType)
         assertEquals(listOf(0 to false, 0 to true), events)
+        adapter.release()
+    }
+
+    @Test
+    fun exactThumbnailDoesNotWaitForPreviewAndStaysWhenItArrives() {
+        val source = SlowPreviewSource()
+        val adapter = ThumbAdapter(source, currentPage = 0) {}
+        val events = ArrayList<Pair<Int, Boolean>>()
+        adapter.onShown = { position, exact -> events += position to exact }
+        val list = listShowing(adapter)
+        val image = (list.findViewHolderForAdapterPosition(0) as ThumbAdapter.Holder).image
+        waitFor { image.drawable != null }
+        assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
+        source.preview.countDown()
+        source.previewDone.await(5, TimeUnit.SECONDS)
+        // Lets a late preview reach the main thread, were it to show.
+        waitFor(300) { false }
+        assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
+        assertEquals(listOf(0 to true), events)
         adapter.release()
     }
 

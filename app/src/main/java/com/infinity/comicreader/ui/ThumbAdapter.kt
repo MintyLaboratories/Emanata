@@ -117,7 +117,9 @@ class ThumbAdapter(
             return
         }
         holder.job = scope.launch {
-            if (holder.image.drawable == null) showPreview(holder, position)
+            // The preview loads beside the exact thumbnail and shows only while that is not in.
+            var exactIn = false
+            val preview = if (holder.image.drawable == null) launch { showPreview(holder, position) { !exactIn } } else null
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
                     try {
@@ -128,6 +130,8 @@ class ThumbAdapter(
                     }
                 }
             }
+            exactIn = true
+            preview?.cancel()
             if (bitmap != null) {
                 cache.put(position, bitmap)
                 if (holder.page == position) show(holder, bitmap)
@@ -140,8 +144,11 @@ class ThumbAdapter(
         }
     }
 
-    /** Shows page [position]'s preview in [holder], cropped to fill it as the exact thumbnail is, when one is quick to get. */
-    private suspend fun showPreview(holder: Holder, position: Int) {
+    /**
+     * Shows page [position]'s preview in [holder], cropped to fill it as the exact
+     * thumbnail is, when one is quick to get and it is still [wanted].
+     */
+    private suspend fun showPreview(holder: Holder, position: Int, wanted: () -> Boolean) {
         val preview = previews.get(position) ?: withContext(AppDispatchers.io) {
             previewGate.withPermit {
                 try {
@@ -153,7 +160,7 @@ class ThumbAdapter(
                 }
             }
         }?.also { previews.put(position, it) } ?: return
-        if (holder.page != position) return
+        if (holder.page != position || !wanted()) return
         holder.image.scaleType = ImageView.ScaleType.CENTER_CROP
         holder.image.setImageBitmap(preview)
         onShown?.invoke(position, false)

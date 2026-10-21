@@ -55,12 +55,12 @@ class SettingsRepositoryTest {
     fun readerChangesArePublished() {
         prefs.pageMode = "longstrip"
         prefs.fit = "width"
-        prefs.twoPage = true
+        prefs.twoPage = TwoPage.LANDSCAPE
         prefs.defaultAdjustments = Adjustments(brightness = -40, contrast = 10, saturation = 300)
         val reader = repo.reader.value
         assertEquals("longstrip", reader.pageMode)
         assertEquals("width", reader.fit)
-        assertTrue(reader.twoPage)
+        assertEquals(TwoPage.LANDSCAPE, reader.twoPage)
         assertEquals(Adjustments(-40, 10, 100), reader.adjustments)
     }
 

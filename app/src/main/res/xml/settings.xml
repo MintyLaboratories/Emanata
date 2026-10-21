@@ -125,10 +125,13 @@
             app:min="0"
             app:showSeekBarValue="true"
             app:title="@string/pref_page_spacing" />
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:key="pref_two_page"
-            app:title="@string/pref_two_page" />
+        <ListPreference
+            app:defaultValue="off"
+            app:entries="@array/two_page_entries"
+            app:entryValues="@array/two_page_values"
+            app:key="pref_two_page_mode"
+            app:title="@string/pref_two_page"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:defaultValue="false"
             app:key="pref_auto_crop"

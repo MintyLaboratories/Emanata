@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks2
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
@@ -59,6 +60,7 @@ import com.infinity.comicreader.data.SeriesSettings
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.BookDirection
@@ -154,7 +156,10 @@ class ViewerActivity : AppCompatActivity() {
     /** Current page index (always a real page, never a spread index). */
     private var currentIndex = 0
     private var mode = MODE_PAGED
-    private var twoPage = false
+    private var twoPage = TwoPage.OFF
+
+    /** Whether the adapter on screen pairs pages; [useSpread] says whether it should. */
+    private var spread = false
     private var readingDir = "ltr"
     private var filter = Filters.NONE
     private var adjustments = Adjustments.NEUTRAL
@@ -597,7 +602,6 @@ class ViewerActivity : AppCompatActivity() {
         val oldMode = mode
         val oldDir = readingDir
         val oldFit = fit
-        val oldTwoPage = twoPage
         resolveLayout()
         if (mode != oldMode) {
             stopAutoScroll()
@@ -605,7 +609,7 @@ class ViewerActivity : AppCompatActivity() {
             if (mode == MODE_PAGED) dropStripAhead()
         }
         if (fit != oldFit) adapter?.fitMode = effectiveFit()
-        return mode != oldMode || readingDir != oldDir || twoPage != oldTwoPage
+        return mode != oldMode || readingDir != oldDir || useSpread() != spread
     }
 
     private fun resolveLayout() {
@@ -651,7 +655,7 @@ class ViewerActivity : AppCompatActivity() {
         mode = saved.mode.takeIf { it == MODE_PAGED || it == MODE_VERTICAL || it == MODE_LONGSTRIP } ?: MODE_PAGED
         readingDir = if (saved.dir == "rtl") "rtl" else "ltr"
         fit = saved.fit
-        twoPage = saved.twoPage
+        twoPage = TwoPage.of(saved.twoPage)
     }
 
     /**
@@ -661,7 +665,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun persistLayout() {
         val folder = file?.parentFile?.absolutePath
         if (seriesActive && folder != null) {
-            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage))
+            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage != TwoPage.OFF))
         } else {
             prefs.pageMode = mode
             // A detected direction belongs to the book, not to the defaults.
@@ -675,7 +679,7 @@ class ViewerActivity : AppCompatActivity() {
         val folder = file?.parentFile?.absolutePath ?: return
         seriesActive = !seriesActive
         if (seriesActive) {
-            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage))
+            library.setSeries(folder, SeriesSettings(mode, readingDir, fit, twoPage != TwoPage.OFF))
             toast(R.string.series_saved)
         } else {
             library.setSeries(folder, null)
@@ -895,12 +899,13 @@ class ViewerActivity : AppCompatActivity() {
         // The new adapter reads the same chapters: they must stay open.
         adapter?.release(closeSources = false)
 
+        spread = useSpread()
         val a = PageAdapter(
             source = src,
             mode = adapterMode(),
             onTap = { x, y -> onTap(x, y) },
             doubleTapZoom = prefs.doubleTapZoom,
-            twoPage = useSpread(),
+            twoPage = spread,
             rtl = readingDir == "rtl",
             verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
             autoCrop = autoCrop,
@@ -1064,13 +1069,21 @@ class ViewerActivity : AppCompatActivity() {
         else -> PageAdapter.Mode.PAGED
     }
 
-    private fun useSpread() = twoPage && mode == MODE_PAGED
+    private fun useSpread() = mode == MODE_PAGED && twoPage.spread(landscape())
+
+    private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    /** "Landscape only" pairs pages after a turn to landscape and parts them after a turn back. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (source != null && useSpread() != spread) attach()
+    }
 
     private val singleLayout = PageLayout(spread = false)
     private val spreadLayout = PageLayout(spread = true)
 
     /** Page/item mapping for the current layout; reading direction does not affect it. */
-    private fun pageLayout() = if (useSpread()) spreadLayout else singleLayout
+    private fun pageLayout() = if (spread) spreadLayout else singleLayout
 
     private fun pageToItem(page: Int) = pageLayout().itemOf(page)
 
@@ -1539,7 +1552,7 @@ class ViewerActivity : AppCompatActivity() {
         menu.findItem(R.id.menu_night)?.isChecked = nightFilter
         menu.findItem(R.id.menu_fullscreen)?.isChecked = prefs.fullscreen
         menu.findItem(R.id.menu_two_page)?.apply {
-            isChecked = twoPage
+            isChecked = twoPage != TwoPage.OFF
             isEnabled = mode == MODE_PAGED
         }
         // Items in a single-choice group must only ever be set to checked: calling
@@ -1701,7 +1714,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             R.id.menu_pages -> { openPages(); true }
             R.id.menu_crop -> { startCrop(); true }
-            R.id.menu_two_page -> { toggleTwoPage(); true }
+            R.id.menu_two_page -> { setTwoPage(if (twoPage == TwoPage.OFF) TwoPage.ON else TwoPage.OFF); true }
             R.id.menu_adjustments -> { showAdjustmentsDialog(); true }
             R.id.menu_page_spacing -> { showSpacingDialog(); true }
             R.id.menu_prev_chapter -> { openPrevChapter(); true }
@@ -1768,14 +1781,15 @@ class ViewerActivity : AppCompatActivity() {
         adapter?.spacingPx = spacingPx()
     }
 
-    private fun toggleTwoPage() {
+    private fun setTwoPage(value: TwoPage) {
         if (mode != MODE_PAGED) {
             toast(R.string.menu_spread)
             return
         }
-        twoPage = !twoPage
+        if (twoPage == value) return
+        twoPage = value
         persistLayout()
-        attach()
+        if (useSpread() != spread) attach()
     }
 
     private fun setOrientationLock(value: Int) {
@@ -1784,10 +1798,8 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun cycleOrientation() {
-        val landscape = resources.configuration.orientation ==
-            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         setOrientationLock(
-            if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            if (landscape()) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         )
     }
@@ -1904,10 +1916,10 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun bindToggleSection(view: View) {
         val twoPageSwitch = view.findViewById<MaterialSwitch>(R.id.sheet_two_page)
-        twoPageSwitch.isChecked = twoPage
+        twoPageSwitch.isChecked = twoPage != TwoPage.OFF
         twoPageSwitch.isEnabled = mode == MODE_PAGED
         twoPageSwitch.setOnCheckedChangeListener { _, checked ->
-            if (checked != twoPage) toggleTwoPage()
+            setTwoPage(if (checked) TwoPage.ON else TwoPage.OFF)
         }
 
         val autoCropSwitch = view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop)

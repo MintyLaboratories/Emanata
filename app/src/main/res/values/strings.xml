@@ -296,6 +296,9 @@
     <string name="prev_chapter_backs_3">3 swipes</string>
     <string name="hint_prev_chapter">Swipe back again for the previous chapter</string>
     <string name="pref_two_page">Two-page spread</string>
+    <string name="two_page_off">Off</string>
+    <string name="two_page_on">On</string>
+    <string name="two_page_landscape">Landscape only</string>
 
     <string name="pref_tap_zones">Tap zones (previous/next)</string>
     <string name="pref_tap_zones_mirror">Mirror left/right zones in right-to-left books</string>
@@ -562,6 +565,16 @@
         <item>sepia</item>
     </string-array>
 
+    <string-array name="two_page_entries">
+        <item>@string/two_page_off</item>
+        <item>@string/two_page_on</item>
+        <item>@string/two_page_landscape</item>
+    </string-array>
+    <string-array name="two_page_values">
+        <item>off</item>
+        <item>on</item>
+        <item>landscape</item>
+    </string-array>
     <string-array name="resume_mode_entries">
         <item>@string/resume_ask</item>
         <item>@string/resume_yes</item>

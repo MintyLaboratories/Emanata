@@ -70,7 +70,7 @@ data class ReaderSettings(
     val pageSpacing: Int,
     val autoNext: Boolean,
     val resumeMode: ResumeMode,
-    val twoPage: Boolean,
+    val twoPage: TwoPage,
     val nightFilter: Boolean,
     val autoCrop: Boolean,
     val linearLight: Boolean,

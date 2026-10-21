@@ -319,4 +319,26 @@ class PrefsUpgradeTest {
         prefs.importAll(mapOf("pref_locale" to "ru"))
         assertEquals("system", prefs.localeTag)
     }
+
+    @Test
+    fun twoPageSwitchBecomesOnOrOff() {
+        assertEquals(mapOf("pref_two_page_mode" to "on", "pref_two_page" to null), Prefs.upgrade(mapOf("pref_two_page" to true)))
+        assertEquals(mapOf("pref_two_page_mode" to "off", "pref_two_page" to null), Prefs.upgrade(mapOf("pref_two_page" to false)))
+        // A mode already chosen wins.
+        assertEquals(mapOf("pref_two_page" to null), Prefs.upgrade(mapOf("pref_two_page" to true, "pref_two_page_mode" to "landscape")))
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_two_page" to true))
+        assertEquals(TwoPage.ON, prefs.twoPage)
+    }
+
+    @Test
+    fun twoPageModes() {
+        assertEquals(TwoPage.OFF, TwoPage.of(null as String?))
+        assertEquals(TwoPage.OFF, TwoPage.of("sideways"))
+        assertTrue(TwoPage.ON.spread(landscape = false))
+        assertTrue(TwoPage.LANDSCAPE.spread(landscape = true))
+        assertFalse(TwoPage.LANDSCAPE.spread(landscape = false))
+        assertFalse(TwoPage.OFF.spread(landscape = true))
+        assertEquals(TwoPage.entries.map { it.key }, context.resources.getStringArray(R.array.two_page_values).toList())
+    }
 }

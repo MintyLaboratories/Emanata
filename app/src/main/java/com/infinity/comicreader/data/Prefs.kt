@@ -114,9 +114,10 @@ class Prefs(context: Context) {
         get() = ResumeMode.of(sp.getString(KEY_RESUME_MODE, null))
         set(v) = put(KEY_RESUME_MODE, v.value)
 
-    var twoPage: Boolean
-        get() = bool(KEY_TWO_PAGE, false)
-        set(v) = put(KEY_TWO_PAGE, v)
+    /** When paged reading pairs pages into spreads. */
+    var twoPage: TwoPage
+        get() = TwoPage.of(sp.getString(KEY_TWO_PAGE, null))
+        set(v) = put(KEY_TWO_PAGE, v.key)
 
     var nightFilter: Boolean
         get() = bool(KEY_NIGHT, false)
@@ -447,7 +448,7 @@ class Prefs(context: Context) {
         private const val KEY_PREV_CHAPTER_BACKS = "pref_prev_chapter_backs"
         private val PREV_CHAPTER_BACKS = setOf(0, 2, 3)
         private const val PREV_CHAPTER_BACKS_DEFAULT = 2
-        private const val KEY_TWO_PAGE = "pref_two_page"
+        private const val KEY_TWO_PAGE = "pref_two_page_mode"
         private const val KEY_NIGHT = "pref_night"
         private const val KEY_TAP_ZONE_LAYOUT = "pref_tap_zone_layout"
         private const val KEY_TAP_ZONES_MIRROR = "pref_tap_zones_mirror"
@@ -482,7 +483,7 @@ class Prefs(context: Context) {
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
-            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
+            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, OLD_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
             OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, KEY_PINCH_PEEK, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
@@ -526,6 +527,9 @@ class Prefs(context: Context) {
 
         /** Retired language tags and the [LOCALES] value that replaced each. */
         private val OLD_LOCALES = mapOf("en" to "en-US")
+
+        /** Replaced by [KEY_TWO_PAGE]: on meant [TwoPage.ON]. */
+        private const val OLD_TWO_PAGE = "pref_two_page"
 
         /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
         private const val OLD_TAP_ZONES = "pref_tap_zones"
@@ -614,6 +618,11 @@ class Prefs(context: Context) {
                     }
                 }
                 out[OLD_FILENAMES] = null
+            }
+            if (OLD_TWO_PAGE in stored) {
+                val on = stored[OLD_TWO_PAGE] as? Boolean
+                if (KEY_TWO_PAGE !in stored && on != null) out[KEY_TWO_PAGE] = TwoPage.of(on).key
+                out[OLD_TWO_PAGE] = null
             }
             val locale = stored[KEY_LOCALE]
             if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]

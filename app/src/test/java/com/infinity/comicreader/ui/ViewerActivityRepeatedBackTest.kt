@@ -17,6 +17,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -331,7 +332,7 @@ class ViewerActivityRepeatedBackTest {
 
     @Test
     fun inTwoPageModeAtItsLastSpread() {
-        prefs.twoPage = true
+        prefs.twoPage = TwoPage.ON
         // Six pages make three spreads.
         assertEquals(2, launch(first, Int.MAX_VALUE).page())
     }

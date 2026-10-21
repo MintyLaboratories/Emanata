@@ -719,7 +719,9 @@ class ViewerActivity : AppCompatActivity() {
         val now = folderLayout
         if (folder == now is FolderLayout.Frozen) return
         setFolder(path, if (now is FolderLayout.Frozen) now.thawed() else FolderLayout.Frozen(currentLayout(), folderDirection()))
+        val oldMode = mode
         if (reloadLayout()) attach()
+        if (mode != oldMode) prepareStripAhead()
         invalidateOptionsMenu()
     }
 

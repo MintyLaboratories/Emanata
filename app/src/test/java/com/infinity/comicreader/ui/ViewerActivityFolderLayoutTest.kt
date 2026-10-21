@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.infinity.comicreader.R
@@ -130,5 +131,23 @@ class ViewerActivityFolderLayoutTest {
         sheet.tap(R.id.btn_dir_rtl)
         assertEquals("rtl", prefs.readingDir)
         assertNull(folder())
+    }
+
+    @Test
+    fun allBooksIntoALongStripLaysTheNextChapterInBehind() {
+        Fixtures.zip(File(dir, "Series A 002.cbz"), *(0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }.toTypedArray())
+        prefs.pageMode = "longstrip"
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Frozen(ReaderLayout()))
+        val viewer = launch()
+        assertEquals(true, viewer.paged())
+        ReaderSheet(viewer).tap(R.id.btn_scope_all)
+        assertEquals(false, viewer.paged())
+        val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
+        val deadline = System.currentTimeMillis() + 5_000
+        while ((strip.adapter?.itemCount ?: 0) <= 4 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            idle()
+        }
+        assertEquals(8, strip.adapter?.itemCount)
     }
 }

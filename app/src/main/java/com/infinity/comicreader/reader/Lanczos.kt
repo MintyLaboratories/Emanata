@@ -107,7 +107,7 @@ object Lanczos {
      * Resamples [window] of a [srcW] x [srcH] image read through [reader] to [dstW] x [dstH],
      * handing each finished row to [writer], on up to [threads] threads. Blocks the
      * calling thread until done, so it must not run on [Dispatchers.Default] itself.
-     * Polls [cancelled] before each row and, once it returns true, stops every thread
+     * Polls [canceled] before each row and, once it returns true, stops every thread
      * and throws [CancellationException].
      */
     fun resample(
@@ -120,7 +120,7 @@ object Lanczos {
         linear: Boolean,
         writer: RowWriter,
         threads: Int = Runtime.getRuntime().availableProcessors(),
-        cancelled: () -> Boolean = { false }
+        canceled: () -> Boolean = { false }
     ) {
         val ax = axis(srcW, window.x, window.width, dstW)
         val ay = axis(srcH, window.y, window.height, dstH)
@@ -130,7 +130,7 @@ object Lanczos {
         val workers = min(threads, bands)
         val stopped = AtomicBoolean()
         if (workers <= 1) {
-            withBand(srcW, ax, ay, linear, reader) { if (!it.run(0, dstH, writer, cancelled)) stopped.set(true) }
+            withBand(srcW, ax, ay, linear, reader) { if (!it.run(0, dstH, writer, canceled)) stopped.set(true) }
         } else {
             val next = AtomicInteger()
             runBlocking(Dispatchers.Default) {
@@ -142,14 +142,14 @@ object Lanczos {
                                 if (b >= bands) break
                                 val y0 = (dstH.toLong() * b / bands).toInt()
                                 val y1 = (dstH.toLong() * (b + 1) / bands).toInt()
-                                if (!band.run(y0, y1, writer, cancelled)) stopped.set(true)
+                                if (!band.run(y0, y1, writer, canceled)) stopped.set(true)
                             }
                         }
                     }
                 }
             }
         }
-        if (stopped.get()) throw CancellationException("Resampling cancelled")
+        if (stopped.get()) throw CancellationException("Resampling canceled")
     }
 
     /** [resample] for pixels held in an array, row-major. */
@@ -162,12 +162,12 @@ object Lanczos {
         dstH: Int,
         linear: Boolean = false,
         threads: Int = Runtime.getRuntime().availableProcessors(),
-        cancelled: () -> Boolean = { false }
+        canceled: () -> Boolean = { false }
     ): IntArray {
         val out = IntArray(dstW * dstH)
         resample(
             srcW, srcH, { y, row -> System.arraycopy(src, y * srcW, row, 0, srcW) }, window, dstW, dstH, linear,
-            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, threads, cancelled
+            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, threads, canceled
         )
         return out
     }
@@ -227,10 +227,10 @@ object Lanczos {
         private val sum = buffers.sum.atLeast(rowLen).also { buffers.sum = it }
         private val out = buffers.out.atLeast(dstW).also { buffers.out = it }
 
-        /** Filters output rows [y0] until [y1], writing each as it is done; false when [cancelled] stopped it. */
-        fun run(y0: Int, y1: Int, writer: RowWriter, cancelled: () -> Boolean): Boolean {
+        /** Filters output rows [y0] until [y1], writing each as it is done; false when [canceled] stopped it. */
+        fun run(y0: Int, y1: Int, writer: RowWriter, canceled: () -> Boolean): Boolean {
             for (y in y0 until y1) {
-                if (cancelled()) return false
+                if (canceled()) return false
                 vertical(y)
                 var o = 0
                 for (x in 0 until dstW) {

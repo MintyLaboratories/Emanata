@@ -6,7 +6,7 @@ import com.infinity.comicreader.data.Prefs
 import org.json.JSONObject
 
 /**
- * Exports favourites, history, bookmarks, read markers, per-series settings,
+ * Exports favorites, history, bookmarks, read markers, per-series settings,
  * statistics and preferences to a single JSON document, and restores them.
  *
  * A backup is only ever read or written through a file the user picked, and a

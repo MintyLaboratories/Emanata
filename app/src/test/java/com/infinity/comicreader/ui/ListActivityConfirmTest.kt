@@ -84,9 +84,9 @@ class ListActivityConfirmTest {
         val activity = launch()
 
         activity.menu(R.id.menu_stats).press(DialogInterface.BUTTON_NEUTRAL)
-        val cancelled = latestDialog()
-        assertEquals(context.getString(R.string.confirm_reset_stats_msg), cancelled.message())
-        cancelled.press(DialogInterface.BUTTON_NEGATIVE)
+        val canceled = latestDialog()
+        assertEquals(context.getString(R.string.confirm_reset_stats_msg), canceled.message())
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(5L, library.stats().pages.toLong())
 
         activity.menu(R.id.menu_stats).press(DialogInterface.BUTTON_NEUTRAL)
@@ -143,9 +143,9 @@ class ListActivityConfirmTest {
         prefs.startupTab = Prefs.TAB_HISTORY
         val activity = launch()
 
-        val cancelled = activity.clearHistoryFromRow()
-        assertEquals(context.getString(R.string.confirm_clear_history_msg), cancelled.message())
-        cancelled.press(DialogInterface.BUTTON_NEGATIVE)
+        val canceled = activity.clearHistoryFromRow()
+        assertEquals(context.getString(R.string.confirm_clear_history_msg), canceled.message())
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(1, library.history().size)
 
         activity.clearHistoryFromRow().press(DialogInterface.BUTTON_POSITIVE)

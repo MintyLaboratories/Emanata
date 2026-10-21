@@ -26,7 +26,7 @@ class RarReader(file: File) : ArchiveReader {
     }
 
     /**
-     * junrar's [Archive] is not thread-safe; the adapter loads neighbours
+     * junrar's [Archive] is not thread-safe; the adapter loads neighbors
      * concurrently, so access is serialized here.
      */
     @Synchronized

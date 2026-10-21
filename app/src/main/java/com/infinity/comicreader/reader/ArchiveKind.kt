@@ -11,7 +11,7 @@ enum class ArchiveKind {
     companion object {
         private const val TAR_HEADER = 512
 
-        /** Bytes [sniff] needs to recognise every kind: a whole tar header. */
+        /** Bytes [sniff] needs to recognize every kind: a whole tar header. */
         const val HEADER_BYTES = TAR_HEADER
 
         /** POSIX and GNU tar headers carry `ustar` here; pre-POSIX ones carry nothing. */
@@ -66,7 +66,7 @@ enum class ArchiveKind {
             return stored == unsigned || stored == signed
         }
 
-        /** Kind from the leading bytes of [file]; null when unreadable or unrecognised. */
+        /** Kind from the leading bytes of [file]; null when unreadable or unrecognized. */
         fun sniff(file: File): ArchiveKind? = try {
             file.inputStream().use { input ->
                 val header = ByteArray(HEADER_BYTES)

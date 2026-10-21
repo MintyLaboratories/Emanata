@@ -46,7 +46,7 @@ data class RowOptions(
 /**
  * Library rows. Each entry shows a cover thumbnail (page 1 for books, first image
  * for folders), its name, a size/pages subtitle, a progress badge and — only for
- * favourites — a star. Tapping a visible star removes the favourite; adding one
+ * favorites — a star. Tapping a visible star removes the favorite; adding one
  * is done from the long-press menu.
  */
 class BookAdapter(

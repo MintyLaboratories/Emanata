@@ -45,7 +45,7 @@ object BitmapUtils {
         if (w < 64 || h < 64) return null
         val tol = 60
         val bg = src.getPixel(1, 1)
-        // The border colour must be shared by at least one other corner.
+        // The border color must be shared by at least one other corner.
         val similar = listOf(
             src.getPixel(w - 2, 1), src.getPixel(1, h - 2), src.getPixel(w - 2, h - 2)
         ).count { !differs(it, bg, tol) }
@@ -117,7 +117,7 @@ object BitmapUtils {
                 Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH),
                 plan.width, plan.height, linear,
                 { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
-                cancelled = Cancellation.current()
+                canceled = Cancellation.current()
             )
         } catch (t: Throwable) {
             out.recycle()

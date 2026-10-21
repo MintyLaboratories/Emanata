@@ -11,10 +11,10 @@ object Cancellation {
 
     private val never: () -> Boolean = { false }
 
-    /** Runs [block] on this thread, which counts as cancelled whenever [cancelled] returns true. */
-    fun <T> during(cancelled: () -> Boolean, block: () -> T): T {
+    /** Runs [block] on this thread, which counts as canceled whenever [canceled] returns true. */
+    fun <T> during(canceled: () -> Boolean, block: () -> T): T {
         val outer = mark.get()
-        mark.set(cancelled)
+        mark.set(canceled)
         try {
             return block()
         } finally {

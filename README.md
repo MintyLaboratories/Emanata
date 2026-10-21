@@ -97,7 +97,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Incremental search within the current folder.
 - Favorites (star) and reading history, with jump-back to the last page read.
   Every history entry shows its **parent folder below the name**, so bare
-  chapters like "Chapter 1" stay recognisable. Tapping a history entry opens
+  chapters like "Chapter 1" stay recognizable. Tapping a history entry opens
   the folder that contains that chapter.
 - **Favorites** are grouped into collapsible **Libraries**, **Sets** and
   **Comics** by what they hold (a folder of comics is a Set, comics two or more
@@ -132,7 +132,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   `zip`/`cbz`, `rar`/`cbr`, `7z`/`cb7`, `tar`/`cbt`, plus `pdf`. The extension
   decides which images are listed; their content decides how they are decoded.
 - **Broken pages** show a placeholder naming the page and the reason.
-- **Archives:** recognised by content, so a `.cbr` that is really a zip opens.
+- **Archives:** recognized by content, so a `.cbr` that is really a zip opens.
   Pages in subfolders keep folder order. Archives inside an archive (one per
   issue) show their pages in place. macOS, hidden and empty entries are skipped.
 - **Page modes:** paged (horizontal swipe), vertical (one page per screen) or
@@ -265,7 +265,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   per-book budget skipped. They sort by file name among their siblings. Covers
   copy only the inner archive holding the first page.
 - A copy that fails for lack of storage fails the whole open, so a book never
-  opens with pages missing. Copies stop when the open is cancelled; the
+  opens with pages missing. Copies stop when the open is canceled; the
   long-strip prefetch uses cached copies only.
 - At most four inner archives stay open per book; others reopen from their
   copies when read.
@@ -342,7 +342,7 @@ No internet permission is requested.
   `DetailStore` and `PageSource.loadDetail` re-render the settled view.
 - The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
-  loads the current page and its neighbours concurrently, all access to these
+  loads the current page and its neighbors concurrently, all access to these
   backends is serialized on the reader or source instance (`@Synchronized`).
 - Page/thumbnail decode failures are logged (`ArchiveSource`, `PdfSource`,
   `PageAdapter`, `ThumbAdapter`, `ViewerActivity`) instead of being silently

@@ -30,7 +30,7 @@ class PdfSource(file: File) : PageSource {
 
     /**
      * [PdfRenderer] allows only one open [PdfRenderer.Page] at a time and is not
-     * safe for concurrent use; the adapter loads neighbours concurrently, so
+     * safe for concurrent use; the adapter loads neighbors concurrently, so
      * access is serialized here.
      *
      * The page is rendered straight at the target size, its points mapped onto the

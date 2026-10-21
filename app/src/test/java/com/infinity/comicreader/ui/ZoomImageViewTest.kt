@@ -317,7 +317,7 @@ class ZoomImageViewTest {
     /** Records render requests; [deliver] completes the last one. */
     private class RecordingDetail : ZoomImageView.DetailSource {
         class Request(val region: Region, val width: Int, val height: Int, val done: (Bitmap) -> Unit) {
-            var cancelled = false
+            var canceled = false
         }
 
         val requests = ArrayList<Request>()
@@ -330,7 +330,7 @@ class ZoomImageViewTest {
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             val request = Request(region, width, height, done)
             requests += request
-            return { request.cancelled = true }
+            return { request.canceled = true }
         }
 
         fun deliver(): Bitmap {
@@ -383,8 +383,8 @@ class ZoomImageViewTest {
         assertTrue(v.detailShown === shown)
 
         v.zoomTo(2.4f, 924f, 1480f)
-        assertTrue(detail.requests[1].cancelled)
-        // A render finishing after it was cancelled is not shown.
+        assertTrue(detail.requests[1].canceled)
+        // A render finishing after it was canceled is not shown.
         detail.requests[1].done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         assertTrue(v.detailShown === shown)
     }

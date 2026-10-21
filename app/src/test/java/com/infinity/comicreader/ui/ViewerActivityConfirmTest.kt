@@ -106,9 +106,9 @@ class ViewerActivityConfirmTest {
         library.setAdjustments(book.absolutePath, own)
         val viewer = launch()
 
-        val (_, cancelled) = viewer.tapResetAdjustments()
-        assertEquals(context.getString(R.string.confirm_reset_adjust_msg), cancelled.message())
-        cancelled.press(DialogInterface.BUTTON_NEGATIVE)
+        val (_, canceled) = viewer.tapResetAdjustments()
+        assertEquals(context.getString(R.string.confirm_reset_adjust_msg), canceled.message())
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(own, library.adjustmentsFor(book.absolutePath))
 
         viewer.tapResetAdjustments().second.press(DialogInterface.BUTTON_POSITIVE)
@@ -129,9 +129,9 @@ class ViewerActivityConfirmTest {
         val viewer = launch()
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)
-        val cancelled = latestDialog()
-        assertEquals(context.getString(R.string.confirm_clear_book_bookmarks_msg, book.name), cancelled.message())
-        cancelled.press(DialogInterface.BUTTON_NEGATIVE)
+        val canceled = latestDialog()
+        assertEquals(context.getString(R.string.confirm_clear_book_bookmarks_msg, book.name), canceled.message())
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(2, library.bookmarksFor(book.absolutePath).size)
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)

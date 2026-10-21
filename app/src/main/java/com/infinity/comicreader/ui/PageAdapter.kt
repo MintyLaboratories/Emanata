@@ -546,7 +546,7 @@ class PageAdapter(
 
     /**
      * Page [index] of [source], shown as [pageIndex]; null after recording why in [failures] for
-     * generation [gen]. Throws [CancellationException] when [cancelled] stops the decode first.
+     * generation [gen]. Throws [CancellationException] when [canceled] stops the decode first.
      */
     private fun decode(
         source: PageSource,
@@ -554,9 +554,9 @@ class PageAdapter(
         pageIndex: Int,
         target: Target,
         gen: Int,
-        cancelled: () -> Boolean
+        canceled: () -> Boolean
     ): Bitmap? = try {
-        Cancellation.during(cancelled) { source.loadPage(index, target) }
+        Cancellation.during(canceled) { source.loadPage(index, target) }
     } catch (e: CancellationException) {
         throw e
     } catch (t: Throwable) {
@@ -622,7 +622,7 @@ class PageAdapter(
 
     /** Throws away everything decoded so far (the requested size changed). */
     private fun dropDecoded() {
-        // Cancelling can complete handlers inline, which edit [pending]: iterate a copy.
+        // Canceling can complete handlers inline, which edit [pending]: iterate a copy.
         pending.values.toList().forEach { it.deferred.cancel() }
         pending.clear()
         synchronized(results) {

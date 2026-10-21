@@ -56,7 +56,7 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /**
      * Renders [request] from [key]'s detail, loading it with [load] first if needed,
      * and hands the result to [done] on the main thread unless the returned job is
-     * cancelled first. Drops every page not in [keep]. A failed load or render is
+     * canceled first. Drops every page not in [keep]. A failed load or render is
      * logged and gives nothing.
      */
     fun <R> render(key: K, keep: Collection<K>, load: () -> PageDetail, request: (PageDetail) -> R, done: (R) -> Unit): Job {

@@ -8,7 +8,7 @@ import java.util.zip.Deflater
 object TestImages {
     private val PNG_SIG = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
 
-    /** A [width] x [height] grey PNG, 8 or 16 bits per channel, RGBA; [extra] chunks go before IDAT. */
+    /** A [width] x [height] gray PNG, 8 or 16 bits per channel, RGBA; [extra] chunks go before IDAT. */
     fun png(width: Int, height: Int, bitDepth: Int = 8, extra: List<Pair<String, ByteArray>> = emptyList()): ByteArray {
         val bytesPerPixel = 4 * bitDepth / 8
         val raw = ByteArrayOutputStream()

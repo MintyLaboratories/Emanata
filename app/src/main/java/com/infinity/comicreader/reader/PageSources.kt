@@ -13,17 +13,17 @@ import java.io.IOException
  */
 object PageSources {
     /**
-     * Opens [file]. Nested-archive copying stops once [cancelled] turns true; without
+     * Opens [file]. Nested-archive copying stops once [canceled] turns true; without
      * [copyNested] only cached copies are used, and a book needing a new one fails.
      */
     fun open(
         file: File,
         charsetName: String,
         cacheDir: File,
-        cancelled: () -> Boolean = { false },
+        canceled: () -> Boolean = { false },
         copyNested: Boolean = true
     ): PageSource {
-        val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, cancelled = cancelled, copy = copyNested)
+        val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
         return GuardedSource(openRaw(file, charsetName, nested, firstPageOnly = false))
     }
 

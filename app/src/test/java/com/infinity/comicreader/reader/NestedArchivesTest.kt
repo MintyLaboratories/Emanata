@@ -30,9 +30,9 @@ class NestedArchivesTest {
     private fun nested(
         maxBytes: Long = NestedArchives.MAX_CACHE_BYTES,
         maxEntryBytes: Long = NestedArchives.MAX_ENTRY_BYTES,
-        cancelled: () -> Boolean = { false },
+        canceled: () -> Boolean = { false },
         copy: Boolean = true
-    ) = NestedArchives(cache, "UTF-8", maxBytes, maxEntryBytes, cancelled, copy) { message, _ -> warnings += message }
+    ) = NestedArchives(cache, "UTF-8", maxBytes, maxEntryBytes, canceled, copy) { message, _ -> warnings += message }
 
     private fun open(file: File, nested: NestedArchives = nested(), firstPageOnly: Boolean = false) =
         ArchiveSource(ZipReader(file, "UTF-8"), NestedArchives.keyOf(file), nested, firstPageOnly)
@@ -252,11 +252,11 @@ class NestedArchivesTest {
     }
 
     @Test
-    fun cancelledOpenFailsAndLeavesNoCopies() {
+    fun canceledOpenFailsAndLeavesNoCopies() {
         val f = omnibus()
-        // Cancelled after the first check, so mid-way through the first copy.
+        // Canceled after the first check, so mid-way through the first copy.
         var checks = 0
-        val nested = nested(cancelled = { checks++ > 0 })
+        val nested = nested(canceled = { checks++ > 0 })
         try {
             open(f, nested).use { }
             throw AssertionError("expected UnavailableException")
@@ -266,7 +266,7 @@ class NestedArchivesTest {
     }
 
     @Test
-    fun cancelledCopyStops() {
+    fun canceledCopyStops() {
         var reads = 0
         val endless = object : InputStream() {
             override fun read(): Int = 0

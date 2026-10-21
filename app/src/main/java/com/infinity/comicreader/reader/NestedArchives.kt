@@ -24,7 +24,7 @@ import java.security.MessageDigest
  * cannot be made now throws [UnavailableException] instead, so a book never opens
  * with fewer pages than it has.
  *
- * Copying checks [cancelled] as it goes. Without [copy], only copies already cached
+ * Copying checks [canceled] as it goes. Without [copy], only copies already cached
  * are used, which lets a prefetch open a book without writing anything. Skipped
  * inner archives are reported to [warn].
  */
@@ -33,7 +33,7 @@ class NestedArchives(
     private val charsetName: String,
     private val maxBytes: Long = MAX_CACHE_BYTES,
     private val maxEntryBytes: Long = MAX_ENTRY_BYTES,
-    private val cancelled: () -> Boolean = { false },
+    private val canceled: () -> Boolean = { false },
     private val copy: Boolean = true,
     private val warn: (String, Throwable) -> Unit = { message, t -> Log.w(TAG, message, t) }
 ) {
@@ -54,7 +54,7 @@ class NestedArchives(
      * unreadable. Throws [UnavailableException] when it cannot be copied right now.
      */
     fun open(outer: ArchiveReader, outerKey: String, entry: ArchiveEntry): Opened? {
-        if (cancelled()) throw UnavailableException("Nested archive open cancelled")
+        if (canceled()) throw UnavailableException("Nested archive open canceled")
         if (held.size >= MAX_ARCHIVES) return null
         val key = "$outerKey\n${entry.path}\n${entry.size}"
         val file = try {
@@ -96,7 +96,7 @@ class NestedArchives(
                     val part = storage { File.createTempFile(target.name, PART_SUFFIX, dir) }
                     try {
                         val copied = outer.read(entry) { input ->
-                            storage { part.outputStream() }.use { copyBounded(input, it, limit, cancelled) }
+                            storage { part.outputStream() }.use { copyBounded(input, it, limit, canceled) }
                         }
                         if (entry.size >= 0 && copied != entry.size) throw IOException("Short nested archive")
                         if (!part.renameTo(target)) {
@@ -189,19 +189,19 @@ class NestedArchives(
 
         /**
          * Copies [input] to [output]; fails once more than [limit] bytes arrive. Returns the
-         * bytes copied. A failed write throws [StorageException]; [cancelled] stops the
+         * bytes copied. A failed write throws [StorageException]; [canceled] stops the
          * copy with an [UnavailableException].
          */
         internal fun copyBounded(
             input: InputStream,
             output: OutputStream,
             limit: Long,
-            cancelled: () -> Boolean = { false }
+            canceled: () -> Boolean = { false }
         ): Long {
             val buf = ByteArray(64 * 1024)
             var total = 0L
             while (true) {
-                if (cancelled()) throw UnavailableException("Nested archive copy cancelled")
+                if (canceled()) throw UnavailableException("Nested archive copy canceled")
                 val n = input.read(buf)
                 if (n < 0) return total
                 total += n

@@ -226,7 +226,7 @@ class ZoomImageView @JvmOverloads constructor(
         baseMatrix.postScale(scale, scale)
         val scaledW = drawableW * scale
         val scaledH = drawableH * scale
-        // Centre what fits; when a page is taller (or wider) than the view start at its
+        // Center what fits; when a page is taller (or wider) than the view start at its
         // top (left) edge so reading begins at the beginning and the rest can be panned to.
         // Whole-pixel offsets, so a page at 1:1 lands on the pixel grid.
         val startX = if (scaledW > viewW) 0f else ((viewW - scaledW) / 2f).roundToInt().toFloat()

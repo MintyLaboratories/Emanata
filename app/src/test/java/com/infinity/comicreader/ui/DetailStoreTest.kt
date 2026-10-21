@@ -116,7 +116,7 @@ class DetailStoreTest {
     }
 
     @Test
-    fun cancelledRenderDeliversNothing() {
+    fun canceledRenderDeliversNothing() {
         val started = CountDownLatch(1)
         val proceed = CountDownLatch(1)
         var done = 0

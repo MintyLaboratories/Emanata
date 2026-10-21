@@ -88,7 +88,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
     }
 
     /**
-     * Starts peeking into [entry], growing from [tile] towards [full] (both in this
+     * Starts peeking into [entry], growing from [tile] toward [full] (both in this
      * view's coordinates); its pages load in [scope].
      */
     fun begin(entry: BookEntry, tile: Box, full: Box, scope: CoroutineScope, charset: String, cacheDir: File, linear: Boolean) {
@@ -170,13 +170,13 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             interpolator = DecelerateInterpolator()
             addUpdateListener { setProgress(it.animatedValue as Float) }
             addListener(object : AnimatorListenerAdapter() {
-                private var cancelled = false
+                private var canceled = false
                 override fun onAnimationCancel(animation: Animator) {
-                    cancelled = true
+                    canceled = true
                 }
 
                 override fun onAnimationEnd(animation: Animator) {
-                    if (!cancelled) end()
+                    if (!canceled) end()
                 }
             })
             start()

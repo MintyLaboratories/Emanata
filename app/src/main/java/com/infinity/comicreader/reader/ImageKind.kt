@@ -5,7 +5,7 @@ enum class ImageKind {
     JPEG, PNG, GIF, BMP, WEBP, AVIF, HEIF, JXL, TIFF;
 
     companion object {
-        /** Bytes [sniff] needs to recognise every kind, ISO-BMFF compatible brands included. */
+        /** Bytes [sniff] needs to recognize every kind, ISO-BMFF compatible brands included. */
         const val HEADER_BYTES = 64
 
         private val JPEG_SIG = bytes(0xFF, 0xD8, 0xFF)

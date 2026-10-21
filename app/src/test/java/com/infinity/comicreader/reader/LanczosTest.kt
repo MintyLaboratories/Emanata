@@ -209,7 +209,7 @@ class LanczosTest {
     }
 
     @Test
-    fun cancellingStopsEveryThread() {
+    fun cancelingStopsEveryThread() {
         val src = noise(200, 300, 6, opaque = true)
         for (threads in listOf(1, 4)) {
             val polls = AtomicInteger()

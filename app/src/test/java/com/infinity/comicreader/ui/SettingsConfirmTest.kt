@@ -118,9 +118,9 @@ class SettingsConfirmTest {
         library.setAdjustments("/books/attic/one.cbz", Adjustments(10, -5, 20))
         addHistory()
 
-        val cancelled = tap("pref_reset")
-        assertTrue(cancelled.message().contains("Per-book adjustments and reading progress are kept"))
-        cancelled.press(DialogInterface.BUTTON_NEGATIVE)
+        val canceled = tap("pref_reset")
+        assertTrue(canceled.message().contains("Per-book adjustments and reading progress are kept"))
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals("sepia", prefs.filter)
 
         tap("pref_reset").press(DialogInterface.BUTTON_POSITIVE)

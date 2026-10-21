@@ -199,7 +199,7 @@ class ArchiveSource(
     companion object {
         private const val TAG = "ArchiveSource"
 
-        /** Enough for a spread and its neighbours across an issue boundary. */
+        /** Enough for a spread and its neighbors across an issue boundary. */
         const val MAX_OPEN_INNER = 4
     }
 }

@@ -715,7 +715,7 @@ class ViewerActivity : AppCompatActivity() {
             val detect = prefs.detectDirection && !seriesActive
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, cancelled = { !job.isActive }) }
+                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -964,7 +964,7 @@ class ViewerActivity : AppCompatActivity() {
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
                 val s = runCatching {
-                    PageSources.open(next, prefs.charset, cacheDir, cancelled = { !job.isActive }, copyNested = false)
+                    PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false)
                 }.getOrNull()
                 try {
                     ensureActive()

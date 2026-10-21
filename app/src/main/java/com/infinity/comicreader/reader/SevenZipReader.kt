@@ -35,7 +35,7 @@ class SevenZipReader(file: File) : ArchiveReader {
      * [SevenZFile] keeps decode state on the instance and is not thread-safe: two
      * concurrent [SevenZFile.getInputStream] reads corrupt each other's stream
      * (observed as `CorruptedInputException`). The [PageAdapter] and [ThumbAdapter]
-     * load neighbours concurrently, so every access is serialized here.
+     * load neighbors concurrently, so every access is serialized here.
      */
     @Synchronized
     override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T =

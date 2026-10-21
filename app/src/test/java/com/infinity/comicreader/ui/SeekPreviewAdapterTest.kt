@@ -11,10 +11,12 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -79,6 +81,21 @@ class SeekPreviewAdapterTest {
         assertEquals(90, bitmap.height)
         assertEquals(ImageView.ScaleType.CENTER, strip.image(0).scaleType)
         assertEquals(0, source.loads.get())
+        adapter.release()
+    }
+
+    @Test
+    fun aPageThatFailsWithNoPreviewShowsThePlaceholder() {
+        val source = object : PageSource {
+            override val pageCount: Int = 1
+            override fun loadPage(index: Int, target: Target): Bitmap = throw DecodeException("Could not decode this page")
+            override fun close() {}
+        }
+        val adapter = SeekPreviewAdapter(source, thumbHeight = 90, linear = false, exact = true) {}
+        adapter.show(listOf(cell(0)), current = 0)
+        val strip = stripShowing(adapter)
+        waitFor { strip.image(0).drawable != null }
+        assertTrue(strip.image(0).drawable is ErrorPageDrawable)
         adapter.release()
     }
 }

@@ -177,7 +177,12 @@ class SeekPreviewAdapter(
                 } catch (t: Throwable) {
                     null
                 }
-            } ?: return@launch
+            }
+            if (render == null) {
+                // A preview stays; with none, the cell says the page failed, as the page grid does.
+                if (preview == null && slot.key == key) showError(slot, key.page)
+                return@launch
+            }
             renders.put(key, render)
             if (slot.key == key) showRender(slot, render)
         }
@@ -188,6 +193,13 @@ class SeekPreviewAdapter(
         val job = currentCoroutineContext().job
         val plan = Target(key.width, key.height, Fit.COVER).plan(preview.width.toDouble(), preview.height.toDouble())
         return Cancellation.during({ !job.isActive }) { CoverArt.render(preview, plan, linear) }
+    }
+
+    private fun showError(slot: Slot, page: Int) {
+        val res = slot.image.resources
+        val name = source.pageName(page) ?: res.getString(R.string.page_number, page + 1)
+        slot.image.scaleType = ImageView.ScaleType.FIT_CENTER
+        slot.image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, ""))
     }
 
     private fun showRender(slot: Slot, bitmap: Bitmap) {

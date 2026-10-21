@@ -120,17 +120,60 @@ class ThumbsTest {
         }
     }
 
+    /** A [w] x [h] PNG: [left] up to [split], [middle] up to [w] - [split], [right] after. */
+    private fun bands(w: Int, h: Int, split: Int, left: Int, middle: Int, right: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        for (y in 0 until h) for (x in 0 until w) {
+            bitmap.setPixel(x, y, if (x < split) left else if (x < w - split) middle else right)
+        }
+        return java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
     @Test
-    fun aWraparoundWithoutBarcodeIsFittedWhole() {
-        val bitmap = Bitmap.createBitmap(1300, 1000, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.RED)
+    fun aWraparoundWithoutBarcodeShowsTheHalfItsDirectionStartsOn() {
         val file = File(context.cacheDir, "plain.png")
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
         val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
-        val thumb = Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        // Whole and centered: red across the middle, the dimmed blur above it.
-        assertEquals(Color.RED, thumb.getPixel(65, 100))
-        assertTrue(Color.red(thumb.getPixel(65, 5)) < 230)
+        val ltr = Thumbs.load(context, entry.copy(direction = ReadingDirection.LTR), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(Color.RED, ltr.getPixel(5, 100))
+        assertEquals(Color.RED, ltr.getPixel(125, 100))
+        val rtl = Thumbs.load(context, entry.copy(direction = ReadingDirection.RTL), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(Color.BLUE, rtl.getPixel(5, 100))
+        assertEquals(Color.BLUE, rtl.getPixel(125, 100))
+        // Each direction is its own cover.
+        assertEquals(2, File(context.cacheDir, "thumbnails").listFiles()!!.size)
+    }
+
+    @Test
+    fun aBookCoverTwoInnerPagesWideShowsItsFrontWithoutTheSpine() {
+        // Back blue, a green spine 60 wide, front red; inner pages 2:3 at another scale.
+        val file = Fixtures.zip(
+            File(context.cacheDir, "wrapped.cbz"),
+            Fixtures.entry("00.png", bands(660, 450, 300, Color.BLUE, Color.GREEN, Color.RED)),
+            Fixtures.entry("01.png", png(Color.WHITE)), Fixtures.entry("02.png", png(Color.WHITE)), Fixtures.entry("03.png", png(Color.WHITE))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+        val thumb = Thumbs.load(context, book, "UTF-8", 100, 150, CoverStyle(ThumbFit.FILL))!!
+        // Red throughout but for a faint edge where the kernel reaches across the cut.
+        assertEquals(Color.RED, thumb.getPixel(5, 75))
+        assertEquals(Color.RED, thumb.getPixel(99, 75))
+        assertTrue(Color.green(thumb.getPixel(0, 75)) < 40)
+    }
+
+    @Test
+    fun aLandscapeCoverOfALandscapeBookIsOnePage() {
+        // Shaped like a wraparound alone, but so are the book's pages.
+        val file = Fixtures.zip(
+            File(context.cacheDir, "landscape.cbz"),
+            Fixtures.entry("00.png", bands(400, 300, 200, Color.BLUE, Color.BLUE, Color.RED)),
+            Fixtures.entry("01.png", bands(400, 300, 200, Color.WHITE, Color.WHITE, Color.WHITE)),
+            Fixtures.entry("02.png", bands(400, 300, 200, Color.WHITE, Color.WHITE, Color.WHITE))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+        val thumb = Thumbs.load(context, book, "UTF-8", 400, 300, CoverStyle(ThumbFit.FILL))!!
+        // Whole: both halves show.
+        assertEquals(Color.BLUE, thumb.getPixel(5, 150))
+        assertEquals(Color.RED, thumb.getPixel(395, 150))
     }
 
     private fun png(color: Int): ByteArray {

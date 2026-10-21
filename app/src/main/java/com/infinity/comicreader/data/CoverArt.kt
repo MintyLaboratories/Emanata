@@ -61,18 +61,25 @@ object CoverArt {
     }
 
     /**
-     * [src] as a [width] x [height] cover. A wraparound shows the half [front] names
-     * (worked out by [frontOf] when asked), or all of it over a blurred copy when
-     * neither half is known to be the front.
+     * [src] as a [width] x [height] cover. A wraparound, judged against its book's
+     * typical inner page of shape [innerRatio] ([Wraparound.isWraparound]), shows its
+     * front: the half without the barcode ([front], worked out by [frontOf] when asked),
+     * else the half a book read [rightToLeft] or not starts on; one inner page wide
+     * from the outer edge, so the spine is left out.
      */
-    fun cover(src: Bitmap, width: Int, height: Int, style: CoverStyle, front: (Bitmap) -> Wraparound.Half? = ::frontOf): Bitmap {
-        if (!Wraparound.isWraparound(src.width, src.height)) return compose(src, width, height, style)
-        val half = src.width / 2
-        return when (front(src)) {
-            Wraparound.Half.LEFT -> compose(src, width, height, style, Rect(0, 0, half, src.height))
-            Wraparound.Half.RIGHT -> compose(src, width, height, style, Rect(src.width - half, 0, src.width, src.height))
-            null -> compose(src, width, height, style, fit = true)
-        }
+    fun cover(
+        src: Bitmap,
+        width: Int,
+        height: Int,
+        style: CoverStyle,
+        innerRatio: Double? = null,
+        rightToLeft: Boolean = false,
+        front: (Bitmap) -> Wraparound.Half? = ::frontOf
+    ): Bitmap {
+        if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style)
+        val half = Wraparound.shownFront(front(src), rightToLeft)
+        val (left, right) = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
+        return compose(src, width, height, style, Rect(left, 0, right, src.height))
     }
 
     /** The front half of wraparound [src], from where its barcode is; null when that tells nothing. */

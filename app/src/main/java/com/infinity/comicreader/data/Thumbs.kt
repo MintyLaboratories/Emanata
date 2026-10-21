@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
+import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PdfSource
 import com.infinity.comicreader.reader.Target
@@ -72,11 +73,13 @@ object Thumbs {
 
     /**
      * The cover of [entry], exactly [width] x [height]. Blocking — call from a background
-     * dispatcher. Returns null when no cover exists.
+     * dispatcher. Returns null when no cover exists. A wraparound without a barcode shows
+     * the half its [BookEntry.direction] starts on, so the direction is part of the key.
      */
     fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
         val page = entry.bookmarkPage
-        val k = "${key(entry)}|${width}x$height|${style.key}" + if (page >= 0) "|p$page" else ""
+        val rightToLeft = entry.direction == ReadingDirection.RTL
+        val k = "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}" + if (page >= 0) "|p$page" else ""
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
@@ -89,9 +92,9 @@ object Thumbs {
             }
         }
 
-        val full = generate(entry, charset, context.cacheDir, width, height) ?: return null
+        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height) ?: return null
         val cover = try {
-            CoverArt.cover(full, width, height, style) { src -> frontOf(entry, src) }
+            CoverArt.cover(full, width, height, style, innerRatio, rightToLeft) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
             return null
         } finally {
@@ -141,32 +144,47 @@ object Thumbs {
     // ------------------------------------------------------------------ internals
 
     /**
-     * The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS]; a PDF's
-     * rendered just large enough for a [width] x [height] box.
+     * The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS] (a PDF's
+     * rendered just large enough for a [width] x [height] box), with its book's
+     * typical inner page shape when the cover is wide enough to be a wraparound.
      */
-    private fun generate(entry: BookEntry, charset: String, cacheDir: File, width: Int, height: Int): Bitmap? = try {
+    private fun generate(entry: BookEntry, charset: String, cacheDir: File, width: Int, height: Int): Pair<Bitmap, Double?>? = try {
         val target = Target(capPixels = THUMB_CAP_PIXELS)
         when {
             entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, width, height) }
-            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target)
+            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target) to null
             else -> coverOf(entry.file, charset, cacheDir, width, height)
         }
     } catch (t: Throwable) {
         null
     }
 
-    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int): Bitmap? {
+    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int): Pair<Bitmap, Double?>? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         val full = Target(capPixels = THUMB_CAP_PIXELS)
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
-            return Decoders.decode(file, full)
+            return Decoders.decode(file, full) to null
         }
         val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
-        return try {
+        val cover = try {
             val target = if (!source.isVector) full else {
                 source.pageSize(0)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
             }
             if (source.pageCount <= 0) null else source.loadPage(0, target)
+        } catch (t: Throwable) {
+            null
+        } finally {
+            runCatching { source.close() }
+        } ?: return null
+        val inner = if (Wraparound.isCandidate(cover.width, cover.height)) innerRatioOf(file, charset, cacheDir) else null
+        return cover to inner
+    }
+
+    /** The typical inner page shape of the book [file] ([Wraparound.innerRatio]); null when it has none or cannot be read. */
+    private fun innerRatioOf(file: File, charset: String, cacheDir: File): Double? {
+        val source = runCatching { PageSources.open(file, charset, cacheDir, copyNested = false) }.getOrNull() ?: return null
+        return try {
+            BookDirection.innerRatio(source)
         } catch (t: Throwable) {
             null
         } finally {

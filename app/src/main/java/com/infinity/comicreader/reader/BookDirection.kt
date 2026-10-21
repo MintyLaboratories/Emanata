@@ -31,14 +31,20 @@ object BookDirection {
         return Contents(DirectionDetection.fromContents(source.comicInfo(cheapOnly = true), file.name, names), !source.comicInfoCostly())
     }
 
+    /** The typical shape of [source]'s first few pages after the cover ([Wraparound.innerRatio]); null without any. */
+    fun innerRatio(source: PageSource): Double? = Wraparound.innerRatio(
+        (1 until minOf(source.pageCount, 1 + Wraparound.INNER_SAMPLE)).mapNotNull { runCatching { source.pageSize(it) }.getOrNull() }
+    )
+
     /**
-     * The front half of a wraparound first page; null when it is not one or its barcode does
-     * not tell. Blocking: the page is decoded.
+     * The front half of a wraparound first page, judged against the book's inner pages;
+     * null when it is not one or its barcode does not tell. Blocking: the page is decoded.
      */
     fun coverFront(source: PageSource): Wraparound.Half? {
         if (source.pageCount == 0 || source.isVector) return null
         val size = source.pageSize(0) ?: return null
-        if (!Wraparound.isWraparound(size[0], size[1])) return null
+        if (!Wraparound.isCandidate(size[0], size[1])) return null
+        if (!Wraparound.isWraparound(size[0], size[1], innerRatio(source))) return null
         val page = runCatching { source.loadPage(0, Target(0, Wraparound.SCAN_HEIGHT, Fit.SHRINK)) }.getOrNull() ?: return null
         return try {
             CoverArt.frontOf(page)

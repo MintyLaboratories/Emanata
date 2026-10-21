@@ -879,11 +879,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         updateFabIcon()
     }
 
-    /** [entry] with the page count read from its book when it has none of its own. */
+    /**
+     * [entry] with the page count read from its book when it has none of its own, and
+     * the direction detected in it when its folder has none set, so a wraparound cover
+     * without a barcode shows the half the book starts on.
+     */
     private fun withFacts(entry: BookEntry): BookEntry {
-        if (entry.isDir || entry.pages > 0) return entry
-        val pages = factsCache.get(entry.path, entry.size)?.pages ?: return entry
-        return if (pages > 0) entry.copy(pages = pages) else entry
+        if (entry.isDir) return entry
+        val facts = factsCache.get(entry.path, entry.size) ?: return entry
+        var out = entry
+        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.pages)
+        val detected = facts.detected?.direction
+        if (detected != null && !entry.directionSet && prefs.detectDirection && detected != entry.direction) out = out.copy(direction = detected)
+        return out
     }
 
     /**

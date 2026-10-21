@@ -79,8 +79,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (default) or the center of a cover cropped for height.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
-- **Wraparound covers** (front and back side by side) show their front: the half
-  without the barcode. Without a barcode the whole cover is fitted over a blur.
+- **Wraparound covers** (front and back side by side, about twice as wide as
+  the book's own inner pages) show their front: the half without the barcode,
+  else the half the book starts on in its reading direction (right for
+  left-to-right, left for right-to-left), one page wide so the spine stays out.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
   Search; the others step aside while searching. Settings → **Toolbar

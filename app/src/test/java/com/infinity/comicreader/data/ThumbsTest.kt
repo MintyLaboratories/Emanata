@@ -29,13 +29,13 @@ class ThumbsTest {
     @Before
     fun clear() = Thumbs.clear(context)
 
-    /** A 300 x 450 cover: red top third, green middle, blue bottom, so the crop shows. */
-    private fun cover(): BookEntry {
-        val bitmap = Bitmap.createBitmap(300, 450, Bitmap.Config.ARGB_8888)
-        for (y in 0 until 450) for (x in 0 until 300) {
-            bitmap.setPixel(x, y, if (y < 150) Color.RED else if (y < 300) Color.GREEN else Color.BLUE)
+    /** A [w] x [h] cover: red top third, green middle, blue bottom, so the crop shows. */
+    private fun cover(w: Int = 300, h: Int = 450, name: String = "cover.png"): BookEntry {
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        for (y in 0 until h) for (x in 0 until w) {
+            bitmap.setPixel(x, y, if (y < h / 3) Color.RED else if (y < 2 * h / 3) Color.GREEN else Color.BLUE)
         }
-        val file = File(context.cacheDir, "cover.png")
+        val file = File(context.cacheDir, name)
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         return BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
     }
@@ -44,7 +44,7 @@ class ThumbsTest {
 
     @Test
     fun coverFillsTheExactSizeCroppedEvenly() {
-        val thumb = Thumbs.load(context, cover(), "UTF-8", 120, 60)
+        val thumb = Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.CENTER))
         assertNotNull(thumb)
         assertEquals(120, thumb!!.width)
         assertEquals(60, thumb.height)
@@ -53,6 +53,45 @@ class ThumbsTest {
         assertEquals(Color.GREEN, thumb.getPixel(60, 30))
         assertEquals(Color.GREEN, thumb.getPixel(0, 30))
         assertTrue(Color.red(thumb.getPixel(60, 0)) > 0)
+    }
+
+    @Test
+    fun fillFromTheTopKeepsTheTop() {
+        val thumb = Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.TOP))!!
+        assertEquals(Color.RED, thumb.getPixel(60, 2))
+        assertEquals(Color.RED, thumb.getPixel(60, 30))
+    }
+
+    @Test
+    fun fitShowsTheWholeCoverOverItsBlurredCopy() {
+        // A 2:3 cover in a 2:1 box: the whole cover, full height, in the middle.
+        val thumb = Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FIT))!!
+        assertEquals(120, thumb.width)
+        assertEquals(Color.RED, thumb.getPixel(60, 3))
+        assertEquals(Color.BLUE, thumb.getPixel(60, 56))
+        // Beside it, an opaque, darker blur of the same colors rather than empty space.
+        val side = thumb.getPixel(5, 30)
+        assertEquals(255, Color.alpha(side))
+        assertTrue(Color.green(side) in 1..230)
+    }
+
+    @Test
+    fun autoFillsCoversOfTheBoxShapeAndFitsOthers() {
+        val same = Thumbs.load(context, cover(), "UTF-8", 200, 300)!!
+        assertEquals(Color.RED, same.getPixel(100, 1))
+        assertEquals(Color.RED, same.getPixel(1, 1))
+        // A landscape image is fitted: its top edge sits well below the box's.
+        val wide = Thumbs.load(context, cover(600, 300, "wide.png"), "UTF-8", 200, 300)!!
+        assertTrue(Color.red(wide.getPixel(100, 1)) < 230)
+        assertEquals(Color.GREEN, wide.getPixel(100, 150))
+    }
+
+    @Test
+    fun eachStyleIsItsOwnCover() {
+        val entry = cover()
+        Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FILL))
+        Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FIT))
+        assertEquals(2, File(context.cacheDir, "thumbnails").listFiles()!!.size)
     }
 
     @Test

@@ -48,8 +48,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **List density** (per tab): Compact, Normal or Large list thumbnails.
 - **Cover shape:** 2:3 (default), 3:4 or the cell's own shape; covers sit in the
   largest box of that shape that fits the cell, centered.
-- Covers are made at the exact size of their cell (cropped and Lanczos3-scaled,
-  drawn 1:1) and cached losslessly.
+- Covers are made at the exact size of their cell (Lanczos3-scaled, drawn 1:1)
+  and cached losslessly.
+- **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover
+  over a blurred, filled copy of itself; Auto (default) fills when the cover's
+  shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
+  (default) or the center of a cover cropped for height.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - A **Recent** row sits above the browsing list and opens the folder holding the
   last chapter you read.

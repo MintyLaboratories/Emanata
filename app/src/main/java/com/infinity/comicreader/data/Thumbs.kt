@@ -17,10 +17,10 @@ import java.security.MessageDigest
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
  * render their first page; folders fall back to the first image/openable file
  * found a couple of levels deep. Covers are made at exactly the size of the view
- * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]), then cropped and
- * Lanczos3-scaled to fill it ([Fit.COVER]), so the view draws them 1:1. They are
- * cached per size in memory (bounded by heap) and losslessly on disk under
- * `cacheDir/thumbnails`.
+ * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]), then made into
+ * the box by [CoverArt] as the [CoverStyle] says, so the view draws them 1:1. They
+ * are cached per size and style in memory (bounded by heap) and losslessly on disk
+ * under `cacheDir/thumbnails`.
  */
 object Thumbs {
     private const val DISK_DIR = "thumbnails"
@@ -46,21 +46,28 @@ object Thumbs {
      * The cover of [entry], exactly [width] x [height]. Blocking — call from a background
      * dispatcher. Returns null when no cover exists.
      */
-    fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, linear: Boolean = false): Bitmap? {
-        val target = Target(width, height, Fit.COVER, linear = linear, capPixels = THUMB_CAP_PIXELS)
-        val k = "${key(entry)}|${width}x$height" + if (linear) "|linear" else ""
+    fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
+        val k = "${key(entry)}|${width}x$height|${style.key}"
         memory.get(k)?.let { return it }
 
         val disk = diskFile(context, k)
         if (disk.isFile) {
-            val cached = runCatching { Decoders.decode(disk, target) }.getOrNull()
+            // Stored at the box size: the decode is the file as it is.
+            val cached = runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()
             if (cached != null) {
                 memory.put(k, cached)
                 return cached
             }
         }
 
-        val bitmap = generate(entry, charset, context.cacheDir, target) ?: return null
+        val full = generate(entry, charset, context.cacheDir) ?: return null
+        val bitmap = try {
+            CoverArt.compose(full, width, height, style)
+        } catch (t: Throwable) {
+            return null
+        } finally {
+            full.recycle()
+        }
         memory.put(k, bitmap)
         runCatching {
             disk.parentFile?.mkdirs()
@@ -98,7 +105,9 @@ object Thumbs {
 
     // ------------------------------------------------------------------ internals
 
-    private fun generate(entry: BookEntry, charset: String, cacheDir: File, target: Target): Bitmap? = try {
+    /** The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS]. */
+    private fun generate(entry: BookEntry, charset: String, cacheDir: File): Bitmap? = try {
+        val target = Target(capPixels = THUMB_CAP_PIXELS)
         when {
             entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, target) }
             entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target)

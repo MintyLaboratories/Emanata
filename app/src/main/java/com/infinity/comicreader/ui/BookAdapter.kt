@@ -265,11 +265,11 @@ class BookAdapter(
         holder.job?.cancel()
         val appContext = holder.itemView.context.applicationContext
         val charset = prefs.charset
-        val linear = prefs.linearLight
+        val style = prefs.coverStyle
         holder.job = scope.launch {
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
-                    runCatching { Thumbs.load(appContext, item, charset, w, h, linear) }.getOrNull()
+                    runCatching { Thumbs.load(appContext, item, charset, w, h, style) }.getOrNull()
                 }
             }
             if (bitmap != null && holder.entry === item) {

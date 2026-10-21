@@ -26,6 +26,9 @@ enum class Fit {
  * fits the width, and both free keep the source size. [COVER][Fit.COVER] and
  * [STRETCH][Fit.STRETCH] need both dimensions and act as [INSIDE][Fit.INSIDE] without.
  *
+ * [anchorTop] makes [COVER][Fit.COVER] keep the top of a source too tall for the
+ * box, cropping only its bottom; sides are always cropped evenly.
+ *
  * [linear] shrinks in linear light; enlarging stays in sRGB, where Lanczos halos are
  * fainter. [capPixels] bounds the decoded source: a larger
  * image is first reduced by the decoder's own power-of-two sampling (see [Decoders]).
@@ -39,7 +42,8 @@ data class Target(
     val fit: Fit = Fit.INSIDE,
     val autoCrop: Boolean = false,
     val linear: Boolean = false,
-    val capPixels: Long = DEFAULT_CAP_PIXELS
+    val capPixels: Long = DEFAULT_CAP_PIXELS,
+    val anchorTop: Boolean = false
 ) {
     /** What to produce from a [srcW] x [srcH] source region at ([left], [top]), in source pixels. */
     fun plan(srcW: Double, srcH: Double, left: Double = 0.0, top: Double = 0.0): Plan {
@@ -53,7 +57,8 @@ data class Target(
                 // The axis needing the larger scale is filled; the other is cropped evenly.
                 if (bw * srcH >= bh * srcW) {
                     val span = bh * srcW / bw
-                    Plan(bw, bh, left, top + coverOffset(srcH, span, bh), srcW, span)
+                    val offset = if (anchorTop) 0.0 else coverOffset(srcH, span, bh)
+                    Plan(bw, bh, left, top + offset, srcW, span)
                 } else {
                     val span = bw * srcH / bh
                     Plan(bw, bh, left + coverOffset(srcW, span, bw), top, span, srcH)

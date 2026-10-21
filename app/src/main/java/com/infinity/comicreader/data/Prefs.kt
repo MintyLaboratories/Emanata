@@ -199,6 +199,17 @@ class Prefs(context: Context) {
 
     fun setDensity(tab: String, density: ListDensity) = put(viewKey(tab, VIEW_DENSITY), density.key)
 
+    var thumbFit: ThumbFit
+        get() = ThumbFit.of(sp.getString(KEY_THUMB_FIT, null))
+        set(v) = put(KEY_THUMB_FIT, v.key)
+
+    var cropAnchor: CropAnchor
+        get() = CropAnchor.of(sp.getString(KEY_CROP_ANCHOR, null))
+        set(v) = put(KEY_CROP_ANCHOR, v.key)
+
+    /** How covers are made from their images. */
+    val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight)
+
     /** The box covers are drawn in, in every tab. */
     var coverShape: CoverShape
         get() = CoverShape.of(sp.getString(KEY_COVER_SHAPE, null))
@@ -387,6 +398,8 @@ class Prefs(context: Context) {
         private const val KEY_SHOW_HIDDEN = "pref_show_hidden"
         private const val KEY_THUMBS = "pref_thumbs"
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
+        private const val KEY_THUMB_FIT = "pref_thumb_fit"
+        private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
         private const val KEY_SORT = "pref_sort"
         private const val KEY_SORT_DIR = "pref_sort_dir"
         private const val KEY_FILENAMES = "pref_show_filenames"
@@ -407,7 +420,7 @@ class Prefs(context: Context) {
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
-            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, OLD_GRID,
+            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
             OLD_COLUMNS, KEY_SORT, KEY_SORT_DIR, KEY_FILENAMES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,

@@ -42,6 +42,17 @@ class TargetTest {
     }
 
     @Test
+    fun coverAnchoredAtTheTopCropsOnlyTheBottom() {
+        val plan = Target(300, 300, Fit.COVER, anchorTop = true).plan(2000.0, 3000.0, left = 10.0, top = 20.0)
+        assertEquals(20.0, plan.y, 0.0)
+        assertEquals(2000.0, plan.spanH, 1e-9)
+        // Too wide: the sides still go evenly.
+        val wide = Target(200, 300, Fit.COVER, anchorTop = true).plan(600.0, 300.0)
+        assertEquals(200.0, wide.x, 1e-9)
+        assertEquals(0.0, wide.y, 0.0)
+    }
+
+    @Test
     fun coverFillsTheBoxAndCropsEvenly() {
         // A 2:3 page in a square cell loses its top and bottom sixths.
         val plan = Target(300, 300, Fit.COVER).plan(2000.0, 3000.0)

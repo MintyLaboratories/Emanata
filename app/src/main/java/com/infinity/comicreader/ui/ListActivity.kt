@@ -261,7 +261,7 @@ class ListActivity : AppCompatActivity() {
         if (s.sort != old.sort || s.sortDir != old.sortDir) {
             applyFilterAndSort()
         } else if (s.thumbnails != old.thumbnails || s.showFilenames != old.showFilenames || s.charset != old.charset ||
-            s.linearLight != old.linearLight
+            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
         ) {
             adapter.notifyDataSetChanged()
         }

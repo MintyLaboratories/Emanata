@@ -227,6 +227,20 @@
             app:key="pref_cover_shape"
             app:title="@string/pref_cover_shape"
             app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="auto"
+            app:entries="@array/thumb_fit_entries"
+            app:entryValues="@array/thumb_fit_values"
+            app:key="pref_thumb_fit"
+            app:title="@string/pref_thumb_fit"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="top"
+            app:entries="@array/crop_anchor_entries"
+            app:entryValues="@array/crop_anchor_values"
+            app:key="pref_crop_anchor"
+            app:title="@string/pref_crop_anchor"
+            app:useSimpleSummaryProvider="true" />
         <!-- One entry per tab; each opens that tab's view settings. -->
         <Preference
             app:key="view_browse"

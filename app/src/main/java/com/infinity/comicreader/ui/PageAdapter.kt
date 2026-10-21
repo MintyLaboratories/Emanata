@@ -81,7 +81,8 @@ class PageAdapter(
     private val autoCrop: Boolean = false,
     private val linear: Boolean = false,
     private val preload: Int = 2,
-    private val fling: Boolean = false
+    private val fling: Boolean = false,
+    private val onLongPress: ((Int) -> Unit)? = null
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, VERTICAL, LONG_STRIP }
@@ -290,9 +291,23 @@ class PageAdapter(
         doubleTapEnabled = doubleTapZoom
         flingEnabled = fling
         onTap = { x, y -> tapped(this, x, y) }
+        if (this@PageAdapter.onLongPress != null) onLongPress = { pressed(this) }
         verticalDrag = this@PageAdapter.verticalDrag
         look = this@PageAdapter.look
         images += this
+    }
+
+    /** The page each image last showed, by its number in the strip. */
+    private val pageOf = WeakHashMap<ZoomImageView, Int>()
+
+    /**
+     * Passes on a long-press of [image] as its page in the first chapter of the strip,
+     * the one being read; -1 for a page of a chapter laid in behind it, or none.
+     */
+    private fun pressed(image: ZoomImageView) {
+        val page = pageOf[image] ?: -1
+        val first = strip.chapters.firstOrNull()
+        onLongPress?.invoke(if (first != null && page in first.first until first.first + first.count) page - first.first else -1)
     }
 
     private val tapAt = IntArray(2)
@@ -439,6 +454,7 @@ class PageAdapter(
     private fun bindImage(holder: PageHolder, slot: Int, pageIndex: Int) {
         val image = holder.images[slot]
         stopWaiting(holder, slot)
+        pageOf[image] = pageIndex
         if (pageIndex < 0 || pageIndex >= end) {
             clearImage(holder, slot)
             return

@@ -205,6 +205,7 @@
     <string name="menu_auto_scroll">Auto-scroll</string>
     <string name="menu_auto_next">Auto next chapter</string>
     <string name="menu_group_page">Page</string>
+    <string name="page_actions_title">Page %1$d</string>
     <string name="menu_group_view">View</string>
     <string name="menu_group_tools">Tools</string>
     <string name="resume_progress">Page %1$d of %2$d · %3$d%%</string>

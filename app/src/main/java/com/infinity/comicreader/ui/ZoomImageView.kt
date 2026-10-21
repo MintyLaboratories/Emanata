@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
@@ -62,6 +63,9 @@ class ZoomImageView @JvmOverloads constructor(
     private val values = FloatArray(9)
 
     var onTap: ((Float, Float) -> Unit)? = null
+
+    /** A finger held still on the page, with no second finger and no drag. */
+    var onLongPress: (() -> Unit)? = null
     var verticalDrag: VerticalDrag? = null
 
     /** A drag the view locked to the vertical axis ([AxisLock]); the parent sees none of it. */
@@ -167,6 +171,13 @@ class ZoomImageView @JvmOverloads constructor(
                 val y = if (height > 0) e.y / height.toFloat() else 0.5f
                 onTap?.invoke(x, y)
                 return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                val press = onLongPress ?: return
+                if (pinched || scaleDetector.isInProgress || axis != AxisLock.NONE) return
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                press()
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {

@@ -935,7 +935,8 @@ class ViewerActivity : AppCompatActivity() {
             autoCrop = autoCrop,
             linear = prefs.linearLight,
             preload = prefs.preload,
-            fling = prefs.fling
+            fling = prefs.fling,
+            onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) }
         )
         a.fitMode = effectiveFit()
         a.filter = filter
@@ -2162,16 +2163,33 @@ class ViewerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ share / save page
 
-    private fun fileSafeName(): String {
+    private fun fileSafeName(page: Int): String {
         val base = file?.let { chapterLabel(it) } ?: "page"
-        return base.replace(Regex("[^A-Za-z0-9._-]"), "_").take(60) + "_p" + (currentIndex + 1)
+        return base.replace(Regex("[^A-Za-z0-9._-]"), "_").take(60) + "_p" + (page + 1)
     }
 
-    /** Renders the current page at full resolution and either shares or saves it. */
-    private fun exportPage(share: Boolean) {
+    /**
+     * Page ▸ actions for [page], from a long-press on it: share, save, crop, and rotating
+     * the screen.
+     */
+    private fun showPageActions(page: Int) {
+        if (source == null) return
+        val actions = listOf<Pair<Int, () -> Unit>>(
+            R.string.menu_share_page to { exportPage(share = true, page = page) },
+            R.string.menu_save_page to { exportPage(share = false, page = page) },
+            R.string.menu_crop to { startCrop(page) },
+            R.string.menu_rotate to { cycleOrientation() }
+        )
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.page_actions_title, page + 1))
+            .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, which -> actions[which].second() }
+            .show()
+    }
+
+    /** Renders [page] at full resolution and either shares or saves it. */
+    private fun exportPage(share: Boolean, page: Int = currentIndex) {
         val src = source ?: return
-        val page = currentIndex
-        val name = fileSafeName()
+        val name = fileSafeName(page)
         progress.visibility = View.VISIBLE
         lifecycleScope.launch {
             val outcome = withContext(AppDispatchers.io) {
@@ -2311,9 +2329,8 @@ class ViewerActivity : AppCompatActivity() {
         )
     }
 
-    private fun startCrop() {
+    private fun startCrop(page: Int = currentIndex) {
         val src = source ?: return
-        val page = currentIndex
         progress.visibility = View.VISIBLE
         lifecycleScope.launch {
             val bitmap = withContext(AppDispatchers.io) {

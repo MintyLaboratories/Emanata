@@ -532,4 +532,35 @@ class ZoomImageViewTest {
         assertEquals(listOf(RectF(0f, 150f, 100f, 200f)), ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(-5f, -5f, 105f, 150f)))
         assertEquals(listOf(RectF(0f, 0f, 100f, 200f)), ZoomImageView.bandsAround(0f, 0f, 100f, 200f, RectF(120f, 0f, 150f, 50f)))
     }
+
+    private fun touch(v: ZoomImageView, action: Int, x: Float = 300f, y: Float = 400f, down: Long = SystemClock.uptimeMillis()) {
+        v.onTouchEvent(MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0))
+    }
+
+    private fun holdPastLongPress() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+
+    @Test
+    fun aFingerHeldStillIsALongPress() {
+        val v = view(600, 800, 600, 800, ZoomImageView.FitMode.SCREEN)
+        var pressed = 0
+        v.onLongPress = { pressed++ }
+        val down = SystemClock.uptimeMillis()
+        touch(v, MotionEvent.ACTION_DOWN, down = down)
+        holdPastLongPress()
+        touch(v, MotionEvent.ACTION_UP, down = down)
+        assertEquals(1, pressed)
+    }
+
+    @Test
+    fun aDragIsNoLongPress() {
+        val v = view(600, 800, 600, 800, ZoomImageView.FitMode.SCREEN)
+        var pressed = 0
+        v.onLongPress = { pressed++ }
+        val down = SystemClock.uptimeMillis()
+        touch(v, MotionEvent.ACTION_DOWN, down = down)
+        touch(v, MotionEvent.ACTION_MOVE, x = 300f, y = 600f, down = down)
+        holdPastLongPress()
+        touch(v, MotionEvent.ACTION_UP, x = 300f, y = 600f, down = down)
+        assertEquals(0, pressed)
+    }
 }

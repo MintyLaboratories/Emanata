@@ -137,4 +137,25 @@ class ViewerActivityMenuTest {
         assertTrue(text, text.contains("Right-to-left (set for this folder)"))
         assertTrue(text, !text.contains(context.getString(R.string.info_comic_info)))
     }
+
+    @Test
+    fun aLongPressOnAPageOffersItsActions() {
+        val viewer = launch(book())
+        val pager = viewer.findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.viewer_pager)
+        pager.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1200, View.MeasureSpec.EXACTLY))
+        pager.layout(0, 0, 800, 1200)
+        idle()
+        val page = descendants(pager).filterIsInstance<ZoomImageView>().first()
+        val down = android.os.SystemClock.uptimeMillis()
+        page.onTouchEvent(android.view.MotionEvent.obtain(down, down, android.view.MotionEvent.ACTION_DOWN, 400f, 600f, 0))
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1_000))
+        page.onTouchEvent(android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), android.view.MotionEvent.ACTION_UP, 400f, 600f, 0))
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        assertEquals(context.getString(R.string.page_actions_title, 1), dialog.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString())
+        assertEquals(4, dialog.listView.adapter.count)
+        assertEquals(context.getString(R.string.menu_share_page), dialog.listView.adapter.getItem(0).toString())
+    }
+
+    private fun descendants(v: View): List<View> =
+        listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { descendants(v.getChildAt(it)) } else emptyList()
 }

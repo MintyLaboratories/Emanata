@@ -18,9 +18,13 @@ object GridPick {
     /** Cells per side: Auto, then 1..[TabView.MAX_CELLS]. */
     const val SIDE = TabView.MAX_CELLS + 1
 
-    /** The cell index (0 = Auto) under [pos] along an axis of [SIDE] cells [cell] long with [gap] between; clamped to the grid. */
+    /**
+     * The cell index (0 = Auto) under [pos] along an axis of [SIDE] cells [cell] long
+     * with [gap] between, a gap counting with the cell before it; -1 outside the grid.
+     */
     fun cellAt(pos: Float, cell: Float, gap: Float): Int =
-        if (pos <= 0f) 0 else (pos / (cell + gap)).toInt().coerceAtMost(SIDE - 1)
+        if (pos < 0f || pos >= SIDE * cell + (SIDE - 1) * gap) -1
+        else (pos / (cell + gap)).toInt().coerceAtMost(SIDE - 1)
 
     /** "4 × 3", "Auto × 3": columns first, [auto] for 0. */
     fun label(columns: Int, rows: Int, auto: String): String {
@@ -33,7 +37,8 @@ object GridPick {
  * A 7 x 7 table picker for grid columns x rows: the first column and row stand for
  * Auto, the rest for 1..6. The cells from the top-left to the chosen one are
  * highlighted, with the choice written below. Tap a cell, or drag and release;
- * [onPick] gets the columns and rows on release.
+ * [onPick] gets the columns and rows on release. Touches starting outside the grid
+ * are ignored; releasing outside it picks nothing.
  */
 class GridPicker @JvmOverloads constructor(
     context: Context,
@@ -137,29 +142,33 @@ class GridPicker @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val c = GridPick.cellAt(event.x - left, cell, gap)
         val r = GridPick.cellAt(event.y - paddingTop, cell, gap)
+        val inside = c >= 0 && r >= 0
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+            MotionEvent.ACTION_DOWN -> {
+                if (!inside) return false
                 parent?.requestDisallowInterceptTouchEvent(true)
-                if (c != hoverColumn || r != hoverRow) {
-                    hoverColumn = c
-                    hoverRow = r
-                    invalidate()
+                hover(c, r)
+            }
+            MotionEvent.ACTION_MOVE -> if (inside) hover(c, r) else hover(-1, -1)
+            MotionEvent.ACTION_UP -> {
+                hover(-1, -1)
+                if (inside) {
+                    select(c, r)
+                    performClick()
+                    onPick?.invoke(columns, rows)
                 }
             }
-            MotionEvent.ACTION_UP -> {
-                hoverColumn = -1
-                hoverRow = -1
-                select(c, r)
-                performClick()
-                onPick?.invoke(columns, rows)
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                hoverColumn = -1
-                hoverRow = -1
-                invalidate()
-            }
+            MotionEvent.ACTION_CANCEL -> hover(-1, -1)
         }
         return true
+    }
+
+    /** Highlights up to cell [c], [r] while dragging; -1 shows the current choice. */
+    private fun hover(c: Int, r: Int) {
+        if (c == hoverColumn && r == hoverRow) return
+        hoverColumn = c
+        hoverRow = r
+        invalidate()
     }
 
     override fun performClick(): Boolean = super.performClick()

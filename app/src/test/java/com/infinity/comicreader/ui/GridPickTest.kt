@@ -15,9 +15,12 @@ class GridPickTest {
     }
 
     @Test
-    fun dragsPastTheEdgesClampToTheGrid() {
-        assertEquals(0, GridPick.cellAt(-50f, 36f, 4f))
-        assertEquals(6, GridPick.cellAt(5000f, 36f, 4f))
+    fun pointsOutsideTheGridHitNoCell() {
+        // The grid spans [0, 7 * 36 + 6 * 4) = [0, 276).
+        assertEquals(-1, GridPick.cellAt(-1f, 36f, 4f))
+        assertEquals(6, GridPick.cellAt(275.9f, 36f, 4f))
+        assertEquals(-1, GridPick.cellAt(276f, 36f, 4f))
+        assertEquals(-1, GridPick.cellAt(5000f, 36f, 4f))
     }
 
     @Test

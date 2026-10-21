@@ -1090,11 +1090,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         peek = pinch.overlay
     }
 
-    /** What [dir] lists when browsed, in the browse order. */
+    /**
+     * What [dir] lists when browsed: the browse filter applied, in the browse order, with
+     * the facts found in its books ([withFacts]), so covers match the list's.
+     */
     private suspend fun peekEntries(dir: File): List<BookEntry> {
         val entries = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
         val sort = prefs.sort(Prefs.TAB_BROWSE)
-        return entries.sortedWith(LibrarySort.comparator(sort, values().frozen(entries, sort.keys)))
+        val filter = prefs.filter(Prefs.TAB_BROWSE)
+        val live = values()
+        val passing = if (filter.isActive) entries.filter { filter.accepts(it, live, true) } else entries
+        return passing.sortedWith(LibrarySort.comparator(sort, live.frozen(passing, sort.keys))).map { withFacts(it) }
     }
 
     /** The comic or folder under list point ([x], [y]) and the view its cover is drawn in, or null. */

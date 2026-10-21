@@ -14,7 +14,14 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.BookFacts
+import com.infinity.comicreader.data.BookFactsCache
+import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReadingDirection
+import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
@@ -219,6 +226,42 @@ class ListActivityPeekTest {
         val started = shadowOf(activity).nextStartedActivity
         assertEquals(File(extras, "Part 2.cbz").absolutePath, started?.getStringExtra(ViewerActivity.EXTRA_PATH))
         assertFalse(peek.isShowing)
+    }
+
+    /** The entries [folder]'s peek shows, opened from the long-press menu. */
+    private fun ListActivity.peekedEntries(folder: File): List<BookEntry> {
+        longPress(folder)
+        (ShadowDialog.getLatestDialog() as AlertDialog).click("Peek")
+        idle(500)
+        val adapter = peek().grid().adapter as CoverPeekAdapter
+        return (0 until adapter.itemCount).map { adapter.entryAt(it) }
+    }
+
+    @Test
+    fun folderPeekCarriesDetectedDirections() {
+        val extras = extrasWithBooks()
+        val manga = File(extras, "Part 2.cbz")
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        BookFactsCache(context).put(
+            manga.absolutePath, manga.length(),
+            BookFacts(1, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.COMIC_INFO))
+        )
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val entries = activity.peekedEntries(extras)
+        assertEquals(ReadingDirection.RTL, entries.single { it.name == "Part 2.cbz" }.direction)
+        assertEquals(ReadingDirection.LTR, entries.single { it.name == "Part 1.cbz" }.direction)
+    }
+
+    @Test
+    fun folderPeekAppliesTheBrowseFilter() {
+        val extras = extrasWithBooks()
+        File(extras, "Sketch.png").writeBytes(TestImages.png(4, 6))
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        Prefs(context).setFilter(Prefs.TAB_BROWSE, LibraryFilter(types = setOf(EntryType.FOLDER, EntryType.ARCHIVE)))
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(listOf("Part 1.cbz", "Part 2.cbz", "Part 10.cbz"), activity.peekedEntries(extras).map { it.name })
     }
 
     @Test

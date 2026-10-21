@@ -64,6 +64,9 @@ class CoverPeekAdapter(
 
     override fun getItemCount(): Int = entries.size
 
+    /** The entry shown at [position]. */
+    fun entryAt(position: Int): BookEntry = entries[position]
+
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         recycler = recyclerView
     }

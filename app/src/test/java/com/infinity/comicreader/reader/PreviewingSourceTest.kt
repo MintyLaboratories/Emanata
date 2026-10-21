@@ -114,6 +114,16 @@ class PreviewingSourceTest {
     }
 
     @Test
+    fun renderBelowPreviewSizeLeavesNoPreviewSoALargerOneCan() {
+        val source = PreviewingSource(RenderedPages(), store, "book")
+        // A list-row cover: the whole page, but smaller than a preview.
+        source.loadPage(0, Target(80, 120))
+        assertNull(store.get(key(0, null)))
+        source.loadPage(0, Target(1000, 1000))
+        assertEquals(256, store.get(key(0, null))!!.height)
+    }
+
+    @Test
     fun quickPreviewIsStoredAndThenServedFromStore() {
         val quick = Bitmap.createBitmap(20, 30, Bitmap.Config.ARGB_8888)
         val inner = EncodedPages(listOf(framedPage(200, 300)), quick)

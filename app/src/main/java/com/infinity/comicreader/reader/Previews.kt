@@ -46,6 +46,9 @@ object Previews {
         return sample
     }
 
+    /** True when a [w] x [h] rendering of a whole page reaches its preview's size, so the preview loses nothing. */
+    fun isFullSize(w: Int, h: Int): Boolean = w >= BOX || h >= BOX
+
     /** `[width, height]` of the preview of a [w] x [h] page. */
     fun sizeOf(w: Int, h: Int): IntArray = TARGET.plan(w.toDouble(), h.toDouble()).let { intArrayOf(it.width, it.height) }
 

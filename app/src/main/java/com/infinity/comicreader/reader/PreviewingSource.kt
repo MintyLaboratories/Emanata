@@ -6,7 +6,9 @@ import android.graphics.Bitmap
  * [inner] with page previews: every page it decodes, for any reason, leaves its
  * preview in [store] unless one is there, made from the full-size decode before any
  * crop or resampling ([Decoders.capturing]). A source that renders straight at the
- * target size (PDF) leaves one only when it renders a whole page. [book] identifies
+ * target size (PDF) leaves one only when it renders a whole page no smaller than its
+ * preview ([Previews.isFullSize]), so a small cover never stands in for later
+ * renders. [book] identifies
  * the book ([PreviewStore.bookId]).
  */
 class PreviewingSource(
@@ -20,7 +22,8 @@ class PreviewingSource(
         if (store.has(key)) return inner.loadPage(index, target)
         var preview: Bitmap? = null
         val page = Decoders.capturing({ preview = previewOf(it) }) { inner.loadPage(index, target) }
-        (preview ?: if (isWholePage(target)) previewOf(page) else null)?.let { store.put(key, it) }
+        (preview ?: if (isWholePage(target) && Previews.isFullSize(page.width, page.height)) previewOf(page) else null)
+            ?.let { store.put(key, it) }
         return page
     }
 

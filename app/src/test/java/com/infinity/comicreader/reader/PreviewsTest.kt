@@ -21,6 +21,14 @@ import kotlin.math.abs
 class PreviewsTest {
 
     @Test
+    fun fullSizeOnceEitherSideReachesTheBox() {
+        assertTrue(Previews.isFullSize(256, 384))
+        assertTrue(Previews.isFullSize(300, 100))
+        assertFalse(Previews.isFullSize(100, 150))
+        assertFalse(Previews.isFullSize(255, 255))
+    }
+
+    @Test
     fun sizeFitsTheBoxWithoutEnlarging() {
         assertArrayEquals(intArrayOf(171, 256), Previews.sizeOf(2000, 3000))
         assertArrayEquals(intArrayOf(256, 128), Previews.sizeOf(4000, 2000))

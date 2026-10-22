@@ -38,6 +38,15 @@ object ImageHeaders {
      * a later marker (DNL).
      */
     fun jpegSize(bytes: ByteArray): IntArray? {
+        val head = jpegHead(bytes) ?: return null
+        return if (head[2] in 5..8) intArrayOf(head[1], head[0]) else intArrayOf(head[0], head[1])
+    }
+
+    /** The EXIF orientation of a JPEG, 1 without one; null when its frame header is not found. */
+    fun jpegOrientation(bytes: ByteArray): Int? = jpegHead(bytes)?.get(2)
+
+    /** `[width, height, orientation]` of a JPEG as stored, before any EXIF orientation. */
+    private fun jpegHead(bytes: ByteArray): IntArray? {
         if (bytes.size < 4 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xD8.toByte()) return null
         var at = 2
         var orientation = 1
@@ -64,7 +73,7 @@ object ImageHeaders {
                 val h = be16(bytes, body + 1)
                 val w = be16(bytes, body + 3)
                 if (w <= 0 || h <= 0) return null
-                return if (orientation in 5..8) intArrayOf(h, w) else intArrayOf(w, h)
+                return intArrayOf(w, h, orientation)
             }
             at += 2 + length
         }

@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -161,6 +162,13 @@ class ImageHeadersTest {
         assertArrayEquals(intArrayOf(3056, 1988), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 6)))
         assertArrayEquals(intArrayOf(3056, 1988), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 8, little = false)))
         assertArrayEquals(intArrayOf(1988, 3056), ImageHeaders.jpegSize(jpeg(1988, 3056, orientation = 3)))
+    }
+
+    @Test
+    fun jpegOrientationIsReadAsStored() {
+        assertEquals(1, ImageHeaders.jpegOrientation(jpeg(1988, 3056)))
+        for (o in 1..8) assertEquals(o, ImageHeaders.jpegOrientation(jpeg(1988, 3056, orientation = o, little = o % 2 == 0)))
+        assertNull(ImageHeaders.jpegOrientation(png(37, 23)))
     }
 
     @Test

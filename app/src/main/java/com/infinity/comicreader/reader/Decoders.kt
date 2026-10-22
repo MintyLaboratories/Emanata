@@ -318,6 +318,27 @@ object Decoders {
     /** Kinds [edge] decodes only a strip of. */
     private val REGION_KINDS = setOf(ImageKind.JPEG, ImageKind.PNG, ImageKind.WEBP)
 
+    /**
+     * A region decoder of [bytes], a [REGION_KINDS] image shown [w] x [h], whose pixels are
+     * laid out as shown: none where an EXIF orientation may turn or mirror the image, as
+     * region decodes ignore it, or where the decoder sees another size.
+     */
+    private fun regionDecoder(bytes: ByteArray, w: Int, h: Int): BitmapRegionDecoder? {
+        val kind = ImageKind.sniff(bytes)
+        if (kind !in REGION_KINDS) return null
+        if (kind == ImageKind.JPEG && ImageHeaders.jpegOrientation(bytes) != 1) return null
+        if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
+        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
+        } else {
+            @Suppress("DEPRECATION")
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
+        } ?: return null
+        if (decoder.width == w && decoder.height == h) return decoder
+        decoder.recycle()
+        return null
+    }
+
     /** Pixels a whole decode for [edge] works on at most, sampled down by a power of two. */
     private const val EDGE_CAP_PIXELS = 4_000_000L
 
@@ -336,7 +357,7 @@ object Decoders {
         val w = size[0]
         val h = size[1]
         if (w <= 0 || h <= 0) return null
-        val strip = (if (ImageKind.sniff(bytes) in REGION_KINDS) runCatching { regionStrip(bytes, w, h, bottom) }.getOrNull() else null)
+        val strip = runCatching { regionStrip(bytes, w, h, bottom) }.getOrNull()
             ?: runCatching { bandStrip(bytes, h, bottom) }.getOrNull()
             ?: return null
         return try {
@@ -360,12 +381,7 @@ object Decoders {
         val sample = edgeSample(w)
         val rows = (Seams.ROWS * sample).coerceAtMost(h)
         val rect = if (bottom) Rect(0, h - rows, w, h) else Rect(0, 0, w, rows)
-        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
-        } else {
-            @Suppress("DEPRECATION")
-            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
-        } ?: return null
+        val decoder = regionDecoder(bytes, w, h) ?: return null
         return try {
             decoder.decodeRegion(rect, BitmapFactory.Options().apply {
                 inSampleSize = sample
@@ -397,7 +413,7 @@ object Decoders {
         val w = size[0]
         val h = size[1]
         if (w <= 0 || h <= 0) return null
-        if (ImageKind.sniff(bytes) in REGION_KINDS) runCatching { regionSides(bytes, w, h) }.getOrNull()?.let { return it }
+        runCatching { regionSides(bytes, w, h) }.getOrNull()?.let { return it }
         return runCatching { wholeSides(bytes) }.getOrNull()
     }
 
@@ -405,12 +421,7 @@ object Decoders {
     private fun regionSides(bytes: ByteArray, w: Int, h: Int): SpreadSeams.Sides? {
         val sample = edgeSample(h)
         val columns = (SpreadSeams.COLUMNS * sample).coerceAtMost(w)
-        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
-        } else {
-            @Suppress("DEPRECATION")
-            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
-        } ?: return null
+        val decoder = regionDecoder(bytes, w, h) ?: return null
         try {
             val options = BitmapFactory.Options().apply {
                 inSampleSize = sample

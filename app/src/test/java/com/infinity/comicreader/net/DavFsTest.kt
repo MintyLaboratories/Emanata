@@ -1,7 +1,13 @@
 package com.infinity.comicreader.net
 
+import okhttp3.Credentials
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
+import java.net.InetAddress
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -242,6 +248,97 @@ class DavFsTest {
             if (closeShare) assertEquals(RemoteException.Reason.UNKNOWN_SHARE, (e as RemoteException).reason)
             else assertFalse("$e", e is RemoteException)
         }
+    }
+
+    /** A server on this machine answering with [answer]; shut down after the test. */
+    private fun mock(answer: (RecordedRequest) -> MockResponse): MockWebServer = MockWebServer().apply {
+        dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = answer(request)
+        }
+        mocks += this
+    }
+
+    private val mocks = ArrayList<MockWebServer>()
+
+    @After
+    fun shutMocks() {
+        mocks.forEach { it.shutdown() }
+    }
+
+    private fun davShare(secure: Boolean, host: String, port: Int, dir: String = "dav") =
+        Share("m1", "Share M", DavUrl(secure, host, port, dir), "user", "pw")
+
+    private val emptyListing = MockResponse().setResponseCode(207)
+        .setHeader("Content-Type", "application/xml; charset=utf-8")
+        .setBody("""<?xml version="1.0" encoding="utf-8"?><D:multistatus xmlns:D="DAV:"></D:multistatus>""")
+
+    @Test
+    fun theSignInStaysOnItsHostThroughRedirects() {
+        val other = mock { emptyListing }
+        other.start(InetAddress.getByName("127.0.0.1"), 0)
+        val first = mock { MockResponse().setResponseCode(302).setHeader("Location", "http://127.0.0.1:${other.port}/dav/") }
+        first.start()
+        assertEquals(emptyList<RemoteStat>(), fs(davShare(false, "localhost", first.port)).list(""))
+        assertEquals(Credentials.basic("user", "pw"), first.takeRequest().getHeader("Authorization"))
+        val moved = other.takeRequest()
+        assertEquals("PROPFIND", moved.method)
+        assertNull(moved.getHeader("Authorization"))
+    }
+
+    @Test
+    fun aFolderMovedToItsSlashKeepsPropfindDepthAndSignIn() {
+        val dav = mock { request ->
+            when (request.path) {
+                "/dav/Series" -> MockResponse().setResponseCode(301).setHeader("Location", "/dav/Series/")
+                "/dav/Series/" -> MockResponse().setResponseCode(207).setHeader("Content-Type", "application/xml").setBody(
+                    """<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/Series/</D:href>""" +
+                        """<D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>""" +
+                        """<D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>"""
+                )
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        dav.start()
+        assertTrue(fs(davShare(false, "localhost", dav.port)).stat("Series")!!.isDirectory)
+        dav.takeRequest()
+        val moved = dav.takeRequest()
+        assertEquals("/dav/Series/", moved.path)
+        assertEquals("PROPFIND", moved.method)
+        assertEquals("0", moved.getHeader("Depth"))
+        assertEquals(Credentials.basic("user", "pw"), moved.getHeader("Authorization"))
+        assertTrue(moved.body.readUtf8().contains("propfind"))
+    }
+
+    @Test
+    fun redirectsBetweenHttpsAndHttpAreRefused() {
+        val cert = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        val serverCerts = HandshakeCertificates.Builder().heldCertificate(cert).build()
+        val clientCerts = HandshakeCertificates.Builder().addTrustedCertificate(cert.certificate).build()
+        val client = DavFs.sharedClient.newBuilder().sslSocketFactory(clientCerts.sslSocketFactory(), clientCerts.trustManager).build()
+        val plainTarget = mock { emptyListing }
+        plainTarget.start()
+        val secureTarget = mock { emptyListing }
+        secureTarget.useHttps(serverCerts.sslSocketFactory(), false)
+        secureTarget.start()
+        val secureFrom = mock { MockResponse().setResponseCode(302).setHeader("Location", "http://localhost:${plainTarget.port}/dav/") }
+        secureFrom.useHttps(serverCerts.sslSocketFactory(), false)
+        secureFrom.start()
+        val plainFrom = mock { MockResponse().setResponseCode(302).setHeader("Location", "https://localhost:${secureTarget.port}/dav/") }
+        plainFrom.start()
+        // The certificate is trusted: straight to the HTTPS server works.
+        assertEquals(emptyList<RemoteStat>(), DavFs(davShare(true, "localhost", secureTarget.port), client).also { opened += it }.list(""))
+        val reached = secureTarget.requestCount
+        for ((share, target) in listOf(davShare(true, "localhost", secureFrom.port) to plainTarget, davShare(false, "localhost", plainFrom.port) to secureTarget)) {
+            val before = target.requestCount
+            try {
+                DavFs(share, client).also { opened += it }.list("")
+                fail("followed a redirect between HTTPS and HTTP")
+            } catch (e: IOException) {
+                assertTrue("$e", e.message!!.contains("302"))
+            }
+            assertEquals(before, target.requestCount)
+        }
+        assertEquals(1, reached)
     }
 
     @Test

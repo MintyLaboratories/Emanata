@@ -421,7 +421,8 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             return Triple(first, last, total)
         }
 
-        private val sharedClient: OkHttpClient by lazy {
+        /** The client every share uses; tests derive theirs from it, keeping its redirect rules. */
+        internal val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
                 .connectTimeout(5, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)

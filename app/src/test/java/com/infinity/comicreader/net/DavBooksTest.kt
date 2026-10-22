@@ -106,6 +106,31 @@ class DavBooksTest {
     }
 
     @Test
+    fun aRefusedSignInIsNotTriedAgainUntilRetried() {
+        server.user = "user"
+        server.password = "pw"
+        Remotes.serve(listOf(server.share(id = "d1", password = "wrong"))) { DavFs(it) }
+        repeat(2) {
+            try {
+                Remotes.list("/net/d1")
+                fail("listed with a wrong password")
+            } catch (e: RemoteException) {
+                assertEquals(RemoteException.Reason.DENIED, e.reason)
+                assertTrue(e.lasting)
+            }
+        }
+        assertEquals(1, server.requests.size)
+        Remotes.retry("d1")
+        try {
+            Remotes.list("/net/d1")
+            fail("listed with a wrong password")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteException.Reason.DENIED, e.reason)
+        }
+        assertEquals(2, server.requests.size)
+    }
+
+    @Test
     fun oneFilesServerErrorLeavesTheShareReachable() {
         Fixtures.zip(File(share, "b.cbz"), entry("01.jpg"))
         server.errors["b.cbz"] = 500

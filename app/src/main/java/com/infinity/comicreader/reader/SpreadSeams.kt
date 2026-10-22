@@ -6,12 +6,12 @@ import kotlin.math.sqrt
 /**
  * Tells whether two pages side by side are the halves of one picture: the right edge of
  * the left page runs on into the left edge of the right page. Each side of a page is an
- * [Edge]: the color of its outermost [BAND] columns and of the [BAND] columns next to
- * them, at [Seams.LENGTH] points down the page. A side with too little in it (a white or
- * dark gutter, flat color, a lone line) says nothing ([informative]). Otherwise the two
- * facing edges must agree in color, within a fixed limit or about as well as each edge
- * agrees with the columns just inside it, and in shape: the same rises and falls of
- * brightness down the page ([compare]). Free of Android types.
+ * [Edge]: the color of bands of [BAND] columns from its outermost in, at [Seams.LENGTH]
+ * points down the page. A side with too little in it (a white or dark gutter, flat
+ * color, a lone line) says nothing ([informative]). Otherwise the two facing edges must
+ * agree in color, within a fixed limit or about as well as each edge agrees with a band
+ * inside it (further in where columns were lost at the cut), and in shape: the same
+ * rises and falls of brightness down the page ([compare]). Free of Android types.
  */
 object SpreadSeams {
     /** Columns of a side strip, at the scale it is decoded at. */
@@ -19,6 +19,9 @@ object SpreadSeams {
 
     /** Columns averaged into one line of an edge. */
     const val BAND = 2
+
+    /** Lines of an edge, from the outermost in: all of [COLUMNS]. */
+    const val BANDS = COLUMNS / BAND
 
     /** Below this spread of luma, in 0..255, a side is too flat to compare. */
     const val MIN_STD = 10.0
@@ -67,15 +70,17 @@ object SpreadSeams {
     }
 
     /**
-     * One side of a page: red, green and blue at [Seams.LENGTH] points down its [outer]
-     * [BAND] columns and the [inner] [BAND] next to them, interleaved.
+     * One side of a page: red, green and blue at [Seams.LENGTH] points down each of its
+     * [bands], [BAND] columns each, from the outermost in ([outer]), interleaved.
      */
-    class Edge(val outer: FloatArray, val inner: FloatArray) {
-        /** Brightness down the outer columns. */
-        val luma = FloatArray(Seams.LENGTH) { lumaAt(outer, it) }
+    class Edge(val bands: List<FloatArray>) {
+        val outer: FloatArray get() = bands[0]
 
-        /** Brightness down the inner columns. */
-        val innerLuma = FloatArray(Seams.LENGTH) { lumaAt(inner, it) }
+        /** Brightness down each band. */
+        val lumas: List<FloatArray> = bands.map { b -> FloatArray(Seams.LENGTH) { lumaAt(b, it) } }
+
+        /** Brightness down the outer columns. */
+        val luma: FloatArray get() = lumas[0]
         val std: Double = luma.average().let { m -> sqrt(luma.sumOf { (it - m) * (it - m) } / luma.size) }
 
         /** Share of points whose color stands out from the side's median color by [BUSY_STEP]. */
@@ -99,16 +104,20 @@ object SpreadSeams {
     }
 
     /**
-     * The [right] or left side of a [width] x [height] image of ARGB [pixels]: its outermost
-     * [BAND] columns and the [BAND] next in, area-averaged down to [Seams.LENGTH] points.
-     * A strip narrower than two bands uses what it has. Null for an empty image.
+     * The [right] or left side of a [width] x [height] image of ARGB [pixels]: up to
+     * [BANDS] bands of [BAND] columns from the outermost in, each area-averaged down to
+     * [Seams.LENGTH] points. A strip narrower than two bands uses what it has. Null for
+     * an empty image.
      */
     fun edge(pixels: IntArray, width: Int, height: Int, right: Boolean): Edge? {
         if (width <= 0 || height <= 0 || pixels.size < width * height) return null
-        val outer = minOf(BAND, width)
-        val innerFrom = minOf(BAND, width - 1)
-        val innerTo = minOf(2 * BAND, width).coerceAtLeast(innerFrom + 1)
-        return Edge(line(pixels, width, height, right, 0, outer), line(pixels, width, height, right, innerFrom, innerTo))
+        val count = (width / BAND).coerceIn(2, BANDS)
+        val bands = List(count) { k ->
+            val from = minOf(k * BAND, width - 1)
+            val to = minOf((k + 1) * BAND, width).coerceAtLeast(from + 1)
+            line(pixels, width, height, right, from, to)
+        }
+        return Edge(bands)
     }
 
     /** Mean color of columns [from] until [to], counted in from the [right] or left side, at [Seams.LENGTH] points. */
@@ -146,7 +155,10 @@ object SpreadSeams {
     /**
      * Whether the picture runs on from [left], the right side of the page on the left, into
      * [right], the left side of the page on the right, at the shift of up to [MAX_SHIFT]
-     * points that brings their colors closest.
+     * points that brings their colors closest. Their difference is judged against how
+     * each edge differs from the band [step] bands in, for each step either has: a step of
+     * one for a clean cut, more for columns lost at the cut, as a trimmed scan loses them
+     * ([GAP_PENALTY]). The step that judges them best decides.
      */
     fun compare(left: Edge, right: Edge): Verdict {
         if (!informative(left) || !informative(right)) return Verdict.UNKNOWN
@@ -156,10 +168,26 @@ object SpreadSeams {
             if (best == null || f.distance < best.distance) best = f
         }
         val fit = best!!
-        // A seam is two columns apart, as is each edge from the columns just inside it: busy
-        // art differs and decorrelates that much within a page too, and may across the seam.
-        val inLeft = fit(left.outer, left.luma, left.inner, left.innerLuma, 0)
-        val inRight = fit(right.outer, right.luma, right.inner, right.innerLuma, 0)
+        val steps = minOf(left.bands.size, right.bands.size) - 1
+        var verdict: Verdict? = null
+        for (step in 1..steps) {
+            val v = judge(fit, left, right, step)
+            val score = if (v.match) 1 + v.confidence else if (v.seam == Seam.UNKNOWN) 0.0 else -v.confidence
+            val bestScore = verdict?.let { if (it.match) 1 + it.confidence else if (it.seam == Seam.UNKNOWN) 0.0 else -it.confidence }
+            if (bestScore == null || score > bestScore) verdict = v
+        }
+        return verdict ?: Verdict.UNKNOWN
+    }
+
+    /** Confidence a match loses for each band its [compare] step lies past the first. */
+    const val GAP_PENALTY = 0.2
+
+    /** The verdict on [fit], the seam between [left] and [right], judged against each edge's band [step] bands in. */
+    private fun judge(fit: Fit, left: Edge, right: Edge, step: Int): Verdict {
+        // A seam is a band apart, as is each edge from the band next in: busy art differs and
+        // decorrelates that much within a page too, and may across the seam.
+        val inLeft = fit(left.outer, left.luma, left.bands[step], left.lumas[step], 0)
+        val inRight = fit(right.outer, right.luma, right.bands[step], right.lumas[step], 0)
         val ratio = fit.distance / maxOf((inLeft.distance + inRight.distance) / 2, 1.0)
         val minCorrelation = minOf(MIN_CORRELATION, CORRELATION_SHARE * (inLeft.correlation + inRight.correlation) / 2).coerceAtLeast(CORRELATION_FLOOR)
         val minGradient = minOf(MIN_GRADIENT, GRADIENT_SHARE * (inLeft.gradient + inRight.gradient) / 2).coerceAtLeast(GRADIENT_FLOOR)
@@ -170,7 +198,9 @@ object SpreadSeams {
                 val color = maxOf((MAX_RATIO - ratio) / (MAX_RATIO - 1), 1 - fit.distance / MAX_DISTANCE).coerceIn(0.0, 1.0)
                 val shape = (fit.correlation - minCorrelation) / (1 - minCorrelation)
                 val detail = (fit.gradient - minGradient) / (1 - minGradient)
-                Verdict(Seam.MATCH, ((color + shape + detail) / 3).coerceIn(0.0, 1.0))
+                val confidence = (color + shape + detail) / 3 - GAP_PENALTY * (step - 1)
+                // Only a clean cut matches on a bare pass; past it the columns lost leave too much open.
+                if (step > 1 && confidence <= 0.0) Verdict.UNKNOWN else Verdict(Seam.MATCH, confidence.coerceIn(0.0, 1.0))
             }
             // Alike in color and overall shading, without detail to tell: a shared sky.
             agrees -> Verdict.UNKNOWN

@@ -187,13 +187,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Page sizes come from image headers, read once per book in the background.
 - **Spreads in two files** are told by their seams: the facing edges of two
   pages, decoded as thin strips, must agree in color and shape within a fixed
-  limit, or about as well as each edge agrees with the columns just inside it;
-  blank, flat or nearly empty edges say nothing. In two-page mode such a pair shares a screen even when
-  page numbers would pair it otherwise (the seams of that run decide; **Shift
-  pairs by one page** still flips the result), and its gutter is never cropped.
-  Seams are checked in the background, nearest the page on screen first, and kept
-  per book. **Join spreads by their edges** (on by default, also in the reader
-  sheet) turns this off.
+  limit, or about as well as each edge agrees with columns inside it (a few
+  columns trimmed at the cut are allowed for); blank, flat or nearly empty edges
+  say nothing. In two-page mode such a pair shares a screen even when page
+  numbers would pair it otherwise (the seams of that run decide; **Shift pairs
+  by one page** still flips the result), and its gutter is never cropped. Seams
+  are checked in the background at low priority, nearest the page on screen
+  first; beyond nearby pages only JPEG, PNG and WebP pages, whose strips decode
+  alone. They are kept per book. Once you turn a page, a seam found later never
+  re-pairs the pages you are on. **Join spreads by their edges** (on by
+  default, also in the reader sheet) turns this off.
 - **Spreads:** *Merge* (default) shows a wide page whole, and a spread in two
   files as one; *Split* shows a wide page as two pages, each numbered and fitted
   on its own (one page at a time only).

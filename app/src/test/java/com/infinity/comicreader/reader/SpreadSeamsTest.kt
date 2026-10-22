@@ -145,6 +145,21 @@ class SpreadSeamsTest {
     }
 
     @Test
+    fun columnsLostAtTheCutMostlyStillMatch() {
+        for ((lost, least) in listOf(1 to 9, 2 to 7, 3 to 4)) {
+            val matched = (1L..10L).count { seed ->
+                val w = width + lost
+                val art = SyntheticArt.art(w, height, seed)
+                // A trimmed scan: [lost] columns at the cut belong to neither page.
+                val left = SyntheticArt.columns(art, w, 0, half)
+                val right = SyntheticArt.columns(art, w, half + lost, w)
+                seam(SyntheticArt.jpegLike(left, half, 75), SyntheticArt.jpegLike(right, half, 75)).match
+            }
+            assertTrue("lost $lost: $matched of 10", matched >= least)
+        }
+    }
+
+    @Test
     fun narrowStripsAreEnough() {
         // Side strips as a decoder hands them over: only the outermost columns.
         val (left, right) = halves(SyntheticArt.art(width, height, seed = 2))

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Looper
 import android.view.View
+import android.widget.CompoundButton
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -77,6 +78,13 @@ class ViewerActivitySheetTest {
         val sheet = ReaderSheet(launch())
         for (id in groups) assertNotEquals(View.NO_ID, sheet.view<MaterialButtonToggleGroup>(id).checkedButtonId)
         assertEquals(R.id.chip_filter_none, sheet.view<ChipGroup>(R.id.sheet_filter).checkedChipId)
+    }
+
+    @Test
+    fun aFreshSheetMergesSpreadsAndTurnsTheScreen() {
+        val sheet = ReaderSheet(launch())
+        assertEquals(R.id.btn_spreads_merge, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_spreads).checkedButtonId)
+        assertTrue(sheet.view<CompoundButton>(R.id.sheet_rotate_spreads).isChecked)
     }
 
     @Test

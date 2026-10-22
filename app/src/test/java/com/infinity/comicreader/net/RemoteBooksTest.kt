@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlin.random.Random
 
 /** Books on a share: zips and covers read in place, other books fetched for the reader only. */
 @RunWith(RobolectricTestRunner::class)
@@ -86,6 +87,18 @@ class RemoteBooksTest {
         }
         assertEquals(0, copies())
         assertTrue("read ${fake.bytesRead} bytes", fake.bytesRead < big.size / 2)
+    }
+
+    @Test
+    fun aZipOfManyPagesOpensWithoutReadingEachPage() {
+        val random = Random(7)
+        val many = Array(40) { entry("%02d.jpg".format(it), random.nextBytes(512 * 1024)) }
+        Fixtures.zip(File(share, "many.cbz"), *many)
+        PageSources.open(remote("many.cbz"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
+            assertEquals(40, src.pageCount)
+        }
+        // Only the central directory at the end: no page's local header.
+        assertTrue("read ${fake.bytesRead} bytes", fake.bytesRead < 3L * 1024 * 1024)
     }
 
     @Test

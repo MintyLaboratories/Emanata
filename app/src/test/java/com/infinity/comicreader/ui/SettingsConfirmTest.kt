@@ -94,7 +94,7 @@ class SettingsConfirmTest {
 
     @Test
     fun clearThumbnailsWaitsForConfirmation() {
-        val thumb = File(context.cacheDir, "thumbnails/a.png").apply { parentFile!!.mkdirs(); writeText("x") }
+        val thumb = File(context.cacheDir, "covers/a.png").apply { parentFile!!.mkdirs(); writeText("x") }
         tap("pref_clear_thumbs").press(DialogInterface.BUTTON_NEGATIVE)
         assertTrue(thumb.exists())
         tap("pref_clear_thumbs").press(DialogInterface.BUTTON_POSITIVE)

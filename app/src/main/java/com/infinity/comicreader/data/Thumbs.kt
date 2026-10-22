@@ -27,7 +27,7 @@ import java.io.File
  * under `cacheDir/thumbnails`. A bookmark's cover has its page in front ([CoverArt.withPage]).
  */
 object Thumbs {
-    private const val DISK_DIR = "thumbnails"
+    private const val DISK_DIR = "covers"
 
     /** Covers decode at full size below this; larger sources take the decoder's coarse reduction first. */
     private const val THUMB_CAP_PIXELS = 16_000_000L

@@ -33,6 +33,20 @@ class RetiredFilesTest {
     }
 
     @Test
+    fun dropsRetiredCacheFoldersAndKeepsTheRest() {
+        val old = File(context.cacheDir, "thumbnails").apply { mkdirs() }
+        File(old, "a.webp").writeText("x")
+        File(context.cacheDir, "previews").mkdirs()
+        val kept = File(context.cacheDir, "covers").apply { mkdirs() }
+
+        RetiredFiles.drop(context)
+
+        assertFalse(old.exists())
+        assertFalse(File(context.cacheDir, "previews").exists())
+        assertTrue(kept.isDirectory)
+    }
+
+    @Test
     fun droppingTwiceIsHarmless() {
         RetiredFiles.drop(context)
         RetiredFiles.drop(context)

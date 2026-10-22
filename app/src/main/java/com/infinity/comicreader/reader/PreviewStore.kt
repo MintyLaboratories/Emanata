@@ -100,7 +100,7 @@ class PreviewStore(
     private fun fileOf(key: String) = File(dir, Hashes.sha256Hex(key) + ".jpg")
 
     companion object {
-        private const val DIR = "previews"
+        private const val DIR = "page-previews"
         private const val PART_SUFFIX = ".part"
         private const val QUALITY = 85
         private const val STALE_PART_MS = 10L * 60 * 1000

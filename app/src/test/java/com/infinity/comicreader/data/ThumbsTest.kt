@@ -94,7 +94,7 @@ class ThumbsTest {
         val entry = cover()
         Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FILL))
         Thumbs.load(context, entry, "UTF-8", 50, 75, CoverStyle(ThumbFit.FIT))
-        assertEquals(2, File(context.cacheDir, "thumbnails").listFiles()!!.size)
+        assertEquals(2, File(context.cacheDir, "covers").listFiles()!!.size)
     }
 
     /** A 1300 x 1000 wraparound: a white back with an EAN-13 barcode beside a red front, or two red halves. */
@@ -141,7 +141,7 @@ class ThumbsTest {
         assertEquals(Color.BLUE, rtl.getPixel(5, 100))
         assertEquals(Color.BLUE, rtl.getPixel(125, 100))
         // Each direction is its own cover.
-        assertEquals(2, File(context.cacheDir, "thumbnails").listFiles()!!.size)
+        assertEquals(2, File(context.cacheDir, "covers").listFiles()!!.size)
     }
 
     @Test
@@ -212,7 +212,7 @@ class ThumbsTest {
     fun diskCacheIsLossless() {
         val entry = cover()
         val made = Thumbs.load(context, entry, "UTF-8", 97, 131)!!
-        val files = File(context.cacheDir, "thumbnails").listFiles()!!
+        val files = File(context.cacheDir, "covers").listFiles()!!
         assertEquals(1, files.size)
         val stored = BitmapFactory.decodeFile(files[0].path)
         assertEquals(97, stored.width)
@@ -226,6 +226,6 @@ class ThumbsTest {
         val large = Thumbs.load(context, entry, "UTF-8", 200, 300)!!
         assertEquals(50, small.width)
         assertEquals(200, large.width)
-        assertTrue(File(context.cacheDir, "thumbnails").listFiles()!!.size == 2)
+        assertTrue(File(context.cacheDir, "covers").listFiles()!!.size == 2)
     }
 }

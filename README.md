@@ -506,6 +506,9 @@ license and NOTICE text under Settings → About (files in
 | Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
 | LLVM libc++abi, libunwind (in jxl-coder) | Apache-2.0 with LLVM Exceptions |
 | [ZXing](https://github.com/zxing/zxing) (`core`) | Apache-2.0 |
+| [SMBJ](https://github.com/hierynomus/smbj), ASN-One | Apache-2.0 |
+| [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
+| [MBassador](https://github.com/bennidi/mbassador) | MIT |
 | Material Symbols | Apache-2.0 |
 
 Dual-licensed components are used under Apache-2.0.

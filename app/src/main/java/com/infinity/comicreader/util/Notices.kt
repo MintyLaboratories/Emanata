@@ -151,6 +151,14 @@ object Notices {
             note = "Built from source; decodes the AV1 data of AVIF pages."
         ),
         Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
+        Notice(
+            "SMBJ and ASN-One", APACHE_2, "https://github.com/hierynomus/smbj", APACHE, listOf("com.hierynomus:*")
+        ),
+        Notice(
+            "Bouncy Castle", MIT, "https://www.bouncycastle.org/", listOf("bouncycastle.txt"),
+            listOf("org.bouncycastle:*"), note = "The Bouncy Castle Licence, an MIT License; the provider (bcprov), used by SMBJ."
+        ),
+        Notice("MBassador", MIT, "https://github.com/bennidi/mbassador", listOf("mbassador.txt"), listOf("net.engio:mbassador")),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )
 

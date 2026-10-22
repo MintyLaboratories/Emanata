@@ -41,7 +41,7 @@ object HiddenPages {
     fun bookIndex(source: PageSource?, index: Int): Int = (source as? HidingSource)?.bookIndex(index) ?: index
 
     /**
-     * What the pages [source] shows of book [bookId] are kept by ([PageSizes], [PageSeams]):
+     * What the seams across hidden pages of book [bookId] are kept by ([StoredPages]):
      * [bookId] itself unless pages are hidden, so stored values never land on other pages.
      */
     fun pagesId(bookId: String, source: PageSource): String =

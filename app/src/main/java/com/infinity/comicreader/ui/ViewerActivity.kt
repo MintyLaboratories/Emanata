@@ -99,6 +99,7 @@ import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.reader.Spreads
+import com.infinity.comicreader.reader.StoredPages
 import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
@@ -222,6 +223,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** The open book's page names and sizes, null where unknown; what the spread engine reads. */
     private var pageNames: List<String?> = emptyList()
+
+    /** Where the open book's page sizes and seams are stored, as [pageNames] counts its pages. */
+    private var pageStore: StoredPages? = null
     private var pageSizes: Array<IntArray?> = emptyArray()
 
     /** What the spread engine found in the open book's pages; null until the book is open. */
@@ -1173,6 +1177,7 @@ class ViewerActivity : AppCompatActivity() {
         seamsJob?.cancel()
         seamsJob = null
         pageSeams = PageSeams.Found(0)
+        pageStore = null
         shownSeams = pageSeams
         bookInfoJob?.cancel()
         bookInfoJob = null
@@ -1287,23 +1292,26 @@ class ViewerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ spreads
 
     /**
-     * A book's page [names], the [sizes] known of them (null where unknown), what the spread
-     * engine finds in both, and the [seams] between its pages checked before.
+     * A book's pages as [store]d, their [names], the [sizes] known of them (null where unknown),
+     * what the spread engine finds in both, and the [seams] between its pages checked before.
      */
-    private class KnownPages(val names: List<String?>, val sizes: Array<IntArray?>, val analysis: Spreads.Analysis, val seams: PageSeams.Found)
+    private class KnownPages(
+        val store: StoredPages,
+        val sizes: Array<IntArray?>,
+        val analysis: Spreads.Analysis,
+        val seams: PageSeams.Found
+    ) {
+        val names: List<String?> get() = store.names
+    }
 
     /** [src], the book [book] opened, without the pages hidden in it. */
     private fun hiding(book: File, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(book.absolutePath))
 
-    /** What the pages [src] shows of [book] are stored by. */
-    private fun pagesId(book: File, src: PageSource): String = HiddenPages.pagesId(PreviewStore.bookId(book), src)
-
     /** The page names of [src], the sizes and seams stored for them and their [Spreads.classify]. Blocking. */
     private fun knownSizes(book: File, src: PageSource): KnownPages {
-        val names = List(src.pageCount) { runCatching { src.pageName(it) }.getOrNull() }
-        val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(pagesId(book, src), names) ?: arrayOfNulls(names.size)
-        val seams = PageSeams(PageSeams.dirIn(cacheDir)).read(pagesId(book, src), names) ?: PageSeams.Found(names.size)
-        return KnownPages(names, sizes, classify(names, sizes), seams)
+        val store = StoredPages(PageSizes(PageSizes.dirIn(cacheDir)), PageSeams(PageSeams.dirIn(cacheDir)), PreviewStore.bookId(book), src)
+        val sizes = store.readSizes()
+        return KnownPages(store, sizes, classify(store.names, sizes), store.readSeams())
     }
 
     /** What the spread engine finds in page [names] of [sizes]. Blocking on long books. */
@@ -1314,6 +1322,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun showPages(known: KnownPages) {
         pageBounds = PageBounds()
         pageNames = known.names
+        pageStore = known.store
         pageSizes = known.sizes
         val path = favoriteFile()?.absolutePath
         shifted = path != null && library.isShifted(path)
@@ -1335,13 +1344,14 @@ class ViewerActivity : AppCompatActivity() {
         sizesJob?.cancel()
         if (!src.cheapSizes || pageSizes.none { it == null }) return
         val names = pageNames
+        val store = pageStore ?: return
         val sizes = pageSizes.copyOf()
         val from = currentIndex
         sizesJob = lifecycleScope.launch {
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 if (!PageSizes.scan(src, sizes, from) { !job.isActive }) return@withContext null
-                PageSizes(PageSizes.dirIn(cacheDir)).write(pagesId(book, src), names, sizes)
+                store.writeSizes(sizes)
                 classify(names, sizes)
             }
             if (found == null || source !== src || file != book) return@launch
@@ -1360,6 +1370,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun learnSize(page: Int) {
         val src = source ?: return
         val book = file ?: return
+        val store = pageStore ?: return
         if (mode != MODE_PAGED || src.cheapSizes || page !in pageSizes.indices || pageSizes[page] != null) return
         pageSizes[page] = src.loadedSize(page) ?: return
         if (learnJob != null) return
@@ -1371,7 +1382,7 @@ class ViewerActivity : AppCompatActivity() {
             val names = pageNames
             val sizes = pageSizes.copyOf()
             val found = withContext(AppDispatchers.io) {
-                PageSizes(PageSizes.dirIn(cacheDir)).write(pagesId(book, src), names, sizes)
+                store.writeSizes(sizes)
                 classify(names, sizes)
             }
             if (round != learnRound || source !== src || file != book) return@launch
@@ -1432,6 +1443,7 @@ class ViewerActivity : AppCompatActivity() {
         val src = source ?: return
         val book = file ?: return
         val a = analysis ?: return
+        val store = pageStore ?: return
         if (seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
         val cheap = { i: Int -> src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
@@ -1446,7 +1458,7 @@ class ViewerActivity : AppCompatActivity() {
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
                     PageSeams.check(src, next, found) { !job.isActive }.also { checked ->
-                        if (checked) PageSeams(PageSeams.dirIn(cacheDir)).write(pagesId(book, src), names, found)
+                        if (checked) store.writeSeams(found)
                     }
                 }
                 if (!done || source !== src || file != book) return@launch
@@ -1688,6 +1700,7 @@ class ViewerActivity : AppCompatActivity() {
         // Its spreads are read on the next paged layout.
         sizesJob?.cancel()
         analysis = null
+        pageStore = null
         lifecycleScope.launch {
             val known = withContext(AppDispatchers.io) { knownSizes(nextFile, next) }
             if (source !== next) return@launch

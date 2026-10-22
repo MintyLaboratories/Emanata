@@ -157,8 +157,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   password; everything else is defaulted. SMB: the path is `host/share/folder`
   (`\\host\share` and `smb://` work too), the user `DOMAIN\user` or blank for
   a guest; port 445, the dialect negotiated, never SMB1, signing and
-  encryption as the server requires. WebDAV (Nextcloud, Synology, rclone
-  and others): the address is `https://host/folder` (`davs://` or a
+  encryption as the server requires. WebDAV (tested with rclone; other
+  servers untested, and HTTPS needs a certificate Android trusts, so
+  self-signed ones fail): the address is `https://host/folder` (`davs://` or a
   bare `host/folder` work too), signing in with Basic over HTTPS; plain
   `http://` only to `localhost`, so a password never crosses a network
   readable. Books are read with HTTP Range requests; a server without them
@@ -166,7 +167,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   get their covers once fetched. WebDAV shares show a cloud in the sheet, and
   their free space when the server tells it. Passwords are sealed with a
   key in the Android Keystore. Long-press a share in the sheet to edit or
-  remove it. A share is browsed like a drive: its name is the root crumb and
+  remove it; a blank password keeps the saved one only on the same server. A share is browsed like a drive: its name is the root crumb and
   the root of same-name labels; favorites, history, bookmarks, the startup
   location, sort, filter and peek work there. CBZ books are read in place
   (only the parts needed travel); CBR, CB7, CBT, PDFs and loose images are

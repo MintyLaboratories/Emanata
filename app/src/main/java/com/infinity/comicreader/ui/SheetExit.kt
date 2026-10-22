@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.view.View
+import android.view.Window
 import android.view.WindowManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -22,26 +23,36 @@ object SheetExit {
     /** Makes [dialog]'s window untouchable while its sheet slides out. */
     fun passTouchesWhileLeaving(dialog: BottomSheetDialog) {
         val behavior = dialog.behavior
-        behavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
-            private var last = Float.NaN
-            private var passing = false
+        behavior.addBottomSheetCallback(PassThrough({ dialog.window }, { behavior.state }, { behavior.skipCollapsed }))
+    }
 
-            override fun onStateChanged(sheet: View, newState: Int) {
-                if (newState != BottomSheetBehavior.STATE_SETTLING && newState != BottomSheetBehavior.STATE_HIDDEN) pass(false)
-            }
+    /**
+     * Makes [window] untouchable while the sheet it follows, in [state] and [skipCollapsed]
+     * as read from its behavior, is [leaving]; touchable again once it stops or turns back.
+     */
+    class PassThrough(
+        private val window: () -> Window?,
+        private val state: () -> Int,
+        private val skipCollapsed: () -> Boolean
+    ) : BottomSheetBehavior.BottomSheetCallback() {
+        private var last = Float.NaN
+        private var passing = false
 
-            override fun onSlide(sheet: View, offset: Float) {
-                if (!last.isNaN()) pass(leaving(behavior.state, offset, last, behavior.skipCollapsed))
-                last = offset
-            }
+        override fun onStateChanged(sheet: View, newState: Int) {
+            if (newState != BottomSheetBehavior.STATE_SETTLING && newState != BottomSheetBehavior.STATE_HIDDEN) pass(false)
+        }
 
-            private fun pass(on: Boolean) {
-                if (on == passing) return
-                passing = on
-                val window = dialog.window ?: return
-                if (on) window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-                else window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-            }
-        })
+        override fun onSlide(sheet: View, offset: Float) {
+            if (!last.isNaN()) pass(leaving(state(), offset, last, skipCollapsed()))
+            last = offset
+        }
+
+        private fun pass(on: Boolean) {
+            if (on == passing) return
+            passing = on
+            val w = window() ?: return
+            if (on) w.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            else w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        }
     }
 }

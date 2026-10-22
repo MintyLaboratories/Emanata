@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import android.content.Context
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.HiddenPages
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -9,7 +10,7 @@ import java.time.LocalDate
 
 /**
  * Favorites, read marks, reading history, bookmarks, per-folder layouts, per-book
- * color adjustments and reading statistics, persisted as JSON documents in SharedPreferences.
+ * color adjustments and hidden pages, and reading statistics, persisted as JSON documents in SharedPreferences.
  *
  * Every read tolerates a corrupted document (it yields an empty value instead of
  * throwing) and every read-modify-write runs under one process-wide lock, because
@@ -151,6 +152,58 @@ class Library(context: Context) {
     }
 
     fun clearBookmarks() = sp.edit().putString(KEY_BOOKMARKS, "[]").apply()
+
+    // ---------------- hidden pages ----------------
+    /** The pages left out of the book at [path] ("Hide this page"), by book index. */
+    fun hiddenPages(path: String): Set<Int> = parseHidden(readObject(KEY_HIDDEN).optJSONArray(path))
+
+    /** How many pages each book leaves out, by path. */
+    fun hiddenCounts(): Map<String, Int> {
+        val all = readObject(KEY_HIDDEN)
+        val out = HashMap<String, Int>()
+        all.keys().forEach { k -> parseHidden(all.optJSONArray(k)).size.takeIf { it > 0 }?.let { out[k] = it } }
+        return out
+    }
+
+    /**
+     * Leaves [hidden] out of the book at [path], of [pageCount] pages. Its history and
+     * bookmarks count pages as shown, so they move to the same pages counted anew; a
+     * bookmark on a page now hidden moves to the next page shown.
+     */
+    fun setHiddenPages(path: String, hidden: Set<Int>, pageCount: Int) {
+        synchronized(LOCK) {
+            val old = hiddenPages(path)
+            val new = hidden.filter { it in 0 until pageCount }.toSortedSet()
+            if (old == new) return@synchronized
+            val all = readObject(KEY_HIDDEN)
+            if (new.isEmpty()) all.remove(path) else all.put(path, JSONArray(new.toList()))
+            sp.edit().putString(KEY_HIDDEN, all.toString()).apply()
+            val last = (pageCount - new.size - 1).coerceAtLeast(0)
+            fun remap(page: Int) = HiddenPages.remap(page, old, new).coerceIn(0, last)
+            val history = history()
+            if (history.any { it.path == path }) {
+                writeHistory(history.map { h -> if (h.path != path) h else h.copy(page = remap(h.page), total = last + 1) })
+            }
+            val marks = bookmarks()
+            if (marks.any { it.path == path }) {
+                val seen = HashSet<Int>()
+                writeBookmarks(
+                    marks.mapNotNull { b ->
+                        if (b.path != path) return@mapNotNull b
+                        val page = remap(b.page)
+                        if (seen.add(page)) b.copy(page = page) else null
+                    }
+                )
+            }
+        }
+    }
+
+    private fun parseHidden(arr: JSONArray?): Set<Int> {
+        if (arr == null) return emptySet()
+        val out = HashSet<Int>()
+        for (i in 0 until arr.length()) arr.optInt(i, -1).takeIf { it >= 0 }?.let { out.add(it) }
+        return out
+    }
 
     // ---------------- path maintenance (rename / move / delete) ----------------
     private fun under(path: String, root: String) = path == root || path.startsWith("$root/")
@@ -427,6 +480,7 @@ class Library(context: Context) {
         const val KEY_SERIES = "series"
         const val KEY_STATS = "stats"
         const val KEY_ADJUST = "adjust"
+        const val KEY_HIDDEN = "hidden_pages"
         /** Books shifted before seams paired pages ([isShiftedByNames]). */
         const val KEY_SHIFTED = "shifted"
 
@@ -436,10 +490,10 @@ class Library(context: Context) {
         const val MAX_DAYS = 3650
         val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS)
         val SHIFT_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS)
-        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST)
+        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN)
 
         /** Documents keyed by file or folder path. */
-        val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST)
+        val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST, KEY_HIDDEN)
         val LOCK = Any()
     }
 }

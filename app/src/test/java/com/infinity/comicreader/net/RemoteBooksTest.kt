@@ -75,9 +75,12 @@ class RemoteBooksTest {
     }
 
     @Test
-    fun theKindComesFromTheBytesOnTheShare() {
+    fun theKindComesFromTheBytesOnTheShareReadOnce() {
         Fixtures.zip(File(share, "zip.cbr"), *pages)
         assertEquals(ArchiveKind.ZIP, ArchiveKind.detect(remote("zip.cbr")))
+        val read = fake.bytesRead
+        assertEquals(ArchiveKind.ZIP, ArchiveKind.detect(remote("zip.cbr")))
+        assertEquals(read, fake.bytesRead)
     }
 
     @Test

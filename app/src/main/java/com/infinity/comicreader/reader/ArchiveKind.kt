@@ -69,20 +69,33 @@ enum class ArchiveKind {
             return stored == unsigned || stored == signed
         }
 
-        /** Kind from the leading bytes of [file], on a share too; null when unreadable or unrecognized. */
-        fun sniff(file: File): ArchiveKind? = try {
-            open(file).use { input ->
-                val header = ByteArray(HEADER_BYTES)
-                var n = 0
-                while (n < header.size) {
-                    val r = input.read(header, n, header.size - n)
-                    if (r < 0) break
-                    n += r
+        private const val MAX_REMEMBERED = 512
+
+        /** Kinds of files on shares by path, size and time, so each is read for its kind once. */
+        private val remembered = object : LinkedHashMap<String, ArchiveKind>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ArchiveKind>) = size > MAX_REMEMBERED
+        }
+
+        /** Kind from the leading bytes of [file], on a share too (read once per version); null when unreadable or unrecognized. */
+        fun sniff(file: File): ArchiveKind? {
+            val key = (file as? RemoteFile)?.stat()?.let { "${file.path}\n${it.size}\n${it.modified}" }
+            if (key != null) synchronized(remembered) { remembered[key] }?.let { return it }
+            val kind = try {
+                open(file).use { input ->
+                    val header = ByteArray(HEADER_BYTES)
+                    var n = 0
+                    while (n < header.size) {
+                        val r = input.read(header, n, header.size - n)
+                        if (r < 0) break
+                        n += r
+                    }
+                    sniff(header, n)
                 }
-                sniff(header, n)
+            } catch (e: IOException) {
+                null
             }
-        } catch (e: IOException) {
-            null
+            if (key != null && kind != null) synchronized(remembered) { remembered[key] = kind }
+            return kind
         }
 
         private fun open(file: File): InputStream = if (file is RemoteFile) Remotes.inputStream(file.path) else file.inputStream()

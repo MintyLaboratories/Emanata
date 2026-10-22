@@ -20,6 +20,7 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.infinity.comicreader"
     compileSdk = 36
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "minty.emanata"
@@ -59,6 +60,14 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+    }
+
+    // AVIF decoding: libavif and libgav1, fetched and built by CMake (src/main/cpp).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "4.1.2"
         }
     }
 

@@ -142,6 +142,14 @@ object Notices {
             "LLVM C++ runtime", "$APACHE_2 with LLVM Exceptions", "https://llvm.org/",
             listOf(APACHE_TEXT, "llvm-exception.txt"), note = "libc++abi and libunwind, bundled in jxl-coder."
         ),
+        Notice(
+            "libavif", BSD_2, "https://github.com/AOMediaCodec/libavif", listOf("libavif.txt"),
+            note = "Built from source for AVIF pages, with parts of libyuv (BSD 3-Clause License, in the same text)."
+        ),
+        Notice(
+            "dav1d", BSD_2, "https://code.videolan.org/videolan/dav1d", listOf("dav1d.txt"),
+            note = "Built from source; decodes the AV1 data of AVIF pages."
+        ),
         Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )

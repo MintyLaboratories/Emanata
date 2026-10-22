@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.util.zip.ZipFile
 
 class NoticesTest {
 
@@ -39,6 +40,15 @@ class NoticesTest {
         assertTrue(Notice.matches("a.*", "a:x"))
         assertTrue(Notice.matches("a.*", "a.b.c:x"))
         assertFalse(Notice.matches("a.*", "ab:x"))
+    }
+
+    @Test
+    fun theApkLeavesOutOkHttpsPublicSuffixList() {
+        // MPL-2.0 data, unused without cookies; packaging excludes it.
+        val jar = File("build/intermediates/merged_java_res/release/mergeReleaseJavaResource/base.jar")
+        assertTrue("no merged resources at $jar", jar.isFile)
+        val names = ZipFile(jar).use { zip -> zip.entries().toList().map { it.name } }
+        assertTrue("okhttp3/internal/publicsuffix/ shipped", names.none { it.startsWith("okhttp3/internal/publicsuffix/") })
     }
 
     private val assetDir = File("src/main/assets/${Notices.ASSET_DIR}")

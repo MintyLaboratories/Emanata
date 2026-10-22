@@ -87,7 +87,9 @@ android {
             "META-INF/DEPENDENCIES",
             "META-INF/LICENSE*",
             "META-INF/NOTICE*",
-            "META-INF/*.kotlin_module"
+            "META-INF/*.kotlin_module",
+            // OkHttp's public suffix list (MPL-2.0): read only for cookies and topPrivateDomain(), neither used.
+            "okhttp3/internal/publicsuffix/**"
         )
     }
 }
@@ -113,7 +115,11 @@ val releaseModules = tasks.register("releaseModules") {
         out.get().asFile.apply { parentFile.mkdirs() }.writeText(modules.joinToString("\n", postfix = "\n"))
     }
 }
-tasks.withType<Test>().configureEach { inputs.files(releaseModules) }
+tasks.withType<Test>().configureEach {
+    inputs.files(releaseModules)
+    // NoticesTest reads the Java resources the release APK packs.
+    dependsOn("mergeReleaseJavaResource")
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

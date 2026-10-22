@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The network share form: name, path, user and password; everything else is defaulted. -->
+<!--
+    The network share form: name, path, user and password; everything else is defaulted.
+    Kept from autofill, so password managers neither offer nor save share passwords.
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:importantForAutofill="noExcludeDescendants">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -57,7 +61,6 @@
                 android:id="@+id/share_user"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:autofillHints="username"
                 android:inputType="text"
                 android:maxLines="1" />
         </com.google.android.material.textfield.TextInputLayout>
@@ -74,7 +77,6 @@
                 android:id="@+id/share_password"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:autofillHints="password"
                 android:inputType="textPassword"
                 android:maxLines="1" />
         </com.google.android.material.textfield.TextInputLayout>

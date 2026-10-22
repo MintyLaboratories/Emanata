@@ -2,6 +2,8 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
@@ -22,7 +24,9 @@ object BookFactsReader {
         EntryType.PDF, EntryType.ARCHIVE -> {
             val kind = ArchiveKind.detect(file)
             if (kind == ArchiveKind.PDF) {
-                PdfSource(file).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
+                // A PDF on a share is counted only once fetched for reading.
+                val local = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: throw IOException("Not fetched") else file
+                PdfSource(local).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
                 val reader = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }

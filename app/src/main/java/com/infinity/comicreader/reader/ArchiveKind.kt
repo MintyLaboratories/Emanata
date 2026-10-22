@@ -1,8 +1,11 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 
 /** Container formats a book file can hold, as told by its leading bytes. */
 enum class ArchiveKind {
@@ -66,9 +69,9 @@ enum class ArchiveKind {
             return stored == unsigned || stored == signed
         }
 
-        /** Kind from the leading bytes of [file]; null when unreadable or unrecognized. */
+        /** Kind from the leading bytes of [file], on a share too; null when unreadable or unrecognized. */
         fun sniff(file: File): ArchiveKind? = try {
-            file.inputStream().use { input ->
+            open(file).use { input ->
                 val header = ByteArray(HEADER_BYTES)
                 var n = 0
                 while (n < header.size) {
@@ -81,6 +84,8 @@ enum class ArchiveKind {
         } catch (e: IOException) {
             null
         }
+
+        private fun open(file: File): InputStream = if (file is RemoteFile) Remotes.inputStream(file.path) else file.inputStream()
 
         /** Kind implied by the extension of [name] alone. */
         fun ofName(name: String): ArchiveKind? = when (Formats.ext(name)) {

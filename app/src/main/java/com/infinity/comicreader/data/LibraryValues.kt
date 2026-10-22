@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.util.Formats
@@ -50,7 +51,7 @@ object AccessTimes {
 class FileStat(val isDirectory: Boolean, val size: Long, val lastModified: Long, val created: Long) {
     companion object {
         /** Read in one call where the platform allows; creation time falls back to modification time. */
-        fun of(file: File): FileStat = try {
+        fun of(file: File): FileStat = if (file is RemoteFile) remote(file) else try {
             val a = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
             val modified = a.lastModifiedTime().toMillis()
             val created = a.creationTime()?.toMillis()?.takeIf { it > 0 } ?: modified
@@ -59,6 +60,13 @@ class FileStat(val isDirectory: Boolean, val size: Long, val lastModified: Long,
             val modified = file.lastModified()
             val dir = file.isDirectory
             FileStat(dir, if (dir) 0 else file.length(), modified, modified)
+        }
+
+        /** A share tells creation times, so "Added" sorts by them there. */
+        private fun remote(file: RemoteFile): FileStat {
+            val dir = file.isDirectory
+            val modified = file.lastModified()
+            return FileStat(dir, if (dir) 0 else file.length(), modified, file.created().takeIf { it > 0 } ?: modified)
         }
     }
 }

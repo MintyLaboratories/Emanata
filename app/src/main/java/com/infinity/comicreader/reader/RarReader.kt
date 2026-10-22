@@ -1,15 +1,19 @@
 package com.infinity.comicreader.reader
 
 import com.github.junrar.Archive
+import com.github.junrar.UnrarCallback
 import com.github.junrar.rarfile.FileHeader
+import com.infinity.comicreader.net.RemoteChannel
+import com.infinity.comicreader.net.RemoteRar
+import java.io.Closeable
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/** Reads a rar/cbr archive, RAR4 or RAR5 (via junrar). */
-class RarReader(file: File) : ArchiveReader {
-    private val archive = Archive(file)
+/** Reads a rar/cbr archive, RAR4 or RAR5 (via junrar); [owned] closes with it. */
+class RarReader private constructor(private val archive: Archive, private val owned: Closeable?) : ArchiveReader {
+    constructor(file: File) : this(Archive(file), null)
 
     private val native: List<FileHeader>
 
@@ -24,6 +28,7 @@ class RarReader(file: File) : ArchiveReader {
             entries = native.mapIndexed { i, h -> ArchiveEntry(h.fileName, h.fullUnpackSize, i) }
         } catch (t: Throwable) {
             runCatching { archive.close() }
+            runCatching { owned?.close() }
             throw t
         }
     }
@@ -52,9 +57,21 @@ class RarReader(file: File) : ArchiveReader {
 
     override fun close() {
         runCatching { archive.close() }
+        runCatching { owned?.close() }
     }
 
-    private companion object {
-        const val DRAIN_BYTES = 64 * 1024
+    companion object {
+        private const val DRAIN_BYTES = 64 * 1024
+
+        /** Reads the rar on a share through [channel], in place; the reader closes it. */
+        fun inPlace(channel: RemoteChannel): RarReader {
+            val archive = try {
+                Archive(RemoteRar(channel), null as UnrarCallback?, null as String?)
+            } catch (t: Throwable) {
+                runCatching { channel.close() }
+                throw t
+            }
+            return RarReader(archive, channel)
+        }
     }
 }

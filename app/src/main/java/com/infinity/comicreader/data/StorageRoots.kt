@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.Remotes
 import java.io.File
 
 /**
@@ -44,14 +45,19 @@ object StorageRoots {
                 out.add(root(dir, sm?.getStorageVolume(File(dir))?.getDescription(context)))
             }
         }
+        for (share in Remotes.shares()) out.add(StorageRoot(share.root, share.name, StorageRoot.Kind.SHARE))
         return ordered(out.distinctBy { it.path })
     }
 
     /** [roots] by kind (device, SD cards, USB drives, shares), keeping their order within each kind. */
     fun ordered(roots: List<StorageRoot>): List<StorageRoot> = roots.sortedBy { it.kind.ordinal }
 
-    /** Free and total bytes of [root]; null when it cannot be asked (an unreachable share). */
+    /**
+     * Free and total bytes of [root]; null when it cannot be asked. A share is asked
+     * over the network: blocking, and throwing when it cannot be reached.
+     */
     fun space(root: StorageRoot): Pair<Long, Long>? {
+        Remotes.idOf(root.path)?.let { return Remotes.space(it) }
         val dir = File(root.path)
         val total = runCatching { dir.totalSpace }.getOrDefault(0L)
         if (total <= 0) return null

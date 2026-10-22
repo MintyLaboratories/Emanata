@@ -4,10 +4,13 @@ import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import java.io.File
 import java.io.InputStream
+import java.nio.channels.SeekableByteChannel
 
-/** Reads a 7z/cb7 archive (via Apache Commons Compress). */
-class SevenZipReader(file: File) : ArchiveReader {
-    private val sz: SevenZFile = SevenZFile.builder().setFile(file).get()
+/** Reads a 7z/cb7 archive (via Apache Commons Compress), from a file or a channel it closes. */
+class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
+    constructor(file: File) : this(SevenZFile.builder().setFile(file).get())
+
+    constructor(channel: SeekableByteChannel) : this(SevenZFile.builder().setSeekableByteChannel(channel).get())
 
     private val native: List<SevenZArchiveEntry>
 

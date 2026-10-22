@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Looper
 import java.io.File
+import java.io.InputStream
 
 /**
  * Network shares as the app's paths see them: share `id` is the folder `/net/id`,
@@ -149,6 +150,22 @@ object Remotes {
 
     /** Opens the file at [path]. */
     fun open(path: String): RemoteInput = call(path) { it.open(relOf(path)) }
+
+    /** Opens the file at [path] as a stream from its start. */
+    fun inputStream(path: String): InputStream = RemoteInputStream(open(path))
+
+    /** The whole file at [path]; for small files such as loose images. */
+    fun readBytes(path: String): ByteArray = open(path).use { input ->
+        require(input.length <= Int.MAX_VALUE - 8) { "Too large: $path" }
+        val bytes = ByteArray(input.length.toInt())
+        var n = 0
+        while (n < bytes.size) {
+            val r = input.read(n.toLong(), bytes, n, bytes.size - n)
+            if (r < 0) break
+            n += r
+        }
+        if (n == bytes.size) bytes else bytes.copyOf(n)
+    }
 
     /** Free and total bytes of share [id]; null when it does not say. Throws when it fails. */
     fun space(id: String): Pair<Long, Long>? = call(rootOf(id)) { it.space() }

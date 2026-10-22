@@ -1,16 +1,23 @@
 package com.infinity.comicreader.reader
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarConstants
 import org.apache.commons.compress.archivers.tar.TarFile
 import java.io.File
 import java.io.InputStream
+import java.nio.channels.SeekableByteChannel
 
 /**
  * Reads a tar/cbt archive (via Apache Commons Compress). [TarFile] indexes the
  * headers once and then seeks straight to an entry's data, so pages open in any order.
  */
-class TarReader(file: File, charsetName: String) : ArchiveReader {
-    private val tar: TarFile = runCatching { TarFile(file, charsetName) }.getOrElse { TarFile(file) }
+class TarReader(private val tar: TarFile) : ArchiveReader {
+    constructor(file: File, charsetName: String) : this(tarFile(file, charsetName))
+
+    /** Reads the tar from [channel], which it closes. */
+    constructor(channel: SeekableByteChannel, charsetName: String) : this(
+        TarFile(channel, TarConstants.DEFAULT_BLKSIZE, TarConstants.DEFAULT_RCDSIZE, charsetName, false)
+    )
 
     private val native: List<TarArchiveEntry>
 
@@ -33,5 +40,13 @@ class TarReader(file: File, charsetName: String) : ArchiveReader {
 
     override fun close() {
         runCatching { tar.close() }
+    }
+
+    private companion object {
+        fun tarFile(file: File, charsetName: String): TarFile = try {
+            TarFile(file, charsetName)
+        } catch (e: Exception) {
+            TarFile(file)
+        }
     }
 }

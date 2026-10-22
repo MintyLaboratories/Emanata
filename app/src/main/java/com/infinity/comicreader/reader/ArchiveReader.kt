@@ -1,5 +1,7 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.net.RemoteChannel
+import com.infinity.comicreader.net.RemoteFile
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
@@ -22,17 +24,39 @@ interface ArchiveReader : Closeable {
     fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T
 
     companion object {
-        /** Reader for [file] as [kind] (by default from its leading bytes), or null when it is not an archive. */
+        /**
+         * Reader for [file] as [kind] (by default from its leading bytes), or null when it
+         * is not an archive. One on a share is read in place, through a [RemoteChannel].
+         */
         fun open(
             file: File,
             charsetName: String,
             kind: ArchiveKind? = ArchiveKind.detect(file)
-        ): ArchiveReader? = when (kind) {
+        ): ArchiveReader? = if (file is RemoteFile) inPlace(file, charsetName, kind) else when (kind) {
             ArchiveKind.ZIP -> ZipReader(file, charsetName)
             ArchiveKind.RAR -> RarReader(file)
             ArchiveKind.SEVEN_ZIP -> SevenZipReader(file)
             ArchiveKind.TAR -> TarReader(file, charsetName)
             ArchiveKind.PDF, null -> null
+        }
+
+        private fun inPlace(file: RemoteFile, charsetName: String, kind: ArchiveKind?): ArchiveReader? {
+            if (kind == null || kind == ArchiveKind.PDF) return null
+            val channel = RemoteChannel.open(file.path)
+            return when (kind) {
+                ArchiveKind.ZIP -> ChannelZipReader(channel, charsetName)
+                ArchiveKind.RAR -> RarReader.inPlace(channel)
+                ArchiveKind.SEVEN_ZIP -> closingOnFailure(channel) { SevenZipReader(channel) }
+                ArchiveKind.TAR -> closingOnFailure(channel) { TarReader(channel, charsetName) }
+                ArchiveKind.PDF -> null
+            }
+        }
+
+        private inline fun closingOnFailure(channel: Closeable, open: () -> ArchiveReader): ArchiveReader = try {
+            open()
+        } catch (t: Throwable) {
+            runCatching { channel.close() }
+            throw t
         }
     }
 }

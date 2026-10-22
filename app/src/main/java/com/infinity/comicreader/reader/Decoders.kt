@@ -14,6 +14,8 @@ import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlResizeFilter
 import com.awxkee.jxlcoder.PreferredColorConfig
 import com.awxkee.jxlcoder.ScaleMode
+import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.io.IOException
@@ -87,8 +89,12 @@ object Decoders {
 
     fun decode(input: InputStream, target: Target): Bitmap = decode(BitmapUtils.readCapped(input), target)
 
-    /** Streams [file] to the platform decoder; JPEG XL, AVIF, and any image below API 28, is read whole first. */
+    /**
+     * Streams [file] to the platform decoder; JPEG XL, AVIF, and any image below API 28,
+     * is read whole first, as is one on a share.
+     */
     fun decode(file: File, target: Target): Bitmap {
+        if (file is RemoteFile) return decode(Remotes.readBytes(file.path), target)
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
         if (kind == ImageKind.TIFF) {
             val source = if (measuresCrop(target)) size(file) else null
@@ -260,6 +266,7 @@ object Decoders {
 
     /** Like [size] on bytes, reading only the first [ImageHeaders.PREFIX_BYTES] unless a JPEG XL header or AVIF metadata lies beyond. */
     fun size(file: File): IntArray? = runCatching {
+        if (file is RemoteFile) return size(Remotes.readBytes(file.path))
         val head = readPrefix(file, ImageHeaders.PREFIX_BYTES)
         when (ImageKind.sniff(head)) {
             ImageKind.PNG -> pngSize(head) { platformSize(file) }

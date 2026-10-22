@@ -81,6 +81,9 @@
                 android:id="@+id/menu_crop"
                 android:title="@string/menu_crop" />
             <item
+                android:id="@+id/menu_hide_page"
+                android:title="@string/menu_hide_page" />
+            <item
                 android:id="@+id/menu_rotate"
                 android:title="@string/menu_rotate" />
         </menu>

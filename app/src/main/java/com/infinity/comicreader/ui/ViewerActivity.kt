@@ -46,6 +46,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -88,6 +89,8 @@ import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Half
+import com.infinity.comicreader.reader.HiddenPages
+import com.infinity.comicreader.reader.HidingSource
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSource
@@ -543,6 +546,31 @@ class ViewerActivity : AppCompatActivity() {
         open()
     }
 
+    /**
+     * Leaves the book pages [hidden] out of the open book and opens it again at the page
+     * on screen, or the next one shown when that one is hidden. Its history and
+     * bookmarks follow the new numbering ([Library.setHiddenPages]).
+     */
+    private fun applyHidden(hidden: Set<Int>) {
+        val f = file ?: return
+        val src = source ?: return
+        val path = f.absolutePath
+        val count = HiddenPages.bookCount(src)
+        val page = HiddenPages.bookIndex(src, currentIndex.coerceIn(0, src.pageCount - 1))
+        stopAutoScroll()
+        flushStats()
+        saveHistory()
+        library.setHiddenPages(path, hidden, count)
+        val now = library.hiddenPages(path)
+        val shown = HiddenPages.shown(count, now).size
+        intent.putExtra(EXTRA_PAGE, HiddenPages.toShown(page, now).coerceIn(0, shown - 1))
+        openJob?.cancel()
+        closeSource()
+        endDismissed = false
+        hideEndCard()
+        open()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putIntArray(STATE_ROTATION, spreadRotation.save())
@@ -979,7 +1007,7 @@ class ViewerActivity : AppCompatActivity() {
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
-                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch) }
+                val s = runCatching { hiding(target, PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)) }
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -1264,11 +1292,17 @@ class ViewerActivity : AppCompatActivity() {
      */
     private class KnownPages(val names: List<String?>, val sizes: Array<IntArray?>, val analysis: Spreads.Analysis, val seams: PageSeams.Found)
 
+    /** [src], the book [book] opened, without the pages hidden in it. */
+    private fun hiding(book: File, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(book.absolutePath))
+
+    /** What the pages [src] shows of [book] are stored by. */
+    private fun pagesId(book: File, src: PageSource): String = HiddenPages.pagesId(PreviewStore.bookId(book), src)
+
     /** The page names of [src], the sizes and seams stored for them and their [Spreads.classify]. Blocking. */
     private fun knownSizes(book: File, src: PageSource): KnownPages {
         val names = List(src.pageCount) { runCatching { src.pageName(it) }.getOrNull() }
-        val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: arrayOfNulls(names.size)
-        val seams = PageSeams(PageSeams.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: PageSeams.Found(names.size)
+        val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(pagesId(book, src), names) ?: arrayOfNulls(names.size)
+        val seams = PageSeams(PageSeams.dirIn(cacheDir)).read(pagesId(book, src), names) ?: PageSeams.Found(names.size)
         return KnownPages(names, sizes, classify(names, sizes), seams)
     }
 
@@ -1307,7 +1341,7 @@ class ViewerActivity : AppCompatActivity() {
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
                 if (!PageSizes.scan(src, sizes, from) { !job.isActive }) return@withContext null
-                PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
+                PageSizes(PageSizes.dirIn(cacheDir)).write(pagesId(book, src), names, sizes)
                 classify(names, sizes)
             }
             if (found == null || source !== src || file != book) return@launch
@@ -1337,7 +1371,7 @@ class ViewerActivity : AppCompatActivity() {
             val names = pageNames
             val sizes = pageSizes.copyOf()
             val found = withContext(AppDispatchers.io) {
-                PageSizes(PageSizes.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, sizes)
+                PageSizes(PageSizes.dirIn(cacheDir)).write(pagesId(book, src), names, sizes)
                 classify(names, sizes)
             }
             if (round != learnRound || source !== src || file != book) return@launch
@@ -1412,7 +1446,7 @@ class ViewerActivity : AppCompatActivity() {
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
                     PageSeams.check(src, next, found) { !job.isActive }.also { checked ->
-                        if (checked) PageSeams(PageSeams.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, found)
+                        if (checked) PageSeams(PageSeams.dirIn(cacheDir)).write(pagesId(book, src), names, found)
                     }
                 }
                 if (!done || source !== src || file != book) return@launch
@@ -1592,7 +1626,7 @@ class ViewerActivity : AppCompatActivity() {
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
                 val s = runCatching {
-                    PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false)
+                    hiding(next, PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
                 }.getOrNull()
                 try {
                     ensureActive()
@@ -2466,6 +2500,7 @@ class ViewerActivity : AppCompatActivity() {
                 true
             }
             R.id.menu_crop -> { startCrop(); true }
+            R.id.menu_hide_page -> { hidePage(currentIndex); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -3101,6 +3136,7 @@ class ViewerActivity : AppCompatActivity() {
         val f = file ?: return
         val src = source ?: return
         val pages = src.pageCount
+        val hidden = HiddenPages.bookCount(src) - pages
         val direction = directionInfo()
         val known = bookComicInfo?.takeIf { it.first === src }
         progress.visibility = View.VISIBLE
@@ -3130,15 +3166,16 @@ class ViewerActivity : AppCompatActivity() {
             f.parent?.let { row(R.string.info_folder, it) }
             row(R.string.info_format, BookInfo.format(f.name, kind, getString(R.string.info_format_mismatch)))
             row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, size))
-            row(R.string.info_pages, pages.toString())
+            row(R.string.info_pages, if (hidden > 0) getString(R.string.info_pages_hidden, pages, hidden) else pages.toString())
             row(R.string.menu_reading_dir, direction)
             val fields = info?.fields.orEmpty()
             if (fields.isNotEmpty()) row(R.string.info_comic_info, fields.joinToString("\n") { (k, v) -> "$k: $v" })
-            AlertDialog.Builder(this@ViewerActivity)
+            val dialog = AlertDialog.Builder(this@ViewerActivity)
                 .setTitle(chapterLabel(f))
                 .setMessage(text)
                 .setPositiveButton(R.string.close, null)
-                .show()
+            if (hidden > 0) dialog.setNeutralButton(R.string.menu_unhide_pages) { _, _ -> showHiddenPages() }
+            dialog.show()
         }
     }
 
@@ -3150,8 +3187,8 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Page ▸ actions for [page], from a long-press on it: share, save, crop, and rotating
-     * the screen.
+     * Page ▸ actions for [page], from a long-press on it: share, save, crop, hide, and
+     * rotating the screen.
      */
     private fun showPageActions(page: Int) {
         if (source == null) return
@@ -3159,12 +3196,68 @@ class ViewerActivity : AppCompatActivity() {
             R.string.menu_share_page to { exportPage(share = true, page = page) },
             R.string.menu_save_page to { exportPage(share = false, page = page) },
             R.string.menu_crop to { startCrop(page) },
+            R.string.menu_hide_page to { hidePage(page) },
             R.string.menu_rotate to { cycleOrientation() }
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.page_actions_title, page + 1))
             .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, which -> actions[which].second() }
             .show()
+    }
+
+    /** Leaves [page] out of the open book; the last page shown stays. */
+    private fun hidePage(page: Int) {
+        val f = file ?: return
+        val src = source ?: return
+        if (page !in 0 until src.pageCount) return
+        if (src.pageCount <= 1) {
+            toast(R.string.hide_last_page)
+            return
+        }
+        applyHidden(library.hiddenPages(f.absolutePath) + HiddenPages.bookIndex(src, page))
+        toast(R.string.page_hidden)
+    }
+
+    /**
+     * The pages hidden in the open book as a grid, numbered as in the book: tapping
+     * marks pages to show again.
+     */
+    private fun showHiddenPages() {
+        val f = file ?: return
+        val src = source as? HidingSource ?: return
+        val hidden = library.hiddenPages(f.absolutePath).filter { it < src.inner.pageCount }.sorted()
+        if (hidden.isEmpty()) return
+        val picked = HashSet<Int>()
+        val grid = RecyclerView(this)
+        grid.id = R.id.hidden_pages_grid
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        grid.setPadding(pad, pad, pad, 0)
+        grid.layoutManager = GridLayoutManager(this, HIDDEN_COLUMNS)
+        lateinit var dialog: AlertDialog
+        // Never closed here: it reads through the open book, which the reader closes.
+        val pages = HidingSource(src.inner, hidden.toIntArray())
+        val thumbs = ThumbAdapter(
+            pages, -1, prefs.linearLight,
+            marked = { it in picked },
+            labelOf = { (hidden[it] + 1).toString() }
+        ) { position ->
+            if (position < 0) return@ThumbAdapter
+            if (!picked.add(position)) picked.remove(position)
+            grid.adapter?.notifyItemChanged(position)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = picked.isNotEmpty()
+        }
+        grid.adapter = thumbs
+        dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.unhide_pages_title)
+            .setView(grid)
+            .setPositiveButton(R.string.unhide) { _, _ ->
+                applyHidden(hidden.filterIndexed { i, _ -> i !in picked }.toSet())
+            }
+            .setNeutralButton(R.string.unhide_all) { _, _ -> applyHidden(emptySet()) }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener { thumbs.release() }
+            .show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = false
     }
 
     /** Renders [page] at full resolution and either shares or saves it. */
@@ -3374,6 +3467,9 @@ class ViewerActivity : AppCompatActivity() {
         private const val DIR_AUTO = "auto"
 
         private const val SHARE_DIR = "shared"
+
+        /** Columns of the hidden pages grid. */
+        private const val HIDDEN_COLUMNS = 4
         private const val EXPORT_W = 2400
         private const val EXPORT_H = 3200
         private const val MAX_SESSION_SECONDS = 4L * 3600

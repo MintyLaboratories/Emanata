@@ -110,7 +110,7 @@ class ViewerActivityMenuTest {
         )
         val page = menu.findItem(R.id.menu_page_tools).subMenu!!
         assertEquals(
-            listOf(R.id.menu_share_page, R.id.menu_save_page, R.id.menu_crop, R.id.menu_rotate),
+            listOf(R.id.menu_share_page, R.id.menu_save_page, R.id.menu_crop, R.id.menu_hide_page, R.id.menu_rotate),
             (0 until page.size()).map { page.getItem(it).itemId }
         )
     }
@@ -230,7 +230,7 @@ class ViewerActivityMenuTest {
         press(page)
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         assertEquals(context.getString(R.string.page_actions_title, 1), dialog.title())
-        assertEquals(4, dialog.listView.adapter.count)
+        assertEquals(5, dialog.listView.adapter.count)
         assertEquals(context.getString(R.string.menu_share_page), dialog.listView.adapter.getItem(0).toString())
     }
 

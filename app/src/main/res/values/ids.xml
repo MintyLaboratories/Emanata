@@ -8,4 +8,6 @@
     <item name="toolbar_buttons_list" type="id" />
     <!-- The location picker's "Add network share…" row. -->
     <item name="location_add" type="id" />
+    <!-- Book info's grid of hidden pages. -->
+    <item name="hidden_pages_grid" type="id" />
 </resources>

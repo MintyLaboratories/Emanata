@@ -261,6 +261,14 @@
     <string name="menu_share_page">Share this page</string>
     <string name="menu_save_page">Save page to gallery</string>
     <string name="page_saved">Saved to Pictures/Emanata</string>
+    <string name="menu_hide_page">Hide this page</string>
+    <string name="page_hidden">Page hidden; Book info can bring it back</string>
+    <string name="hide_last_page">The only page shown can\'t be hidden</string>
+    <string name="info_pages_hidden">%1$d (%2$d hidden)</string>
+    <string name="menu_unhide_pages">Unhide pages…</string>
+    <string name="unhide_pages_title">Hidden pages</string>
+    <string name="unhide">Unhide</string>
+    <string name="unhide_all">Unhide all</string>
     <string name="direction_kept_for_folder">Direction kept for this folder; detection is off here</string>
     <string name="direction_kept_for_folder_ttb">Direction kept for this folder; slices still show in one column</string>
     <string name="chapters_title">Chapters</string>

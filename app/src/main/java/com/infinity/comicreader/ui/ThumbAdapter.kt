@@ -31,13 +31,16 @@ import kotlinx.coroutines.withContext
  * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. Until it is ready the
  * page's preview stands in, stored or quickly decoded ([PageSource.loadPreview]) and
  * cropped the same way, so the exact one replaces it in place. [thumbHeight], when
- * above 0, replaces the layout's thumbnail height in pixels.
+ * above 0, replaces the layout's thumbnail height in pixels. [currentPage] and pages
+ * [marked] are outlined; [labelOf] numbers each page.
  */
 class ThumbAdapter(
     private val source: PageSource,
     private val currentPage: Int,
     private val linear: Boolean = false,
     private val thumbHeight: Int = 0,
+    private val marked: (Int) -> Boolean = { false },
+    private val labelOf: (Int) -> String = { (it + 1).toString() },
     private val onPick: (Int) -> Unit
 ) : RecyclerView.Adapter<ThumbAdapter.Holder>() {
 
@@ -84,9 +87,9 @@ class ThumbAdapter(
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        holder.label.text = (position + 1).toString()
+        holder.label.text = labelOf(position)
         val context = holder.itemView.context
-        if (position == currentPage) {
+        if (position == currentPage || marked(position)) {
             holder.image.strokeWidth = context.resources.displayMetrics.density * 2f
             holder.image.strokeColor = androidx.core.content.ContextCompat.getColorStateList(context, R.color.md_primary)
         } else {

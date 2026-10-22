@@ -11,8 +11,9 @@ features and customizability.
   zooming (Android 13+).
 - **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
 - **No required connection:** works offline. The network is used only for the
-  network shares you add, while you browse or read them; the app sends nothing
-  on its own.
+  network shares you add, while the app shows something on them: a folder, a
+  book, a cover, a favorite, or a share's free space in the Locations sheet;
+  the app sends nothing on its own.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -163,8 +164,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (only the parts needed travel); CBR, CB7, CBT, PDFs and loose images are
   fetched to a **Network cache** (Settings, 2 GB by default, least recently
   read first out) before the reader opens them, while covers and peeks of
-  rar, 7z and tar books read them in place. A share that cannot be reached
-  says so ("Not reachable") with a Retry; favorites and history show shares
+  rar, 7z and tar books read them in place; a PDF gets its cover once read.
+  A share that cannot be reached says so ("Not reachable") with a Retry; a
+  refused sign-in is not tried again until you retry or edit the share, so a
+  wrong password cannot lock the account; favorites and history show shares
   without waiting for the network, and a favorite folder there is sorted into
   its section once looked into (a spinner meanwhile). Shares are read-only:
   no rename, delete or new folder. The connection closes after a minute

@@ -152,11 +152,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   disappear live; plugging one in opens the sheet with it highlighted (at once
   in the library, else on returning to it); pulling one out while a book on it
   is open closes the book and says why.
-- **Network shares (SMB 2/3):** "Add network share…" in the Locations sheet
-  takes a name, a path (`host/share/folder`; `\\host\share` and `smb://` work
-  too), a user (`DOMAIN\user`, or blank for a guest) and a password;
-  everything else is defaulted (port 445, the dialect negotiated, never SMB1,
-  signing and encryption as the server requires). Passwords are sealed with a
+- **Network shares (SMB 2/3 and WebDAV):** "Add network share…" in the
+  Locations sheet asks SMB or WebDAV, then takes a name, a path, a user and a
+  password; everything else is defaulted. SMB: the path is `host/share/folder`
+  (`\\host\share` and `smb://` work too), the user `DOMAIN\user` or blank for
+  a guest; port 445, the dialect negotiated, never SMB1, signing and
+  encryption as the server requires. WebDAV (Nextcloud, Synology, rclone
+  and others): the address is `https://host/folder` (`davs://` or a
+  bare `host/folder` work too), signing in with Basic over HTTPS; plain
+  `http://` only to `localhost`, so a password never crosses a network
+  readable. Books are read with HTTP Range requests; a server without them
+  sends whole files, so its books are always fetched to the cache first, and
+  get their covers once fetched. WebDAV shares show a cloud in the sheet, and
+  their free space when the server tells it. Passwords are sealed with a
   key in the Android Keystore. Long-press a share in the sheet to edit or
   remove it. A share is browsed like a drive: its name is the root crumb and
   the root of same-name labels; favorites, history, bookmarks, the startup

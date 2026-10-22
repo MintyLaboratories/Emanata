@@ -625,7 +625,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
                 }
             }
-            val failure = listed.exceptionOrNull()
+            val failure = listed.exceptionOrNull()?.let {
+                // Anything that stops a share's listing shows as that share failing, with Retry.
+                if (it is RemoteException || dir !is RemoteFile) it
+                else RemoteException(RemoteException.Reason.UNREACHABLE, it.message, it)
+            }
             if (failure != null) {
                 if (failure !is RemoteException) throw failure
                 progress.visibility = View.GONE

@@ -17,6 +17,7 @@ import com.hierynomus.smbj.auth.NtlmAuthenticator
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
+import android.util.Log
 import java.io.IOException
 import java.util.EnumSet
 import java.util.concurrent.Executors
@@ -125,9 +126,11 @@ class SmbFs(private val share: Share) : RemoteFs {
             val d = s.connectShare(p.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
             disk = d
             return d
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             disconnect()
-            throw translate(e).toRemote()
+            // A missing platform class (SMBJ code Android lacks) reads as a failure, not a crash.
+            if (e !is Exception) Log.w(TAG, "Connecting failed", e)
+            throw translate(e as? Exception ?: IOException(e)).toRemote()
         }
     }
 
@@ -224,6 +227,8 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     companion object {
+        private const val TAG = "SmbFs"
+
         /** How long a connection stays open unused. */
         const val IDLE_MS = 60_000L
         private const val CONNECT_TIMEOUT_MS = 5_000

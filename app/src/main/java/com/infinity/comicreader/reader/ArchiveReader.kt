@@ -2,8 +2,10 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 
 /** A file inside an archive: its [path] in the archive, its uncompressed [size] (-1 when unknown). */
@@ -26,7 +28,8 @@ interface ArchiveReader : Closeable {
     companion object {
         /**
          * Reader for [file] as [kind] (by default from its leading bytes), or null when it
-         * is not an archive. One on a share is read in place, through a [RemoteChannel].
+         * is not an archive. One on a share is read in place, through a [RemoteChannel];
+         * on a server that sends files only whole ([Remotes.seekable]) it throws.
          */
         fun open(
             file: File,
@@ -42,6 +45,8 @@ interface ArchiveReader : Closeable {
 
         private fun inPlace(file: RemoteFile, charsetName: String, kind: ArchiveKind?): ArchiveReader? {
             if (kind == null || kind == ArchiveKind.PDF) return null
+            // A server sending files only whole would send this one again for each seek.
+            if (!Remotes.seekable(file.path)) throw IOException("Not readable in place: ${file.name}")
             val channel = RemoteChannel.open(file.path)
             return when (kind) {
                 ArchiveKind.ZIP -> ChannelZipReader(channel, charsetName)

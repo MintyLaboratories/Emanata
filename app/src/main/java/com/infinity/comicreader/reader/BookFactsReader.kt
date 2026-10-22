@@ -28,7 +28,10 @@ object BookFactsReader {
                 val local = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: throw IOException("Not fetched") else file
                 PdfSource(local).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
-                val reader = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Not an archive")
+                // A book on a share is read from its local copy when there is one: on a server
+                // sending files only whole, that is the only way.
+                val source = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: file else file
+                val reader = ArchiveReader.open(source, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
             }
         }

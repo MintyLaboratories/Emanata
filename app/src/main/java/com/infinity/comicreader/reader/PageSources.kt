@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.io.IOException
@@ -19,7 +20,8 @@ import java.io.IOException
  * first, and PDFs too except for covers, which a PDF not fetched yet lacks; rar, 7z
  * and tar books are fetched when a [Fetch] asks for it (the reader, where reading in
  * place would unpack solid blocks over and over), else read in place too (covers,
- * peeks, page counts).
+ * peeks, page counts). On a server that sends files only whole ([Remotes.seekable]),
+ * no book is read in place: each is fetched, except for a cover, which it then lacks.
  */
 object PageSources {
     /** Fetching a book from a share before reading it: stops once [canceled] turns true; [progress] hears bytes done of the total. */
@@ -41,7 +43,7 @@ object PageSources {
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
         val raw = openRaw(
             file, charsetName, cacheDir, nested,
-            firstPageOnly = false, fetch = fetch ?: Fetch(canceled), fetchArchives = fetch != null, fetchPdf = true
+            firstPageOnly = false, fetch = fetch ?: Fetch(canceled), fetchArchives = fetch != null, fetchWhole = true
         )
         return previewing(file, cacheDir, GuardedSource(raw))
     }
@@ -52,7 +54,7 @@ object PageSources {
         GuardedSource(
             openRaw(
                 file, charsetName, cacheDir, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName),
-                firstPageOnly = true, fetch = Fetch(), fetchArchives = false, fetchPdf = false
+                firstPageOnly = true, fetch = Fetch(), fetchArchives = false, fetchWhole = false
             )
         )
     )
@@ -69,15 +71,20 @@ object PageSources {
         firstPageOnly: Boolean,
         fetch: Fetch,
         fetchArchives: Boolean,
-        fetchPdf: Boolean
+        fetchWhole: Boolean
     ): PageSource {
         val type = Formats.typeOf(file.name)
         if (file is RemoteFile && (type == EntryType.IMAGE || type == EntryType.PDF || type == EntryType.ARCHIVE)) {
             RemoteCache.cached(file, cacheDir)?.let { return local(it, file, charsetName, nested, firstPageOnly) }
-            if (type == EntryType.PDF && !fetchPdf) throw IOException("Not fetched: ${file.name}")
+            if (type == EntryType.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
             val kind = if (type == EntryType.IMAGE) null else ArchiveKind.detect(file)
-            if (kind == ArchiveKind.PDF && !fetchPdf) throw IOException("Not fetched: ${file.name}")
-            val inPlace = kind == ArchiveKind.ZIP || (kind != null && kind != ArchiveKind.PDF && !fetchArchives)
+            if (kind == ArchiveKind.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
+            val archive = kind != null && kind != ArchiveKind.PDF
+            if (archive && !Remotes.seekable(file.path)) {
+                if (!fetchWhole) throw IOException("Not fetched: ${file.name}")
+                return local(RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress), file, charsetName, nested, firstPageOnly)
+            }
+            val inPlace = kind == ArchiveKind.ZIP || (archive && !fetchArchives)
             if (!inPlace) {
                 val copy = RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress)
                 return local(copy, file, charsetName, nested, firstPageOnly)

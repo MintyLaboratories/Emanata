@@ -21,7 +21,8 @@ import java.util.Locale
  * pages, the left pages' parity comes from the seams between them when they tell
  * ([Options.seams]: the picture runs on from one page into the next, so those two share
  * a screen), else from what spreads say (a spread starts on a left page), else the run's
- * first page is a left page; [Options.shift] flips it. In one-page reading, two pages
+ * first page is a left page; [Options.shift] flips it (a shift from before seams flips
+ * the parity without them, [Options.shiftByNames]). In one-page reading, two pages
  * whose seam matches show as one ([merge]).
  */
 object Spreads {
@@ -109,15 +110,20 @@ object Spreads {
     /**
      * Pairing choices: the [coverAlone] option, the book's manual [shift] by one page and
      * the [seams] found so far, by page: the seam between that page and the next in
-     * reading order, null where not checked.
+     * reading order, null where not checked. A shift chosen before seams paired pages
+     * ([shiftByNames]) flips the pairing names and spreads give, seams unread.
      */
     data class Options(
         val coverAlone: Boolean = true,
         val shift: Boolean = false,
-        val seams: List<SpreadSeams.Verdict?> = emptyList()
+        val seams: List<SpreadSeams.Verdict?> = emptyList(),
+        val shiftByNames: Boolean = false
     ) {
         /** True when the picture runs on from page [i] into the next. */
         fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
+
+        /** True when seams may settle pairing. */
+        val pairsBySeams: Boolean get() = !(shift && shiftByNames)
     }
 
     // ------------------------------------------------------------------ tokens
@@ -374,14 +380,15 @@ object Spreads {
             while (at < seg.pages.first()) out += intArrayOf(at++)
             val pairs = if (seg.numbered) {
                 val soft = seg.soft && seg.group == previousGroup
-                var parity = seamSide(numberedSeams(seg, pages, options)) ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
+                val bySeams = if (options.pairsBySeams) seamSide(numberedSeams(seg, pages, options)) else null
+                var parity = bySeams ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
                 if (options.shift) parity = 1 - parity
                 previousParity = if (options.shift) 1 - parity else parity
                 previousGroup = seg.group
                 pairNumbered(seg.pages, pages, parity)
             } else {
                 previousGroup = -2
-                val offset = seamSide(positionalSeams(seg, options)) ?: 0
+                val offset = (if (options.pairsBySeams) seamSide(positionalSeams(seg, options)) else null) ?: 0
                 pairPositional(seg.pages, if (options.shift) 1 - offset else offset)
             }
             out += pairs

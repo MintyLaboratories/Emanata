@@ -227,8 +227,9 @@ class ViewerActivity : AppCompatActivity() {
     private var learnJob: Job? = null
     private var learnRound = 0
 
-    /** True when the open book's two-page pairing is shifted by one page. */
+    /** True when the open book's two-page pairing is shifted by one page; [shiftedByNames] from before seams. */
     private var shifted = false
+    private var shiftedByNames = false
 
     /** The seams between the open book's pages checked so far, and the job checking more ([checkSeams]). */
     private var pageSeams = PageSeams.Found(0)
@@ -1220,7 +1221,9 @@ class ViewerActivity : AppCompatActivity() {
         pageBounds = PageBounds()
         pageNames = known.names
         pageSizes = known.sizes
-        shifted = favoriteFile()?.let { library.isShifted(it.absolutePath) } == true
+        val path = favoriteFile()?.absolutePath
+        shifted = path != null && library.isShifted(path)
+        shiftedByNames = path != null && library.isShiftedByNames(path)
         analysis = known.analysis
         pageSeams = known.seams
     }
@@ -1290,7 +1293,7 @@ class ViewerActivity : AppCompatActivity() {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (topToBottom()) emptyList() else pageSeams.of(rtl))
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (topToBottom()) emptyList() else pageSeams.of(rtl), shiftedByNames)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -1352,6 +1355,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun setShifted(value: Boolean) {
         if (shifted == value) return
         shifted = value
+        shiftedByNames = false
         favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
         if (spread) attach()
     }

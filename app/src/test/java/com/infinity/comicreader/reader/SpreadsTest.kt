@@ -504,6 +504,19 @@ class SpreadsTest {
     }
 
     @Test
+    fun aShiftFromBeforeSeamsFlipsThePairingByNamesAlone() {
+        val paths = book(run("page", 1..9, pad = 2))
+        val shifted = "[01][02][03|04][05|06][07|08][09]"
+        for (at in listOf(2, 3)) {
+            val options = Spreads.Options(shift = true, seams = seams(paths.size, mapOf(at to match)), shiftByNames = true)
+            assertEquals(shifted, screens(paths, "page", options = options))
+        }
+        val unnumbered = listOf("alpha.jpg", "bravo.jpg", "charlie.jpg", "delta.jpg", "echo.jpg", "foxtrot.jpg")
+        val options = Spreads.Options(shift = true, seams = seams(unnumbered.size, mapOf(1 to match)), shiftByNames = true)
+        assertEquals("[alpha][bravo][charlie|delta][echo|foxtrot]", screens(unnumbered, "", options = options))
+    }
+
+    @Test
     fun seamsOutrankSpreadVotesFromElsewhere() {
         // The spread votes odd left pages; after it, page 026 runs on into 027.
         val options = Spreads.Options(seams = seams(harbor.size, mapOf(harbor.indexOfFirst { Spreads.stemOf(it) == "Pale Harbor 018-026" } to match)))

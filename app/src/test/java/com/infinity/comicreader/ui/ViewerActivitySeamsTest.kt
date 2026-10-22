@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -136,6 +137,25 @@ class ViewerActivitySeamsTest {
         assertEquals(6, viewer.items())
         repeat(3) { viewer.next() }
         assertEquals("5 / 9", viewer.indicator())
+    }
+
+    @Test
+    fun aShiftChosenBeforeSeamsKeepsItsPairing() {
+        prefs.twoPage = TwoPage.ON
+        val book = book(count = 9, first = 4)
+        // Shifted by names alone: [000] [001] [002|003] [004|005] [006|007] [008], as the seams pair it too.
+        ApplicationProvider.getApplicationContext<Application>().getSharedPreferences("library", android.content.Context.MODE_PRIVATE)
+            .edit().putString("shifted", JSONArray().put(book.absolutePath).toString()).commit()
+        val viewer = launch(book)
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
+        repeat(20) { Thread.sleep(10); idle() }
+        assertEquals(6, viewer.items())
+        // Shifted again from here, it flips the seams' pairing.
+        val sheet = ReaderSheet(viewer)
+        sheet.tap(R.id.sheet_shift)
+        sheet.tap(R.id.sheet_shift)
+        assertEquals(5, viewer.items())
     }
 
     @Test

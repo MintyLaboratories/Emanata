@@ -56,13 +56,22 @@ class Library(context: Context) {
 
     // ---------------- spread pairing ----------------
     /** True when [path]'s two-page pairing is shifted by one page. */
-    fun isShifted(path: String): Boolean = readStringList(KEY_SHIFTED).contains(path)
+    fun isShifted(path: String): Boolean = isShiftedByNames(path) || readStringList(KEY_SHIFTED_SEAMS).contains(path)
 
+    /**
+     * True when [path]'s shift was chosen before seams paired pages: it flips the pairing
+     * page names give, not the one seams correct.
+     */
+    fun isShiftedByNames(path: String): Boolean = readStringList(KEY_SHIFTED).contains(path)
+
+    /** Shifts [path]'s pairing, or not, from the pairing shown now: seams and names alike. */
     fun setShifted(path: String, shifted: Boolean) {
         synchronized(LOCK) {
-            val set = readStringList(KEY_SHIFTED).toHashSet()
+            val byNames = readStringList(KEY_SHIFTED)
+            if (byNames.remove(path)) writeStringList(KEY_SHIFTED, byNames)
+            val set = readStringList(KEY_SHIFTED_SEAMS).toHashSet()
             val changed = if (shifted) set.add(path) else set.remove(path)
-            if (changed) writeStringList(KEY_SHIFTED, set.toList())
+            if (changed) writeStringList(KEY_SHIFTED_SEAMS, set.toList())
         }
     }
 
@@ -152,7 +161,7 @@ class Library(context: Context) {
             fun remap(p: String) = if (under(p, old)) new + p.removePrefix(old) else p
             writeStringList(KEY_FAVORITES, favorites().map { remap(it) })
             writeStringList(KEY_READ, readSet().map { remap(it) })
-            writeStringList(KEY_SHIFTED, readStringList(KEY_SHIFTED).map { remap(it) })
+            for (key in SHIFT_KEYS) writeStringList(key, readStringList(key).map { remap(it) })
             for (key in PATH_OBJECT_KEYS) {
                 val all = readObject(key)
                 val moved = JSONObject()
@@ -183,7 +192,7 @@ class Library(context: Context) {
         synchronized(LOCK) {
             writeStringList(KEY_FAVORITES, favorites().filterNot { under(it, root) })
             writeStringList(KEY_READ, readSet().filterNot { under(it, root) })
-            writeStringList(KEY_SHIFTED, readStringList(KEY_SHIFTED).filterNot { under(it, root) })
+            for (key in SHIFT_KEYS) writeStringList(key, readStringList(key).filterNot { under(it, root) })
             for (key in PATH_OBJECT_KEYS) {
                 val all = readObject(key)
                 val kept = JSONObject()
@@ -351,7 +360,7 @@ class Library(context: Context) {
         val out = JSONArray()
         for (i in 0 until arr.length()) {
             when (key) {
-                KEY_FAVORITES, KEY_READ, KEY_SHIFTED -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
+                KEY_FAVORITES, KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
                 else -> arr.optJSONObject(i)?.takeIf { it.optString("path").isNotEmpty() }?.let { out.put(it) }
             }
         }
@@ -418,10 +427,15 @@ class Library(context: Context) {
         const val KEY_SERIES = "series"
         const val KEY_STATS = "stats"
         const val KEY_ADJUST = "adjust"
+        /** Books shifted before seams paired pages ([isShiftedByNames]). */
         const val KEY_SHIFTED = "shifted"
+
+        /** Books shifted since. */
+        const val KEY_SHIFTED_SEAMS = "shifted_seams"
         const val MAX_HISTORY = 200
         const val MAX_DAYS = 3650
-        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED)
+        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS)
+        val SHIFT_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS)
         val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST)
 
         /** Documents keyed by file or folder path. */

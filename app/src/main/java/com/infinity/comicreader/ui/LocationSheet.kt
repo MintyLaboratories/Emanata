@@ -24,6 +24,7 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -169,9 +170,13 @@ class LocationSheet : BottomSheetDialogFragment() {
                 if (which == 0) {
                     ShareDialog.show(owner, id)
                 } else {
+                    val app = context.applicationContext
                     confirm(context, R.string.share_remove_title, getString(R.string.share_remove_msg, name), R.string.share_remove) {
-                        ShareStore(context).remove(id)
-                        (owner as? Host)?.onSharesChanged()
+                        owner.lifecycleScope.launch {
+                            // Closing the share's connection may wait on the network.
+                            withContext(NonCancellable + AppDispatchers.io) { ShareStore(app).remove(id) }
+                            (owner as? Host)?.onSharesChanged()
+                        }
                     }
                 }
             }

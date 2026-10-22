@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.app.Dialog
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
@@ -9,17 +10,23 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.net.ShareForm
 import com.infinity.comicreader.net.SharePath
 import com.infinity.comicreader.net.ShareStore
+import com.infinity.comicreader.util.AppDispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The form that adds a network share, or edits one: name, path (`host/share/folder`),
  * user and password, everything else defaulted. Saving checks the path, stores the
- * share (its password sealed) and tells the [LocationSheet.Host]; a bad path keeps the
- * form open, saying what is wrong. It comes back after a rotation with what was typed.
+ * share (its password sealed) off the main thread and tells the [LocationSheet.Host];
+ * a bad path, or a password the keystore could not seal, keeps the form open, saying
+ * what is wrong. It comes back after a rotation with what was typed.
  */
 class ShareDialog : DialogFragment() {
     private lateinit var form: View
@@ -45,7 +52,8 @@ class ShareDialog : DialogFragment() {
             .create()
         // Saving checks first, and a bad path keeps the form open.
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { if (save(store)) dismissAllowingStateLoss() }
+            val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            button.setOnClickListener { save(store, button) }
         }
         return dialog
     }
@@ -54,21 +62,30 @@ class ShareDialog : DialogFragment() {
 
     private fun text(id: Int): String = field(id).text?.toString().orEmpty()
 
-    /** Stores the share the form describes; false, showing why, when its path is bad. */
-    private fun save(store: ShareStore): Boolean {
+    /** Stores the share the form describes and closes the form; shows why instead when it cannot. */
+    private fun save(store: ShareStore, button: View) {
         val previous = arguments?.getString(ARG_ID)?.let { store.get(it) }
         val pathLayout = form.findViewById<TextInputLayout>(R.id.share_path_layout)
+        val passwordLayout = form.findViewById<TextInputLayout>(R.id.share_password_layout)
         val result = ShareForm.build(text(R.id.share_name), text(R.id.share_path), text(R.id.share_user), text(R.id.share_password), previous)
         when (result) {
-            is ShareForm.Result.Invalid -> {
-                pathLayout.error = getString(problemText(result.problem))
-                return false
-            }
+            is ShareForm.Result.Invalid -> pathLayout.error = getString(problemText(result.problem))
             is ShareForm.Result.Ok -> {
                 pathLayout.error = null
-                store.put(result.share)
-                (activity as? LocationSheet.Host)?.onSharesChanged()
-                return true
+                passwordLayout.error = null
+                button.isEnabled = false
+                lifecycleScope.launch {
+                    // Finishes even when the form goes meanwhile: the share is stored or not, never half.
+                    val stored = withContext(NonCancellable + AppDispatchers.io) { runCatching { store.put(result.share) } }
+                    button.isEnabled = true
+                    stored.onSuccess {
+                        (activity as? LocationSheet.Host)?.onSharesChanged()
+                        dismissAllowingStateLoss()
+                    }.onFailure {
+                        Log.w(TAG, "Storing the share failed", it)
+                        passwordLayout.error = getString(R.string.share_save_failed)
+                    }
+                }
             }
         }
     }

@@ -204,6 +204,30 @@ class ListActivitySharesTest {
     }
 
     @Test
+    fun aKeystoreFailureKeepsTheFormOpenSayingSo() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        ShareStore.defaultBox = object : SecretBox {
+            override fun seal(plain: ByteArray): ByteArray = throw java.security.GeneralSecurityException("keystore")
+            override fun open(sealed: ByteArray): ByteArray = box.open(sealed)
+        }
+        sheetList().findViewById<View>(R.id.location_add).performClick()
+        idle()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "nas.local/books"
+        dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        assertTrue(dialog.isShowing)
+        assertEquals(
+            activity.getString(R.string.share_save_failed),
+            dialog.findViewById<TextInputLayout>(R.id.share_password_layout)!!.error.toString()
+        )
+        assertEquals(listOf("Share A"), ShareStore(context, box).all().map { it.name })
+    }
+
+    @Test
     fun aLongPressEditsOrRemovesAShare() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()

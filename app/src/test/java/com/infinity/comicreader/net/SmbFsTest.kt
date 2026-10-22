@@ -45,6 +45,17 @@ class SmbFsTest {
         }
     }
 
+    @Test
+    fun aBlankUserSignsInAnonymouslyThenAsAGuest() {
+        val ways = SmbFs.authentications(share(1, user = ""))
+        assertEquals(listOf(true, false), ways.map { it.isAnonymous })
+        assertEquals(listOf(false, true), ways.map { it.isGuest })
+        val named = SmbFs.authentications(share(1, user = "WORKGROUP\\user")).single()
+        assertEquals("user", named.username)
+        assertEquals("WORKGROUP", named.domain)
+        assertEquals("secret", String(named.password))
+    }
+
     @Test(timeout = 20_000)
     fun callersWaitingOnAFailedConnectFailWithoutConnectingAgain() {
         Silent().use { silent ->

@@ -2,7 +2,7 @@ package com.infinity.comicreader.net
 
 /**
  * A network share the user added: browsed as a storage root at [root] under [name].
- * [user] may name a domain (`DOMAIN\user`); an empty one signs in as a guest.
+ * [user] may name a domain (`DOMAIN\user`); an empty one signs in anonymously or as a guest.
  */
 data class Share(
     val id: String,

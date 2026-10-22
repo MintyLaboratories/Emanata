@@ -27,8 +27,8 @@ import com.hierynomus.smbj.share.File as SmbFile
 
 /**
  * A [Share] over SMB 2 or 3 (SMBJ): the dialect is negotiated, never SMB1; signing
- * and encryption are used as the server requires; NTLM signs in, as a guest without
- * a user name. One connection per share, made on first use, made again once when it
+ * and encryption are used as the server requires; NTLM signs in, without a user
+ * name anonymously, else as a guest. One connection per share, made on first use, made again once when it
  * drops, and closed after [IDLE_MS] without use while no file is open, so nothing
  * goes over the network unless the share is browsed or read. A sign-in or share the
  * host turned down is not tried again until [retry]; a host that could not be
@@ -145,10 +145,8 @@ class SmbFs(private val share: Share) : RemoteFs {
             var s: Session? = null
             try {
                 c = client.connect(p.host, p.port)
-                val auth = if (share.account.isEmpty()) AuthenticationContext.anonymous()
-                else AuthenticationContext(share.account, share.password.toCharArray(), share.domain)
-                s = c.authenticate(auth)
-                val d = s.connectShare(p.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
+                val (signed, d) = signIn(c)
+                s = signed
                 synchronized(lock) {
                     if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
                     connection = c
@@ -164,6 +162,26 @@ class SmbFs(private val share: Share) : RemoteFs {
                 throw remember(translate(e as? Exception ?: IOException(e)).toRemote())
             }
         }
+    }
+
+    /** A session on [c] and the share in it, trying each of [authentications] while the host turns them down. */
+    private fun signIn(c: Connection): Pair<Session, DiskShare> {
+        val ways = authentications(share)
+        for ((i, auth) in ways.withIndex()) {
+            var s: Session? = null
+            try {
+                s = c.authenticate(auth)
+                val d = s.connectShare(share.path.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
+                return s to d
+            } catch (e: SMBApiException) {
+                runCatching { s?.close() }
+                if (i == ways.lastIndex) throw e
+            } catch (e: Exception) {
+                runCatching { s?.close() }
+                throw e
+            }
+        }
+        throw IllegalStateException("No way to sign in")
     }
 
     /** The failure to repeat instead of connecting: a refusal until [retry], else one from the last [Remotes.QUIET_MS]. */
@@ -323,6 +341,15 @@ class SmbFs(private val share: Share) : RemoteFs {
         private val timer: ScheduledExecutorService by lazy {
             Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "smb-idle").apply { isDaemon = true } }
         }
+
+        /** How to sign in to [share], in order: as its user, or without one anonymously, then as a guest. */
+        internal fun authentications(share: Share): List<AuthenticationContext> =
+            if (share.account.isEmpty()) {
+                // Some hosts refuse anonymous sessions but take guests, others the other way round.
+                listOf(AuthenticationContext.anonymous(), AuthenticationContext.guest())
+            } else {
+                listOf(AuthenticationContext(share.account, share.password.toCharArray(), share.domain))
+            }
 
         private fun isDirectory(attributes: Long) = attributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
 

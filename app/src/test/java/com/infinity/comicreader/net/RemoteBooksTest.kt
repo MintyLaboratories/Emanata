@@ -10,6 +10,7 @@ import com.infinity.comicreader.reader.PageSources
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -18,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.IOException
 import kotlin.random.Random
 
 /** Books on a share: zips and covers read in place, other books fetched for the reader only. */
@@ -139,6 +141,19 @@ class RemoteBooksTest {
         PageSources.openCover(remote("b.cbr"), "UTF-8", cacheDir).use { assertEquals(1, it.pageCount) }
         PageSources.open(remote("b.cbr"), "UTF-8", cacheDir).use { assertEquals(3, it.pageCount) }
         assertEquals(0, copies())
+    }
+
+    @Test
+    fun aPdfNotFetchedHasNoCoverAndIsNotFetchedForOne() {
+        File(share, "book.pdf").writeBytes("%PDF-1.4\n".toByteArray() + ByteArray(4096))
+        try {
+            PageSources.openCover(remote("book.pdf"), "UTF-8", cacheDir)
+            fail("a cover from a PDF not fetched")
+        } catch (e: IOException) {
+            // Expected: covers never fetch a whole PDF.
+        }
+        assertEquals(0, copies())
+        assertEquals(0L, fake.bytesRead)
     }
 
     @Test

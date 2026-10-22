@@ -9,9 +9,9 @@ import kotlin.math.sqrt
  * [Edge]: the color of its outermost [BAND] columns and of the [BAND] columns next to
  * them, at [Seams.LENGTH] points down the page. A side with too little in it (a white or
  * dark gutter, flat color, a lone line) says nothing ([informative]). Otherwise the two
- * facing edges must agree in color, about as closely as each edge agrees with the
- * columns just inside it, and in shape: the same rises and falls of brightness down the
- * page ([compare]). Free of Android types.
+ * facing edges must agree in color, within a fixed limit or about as well as each edge
+ * agrees with the columns just inside it, and in shape: the same rises and falls of
+ * brightness down the page ([compare]). Free of Android types.
  */
 object SpreadSeams {
     /** Columns of a side strip, at the scale it is decoded at. */

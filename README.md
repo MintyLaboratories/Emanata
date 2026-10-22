@@ -186,9 +186,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   one page** fixes a book that still pairs wrong, and is kept for that book.
   Page sizes come from image headers, read once per book in the background.
 - **Spreads in two files** are told by their seams: the facing edges of two
-  pages, decoded as thin strips, must agree in color and shape about as closely
-  as each edge agrees with the columns just inside it; blank, flat or nearly
-  empty edges say nothing. In two-page mode such a pair shares a screen even when
+  pages, decoded as thin strips, must agree in color and shape within a fixed
+  limit, or about as well as each edge agrees with the columns just inside it;
+  blank, flat or nearly empty edges say nothing. In two-page mode such a pair shares a screen even when
   page numbers would pair it otherwise (the seams of that run decide; **Shift
   pairs by one page** still flips the result), and its gutter is never cropped.
   Seams are checked in the background, nearest the page on screen first, and kept

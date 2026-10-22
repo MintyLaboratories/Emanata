@@ -33,11 +33,19 @@ import com.hierynomus.smbj.share.File as SmbFile
  * goes over the network unless the share is browsed or read.
  */
 class SmbFs(private val share: Share) : RemoteFs {
+    /** Guards the fields below; never held across network I/O, so [close] never waits on it. */
+    private val lock = Any()
+
+    /** Serializes connecting, so one sign-in at a time is under way. */
+    private val connecting = Any()
+
     private var connection: Connection? = null
     private var session: Session? = null
     private var disk: DiskShare? = null
     private var lastUsed = 0L
     private val inputs = HashSet<SmbInput>()
+
+    @Volatile
     private var closed = false
 
     init {
@@ -66,7 +74,7 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     override fun open(path: String): RemoteInput {
         val (file, length) = openFile(path)
-        return SmbInput(path, file, length).also { synchronized(this) { inputs += it } }
+        return SmbInput(path, file, length).also { synchronized(lock) { inputs += it } }
     }
 
     override fun space(): Pair<Long, Long>? = call { d ->
@@ -74,7 +82,7 @@ class SmbFs(private val share: Share) : RemoteFs {
         if (info.totalSpace <= 0) null else info.freeSpace to info.totalSpace
     }
 
-    @Synchronized
+    /** Closes the connection at once, even while another thread is connecting; that one then fails. */
     override fun close() {
         closed = true
         disconnect()
@@ -96,61 +104,84 @@ class SmbFs(private val share: Share) : RemoteFs {
     private fun <T> call(block: (DiskShare) -> T): T {
         var retried = false
         while (true) {
-            val d = synchronized(this) {
-                lastUsed = System.currentTimeMillis()
-                connected()
-            }
+            val d = connected()
             try {
                 return block(d)
             } catch (e: Exception) {
                 val failure = translate(e)
                 if (failure !is Dropped || retried) throw failure.toRemote()
                 retried = true
-                synchronized(this) { disconnect() }
+                disconnect()
             }
         }
     }
 
-    private fun connected(): DiskShare {
+    /** The open connection's share, marked as used; null when there is none. */
+    private fun current(): DiskShare? = synchronized(lock) {
         if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
-        disk?.takeIf { connection?.isConnected == true }?.let { return it }
-        disconnect()
-        val p = share.path
-        try {
-            val c = client.connect(p.host, p.port)
-            connection = c
-            val auth = if (share.account.isEmpty()) AuthenticationContext.anonymous()
-            else AuthenticationContext(share.account, share.password.toCharArray(), share.domain)
-            val s = c.authenticate(auth)
-            session = s
-            val d = s.connectShare(p.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
-            disk = d
-            return d
-        } catch (e: Throwable) {
+        lastUsed = System.currentTimeMillis()
+        disk?.takeIf { connection?.isConnected == true }
+    }
+
+    private fun connected(): DiskShare {
+        current()?.let { return it }
+        synchronized(connecting) {
+            current()?.let { return it }
             disconnect()
-            // A missing platform class (SMBJ code Android lacks) reads as a failure, not a crash.
-            if (e !is Exception) Log.w(TAG, "Connecting failed", e)
-            throw translate(e as? Exception ?: IOException(e)).toRemote()
+            val p = share.path
+            var c: Connection? = null
+            var s: Session? = null
+            try {
+                c = client.connect(p.host, p.port)
+                val auth = if (share.account.isEmpty()) AuthenticationContext.anonymous()
+                else AuthenticationContext(share.account, share.password.toCharArray(), share.domain)
+                s = c.authenticate(auth)
+                val d = s.connectShare(p.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
+                synchronized(lock) {
+                    if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+                    connection = c
+                    session = s
+                    disk = d
+                }
+                return d
+            } catch (e: Throwable) {
+                runCatching { s?.close() }
+                runCatching { c?.close() }
+                // A missing platform class (SMBJ code Android lacks) reads as a failure, not a crash.
+                if (e !is Exception) Log.w(TAG, "Connecting failed", e)
+                throw translate(e as? Exception ?: IOException(e)).toRemote()
+            }
         }
     }
 
+    /** Drops the connection, closing it outside [lock]. */
     private fun disconnect() {
-        runCatching { disk?.close() }
-        runCatching { session?.close() }
-        runCatching { connection?.close() }
-        disk = null
-        session = null
-        connection = null
+        synchronized(lock) { take() }?.let(::shut)
+    }
+
+    /** Takes the connection's parts away for [shut]; null when there is none. Under [lock]. */
+    private fun take(): Triple<DiskShare?, Session?, Connection?>? {
+        if (connection == null && session == null && disk == null) return null
+        return Triple(disk, session, connection).also {
+            disk = null
+            session = null
+            connection = null
+        }
+    }
+
+    private fun shut(parts: Triple<DiskShare?, Session?, Connection?>) {
+        runCatching { parts.first?.close() }
+        runCatching { parts.second?.close() }
+        runCatching { parts.third?.close() }
     }
 
     /** Closes the connection once it has been idle for [IDLE_MS] with no file open. */
     private fun idleCheck() {
         timer.schedule({
-            val again = synchronized(this) {
-                if (!closed && connection != null && inputs.isEmpty() && System.currentTimeMillis() - lastUsed >= IDLE_MS) disconnect()
-                !closed
-            }
-            if (again) idleCheck()
+            synchronized(lock) {
+                if (inputs.isEmpty() && System.currentTimeMillis() - lastUsed >= IDLE_MS) take() else null
+            }?.let(::shut)
+            if (!closed) idleCheck()
         }, IDLE_MS / 2, TimeUnit.MILLISECONDS)
     }
 
@@ -162,7 +193,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             while (true) {
                 val f = synchronized(this) { file ?: openFile(path).first.also { file = it } }
                 try {
-                    synchronized(this@SmbFs) { lastUsed = System.currentTimeMillis() }
+                    synchronized(lock) { lastUsed = System.currentTimeMillis() }
                     val n = f.read(buffer, position, offset, count)
                     return if (n <= 0) -1 else n
                 } catch (e: Exception) {
@@ -173,7 +204,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                         runCatching { f.close() }
                         file = null
                     }
-                    synchronized(this@SmbFs) { disconnect() }
+                    disconnect()
                 }
             }
         }
@@ -183,7 +214,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                 runCatching { file?.close() }
                 file = null
             }
-            synchronized(this@SmbFs) {
+            synchronized(lock) {
                 inputs -= this
                 lastUsed = System.currentTimeMillis()
             }

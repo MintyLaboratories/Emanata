@@ -8,6 +8,7 @@ import com.infinity.comicreader.reader.Fixtures.entry
 import com.infinity.comicreader.reader.PageSources
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -64,6 +65,38 @@ class DavBooksTest {
         PageSources.openCover(remote("a.cbz"), "UTF-8", cacheDir).use { assertEquals(1, it.pageCount) }
         assertEquals(0, copies())
         assertTrue("sent ${server.bytesSent} bytes", server.bytesSent < big.size / 2)
+    }
+
+    @Test
+    fun oneFilesServerErrorLeavesTheShareReachable() {
+        Fixtures.zip(File(share, "b.cbz"), entry("01.jpg"))
+        server.errors["b.cbz"] = 500
+        try {
+            Remotes.open("/net/d1/b.cbz")
+            fail("opened a file the server failed")
+        } catch (e: IOException) {
+            assertFalse("$e", e is RemoteException)
+        }
+        assertFalse(Remotes.unreachable("d1"))
+        Remotes.open("/net/d1/a.cbz").close()
+        // A gateway's trouble is the whole share's.
+        server.errors["b.cbz"] = 503
+        try {
+            Remotes.open("/net/d1/b.cbz")
+            fail("opened a file the server failed")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteException.Reason.UNREACHABLE, e.reason)
+        }
+        assertTrue(Remotes.unreachable("d1"))
+        // So is a server error at the share's top.
+        Remotes.retry("d1")
+        server.errors[""] = 500
+        try {
+            Remotes.list("/net/d1")
+            fail("listed a failing top")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteException.Reason.UNREACHABLE, e.reason)
+        }
     }
 
     @Test

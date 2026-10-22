@@ -151,7 +151,11 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         }
     }
 
-    /** What an error [response] means; a missing [top] folder is a missing share. */
+    /**
+     * What an error [response] means. A missing [top] folder is a missing share; a
+     * server error is the share's trouble from a gateway (502-504) or at [top], else
+     * the one file's, leaving the share reachable.
+     */
     private fun failure(response: Response, top: Boolean = false): IOException {
         val message = "HTTP ${response.code}"
         return when (response.code) {
@@ -160,7 +164,8 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             404, 410 -> RemoteException(if (top) RemoteException.Reason.NO_SHARE else RemoteException.Reason.MISSING, message)
             // No WebDAV there.
             405, 501 -> RemoteException(RemoteException.Reason.NO_SHARE, message)
-            408, 429, in 500..599 -> RemoteException(RemoteException.Reason.UNREACHABLE, message)
+            502, 503, 504 -> RemoteException(RemoteException.Reason.UNREACHABLE, message)
+            408, 429, in 500..599 -> if (top) RemoteException(RemoteException.Reason.UNREACHABLE, message) else IOException(message)
             else -> IOException(message)
         }
     }

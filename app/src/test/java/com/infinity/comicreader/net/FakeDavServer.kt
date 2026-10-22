@@ -12,6 +12,7 @@ import java.net.URLDecoder
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
@@ -41,6 +42,9 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     var quota: Pair<Long, Long>? = 3_000_000_000L to 5_000_000_000L
 
     val requests = CopyOnWriteArrayList<RecordedRequest>()
+
+    /** Status codes to answer with instead, by path below [prefix]. */
+    val errors = ConcurrentHashMap<String, Int>()
 
     @Volatile
     var bytesSent = 0L
@@ -74,6 +78,7 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         val raw = request.requestUrl!!.encodedPath
         if (!raw.startsWith(prefix)) return MockResponse().setResponseCode(404)
         val rel = raw.removePrefix(prefix).split('/').filter { it.isNotEmpty() }.joinToString("/") { URLDecoder.decode(it.replace("+", "%2B"), "UTF-8") }
+        errors[rel]?.let { return MockResponse().setResponseCode(it) }
         val file = if (rel.isEmpty()) dir else File(dir, rel)
         return when (request.method) {
             "PROPFIND" -> propfind(request, file, raw)

@@ -210,6 +210,21 @@ class PageAdapter(
     internal val decoding: Boolean get() = pending.isNotEmpty()
 
     /**
+     * The pages decoded from [source] this adapter holds, for one that replaces it ([adopt]);
+     * none unless paged, where pages are numbered from the book's first.
+     */
+    internal fun decoded(source: PageSource): Map<PageKey, Bitmap> =
+        if (released || mode != Mode.PAGED || strip.chapters.firstOrNull()?.value?.source !== source) emptyMap() else cache.snapshot()
+
+    /** Takes the [pages] an adapter of the same pages decoded, so those it showed show at once here. */
+    internal fun adopt(pages: Map<PageKey, Bitmap>) {
+        for ((key, bitmap) in pages) if (!bitmap.isRecycled) cache.put(key, bitmap)
+    }
+
+    /** True when a page on screen is zoomed in. */
+    fun zoomed(): Boolean = images.any { it.isAttachedToWindow && it.isZoomed }
+
+    /**
      * Why a page could not be shown at [target]; [name] is null when its source has no
      * page names. Only a [permanent] failure is shown again without another decode, and
      * only at the size it failed at.

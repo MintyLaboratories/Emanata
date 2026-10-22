@@ -235,6 +235,15 @@ class ViewerActivity : AppCompatActivity() {
     private var pageSeams = PageSeams.Found(0)
     private var seamsJob: Job? = null
 
+    /** The seams the layout reads: [pageSeams] as they were when last shown ([showSeams]). */
+    private var shownSeams = PageSeams.Found(0)
+
+    /** True until the reader turns a page of the book just opened: until then seams may re-pair the page on screen. */
+    private var seamsSettling = true
+
+    /** The page the open book first showed, -1 until it shows. */
+    private var openedPage = -1
+
     /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
     private val spreadRotation = SpreadRotation()
 
@@ -397,6 +406,8 @@ class ViewerActivity : AppCompatActivity() {
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageScrollStateChanged(state: Int) {
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) stopAutoScroll()
+                // Seams held back while the reader was on their pages may show now.
+                if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) pager.post { showSeams() }
             }
 
             override fun onPageSelected(position: Int) {
@@ -1124,6 +1135,7 @@ class ViewerActivity : AppCompatActivity() {
         seamsJob?.cancel()
         seamsJob = null
         pageSeams = PageSeams.Found(0)
+        shownSeams = pageSeams
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
@@ -1230,6 +1242,9 @@ class ViewerActivity : AppCompatActivity() {
         shiftedByNames = path != null && library.isShiftedByNames(path)
         analysis = known.analysis
         pageSeams = known.seams
+        shownSeams = pageSeams
+        seamsSettling = true
+        openedPage = -1
     }
 
     /**
@@ -1255,7 +1270,7 @@ class ViewerActivity : AppCompatActivity() {
             pageSizes = sizes
             analysis = found
             // The same layout may still show a page now known to be wide.
-            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach(fresh = false)
         }
     }
 
@@ -1283,7 +1298,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             if (round != learnRound || source !== src || file != book) return@launch
             analysis = found
-            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach(fresh = false)
         }
     }
 
@@ -1291,13 +1306,13 @@ class ViewerActivity : AppCompatActivity() {
      * How items map to pages: in paged reading, the spread engine's pairs in two-page
      * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]),
      * left or right, or with spreads in two files shown as one ([SpreadDisplay.MERGE]);
-     * otherwise a page an item. Seams checked so far ([pageSeams]) settle pairs and merges.
+     * otherwise a page an item. Seams shown so far ([shownSeams]) settle pairs and merges.
      */
     private fun buildLayout(): PageLayout {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) pageSeams.of(rtl) else emptyList(), shiftedByNames)
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -1322,6 +1337,7 @@ class ViewerActivity : AppCompatActivity() {
     /** Lays the open book out again with seams read or not, as [Prefs.joinSpreads] now says. */
     private fun applyJoinSpreads() {
         if (!prefs.joinSpreads) seamsJob?.cancel()
+        shownSeams = pageSeams
         if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
         checkSeams()
     }
@@ -1355,7 +1371,7 @@ class ViewerActivity : AppCompatActivity() {
                 }
                 if (!done || source !== src || file != book) return@launch
                 pageSeams = found.copy()
-                if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+                showSeams()
                 at += next.size
                 batch = SEAM_BATCH
             }
@@ -1363,6 +1379,42 @@ class ViewerActivity : AppCompatActivity() {
             // Where only nearby seams are checked, the reader may have moved on meanwhile.
             checkSeams()
         }
+    }
+
+    /**
+     * Lays the book out with the seams found since the layout was made, unless, once the
+     * reader turned a page ([seamsSettling]), that re-pairs the pages on screen or next to
+     * them, or would interrupt a swipe or a zoom: those wait, until the reader moves on or
+     * the book opens again. A layout the reader asks for takes them all ([attach]).
+     */
+    private fun showSeams() {
+        if (shownSeams === pageSeams) return
+        val shown = shownSeams
+        shownSeams = pageSeams
+        val next = buildLayout()
+        if (next.sameAs(layout)) {
+            updateSpreadRotation()
+            return
+        }
+        val busy = pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || adapter?.zoomed() == true
+        if (!seamsSettling && (busy || nearChanged(next))) {
+            shownSeams = shown
+            return
+        }
+        attach(fresh = false)
+    }
+
+    /** True when [next] shows the open book's item on screen, or one next to it, other than [layout] does. */
+    private fun nearChanged(next: PageLayout): Boolean {
+        val count = source?.pageCount ?: return false
+        val item = layout.itemOf(currentIndex)
+        for (i in item - 1..item + 1) {
+            if (i < 0 || i >= layout.itemCount(count)) continue
+            val parts = layout.parts(i, count).filterNotNull()
+            val at = next.itemOf(parts.firstOrNull() ?: continue)
+            if (next.parts(at, count).filterNotNull() != parts || next.joined(at) != layout.joined(i)) return true
+        }
+        return false
     }
 
     /** Shifts the open book's two-page pairing by one page, or back, and keeps the choice. */
@@ -1400,10 +1452,14 @@ class ViewerActivity : AppCompatActivity() {
      * Builds a fresh adapter for the current layout. A [RecyclerView.Adapter] has
      * a fixed item view type, so changing the mode, spread or reading direction
      * requires a new instance. Paged reading top to bottom turns the pager upright.
+     * A [fresh] layout, one the reader asked for, takes every seam found so far
+     * ([showSeams]). The pages the old adapter decoded show at once in the new one.
      * These are only emitted from the UI thread.
      */
-    private fun attach() {
+    private fun attach(fresh: Boolean = true) {
         val src = source ?: return
+        if (fresh) shownSeams = pageSeams
+        val decoded = adapter?.decoded(src).orEmpty()
         pager.adapter = null
         vertical.adapter = null
         // The new adapter reads the same chapters: they must stay open.
@@ -1433,6 +1489,7 @@ class ViewerActivity : AppCompatActivity() {
         a.filter = filter
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
+        a.adopt(decoded)
         adapter = a
 
         val item = pageToItem(currentIndex)
@@ -1773,6 +1830,7 @@ class ViewerActivity : AppCompatActivity() {
             seenPages.set(layout.firstPage(item).coerceAtLeast(0), layout.lastPage(item, count) + 1)
         }
         updateSpreadRotation()
+        if (openedPage < 0) openedPage = currentIndex else if (currentIndex != openedPage) seamsSettling = false
         checkSeams()
         if (seekPanel.visibility == View.VISIBLE) {
             seekPreviews?.highlight(shownItem())

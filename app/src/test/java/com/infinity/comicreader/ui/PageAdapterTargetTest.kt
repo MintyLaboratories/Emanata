@@ -156,6 +156,24 @@ class PageAdapterTargetTest {
         adapter.release()
     }
 
+    @Test
+    fun anAdapterThatReplacesAnotherShowsItsPagesWithoutDecoding() {
+        val source = RecordingSource(3)
+        val first = adapter(source)
+        recycler(first, 1848, 2960)
+        idle { source.requests.isNotEmpty() && !first.decoding }
+        val decoded = first.decoded(source)
+        first.release(closeSources = false)
+        val second = adapter(source)
+        second.adopt(decoded)
+        recycler(second, 1848, 2960)
+        idle()
+        assertEquals(1, source.requests.size)
+        // Pages of another source are not handed over.
+        assertTrue(second.decoded(RecordingSource(3)).isEmpty())
+        second.release()
+    }
+
     /** Like [RecordingSource], but every decode after the first waits for [gate]. */
     private class GatedSource(override val pageCount: Int) : PageSource {
         val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()

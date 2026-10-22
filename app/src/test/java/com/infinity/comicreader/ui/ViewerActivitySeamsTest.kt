@@ -182,6 +182,36 @@ class ViewerActivitySeamsTest {
     }
 
     @Test
+    fun seamsFoundLaterWaitRatherThanRePairThePagesOnScreen() {
+        prefs.twoPage = TwoPage.ON
+        // By number: [000] [001|002] … [029|030], 16 screens; page 020 running on into 021 pairs
+        // even left pages instead: [000] [001] [002|003] … [028|029] [030], 17 screens.
+        val book = book(count = 31, first = 20)
+        val viewer = launch(book)
+        // Once the reader turns a page, seams found after re-pair nothing near it.
+        viewer.next()
+        assertEquals("2 / 31", viewer.indicator())
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
+        repeat(100) { Thread.sleep(10); idle() }
+        assertEquals(16, viewer.items())
+        viewer.finish()
+        // Opened again, the seams pair the run from the start.
+        val again = launch(book)
+        await { again.items() == 17 }
+        assertEquals(17, again.items())
+    }
+
+    @Test
+    fun seamsFoundLaterAwayFromTheReaderShow() {
+        val viewer = launch(book(count = 31, first = 20))
+        viewer.next()
+        await { viewer.items() == 30 }
+        assertEquals(30, viewer.items())
+        assertEquals("2 / 31", viewer.indicator())
+    }
+
+    @Test
     fun seamsAreKeptForTheNextOpen() {
         val book = book(count = 7, first = 3)
         val first = launch(book)

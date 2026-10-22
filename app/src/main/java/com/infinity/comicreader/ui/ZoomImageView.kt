@@ -438,6 +438,9 @@ class ZoomImageView @JvmOverloads constructor(
     /** True when zoomed in past the fitted scale. */
     private val zoomed: Boolean get() = currentScale > minScale * (1f + ONE_TO_ONE)
 
+    /** [zoomed], for the adapter. */
+    internal val isZoomed: Boolean get() = zoomed
+
     /** The detail drawn over the page, if any; for tests. */
     internal val detailShown: Bitmap? get() = detail
 

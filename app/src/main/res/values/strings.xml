@@ -77,6 +77,13 @@
     <string name="share_problem_port">Not a port number (1–65535)</string>
     <string name="share_problem_name">Names cannot hold \\ / : * ? \" &lt; &gt; |</string>
     <string name="share_problem_web">That is a web address: choose WebDAV</string>
+    <string name="share_kind_smb" translatable="false">SMB</string>
+    <string name="share_kind_webdav" translatable="false">WebDAV</string>
+    <string name="share_address">Address</string>
+    <string name="share_address_hint">https://host/folder</string>
+    <string name="share_user_hint_webdav">Blank when the server asks for none</string>
+    <string name="share_problem_empty_webdav">Enter the server\'s address, such as https://nas.local/comics</string>
+    <string name="share_problem_name_webdav">Folder names cannot be . or .., or hold / or \\</string>
     <string name="share_problem_insecure">Use https://; plain http:// reaches only this device</string>
     <string name="share_edit">Edit…</string>
     <string name="share_remove">Remove</string>

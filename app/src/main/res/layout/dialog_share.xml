@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The network share form: name, path, user and password; everything else is defaulted.
-    Kept from autofill, so password managers neither offer nor save share passwords.
+    The network share form: SMB or WebDAV, name, path, user and password; everything else
+    is defaulted. Kept from autofill, so password managers neither offer nor save share passwords.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -15,6 +15,24 @@
         android:orientation="vertical"
         android:paddingHorizontal="@dimen/space_6"
         android:paddingTop="@dimen/space_3">
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/share_kind"
+            style="@style/Widget.ComicReader.SheetSegments"
+            android:layout_marginTop="0dp"
+            android:layout_marginBottom="@dimen/space_2"
+            app:checkedButton="@+id/share_kind_smb">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/share_kind_smb"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/share_kind_smb" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/share_kind_webdav"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/share_kind_webdav" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/share_name_layout"

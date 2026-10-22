@@ -11,11 +11,13 @@ import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.net.AesGcmBox
+import com.infinity.comicreader.net.DavUrl
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.SecretBox
@@ -202,6 +204,52 @@ class ListActivitySharesTest {
         assertEquals("more", added.path.dir)
         assertEquals("pw", added.password)
         assertEquals(listOf("Device", "Share A", "Share B"), activity.locations?.shownRoots?.map { it.name })
+    }
+
+    @Test
+    fun theFormAddsAWebDavShareAndEditsItAsOne() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        sheetList().findViewById<View>(R.id.location_add).performClick()
+        idle()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val pathLayout = dialog.findViewById<TextInputLayout>(R.id.share_path_layout)!!
+        assertEquals(activity.getString(R.string.share_path), pathLayout.hint.toString())
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "https://nas.local/dav"
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        assertEquals(activity.getString(R.string.share_problem_web), pathLayout.error.toString())
+        dialog.findViewById<View>(R.id.share_kind_webdav)!!.performClick()
+        idle()
+        assertEquals(activity.getString(R.string.share_address), pathLayout.hint.toString())
+        assertEquals(null, pathLayout.error)
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "http://nas.local/dav"
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        assertEquals(activity.getString(R.string.share_problem_insecure), pathLayout.error.toString())
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "https://nas.local/dav/comics"
+        dialog.findViewById<TextView>(R.id.share_user)!!.text = "user"
+        dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        assertFalse(dialog.isShowing)
+        val added = ShareStore(context, box).all().last()
+        assertEquals("comics", added.name)
+        assertEquals(DavUrl(true, "nas.local", 443, "dav/comics"), added.path)
+        assertEquals("pw", added.password)
+        assertEquals(listOf("Device", "Share A", "comics"), activity.locations?.shownRoots?.map { it.name })
+
+        // Editing it opens on WebDAV with its address.
+        openSheet(activity)
+        row("comics").performLongClick()
+        idle()
+        (ShadowDialog.getLatestDialog() as AlertDialog).listView.performItemClick(null, 0, 0)
+        idle()
+        val edit = ShadowDialog.getLatestDialog() as AlertDialog
+        assertEquals(R.id.share_kind_webdav, edit.findViewById<MaterialButtonToggleGroup>(R.id.share_kind)!!.checkedButtonId)
+        assertEquals("https://nas.local/dav/comics", edit.findViewById<TextView>(R.id.share_path)!!.text.toString())
+        assertEquals(activity.getString(R.string.share_address), edit.findViewById<TextInputLayout>(R.id.share_path_layout)!!.hint.toString())
     }
 
     @Test

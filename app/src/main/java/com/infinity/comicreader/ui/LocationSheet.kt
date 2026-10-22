@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareKind
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.Job
@@ -29,10 +30,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The location picker the app icon crumb opens: every storage root with its icon, name
- * and free space, the current one highlighted (or a drive just plugged in), then
- * "Add network share…". A share says "Not reachable" (or why it failed) instead of
- * its free space; tapping it tries it again, a long press edits or removes it.
+ * The location picker the app icon crumb opens: every storage root with its icon (a
+ * cloud for a WebDAV share), name and free space, the current one highlighted (or a
+ * drive just plugged in), then "Add network share…". A share says "Not reachable" (or
+ * why it failed) instead of its free space; tapping it tries it again, a long press
+ * edits or removes it.
  * Tapping a root hands it to the [Host] activity. [update] redraws an open sheet as
  * drives and shares come and go; the sheet comes back after a rotation. Free space
  * is read off the main thread, a share's over the network.
@@ -103,10 +105,11 @@ class LocationSheet : BottomSheetDialogFragment() {
         val inflater = LayoutInflater.from(context)
         for (root in roots) {
             val row = inflater.inflate(R.layout.item_location, container, false)
-            row.findViewById<ImageView>(R.id.location_icon).setImageResource(iconOf(root.kind))
+            val share = Remotes.idOf(root.path)
+            val webDav = share != null && Remotes.share(share)?.kind == ShareKind.WEBDAV
+            row.findViewById<ImageView>(R.id.location_icon).setImageResource(if (webDav) R.drawable.ic_cloud else iconOf(root.kind))
             row.findViewById<TextView>(R.id.location_name).text = root.name
             val detail = row.findViewById<TextView>(R.id.location_detail)
-            val share = Remotes.idOf(root.path)
             if (share != null) {
                 detail.setText(R.string.share_connecting)
                 detail.visibility = View.VISIBLE

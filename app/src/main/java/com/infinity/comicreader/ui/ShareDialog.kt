@@ -1,10 +1,12 @@
 package com.infinity.comicreader.ui
 
 import android.app.Dialog
+import android.content.DialogInterface
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
+import android.view.autofill.AutofillManager
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
@@ -55,7 +57,7 @@ class ShareDialog : DialogFragment() {
             .setTitle(if (previous == null) R.string.share_add_title else R.string.share_edit_title)
             .setView(form)
             .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> dropAutofill() }
             .create()
         // Saving checks first, and a bad path keeps the form open.
         dialog.setOnShowListener {
@@ -64,6 +66,20 @@ class ShareDialog : DialogFragment() {
             button.setOnClickListener { save(store, button) }
         }
         return dialog
+    }
+
+    override fun onCancel(dialog: DialogInterface) {
+        dropAutofill()
+        super.onCancel(dialog)
+    }
+
+    /**
+     * Ends the autofill session before the form closes, so no password manager offers
+     * to save what was typed: recent Android versions fill and save even fields marked
+     * not important for autofill.
+     */
+    private fun dropAutofill() {
+        runCatching { context?.getSystemService(AutofillManager::class.java)?.cancel() }
     }
 
     private fun field(id: Int): EditText = form.findViewById(id)
@@ -105,6 +121,7 @@ class ShareDialog : DialogFragment() {
                     button.isEnabled = true
                     stored.onSuccess {
                         (activity as? LocationSheet.Host)?.onSharesChanged()
+                        dropAutofill()
                         dismissAllowingStateLoss()
                     }.onFailure {
                         Log.w(TAG, "Storing the share failed", it)

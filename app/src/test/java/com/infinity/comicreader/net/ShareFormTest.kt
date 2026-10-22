@@ -47,6 +47,32 @@ class ShareFormTest {
     }
 
     @Test
+    fun aWebDavShareTakesAnAddress() {
+        val share = ok(ShareForm.build("", "https://nas.local/dav/comics", "user", "pw", null, ShareKind.WEBDAV))
+        assertEquals(DavUrl(true, "nas.local", 443, "dav/comics"), share.path)
+        assertEquals("comics", share.name)
+        assertEquals(ShareKind.WEBDAV, share.kind)
+        assertEquals("nas.local", ok(ShareForm.build("", "nas.local", "", "", null, ShareKind.WEBDAV)).name)
+        assertEquals(
+            ShareForm.Result.Invalid(SharePath.Problem.INSECURE),
+            ShareForm.build("A", "http://nas.local/dav", "user", "pw", null, ShareKind.WEBDAV)
+        )
+        assertEquals(
+            ShareForm.Result.Invalid(SharePath.Problem.WEB_ADDRESS),
+            ShareForm.build("A", "https://nas.local/dav", "user", "pw", null, ShareKind.SMB)
+        )
+    }
+
+    @Test
+    fun editingCanSwitchHowTheShareIsReached() {
+        val first = ok(ShareForm.build("A", "nas.local/books", "user", "pw", null))
+        val edited = ok(ShareForm.build("A", "https://nas.local/books", "user", "", first, ShareKind.WEBDAV))
+        assertEquals(first.id, edited.id)
+        assertEquals("pw", edited.password)
+        assertEquals(ShareKind.WEBDAV, edited.kind)
+    }
+
+    @Test
     fun thePasswordStaysOutOfText() {
         val share = ok(ShareForm.build("A", "nas.local/books", "user", "hunter2", null))
         assertFalse(share.toString().contains("hunter2"))

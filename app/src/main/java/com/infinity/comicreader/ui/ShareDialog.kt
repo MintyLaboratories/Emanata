@@ -112,6 +112,8 @@ class ShareDialog : DialogFragment() {
             SharePath.Problem.BAD_HOST -> R.string.share_problem_host
             SharePath.Problem.BAD_PORT -> R.string.share_problem_port
             SharePath.Problem.BAD_NAME -> R.string.share_problem_name
+            SharePath.Problem.WEB_ADDRESS -> R.string.share_problem_web
+            SharePath.Problem.INSECURE -> R.string.share_problem_insecure
         }
     }
 }

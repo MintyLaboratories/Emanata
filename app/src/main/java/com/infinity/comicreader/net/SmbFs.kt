@@ -36,6 +36,8 @@ import com.hierynomus.smbj.share.File as SmbFile
  * at once.
  */
 class SmbFs(private val share: Share) : RemoteFs {
+    private val where = share.path as? SharePath ?: throw IllegalArgumentException("Not an SMB share: $share")
+
     /** Guards the fields below; never held across network I/O, so [close] never waits on it. */
     private val lock = Any()
 
@@ -110,7 +112,7 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     /** [path] inside the share, with the share's folder in front and `\` between names. */
     private fun smbPath(path: String): String =
-        listOf(share.path.dir, path).filter { it.isNotEmpty() }.joinToString("/").replace('/', '\\')
+        listOf(where.dir, path).filter { it.isNotEmpty() }.joinToString("/").replace('/', '\\')
 
     /** Runs [block] on the share, connecting first; once more on a new connection when the old one dropped. */
     private fun <T> call(block: (DiskShare) -> T): T {
@@ -141,7 +143,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             current()?.let { return it }
             remembered()?.let { throw it }
             disconnect()
-            val p = share.path
+            val p = where
             var c: Connection? = null
             var s: Session? = null
             try {
@@ -172,7 +174,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             var s: Session? = null
             try {
                 s = c.authenticate(auth)
-                val d = s.connectShare(share.path.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
+                val d = s.connectShare(where.share) as? DiskShare ?: throw RemoteException(RemoteException.Reason.NO_SHARE)
                 return s to d
             } catch (e: SMBApiException) {
                 runCatching { s?.close() }

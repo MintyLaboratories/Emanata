@@ -26,7 +26,12 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val id = o.optString("id").takeIf { it.isNotEmpty() } ?: continue
-            val path = SharePath(o.optString("host"), o.optInt("port", SharePath.DEFAULT_PORT), o.optString("share"), o.optString("dir"))
+            val path = if (o.optString(KEY_KIND) == KIND_WEBDAV) {
+                val secure = o.optBoolean(KEY_SECURE, true)
+                DavUrl(secure, o.optString("host"), o.optInt("port", DavUrl.defaultPort(secure)), o.optString("dir"))
+            } else {
+                SharePath(o.optString("host"), o.optInt("port", SharePath.DEFAULT_PORT), o.optString("share"), o.optString("dir"))
+            }
             val password = unseal(o.optString("secret"))
             val lost = password == null || o.optBoolean(KEY_LOST)
             out.add(Share(id, o.optString("name"), path, o.optString("user"), password.orEmpty(), passwordLost = lost))
@@ -58,7 +63,13 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
             arr.put(
                 JSONObject()
                     .put("id", s.id).put("name", s.name)
-                    .put("host", s.path.host).put("port", s.path.port).put("share", s.path.share).put("dir", s.path.dir)
+                    .put("host", s.path.host).put("port", s.path.port).put("dir", s.path.dir)
+                    .apply {
+                        when (val p = s.path) {
+                            is SharePath -> put("share", p.share)
+                            is DavUrl -> put(KEY_KIND, KIND_WEBDAV).put(KEY_SECURE, p.secure)
+                        }
+                    }
                     .put("user", s.user).put("secret", seal(s.password))
                     .apply { if (s.passwordLost) put(KEY_LOST, true) }
             )
@@ -77,6 +88,11 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
         private const val FILE = "shares"
         private const val KEY_LIST = "list"
         private const val KEY_LOST = "lost"
+
+        /** How a share is reached: absent for SMB, as stored before WebDAV. */
+        private const val KEY_KIND = "kind"
+        private const val KIND_WEBDAV = "webdav"
+        private const val KEY_SECURE = "secure"
         private val LOCK = Any()
 
         /** How passwords are sealed; tests stand in a key the JVM has. */

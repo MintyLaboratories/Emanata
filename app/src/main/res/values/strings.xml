@@ -76,6 +76,8 @@
     <string name="share_problem_host">Not a host name or address</string>
     <string name="share_problem_port">Not a port number (1–65535)</string>
     <string name="share_problem_name">Names cannot hold \\ / : * ? \" &lt; &gt; |</string>
+    <string name="share_problem_web">That is a web address: choose WebDAV</string>
+    <string name="share_problem_insecure">Use https://; plain http:// reaches only this device</string>
     <string name="share_edit">Edit…</string>
     <string name="share_remove">Remove</string>
     <string name="share_remove_title">Remove network share?</string>

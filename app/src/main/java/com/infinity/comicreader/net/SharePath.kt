@@ -6,7 +6,7 @@ package com.infinity.comicreader.net
  * takes it: `host/share/dir`, `host:port/share`, with `\` or a leading `smb://` or
  * `\\` accepted too.
  */
-data class SharePath(val host: String, val port: Int, val share: String, val dir: String) {
+data class SharePath(override val host: String, override val port: Int, val share: String, override val dir: String) : ShareAddress {
     /** As the form shows it: `host/share/dir`, the port only when it is not the default. */
     override fun toString(): String = buildString {
         append(if (':' in host) "[$host]" else host)
@@ -15,8 +15,16 @@ data class SharePath(val host: String, val port: Int, val share: String, val dir
         if (dir.isNotEmpty()) append('/').append(dir)
     }
 
-    /** Why a path cannot be used. */
-    enum class Problem { EMPTY, NO_SHARE, BAD_HOST, BAD_PORT, BAD_NAME }
+    /** Why a path or address cannot be used. */
+    enum class Problem {
+        EMPTY, NO_SHARE, BAD_HOST, BAD_PORT, BAD_NAME,
+
+        /** A web address given for an SMB share. */
+        WEB_ADDRESS,
+
+        /** Plain `http://` to another device, where the password would cross the network readable. */
+        INSECURE
+    }
 
     /** What [parse] makes of a path: a [SharePath], or the [Problem] with it. */
     sealed class Parsed {
@@ -36,10 +44,11 @@ data class SharePath(val host: String, val port: Int, val share: String, val dir
         fun parse(input: String): Parsed {
             var text = input.trim()
             if (text.isEmpty()) return Parsed.Invalid(Problem.EMPTY)
+            if (DavUrl.hasWebScheme(text)) return Parsed.Invalid(Problem.WEB_ADDRESS)
             if (text.startsWith("smb://", ignoreCase = true)) text = text.substring(6)
             text = text.replace('\\', '/').trimStart('/')
             val (authority, rest) = splitAuthority(text) ?: return Parsed.Invalid(Problem.BAD_HOST)
-            val (host, port) = hostAndPort(authority) ?: return Parsed.Invalid(Problem.BAD_HOST)
+            val (host, port) = hostAndPort(authority, DEFAULT_PORT) ?: return Parsed.Invalid(Problem.BAD_HOST)
             if (port == null) return Parsed.Invalid(Problem.BAD_PORT)
             val parts = rest.split('/').filter { it.isNotEmpty() }
             if (parts.isEmpty()) return Parsed.Invalid(Problem.NO_SHARE)
@@ -48,7 +57,7 @@ data class SharePath(val host: String, val port: Int, val share: String, val dir
         }
 
         /** The host part (up to the first `/`, a bracketed IPv6 address whole) and the rest. */
-        private fun splitAuthority(text: String): Pair<String, String>? {
+        internal fun splitAuthority(text: String): Pair<String, String>? {
             if (text.startsWith("[")) {
                 val close = text.indexOf(']')
                 if (close < 0) return null
@@ -59,8 +68,11 @@ data class SharePath(val host: String, val port: Int, val share: String, val dir
             return if (slash < 0) text to "" else text.substring(0, slash) to text.substring(slash + 1)
         }
 
-        /** The host and port of [authority]; a null port when one is given but out of range, null when the host is bad. */
-        private fun hostAndPort(authority: String): Pair<String, Int?>? {
+        /**
+         * The host and port of [authority], [defaultPort] when it names none; a null port
+         * when one is given but out of range, null when the host is bad.
+         */
+        internal fun hostAndPort(authority: String, defaultPort: Int): Pair<String, Int?>? {
             val host: String
             val portText: String?
             if (authority.startsWith("[")) {
@@ -75,7 +87,7 @@ data class SharePath(val host: String, val port: Int, val share: String, val dir
                 portText = if (':' in authority) authority.substringAfter(':') else null
                 if (!HOST_NAME.matches(host)) return null
             }
-            if (portText == null) return host to DEFAULT_PORT
+            if (portText == null) return host to defaultPort
             val port = portText.toIntOrNull()?.takeIf { it in 1..65535 }
             return host to port
         }

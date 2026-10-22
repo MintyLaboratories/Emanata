@@ -52,6 +52,19 @@ class ShareStoreTest {
     }
 
     @Test
+    fun webDavSharesRoundTripBesideSmbOnes() {
+        val store = ShareStore(context, box)
+        val dav = Share("d3", "Share D", DavUrl(true, "nas.local", 8443, "dav/comics"), "user", "pw-d")
+        val local = Share("d4", "Share E", DavUrl(false, "localhost", 8080, ""), "", "")
+        store.put(share("a1", "Share A", "pw-a"))
+        store.put(dav)
+        store.put(local)
+        assertEquals(listOf(share("a1", "Share A", "pw-a"), dav, local), ShareStore(context, box).all())
+        assertEquals(ShareKind.WEBDAV, store.get("d3")!!.kind)
+        assertEquals(ShareKind.SMB, store.get("a1")!!.kind)
+    }
+
+    @Test
     fun passwordsAreNeverStoredInTheClear() {
         ShareStore(context, box).put(share("a1", "Share A", "plain-secret"))
         val stored = context.getSharedPreferences("shares", 0).all.values.joinToString()

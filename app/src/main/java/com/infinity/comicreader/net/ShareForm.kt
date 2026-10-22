@@ -8,16 +8,27 @@ object ShareForm {
     }
 
     /**
-     * The share the form describes, keeping [previous]'s id when editing one. A blank
-     * [name] takes the path's last folder (or the share's name); a blank [password]
-     * while editing keeps [previous]'s, lost or not.
+     * The share the form describes, reached as [kind] says, keeping [previous]'s id
+     * when editing one. A blank [name] takes the path's last folder (else the share's
+     * name on SMB, the host on WebDAV); a blank [password] while editing keeps
+     * [previous]'s, lost or not.
      */
-    fun build(name: String, path: String, user: String, password: String, previous: Share?): Result {
-        val parsed = when (val p = SharePath.parse(path)) {
-            is SharePath.Parsed.Invalid -> return Result.Invalid(p.problem)
-            is SharePath.Parsed.Valid -> p.path
+    fun build(name: String, path: String, user: String, password: String, previous: Share?, kind: ShareKind = ShareKind.SMB): Result {
+        val parsed: ShareAddress = when (kind) {
+            ShareKind.SMB -> when (val p = SharePath.parse(path)) {
+                is SharePath.Parsed.Invalid -> return Result.Invalid(p.problem)
+                is SharePath.Parsed.Valid -> p.path
+            }
+            ShareKind.WEBDAV -> when (val p = DavUrl.parse(path)) {
+                is DavUrl.Parsed.Invalid -> return Result.Invalid(p.problem)
+                is DavUrl.Parsed.Valid -> p.url
+            }
         }
-        val label = name.trim().ifEmpty { parsed.dir.substringAfterLast('/').ifEmpty { parsed.share } }
+        val top = when (parsed) {
+            is SharePath -> parsed.share
+            is DavUrl -> parsed.host
+        }
+        val label = name.trim().ifEmpty { parsed.dir.substringAfterLast('/').ifEmpty { top } }
         val keep = password.isEmpty() && previous != null
         val secret = if (keep) previous!!.password else password
         val lost = keep && previous!!.passwordLost

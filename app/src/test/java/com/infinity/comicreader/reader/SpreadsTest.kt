@@ -463,4 +463,91 @@ class SpreadsTest {
             assertEquals(paths.indices.toList(), views.flatMap { it.toList() })
         }
     }
+
+    // -------------------------------------------------------------- seams
+
+    private val match = SpreadSeams.Verdict(SpreadSeams.Seam.MATCH, 0.9)
+    private val weakMatch = SpreadSeams.Verdict(SpreadSeams.Seam.MATCH, 0.4)
+    private val noMatch = SpreadSeams.Verdict(SpreadSeams.Seam.NO_MATCH, 1.0)
+
+    /** Seams after each of [count] pages: [matches] at the pages given, the rest not matching. */
+    private fun seams(count: Int, matches: Map<Int, SpreadSeams.Verdict>): List<SpreadSeams.Verdict?> =
+        List(count) { matches[it] ?: noMatch }
+
+    @Test
+    fun aMatchingSeamAcrossTwoScreensShiftsTheRun() {
+        val paths = book(run("page", 1..9, pad = 2))
+        assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page"))
+        // page03 runs on into page04: they share a screen.
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)))
+        assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = options))
+        // A seam that agrees with the pairing changes nothing.
+        assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page", options = Spreads.Options(seams = seams(paths.size, mapOf(3 to match)))))
+    }
+
+    @Test
+    fun aWeakLoneMatchOrMixedMatchesChangeNothing() {
+        val paths = book(run("page", 1..9, pad = 2))
+        val plain = "[01][02|03][04|05][06|07][08|09]"
+        assertEquals(plain, screens(paths, "page", options = Spreads.Options(seams = seams(paths.size, mapOf(2 to weakMatch)))))
+        // Two say shift, one says not: not three times as many.
+        assertEquals(plain, screens(paths, "page", options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match, 4 to match, 3 to match)))))
+        // Two weak ones together do tell.
+        assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = Spreads.Options(seams = seams(paths.size, mapOf(2 to weakMatch, 4 to weakMatch)))))
+    }
+
+    @Test
+    fun theManualShiftStillFlipsASeamCorrection() {
+        val paths = book(run("page", 1..9, pad = 2))
+        val options = Spreads.Options(shift = true, seams = seams(paths.size, mapOf(2 to match)))
+        assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page", options = options))
+    }
+
+    @Test
+    fun seamsOutrankSpreadVotesFromElsewhere() {
+        // The spread votes odd left pages; after it, page 026 runs on into 027.
+        val options = Spreads.Options(seams = seams(harbor.size, mapOf(harbor.indexOfFirst { Spreads.stemOf(it) == "Pale Harbor 018-026" } to match)))
+        assertTrue(screens(harbor, "Pale Harbor 018-", options = options).endsWith("[023-024][025][026|027][028|029][030][zWave]"))
+        assertTrue(screens(harbor, "Pale Harbor 018-", options = options).startsWith("[000][001|002]"))
+    }
+
+    @Test
+    fun unnumberedPagesShiftByTheirSeams() {
+        val paths = listOf("alpha.jpg", "bravo.jpg", "charlie.jpg", "delta.jpg", "echo.jpg", "foxtrot.jpg")
+        assertEquals("[alpha][bravo|charlie][delta|echo][foxtrot]", screens(paths, ""))
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)))
+        assertEquals("[alpha][bravo][charlie|delta][echo|foxtrot]", screens(paths, "", options = options))
+        assertEquals("[alpha][bravo|charlie][delta|echo][foxtrot]", screens(paths, "", options = options.copy(shift = true)))
+    }
+
+    @Test
+    fun mergeShowsMatchingPagesAsOne() {
+        val paths = book(run("page", 1..7, pad = 2))
+        val a = Spreads.classify(paths)
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match, 3 to match)))
+        val views = Spreads.merge(a, options)
+        assertEquals(listOf(listOf(0), listOf(1), listOf(2, 3), listOf(4), listOf(5), listOf(6)), views.map { it.toList() })
+        assertEquals(setOf(2), Spreads.joined(views, options))
+        // Without matches, every page alone.
+        assertEquals(paths.indices.map { listOf(it) }, Spreads.merge(a, Spreads.Options()).map { it.toList() })
+    }
+
+    @Test
+    fun mergeLeavesCoversAndWidePagesAlone() {
+        val paths = book(run("page", 1..6, pad = 2))
+        val sizes = paths.map { if (Spreads.stemOf(it) == "page04") wide else portrait }
+        val a = Spreads.classify(paths, sizes)
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(0 to match, 2 to match, 3 to match)))
+        assertEquals(paths.indices.map { listOf(it) }, Spreads.merge(a, options).map { it.toList() })
+        // Covers join their neighbor only without "cover alone".
+        assertEquals(listOf(0, 1), Spreads.merge(a, options.copy(coverAlone = false)).first().toList())
+    }
+
+    @Test
+    fun pairsThatRunOnAreJoined() {
+        val paths = book(run("page", 1..9, pad = 2))
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(3 to match)))
+        val views = Spreads.pair(Spreads.classify(paths), options)
+        assertEquals(setOf(2), Spreads.joined(views, options))
+    }
 }

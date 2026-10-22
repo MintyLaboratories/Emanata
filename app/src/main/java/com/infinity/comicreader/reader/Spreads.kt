@@ -18,8 +18,11 @@ import java.util.Locale
  * Shown alone: the first page (an option), cover blocks and variant covers, inserted
  * pages (`156b`), wide pages, filename spreads, scanner tags at the end and pages
  * outside any family. Pairing restarts after each of them. Within a run of story
- * pages, the left pages' parity comes from what spreads say (a spread starts on a
- * left page), else the run's first page is a left page; [Options.shift] flips it.
+ * pages, the left pages' parity comes from the seams between them when they tell
+ * ([Options.seams]: the picture runs on from one page into the next, so those two share
+ * a screen), else from what spreads say (a spread starts on a left page), else the run's
+ * first page is a left page; [Options.shift] flips it. In one-page reading, two pages
+ * whose seam matches show as one ([merge]).
  */
 object Spreads {
 
@@ -103,8 +106,19 @@ object Spreads {
         }
     }
 
-    /** Pairing choices: the [coverAlone] option and the book's manual [shift] by one page. */
-    data class Options(val coverAlone: Boolean = true, val shift: Boolean = false)
+    /**
+     * Pairing choices: the [coverAlone] option, the book's manual [shift] by one page and
+     * the [seams] found so far, by page: the seam between that page and the next in
+     * reading order, null where not checked.
+     */
+    data class Options(
+        val coverAlone: Boolean = true,
+        val shift: Boolean = false,
+        val seams: List<SpreadSeams.Verdict?> = emptyList()
+    ) {
+        /** True when the picture runs on from page [i] into the next. */
+        fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
+    }
 
     // ------------------------------------------------------------------ tokens
 
@@ -349,17 +363,7 @@ object Spreads {
     fun pair(analysis: Analysis, options: Options = Options()): List<IntArray> {
         val pages = analysis.pages
         if (analysis.landscape) return pages.indices.map { intArrayOf(it) }
-        val pairable = BooleanArray(pages.size) { i ->
-            val k = pages[i].kind
-            when {
-                i == 0 && options.coverAlone -> false
-                // A wide page is alone whatever its kind, a wraparound cover too.
-                pages[i].aspect > 1.0 -> false
-                k == Kind.STORY -> true
-                !options.coverAlone && (k == Kind.FRONT_COVER || k == Kind.VARIANT_COVER) -> true
-                else -> false
-            }
-        }
+        val pairable = pairable(pages, options)
         val segments = segments(pages, pairable)
         val votes = votes(pages)
         val out = ArrayList<IntArray>(pages.size)
@@ -370,20 +374,91 @@ object Spreads {
             while (at < seg.pages.first()) out += intArrayOf(at++)
             val pairs = if (seg.numbered) {
                 val soft = seg.soft && seg.group == previousGroup
-                var parity = parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
+                var parity = seamSide(numberedSeams(seg, pages, options)) ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
                 if (options.shift) parity = 1 - parity
                 previousParity = if (options.shift) 1 - parity else parity
                 previousGroup = seg.group
                 pairNumbered(seg.pages, pages, parity)
             } else {
                 previousGroup = -2
-                pairPositional(seg.pages, if (options.shift) 1 else 0)
+                val offset = seamSide(positionalSeams(seg, options)) ?: 0
+                pairPositional(seg.pages, if (options.shift) 1 - offset else offset)
             }
             out += pairs
             at = seg.pages.last() + 1
         }
         while (at < pages.size) out += intArrayOf(at++)
         return out
+    }
+
+    /** Pages that may share a screen: story pages, covers too without [Options.coverAlone]; never wide ones. */
+    private fun pairable(pages: List<Page>, options: Options) = BooleanArray(pages.size) { i ->
+        val k = pages[i].kind
+        when {
+            i == 0 && options.coverAlone -> false
+            // A wide page is alone whatever its kind, a wraparound cover too.
+            pages[i].aspect > 1.0 -> false
+            k == Kind.STORY -> true
+            !options.coverAlone && (k == Kind.FRONT_COVER || k == Kind.VARIANT_COVER) -> true
+            else -> false
+        }
+    }
+
+    /**
+     * The screens of a one-page reader: each page alone, but for two pages that may share
+     * a screen whose seam matches ([Options.seams]), shown as one, first come first.
+     */
+    fun merge(analysis: Analysis, options: Options): List<IntArray> {
+        val pages = analysis.pages
+        if (analysis.landscape || options.seams.none { it?.match == true }) return pages.indices.map { intArrayOf(it) }
+        val pairable = pairable(pages, options)
+        val out = ArrayList<IntArray>(pages.size)
+        var i = 0
+        while (i < pages.size) {
+            if (i + 1 < pages.size && pairable[i] && pairable[i + 1] && pages[i].dir == pages[i + 1].dir && options.joins(i)) {
+                out += intArrayOf(i, i + 1)
+                i += 2
+            } else {
+                out += intArrayOf(i++)
+            }
+        }
+        return out
+    }
+
+    /** The screens of [views] (page indices in reading order) whose two pages are one picture, by their seam. */
+    fun joined(views: List<IntArray>, options: Options): Set<Int> =
+        views.indices.filterTo(HashSet()) { v -> views[v].size == 2 && views[v][1] == views[v][0] + 1 && options.joins(views[v][0]) }
+
+    /** A seam that runs on: the side, 0 or 1, that puts its first page on the left, and how sure it is. */
+    private class SeamVote(val side: Int, val confidence: Double)
+
+    /** Seams that run on between consecutive numbers of [seg], each voting the parity of its first page's number. */
+    private fun numberedSeams(seg: Segment, pages: List<Page>, options: Options): List<SeamVote> =
+        seg.pages.zipWithNext().mapNotNull { (a, b) ->
+            val v = options.seams.getOrNull(a)
+            if (v?.match == true && pages[b].number == pages[a].number + 1) SeamVote(Math.floorMod(pages[a].number, 2L).toInt(), v.confidence) else null
+        }
+
+    /** Seams that run on within [seg], each voting the offset that puts its first page on the left. */
+    private fun positionalSeams(seg: Segment, options: Options): List<SeamVote> =
+        seg.pages.withIndex().toList().dropLast(1).mapNotNull { (k, a) ->
+            val v = options.seams.getOrNull(a)
+            if (v?.match == true) SeamVote(k % 2, v.confidence) else null
+        }
+
+    /**
+     * The side seams settle: one with at least two matches and three times the other's, or
+     * a lone [SpreadSeams.STRONG] match with none against it; null when they do not tell.
+     */
+    private fun seamSide(votes: List<SeamVote>): Int? {
+        if (votes.isEmpty()) return null
+        for (side in 0..1) {
+            val mine = votes.filter { it.side == side }
+            val other = votes.size - mine.size
+            if (mine.size >= 2 && mine.size >= 3 * other) return side
+            if (mine.size == 1 && other == 0 && mine[0].confidence >= SpreadSeams.STRONG) return side
+        }
+        return null
     }
 
     /** Runs of pairable pages, broken by every other page and by a change of group or folder. */

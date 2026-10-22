@@ -102,6 +102,21 @@ class RemoteBooksTest {
     }
 
     @Test
+    fun rarAndTarListingsFetchLittleAroundEachHeader() {
+        val random = Random(11)
+        val many = Array(20) { entry("%02d.jpg".format(it), random.nextBytes(512 * 1024)) }
+        File(share, "many.cbr").writeBytes(Fixtures.rar4Bytes(*many))
+        File(share, "many.cbt").writeBytes(Fixtures.tarBytes(*many))
+        for (name in listOf("many.cbr", "many.cbt")) {
+            val before = fake.bytesRead
+            ArchiveReader.open(remote(name), "UTF-8")!!.use { assertEquals(20, it.entries.size) }
+            val read = fake.bytesRead - before
+            assertTrue("$name: read $read bytes", read < 2L * 1024 * 1024)
+        }
+        assertEquals(0, copies())
+    }
+
+    @Test
     fun theReaderFetchesARarFirstAndReusesTheCopy() {
         File(share, "b.cbr").writeBytes(Fixtures.rar4Bytes(*pages))
         var progress = 0L to 0L

@@ -6,17 +6,19 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 class RemoteChannelTest {
 
-    /** [bytes] as an open file on a share, counting reads. */
+    /** [bytes] as an open file on a share, recording each read's position and length. */
     private class Bytes(private val bytes: ByteArray) : RemoteInput {
-        var reads = 0
+        val asked = ArrayList<Pair<Long, Int>>()
+        val reads get() = asked.size
         override val length: Long = bytes.size.toLong()
 
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
-            reads++
+            asked += position to count
             if (position >= bytes.size) return -1
             val n = minOf(count.toLong(), bytes.size - position).toInt()
             System.arraycopy(bytes, position.toInt(), buffer, offset, n)
@@ -29,30 +31,48 @@ class RemoteChannelTest {
     private val data = ByteArray(10_000) { (it * 7).toByte() }
 
     @Test
-    fun readsAcrossBlocksAndSeeks() {
+    fun smallReadsInARowFetchGrowingRuns() {
         val input = Bytes(data)
-        val channel = RemoteChannel(input, blockSize = 1024, blocks = 4)
-        val buf = ByteBuffer.allocate(3000)
-        channel.position(500)
-        assertEquals(3000, channel.read(buf))
-        assertArrayEquals(data.copyOfRange(500, 3500), buf.array())
-        assertEquals(3500, channel.position())
-        assertEquals(4, channel.fetches)
-        // Kept blocks are not fetched again.
-        channel.position(600)
-        assertEquals(100, channel.read(ByteBuffer.allocate(100)))
-        assertEquals(4, channel.fetches)
-        channel.position(9_990)
-        val tail = ByteBuffer.allocate(100)
-        assertEquals(10, channel.read(tail))
-        assertEquals(-1, channel.read(ByteBuffer.allocate(1)))
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096)
+        val out = ByteArrayOutputStream()
+        val piece = ByteArray(100)
+        while (true) {
+            val n = channel.read(piece, 0, piece.size)
+            if (n < 0) break
+            out.write(piece, 0, n)
+        }
+        assertArrayEquals(data, out.toByteArray())
+        assertEquals(listOf(0L to 1024, 1024L to 2048, 3072L to 4096, 7168L to 2832), input.asked)
         assertEquals(10_000, channel.size())
     }
 
     @Test
-    fun onlyTheLastBlocksAreKept() {
-        val channel = RemoteChannel(Bytes(data), blockSize = 1000, blocks = 2)
-        for (at in listOf(0L, 1000L, 2000L, 0L)) {
+    fun aSeekFetchesASmallRunAndKeptRunsAreReused() {
+        val input = Bytes(data)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096)
+        channel.read(ByteBuffer.allocate(10))
+        channel.position(5000)
+        channel.read(ByteBuffer.allocate(10))
+        channel.position(600)
+        assertEquals(100, channel.read(ByteBuffer.allocate(100)))
+        // Following on from the last run fetched grows the next one.
+        channel.position(5120)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(listOf(0L to 1024, 4096L to 1024, 5120L to 2048), input.asked)
+        // A large read fetches what it asks for in one run.
+        channel.position(8000)
+        val tail = ByteBuffer.allocate(2000)
+        assertEquals(2000, channel.read(tail))
+        assertArrayEquals(data.copyOfRange(8000, 10_000), tail.array())
+        assertEquals(7168L to 2832, input.asked.last())
+        assertEquals(-1, channel.read(ByteBuffer.allocate(1)))
+    }
+
+    @Test
+    fun onlyTheMostRecentRunsAreKept() {
+        val input = Bytes(data)
+        val channel = RemoteChannel(input, minBlock = 1000, maxBlock = 1000, maxCached = 2000)
+        for (at in listOf(0L, 3000L, 6000L, 0L)) {
             channel.position(at)
             channel.read(ByteBuffer.allocate(10))
         }
@@ -64,7 +84,7 @@ class RemoteChannelTest {
         val big = ByteArray(3 shl 20) { (it % 251).toByte() }
         val zip = Fixtures.zipBytes(Fixtures.entry("a.png", big), Fixtures.entry("b.png"), Fixtures.entry("ComicInfo.xml"))
         val input = Bytes(zip)
-        ZipFile.builder().setSeekableByteChannel(RemoteChannel(input, blockSize = 64 * 1024)).get().use { file ->
+        ZipFile.builder().setSeekableByteChannel(RemoteChannel(input)).setIgnoreLocalFileHeader(true).get().use { file ->
             val names = file.entries.toList().map { it.name }
             assertEquals(listOf("a.png", "b.png", "ComicInfo.xml"), names)
             val b = file.getInputStream(file.getEntry("b.png")).use { it.readBytes() }

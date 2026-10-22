@@ -8,23 +8,34 @@ import java.nio.channels.SeekableByteChannel
 
 /**
  * A read-only channel over a file on a share, for archive readers that seek (zip,
- * 7z, tar, rar). Reads go through whole aligned blocks of [blockSize] bytes, the
- * last [blocks] of them kept, so the many small reads of an archive's headers and
- * a page streamed in small pieces cost few round trips. Calls are serialized.
+ * 7z, tar, rar). Reads go through runs fetched from [minBlock]-aligned offsets: a
+ * run after a seek is [minBlock] long, so walking an archive's headers fetches little
+ * around each; each run that follows on from the last fetched doubles, up to
+ * [maxBlock], so a page streamed in small pieces costs few round trips. The most
+ * recently used runs are kept, up to [maxCached] bytes. Calls are serialized.
  */
 class RemoteChannel(
     private val input: RemoteInput,
-    private val blockSize: Int = BLOCK_BYTES,
-    private val blocks: Int = MAX_BLOCKS
+    private val minBlock: Int = MIN_BLOCK_BYTES,
+    private val maxBlock: Int = MAX_BLOCK_BYTES,
+    private val maxCached: Long = MAX_CACHED_BYTES
 ) : SeekableByteChannel {
     private var position = 0L
     private var open = true
     private val size = input.length
 
-    /** Kept blocks by index, least recently used first. */
-    private val cache = object : LinkedHashMap<Long, ByteArray>(blocks, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, ByteArray>) = size > blocks
+    /** A fetched run of the file, from [start]. */
+    private class Run(val start: Long, val bytes: ByteArray) {
+        val end: Long get() = start + bytes.size
     }
+
+    /** Kept runs, least recently used first. */
+    private val runs = ArrayList<Run>()
+    private var cachedBytes = 0L
+
+    /** Where the last fetched run ended, and how long a run that follows on from it is. */
+    private var lastEnd = -1L
+    private var window = minBlock
 
     /** Round trips made so far; for tests. */
     var fetches = 0
@@ -37,12 +48,11 @@ class RemoteChannel(
         if (position >= size) return -1
         var total = 0
         while (dst.hasRemaining() && position < size) {
-            val index = position / blockSize
-            val block = block(index)
-            val at = (position - index * blockSize).toInt()
-            if (at >= block.size) break
-            val n = minOf(dst.remaining(), block.size - at)
-            dst.put(block, at, n)
+            val run = runAt(position, dst.remaining())
+            val at = (position - run.start).toInt()
+            if (at >= run.bytes.size) break
+            val n = minOf(dst.remaining(), run.bytes.size - at)
+            dst.put(run.bytes, at, n)
             position += n
             total += n
         }
@@ -53,10 +63,19 @@ class RemoteChannel(
     @Synchronized
     fun read(buffer: ByteArray, offset: Int, count: Int): Int = read(ByteBuffer.wrap(buffer, offset, count))
 
-    private fun block(index: Long): ByteArray {
-        cache[index]?.let { return it }
-        val start = index * blockSize
-        val length = minOf(blockSize.toLong(), size - start).toInt()
+    /** The kept run holding [at], else one fetched from there, long enough for [wanted] bytes up to [maxBlock]. */
+    private fun runAt(at: Long, wanted: Int): Run {
+        for (i in runs.indices.reversed()) {
+            val run = runs[i]
+            if (at >= run.start && at < run.end) {
+                if (i != runs.lastIndex) runs.add(runs.removeAt(i))
+                return run
+            }
+        }
+        val start = at - at % minBlock
+        window = if (start == lastEnd) minOf(window.toLong() * 2, maxBlock.toLong()).toInt() else minBlock
+        val reach = (at - start + wanted).coerceAtMost(maxBlock.toLong()).toInt()
+        val length = minOf(maxOf(window, reach).toLong(), size - start).toInt()
         val bytes = ByteArray(length)
         var n = 0
         while (n < length) {
@@ -65,9 +84,12 @@ class RemoteChannel(
             n += r
         }
         fetches++
-        val block = if (n == length) bytes else bytes.copyOf(n)
-        cache[index] = block
-        return block
+        val run = Run(start, if (n == length) bytes else bytes.copyOf(n))
+        lastEnd = run.end
+        runs.add(run)
+        cachedBytes += run.bytes.size
+        while (cachedBytes > maxCached && runs.size > 1) cachedBytes -= runs.removeAt(0).bytes.size
+        return run
     }
 
     override fun write(src: ByteBuffer): Int = throw NonWritableChannelException()
@@ -100,7 +122,8 @@ class RemoteChannel(
     override fun close() {
         if (!open) return
         open = false
-        cache.clear()
+        runs.clear()
+        cachedBytes = 0
         input.close()
     }
 
@@ -109,8 +132,9 @@ class RemoteChannel(
     }
 
     companion object {
-        const val BLOCK_BYTES = 1 shl 20
-        const val MAX_BLOCKS = 8
+        const val MIN_BLOCK_BYTES = 64 * 1024
+        const val MAX_BLOCK_BYTES = 1 shl 20
+        const val MAX_CACHED_BYTES = 8L shl 20
 
         /** Opens the file at [path] on its share as a channel. */
         @Throws(IOException::class)

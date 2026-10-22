@@ -69,6 +69,7 @@ class DavUrlTest {
         assertEquals(Problem.EMPTY, problem("  "))
         assertEquals(Problem.BAD_HOST, problem("https://nas_local!/dav"))
         assertEquals(Problem.BAD_HOST, problem("https://user@nas.local/dav"))
+        assertEquals(Problem.BAD_HOST, problem("https://user:pw@nas.local/dav"))
         assertEquals(Problem.BAD_HOST, problem("smb://nas.local/books"))
         assertEquals(Problem.BAD_HOST, problem("""\\nas.local\books"""))
         assertEquals(Problem.BAD_HOST, problem("https:///dav"))
@@ -88,6 +89,15 @@ class DavUrlTest {
             assertEquals(text, valid(text).toString())
             assertEquals(valid(text), valid(valid(text).toString()))
         }
+    }
+
+    @Test
+    fun foldersMayHoldAnAt() {
+        val url = valid("https://cloud.example.com/remote.php/dav/files/user%40example.com/")
+        assertEquals("remote.php/dav/files/user@example.com", url.dir)
+        assertEquals("https://cloud.example.com/remote.php/dav/files/user@example.com", url.toString())
+        assertEquals(url, valid(url.toString()))
+        assertEquals(url, valid("https://cloud.example.com/remote.php/dav/files/user@example.com/"))
     }
 
     @Test

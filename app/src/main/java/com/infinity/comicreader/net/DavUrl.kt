@@ -53,8 +53,10 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
                 secure = false
             }
             text = text.substringBefore('#').substringBefore('?')
-            if (text.startsWith("/") || "://" in text || '\\' in text || '@' in text) return Parsed.Invalid(Problem.BAD_HOST)
+            if (text.startsWith("/") || "://" in text || '\\' in text) return Parsed.Invalid(Problem.BAD_HOST)
             val (authority, rest) = SharePath.splitAuthority(text) ?: return Parsed.Invalid(Problem.BAD_HOST)
+            // A user in the address (`user@host`) is refused; folders may hold `@`.
+            if ('@' in authority) return Parsed.Invalid(Problem.BAD_HOST)
             val (host, port) = SharePath.hostAndPort(authority, defaultPort(secure)) ?: return Parsed.Invalid(Problem.BAD_HOST)
             if (port == null) return Parsed.Invalid(Problem.BAD_PORT)
             if (!secure && !isLoopback(host)) return Parsed.Invalid(Problem.INSECURE)

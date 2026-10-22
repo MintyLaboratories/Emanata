@@ -281,8 +281,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   save the page as an image, crop it, hide it, or rotate the screen.
 - **Hide this page:** a hidden page is left out of reading, page counts, the
   seek strip, page grids and peeks for that book; history and bookmarks keep
-  their pages. Book info lists hidden pages (**Unhide pages…**) to show them
-  again. Kept per book, moved with it, and backed up.
+  their pages, except a bookmark on the hidden page, which moves to the next
+  shown page for good (joining its note to a bookmark already there). Book info
+  lists hidden pages (**Unhide pages…**) to show them again. Kept per book,
+  moved with it, and backed up; restoring a backup made without them shows
+  every page again.
 - **Apply to: This folder / All books** at the top of the reader settings:
   *This folder* keeps the whole layout (paged or continuous, direction, fit,
   two-page, spreads, auto-crop, page gap) for the book's folder; *All books* changes the defaults and

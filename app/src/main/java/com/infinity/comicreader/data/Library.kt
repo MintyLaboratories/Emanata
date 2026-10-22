@@ -168,7 +168,8 @@ class Library(context: Context) {
     /**
      * Leaves [hidden] out of the book at [path], of [pageCount] pages. Its history and
      * bookmarks count pages as shown, so they move to the same pages counted anew; a
-     * bookmark on a page now hidden moves to the next page shown.
+     * bookmark on a page now hidden moves to the next page shown, or joins its note to
+     * the bookmark already there.
      */
     fun setHiddenPages(path: String, hidden: Set<Int>, pageCount: Int) {
         synchronized(LOCK) {
@@ -186,12 +187,20 @@ class Library(context: Context) {
             }
             val marks = bookmarks()
             if (marks.any { it.path == path }) {
-                val seen = HashSet<Int>()
+                // Bookmarks landing on one page become the one already there, their notes joined.
+                val merged = marks.filter { it.path == path }
+                    .groupBy { remap(it.page) }
+                    .mapValues { (page, group) ->
+                        val keep = group.firstOrNull { HiddenPages.toBook(it.page, old) !in new } ?: group.first()
+                        val notes = (listOf(keep) + (group - keep)).map { it.note }.filter { it.isNotBlank() }.distinct()
+                        keep.copy(page = page, note = notes.joinToString("\n"))
+                    }
+                val written = HashSet<Int>()
                 writeBookmarks(
                     marks.mapNotNull { b ->
                         if (b.path != path) return@mapNotNull b
                         val page = remap(b.page)
-                        if (seen.add(page)) b.copy(page = page) else null
+                        if (written.add(page)) merged.getValue(page) else null
                     }
                 )
             }

@@ -69,6 +69,23 @@ class LibraryHiddenPagesTest {
     }
 
     @Test
+    fun aBookmarkMovedOntoAnotherKeepsBothNotes() {
+        val path = "/books/a.cbz"
+        // Newest first: the moved bookmark comes before the one already on page 3.
+        library.addBookmark(Bookmark(path, "a.cbz", 3, "kept note", 1))
+        library.addBookmark(Bookmark(path, "a.cbz", 2, "moved note", 2))
+        library.setHiddenPages(path, setOf(2), 5)
+        val marks = library.bookmarksFor(path)
+        assertEquals(1, marks.size)
+        assertEquals(2, marks[0].page)
+        assertEquals(1L, marks[0].time)
+        assertEquals("kept note\nmoved note", marks[0].note)
+        // Showing the page again leaves the bookmark on its own page.
+        library.setHiddenPages(path, emptySet(), 5)
+        assertEquals(listOf(3), library.bookmarksFor(path).map { it.page })
+    }
+
+    @Test
     fun hiddenPagesFollowRenamesAndDeletes() {
         library.setHiddenPages("/books/old/a.cbz", setOf(0), 4)
         library.setHiddenPages("/books/keep.cbz", setOf(1), 4)

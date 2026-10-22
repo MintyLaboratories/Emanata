@@ -106,7 +106,7 @@ object Seams {
     }
 
     /** [values] area-averaged (or spread) to [LENGTH] points. */
-    private fun resample(values: DoubleArray): FloatArray {
+    internal fun resample(values: DoubleArray): FloatArray {
         val out = FloatArray(LENGTH)
         val scale = values.size.toDouble() / LENGTH
         for (i in 0 until LENGTH) {
@@ -128,6 +128,6 @@ object Seams {
         return out
     }
 
-    private fun luma(argb: Int): Double =
+    internal fun luma(argb: Int): Double =
         0.299 * ((argb shr 16) and 0xFF) + 0.587 * ((argb shr 8) and 0xFF) + 0.114 * (argb and 0xFF)
 }

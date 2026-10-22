@@ -932,7 +932,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /** Sort and filter values as found so far: folder totals and what books' contents told. */
-    private fun values() = EntryValues(folderSizes, prefs.detectDirection) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
+    private fun values(hidden: Map<String, Int>) =
+        EntryValues(folderSizes, prefs.detectDirection, hidden) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
 
     /**
      * Shows the entries matching the search in the tab's order. Unless [resort], the
@@ -949,13 +950,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         val sort = prefs.sort(tabName())
         val filter = prefs.filter(tabName())
-        val live = values()
+        val hidden = library.hiddenCounts()
+        val live = values(hidden)
         val order = sortValues.takeIf { !resort } ?: live.frozen(searched, sort.keys).also { sortValues = it }
         val browsing = mode == TAB_BROWSE
         val passing = if (filter.isActive) searched.filter { filter.accepts(it, live, browsing) } else searched
 
         shown.clear()
-        val hidden = library.hiddenCounts()
         shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it, hidden) })
         filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
         if (resort) scheduleFacts(sort.keys + filter.keys)
@@ -984,7 +985,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (entry.isDir) return entry
         val facts = factsCache.get(entry.path, entry.size) ?: return entry
         var out = entry
-        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = (facts.pages - (hidden[entry.path] ?: 0)).coerceAtLeast(1))
+        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.shownPages(hidden[entry.path] ?: 0))
         val detected = facts.detected?.direction
         if (detected != null && !entry.directionSet && prefs.detectDirection && detected != entry.direction) out = out.copy(direction = detected)
         return out
@@ -1222,9 +1223,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val entries = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
         val sort = prefs.sort(Prefs.TAB_BROWSE)
         val filter = prefs.filter(Prefs.TAB_BROWSE)
-        val live = values()
-        val passing = if (filter.isActive) entries.filter { filter.accepts(it, live, true) } else entries
         val hidden = library.hiddenCounts()
+        val live = values(hidden)
+        val passing = if (filter.isActive) entries.filter { filter.accepts(it, live, true) } else entries
         return passing.sortedWith(LibrarySort.comparator(sort, live.frozen(passing, sort.keys))).map { withFacts(it, hidden) }
     }
 

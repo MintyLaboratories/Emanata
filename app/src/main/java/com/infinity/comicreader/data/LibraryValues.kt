@@ -96,16 +96,21 @@ data class BookFacts(
 ) {
     /** The direction found: top to bottom for slices, else [detected]'s. */
     val direction: ReadingDirection? get() = slices?.found?.direction ?: detected?.direction
+
+    /** The page count with [hidden] pages left out, at least one; -1 unknown. */
+    fun shownPages(hidden: Int): Int = if (pages > 0) (pages - hidden).coerceAtLeast(1) else pages
 }
 
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found
- * so far by path, and [facts] read from the books themselves. With [detect], a book
- * whose folder has no direction set reads in the direction its facts suggest.
+ * so far by path, and [facts] read from the books themselves, less the pages each book
+ * hides ([hidden] counts by path). With [detect], a book whose folder has no direction
+ * set reads in the direction its facts suggest.
  */
 class EntryValues(
     private val folderSizes: Map<String, Long> = emptyMap(),
     private val detect: Boolean = false,
+    private val hidden: Map<String, Int> = emptyMap(),
     private val facts: (BookEntry) -> BookFacts? = { null }
 ) : SortValues {
     override fun of(entry: BookEntry, key: SortKey): Long? = when (key) {
@@ -113,7 +118,7 @@ class EntryValues(
         SortKey.ADDED -> entry.added.takeIf { it > 0 }
         SortKey.ACCESSED -> entry.accessed.takeIf { it > 0 }
         SortKey.SIZE -> if (entry.isDir) folderSizes[entry.path] else entry.size.takeIf { it > 0 }
-        SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.pages?.takeIf { it > 0 })?.toLong()
+        SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.shownPages(hidden[entry.path] ?: 0)?.takeIf { it > 0 })?.toLong()
         SortKey.DIRECTION -> direction(entry)?.rank?.toLong()
         SortKey.TYPE -> LibrarySort.typeRank(entry)
         SortKey.NAME -> null

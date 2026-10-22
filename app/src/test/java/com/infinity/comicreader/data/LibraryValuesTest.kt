@@ -70,6 +70,18 @@ class LibraryValuesTest {
     }
 
     @Test
+    fun lengthLeavesHiddenPagesOut() {
+        val book = entry("a.cbz")
+        val values = EntryValues(hidden = mapOf(book.path to 4)) { BookFacts(pages = 24, year = 0) }
+        assertEquals(20L, values.of(book, SortKey.LENGTH))
+        assertEquals(24L, values.of(entry("b.cbz"), SortKey.LENGTH))
+        // A count from history is already shown pages.
+        assertEquals(30L, values.of(book.copy(pages = 30), SortKey.LENGTH))
+        assertEquals(1, BookFacts(pages = 3, year = 0).shownPages(5))
+        assertEquals(-1, BookFacts(pages = -1, year = 0).shownPages(2))
+    }
+
+    @Test
     fun folderSizesComeFromTheScan() {
         val folder = entry("f", isDir = true, size = 0)
         assertNull(EntryValues().of(folder, SortKey.SIZE))

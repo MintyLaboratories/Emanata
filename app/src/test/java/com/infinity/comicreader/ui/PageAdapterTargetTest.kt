@@ -174,6 +174,35 @@ class PageAdapterTargetTest {
         second.release()
     }
 
+    @Test
+    fun theHalvesOfOnePictureShareOneViewArea() {
+        val source = RecordingSource(4)
+        // One page a screen, pages 1 and 2 merged as one picture.
+        val layout = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3)), spread = true, rtl = false, joined = setOf(1))
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0, pageLayout = layout
+        )
+        val rv = recycler(adapter, 2960, 1848)
+        rv.scrollToPosition(1)
+        rv.layOut(2960, 1848)
+        idle { source.requests.count { it.first in 1..2 } >= 2 && !adapter.decoding }
+        val holder = rv.findViewHolderForAdapterPosition(1) as PageAdapter.PageHolder
+        assertTrue(holder.joined)
+        // Both views cover the whole item; each page is still decoded for its half.
+        holder.images.forEach { assertEquals(2960, it.width) }
+        assertTrue(1 to Target(1480, 1848) in source.requests)
+        assertTrue(2 to Target(1480, 1848) in source.requests)
+        rv.layOut(2960, 1848)
+        idle()
+        val left = FloatArray(9).also { holder.images[0].imageMatrix.getValues(it) }
+        val right = FloatArray(9).also { holder.images[1].imageMatrix.getValues(it) }
+        val page = Target(1480, 1848).plan(2000.0, 3000.0)
+        // Side by side, centered as one, meeting at the gutter.
+        assertEquals((2960 - 2 * page.width) / 2f, left[Matrix.MTRANS_X], 1f)
+        assertEquals(left[Matrix.MTRANS_X] + page.width, right[Matrix.MTRANS_X], 1f)
+        adapter.release()
+    }
+
     /** Like [RecordingSource], but every decode after the first waits for [gate]. */
     private class GatedSource(override val pageCount: Int) : PageSource {
         val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()

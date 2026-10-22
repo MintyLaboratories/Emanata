@@ -44,6 +44,9 @@ class PageStrip<T>(first: T, pageCount: Int, private val layout: PageLayout) {
     /** The part each slot of item [position] shows, as [PageLayout.parts]. */
     fun parts(position: Int): Array<PageLayout.Part?> = layout.parts(item(position), end)
 
+    /** True when item [position] shows two pages that are one picture ([PageLayout.joined]). */
+    fun joined(position: Int): Boolean = layout.joined(item(position))
+
     /** The last page item [position] shows. */
     fun lastPage(position: Int): Int = layout.lastPage(item(position), end)
 

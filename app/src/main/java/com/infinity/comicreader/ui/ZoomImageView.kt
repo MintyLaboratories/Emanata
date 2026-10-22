@@ -42,6 +42,10 @@ import kotlin.math.roundToInt
  * image cannot pan (the brightness gesture); a drag locked horizontally goes to the
  * parent, to turn the page. With [flingEnabled] a pan keeps gliding after the finger
  * lifts, slowing down, and stops at the page's edges.
+ *
+ * Two views laid over each other can show two pages as one picture ([joinWith]): the
+ * left page's view lays out both, side by side at one height, and takes every gesture;
+ * the right page's view draws its page where that puts it.
  */
 class ZoomImageView @JvmOverloads constructor(
     context: Context,
@@ -62,6 +66,12 @@ class ZoomImageView @JvmOverloads constructor(
     private var lastX = 0f
     private var lastY = 0f
     private val values = FloatArray(9)
+
+    /** The view showing the page to the right of this one's, as one picture ([joinWith]). */
+    private var follower: ZoomImageView? = null
+
+    /** The view this one's page is laid out by, when it shows the right page of a joined pair. */
+    private var leader: ZoomImageView? = null
 
     var onTap: ((Float, Float) -> Unit)? = null
 
@@ -235,13 +245,16 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     fun fit(mode: FitMode = fitMode) {
+        leader?.let {
+            it.partnerChanged()
+            return
+        }
         stopFling()
-        val drawable = drawable ?: return
         val viewW = width.toFloat()
         val viewH = height.toFloat()
         if (viewW <= 0f || viewH <= 0f) return
-        val drawableW = drawable.intrinsicWidth.toFloat()
-        val drawableH = drawable.intrinsicHeight.toFloat()
+        val drawableW = contentW()
+        val drawableH = contentH()
         if (drawableW <= 0f || drawableH <= 0f) return
 
         if (mode == FitMode.STRETCH) {
@@ -281,6 +294,10 @@ class ZoomImageView @JvmOverloads constructor(
      * zooms; a detail tile already drawn stays until the next settle replaces it.
      */
     fun swapBitmap(bitmap: Bitmap, detail: DetailSource?) {
+        leader?.let {
+            swapFollowing(it, bitmap, detail)
+            return
+        }
         val oldW = drawable?.intrinsicWidth ?: 0
         val oldH = drawable?.intrinsicHeight ?: 0
         val viewW = width.toFloat()
@@ -305,8 +322,8 @@ class ZoomImageView @JvmOverloads constructor(
             keepGeometry = false
         }
         details = detail
-        val w = bitmap.width.toFloat()
-        val h = bitmap.height.toFloat()
+        val w = contentW()
+        val h = contentH()
         val scaleX: Float
         val scaleY: Float
         if (fitMode == FitMode.STRETCH) {
@@ -340,15 +357,115 @@ class ZoomImageView @JvmOverloads constructor(
         applyMatrix()
     }
 
+    /**
+     * Shows [right]'s page beside this one's, to its right and at its height, as one
+     * picture: this view lays both out and takes every gesture, and [right], laid over the
+     * same area, draws its page where that puts it. Null parts them.
+     */
+    fun joinWith(right: ZoomImageView?) {
+        if (follower === right) return
+        follower?.leader = null
+        follower = right
+        right?.leader = this
+        fit()
+    }
+
+    /** Width of this view's page: its bitmap's, or its [follower]'s while it has none. */
+    private fun ownW(): Float {
+        val d = drawable?.takeIf { it.intrinsicWidth > 0 && it.intrinsicHeight > 0 } ?: follower?.drawable ?: return 0f
+        return d.intrinsicWidth.toFloat()
+    }
+
+    /** Height of this view's page, as [ownW]. */
+    private fun ownH(): Float {
+        val d = drawable?.takeIf { it.intrinsicWidth > 0 && it.intrinsicHeight > 0 } ?: follower?.drawable ?: return 0f
+        return d.intrinsicHeight.toFloat()
+    }
+
+    /**
+     * Width of what this view lays out, in its page's pixels: its page, and its
+     * [follower]'s brought to the same height (as wide as this one's while it has none).
+     */
+    private fun contentW(): Float {
+        val w = ownW()
+        val f = follower ?: return w
+        val d = f.drawable?.takeIf { it.intrinsicWidth > 0 && it.intrinsicHeight > 0 } ?: return 2 * w
+        return w + d.intrinsicWidth * ownH() / d.intrinsicHeight
+    }
+
+    private fun contentH(): Float = ownH()
+
+    /** Lays the [follower] out again after its page changed: fitted anew, unless zoomed in. */
+    private fun partnerChanged() {
+        if (zoomed) {
+            clamp()
+            applyMatrix()
+        } else {
+            fit()
+        }
+    }
+
+    /**
+     * Puts into [out] where [lead]'s layout puts this view's page: right of [lead]'s, at its
+     * height. Returns the scale from this page's pixels to [lead]'s, or 0 without a page.
+     */
+    private fun followMatrix(lead: ZoomImageView, out: Matrix): Float {
+        val d = drawable ?: return 0f
+        if (d.intrinsicWidth <= 0 || d.intrinsicHeight <= 0) return 0f
+        val k = lead.ownH() / d.intrinsicHeight
+        out.set(lead.matrix)
+        out.preTranslate(lead.ownW(), 0f)
+        out.preScale(k, k)
+        return k
+    }
+
+    /** Takes the place [lead] lays this view's page out at, and its zoom. */
+    private fun follow(lead: ZoomImageView) {
+        val k = followMatrix(lead, matrix)
+        if (k <= 0f) return
+        fitMode = lead.fitMode
+        minScale = lead.minScale * k
+        maxScale = lead.maxScale * k
+        currentScale = lead.currentScale * k
+        applyMatrix()
+    }
+
+    /** [swapBitmap] for a view [lead] lays out: the new bitmap goes where [lead] puts the page. */
+    private fun swapFollowing(lead: ZoomImageView, bitmap: Bitmap, detail: DetailSource?) {
+        if (drawable !is BitmapDrawable || bitmap.width <= 0 || bitmap.height <= 0) {
+            setImageBitmap(bitmap)
+            detailSource = detail
+            return
+        }
+        matrix.getValues(values)
+        val oldScaleX = values[Matrix.MSCALE_X]
+        val oldScaleY = values[Matrix.MSCALE_Y]
+        clearShaders(pageShaders)
+        keepGeometry = true
+        try {
+            setImageBitmap(bitmap)
+        } finally {
+            keepGeometry = false
+        }
+        details = detail
+        // The tile follows the page's new pixels.
+        val next = Matrix()
+        if (followMatrix(lead, next) > 0f) {
+            next.getValues(values)
+            detailMatrix.postScale(oldScaleX / values[Matrix.MSCALE_X], oldScaleY / values[Matrix.MSCALE_Y])
+        }
+        lead.partnerChanged()
+    }
+
     private fun clamp() {
         matrix.getValues(values)
         val transX = values[Matrix.MTRANS_X]
         val transY = values[Matrix.MTRANS_Y]
         val scaleX = values[Matrix.MSCALE_X]
         val scaleY = values[Matrix.MSCALE_Y]
-        val drawable = drawable ?: return
-        val drawableW = drawable.intrinsicWidth * scaleX
-        val drawableH = drawable.intrinsicHeight * scaleY
+        val drawableW = contentW() * scaleX
+        val drawableH = contentH() * scaleY
+        if (drawableW <= 0f || drawableH <= 0f) return
         val viewW = width.toFloat()
         val viewH = height.toFloat()
 
@@ -386,6 +503,7 @@ class ZoomImageView @JvmOverloads constructor(
         cancelDetailRender()
         settler.removeCallbacks(settle)
         if (oneToOne || !zoomed) dropDetail() else if (detailSource != null) settler.postDelayed(settle, SETTLE_MS)
+        follower?.follow(this)
     }
 
     // ------------------------------------------------------------------ detail
@@ -719,10 +837,10 @@ class ZoomImageView @JvmOverloads constructor(
 
     /** Glides the page at [velocityX], [velocityY] px/s, slowing down, within its edges. */
     internal fun fling(velocityX: Float, velocityY: Float) {
-        val d = drawable ?: return
+        if (contentW() <= 0f) return
         matrix.getValues(values)
-        val x = flingRange(d.intrinsicWidth * values[Matrix.MSCALE_X], width.toFloat(), values[Matrix.MTRANS_X])
-        val y = flingRange(d.intrinsicHeight * values[Matrix.MSCALE_Y], height.toFloat(), values[Matrix.MTRANS_Y])
+        val x = flingRange(contentW() * values[Matrix.MSCALE_X], width.toFloat(), values[Matrix.MTRANS_X])
+        val y = flingRange(contentH() * values[Matrix.MSCALE_Y], height.toFloat(), values[Matrix.MTRANS_Y])
         stopFling()
         scroller.fling(
             values[Matrix.MTRANS_X].roundToInt(), values[Matrix.MTRANS_Y].roundToInt(),
@@ -744,18 +862,18 @@ class ZoomImageView @JvmOverloads constructor(
 
     /** How far the content may still move in the drag direction (dx, dy), per axis. */
     private fun roomX(dx: Float): Boolean {
-        val d = drawable ?: return false
+        if (contentW() <= 0f) return false
         matrix.getValues(values)
-        val contentW = d.intrinsicWidth * values[Matrix.MSCALE_X]
+        val contentW = contentW() * values[Matrix.MSCALE_X]
         if (contentW <= width + EDGE_SLOP) return false
         val tx = values[Matrix.MTRANS_X]
         return if (dx > 0) tx < -EDGE_SLOP else tx > width - contentW + EDGE_SLOP
     }
 
     private fun roomY(dy: Float): Boolean {
-        val d = drawable ?: return false
+        if (contentH() <= 0f) return false
         matrix.getValues(values)
-        val contentH = d.intrinsicHeight * values[Matrix.MSCALE_Y]
+        val contentH = contentH() * values[Matrix.MSCALE_Y]
         if (contentH <= height + EDGE_SLOP) return false
         val ty = values[Matrix.MTRANS_Y]
         return if (dy > 0) ty < -EDGE_SLOP else ty > height - contentH + EDGE_SLOP
@@ -763,10 +881,11 @@ class ZoomImageView @JvmOverloads constructor(
 
     /** True when the content is larger than the view in either direction. */
     private fun canPan(): Boolean {
-        val d = drawable ?: return false
+        leader?.let { return it.canPan() }
+        if (contentW() <= 0f) return false
         matrix.getValues(values)
-        return d.intrinsicWidth * values[Matrix.MSCALE_X] > width + EDGE_SLOP ||
-            d.intrinsicHeight * values[Matrix.MSCALE_Y] > height + EDGE_SLOP
+        return contentW() * values[Matrix.MSCALE_X] > width + EDGE_SLOP ||
+            contentH() * values[Matrix.MSCALE_Y] > height + EDGE_SLOP
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

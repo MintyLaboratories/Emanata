@@ -84,7 +84,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * [twoPage]. With [autoCrop], the two pages of a pair share one top and bottom crop and
  * show at one height ([PairCrop]), from what auto-crop found on each, kept in [bounds];
  * a page not measured yet is measured first; the halves of one picture ([PageLayout.joined])
- * keep their gutter edges. Paired pages meet at the gutter.
+ * keep their gutter edges. Paired pages meet at the gutter; the halves of one picture
+ * show as one, zooming and panning together ([ZoomImageView.joinWith]).
  *
  * A continuous column may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
@@ -257,8 +258,11 @@ class PageAdapter(
      */
     private val merged = spread && !twoPage
 
-    override fun getItemViewType(position: Int): Int =
-        if (spread && !(merged && strip.parts(position).count { it != null } <= 1)) ROW else SINGLE
+    override fun getItemViewType(position: Int): Int = when {
+        !spread || (merged && strip.parts(position).count { it != null } <= 1) -> SINGLE
+        strip.joined(position) -> JOINED
+        else -> ROW
+    }
 
     /** A chapter's source, open while its pages can be addressed or are decoding. */
     private class Segment(
@@ -283,7 +287,8 @@ class PageAdapter(
     private val end get() = strip.end
     private var released = false
 
-    inner class PageHolder(val container: View, val images: List<ZoomImageView>) :
+    /** An item's [images], by slot; [joined] when they show one picture, laid over each other. */
+    inner class PageHolder(val container: View, val images: List<ZoomImageView>, val joined: Boolean = false) :
         RecyclerView.ViewHolder(container) {
         /** The decode each image is waiting for, and the coroutine waiting for it. */
         internal val decodes = arrayOfNulls<Pending>(images.size)
@@ -354,6 +359,23 @@ class PageAdapter(
             row.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             row.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             return PageHolder(row, listOf(left, right))
+        }
+        if (viewType == JOINED) {
+            // Both pages over the whole item: the left one lays out both and takes the gestures.
+            val frame = FrameLayout(context).apply {
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
+            val left = makeImage(context)
+            val right = makeImage(context)
+            val whole = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            frame.addView(right, whole)
+            frame.addView(left, FrameLayout.LayoutParams(whole))
+            left.joinWith(right)
+            return PageHolder(frame, listOf(left, right), joined = true)
         }
         val container = FrameLayout(context).apply {
             layoutParams = RecyclerView.LayoutParams(
@@ -567,14 +589,14 @@ class PageAdapter(
         if (key == null) {
             // The pair's shared crop waits for what auto-crop finds on both pages.
             measureItem(part)
-            image.setFitGeometry(null, alignOf(slotType))
+            image.setFitGeometry(null, if (holder.joined) 0.5f else alignOf(slotType))
             if (holder.shown[slot] != code) {
                 val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
                 if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
             }
             return
         }
-        image.setFitGeometry(fitBoxOf(key, slotType), alignOf(slotType))
+        if (holder.joined) image.setFitGeometry(joinedBoxOf(key), 0.5f) else image.setFitGeometry(fitBoxOf(key, slotType), alignOf(slotType))
         val cached = cache.get(key)
         if (cached != null) {
             showBitmap(holder, slot, key, cached)
@@ -671,6 +693,16 @@ class PageAdapter(
         val t = key.target
         if (slot == PageTargets.Slot.ALONE || fitMode != ZoomImageView.FitMode.SCREEN || t.box == null) return null
         return if (t.width > 0 && t.height > 0) intArrayOf(t.width, t.height) else null
+    }
+
+    /**
+     * The box two pages shown as one ([ZoomImageView.joinWith]) fit into at fit screen: the
+     * item's width and the one height of [key]'s pair, when it has one ([fitBoxOf]).
+     */
+    private fun joinedBoxOf(key: PageKey): IntArray? {
+        val t = key.target
+        if (fitMode != ZoomImageView.FitMode.SCREEN || t.box == null || t.height <= 0) return null
+        return intArrayOf(itemSize()[0], t.height)
     }
 
     /**
@@ -771,7 +803,7 @@ class PageAdapter(
         if (mode == Mode.CONTINUOUS) {
             applyHeight(holder.container, longStripHeight(pageIndex))
             holder.container.setPadding(0, 0, 0, spacingPx)
-        } else if (holder.container is FrameLayout) {
+        } else if (holder.container is FrameLayout && !holder.joined) {
             holder.container.setPadding(spacingPx, spacingPx, spacingPx, spacingPx)
         }
     }
@@ -986,9 +1018,10 @@ class PageAdapter(
         private const val TAG = "PageAdapter"
         private const val NO_PAGE = PageLayout.NONE
 
-        /** Item view types: one page, or a two-slot row. */
+        /** Item view types: one page, a two-slot row, or two pages shown as one picture. */
         private const val SINGLE = 0
         private const val ROW = 1
+        private const val JOINED = 2
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2

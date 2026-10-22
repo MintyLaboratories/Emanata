@@ -30,7 +30,7 @@ object Remotes {
 
     /** Makes the file system of a share; tests stand in fakes. */
     @Volatile
-    var connector: (Share) -> RemoteFs = { SmbFs(it) }
+    var connector: (Share) -> RemoteFs = { if (it.kind == ShareKind.WEBDAV) DavFs(it) else SmbFs(it) }
 
     /** True while the device has a network at all. */
     @Volatile
@@ -173,6 +173,9 @@ object Remotes {
 
     /** Opens the file at [path]. */
     fun open(path: String): RemoteInput = call(path) { it.open(relOf(path)) }
+
+    /** False when the file at [path] can be read only front to back ([RemoteFs.seekable]). */
+    fun seekable(path: String): Boolean = call(path) { it.seekable(relOf(path)) }
 
     /** Opens the file at [path] as a stream from its start. */
     fun inputStream(path: String): InputStream = RemoteInputStream(open(path))

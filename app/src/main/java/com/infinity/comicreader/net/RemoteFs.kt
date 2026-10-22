@@ -17,6 +17,12 @@ interface RemoteFs : Closeable {
     /** Opens the file [path] for reading at any position. */
     fun open(path: String): RemoteInput
 
+    /**
+     * False when [path] can be read only front to back, so a read behind or far ahead
+     * fetches it again from its start: books there are fetched whole instead.
+     */
+    fun seekable(path: String): Boolean = true
+
     /** Free and total bytes of the share; null when it does not say. */
     fun space(): Pair<Long, Long>?
 

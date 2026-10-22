@@ -185,11 +185,20 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   spreads. A spread's numbers tell which pages face each other. **Shift pairs by
   one page** fixes a book that still pairs wrong, and is kept for that book.
   Page sizes come from image headers, read once per book in the background.
-- **Spreads in one file:** *Merge* shows a wide page whole; *Split* shows it as
-  two pages, each numbered and fitted on its own (one page at a time only).
-- **Rotate for spreads** (on by default): a wide page shown whole turns the
-  screen to landscape, either way up, until a page that is not wide shows; then
-  the reader's own orientation is back.
+- **Spreads in two files** are told by their seams: the facing edges of two
+  pages, decoded as thin strips, must agree in color and shape about as closely
+  as each edge agrees with the columns just inside it; blank, flat or nearly
+  empty edges say nothing. In two-page mode such a pair shares a screen even when
+  page numbers would pair it otherwise (the seams of that run decide; **Shift
+  pairs by one page** still flips the result), and its gutter is never cropped.
+  Seams are checked in the background, nearest the page on screen first, and kept
+  per book.
+- **Spreads:** *Merge* (default) shows a wide page whole, and a spread in two
+  files as one; *Split* shows a wide page as two pages, each numbered and fitted
+  on its own (one page at a time only).
+- **Rotate for spreads** (on by default): a wide page or a merged spread shown
+  whole turns the screen to landscape, either way up, until a page that is not
+  wide shows; then the reader's own orientation is back.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right, right-to-left (left/right tap zones

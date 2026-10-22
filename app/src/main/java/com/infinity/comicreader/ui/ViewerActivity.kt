@@ -2671,6 +2671,7 @@ class ViewerActivity : AppCompatActivity() {
         dialog.behavior.peekHeight = sheetPeek()
         // No scrim: the page behind is what the sheet's colors and layout are judged on.
         dialog.window?.setDimAmount(0f)
+        SheetExit.passTouchesWhileLeaving(dialog)
         bindSheet(view)
         bindAdjustments(view)
         view.findViewById<View>(R.id.sheet_more_settings).setOnClickListener {

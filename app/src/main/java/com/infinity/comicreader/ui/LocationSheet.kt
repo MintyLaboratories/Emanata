@@ -67,6 +67,7 @@ class LocationSheet : BottomSheetDialogFragment() {
             // Opens whole: in landscape the collapsed height showed only the first row.
             behavior.state = BottomSheetBehavior.STATE_EXPANDED
             behavior.skipCollapsed = true
+            SheetExit.passTouchesWhileLeaving(this)
         }
     }
 

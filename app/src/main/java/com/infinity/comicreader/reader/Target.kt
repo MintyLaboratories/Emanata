@@ -212,6 +212,10 @@ data class Plan(val width: Int, val height: Int, val x: Double, val y: Double, v
     fun isCrop(): Boolean =
         width.toDouble() == spanW && height.toDouble() == spanH && x == Math.floor(x) && y == Math.floor(y)
 
+    /** The source span at its own size when this plan enlarges it (a plain crop when the span is whole pixels); else this plan. */
+    fun notEnlarged(): Plan =
+        if (shrinks()) this else copy(width = spanW.roundToInt().coerceAtLeast(1), height = spanH.roundToInt().coerceAtLeast(1))
+
     /** Shrunk evenly, aspect kept, to at most [maxPixels] pixels and [maxSide] on either side. */
     fun capped(maxPixels: Long, maxSide: Int): Plan {
         val pixels = width.toLong() * height

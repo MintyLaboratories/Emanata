@@ -118,7 +118,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   place. Previews (256 px) are kept on disk whenever a page is decoded, for any
   reason; a page never decoded gets a quick one where its format allows (JPEG
   at 1/8 scale, WebP scaled while decoding, AVIF from an embedded thumbnail or
-  a layered file's small first layer). Folder peeks reuse the library's
+  a layered file's small first layer). A layered AVIF page shows its first
+  layer while the full page decodes. Folder peeks reuse the library's
   covers and make missing ones nearest the middle of the view first; from list
   view at the size the grid last drew them.
 - Incremental search within the current folder.

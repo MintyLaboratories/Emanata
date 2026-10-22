@@ -30,6 +30,7 @@ import com.infinity.comicreader.reader.PairCrop
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -61,7 +62,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * Decoding happens off the main thread, at most [DECODE_THREADS] pages at a time.
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
- * the next [preload] pages are decoded ahead of time. With [autoCrop] blank borders
+ * the next [preload] pages are decoded ahead of time. A page whose decode yields a
+ * smaller version first (a layered AVIF's first layer, [Decoders.standingIn]) shows it
+ * scaled until the page takes over in place. With [autoCrop] blank borders
  * are trimmed. A page
  * that fails to decode shows an [ErrorPageDrawable] naming it and why, and is not
  * retried until the decode size changes; one that failed for lack of memory or a
@@ -177,7 +180,7 @@ class PageAdapter(
         images.forEach { it.look = look }
     }
 
-    internal class Pending(val key: PageKey, val deferred: Deferred<Bitmap?>) {
+    internal class Pending(val key: PageKey, val deferred: Deferred<Bitmap?>, val standIn: Deferred<Bitmap?>) {
         var waiters = 0
         var prefetch = false
     }
@@ -569,6 +572,11 @@ class PageAdapter(
         entry.waiters++
         holder.decodes[slot] = entry
         holder.waiters[slot] = scope.launch {
+            // A smaller version of the page, when its decode yields one first, shows until it is done.
+            launch {
+                val standIn = entry.standIn.await() ?: return@launch
+                if (entry.deferred.isActive && holder.shown[slot] != key.code) applyBitmap(holder, slot, key, standIn)
+            }
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
                 failures[key.page]?.let { applyFailure(holder, slot, it) }
@@ -824,11 +832,15 @@ class PageAdapter(
         // Keep the chapter open while its page is being decoded, even if the strip
         // rolls on past it in the meantime.
         seg.loads.incrementAndGet()
+        val standIn = CompletableDeferred<Bitmap?>()
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
                 val job = coroutineContext.job
-                val bitmap = learning(key) { decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled } }
-                    ?.let { frozen(it) }
+                val bitmap = learning(key) {
+                    Decoders.standingIn({ standIn.complete(frozen(it)) }) {
+                        decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                    }
+                }?.let { frozen(it) }
                 if (bitmap != null && bitmap.width > 0) {
                     cache.put(key, bitmap)
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -836,8 +848,11 @@ class PageAdapter(
                 bitmap
             }
         }
-        deferred.invokeOnCompletion { releaseLoad(seg) }
-        val entry = Pending(key, deferred)
+        deferred.invokeOnCompletion {
+            standIn.complete(null)
+            releaseLoad(seg)
+        }
+        val entry = Pending(key, deferred, standIn)
         pending[key] = entry
         deferred.invokeOnCompletion { error ->
             // Runs on the decoder thread; hop back before touching [pending].

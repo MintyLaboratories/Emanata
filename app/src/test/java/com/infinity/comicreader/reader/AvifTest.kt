@@ -212,8 +212,9 @@ class AvifTest {
     private val avifBytes = byteArrayOf(0, 0, 0, 16) + "ftypavif".toByteArray() + ByteArray(4) + ByteArray(64)
 
     @Test
-    fun decodersKeepTheFirstLayerAsThePreview() {
+    fun decodersShowTheFirstLayerAndKeepItsPreview() {
         layered()
+        var standIn: Bitmap? = null
         var previewed: IntArray? = null
         val sink = object : Decoders.PreviewSink {
             override fun encoded(bytes: ByteArray) = fail()
@@ -222,9 +223,14 @@ class AvifTest {
                 previewed = intArrayOf(full.width, full.height)
             }
         }
-        val page = Decoders.capturing(sink) { Decoders.decode(avifBytes, Target(300, 450)) }
+        val page = Decoders.capturing(sink) {
+            Decoders.standingIn({ standIn = it }) { Decoders.decode(avifBytes, Target(300, 450)) }
+        }
         assertArrayEquals(intArrayOf(300, 450), intArrayOf(page.width, page.height))
         assertArrayEquals(intArrayOf(150, 225), previewed)
+        // Made to the page's target, but never enlarged.
+        assertArrayEquals(intArrayOf(150, 225), intArrayOf(standIn!!.width, standIn!!.height))
+        assertEquals(layer, standIn!!.getPixel(75, 100))
     }
 
     @Test

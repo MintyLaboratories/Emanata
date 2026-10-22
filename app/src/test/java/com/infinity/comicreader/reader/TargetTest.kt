@@ -7,6 +7,17 @@ import org.junit.Test
 
 class TargetTest {
 
+    @Test
+    fun notEnlargedKeepsTheSpanAtItsOwnSize() {
+        val enlarging = Target(1848, 2960).plan(620.0, 876.0)
+        val kept = enlarging.notEnlarged()
+        assertEquals(620, kept.width)
+        assertEquals(876, kept.height)
+        assertTrue(kept.isCrop())
+        val shrinking = Target(300, 450).plan(620.0, 876.0)
+        assertEquals(shrinking, shrinking.notEnlarged())
+    }
+
     private fun size(plan: Plan) = plan.width to plan.height
 
     @Test

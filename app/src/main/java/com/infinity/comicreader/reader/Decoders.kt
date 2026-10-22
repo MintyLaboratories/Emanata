@@ -52,7 +52,8 @@ class DecodeException(
  *
  * Quick previews ([preview]) are the one exception: JPEG and WebP decode already
  * shrunk toward [Previews.TARGET], AVIF from a thumbnail or first layer inside the
- * file, to stand in until the exact page is ready.
+ * file, to stand in until the exact page is ready. A layered AVIF's first layer also
+ * stands in while its page decodes ([standingIn]).
  *
  * JPEG XL decodes with jxl-coder and AVIF with libavif ([Avif]) on every API level,
  * TIFF with the built-in [Tiff] (its cap reduction is point sampling, DCT scaling for
@@ -126,6 +127,24 @@ object Decoders {
         }
     }
 
+    /** Where this thread's next decode leaves its stand-in ([standingIn]). */
+    private val standIns = ThreadLocal<((Bitmap) -> Unit)?>()
+
+    /**
+     * Runs [block], handing [show] a stand-in for the first image decoded in it on this
+     * thread, when that image has one ready well before itself: the first layer of a
+     * layered AVIF, made to the same target but never enlarged ([fit]), to keep.
+     */
+    fun <T> standingIn(show: (Bitmap) -> Unit, block: () -> T): T {
+        val outer = standIns.get()
+        standIns.set(show)
+        try {
+            return block()
+        } finally {
+            if (outer == null) standIns.remove() else standIns.set(outer)
+        }
+    }
+
     /** Where this thread's next auto-crop leaves what it found ([measuring]). */
     private val measures = ThreadLocal<((Box, Int, Int) -> Unit)?>()
 
@@ -159,25 +178,31 @@ object Decoders {
      * [full] cropped and resampled to [target]; [full] itself when it already is the result,
      * else recycled. [source] is the image's own size, when [full] may be a sampled decode
      * of it: what auto-crop finds is then told in its terms ([SampledCrop]).
+     *
+     * A [standIn], a smaller version of the image standing in for it, is never enlarged
+     * ([Plan.notEnlarged]) and leaves this thread's [capturing] and [measuring] alone.
      */
-    fun fit(full: Bitmap, target: Target, source: IntArray? = null): Bitmap {
+    fun fit(full: Bitmap, target: Target, source: IntArray? = null, standIn: Boolean = false): Bitmap {
         val src = if (full.config == Bitmap.Config.ARGB_8888) full else full.copy(Bitmap.Config.ARGB_8888, false).also {
             full.recycle()
         }
-        sinks.get()?.let { sink ->
+        if (!standIn) sinks.get()?.let { sink ->
             sinks.set(null)
             sink.decoded(src)
         }
         val bounds = if (target.autoCrop && target.box == null) {
             BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) }.also { found ->
-                val (box, size) = SampledCrop.of(found, src.width, src.height, source)
-                measured(box, size[0], size[1])
+                if (!standIn) {
+                    val (box, size) = SampledCrop.of(found, src.width, src.height, source)
+                    measured(box, size[0], size[1])
+                }
             }
         } else {
             null
         }
         val area = target.area(src.width, src.height, bounds)
         val plan = target.plan((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble(), area[0].toDouble(), area[1].toDouble())
+            .let { if (standIn) it.notEnlarged() else it }
         if (plan.isIdentity(src.width, src.height)) return src
         try {
             return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
@@ -475,17 +500,22 @@ object Decoders {
 
     /**
      * Full decode through libavif. Of a layered image, the first layer goes to this
-     * thread's preview sink ([capturing]) as soon as it is decoded; it never fails the
-     * decode.
+     * thread's preview sink ([capturing]) and stand-in ([standingIn]) as soon as it is
+     * decoded; neither ever fails the decode.
      */
     private fun decodeAvif(bytes: ByteArray, target: Target): Bitmap {
-        val sink = sinks.get() ?: return Avif.decode(bytes, target.capPixels)
+        if (sinks.get() == null && standIns.get() == null) return Avif.decode(bytes, target.capPixels)
         return Avif.decode(bytes, target.capPixels) { layer ->
-            sinks.set(null)
-            try {
+            sinks.get()?.let { sink ->
+                sinks.set(null)
                 runCatching { sink.decoded(layer) }
-            } finally {
+            }
+            val show = standIns.get()
+            if (show == null) {
                 layer.recycle()
+            } else {
+                standIns.set(null)
+                runCatching { show(fit(layer, target, standIn = true)) }
             }
         }
     }

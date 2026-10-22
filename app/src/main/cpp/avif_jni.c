@@ -13,6 +13,10 @@
 
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
+// Largest frame decoded, in pixels (Avif.MAX_PIXELS) and per side.
+#define MAX_PIXELS 40000000u
+#define MAX_DIMENSION 32768u
+
 // Bytes of a file, all of it or only its start. Reads past a start return
 // AVIF_RESULT_WAITING_ON_IO, which callers take as "more bytes needed".
 typedef struct {
@@ -139,6 +143,11 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibAvif_nOpen(JNIEnv *
         destroy(handle);
         return 0;
     }
+    // Bounds every decoded frame, which may be larger than the size the file declares (an
+    // inner layer keeps its own size). Set after parsing, so a declared size past it is
+    // refused by Avif with its own message; the AV1 decoder takes it as it starts.
+    decoder->imageSizeLimit = MAX_PIXELS;
+    decoder->imageDimensionLimit = MAX_DIMENSION;
     return (jlong)(intptr_t)handle;
 }
 

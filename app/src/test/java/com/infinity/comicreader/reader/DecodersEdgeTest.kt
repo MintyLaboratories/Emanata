@@ -85,6 +85,36 @@ class DecodersEdgeTest {
         }
     }
 
+    /** The halves of one generated picture, as pages [width] / 2 wide. */
+    private val spread = SyntheticArt.art(width, 900, seed = 4).let { art ->
+        SyntheticArt.columns(art, width, 0, width / 2) to SyntheticArt.columns(art, width, width / 2, width)
+    }
+
+    @Test
+    fun theSidesOfASpreadInTwoFilesMatch() {
+        for (format in listOf(Bitmap.CompressFormat.PNG, Bitmap.CompressFormat.JPEG)) {
+            val (left, right) = spread.toList().map { Decoders.sides(encode(it, width / 2, format, quality = 85))!! }
+            assertTrue("$format", SpreadSeams.verdict(left, right, rtl = false).match)
+            assertFalse("$format", SpreadSeams.verdict(right, left, rtl = false).match)
+            assertTrue("$format", SpreadSeams.verdict(right, left, rtl = true).match)
+        }
+    }
+
+    @Test
+    fun anArchivePageGivesItsSides() {
+        val pages = spread.toList().mapIndexed { i, s -> Fixtures.entry("p%02d.jpg".format(i), encode(s, width / 2, Bitmap.CompressFormat.JPEG, 90)) }
+        val book = Fixtures.zip(File(tmp.root, "spread.cbz"), *pages.toTypedArray())
+        PageSources.open(book, "UTF-8", tmp.newFolder("cache")).use { src ->
+            assertTrue(SpreadSeams.verdict(src.sides(0)!!, src.sides(1)!!, rtl = false).match)
+            assertNull(src.sides(5))
+        }
+    }
+
+    @Test
+    fun brokenBytesHaveNoSides() {
+        assertNull(Decoders.sides(byteArrayOf(1, 2, 3)))
+    }
+
     @Test
     fun brokenBytesHaveNoEdge() {
         assertNull(Decoders.edge(byteArrayOf(1, 2, 3), bottom = true))

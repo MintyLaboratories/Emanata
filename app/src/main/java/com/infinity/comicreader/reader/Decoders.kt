@@ -348,7 +348,7 @@ object Decoders {
         }
     }
 
-    /** The power-of-two sample that leaves a [w]-wide image at least [Seams.LENGTH] wide. */
+    /** The power-of-two sample that leaves a [w]-long side of an image at least [Seams.LENGTH] long. */
     internal fun edgeSample(w: Int): Int {
         var sample = 1
         while (w / (sample * 2) >= Seams.LENGTH) sample *= 2
@@ -382,6 +382,67 @@ object Decoders {
         val box = if (bottom) Box(0.0, 1.0 - band, 1.0, 1.0) else Box(0.0, 0.0, 1.0, band)
         return decode(bytes, Target(Seams.LENGTH, 0, capPixels = EDGE_CAP_PIXELS, box = box))
     }
+
+    /** Height a whole decode for [sides] shrinks a page to: twice [Seams.LENGTH]. */
+    private const val SIDES_HEIGHT = Seams.LENGTH * 2
+
+    /**
+     * Both [SpreadSeams.Sides] of an encoded image, or null when it does not decode. JPEG,
+     * PNG and WebP decode only a strip of [SpreadSeams.COLUMNS] columns at each side, sampled
+     * down toward [Seams.LENGTH] tall ([BitmapRegionDecoder]); other formats decode whole,
+     * [SIDES_HEIGHT] tall. For analysis only, never shown. Blocking.
+     */
+    fun sides(bytes: ByteArray): SpreadSeams.Sides? {
+        val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() ?: return null
+        val w = size[0]
+        val h = size[1]
+        if (w <= 0 || h <= 0) return null
+        if (ImageKind.sniff(bytes) in REGION_KINDS) runCatching { regionSides(bytes, w, h) }.getOrNull()?.let { return it }
+        return runCatching { wholeSides(bytes) }.getOrNull()
+    }
+
+    /** The side strips of a [w] x [h] image, sampled down ([edgeSample] of its height), decoded alone. */
+    private fun regionSides(bytes: ByteArray, w: Int, h: Int): SpreadSeams.Sides? {
+        val sample = edgeSample(h)
+        val columns = (SpreadSeams.COLUMNS * sample).coerceAtMost(w)
+        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
+        } else {
+            @Suppress("DEPRECATION")
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
+        } ?: return null
+        try {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val left = sideOf(decoder.decodeRegion(Rect(0, 0, columns, h), options) ?: return null, right = false) ?: return null
+            val right = sideOf(decoder.decodeRegion(Rect(w - columns, 0, w, h), options) ?: return null, right = true) ?: return null
+            return SpreadSeams.Sides(left, right)
+        } finally {
+            decoder.recycle()
+        }
+    }
+
+    /** The [right] or left [SpreadSeams.Edge] of [strip], which is recycled. */
+    private fun sideOf(strip: Bitmap, right: Boolean): SpreadSeams.Edge? = try {
+        SpreadSeams.edge(pixelsOf(strip), strip.width, strip.height, right)
+    } finally {
+        strip.recycle()
+    }
+
+    /** Both sides of an image decoded whole, [SIDES_HEIGHT] tall at most. */
+    private fun wholeSides(bytes: ByteArray): SpreadSeams.Sides? {
+        val page = decode(bytes, Target(0, SIDES_HEIGHT, Fit.SHRINK, capPixels = EDGE_CAP_PIXELS))
+        return try {
+            SpreadSeams.sides(pixelsOf(page), page.width, page.height)
+        } finally {
+            page.recycle()
+        }
+    }
+
+    private fun pixelsOf(bitmap: Bitmap): IntArray =
+        IntArray(bitmap.width * bitmap.height).also { bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height) }
 
     /** Smallest power-of-two sample size that brings a [w] x [h] image to at most [capPixels]: 1 below the cap. */
     fun capSample(w: Int, h: Int, capPixels: Long): Int {

@@ -84,6 +84,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    override fun sides(index: Int): SpreadSeams.Sides? {
+        if (!enter()) return null
+        try {
+            return inner.sides(index)
+        } finally {
+            exit()
+        }
+    }
+
     override fun pageName(index: Int): String? = inner.pageName(index)
 
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? {

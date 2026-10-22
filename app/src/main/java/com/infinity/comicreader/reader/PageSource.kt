@@ -51,6 +51,12 @@ interface PageSource : Closeable {
      */
     fun edge(index: Int, bottom: Boolean): Seams.Profile? = null
 
+    /**
+     * The left and right [SpreadSeams.Sides] of page [index], decoded as thin strips where
+     * its format allows ([Decoders.sides]); null when it cannot be read. Blocking.
+     */
+    fun sides(index: Int): SpreadSeams.Sides? = null
+
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 

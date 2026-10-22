@@ -192,6 +192,11 @@ class ArchiveSource(
         return runCatching { Decoders.edge(readPage(index) { BitmapUtils.readCapped(it) }, bottom) }.getOrNull()
     }
 
+    override fun sides(index: Int): SpreadSeams.Sides? {
+        if (index !in pages.indices) return null
+        return runCatching { Decoders.sides(readPage(index) { BitmapUtils.readCapped(it) }) }.getOrNull()
+    }
+
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path
 
     /**

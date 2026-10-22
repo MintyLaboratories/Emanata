@@ -20,6 +20,9 @@ class ImageSource(private val file: File) : PageSource {
     override fun edge(index: Int, bottom: Boolean): Seams.Profile? =
         runCatching { Decoders.edge(file.inputStream().use { BitmapUtils.readCapped(it) }, bottom) }.getOrNull()
 
+    override fun sides(index: Int): SpreadSeams.Sides? =
+        runCatching { Decoders.sides(file.inputStream().use { BitmapUtils.readCapped(it) }) }.getOrNull()
+
     override fun pageName(index: Int): String = file.name
 
     override fun close() {

@@ -2513,7 +2513,7 @@ class ViewerActivity : AppCompatActivity() {
                 true
             }
             R.id.menu_crop -> { startCrop(); true }
-            R.id.menu_hide_page -> { hidePage(currentIndex); true }
+            R.id.menu_hide_page -> { hidePageOnScreen(); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -3216,6 +3216,17 @@ class ViewerActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.page_actions_title, page + 1))
             .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, which -> actions[which].second() }
+            .show()
+    }
+
+    /** Hides the page on screen, or the one picked when two pages share it. */
+    private fun hidePageOnScreen() {
+        val src = source ?: return
+        val pages = layout.slots(layout.itemOf(currentIndex), src.pageCount).filter { it != PageLayout.NONE }.distinct()
+        if (pages.size < 2) return hidePage(currentIndex)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.hide_which_page)
+            .setItems(pages.map { getString(R.string.page_number, it + 1) }.toTypedArray()) { _, which -> hidePage(pages[which]) }
             .show()
     }
 

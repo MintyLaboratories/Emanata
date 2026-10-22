@@ -263,6 +263,7 @@
     <string name="page_saved">Saved to Pictures/Emanata</string>
     <string name="menu_hide_page">Hide this page</string>
     <string name="page_hidden">Page hidden; Book info can bring it back</string>
+    <string name="hide_which_page">Hide which page?</string>
     <string name="hide_last_page">The only page shown can\'t be hidden</string>
     <string name="info_pages_hidden">%1$d (%2$d hidden)</string>
     <string name="menu_unhide_pages">Unhide pages…</string>

@@ -278,7 +278,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   this book* (its folders, or the inner archives of a nested book) and *In this
   folder* (the files beside it), the current ones highlighted; tap one to go there.
 - **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
-  save the page as an image, crop it, hide it, or rotate the screen.
+  save the page as an image, crop it, hide it, or rotate the screen. With two
+  pages on screen, the menu's **Hide this page** asks which one.
 - **Hide this page:** a hidden page is left out of reading, page counts, the
   seek strip, page grids and peeks for that book; history and bookmarks keep
   their pages, except a bookmark on the hidden page, which moves to the next

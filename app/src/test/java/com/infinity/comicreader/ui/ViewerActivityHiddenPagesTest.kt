@@ -18,6 +18,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -136,6 +137,28 @@ class ViewerActivityHiddenPagesTest {
         assertEquals(5, viewer.pager().adapter!!.itemCount)
         assertEquals(3, viewer.pager().currentItem)
         assertEquals(listOf(4), library.bookmarksFor(path).map { it.page })
+    }
+
+    @Test
+    fun theMenuAsksWhichOfTwoPagesToHide() {
+        Prefs(context).twoPage = TwoPage.ON
+        val portrait = TestImages.png(26, 40)
+        val book = Fixtures.zip(
+            File(tmp.newFolder("pairs"), "Book 02.cbz"),
+            *(1..8).map { Fixtures.entry("Page %02d.png".format(it), portrait) }.toTypedArray()
+        )
+        val viewer = launch(book, 1)
+        // [1] [2|3] [4|5] [6|7] [8]: the second screen shows two pages.
+        assertEquals(1, viewer.pager().currentItem)
+        shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
+        idle()
+        val ask = ShadowDialog.getLatestDialog() as AlertDialog
+        val list = ask.listView
+        assertEquals(listOf("Page 2", "Page 3"), (0 until list.adapter.count).map { list.adapter.getItem(it).toString() })
+        assertTrue(library.hiddenPages(book.absolutePath).isEmpty())
+        list.performItemClick(list.adapter.getView(1, null, list), 1, 1)
+        viewer.settle()
+        assertEquals(setOf(2), library.hiddenPages(book.absolutePath))
     }
 
     @Test

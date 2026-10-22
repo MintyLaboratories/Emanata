@@ -23,7 +23,10 @@ data class SharePath(override val host: String, override val port: Int, val shar
         WEB_ADDRESS,
 
         /** Plain `http://` to another device, where the password would cross the network readable. */
-        INSECURE
+        INSECURE,
+
+        /** A blank password while editing a share moved to another server or protocol: the saved one stays with the old. */
+        PASSWORD_AGAIN
     }
 
     /** What [parse] makes of a path: a [SharePath], or the [Problem] with it. */

@@ -11,7 +11,9 @@ object ShareForm {
      * The share the form describes, reached as [kind] says, keeping [previous]'s id
      * when editing one. A blank [name] takes the path's last folder (else the share's
      * name on SMB, the host on WebDAV); a blank [password] while editing keeps
-     * [previous]'s, lost or not.
+     * [previous]'s, lost or not, only for the same server reached the same way: else
+     * the password is asked for again ([SharePath.Problem.PASSWORD_AGAIN]), so it never
+     * goes to a mistyped host or over another protocol.
      */
     fun build(name: String, path: String, user: String, password: String, previous: Share?, kind: ShareKind = ShareKind.SMB): Result {
         val parsed: ShareAddress = when (kind) {
@@ -30,8 +32,15 @@ object ShareForm {
         }
         val label = name.trim().ifEmpty { parsed.dir.substringAfterLast('/').ifEmpty { top } }
         val keep = password.isEmpty() && previous != null
+        if (keep && (previous!!.password.isNotEmpty() || previous.passwordLost) && serverOf(previous.path) != serverOf(parsed)) {
+            return Result.Invalid(SharePath.Problem.PASSWORD_AGAIN)
+        }
         val secret = if (keep) previous!!.password else password
         val lost = keep && previous!!.passwordLost
         return Result.Ok(Share(previous?.id ?: ShareStore.newId(), label, parsed, user.trim(), secret, passwordLost = lost))
     }
+
+    /** What a password is sent to: the protocol, host and port. */
+    private fun serverOf(address: ShareAddress): List<Any> =
+        listOf(address::class, address.host.lowercase(), address.port, (address as? DavUrl)?.secure ?: false)
 }

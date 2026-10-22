@@ -66,10 +66,30 @@ class ShareFormTest {
     @Test
     fun editingCanSwitchHowTheShareIsReached() {
         val first = ok(ShareForm.build("A", "nas.local/books", "user", "pw", null))
-        val edited = ok(ShareForm.build("A", "https://nas.local/books", "user", "", first, ShareKind.WEBDAV))
+        val edited = ok(ShareForm.build("A", "https://nas.local/books", "user", "new", first, ShareKind.WEBDAV))
         assertEquals(first.id, edited.id)
-        assertEquals("pw", edited.password)
+        assertEquals("new", edited.password)
         assertEquals(ShareKind.WEBDAV, edited.kind)
+    }
+
+    @Test
+    fun aBlankPasswordStaysWithTheServerItWasSavedFor() {
+        val smb = ok(ShareForm.build("A", "nas.local/books", "user", "pw", null))
+        val again = ShareForm.Result.Invalid(SharePath.Problem.PASSWORD_AGAIN)
+        // Another protocol, host or port: asked for again.
+        assertEquals(again, ShareForm.build("A", "https://nas.local/books", "user", "", smb, ShareKind.WEBDAV))
+        assertEquals(again, ShareForm.build("A", "other.local/books", "user", "", smb))
+        assertEquals(again, ShareForm.build("A", "nas.local:4450/books", "user", "", smb))
+        // The same server, another share or folder, any case of its name: kept.
+        assertEquals("pw", ok(ShareForm.build("A", "NAS.local/other/folder", "user", "", smb)).password)
+        val dav = ok(ShareForm.build("A", "https://nas.local/dav", "user", "pw", null, ShareKind.WEBDAV))
+        assertEquals(again, ShareForm.build("A", "https://nas.local:8443/dav", "user", "", dav, ShareKind.WEBDAV))
+        assertEquals(again, ShareForm.build("A", "https://cloud.example.com/dav", "user", "", dav, ShareKind.WEBDAV))
+        assertEquals("pw", ok(ShareForm.build("A", "https://nas.local/elsewhere", "user", "", dav, ShareKind.WEBDAV)).password)
+        // A lost password is asked for again too; no password at all needs none.
+        assertEquals(again, ShareForm.build("A", "other.local/books", "user", "", smb.copy(password = "", passwordLost = true)))
+        val open = ok(ShareForm.build("A", "nas.local/books", "", "", null))
+        assertEquals("", ok(ShareForm.build("A", "other.local/books", "", "", open)).password)
     }
 
     @Test

@@ -85,6 +85,7 @@
     <string name="share_problem_empty_webdav">Enter the server\'s address, such as https://nas.local/comics</string>
     <string name="share_problem_name_webdav">Folder names cannot be . or .., or hold / or \\</string>
     <string name="share_problem_insecure">Use https://; plain http:// reaches only this device</string>
+    <string name="share_problem_password_again">Enter the password again for the new server</string>
     <string name="share_edit">Edit…</string>
     <string name="share_remove">Remove</string>
     <string name="share_remove_title">Remove network share?</string>

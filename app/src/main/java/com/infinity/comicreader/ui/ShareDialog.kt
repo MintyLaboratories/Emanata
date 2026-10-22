@@ -110,7 +110,11 @@ class ShareDialog : DialogFragment() {
         val kind = kind()
         val result = ShareForm.build(text(R.id.share_name), text(R.id.share_path), text(R.id.share_user), text(R.id.share_password), previous, kind)
         when (result) {
-            is ShareForm.Result.Invalid -> pathLayout.error = getString(problemText(result.problem, kind))
+            is ShareForm.Result.Invalid -> {
+                val onPassword = result.problem == SharePath.Problem.PASSWORD_AGAIN
+                pathLayout.error = if (onPassword) null else getString(problemText(result.problem, kind))
+                passwordLayout.error = if (onPassword) getString(problemText(result.problem, kind)) else null
+            }
             is ShareForm.Result.Ok -> {
                 pathLayout.error = null
                 passwordLayout.error = null
@@ -155,6 +159,7 @@ class ShareDialog : DialogFragment() {
             SharePath.Problem.BAD_NAME -> if (kind == ShareKind.WEBDAV) R.string.share_problem_name_webdav else R.string.share_problem_name
             SharePath.Problem.WEB_ADDRESS -> R.string.share_problem_web
             SharePath.Problem.INSECURE -> R.string.share_problem_insecure
+            SharePath.Problem.PASSWORD_AGAIN -> R.string.share_problem_password_again
         }
     }
 }

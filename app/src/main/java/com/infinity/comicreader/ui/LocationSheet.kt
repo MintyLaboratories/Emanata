@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.infinity.comicreader.R
@@ -60,7 +61,12 @@ class LocationSheet : BottomSheetDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val view = LayoutInflater.from(requireContext()).inflate(R.layout.sheet_locations, null)
         list = view.findViewById(R.id.locations_list)
-        return BottomSheetDialog(requireContext(), theme).apply { setContentView(view) }
+        return BottomSheetDialog(requireContext(), theme).apply {
+            setContentView(view)
+            // Opens whole: in landscape the collapsed height showed only the first row.
+            behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            behavior.skipCollapsed = true
+        }
     }
 
     override fun onStart() {

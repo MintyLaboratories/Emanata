@@ -180,7 +180,11 @@ class PageAdapter(
         images.forEach { it.look = look }
     }
 
-    internal class Pending(val key: PageKey, val deferred: Deferred<Bitmap?>, val standIn: Deferred<Bitmap?>) {
+    internal class Pending(val key: PageKey, val standIn: CompletableDeferred<Bitmap?>) {
+        lateinit var deferred: Deferred<Bitmap?>
+
+        /** Slots waiting for it; the decode reads it to make a stand-in only for a page shown. */
+        @Volatile
         var waiters = 0
         var prefetch = false
     }
@@ -832,12 +836,13 @@ class PageAdapter(
         // Keep the chapter open while its page is being decoded, even if the strip
         // rolls on past it in the meantime.
         seg.loads.incrementAndGet()
-        val standIn = CompletableDeferred<Bitmap?>()
+        val entry = Pending(key, CompletableDeferred())
+        val standIn = entry.standIn
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
                 val job = coroutineContext.job
                 val bitmap = learning(key) {
-                    Decoders.standingIn({ standIn.complete(frozen(it)) }) {
+                    Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
                         decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
                     }
                 }?.let { frozen(it) }
@@ -852,7 +857,7 @@ class PageAdapter(
             standIn.complete(null)
             releaseLoad(seg)
         }
-        val entry = Pending(key, deferred, standIn)
+        entry.deferred = deferred
         pending[key] = entry
         deferred.invokeOnCompletion { error ->
             // Runs on the decoder thread; hop back before touching [pending].

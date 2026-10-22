@@ -207,6 +207,24 @@ class Library(context: Context) {
         }
     }
 
+    /** Shows every hidden page again, moving history and bookmarks back to book pages. */
+    private fun showAllPages() {
+        val hidden = readObject(KEY_HIDDEN)
+        val byPath = HashMap<String, Set<Int>>()
+        hidden.keys().forEach { k -> parseHidden(hidden.optJSONArray(k)).takeIf { it.isNotEmpty() }?.let { byPath[k] = it } }
+        if (byPath.isEmpty()) return
+        writeHistory(
+            history().map { h ->
+                val old = byPath[h.path] ?: return@map h
+                h.copy(page = HiddenPages.toBook(h.page, old), total = if (h.total > 0) h.total + old.size else h.total)
+            }
+        )
+        writeBookmarks(
+            bookmarks().map { b -> byPath[b.path]?.let { b.copy(page = HiddenPages.toBook(b.page, it)) } ?: b }
+        )
+        sp.edit().putString(KEY_HIDDEN, "{}").apply()
+    }
+
     private fun parseHidden(arr: JSONArray?): Set<Int> {
         if (arr == null) return emptySet()
         val out = HashSet<Int>()
@@ -406,10 +424,14 @@ class Library(context: Context) {
 
     /**
      * Replaces the stored documents with those in [data]. Only known keys of the
-     * right JSON type are taken; everything else is ignored.
+     * right JSON type are taken; everything else is ignored. A backup with history or
+     * bookmarks but no hidden pages counts every page, so every page is shown again.
      */
     fun importAll(data: JSONObject) {
         synchronized(LOCK) {
+            if (data.optJSONObject(KEY_HIDDEN) == null &&
+                (data.optJSONArray(KEY_HISTORY) != null || data.optJSONArray(KEY_BOOKMARKS) != null)
+            ) showAllPages()
             val e = sp.edit()
             for (k in ARRAY_KEYS) data.optJSONArray(k)?.let { e.putString(k, sanitizeArray(k, it).toString()) }
             for (k in OBJECT_KEYS) data.optJSONObject(k)?.let { e.putString(k, it.toString()) }

@@ -25,7 +25,8 @@ import java.util.concurrent.locks.ReentrantLock
  * retries ([Remotes] remembers it). HTTPS, or plain HTTP only to this device
  * ([DavUrl]); redirects are followed, never between the two, and the sign-in never
  * goes to another host. Idle connections close after [IDLE_MS]. Closing the share or
- * a file cancels its requests, bodies still coming included, and never waits.
+ * a file cancels its requests, bodies still coming included, and never waits. Ranges
+ * ask for the version first read (If-Range): a file changed meanwhile fails to read.
  */
 class DavFs(private val share: Share, private val client: OkHttpClient = sharedClient) : RemoteFs {
     private val where = share.path as? DavUrl ?: throw IllegalArgumentException("Not a WebDAV share: $share")
@@ -223,6 +224,13 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         private var streamAt = 0L
         private val rangeless: Boolean
 
+        /**
+         * The version the first answer named (a strong ETag, else Last-Modified), sent as
+         * If-Range with later ranges: a file changed since then fails instead of mixing.
+         */
+        private var version: String? = null
+
+
         init {
             val answer = get(0, HEAD_BYTES - 1L)
             val response = answer.response
@@ -234,6 +242,7 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
                         if (range == null || range.first != 0L || range.second >= HEAD_BYTES) throw IOException("Unasked range from ${share.name}")
                         length = if (range.third >= 0) range.third else knownLength()
                         head = readBody(response, (range.second + 1).toInt())
+                        version = response.header("ETag")?.takeIf { !it.startsWith("W/") } ?: response.header("Last-Modified")
                         ranges = true
                         rangeless = false
                     }
@@ -301,8 +310,9 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             ahead = if (position == lastEnd) minOf(maxOf(ahead * 2, count), MAX_AHEAD_BYTES) else count
             val end = minOf(length, position + maxOf(ahead, count)) - 1
             try {
-                get(position, end).use { answer ->
+                get(position, end, version).use { answer ->
                     val response = answer.response
+                    if (response.code == 200 && version != null) throw IOException("Changed on ${share.name}: $path")
                     if (response.code != 206) throw failure(response)
                     val range = contentRange(response)
                     if (range == null || range.first != position || range.second > end) throw IOException("Unasked range from ${share.name}")
@@ -344,10 +354,14 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             }
         }
 
-        /** GET of bytes [from] to [to] (inclusive); the whole file when [to] is negative. */
-        private fun get(from: Long, to: Long): Answer {
+        /**
+         * GET of bytes [from] to [to] (inclusive), only from [ifRange]'s version when given;
+         * the whole file when [to] is negative. Cancelable by [close].
+         */
+        private fun get(from: Long, to: Long, ifRange: String? = null): Answer {
             val r = request(url).get().header("Accept-Encoding", "identity")
             if (to >= 0) r.header("Range", "bytes=$from-$to")
+            if (to >= 0 && ifRange != null) r.header("If-Range", ifRange)
             try {
                 return execute(r.build()) { call ->
                     going = call

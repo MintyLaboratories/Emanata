@@ -123,13 +123,17 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     private fun get(request: RecordedRequest, file: File): MockResponse {
         if (!file.isFile) return MockResponse().setResponseCode(404)
         val length = file.length()
-        val range = request.getHeader("Range")?.takeIf { ranges }?.removePrefix("bytes=")?.split('-')
-        if (range == null) return paced(MockResponse().setResponseCode(200).setBody(slice(file, 0, length)))
+        val etag = "\"$length-${file.lastModified()}\""
+        // A range of another version than If-Range names: the whole file instead.
+        val range = request.getHeader("Range")?.takeIf { ranges && request.getHeader("If-Range").let { it == null || it == etag } }
+            ?.removePrefix("bytes=")?.split('-')
+        if (range == null) return paced(MockResponse().setResponseCode(200).setHeader("ETag", etag).setBody(slice(file, 0, length)))
         val from = range[0].toLong()
         if (from >= length) return MockResponse().setResponseCode(416).setHeader("Content-Range", "bytes */$length")
         val to = minOf(range[1].toLongOrNull() ?: (length - 1), length - 1)
         return paced(
             MockResponse().setResponseCode(206)
+                .setHeader("ETag", etag)
                 .setHeader("Content-Range", "bytes $from-$to/$length")
                 .setBody(slice(file, from, to - from + 1))
         )

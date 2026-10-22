@@ -170,6 +170,27 @@ class DavFsTest {
     }
 
     @Test
+    fun aFileChangedBetweenReadsFailsInsteadOfMixing() {
+        val file = File(dir, "big.cbz")
+        file.writeBytes(Random(4).nextBytes(1 shl 20))
+        file.setLastModified(1_700_000_000_000L)
+        fs().open("big.cbz").use { input ->
+            val part = ByteArray(1000)
+            assertEquals(1000, input.read(500_000, part, 0, 1000))
+            assertEquals("\"${1 shl 20}-1700000000000\"", server.requests.last().getHeader("If-Range"))
+            file.writeBytes(Random(6).nextBytes(1 shl 20))
+            file.setLastModified(1_700_000_100_000L)
+            try {
+                input.read(900_000, part, 0, 1000)
+                fail("read a changed file")
+            } catch (e: IOException) {
+                assertFalse("$e", e is RemoteException)
+                assertTrue("$e", e.message!!.startsWith("Changed"))
+            }
+        }
+    }
+
+    @Test
     fun withoutRangesAFileStreamsFromItsStartAndIsNotSeekable() {
         server.ranges = false
         val bytes = Random(5).nextBytes(300_000)

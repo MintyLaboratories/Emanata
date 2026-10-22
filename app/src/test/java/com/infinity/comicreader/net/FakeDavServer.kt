@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 /**
  * A WebDAV server on this machine serving local folder [dir] under [prefix], for
@@ -24,6 +25,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
 
     @Volatile
     var ranges = true
+
+    /** Sends file bodies at [SLOW_BYTES_PER_SECOND] while on. */
+    @Volatile
+    var slow = false
 
     @Volatile
     var user = ""
@@ -110,14 +115,19 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         if (!file.isFile) return MockResponse().setResponseCode(404)
         val length = file.length()
         val range = request.getHeader("Range")?.takeIf { ranges }?.removePrefix("bytes=")?.split('-')
-        if (range == null) return MockResponse().setResponseCode(200).setBody(slice(file, 0, length))
+        if (range == null) return paced(MockResponse().setResponseCode(200).setBody(slice(file, 0, length)))
         val from = range[0].toLong()
         if (from >= length) return MockResponse().setResponseCode(416).setHeader("Content-Range", "bytes */$length")
         val to = minOf(range[1].toLongOrNull() ?: (length - 1), length - 1)
-        return MockResponse().setResponseCode(206)
-            .setHeader("Content-Range", "bytes $from-$to/$length")
-            .setBody(slice(file, from, to - from + 1))
+        return paced(
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range", "bytes $from-$to/$length")
+                .setBody(slice(file, from, to - from + 1))
+        )
     }
+
+    private fun paced(response: MockResponse): MockResponse =
+        if (slow) response.throttleBody(SLOW_BYTES_PER_SECOND, 1, TimeUnit.SECONDS) else response
 
     private fun slice(file: File, from: Long, count: Long): Buffer {
         val bytes = ByteArray(count.toInt())
@@ -131,6 +141,8 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
 
     companion object {
         private val HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC)
+
+        const val SLOW_BYTES_PER_SECOND = 16L * 1024
 
         fun encode(name: String): String = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
     }

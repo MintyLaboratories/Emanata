@@ -10,8 +10,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.BufferedSource
+import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * A [Share] over WebDAV: PROPFIND lists folders and states files, and files are read
@@ -22,7 +24,8 @@ import java.util.concurrent.TimeUnit
  * a user or password is set; one turned down (401) is not tried again until the user
  * retries ([Remotes] remembers it). HTTPS, or plain HTTP only to this device
  * ([DavUrl]); redirects are followed, never between the two, and the sign-in never
- * goes to another host. Idle connections close after [IDLE_MS].
+ * goes to another host. Idle connections close after [IDLE_MS]. Closing the share or
+ * a file cancels its requests, bodies still coming included, and never waits.
  */
 class DavFs(private val share: Share, private val client: OkHttpClient = sharedClient) : RemoteFs {
     private val where = share.path as? DavUrl ?: throw IllegalArgumentException("Not a WebDAV share: $share")
@@ -30,10 +33,11 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     private val auth: String? =
         if (share.user.isEmpty() && share.password.isEmpty()) null else Credentials.basic(share.user, share.password, Charsets.UTF_8)
 
+    /** Set under [calls]' lock, so no request starts once it is. */
     @Volatile
     private var closed = false
 
-    /** Requests under way and files open, closed with the share. */
+    /** Requests whose answers are not read through yet, and files open: canceled and closed with the share. */
     private val calls = HashSet<Call>()
     private val inputs = HashSet<DavInput>()
 
@@ -81,13 +85,15 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         return if (total <= 0) null else e.quotaAvailable to total
     }
 
-    /** Cancels requests under way and closes open files; later calls fail. */
+    /** Cancels requests under way, then closes open files; later calls fail. */
     override fun close() {
-        closed = true
+        val going = synchronized(calls) {
+            closed = true
+            calls.toList()
+        }
+        for (call in going) call.cancel()
         val open = synchronized(inputs) { inputs.toList().also { inputs.clear() } }
         for (input in open) runCatching { input.close() }
-        val going = synchronized(calls) { calls.toList() }
-        for (call in going) call.cancel()
     }
 
     private fun statOf(name: String, e: DavXml.Entry) =
@@ -98,7 +104,8 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             .method("PROPFIND", body.toRequestBody(XML))
             .header("Depth", depth.toString())
             .build()
-        execute(request).use { response ->
+        execute(request).use { answer ->
+            val response = answer.response
             if (response.code != 207 && response.code != 200) throw failure(response, top = path.isEmpty())
             val source = response.body?.byteStream() ?: throw IOException("Empty answer")
             return try {
@@ -114,18 +121,33 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     private fun request(url: HttpUrl): Request.Builder =
         Request.Builder().url(url).apply { auth?.let { header("Authorization", it) } }
 
-    /** Runs [request], canceled when the share closes; a transport failure reads as unreachable. */
-    private fun execute(request: Request): Response {
-        if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+    /** A [response] whose [call] the share can cancel until the answer is closed. */
+    private inner class Answer(val call: Call, val response: Response) : Closeable {
+        override fun close() {
+            response.close()
+            synchronized(calls) { calls -= call }
+        }
+    }
+
+    /**
+     * Runs [request], canceled when the share closes, its body included; [started]
+     * hears the call first. A transport failure reads as unreachable.
+     */
+    private fun execute(request: Request, started: (Call) -> Unit = {}): Answer {
         val call = client.newCall(request)
-        synchronized(calls) { calls += call }
+        synchronized(calls) {
+            if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+            calls += call
+        }
+        var answered = false
         try {
-            return call.execute()
+            started(call)
+            return Answer(call, call.execute()).also { answered = true }
         } catch (e: IOException) {
             if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
             throw RemoteException(RemoteException.Reason.UNREACHABLE, e.message, e)
         } finally {
-            synchronized(calls) { calls -= call }
+            if (!answered) synchronized(calls) { calls -= call }
         }
     }
 
@@ -164,11 +186,20 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
      * length and whether the server honors Range; with ranges, each read fetches what is
      * asked, or further ahead when it follows on from the last; without, the whole
      * file streams from its start, skipped forward to each read and started again for
-     * a read behind it.
+     * a read behind it. Reads take turns; [close] cancels the one under way, never waiting.
      */
     private inner class DavInput(private val path: String) : RemoteInput {
         private val url = urlOf(path, folder = false)
         override val length: Long
+
+        private val lock = ReentrantLock()
+
+        @Volatile
+        private var shut = false
+
+        /** The request a read waits on now, or the stream's; canceled by [close]. */
+        @Volatile
+        private var going: Call? = null
 
         /** The file's first bytes, fetched on opening. */
         private var head = ByteArray(0)
@@ -182,12 +213,14 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         private var ahead = 0
 
         /** Without ranges: the whole file streaming, at [streamAt]. */
-        private var stream: Response? = null
+        @Volatile
+        private var stream: Answer? = null
         private var streamAt = 0L
         private val rangeless: Boolean
 
         init {
-            val response = get(0, HEAD_BYTES - 1L)
+            val answer = get(0, HEAD_BYTES - 1L)
+            val response = answer.response
             var keep = false
             try {
                 when (response.code) {
@@ -208,7 +241,7 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
                         } else {
                             ranges = false
                             rangeless = true
-                            stream = response
+                            stream = answer
                             keep = true
                         }
                     }
@@ -219,22 +252,32 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
                     else -> throw failure(response)
                 }
             } finally {
-                if (!keep) response.close()
+                if (!keep) answer.close()
             }
         }
 
         private fun knownLength(): Long = stat(path)?.size ?: throw RemoteException(RemoteException.Reason.MISSING, path)
 
-        @Synchronized
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
-            if (position >= length || count <= 0) return if (count <= 0) 0 else -1
-            val wanted = minOf(count.toLong(), length - position).toInt()
-            val n = copy(head, 0, position, buffer, offset, wanted).takeIf { it > 0 }
-                ?: copy(run, runStart, position, buffer, offset, wanted).takeIf { it > 0 }
-                ?: if (rangeless) streamed(position, buffer, offset, wanted) else ranged(position, buffer, offset, wanted)
-            if (n > 0) lastEnd = position + n
-            return n
+            lock.lock()
+            try {
+                if (shut) throw closedFailure()
+                if (position >= length || count <= 0) return if (count <= 0) 0 else -1
+                val wanted = minOf(count.toLong(), length - position).toInt()
+                val n = copy(head, 0, position, buffer, offset, wanted).takeIf { it > 0 }
+                    ?: copy(run, runStart, position, buffer, offset, wanted).takeIf { it > 0 }
+                    ?: if (rangeless) streamed(position, buffer, offset, wanted) else ranged(position, buffer, offset, wanted)
+                if (n > 0) lastEnd = position + n
+                return n
+            } finally {
+                if (shut) release()
+                lock.unlock()
+            }
         }
+
+        /** What reading a closed file throws: the share's closing, or this file's. */
+        private fun closedFailure(): IOException =
+            if (closed) RemoteException(RemoteException.Reason.UNKNOWN_SHARE) else IOException("Closed: $path")
 
         /** Copies what [bytes], from [start] in the file, hold at [position]; 0 when they hold nothing there. */
         private fun copy(bytes: ByteArray, start: Long, position: Long, out: ByteArray, offset: Int, count: Int): Int {
@@ -248,12 +291,17 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         private fun ranged(position: Long, out: ByteArray, offset: Int, count: Int): Int {
             ahead = if (position == lastEnd) minOf(maxOf(ahead * 2, count), MAX_AHEAD_BYTES) else count
             val end = minOf(length, position + maxOf(ahead, count)) - 1
-            get(position, end).use { response ->
-                if (response.code != 206) throw failure(response)
-                val range = contentRange(response)
-                if (range == null || range.first != position || range.second > end) throw IOException("Unasked range from ${share.name}")
-                run = readBody(response, (range.second - range.first + 1).toInt())
-                runStart = position
+            try {
+                get(position, end).use { answer ->
+                    val response = answer.response
+                    if (response.code != 206) throw failure(response)
+                    val range = contentRange(response)
+                    if (range == null || range.first != position || range.second > end) throw IOException("Unasked range from ${share.name}")
+                    run = readBody(response, (range.second - range.first + 1).toInt())
+                    runStart = position
+                }
+            } finally {
+                going = null
             }
             return copy(run, runStart, position, out, offset, count).takeIf { it > 0 } ?: -1
         }
@@ -262,15 +310,15 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             if (stream == null || position < streamAt) {
                 stream?.close()
                 stream = null
-                val response = get(0, -1)
-                if (response.code != 200) {
-                    response.close()
-                    throw failure(response)
+                val answer = get(0, -1)
+                if (answer.response.code != 200) {
+                    answer.close()
+                    throw failure(answer.response)
                 }
-                stream = response
+                stream = answer
                 streamAt = 0
             }
-            val source: BufferedSource = stream!!.body?.source() ?: throw IOException("Empty answer")
+            val source: BufferedSource = stream!!.response.body?.source() ?: throw IOException("Empty answer")
             try {
                 if (position > streamAt) {
                     source.skip(position - streamAt)
@@ -282,16 +330,24 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             } catch (e: IOException) {
                 stream?.close()
                 stream = null
-                if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+                if (shut || closed) throw closedFailure()
                 throw RemoteException(RemoteException.Reason.UNREACHABLE, e.message, e)
             }
         }
 
         /** GET of bytes [from] to [to] (inclusive); the whole file when [to] is negative. */
-        private fun get(from: Long, to: Long): Response {
+        private fun get(from: Long, to: Long): Answer {
             val r = request(url).get().header("Accept-Encoding", "identity")
             if (to >= 0) r.header("Range", "bytes=$from-$to")
-            return execute(r.build())
+            try {
+                return execute(r.build()) { call ->
+                    going = call
+                    if (shut) call.cancel()
+                }
+            } catch (e: IOException) {
+                if (shut) throw closedFailure()
+                throw e
+            }
         }
 
         /** Exactly [size] bytes of [response]'s body. */
@@ -300,18 +356,31 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             return try {
                 source.readByteArray(size.toLong())
             } catch (e: IOException) {
-                if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+                if (shut || closed) throw closedFailure()
                 throw RemoteException(RemoteException.Reason.UNREACHABLE, e.message, e)
             }
         }
 
-        @Synchronized
+        /** Cancels the request under way; what the file holds goes now, or as the read under way ends. */
         override fun close() {
+            shut = true
+            going?.cancel()
+            stream?.call?.cancel()
+            synchronized(inputs) { inputs -= this }
+            if (lock.tryLock()) {
+                try {
+                    release()
+                } finally {
+                    lock.unlock()
+                }
+            }
+        }
+
+        private fun release() {
             stream?.close()
             stream = null
             head = ByteArray(0)
             run = ByteArray(0)
-            synchronized(inputs) { inputs -= this }
         }
     }
 

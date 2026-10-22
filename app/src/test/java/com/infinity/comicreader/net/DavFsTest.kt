@@ -14,6 +14,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /** WebDAV shares against a server on this machine: listing, stats, ranged and rangeless reads, failures. */
@@ -211,6 +214,34 @@ class DavFsTest {
         fs.close()
         expectFailure(RemoteException.Reason.UNKNOWN_SHARE) { input.read(100_000, ByteArray(10), 0, 10) }
         expectFailure(RemoteException.Reason.UNKNOWN_SHARE) { fs.list("") }
+    }
+
+    @Test
+    fun closingDuringASlowReadCancelsItWithoutWaiting() {
+        File(dir, "slow.cbz").writeBytes(Random(7).nextBytes(2 shl 20))
+        for (closeShare in listOf(true, false)) {
+            server.slow = false
+            val fs = fs()
+            val input = fs.open("slow.cbz")
+            server.slow = true
+            val gets = server.paths("GET").size
+            val failure = AtomicReference<Throwable>()
+            // A megabyte at the slow pace takes about a minute.
+            val reader = thread { runCatching { input.read(1L shl 20, ByteArray(1 shl 20), 0, 1 shl 20) }.onFailure { failure.set(it) } }
+            val deadline = System.nanoTime() + 5_000_000_000L
+            while (server.paths("GET").size == gets && System.nanoTime() < deadline) Thread.sleep(10)
+            Thread.sleep(300)
+            assertTrue(reader.isAlive)
+            val start = System.nanoTime()
+            if (closeShare) fs.close() else input.close()
+            assertTrue("close waited", System.nanoTime() - start < 1_000_000_000L)
+            reader.join(5_000)
+            assertFalse("read still going", reader.isAlive)
+            val e = failure.get()
+            assertTrue("$e", e is IOException)
+            if (closeShare) assertEquals(RemoteException.Reason.UNKNOWN_SHARE, (e as RemoteException).reason)
+            else assertFalse("$e", e is RemoteException)
+        }
     }
 
     @Test

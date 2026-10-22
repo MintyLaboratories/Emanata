@@ -206,6 +206,9 @@ class PageAdapter(
     }
     private val pending = HashMap<PageKey, Pending>()
 
+    /** True while any decode has not finished and been put away; for tests. */
+    internal val decoding: Boolean get() = pending.isNotEmpty()
+
     /**
      * Why a page could not be shown at [target]; [name] is null when its source has no
      * page names. Only a [permanent] failure is shown again without another decode, and

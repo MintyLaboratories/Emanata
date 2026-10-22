@@ -233,6 +233,15 @@ class PageAdapter(
     private val layout = pageLayout?.takeIf { mode == Mode.PAGED } ?: PageLayout(twoPage && mode == Mode.PAGED, rtl)
     private val spread = layout.spread
 
+    /**
+     * True for one page a screen with two-file spreads merged ([PageLayout.joined]): only
+     * those items are two-slot rows; a page alone shows as in any one-page layout.
+     */
+    private val merged = spread && !twoPage
+
+    override fun getItemViewType(position: Int): Int =
+        if (spread && !(merged && strip.parts(position).count { it != null } <= 1)) ROW else SINGLE
+
     /** A chapter's source, open while its pages can be addressed or are decoding. */
     private class Segment(
         val source: PageSource,
@@ -311,7 +320,7 @@ class PageAdapter(
             fallbackW = parent.width
             fallbackH = parent.height
         }
-        if (spread) {
+        if (viewType == ROW) {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 // Slots are screen order, already flipped for RTL: do not inherit the
@@ -390,11 +399,12 @@ class PageAdapter(
     }
 
     override fun onBindViewHolder(holder: PageHolder, position: Int) {
-        val parts = strip.parts(position)
+        // A one-page item of a merged layout has one image for its row's first slot.
+        val parts = strip.parts(position).let { if (holder.images.size < it.size) arrayOf(it.firstOrNull { p -> p != null }) else it }
         for (slot in parts.indices) {
             val part = parts[slot]
             // A lone page of a spread takes the whole row.
-            if (spread) holder.images[slot].visibility = if (part == null) View.GONE else View.VISIBLE
+            if (holder.images.size > 1) holder.images[slot].visibility = if (part == null) View.GONE else View.VISIBLE
             bindImage(holder, slot, part)
         }
         prefetchAfter(position)
@@ -656,7 +666,7 @@ class PageAdapter(
         sizedW = w
         sizedH = h
         val slot = slotOf(part)
-        val view = PageTargets.viewSize(mode, spread, w, h, spacingPx, slot)
+        val view = PageTargets.viewSize(mode, spread && !merged, w, h, spacingPx, slot)
         var target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear)
         if (part.half != Half.WHOLE) target = target.copy(half = part.half)
         if (slot == PageTargets.Slot.ALONE || !autoCrop || fitMode == ZoomImageView.FitMode.STRETCH) return PageKey(part.page, target)
@@ -957,6 +967,10 @@ class PageAdapter(
     companion object {
         private const val TAG = "PageAdapter"
         private const val NO_PAGE = PageLayout.NONE
+
+        /** Item view types: one page, or a two-slot row. */
+        private const val SINGLE = 0
+        private const val ROW = 1
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2

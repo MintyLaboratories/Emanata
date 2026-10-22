@@ -85,6 +85,7 @@ import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.NestedArchives
+import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PageSources
@@ -228,6 +229,10 @@ class ViewerActivity : AppCompatActivity() {
 
     /** True when the open book's two-page pairing is shifted by one page. */
     private var shifted = false
+
+    /** The seams between the open book's pages checked so far, and the job checking more ([checkSeams]). */
+    private var pageSeams = PageSeams.Found(0)
+    private var seamsJob: Job? = null
 
     /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
     private val spreadRotation = SpreadRotation()
@@ -1111,6 +1116,9 @@ class ViewerActivity : AppCompatActivity() {
         learnJob?.cancel()
         learnJob = null
         learnRound++
+        seamsJob?.cancel()
+        seamsJob = null
+        pageSeams = PageSeams.Found(0)
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
@@ -1189,14 +1197,18 @@ class ViewerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ spreads
 
-    /** A book's page [names], the [sizes] known of them (null where unknown) and what the spread engine finds in both. */
-    private class KnownPages(val names: List<String?>, val sizes: Array<IntArray?>, val analysis: Spreads.Analysis)
+    /**
+     * A book's page [names], the [sizes] known of them (null where unknown), what the spread
+     * engine finds in both, and the [seams] between its pages checked before.
+     */
+    private class KnownPages(val names: List<String?>, val sizes: Array<IntArray?>, val analysis: Spreads.Analysis, val seams: PageSeams.Found)
 
-    /** The page names of [src], the sizes stored for them and their [Spreads.classify]. Blocking. */
+    /** The page names of [src], the sizes and seams stored for them and their [Spreads.classify]. Blocking. */
     private fun knownSizes(book: File, src: PageSource): KnownPages {
         val names = List(src.pageCount) { runCatching { src.pageName(it) }.getOrNull() }
         val sizes = PageSizes(PageSizes.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: arrayOfNulls(names.size)
-        return KnownPages(names, sizes, classify(names, sizes))
+        val seams = PageSeams(PageSeams.dirIn(cacheDir)).read(PreviewStore.bookId(book), names) ?: PageSeams.Found(names.size)
+        return KnownPages(names, sizes, classify(names, sizes), seams)
     }
 
     /** What the spread engine finds in page [names] of [sizes]. Blocking on long books. */
@@ -1210,6 +1222,7 @@ class ViewerActivity : AppCompatActivity() {
         pageSizes = known.sizes
         shifted = favoriteFile()?.let { library.isShifted(it.absolutePath) } == true
         analysis = known.analysis
+        pageSeams = known.seams
     }
 
     /**
@@ -1270,17 +1283,69 @@ class ViewerActivity : AppCompatActivity() {
     /**
      * How items map to pages: in paged reading, the spread engine's pairs in two-page
      * mode, or each page with spreads in one file split in halves ([SpreadDisplay.SPLIT]),
-     * left or right; otherwise a page an item.
+     * left or right, or with spreads in two files shown as one ([SpreadDisplay.MERGE]);
+     * otherwise a page an item. Seams checked so far ([pageSeams]) settle pairs and merges.
      */
     private fun buildLayout(): PageLayout {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        if (spread) return PageLayout.of(Spreads.pair(a, Spreads.Options(prefs.coverAlone, shifted)), spread = true, rtl = rtl)
-        if (spreadDisplay == SpreadDisplay.SPLIT && !topToBottom() && (0 until a.size).any { a.splittable(it) }) {
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (topToBottom()) emptyList() else pageSeams.of(rtl))
+        if (spread) {
+            val views = Spreads.pair(a, options)
+            return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
+        }
+        if (topToBottom()) return PageLayout(false, rtl)
+        if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
             return PageLayout.split(a.size, rtl) { a.splittable(it) }
         }
+        if (spreadDisplay == SpreadDisplay.MERGE) {
+            val views = Spreads.merge(a, options)
+            if (views.size < a.size) return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
+        }
         return PageLayout(false, rtl)
+    }
+
+    /** True when the open book's layout reads its seams: paged left or right, two pages a screen or spreads merged. */
+    private fun seamsUsed() = mode == MODE_PAGED && !topToBottom() && (spread || spreadDisplay == SpreadDisplay.MERGE)
+
+    /**
+     * Checks the seams between the open book's pages that its layout may read, in the
+     * background, nearest the page on screen first: all of them where pages are cheap to
+     * read ([PageSource.cheapSizes]), else those within [SEAM_WINDOW] pages, again as the
+     * reader moves on. They are kept for the book ([PageSeams]), and the book is laid out
+     * again whenever they change it.
+     */
+    private fun checkSeams() {
+        val src = source ?: return
+        val book = file ?: return
+        val a = analysis ?: return
+        if (seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
+        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, if (src.cheapSizes) null else SEAM_WINDOW)
+        if (pages.isEmpty()) return
+        val names = pageNames
+        val found = pageSeams.copy()
+        seamsJob = lifecycleScope.launch {
+            var at = 0
+            var batch = SEAM_FIRST
+            while (at < pages.size) {
+                val next = pages.subList(at, minOf(pages.size, at + batch))
+                val done = withContext(AppDispatchers.io) {
+                    val job = coroutineContext.job
+                    PageSeams.check(src, next, found) { !job.isActive }.also { checked ->
+                        if (checked) PageSeams(PageSeams.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, found)
+                    }
+                }
+                if (!done || source !== src || file != book) return@launch
+                pageSeams = found.copy()
+                if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+                at += next.size
+                batch = SEAM_BATCH
+            }
+            seamsJob = null
+            // Where only nearby seams are checked, the reader may have moved on meanwhile.
+            checkSeams()
+        }
     }
 
     /** Shifts the open book's two-page pairing by one page, or back, and keeps the choice. */
@@ -1291,12 +1356,17 @@ class ViewerActivity : AppCompatActivity() {
         if (spread) attach()
     }
 
-    /** The wide page on screen, shown whole and alone in paged reading; -1 for anything else. */
+    /**
+     * The wide page on screen, shown whole and alone in paged reading, or the first page
+     * of a spread in two files merged into one view; -1 for anything else.
+     */
     private fun widePageShown(): Int {
         val a = analysis ?: return -1
         val count = source?.pageCount ?: return -1
         if (mode != MODE_PAGED) return -1
-        val part = layout.parts(shownItem(), count).filterNotNull().singleOrNull() ?: return -1
+        val item = shownItem()
+        if (!spread && layout.joined(item)) return layout.firstPage(item)
+        val part = layout.parts(item, count).filterNotNull().singleOrNull() ?: return -1
         return if (part.half == Half.WHOLE && a.wide(part.page)) part.page else -1
     }
 
@@ -1306,7 +1376,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /** True while items show numbers of their own: a page split in halves takes two. */
-    private fun itemNumbers() = mode == MODE_PAGED && !spread && layout.grouped
+    private fun itemNumbers() = mode == MODE_PAGED && !layout.spread && layout.grouped
 
     /**
      * Builds a fresh adapter for the current layout. A [RecyclerView.Adapter] has
@@ -1685,6 +1755,7 @@ class ViewerActivity : AppCompatActivity() {
             seenPages.set(layout.firstPage(item).coerceAtLeast(0), layout.lastPage(item, count) + 1)
         }
         updateSpreadRotation()
+        checkSeams()
         if (seekPanel.visibility == View.VISIBLE) {
             seekPreviews?.highlight(shownItem())
             centerSeekPanel()
@@ -3155,6 +3226,13 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L
+
+        /** Pages either way of the one on screen whose seams are checked where pages are costly to read. */
+        private const val SEAM_WINDOW = 6
+
+        /** Seams checked before the first layout with them, then between layouts. */
+        private const val SEAM_FIRST = 4
+        private const val SEAM_BATCH = 24
 
         /** A start page past any book's end: opens it at its last page. */
         private const val LAST_PAGE = Int.MAX_VALUE

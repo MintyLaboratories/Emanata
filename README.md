@@ -192,7 +192,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page numbers would pair it otherwise (the seams of that run decide; **Shift
   pairs by one page** still flips the result), and its gutter is never cropped.
   Seams are checked in the background, nearest the page on screen first, and kept
-  per book.
+  per book. **Join spreads by their edges** (on by default, also in the reader
+  sheet) turns this off.
 - **Spreads:** *Merge* (default) shows a wide page whole, and a spread in two
   files as one; *Split* shows a wide page as two pages, each numbered and fitted
   on its own (one page at a time only).

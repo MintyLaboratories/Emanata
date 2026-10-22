@@ -40,9 +40,11 @@ class PrefsDefaultsTest {
         val prefs = Prefs(context)
         assertEquals(SpreadDisplay.MERGE, prefs.spreads)
         assertTrue(prefs.rotateSpreads)
+        assertTrue(prefs.joinSpreads)
         // The settings screen writes the same defaults.
         PreferenceManager.setDefaultValues(context, R.xml.settings, true)
         assertEquals(SpreadDisplay.MERGE, Prefs(context).spreads)
         assertTrue(Prefs(context).rotateSpreads)
+        assertTrue(Prefs(context).joinSpreads)
     }
 }

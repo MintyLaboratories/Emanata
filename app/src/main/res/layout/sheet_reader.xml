@@ -203,6 +203,14 @@
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_join_spreads"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_3"
+            android:minHeight="48dp"
+            android:text="@string/pref_join_spreads" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_auto_crop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

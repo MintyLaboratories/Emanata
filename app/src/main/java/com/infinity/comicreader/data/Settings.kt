@@ -87,7 +87,8 @@ data class ReaderSettings(
     val charset: String,
     val spreads: SpreadDisplay = SpreadDisplay.MERGE,
     val coverAlone: Boolean = true,
-    val rotateSpreads: Boolean = true
+    val rotateSpreads: Boolean = true,
+    val joinSpreads: Boolean = true
 ) {
     companion object {
         fun from(p: Prefs) = ReaderSettings(
@@ -118,7 +119,8 @@ data class ReaderSettings(
             charset = p.charset,
             spreads = p.spreads,
             coverAlone = p.coverAlone,
-            rotateSpreads = p.rotateSpreads
+            rotateSpreads = p.rotateSpreads,
+            joinSpreads = p.joinSpreads
         )
     }
 }

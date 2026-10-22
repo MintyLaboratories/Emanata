@@ -715,6 +715,10 @@ class ViewerActivity : AppCompatActivity() {
             updateSpreadRotation()
             shown = true
         }
+        if (s.joinSpreads != old.joinSpreads) {
+            applyJoinSpreads()
+            shown = true
+        }
         if (s.fullscreen != old.fullscreen) {
             applyFullscreen(s.fullscreen)
             shown = true
@@ -1293,7 +1297,7 @@ class ViewerActivity : AppCompatActivity() {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (topToBottom()) emptyList() else pageSeams.of(rtl), shiftedByNames)
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) pageSeams.of(rtl) else emptyList(), shiftedByNames)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -1309,8 +1313,18 @@ class ViewerActivity : AppCompatActivity() {
         return PageLayout(false, rtl)
     }
 
+    /** True when pages may join by their seams ([Prefs.joinSpreads]) read left or right. */
+    private fun seamsRead() = prefs.joinSpreads && !topToBottom()
+
     /** True when the open book's layout reads its seams: paged left or right, two pages a screen or spreads merged. */
-    private fun seamsUsed() = mode == MODE_PAGED && !topToBottom() && (spread || spreadDisplay == SpreadDisplay.MERGE)
+    private fun seamsUsed() = mode == MODE_PAGED && seamsRead() && (spread || spreadDisplay == SpreadDisplay.MERGE)
+
+    /** Lays the open book out again with seams read or not, as [Prefs.joinSpreads] now says. */
+    private fun applyJoinSpreads() {
+        if (!prefs.joinSpreads) seamsJob?.cancel()
+        if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach()
+        checkSeams()
+    }
 
     /**
      * Checks the seams between the open book's pages that its layout may read, in the
@@ -2607,6 +2621,10 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(id).setOnCheckedChangeListener { _, checked -> if (!syncingSheet) set(checked) }
         switch(R.id.sheet_auto_crop) { setAutoCrop(it) }
         switch(R.id.sheet_shift) { setShifted(it) }
+        switch(R.id.sheet_join_spreads) {
+            prefs.joinSpreads = it
+            applyJoinSpreads()
+        }
         switch(R.id.sheet_rotate_spreads) {
             prefs.rotateSpreads = it
             updateSpreadRotation()
@@ -2664,6 +2682,10 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(R.id.sheet_shift).apply {
                 isChecked = shifted
                 isEnabled = spread && favoriteFile() != null
+            }
+            view.findViewById<MaterialSwitch>(R.id.sheet_join_spreads).apply {
+                isChecked = prefs.joinSpreads
+                isEnabled = sideways
             }
             view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {

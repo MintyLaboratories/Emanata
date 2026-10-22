@@ -121,6 +121,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_COVER_ALONE, true)
         set(v) = put(KEY_COVER_ALONE, v)
 
+    /** Two pages whose facing edges run on show, or pair, as one picture ([com.infinity.comicreader.reader.SpreadSeams]). */
+    var joinSpreads: Boolean
+        get() = bool(KEY_JOIN_SPREADS, true)
+        set(v) = put(KEY_JOIN_SPREADS, v)
+
     /** Paged reading in portrait turns the screen to landscape while a wide page shows whole. */
     var rotateSpreads: Boolean
         get() = bool(KEY_ROTATE_SPREADS, true)
@@ -531,6 +536,7 @@ class Prefs(context: Context) {
         private const val KEY_SPREADS = "pref_spreads"
         private const val KEY_COVER_ALONE = "pref_cover_alone"
         private const val KEY_ROTATE_SPREADS = "pref_rotate_spreads"
+        private const val KEY_JOIN_SPREADS = "pref_join_spreads"
 
         private val KNOWN_KEYS = setOf(
             KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -542,7 +548,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS
+            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

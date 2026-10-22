@@ -129,6 +129,29 @@ class ViewerActivitySeamsTest {
     }
 
     @Test
+    fun withoutJoiningSpreadsSeamsAreNotRead() {
+        prefs.joinSpreads = false
+        val viewer = launch(book(count = 7, first = 3))
+        repeat(50) { Thread.sleep(10); idle() }
+        assertEquals(7, viewer.items())
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        assertTrue(seams.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun theSheetUndoesAJoinAndBringsItBack() {
+        val viewer = launch(book(count = 7, first = 3))
+        await { viewer.items() == 6 }
+        val sheet = ReaderSheet(viewer)
+        sheet.tap(R.id.sheet_join_spreads)
+        assertEquals(false, prefs.joinSpreads)
+        assertEquals(7, viewer.items())
+        sheet.tap(R.id.sheet_join_spreads)
+        await { viewer.items() == 6 }
+        assertEquals(6, viewer.items())
+    }
+
+    @Test
     fun twoPagesPairTheHalvesOfOnePicture() {
         prefs.twoPage = TwoPage.ON
         // By number: [000] [001|002] [003|004] [005|006] [007|008]; page 004 runs on into 005.

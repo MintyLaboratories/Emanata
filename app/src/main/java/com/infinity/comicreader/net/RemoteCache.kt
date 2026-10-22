@@ -27,11 +27,16 @@ object RemoteCache {
 
     fun dirIn(cacheDir: File) = File(cacheDir, DIR)
 
-    /** The local copy of [file] when one is complete; null otherwise. Touches no network. */
+    /**
+     * The local copy of [file] when one is complete; null otherwise. Touches no network.
+     * Copies are stored only once whole, so one of a file whose size is not listed counts.
+     */
     fun cached(file: RemoteFile, cacheDir: File): File? {
         val stat = file.stat() ?: return null
-        return copyOf(file, stat, dirIn(cacheDir)).takeIf { it.isFile && it.length() == stat.size }?.also { touch(it) }
+        return copyOf(file, stat, dirIn(cacheDir)).takeIf { whole(it, stat) }?.also { touch(it) }
     }
+
+    private fun whole(copy: File, stat: RemoteStat): Boolean = copy.isFile && (stat.size < 0 || copy.length() == stat.size)
 
     /**
      * The local copy of [file], fetched first when there is none: written aside and
@@ -47,7 +52,7 @@ object RemoteCache {
         val stat = file.fresh() ?: throw IOException("Not found: ${file.name}")
         val dir = dirIn(cacheDir)
         val target = copyOf(file, stat, dir)
-        if (target.isFile && target.length() == stat.size) {
+        if (whole(target, stat)) {
             touch(target)
             return target
         }
@@ -56,20 +61,23 @@ object RemoteCache {
         val part = File.createTempFile(target.name, PART_SUFFIX, dir)
         synchronized(writing) { writing += part.path }
         try {
-            trim(dir, limitBytes - stat.size)
             Remotes.open(file.path).use { input ->
+                // A size the listing left out comes with the file.
+                val size = if (stat.size >= 0) stat.size else input.length
+                if (size > limitBytes) throw TooLargeException(size, limitBytes)
+                trim(dir, limitBytes - size)
                 part.outputStream().use { out ->
                     val buf = ByteArray(CHUNK_BYTES)
                     var done = 0L
-                    while (done < stat.size) {
+                    while (done < size) {
                         if (canceled()) throw InterruptedIOException("Canceled")
-                        val n = input.read(done, buf, 0, minOf(buf.size.toLong(), stat.size - done).toInt())
+                        val n = input.read(done, buf, 0, minOf(buf.size.toLong(), size - done).toInt())
                         if (n < 0) break
                         out.write(buf, 0, n)
                         done += n
-                        progress(done, stat.size)
+                        progress(done, size)
                     }
-                    if (done != stat.size) throw IOException("Short read: ${file.name}")
+                    if (done != size) throw IOException("Short read: ${file.name}")
                 }
             }
             if (!part.renameTo(target)) {

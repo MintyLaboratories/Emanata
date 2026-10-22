@@ -7,6 +7,7 @@ import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Fixtures.entry
 import com.infinity.comicreader.reader.PageSources
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +88,21 @@ class DavBooksTest {
             }
         }
         assertEquals(gets, server.paths("GET").size)
+    }
+
+    @Test
+    fun sizesListingsLeaveOutComeWithTheFile() {
+        server.sizes = false
+        for (ranges in listOf(true, false)) {
+            server.ranges = ranges
+            Remotes.changed(null)
+            RemoteCache.dirIn(cacheDir).deleteRecursively()
+            assertEquals(-1L, Remotes.stat("/net/d1/a.cbz")!!.size)
+            assertEquals(0L, remote("a.cbz").length())
+            val copy = RemoteCache.fetch(remote("a.cbz"), cacheDir)
+            assertArrayEquals(File(share, "a.cbz").readBytes(), copy.readBytes())
+            assertEquals(copy, RemoteCache.cached(remote("a.cbz"), cacheDir))
+        }
     }
 
     @Test

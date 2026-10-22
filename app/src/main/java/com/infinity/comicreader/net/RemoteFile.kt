@@ -84,7 +84,7 @@ class RemoteFile(
 
     override fun isHidden(): Boolean = name.startsWith(".")
 
-    override fun length(): Long = stat()?.takeIf { !it.isDirectory }?.size ?: 0L
+    override fun length(): Long = stat()?.takeIf { !it.isDirectory }?.size?.coerceAtLeast(0) ?: 0L
 
     override fun lastModified(): Long = stat()?.modified ?: 0L
 

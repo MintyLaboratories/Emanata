@@ -27,6 +27,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     @Volatile
     var ranges = true
 
+    /** Whether listings tell file sizes. */
+    @Volatile
+    var sizes = true
+
     /** Sends file bodies at [SLOW_BYTES_PER_SECOND] while on. */
     @Volatile
     var slow = false
@@ -110,7 +114,7 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
             props.append("<D:quota-available-bytes>${q.first}</D:quota-available-bytes><D:quota-used-bytes>${q.second}</D:quota-used-bytes>")
         } else {
             props.append(if (file.isDirectory) "<D:resourcetype><D:collection/></D:resourcetype>" else "<D:resourcetype/>")
-            if (file.isFile) props.append("<D:getcontentlength>${file.length()}</D:getcontentlength>")
+            if (file.isFile && sizes) props.append("<D:getcontentlength>${file.length()}</D:getcontentlength>")
             props.append("<D:getlastmodified>${HTTP_DATE.format(Instant.ofEpochMilli(file.lastModified()))}</D:getlastmodified>")
         }
         return "<D:response><D:href>$href</D:href><D:propstat><D:prop>$props</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>"

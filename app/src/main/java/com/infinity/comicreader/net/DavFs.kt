@@ -97,7 +97,7 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     }
 
     private fun statOf(name: String, e: DavXml.Entry) =
-        RemoteStat(name, e.isCollection, if (e.isCollection) 0 else e.size.coerceAtLeast(0), e.modified, e.created)
+        RemoteStat(name, e.isCollection, if (e.isCollection) 0 else e.size, e.modified, e.created)
 
     private fun propfind(url: HttpUrl, depth: Int, body: String, path: String): List<DavXml.Entry> {
         val request = request(url)
@@ -261,7 +261,11 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             }
         }
 
-        private fun knownLength(): Long = stat(path)?.size ?: throw RemoteException(RemoteException.Reason.MISSING, path)
+        /** The length the server lists, when the answer did not tell it. */
+        private fun knownLength(): Long {
+            val stat = stat(path) ?: throw RemoteException(RemoteException.Reason.MISSING, path)
+            return stat.size.takeIf { it >= 0 } ?: throw IOException("Length unknown: $path")
+        }
 
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
             lock.lock()

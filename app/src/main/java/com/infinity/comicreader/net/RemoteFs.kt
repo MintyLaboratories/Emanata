@@ -30,7 +30,10 @@ interface RemoteFs : Closeable {
     fun retry() {}
 }
 
-/** A file or folder on a share: sizes in bytes, times in milliseconds since the epoch (0 = unknown). */
+/**
+ * A file or folder on a share: sizes in bytes (-1 for a file the server lists without
+ * one), times in milliseconds since the epoch (0 = unknown).
+ */
 data class RemoteStat(val name: String, val isDirectory: Boolean, val size: Long, val modified: Long, val created: Long)
 
 /** An open file on a share, read at any position. */

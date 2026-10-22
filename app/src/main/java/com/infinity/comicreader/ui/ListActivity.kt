@@ -126,6 +126,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Mounted storage volumes, refreshed whenever the screen resumes. */
     private var roots: List<StorageRoot> = emptyList()
+
+    /** Lists the storage roots; tests stand in drives. */
+    internal var listRoots: () -> List<StorageRoot> = { StorageRoots.list(this) }
+
+    /** A drive plugged in that the location picker has not shown yet. */
+    private var pluggedDrive: String? = null
     private var mode = TAB_BROWSE
     private var query = ""
     private var resumedOnce = false
@@ -266,7 +272,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         pathbar.onCrumbClick = { openCrumb(it) }
         pathbar.onLocationsClick = { showRootChooser() }
-        roots = StorageRoots.list(this)
+        roots = listRoots()
         storageWatcher = StorageWatcher(this) { refreshRoots() }
 
         // Settings changed here, in the settings screen or anywhere else apply live;
@@ -303,7 +309,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         super.onResume()
         applyStatusBarSetting()
         // A drive may have come or gone while stopped.
-        if (refreshRoots()) return
+        val left = refreshRoots()
+        showPluggedDrive()
+        if (left) return
         if (!hasStorageAccess()) return
         if (!resumedOnce) {
             // Right after onCreate's listing, or after access was granted to start up with.
@@ -335,15 +343,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /**
-     * Lists the storage roots again. When the drive of the folder being browsed is
+     * Lists the storage roots again ([now]). When the drive of the folder being browsed is
      * gone, says so and goes to the device's storage; returns true then. Otherwise
-     * the crumbs and an open location picker follow the new list.
+     * the crumbs and an open location picker follow the new list. A drive plugged in
+     * opens the location picker with it highlighted, at once in the foreground, else
+     * on the next return ([showPluggedDrive]).
      */
-    private fun refreshRoots(): Boolean {
+    internal fun refreshRoots(now: List<StorageRoot> = listRoots()): Boolean {
         val before = roots
-        roots = StorageRoots.list(this)
+        roots = now
         LocationSheet.find(this)?.update(roots)
         if (roots == before) return false
+        StorageRoot.added(before, roots)?.let { pluggedDrive = it.path }
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) showPluggedDrive()
         val dir = currentDir ?: return false
         val gone = StorageRoot.removed(dir.absolutePath, before, roots)
         if (gone != null) {
@@ -1720,6 +1732,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun showCrumbs(dir: File) {
         val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
         pathbar.show(crumbs, current = current)
+    }
+
+    /** Opens the location picker with the drive plugged in last highlighted, if it is still mounted. */
+    private fun showPluggedDrive() {
+        val path = pluggedDrive ?: return
+        val drive = roots.firstOrNull { it.path == path }
+        if (drive == null || LocationSheet.show(this, drive)) pluggedDrive = null
     }
 
     /** Opens the location picker from the app icon crumb; picking a root opens its top folder ([onLocationPicked]). */

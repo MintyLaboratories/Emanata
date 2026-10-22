@@ -112,4 +112,16 @@ class StorageRootTest {
         assertEquals(null, StorageRoot.removed("/storage/emulated/0/a.cbz", before, emptyList()))
         assertEquals(null, StorageRoot.removed("/mnt/elsewhere/a.cbz", before, emptyList()))
     }
+
+    @Test
+    fun addedDrives() {
+        val usb = StorageRoot("/storage/1A2B-3C4D", "Drive A", StorageRoot.Kind.USB)
+        val share = StorageRoot("/net/s1", "Share A", StorageRoot.Kind.SHARE)
+        assertEquals(usb, StorageRoot.added(listOf(device, card), listOf(device, card, usb)))
+        assertEquals(card, StorageRoot.added(listOf(device), listOf(device, card)))
+        // Nothing new, a drive pulled out, or a new share is no plugged-in drive.
+        assertEquals(null, StorageRoot.added(listOf(device, usb), listOf(device, usb)))
+        assertEquals(null, StorageRoot.added(listOf(device, usb), listOf(device)))
+        assertEquals(null, StorageRoot.added(listOf(device), listOf(device, share)))
+    }
 }

@@ -11,7 +11,10 @@ import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.StorageRoot
+import com.infinity.comicreader.data.StorageRoots
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -187,6 +190,54 @@ class ListActivityCrumbsTest {
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
         assertEquals(2, bar.currentIndex)
         assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun aDrivePluggedInOpensTheLocationPickerWithItHighlighted() {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        val activity = controller.get()
+        val roots = StorageRoots.list(activity)
+        val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
+        activity.refreshRoots(roots + usb)
+        idle()
+        assertEquals(listOf("Device", "Drive A"), activity.locations?.shownRoots?.map { it.name })
+        val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
+        assertFalse(list.getChildAt(0).isActivated)
+        assertTrue(list.getChildAt(1).isActivated)
+    }
+
+    @Test
+    fun aDrivePluggedInWhileAwayOpensTheLocationPickerOnReturn() {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        val activity = controller.get()
+        val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
+        val mounted = StorageRoots.list(activity) + usb
+        activity.listRoots = { mounted }
+        controller.pause().stop()
+        activity.refreshRoots()
+        idle()
+        assertTrue(activity.locations?.isShowing != true)
+        controller.start().resume()
+        idle()
+        assertTrue(activity.locations?.isShowing == true)
+        val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
+        assertTrue(list.getChildAt(1).isActivated)
+    }
+
+    @Test
+    fun aDrivePulledOutBeforeTheReturnOpensNothing() {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        idle()
+        val activity = controller.get()
+        val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
+        controller.pause().stop()
+        activity.refreshRoots(StorageRoots.list(activity) + usb)
+        activity.refreshRoots(StorageRoots.list(activity))
+        controller.start().resume()
+        idle()
+        assertTrue(activity.locations?.isShowing != true)
     }
 
     @Test

@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * The location picker the app icon crumb opens: every storage root with its icon, name
- * and free space, the current one highlighted. Tapping one hands it to the [Host]
+ * and free space, the current one highlighted (or a drive just plugged in). Tapping one hands it to the [Host]
  * activity. [update] redraws an open sheet as drives come and go; the sheet comes
  * back after a rotation. Free space is read off the main thread.
  */
@@ -112,12 +112,16 @@ class LocationSheet : BottomSheetDialogFragment() {
         private const val TAG = "locations"
         private const val ARG_CURRENT = "current"
 
-        /** Opens the sheet over [activity], which must be a [Host], with [current] highlighted. */
-        fun show(activity: FragmentActivity, current: StorageRoot?) {
+        /**
+         * Opens the sheet over [activity], which must be a [Host], with [current] highlighted;
+         * false when the activity's state is already saved and nothing opened.
+         */
+        fun show(activity: FragmentActivity, current: StorageRoot?): Boolean {
             val fm = activity.supportFragmentManager
-            if (fm.isStateSaved) return
+            if (fm.isStateSaved) return false
             find(activity)?.dismiss()
             LocationSheet().apply { arguments = bundleOf(ARG_CURRENT to current?.path) }.show(fm, TAG)
+            return true
         }
 
         /** The sheet open over [activity]; null when none is. */

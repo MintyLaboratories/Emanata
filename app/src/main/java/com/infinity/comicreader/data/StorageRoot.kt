@@ -31,6 +31,10 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
             return root.takeIf { r -> now.none { it.path == r.path } }
         }
 
+        /** The last removable root in [now] that [before] did not list (a drive plugged in); null when none is new. */
+        fun added(before: List<StorageRoot>, now: List<StorageRoot>): StorageRoot? =
+            now.lastOrNull { r -> (r.kind == Kind.REMOVABLE || r.kind == Kind.USB) && before.none { it.path == r.path } }
+
         /**
          * The top [path] may be browsed up to: its root in [roots], else the first
          * folder below the system ones (`/`, `/storage`, `/storage/emulated`), e.g.

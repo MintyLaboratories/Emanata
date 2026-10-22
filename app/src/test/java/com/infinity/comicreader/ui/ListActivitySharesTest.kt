@@ -35,6 +35,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowToast
 import java.io.File
 import javax.crypto.spec.SecretKeySpec
 
@@ -201,6 +202,30 @@ class ListActivitySharesTest {
         assertEquals("more", added.path.dir)
         assertEquals("pw", added.password)
         assertEquals(listOf("Device", "Share A", "Share B"), activity.locations?.shownRoots?.map { it.name })
+    }
+
+    @Test
+    fun aShareFolderFoundGoneGoesToItsNearestParent() {
+        Prefs(context).lastPath = "/net/s1/Series/Gone/Deeper"
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(listOf("Share A", "Series"), activity.findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label })
+        assertEquals(listOf("001.cbz"), rows(activity.findViewById(R.id.recycler)))
+        assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
+        assertEquals(1, ShadowToast.shownToastCount())
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.empty_retry).visibility)
+    }
+
+    @Test
+    fun pathsOnARemovedShareCountAsGone() {
+        Prefs(context).lastPath = "/net/gone1/Series"
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        assertEquals(listOf("Device"), activity.findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label })
+        val orphan = Remotes.file("/net/gone1/Series/001.cbz", askNetwork = false)
+        assertFalse(orphan.exists())
+        assertFalse(orphan.isFile)
+        assertFalse(Remotes.file("/net/gone1/Series", askNetwork = false).isDirectory)
     }
 
     @Test

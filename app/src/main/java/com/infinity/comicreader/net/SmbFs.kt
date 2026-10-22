@@ -75,7 +75,8 @@ class SmbFs(private val share: Share) : RemoteFs {
                 millis(basic.lastWriteTime), millis(basic.creationTime)
             )
         }
-    } catch (e: Missing) {
+    } catch (e: RemoteException) {
+        if (e.reason != RemoteException.Reason.MISSING) throw e
         null
     }
 
@@ -289,16 +290,13 @@ class SmbFs(private val share: Share) : RemoteFs {
         override fun toRemote() = error
     }
 
-    /** Thrown inside [stat] for a path that is not there. */
-    private class Missing(cause: Throwable) : IOException(cause)
-
     private fun translate(e: Exception): Failure {
         if (e is RemoteException) return Known(e)
-        if (e is Missing) return Known(e)
         if (e is SMBApiException) {
             return when (e.status) {
                 NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND,
-                NtStatus.STATUS_NO_SUCH_FILE, NtStatus.STATUS_NOT_A_DIRECTORY -> Known(Missing(e))
+                NtStatus.STATUS_NO_SUCH_FILE, NtStatus.STATUS_NOT_A_DIRECTORY ->
+                    Known(RemoteException(RemoteException.Reason.MISSING, e.message, e))
                 NtStatus.STATUS_LOGON_FAILURE, NtStatus.STATUS_ACCESS_DENIED, NtStatus.STATUS_ACCOUNT_DISABLED,
                 NtStatus.STATUS_PASSWORD_EXPIRED, NtStatus.STATUS_LOGON_TYPE_NOT_GRANTED ->
                     Known(RemoteException(RemoteException.Reason.DENIED, e.message, e))

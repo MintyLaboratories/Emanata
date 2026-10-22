@@ -49,7 +49,7 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     override fun list(path: String): List<RemoteStat> {
         check()
         lists++
-        return at(path).listFiles()?.map { statOf(it) } ?: throw java.io.IOException("Not a folder: $path")
+        return at(path).listFiles()?.map { statOf(it) } ?: throw RemoteException(RemoteException.Reason.MISSING, "Not a folder: $path")
     }
 
     override fun stat(path: String): RemoteStat? {

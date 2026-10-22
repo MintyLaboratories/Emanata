@@ -56,6 +56,9 @@ class RemoteException(
         /** The share named is not on the host. */
         NO_SHARE,
 
+        /** Nothing is at the path on the share, or not what was asked for (a file listed as a folder). */
+        MISSING,
+
         /** The share was removed from the app. */
         UNKNOWN_SHARE
     }

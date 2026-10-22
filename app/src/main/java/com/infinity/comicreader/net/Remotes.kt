@@ -96,6 +96,9 @@ object Remotes {
 
     fun share(id: String): Share? = shares().firstOrNull { it.id == id }
 
+    /** True for a path on a share that was removed from the app: nothing is there any more. */
+    fun isOrphan(path: String): Boolean = idOf(path)?.let { share(it) == null } == true
+
     /** Forgets what was held for share [id] (every share when null): its connection, findings and failures. */
     fun changed(id: String?) {
         val closing = ArrayList<RemoteFs>()

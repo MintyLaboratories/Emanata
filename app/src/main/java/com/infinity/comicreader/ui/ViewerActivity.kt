@@ -1181,7 +1181,9 @@ class ViewerActivity : AppCompatActivity() {
     private fun openFailure(error: Throwable?, book: File): String = when (error) {
         is NestedArchives.StorageException -> getString(R.string.error_open_storage)
         is RemoteCache.TooLargeException -> getString(R.string.error_open_too_large)
-        is RemoteException -> {
+        is RemoteException -> if (error.reason == RemoteException.Reason.MISSING || error.reason == RemoteException.Reason.UNKNOWN_SHARE) {
+            getString(R.string.open_location_failed)
+        } else {
             val name = StorageRoot.of(book.absolutePath, bookRoots)?.name.orEmpty()
             getString(
                 when (error.reason) {

@@ -11,8 +11,9 @@ import java.io.FilenameFilter
  * size and times come from the listing that found it, else from [Remotes]; on the
  * main thread, where the network is never used, from what is remembered or a guess
  * by its name (a name a book could have is a file); likewise everywhere without
- * [askNetwork], for lists that must show at once (favorites, history). It is read-only: renaming,
- * deleting and making folders fail.
+ * [askNetwork], for lists that must show at once (favorites, history). On a share
+ * removed from the app, nothing exists. It is read-only: renaming, deleting and
+ * making folders fail.
  */
 class RemoteFile(
     private val where: String,
@@ -73,11 +74,13 @@ class RemoteFile(
 
     override fun isAbsolute(): Boolean = true
 
-    override fun exists(): Boolean = guessing() || stat() != null
+    override fun exists(): Boolean = !orphan() && (guessing() || stat() != null)
 
-    override fun isDirectory(): Boolean = if (guessing()) guessDirectory() else stat()?.isDirectory == true
+    override fun isDirectory(): Boolean = !orphan() && if (guessing()) guessDirectory() else stat()?.isDirectory == true
 
-    override fun isFile(): Boolean = if (guessing()) !guessDirectory() else stat()?.isDirectory == false
+    override fun isFile(): Boolean = !orphan() && if (guessing()) !guessDirectory() else stat()?.isDirectory == false
+
+    private fun orphan(): Boolean = Remotes.isOrphan(where)
 
     override fun isHidden(): Boolean = name.startsWith(".")
 

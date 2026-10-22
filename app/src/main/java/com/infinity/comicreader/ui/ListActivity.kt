@@ -590,15 +590,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * Browses [dir], or when it no longer exists its nearest existing parent (the device's
-     * storage when none is left), saying so and dropping the forward crumbs through it.
+     * storage when none is left), saying so (unless [noted] already) and dropping the
+     * forward crumbs through it. A folder on a share is found gone only by listing it.
      */
-    private fun loadDirectory(dir: File, highlight: String? = null) {
+    private fun loadDirectory(dir: File, highlight: String? = null, noted: Boolean = false) {
         if (!dir.isDirectory) {
             val missing = dir.absolutePath
-            toast(R.string.folder_gone)
+            if (!noted) toast(R.string.folder_gone)
             trail = MissingFolder.trailAfter(trail, missing)
             val instead = nearestFolder(missing)?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
-            if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead)
+            if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead, noted = true)
         }
         mode = TAB_BROWSE
         applyView()
@@ -632,6 +633,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
             if (failure != null) {
                 if (failure !is RemoteException) throw failure
+                if (failure.reason == RemoteException.Reason.MISSING) {
+                    shareFolderGone(dir, noted)
+                    return@launchListing
+                }
                 progress.visibility = View.GONE
                 listError = failure
                 setPrefix = null
@@ -655,6 +660,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             }
         }
+    }
+
+    /** Goes to the nearest parent of [dir], a share's folder its listing found gone, saying so unless [noted]. */
+    private fun shareFolderGone(dir: File, noted: Boolean) {
+        if (!noted) toast(R.string.folder_gone)
+        val missing = dir.absolutePath
+        trail = MissingFolder.trailAfter(trail, missing)
+        val parent = dir.parent?.takeIf { Remotes.isRemote(it) }
+        loadDirectory(parent?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory(), noted = true)
     }
 
     /**

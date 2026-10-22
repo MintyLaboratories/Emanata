@@ -128,8 +128,13 @@ class ViewerActivityHiddenPagesTest {
         // Numbered as in the book.
         assertEquals("3", cell.findViewById<TextView>(R.id.thumb_label).text.toString())
         assertFalse(unhide.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+        assertEquals(View.GONE, cell.findViewById<View>(R.id.thumb_check).visibility)
         cell.performClick()
         idle()
+        grid.layout(0, 0, 800, grid.measuredHeight)
+        idle()
+        val marked = grid.findViewHolderForAdapterPosition(0)!!.itemView
+        assertEquals(View.VISIBLE, marked.findViewById<View>(R.id.thumb_check).visibility)
         assertTrue(unhide.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
         unhide.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         viewer.settle()

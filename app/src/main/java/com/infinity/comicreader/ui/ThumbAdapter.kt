@@ -31,8 +31,8 @@ import kotlinx.coroutines.withContext
  * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. Until it is ready the
  * page's preview stands in, stored or quickly decoded ([PageSource.loadPreview]) and
  * cropped the same way, so the exact one replaces it in place. [thumbHeight], when
- * above 0, replaces the layout's thumbnail height in pixels. [currentPage] and pages
- * [marked] are outlined; [labelOf] numbers each page.
+ * above 0, replaces the layout's thumbnail height in pixels. [currentPage] is outlined,
+ * pages [marked] outlined thicker and checked; [labelOf] numbers each page.
  */
 class ThumbAdapter(
     private val source: PageSource,
@@ -60,8 +60,12 @@ class ThumbAdapter(
     /** Called on the main thread as page [Int] shows its preview (false) or exact thumbnail (true). */
     var onShown: ((Int, Boolean) -> Unit)? = null
 
-    class Holder(val root: View, val image: com.google.android.material.imageview.ShapeableImageView, val label: TextView) :
-        RecyclerView.ViewHolder(root) {
+    class Holder(
+        val root: View,
+        val image: com.google.android.material.imageview.ShapeableImageView,
+        val label: TextView,
+        val check: ImageView
+    ) : RecyclerView.ViewHolder(root) {
         var job: Job? = null
 
         /** The page bound here, and the thumbnail size last requested for it (width in the high half). */
@@ -77,7 +81,8 @@ class ThumbAdapter(
         val holder = Holder(
             view,
             view.findViewById(R.id.thumb_image),
-            view.findViewById(R.id.thumb_label)
+            view.findViewById(R.id.thumb_label),
+            view.findViewById(R.id.thumb_check)
         )
         if (thumbHeight > 0) holder.image.layoutParams.height = thumbHeight
         holder.image.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
@@ -89,12 +94,14 @@ class ThumbAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         holder.label.text = labelOf(position)
         val context = holder.itemView.context
-        if (position == currentPage || marked(position)) {
-            holder.image.strokeWidth = context.resources.displayMetrics.density * 2f
+        val isMarked = marked(position)
+        if (position == currentPage || isMarked) {
+            holder.image.strokeWidth = context.resources.displayMetrics.density * (if (isMarked) 4f else 2f)
             holder.image.strokeColor = androidx.core.content.ContextCompat.getColorStateList(context, R.color.md_primary)
         } else {
             holder.image.strokeWidth = 0f
         }
+        holder.check.visibility = if (isMarked) View.VISIBLE else View.GONE
         holder.root.setOnClickListener { onPick(holder.bindingAdapterPosition) }
         holder.job?.cancel()
         holder.page = position

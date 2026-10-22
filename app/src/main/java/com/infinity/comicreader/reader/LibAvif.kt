@@ -31,7 +31,7 @@ internal interface AvifCodec {
     fun close(handle: Long)
 }
 
-/** libavif with the libgav1 AV1 decoder, built from source (`src/main/cpp`), through JNI. */
+/** libavif with the dav1d AV1 decoder, built from source (`src/main/cpp`), through JNI. */
 internal object LibAvif : AvifCodec {
     init {
         System.loadLibrary("avifjni")

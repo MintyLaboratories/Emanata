@@ -24,7 +24,7 @@ import java.io.File
  * just covering the box), then made into the box by [CoverArt] as the [CoverStyle]
  * says, so the view draws them 1:1. They
  * are cached per size and style in memory (bounded by heap) and losslessly on disk
- * under `cacheDir/thumbnails`. A bookmark's cover has its page in front ([CoverArt.withPage]).
+ * under `cacheDir/covers`. A bookmark's cover has its page in front ([CoverArt.withPage]).
  */
 object Thumbs {
     private const val DISK_DIR = "covers"

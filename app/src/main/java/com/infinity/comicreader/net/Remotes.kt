@@ -10,8 +10,9 @@ import java.io.InputStream
  * Network shares as the app's paths see them: share `id` is the folder `/net/id`,
  * with the share's files below it. Paths there make [RemoteFile]s ([file]); this
  * keeps one [RemoteFs] per share, remembers what listings found ([cachedStat]), and
- * fails fast, without touching the network, while offline or for a while after a
- * share could not be reached ([retry] ends that early).
+ * fails fast, without touching the network, while offline, for a while after a share
+ * could not be reached, and after a share turned the sign-in down until it is edited
+ * ([changed]) or the user retries ([retry]).
  */
 object Remotes {
     /** The folder every share's root sits in. */
@@ -46,6 +47,7 @@ object Remotes {
     private var shares: List<Share>? = null
     private val open = HashMap<String, RemoteFs>()
     private val failedAt = HashMap<String, Long>()
+    private val refused = HashMap<String, RemoteException>()
     private val stats = object : LinkedHashMap<String, RemoteStat>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
@@ -103,10 +105,12 @@ object Remotes {
                 closing += open.values
                 open.clear()
                 failedAt.clear()
+                refused.clear()
                 stats.clear()
             } else {
                 open.remove(id)?.let { closing += it }
                 failedAt.remove(id)
+                refused.remove(id)
                 val root = rootOf(id)
                 stats.keys.removeAll { it == root || it.startsWith("$root/") }
             }
@@ -122,10 +126,12 @@ object Remotes {
         return clock() - at < QUIET_MS
     }
 
-    /** Lets the next call to share [id] try the network again at once. */
+    /** Lets the next call to share [id] try the network again at once, signing in again after a refusal. */
     @Synchronized
     fun retry(id: String) {
         failedAt.remove(id)
+        refused.remove(id)
+        open[id]?.retry()
     }
 
     @Synchronized
@@ -179,6 +185,7 @@ object Remotes {
 
     private fun <T> call(path: String, block: (RemoteFs) -> T): T {
         val id = idOf(path) ?: throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+        synchronized(this) { refused[id] }?.let { throw RemoteException(it.reason, it.message, it, lasting = true) }
         if (unreachable(id)) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         // Never from the main thread: a caller there gets what is remembered, or a guess.
         if (onMainThread()) throw RemoteException(RemoteException.Reason.UNREACHABLE, "Network on the main thread")
@@ -186,7 +193,10 @@ object Remotes {
         return try {
             block(fs)
         } catch (e: RemoteException) {
-            if (e.reason == RemoteException.Reason.UNREACHABLE) synchronized(this) { failedAt[id] = clock() }
+            synchronized(this) {
+                if (e.lasting) refused[id] = e
+                else if (e.reason == RemoteException.Reason.UNREACHABLE) failedAt[id] = clock()
+            }
             throw e
         }
     }

@@ -130,6 +130,37 @@ class RemotesTest {
     }
 
     @Test
+    fun aRefusedSignInIsNeverTriedAgainUnasked() {
+        val calls = listOf({ Remotes.list("/net/s1/Series") }, { Remotes.stat("/net/s1/notes.txt") }, { Remotes.space("s1") })
+        for (reason in listOf(RemoteException.Reason.DENIED, RemoteException.Reason.NO_SHARE)) {
+            fake.refuse = reason
+            val before = fake.attempts
+            repeat(5) {
+                for (call in calls) {
+                    try {
+                        call()
+                        fail("succeeded while refused")
+                    } catch (e: RemoteException) {
+                        assertEquals(reason, e.reason)
+                    }
+                }
+                now += Remotes.QUIET_MS
+            }
+            assertNull(Remotes.file("/net/s1/Series").listFiles())
+            assertEquals(1, fake.attempts - before)
+            // The user's Retry, or editing the share, signs in again.
+            fake.refuse = null
+            Remotes.retry("s1")
+            assertEquals(2, Remotes.list("/net/s1/Series").size)
+            fake.refuse = reason
+            runCatching { Remotes.space("s1") }
+            Remotes.changed("s1")
+            fake.refuse = null
+            assertEquals(2, Remotes.list("/net/s1/Series").size)
+        }
+    }
+
+    @Test
     fun offlineNothingIsTried() {
         Remotes.online = { false }
         assertTrue(Remotes.unreachable("s1"))

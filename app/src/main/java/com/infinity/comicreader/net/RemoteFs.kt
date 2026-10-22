@@ -19,6 +19,9 @@ interface RemoteFs : Closeable {
 
     /** Free and total bytes of the share; null when it does not say. */
     fun space(): Pair<Long, Long>?
+
+    /** Forgets a failure it remembered, so the next call tries the network again. */
+    fun retry() {}
 }
 
 /** A file or folder on a share: sizes in bytes, times in milliseconds since the epoch (0 = unknown). */
@@ -32,9 +35,17 @@ interface RemoteInput : Closeable {
     fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int
 }
 
-/** A network failure, by what the user can do about it. */
-class RemoteException(val reason: Reason, message: String? = null, cause: Throwable? = null) :
-    IOException(message ?: reason.name, cause) {
+/**
+ * A network failure, by what the user can do about it. A [lasting] one (a sign-in or
+ * share the host turned down) holds until the share is edited or the user retries:
+ * trying again unasked could lock the account.
+ */
+class RemoteException(
+    val reason: Reason,
+    message: String? = null,
+    cause: Throwable? = null,
+    val lasting: Boolean = false
+) : IOException(message ?: reason.name, cause) {
     enum class Reason {
         /** The host could not be reached: offline, wrong address, or it is off. */
         UNREACHABLE,

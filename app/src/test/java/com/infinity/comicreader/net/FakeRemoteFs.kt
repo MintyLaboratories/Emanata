@@ -5,11 +5,20 @@ import java.io.RandomAccessFile
 
 /**
  * A share served from a local folder [dir], counting what is asked of it; [offline]
- * makes every call fail as an unreachable host would.
+ * makes every call fail as an unreachable host would, [refuse] as a host turning the
+ * sign-in down would.
  */
 class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var offline = false
+
+    @Volatile
+    var refuse: RemoteException.Reason? = null
+
+    /** Calls that reached the host, failed or not. */
+    @Volatile
+    var attempts = 0
+        private set
 
     @Volatile
     var lists = 0
@@ -31,6 +40,8 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
 
     private fun check() {
         if (offline) throw RemoteException(RemoteException.Reason.UNREACHABLE)
+        attempts++
+        refuse?.let { throw RemoteException(it, lasting = true) }
     }
 
     private fun statOf(f: File) = RemoteStat(f.name, f.isDirectory, if (f.isDirectory) 0 else f.length(), f.lastModified(), f.lastModified() - 1000)

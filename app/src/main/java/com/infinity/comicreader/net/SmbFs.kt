@@ -30,7 +30,10 @@ import com.hierynomus.smbj.share.File as SmbFile
  * and encryption are used as the server requires; NTLM signs in, as a guest without
  * a user name. One connection per share, made on first use, made again once when it
  * drops, and closed after [IDLE_MS] without use while no file is open, so nothing
- * goes over the network unless the share is browsed or read.
+ * goes over the network unless the share is browsed or read. A sign-in or share the
+ * host turned down is not tried again until [retry]; a host that could not be
+ * reached, not for [Remotes.QUIET_MS]; so callers waiting to connect meanwhile fail
+ * at once.
  */
 class SmbFs(private val share: Share) : RemoteFs {
     /** Guards the fields below; never held across network I/O, so [close] never waits on it. */
@@ -47,6 +50,10 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     @Volatile
     private var closed = false
+
+    /** Why connecting last failed, and when. */
+    private var failure: RemoteException? = null
+    private var failedAt = 0L
 
     init {
         idleCheck()
@@ -80,6 +87,10 @@ class SmbFs(private val share: Share) : RemoteFs {
     override fun space(): Pair<Long, Long>? = call { d ->
         val info = d.shareInformation
         if (info.totalSpace <= 0) null else info.freeSpace to info.totalSpace
+    }
+
+    override fun retry() {
+        synchronized(lock) { failure = null }
     }
 
     /** Closes the connection at once, even while another thread is connecting; that one then fails. */
@@ -127,6 +138,7 @@ class SmbFs(private val share: Share) : RemoteFs {
         current()?.let { return it }
         synchronized(connecting) {
             current()?.let { return it }
+            remembered()?.let { throw it }
             disconnect()
             val p = share.path
             var c: Connection? = null
@@ -149,9 +161,34 @@ class SmbFs(private val share: Share) : RemoteFs {
                 runCatching { c?.close() }
                 // A missing platform class (SMBJ code Android lacks) reads as a failure, not a crash.
                 if (e !is Exception) Log.w(TAG, "Connecting failed", e)
-                throw translate(e as? Exception ?: IOException(e)).toRemote()
+                throw remember(translate(e as? Exception ?: IOException(e)).toRemote())
             }
         }
+    }
+
+    /** The failure to repeat instead of connecting: a refusal until [retry], else one from the last [Remotes.QUIET_MS]. */
+    private fun remembered(): RemoteException? = synchronized(lock) {
+        val f = failure ?: return null
+        if (!f.lasting && System.currentTimeMillis() - failedAt >= Remotes.QUIET_MS) {
+            failure = null
+            return null
+        }
+        RemoteException(f.reason, f.message, f, f.lasting)
+    }
+
+    /** [error] from connecting, made lasting when the host turned the sign-in or share down, and kept for [remembered]. */
+    private fun remember(error: IOException): IOException {
+        if (error !is RemoteException || error.reason == RemoteException.Reason.UNKNOWN_SHARE) return error
+        val kept = if (error.reason == RemoteException.Reason.DENIED || error.reason == RemoteException.Reason.NO_SHARE) {
+            RemoteException(error.reason, error.message, error.cause, lasting = true)
+        } else {
+            error
+        }
+        synchronized(lock) {
+            failure = kept
+            failedAt = System.currentTimeMillis()
+        }
+        return kept
     }
 
     /** Drops the connection, closing it outside [lock]. */

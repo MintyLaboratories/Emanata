@@ -74,6 +74,9 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
+import com.infinity.comicreader.net.RemoteException
+import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
@@ -118,6 +121,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private lateinit var emptyIcon: ImageView
     private lateinit var emptyText: TextView
     private lateinit var emptySubtitle: TextView
+    private lateinit var retryButton: View
+
+    /** Why the folder browsed could not be listed (its share is unreachable); null when it was. */
+    private var listError: RemoteException? = null
 
     private var currentDir: File? = null
 
@@ -227,6 +234,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         emptyIcon = findViewById(R.id.empty_icon)
         emptyText = findViewById(R.id.empty_text)
         emptySubtitle = findViewById(R.id.empty_subtitle)
+        retryButton = findViewById(R.id.empty_retry)
+        retryButton.setOnClickListener { retryListing() }
 
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(true)
@@ -470,7 +479,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun startUp() {
         val state = restored
         restored = null
-        val savedDir = state?.getString(STATE_DIR)?.let { File(it) }?.takeIf { it.isDirectory }
+        val savedDir = state?.getString(STATE_DIR)?.let { Remotes.file(it) }?.takeIf { it.isDirectory }
         trail = state?.getString(STATE_TRAIL)
         val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
         startTab = null
@@ -511,10 +520,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             shown = { LibraryOrder.favorites(this, prefs, roots).map { it.path } },
             added = { library.favorites() },
             history = { library.history().map { it.path } },
-            isDir = { File(it).isDirectory },
+            // A share's folder is taken as it is; browsing it says when it cannot be reached.
+            isDir = { Remotes.file(it, askNetwork = false).isDirectory },
             reachable = { nearestFolder(it) != null }
         )
-        return path?.let { File(it) } ?: Environment.getExternalStorageDirectory()
+        return path?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
     }
 
     /** Browses the startup location, unless another listing starts while it is worked out. */
@@ -575,7 +585,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     // ------------------------------------------------------------------ listing
 
     /** [path] when it is a folder, else its nearest existing parent within its root; null when none is left. */
-    private fun nearestFolder(path: String): String? = MissingFolder.nearest(path, roots) { File(it).isDirectory }
+    private fun nearestFolder(path: String): String? =
+        MissingFolder.nearest(path, roots) { Remotes.file(it, askNetwork = false).isDirectory }
 
     /**
      * Browses [dir], or when it no longer exists its nearest existing parent (the device's
@@ -586,7 +597,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             val missing = dir.absolutePath
             toast(R.string.folder_gone)
             trail = MissingFolder.trailAfter(trail, missing)
-            val instead = nearestFolder(missing)?.let { File(it) } ?: Environment.getExternalStorageDirectory()
+            val instead = nearestFolder(missing)?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
             if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead)
         }
         mode = TAB_BROWSE
@@ -607,11 +618,23 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         showProgress(true)
         launchListing {
-            val (list, prefix, kind) = withContext(AppDispatchers.io) {
-                val entries = buildDirectoryEntries(dir)
-                val prefix = sharedPrefixOf(entries)
-                Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
+            val listed = withContext(AppDispatchers.io) {
+                runCatching {
+                    val entries = buildDirectoryEntries(dir)
+                    val prefix = sharedPrefixOf(entries)
+                    Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
+                }
             }
+            val failure = listed.exceptionOrNull()
+            if (failure != null) {
+                if (failure !is RemoteException) throw failure
+                progress.visibility = View.GONE
+                listError = failure
+                setPrefix = null
+                displayEntries(emptyList())
+                return@launchListing
+            }
+            val (list, prefix, kind) = listed.getOrThrow()
             setPrefix = prefix.takeIf { kind == FavoriteKind.SET }
             progress.visibility = View.GONE
             displayEntries(list)
@@ -656,6 +679,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
     private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
         if (peek.isShowing) peek.hide()
+        listError = null
         listJob?.cancel()
         classifyJob?.cancel()
         factsJob?.cancel()
@@ -667,8 +691,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
     private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
 
+    /** The entries of [dir]; throws [RemoteException] when its share cannot be reached. */
     private fun buildDirectoryEntries(dir: File): List<BookEntry> {
-        val files = dir.listFiles() ?: return emptyList()
+        val files = (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
         val showHidden = prefs.showHidden
         val snap = snapshot()
         val out = ArrayList<BookEntry>(files.size)
@@ -709,8 +734,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val kinds = HashMap<String, FavoriteKind>()
         val list = paths.map { path ->
             val label = labels[path]
-            val entry = entryFor(File(path), snap).let { if (label != null) it.copy(name = label.name, label = label) else it }
-            val kind = if (!entry.isDir) FavoriteKind.COMIC else kindCache.get(path, entry.lastModified)
+            // Favorites on shares show from what is known, without waiting for the network.
+            val entry = entryFor(Remotes.file(path, askNetwork = false), snap)
+                .let { if (label != null) it.copy(name = label.name, label = label) else it }
+            val kind = when {
+                !entry.isDir -> FavoriteKind.COMIC
+                Remotes.isRemote(path) -> kindCache.peek(path)
+                else -> kindCache.get(path, entry.lastModified)
+            }
             if (kind != null) kinds[path] = kind
             entry
         }
@@ -724,7 +755,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun classifyPending(list: List<BookEntry>) {
         if (!prefs.groupFavorites) return
-        val pending = list.filter { it.path !in favoriteKinds }
+        // Folders on shares are checked too: their kind is shown as cached until their time is known.
+        val pending = list.filter { it.path !in favoriteKinds || (it.isDir && it.file is RemoteFile) }
         if (pending.isEmpty()) return
         classifyJob?.cancel()
         classifyJob = lifecycleScope.launch {
@@ -732,10 +764,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in pending.withIndex()) {
                 // Leaving the tab or listing again stops here, between favorites.
-                found[e.path] = withContext(AppDispatchers.io) {
-                    FavoriteClassifier.classify(e.file, isRoot = roots.any { it.path == e.path })
-                        .also { kindCache.put(e.path, e.lastModified, it) }
-                }
+                val kind = withContext(AppDispatchers.io) { classify(e) }
+                if (kind != null) found[e.path] = kind
                 val now = SystemClock.uptimeMillis()
                 if (i < pending.lastIndex && now - shownAt < CLASSIFY_PUBLISH_MS) continue
                 favoriteKinds = favoriteKinds + found
@@ -745,6 +775,24 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 if (mode == TAB_FAVORITES) applyFilterAndSort(resort = false)
             }
         }
+    }
+
+    /**
+     * The kind of favorite [e], kept with its modification time; a folder on a share
+     * is looked into only when its time changed since, and is left as it is (null)
+     * while the share cannot be reached.
+     */
+    private fun classify(e: BookEntry): FavoriteKind? {
+        val isRoot = roots.any { it.path == e.path }
+        val file = e.file
+        if (file !is RemoteFile) {
+            return FavoriteClassifier.classify(file, isRoot).also { kindCache.put(e.path, e.lastModified, it) }
+        }
+        val time = if (isRoot) 0L else runCatching { file.fresh() }.getOrNull()?.modified ?: return null
+        kindCache.get(e.path, time)?.let { return it }
+        val kind = runCatching { FavoriteClassifier.classify(Remotes.file(e.path), isRoot) }.getOrNull() ?: return null
+        kindCache.put(e.path, time, kind)
+        return kind
     }
 
     private fun toggleSection(kind: FavoriteKind) {
@@ -800,7 +848,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot): BookEntry {
-        val file = File(item.path)
+        val file = Remotes.file(item.path, askNetwork = false)
         val exists = file.exists()
         val stat = if (exists) FileStat.of(file) else null
         // Chapters are usually just "Chapter 12.cbz", so the folder below the name is
@@ -832,7 +880,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     private fun entryForBookmark(bookmark: Bookmark, snap: LibrarySnapshot): BookEntry {
-        val file = File(bookmark.path)
+        val file = Remotes.file(bookmark.path, askNetwork = false)
         val stat = if (file.exists()) FileStat.of(file) else null
         return BookEntry(
             file = file,
@@ -975,7 +1023,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun updateRecentHeader() {
         val show = mode == TAB_BROWSE && query.isBlank() && shown.isNotEmpty()
-        val dir = if (show) library.history().firstOrNull()?.let { File(it.path).parentFile } else null
+        val dir = if (show) library.history().firstOrNull()?.let { Remotes.file(it.path).parentFile } else null
         adapter.header = dir?.let {
             BookAdapter.Header(
                 title = getString(R.string.recent),
@@ -992,9 +1040,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val visible = shown.isEmpty()
         emptyView.visibility = if (visible) View.VISIBLE else View.GONE
         fab.visibility = if (!visible && prefs.listQuickFab) View.VISIBLE else View.GONE
+        val error = listError?.takeIf { mode == TAB_BROWSE }
+        retryButton.visibility = if (error != null) View.VISIBLE else View.GONE
         if (!visible) return
 
         val (icon, title, sub) = when {
+            error != null -> Triple(R.drawable.ic_cloud_off, unreachableText(error), null)
             query.isNotBlank() -> Triple(R.drawable.ic_search, getString(R.string.empty_search), null)
             prefs.filter(tabName()).isActive && allEntries.isNotEmpty() ->
                 Triple(R.drawable.ic_filter_list, getString(R.string.empty_filtered), null)
@@ -1013,6 +1064,26 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         emptyText.text = title
         emptySubtitle.text = sub.orEmpty()
         emptySubtitle.visibility = if (sub == null) View.GONE else View.VISIBLE
+    }
+
+    /** What stopped the share browsed from listing, by its name. */
+    private fun unreachableText(error: RemoteException): String {
+        val name = currentDir?.let { StorageRoot.of(it.absolutePath, roots)?.name }.orEmpty()
+        return getString(
+            when (error.reason) {
+                RemoteException.Reason.DENIED -> R.string.share_denied_named
+                RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+                else -> R.string.share_unreachable_named
+            },
+            name
+        )
+    }
+
+    /** Lists the share browsed again, asking the network at once. */
+    private fun retryListing() {
+        val dir = currentDir ?: return
+        Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
+        loadDirectory(dir)
     }
 
     private fun scrollToHighlight(path: String) {
@@ -1090,7 +1161,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     toast(R.string.startup_folder_set)
                 }
             }
-            if (entry.file.exists()) {
+            if (entry.file !is RemoteFile && entry.file.exists()) {
                 add(getString(R.string.menu_rename)) { renameEntry(entry.file) }
                 add(getString(R.string.delete)) { confirmDelete(entry.file) }
             }
@@ -1646,12 +1717,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 if (currentDir?.let { library.isFavorite(it.absolutePath) } == true)
                     R.string.menu_remove_favorite else R.string.menu_add_favorite
             )
-        menu.findItem(R.id.menu_new_folder)?.isVisible = browsing
+        // Shares are read-only, and too slow to search for duplicates.
+        val local = currentDir !is RemoteFile
+        menu.findItem(R.id.menu_new_folder)?.isVisible = browsing && local
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
-        menu.findItem(R.id.menu_dupes)?.isVisible = browsing
-        menu.findItem(R.id.menu_large)?.isVisible = browsing
+        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_large)?.isVisible = browsing && local
         menu.findItem(R.id.menu_search_deep)?.apply {
             isVisible = browsing
             isChecked = prefs.deepSearch
@@ -1726,7 +1799,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /** Opens a crumb's folder; [loadDirectory] climbs out of one that is gone. */
-    private fun openCrumb(crumb: Crumb) = loadDirectory(File(crumb.path))
+    private fun openCrumb(crumb: Crumb) = loadDirectory(Remotes.file(crumb.path))
 
     /** The crumbs of [dir], with the forward crumbs browsed past it. */
     private fun showCrumbs(dir: File) {
@@ -1748,7 +1821,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override val locationRoots: List<StorageRoot> get() = roots
 
-    override fun onLocationPicked(root: StorageRoot) = loadDirectory(File(root.path))
+    override fun onLocationPicked(root: StorageRoot) {
+        Remotes.idOf(root.path)?.let { Remotes.retry(it) }
+        loadDirectory(Remotes.file(root.path))
+    }
+
+    override fun onSharesChanged() {
+        refreshRoots()
+    }
 
     /** The open location picker; for tests. */
     internal val locations: LocationSheet? get() = LocationSheet.find(this)

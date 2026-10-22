@@ -69,6 +69,9 @@ import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.RemoteException
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
@@ -140,6 +143,9 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var nightOverlay: View
     private lateinit var autoProgress: View
     private lateinit var progress: android.widget.ProgressBar
+
+    /** How much of a book on a share is fetched, below [progress]. */
+    private lateinit var fetched: TextView
     private lateinit var endCard: View
     private lateinit var endSubtitle: TextView
     private lateinit var endNext: View
@@ -626,6 +632,7 @@ class ViewerActivity : AppCompatActivity() {
         nightOverlay = findViewById(R.id.night_overlay)
         autoProgress = findViewById(R.id.auto_progress)
         progress = findViewById(R.id.viewer_progress)
+        fetched = findViewById(R.id.viewer_fetched)
         endCard = findViewById(R.id.viewer_end)
         endSubtitle = findViewById(R.id.end_subtitle)
         endNext = findViewById(R.id.end_next)
@@ -938,7 +945,7 @@ class ViewerActivity : AppCompatActivity() {
             finish()
             return
         }
-        val target = File(path)
+        val target = Remotes.file(path)
         persistAdjustments()
         file = target
         bookRoots = StorageRoots.list(this)
@@ -947,6 +954,7 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.title = chapterLabel(target)
         progress.visibility = View.VISIBLE
         markedRead = false
+        fetchedPercent = -1
         landedAtEnd = false
         bookChapters = emptyList()
         repeatedBack.reset()
@@ -970,7 +978,8 @@ class ViewerActivity : AppCompatActivity() {
             var sliceSettled = false
             val (opened, siblings, contents) = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }) }
+                val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
+                val s = runCatching { PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch) }
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -994,11 +1003,11 @@ class ViewerActivity : AppCompatActivity() {
                 }
             }
             progress.visibility = View.GONE
+            fetched.visibility = View.GONE
             chapters = siblings
             val src = opened.getOrNull()
             if (src == null) {
-                val storage = opened.exceptionOrNull() is NestedArchives.StorageException
-                toast(if (storage) R.string.error_open_storage else R.string.error_open)
+                toast(openFailure(opened.exceptionOrNull(), target))
                 finish()
                 return@launch
             }
@@ -1152,6 +1161,38 @@ class ViewerActivity : AppCompatActivity() {
         source = null
         pager.adapter = null
         vertical.adapter = null
+    }
+
+    /** Shows how much of a book on a share is fetched, from any thread, as whole percents. */
+    private fun showFetched(done: Long, total: Long) {
+        val percent = if (total <= 0) 0 else (done * 100 / total).toInt()
+        if (percent == fetchedPercent) return
+        fetchedPercent = percent
+        runOnUiThread {
+            fetched.text = getString(R.string.share_fetching, percent)
+            fetched.visibility = if (percent < 100) View.VISIBLE else View.GONE
+        }
+    }
+
+    @Volatile
+    private var fetchedPercent = -1
+
+    /** Why [book] could not be opened, as the user can act on it. */
+    private fun openFailure(error: Throwable?, book: File): String = when (error) {
+        is NestedArchives.StorageException -> getString(R.string.error_open_storage)
+        is RemoteCache.TooLargeException -> getString(R.string.error_open_too_large)
+        is RemoteException -> {
+            val name = StorageRoot.of(book.absolutePath, bookRoots)?.name.orEmpty()
+            getString(
+                when (error.reason) {
+                    RemoteException.Reason.DENIED -> R.string.share_denied_named
+                    RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+                    else -> R.string.share_unreachable_named
+                },
+                name
+            )
+        }
+        else -> getString(R.string.error_open)
     }
 
     private fun siblingChapters(f: File): List<File> {

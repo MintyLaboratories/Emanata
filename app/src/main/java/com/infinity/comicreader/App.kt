@@ -7,6 +7,8 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.FileUtils
@@ -22,12 +24,14 @@ class App : Application() {
         Library(this).migrateFolderLayouts(ReaderLayout.of(prefs))
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
+        Remotes.init(this)
+        RemoteCache.limitBytes = prefs.networkCacheBytes
         cleanCaches()
     }
 
     /**
      * Drops temporary files left by earlier runs and files of earlier versions, and keeps
-     * the cover, page-preview and nested-archive caches bounded.
+     * the cover, page-preview, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
@@ -44,6 +48,7 @@ class App : Application() {
                 Thumbs.trim(this)
                 PreviewStore.trim(PreviewStore.dirIn(cacheDir))
                 NestedArchives.trim(NestedArchives.dirIn(cacheDir))
+                RemoteCache.trim(RemoteCache.dirIn(cacheDir))
             }
         }
     }

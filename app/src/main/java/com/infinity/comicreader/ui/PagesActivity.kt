@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
@@ -51,7 +52,7 @@ class PagesActivity : AppCompatActivity() {
         val prefs = Prefs(this)
         lifecycleScope.launch {
             val result = withContext(AppDispatchers.io) {
-                val opened = runCatching { PageSources.open(File(path), prefs.charset, cacheDir) }
+                val opened = runCatching { PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = PageSources.Fetch()) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

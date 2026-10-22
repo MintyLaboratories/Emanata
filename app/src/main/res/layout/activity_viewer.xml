@@ -309,4 +309,14 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
+    <!-- How much of a book on a network share is fetched. -->
+    <TextView
+        android:id="@+id/viewer_fetched"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="64dp"
+        android:textColor="@android:color/white"
+        android:visibility="gone" />
+
 </FrameLayout>

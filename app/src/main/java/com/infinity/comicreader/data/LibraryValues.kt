@@ -192,9 +192,14 @@ class LibrarySnapshot(
         )
     }
 
-    /** The entry for [file] as listed: a folder with the items a user would see in it, or a book. */
-    fun entry(file: File, showHidden: Boolean): BookEntry =
-        entry(file, if (file.isDirectory) visibleChildren(file, showHidden) else null)
+    /**
+     * The entry for [file] as listed: a folder with the items a user would see in it, or
+     * a book. A folder on a share made not to ask the network is not looked into.
+     */
+    fun entry(file: File, showHidden: Boolean): BookEntry {
+        val looks = file.isDirectory && (file !is RemoteFile || file.asksNetwork)
+        return entry(file, if (looks) visibleChildren(file, showHidden) else null)
+    }
 
     companion object {
         /** Items a user would see inside [dir]: sub-folders and openable files, minus hidden ones unless [showHidden]. */

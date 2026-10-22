@@ -61,10 +61,13 @@ object Remotes {
         changed(null)
     }
 
-    /** Serves [list] through [fs]; for tests. */
+    /** Serves [list] through [fs], online, as if from a background thread; for tests. */
     fun serve(list: List<Share>, fs: (Share) -> RemoteFs) {
         source = { list }
         connector = fs
+        online = { true }
+        onMainThread = { false }
+        clock = { System.nanoTime() / 1_000_000 }
         changed(null)
     }
 
@@ -79,8 +82,12 @@ object Remotes {
     /** [path] below its share's root, `/`-separated; empty for the root. */
     fun relOf(path: String): String = path.substring(PREFIX.length).substringAfter('/', "").trim('/')
 
-    /** A [File] for [path]: a [RemoteFile] on a share, else a plain one. */
-    fun file(path: String): File = if (isRemote(path)) RemoteFile(path.trimEnd('/')) else File(path)
+    /**
+     * A [File] for [path]: a [RemoteFile] on a share, else a plain one. Without
+     * [askNetwork], a share's file states what is remembered or guessed, never asking.
+     */
+    fun file(path: String, askNetwork: Boolean = true): File =
+        if (isRemote(path)) RemoteFile(path.trimEnd('/'), askNetwork = askNetwork) else File(path)
 
     @Synchronized
     fun shares(): List<Share> = shares ?: source().also { shares = it }

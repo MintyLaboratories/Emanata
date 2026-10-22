@@ -11,14 +11,16 @@
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <!-- Network shares the user adds, and only those; nothing is sent on the app's own. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
-        allowBackup is off: the app is fully offline and its data (reading history,
-        bookmarks, preferences) is device-local, so there is nothing worth syncing to
-        cloud backup and nothing sensitive to leak through one.
-        usesCleartextTraffic is declared explicitly (false) because the reader makes no
-        network requests at all; without the explicit value Android implicitly enables
-        cleartext for apps targeting older platform versions.
+        allowBackup is off: the app's data (reading history, bookmarks, preferences,
+        network shares with their sealed passwords) is device-local, so there is nothing
+        worth syncing to cloud backup and nothing sensitive to leak through one.
+        usesCleartextTraffic is false: the app makes no plain HTTP requests; network
+        shares speak SMB, which this flag does not govern.
     -->
     <application
         android:name=".App"

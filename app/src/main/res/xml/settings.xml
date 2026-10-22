@@ -261,6 +261,13 @@
             app:key="pref_thumbs"
             app:title="@string/pref_thumbs" />
         <ListPreference
+            app:defaultValue="2048"
+            app:entries="@array/network_cache_entries"
+            app:entryValues="@array/network_cache_values"
+            app:key="pref_network_cache"
+            app:summary="@string/pref_network_cache_desc"
+            app:title="@string/pref_network_cache" />
+        <ListPreference
             app:defaultValue="2:3"
             app:entries="@array/cover_shape_entries"
             app:entryValues="@array/cover_shape_values"

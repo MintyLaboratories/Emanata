@@ -10,9 +10,9 @@ features and customizability.
 - **Rendering:** Lanczos3 scaling everywhere, including GPU Lanczos3 while
   zooming (Android 13+).
 - **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
-- **No required connection:** works offline. No internet permission is
-  requested; network features, once added, will use the network only for what
-  you explicitly set up, never in the background.
+- **No required connection:** works offline. The network is used only for the
+  network shares you add, while you browse or read them; the app sends nothing
+  on its own.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -146,9 +146,29 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   note; forward crumbs past it are dropped.
 - **Locations:** the crumbs start with the app's icon in the theme's color
   (`[icon] / Device / Comics`); it opens a sheet of every
-  location with its free space: the device, SD cards and **USB-OTG drives**
-  (Android 11+, with all-files access). Drives appear and disappear live;
-  pulling one out while a book on it is open closes the book and says why.
+  location with its free space: the device, SD cards, **USB-OTG drives**
+  (Android 11+, with all-files access) and network shares. Drives appear and
+  disappear live; plugging one in opens the sheet with it highlighted (at once
+  in the library, else on returning to it); pulling one out while a book on it
+  is open closes the book and says why.
+- **Network shares (SMB 2/3):** "Add network share…" in the Locations sheet
+  takes a name, a path (`host/share/folder`; `\\host\share` and `smb://` work
+  too), a user (`DOMAIN\user`, or blank for a guest) and a password;
+  everything else is defaulted (port 445, the dialect negotiated, never SMB1,
+  signing and encryption as the server requires). Passwords are sealed with a
+  key in the Android Keystore. Long-press a share in the sheet to edit or
+  remove it. A share is browsed like a drive: its name is the root crumb and
+  the root of same-name labels; favorites, history, bookmarks, the startup
+  location, sort, filter and peek work there. CBZ books are read in place
+  (only the parts needed travel); CBR, CB7, CBT, PDFs and loose images are
+  fetched to a **Network cache** (Settings, 2 GB by default, least recently
+  read first out) before the reader opens them, while covers and peeks of
+  rar, 7z and tar books read them in place. A share that cannot be reached
+  says so ("Not reachable") with a Retry; favorites and history show shares
+  without waiting for the network, and a favorite folder there is sorted into
+  its section once looked into (a spinner meanwhile). Shares are read-only:
+  no rename, delete or new folder. The connection closes after a minute
+  unused.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.
@@ -447,8 +467,8 @@ The debug build installs beside the release build (`minty.emanata.debug`).
   them. The app asks on first launch.
 - `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
   (Android 8–9): the same on older versions.
-
-No internet permission is requested.
+- `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
+  add; the app sends nothing on its own.
 
 ## Notes
 

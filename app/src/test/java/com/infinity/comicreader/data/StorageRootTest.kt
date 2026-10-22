@@ -111,6 +111,9 @@ class StorageRootTest {
         assertEquals(null, StorageRoot.removed("/storage/1A2B-3C4D/a.cbz", before, before))
         assertEquals(null, StorageRoot.removed("/storage/emulated/0/a.cbz", before, emptyList()))
         assertEquals(null, StorageRoot.removed("/mnt/elsewhere/a.cbz", before, emptyList()))
+        // A share removed from the app counts too.
+        val share = StorageRoot("/net/s1", "Share A", StorageRoot.Kind.SHARE)
+        assertEquals(share, StorageRoot.removed("/net/s1/a.cbz", before + share, before))
     }
 
     @Test

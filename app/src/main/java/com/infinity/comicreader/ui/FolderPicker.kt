@@ -4,6 +4,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FavoriteLabels
 import com.infinity.comicreader.data.Library
@@ -46,7 +47,7 @@ class FolderPicker(
                 actions.add { onPick(root.path) }
             }
             labels.add(context.getString(R.string.picker_other_folder))
-            actions.add { browse(File(roots.first().path)) }
+            actions.add { browse(Remotes.file(roots.first().path)) }
             AlertDialog.Builder(context)
                 .setTitle(R.string.pref_startup_custom)
                 .setItems(labels.toTypedArray()) { _, which -> actions[which]() }
@@ -64,8 +65,8 @@ class FolderPicker(
         scope.launch {
             val found = withContext(AppDispatchers.io) {
                 if (dir.isDirectory) dir
-                else MissingFolder.nearest(dir.absolutePath, roots) { File(it).isDirectory }?.let { File(it) }
-                    ?: File(roots.first().path).takeIf { it.isDirectory }
+                else MissingFolder.nearest(dir.absolutePath, roots) { Remotes.file(it).isDirectory }?.let { Remotes.file(it) }
+                    ?: Remotes.file(roots.first().path).takeIf { it.isDirectory }
             }
             if (found != dir) {
                 Toast.makeText(context, R.string.folder_gone, Toast.LENGTH_SHORT).show()

@@ -16,7 +16,7 @@ import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
-import java.io.File
+import com.infinity.comicreader.net.Remotes
 
 object LibraryOrder {
     /**
@@ -32,12 +32,17 @@ object LibraryOrder {
         val snap = LibrarySnapshot.load(library, prefs)
         val entries = paths.map { path ->
             val label = labels[path]
-            snap.entry(File(path), prefs.showHidden).let { it.copy(name = label?.name ?: it.name, label = label) }
+            // Favorites on shares as known, without the network.
+            snap.entry(Remotes.file(path, askNetwork = false), prefs.showHidden).let { it.copy(name = label?.name ?: it.name, label = label) }
         }
         val sorted = entries.sortedWith(LibrarySort.comparator(prefs.sort(Prefs.TAB_FAVORITES), EntryValues()))
         if (!prefs.groupFavorites) return sorted
         return FavoriteSections.arrange(sorted) {
-            if (!it.isDir) FavoriteKind.COMIC else cache.get(it.path, it.lastModified)
+            when {
+                !it.isDir -> FavoriteKind.COMIC
+                Remotes.isRemote(it.path) -> cache.peek(it.path)
+                else -> cache.get(it.path, it.lastModified)
+            }
         }.flatMap { it.entries }
     }
 

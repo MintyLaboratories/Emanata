@@ -229,6 +229,10 @@ class Prefs(context: Context) {
         get() = bool(KEY_THUMBS, true)
         set(v) = put(KEY_THUMBS, v)
 
+    /** How much the local copies of books on network shares may take, in bytes. */
+    val networkCacheBytes: Long
+        get() = (str(KEY_NETWORK_CACHE, DEFAULT_NETWORK_CACHE_MB).toLongOrNull() ?: DEFAULT_NETWORK_CACHE_MB.toLong()).coerceAtLeast(1) shl 20
+
     /** How [tab] (one of the `TAB_*` names) shows its entries. */
     fun view(tab: String): TabView {
         val def = TabView.defaultFor(tab)
@@ -512,6 +516,8 @@ class Prefs(context: Context) {
         private const val KEY_FLING = "pref_fling"
         private const val KEY_SHOW_HIDDEN = "pref_show_hidden"
         private const val KEY_THUMBS = "pref_thumbs"
+        const val KEY_NETWORK_CACHE = "pref_network_cache"
+        private const val DEFAULT_NETWORK_CACHE_MB = "2048"
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_COVER_SPACING = "pref_cover_spacing"
         private const val KEY_TOOLBAR_BUTTONS = "pref_toolbar_buttons"

@@ -121,6 +121,16 @@
             android:gravity="center"
             android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
             android:visibility="gone" />
+
+        <!-- Lists a share that could not be reached again. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/empty_retry"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_4"
+            android:text="@string/retry"
+            android:visibility="gone" />
     </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton

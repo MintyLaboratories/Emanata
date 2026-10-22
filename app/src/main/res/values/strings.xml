@@ -58,6 +58,38 @@
     <string name="choose_root">Locations</string>
     <string name="location_free">%1$s free of %2$s</string>
     <string name="location_removed">%1$s was removed</string>
+    <string name="share_add">Add network share…</string>
+    <string name="share_add_title">Add network share</string>
+    <string name="share_edit_title">Edit network share</string>
+    <string name="share_name">Name</string>
+    <string name="share_name_hint">Shown as the location\'s name</string>
+    <string name="share_path">Path</string>
+    <string name="share_path_hint">host/share/folder</string>
+    <string name="share_user">User</string>
+    <string name="share_user_hint">Blank to sign in as a guest</string>
+    <string name="share_password">Password</string>
+    <string name="share_password_keep">Blank keeps the saved one</string>
+    <string name="share_problem_empty">Enter the share\'s path, such as nas.local/share/folder</string>
+    <string name="share_problem_no_share">Add the share\'s name after the host: host/share</string>
+    <string name="share_problem_host">Not a host name or address</string>
+    <string name="share_problem_port">Not a port number (1–65535)</string>
+    <string name="share_problem_name">Names cannot hold \\ / : * ? \" &lt; &gt; |</string>
+    <string name="share_edit">Edit…</string>
+    <string name="share_remove">Remove</string>
+    <string name="share_remove_title">Remove network share?</string>
+    <string name="share_remove_msg">%1$s leaves the locations. Its favorites, history and bookmarks are kept.</string>
+    <string name="share_connecting">Connecting…</string>
+    <string name="share_unreachable">Not reachable</string>
+    <string name="share_denied">Sign-in failed</string>
+    <string name="share_missing">Share not found</string>
+    <string name="share_unreachable_named">%1$s is not reachable</string>
+    <string name="share_denied_named">%1$s turned the user name or password down</string>
+    <string name="share_missing_named">%1$s is not on its host</string>
+    <string name="retry">Retry</string>
+    <string name="pref_network_cache">Network cache</string>
+    <string name="pref_network_cache_desc">Space for rar, 7z and tar books, PDFs and images fetched from network shares; the least recently read go first</string>
+    <string name="share_fetching">Fetching from the share… %1$d%%</string>
+    <string name="error_open_too_large">Too large for the network cache; raise it in Settings</string>
     <string name="book_storage_removed">%1$s was removed, so the book was closed</string>
     <string name="folder_gone">That folder no longer exists</string>
     <!-- Brightness drag indicator: %1$s is the signed value, e.g. "+12", "−20", "0". -->
@@ -490,6 +522,20 @@
     <string name="about_project_page">Project page</string>
 
     <!-- ===================== Arrays ===================== -->
+    <string-array name="network_cache_entries">
+        <item>512 MB</item>
+        <item>1 GB</item>
+        <item>2 GB</item>
+        <item>4 GB</item>
+        <item>8 GB</item>
+    </string-array>
+    <string-array name="network_cache_values" translatable="false">
+        <item>512</item>
+        <item>1024</item>
+        <item>2048</item>
+        <item>4096</item>
+        <item>8192</item>
+    </string-array>
     <string-array name="startup_tab_entries">
         <item>@string/tab_browse</item>
         <item>@string/tab_favorites</item>

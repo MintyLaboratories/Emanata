@@ -6,4 +6,6 @@
     <item name="menu_bar_filter" type="id" />
     <item name="menu_bar_favorite" type="id" />
     <item name="toolbar_buttons_list" type="id" />
+    <!-- The location picker's "Add network share…" row. -->
+    <item name="location_add" type="id" />
 </resources>

@@ -10,16 +10,24 @@ import java.io.FilenameFilter
  * library, covers and reader handle it as they handle a local [File]. Its kind,
  * size and times come from the listing that found it, else from [Remotes]; on the
  * main thread, where the network is never used, from what is remembered or a guess
- * by its name (a name a book could have is a file). It is read-only: renaming,
+ * by its name (a name a book could have is a file); likewise everywhere without
+ * [askNetwork], for lists that must show at once (favorites, history). It is read-only: renaming,
  * deleting and making folders fail.
  */
-class RemoteFile(private val where: String, @Volatile private var known: RemoteStat? = null) : File(where) {
+class RemoteFile(
+    private val where: String,
+    @Volatile private var known: RemoteStat? = null,
+    private val askNetwork: Boolean = true
+) : File(where) {
+
+    /** False for a file made never to ask the network for its stat. */
+    val asksNetwork: Boolean get() = askNetwork
 
     /** Its stat as known now: found with it, remembered, or asked for off the main thread; null when unknown or gone. */
     fun stat(): RemoteStat? {
         known?.let { return it }
         Remotes.cachedStat(where)?.let { return it }
-        if (asked || Remotes.onMainThread()) return null
+        if (asked || !mayAsk()) return null
         asked = true
         return runCatching { Remotes.stat(where) }.getOrNull()?.also { known = it }
     }
@@ -38,7 +46,10 @@ class RemoteFile(private val where: String, @Volatile private var known: RemoteS
     fun entries(): List<RemoteFile> = Remotes.list(where)
 
     /** True when the stat is unknown and only a guess can be made (on the main thread). */
-    private fun guessing(): Boolean = known == null && Remotes.cachedStat(where) == null && Remotes.onMainThread()
+    private fun guessing(): Boolean = known == null && Remotes.cachedStat(where) == null && !mayAsk()
+
+    /** False where the network is not used for a stat: on the main thread, or for a file made not to ask. */
+    private fun mayAsk(): Boolean = askNetwork && !Remotes.onMainThread()
 
     private fun guessDirectory(): Boolean = !Formats.isOpenable(name)
 

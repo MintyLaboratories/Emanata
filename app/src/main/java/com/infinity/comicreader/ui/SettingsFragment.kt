@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.AppDispatchers
@@ -22,6 +23,7 @@ import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.thread
 
 class SettingsFragment : PreferenceFragmentCompat() {
 
@@ -92,6 +94,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
+
+        findPreference<Preference>(Prefs.KEY_NETWORK_CACHE)?.setOnPreferenceChangeListener { _, value ->
+            val bytes = ((value as String).toLongOrNull() ?: return@setOnPreferenceChangeListener false) shl 20
+            RemoteCache.limitBytes = bytes
+            val dir = RemoteCache.dirIn(requireContext().cacheDir)
+            thread(name = "network-cache-trim", isDaemon = true) { RemoteCache.trim(dir, bytes) }
+            true
+        }
 
         findPreference<ListPreference>("pref_auto_scroll_speed")?.apply {
             entries = AutoScroll.SPEEDS.map { AutoScrollText.of(resources, it) }.toTypedArray()

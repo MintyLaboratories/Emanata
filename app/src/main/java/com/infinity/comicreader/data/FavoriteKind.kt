@@ -109,6 +109,9 @@ class FavoriteKindCache(context: Context) {
         return if (time == lastModified) FavoriteKind.of(stored.substringAfter(':')) else null
     }
 
+    /** The kind stored for [path] at any time: what a folder on a share shows until its time is known. */
+    fun peek(path: String): FavoriteKind? = sp.getString(path, null)?.let { FavoriteKind.of(it.substringAfter(':')) }
+
     fun put(path: String, lastModified: Long, kind: FavoriteKind) {
         sp.edit().putString(path, "$lastModified:${kind.key}").apply()
     }

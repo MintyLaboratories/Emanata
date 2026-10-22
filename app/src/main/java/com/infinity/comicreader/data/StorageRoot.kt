@@ -22,12 +22,13 @@ data class StorageRoot(val path: String, val name: String, val kind: Kind) {
             roots.filter { it.contains(path) }.maxByOrNull { it.path.length }
 
         /**
-         * The removable root of [path] among [before] that [now] no longer lists (a drive
-         * pulled out); null while it is mounted, or when [path] is not on a removable one.
+         * The removable root or share of [path] among [before] that [now] no longer lists
+         * (a drive pulled out, a share removed); null while it is there, or when [path] is
+         * on the device itself.
          */
         fun removed(path: String, before: List<StorageRoot>, now: List<StorageRoot>): StorageRoot? {
             val root = of(path, before) ?: return null
-            if (root.kind != Kind.REMOVABLE && root.kind != Kind.USB) return null
+            if (root.kind == Kind.DEVICE) return null
             return root.takeIf { r -> now.none { it.path == r.path } }
         }
 

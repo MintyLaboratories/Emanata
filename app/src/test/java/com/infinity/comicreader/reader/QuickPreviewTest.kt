@@ -94,10 +94,9 @@ class QuickPreviewTest {
     }
 
     @Test
-    @Config(sdk = [30])
-    fun avifHasNoQuickPreviewBeforeApi31() {
-        assertNull(Decoders.quickBytes(ByteArrayInputStream(avif("layered.avif"))))
-        assertNull(Decoders.preview(avif("layered.avif")))
+    @Config(sdk = [27])
+    fun avifQuickBytesOnEveryApiLevel() {
+        assertEquals(299 + 1388, Decoders.quickBytes(ByteArrayInputStream(avif("layered.avif")))!!.size)
     }
 
     @Test

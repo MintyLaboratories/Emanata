@@ -118,7 +118,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   place. Previews (256 px) are kept on disk whenever a page is decoded, for any
   reason; a page never decoded gets a quick one where its format allows (JPEG
   at 1/8 scale, WebP scaled while decoding, AVIF from an embedded thumbnail or
-  a layered file's small first layer, Android 12+). Folder peeks reuse the library's
+  a layered file's small first layer). Folder peeks reuse the library's
   covers and make missing ones nearest the middle of the view first; from list
   view at the size the grid last drew them.
 - Incremental search within the current folder.
@@ -331,7 +331,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 
 | Extension | Handler | Library |
 |---|---|---|
-| jpg/jpeg/png/gif/bmp/webp/avif/heic/heif | `ImageSource` | platform `ImageDecoder` (`BitmapFactory` below API 28) |
+| jpg/jpeg/png/gif/bmp/webp/heic/heif | `ImageSource` | platform `ImageDecoder` (`BitmapFactory` below API 28) |
+| avif | `ImageSource` | libavif with dav1d, built from source (`app/src/main/cpp`) |
 | jxl | `ImageSource` | jxl-coder (libjxl) |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
@@ -438,8 +439,9 @@ No internet permission is requested.
 ## Notes
 
 - `minSdk 26`, `targetSdk 34`.
-- AVIF decoding depends on the platform: it works natively on Android 12+
-  (API 31+); on older devices AVIF pages show the error placeholder.
+- AVIF decodes through libavif and dav1d on every Android version, layered
+  (progressive) files included. Colors follow the file's CICP; an ICC profile is
+  not read. The x86_64 build (emulators) has no dav1d assembly.
 - Zoom: `LanczosShader` (AGSL) draws while the gesture moves; `DetailTile`,
   `DetailStore` and `PageSource.loadDetail` re-render the settled view.
 - Fit changes are timed: `adb logcat -s ResizeTiming` prints the ms to the

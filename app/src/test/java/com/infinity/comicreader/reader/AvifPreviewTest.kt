@@ -47,58 +47,25 @@ class AvifPreviewTest {
     private fun mdat(boxes: List<Pair<String, ByteArray>>) = boxes.single { it.first == "mdat" }.second
 
     @Test
-    fun firstLayerIsCutOutWithItsOwnSize() {
-        val out = AvifPreview.extract(fixture("layered.avif"), minSize)
-        assertNotNull(out)
-        val boxes = boxes(out!!)
-        assertEquals("ftyp", boxes.first().first)
-        assertArrayEquals(intArrayOf(300, 450), ispe(boxes))
-        assertFalse(boxes.any { it.first == "a1lx" })
-        val data = mdat(boxes)
-        // a1lx gives the first layer as 1388 bytes.
-        assertEquals(1388, data.size)
-        assertArrayEquals(intArrayOf(300, 450), Av1.maxFrameSize(data))
-        val layer = Av1.firstLayer(data)!!
-        assertArrayEquals(intArrayOf(300, 450), intArrayOf(layer.width, layer.height))
-        // The item's data points into the mdat.
-        assertEquals(out.size - data.size, u32(boxes.single { it.first == "iloc" }.second, 14))
-    }
-
-    @Test
-    fun onlyTheSequenceHeaderChangesInTheLayer() {
-        val file = fixture("layered.avif")
-        val data = mdat(boxes(AvifPreview.extract(file, minSize)!!))
-        // The first layer starts the primary item's data at 299 (from iloc).
-        val original = file.copyOfRange(299, 299 + data.size)
-        assertArrayEquals(intArrayOf(600, 900), Av1.maxFrameSize(original))
-        val changed = data.indices.filter { data[it] != original[it] }
-        assertTrue(changed.isNotEmpty())
-        assertTrue("changed bytes $changed", changed.all { it < 24 })
-    }
-
-    @Test
-    fun grayscaleLayerToo() {
-        val boxes = boxes(AvifPreview.extract(fixture("layered-gray.avif"), minSize)!!)
-        assertArrayEquals(intArrayOf(300, 450), ispe(boxes))
-        assertArrayEquals(intArrayOf(300, 450), Av1.maxFrameSize(mdat(boxes)))
-    }
-
-    @Test
-    fun firstLayerSmallerThanAPreviewIsNone() {
-        assertNull(AvifPreview.extract(fixture("layered-tiny.avif"), minSize))
+    fun layeredFilesHaveNoThumbnailButNeedTheirFirstLayer() {
+        for (name in listOf("layered.avif", "layered-gray.avif", "layered-tiny.avif")) {
+            val file = fixture(name)
+            assertNull(name, AvifPreview.thumbnail(file, minSize))
+            assertTrue(name, AvifPreview.needed(file, file.size, minSize) in 1 until file.size)
+        }
     }
 
     @Test
     fun singleLayerHasNone() {
         val file = fixture("single.avif")
         assertEquals(0, AvifPreview.needed(file, file.size, minSize))
-        assertNull(AvifPreview.extract(file, minSize))
+        assertNull(AvifPreview.thumbnail(file, minSize))
     }
 
     @Test
     fun thumbnailIsCutOut() {
         val file = fixture("with-thumbnail.avif")
-        val boxes = boxes(AvifPreview.extract(file, minSize)!!)
+        val boxes = boxes(AvifPreview.thumbnail(file, minSize)!!)
         assertArrayEquals(intArrayOf(200, 300), ispe(boxes))
         assertEquals(1, boxes.count { it.first == "infe" })
         // The thumbnail is the second item, stored last.
@@ -109,7 +76,7 @@ class AvifPreviewTest {
 
     @Test
     fun thumbnailSmallerThanAPreviewIsNone() {
-        assertNull(AvifPreview.extract(fixture("with-thumbnail.avif")) { _, _ -> intArrayOf(300, 450) })
+        assertNull(AvifPreview.thumbnail(fixture("with-thumbnail.avif")) { _, _ -> intArrayOf(300, 450) })
     }
 
     @Test
@@ -121,8 +88,13 @@ class AvifPreviewTest {
         val end = AvifPreview.needed(file, metaEnd, minSize)
         assertEquals(299 + 1388, end)
         assertEquals(end, AvifPreview.needed(file.copyOf(end), end, minSize))
-        assertArrayEquals(AvifPreview.extract(file, minSize), AvifPreview.extract(file.copyOf(end), minSize))
-        assertNull(AvifPreview.extract(file.copyOf(end - 1), minSize))
+    }
+
+    @Test
+    fun thumbnailNeedsAllOfItsData() {
+        val file = fixture("with-thumbnail.avif")
+        assertArrayEquals(AvifPreview.thumbnail(file, minSize), AvifPreview.thumbnail(file.copyOf(file.size), minSize))
+        assertNull(AvifPreview.thumbnail(file.copyOf(file.size - 1), minSize))
     }
 
     @Test
@@ -131,9 +103,8 @@ class AvifPreviewTest {
         assertEquals(0, AvifPreview.needed(ByteArray(64), 64, minSize))
         // An iloc version (at 99) no file has.
         val broken = file.copyOf().also { it[99] = 3 }
-        assertNull(AvifPreview.extract(broken, minSize))
-        assertNull(AvifPreview.extract(file.copyOf(200), minSize))
-        val garbledLayer = file.copyOf().also { for (i in 300 until 320) it[i] = 0xFF.toByte() }
-        assertNull(AvifPreview.extract(garbledLayer, minSize))
+        assertEquals(0, AvifPreview.needed(broken, broken.size, minSize))
+        val thumbnailed = fixture("with-thumbnail.avif")
+        assertNull(AvifPreview.thumbnail(thumbnailed.copyOf(200), minSize))
     }
 }

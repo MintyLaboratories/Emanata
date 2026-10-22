@@ -48,15 +48,16 @@ class DecodeException(
  * by the smallest power-of-two sample size that brings it under the cap, inside the
  * decoder ([capSample]), and only then resampled. That reduction is the decoder's own:
  * libjpeg-turbo's DCT scaling for JPEG, an area average for WebP, point sampling for
- * PNG, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
+ * PNG and AVIF, jxl-coder's Mitchell filter for JPEG XL. Only images past the cap take it.
  *
  * Quick previews ([preview]) are the one exception: JPEG and WebP decode already
  * shrunk toward [Previews.TARGET], AVIF from a thumbnail or first layer inside the
  * file, to stand in until the exact page is ready.
  *
- * JPEG XL decodes with jxl-coder on every API level, TIFF with the built-in [Tiff]
- * (its cap reduction is point sampling, DCT scaling for JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+
- * (AVIF from API 31), with [BitmapFactory] below that.
+ * JPEG XL decodes with jxl-coder and AVIF with libavif ([Avif]) on every API level,
+ * TIFF with the built-in [Tiff] (its cap reduction is point sampling, DCT scaling for
+ * JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+, with
+ * [BitmapFactory] below that.
  */
 object Decoders {
 
@@ -70,6 +71,7 @@ object Decoders {
         return reported(kind) {
             val full = when {
                 kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
+                kind == ImageKind.AVIF -> decodeAvif(bytes, target)
                 kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), target.capPixels)
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
                     decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), target.capPixels)
@@ -81,14 +83,14 @@ object Decoders {
 
     fun decode(input: InputStream, target: Target): Bitmap = decode(BitmapUtils.readCapped(input), target)
 
-    /** Streams [file] to the platform decoder; JPEG XL, and any image below API 28, is read whole first. */
+    /** Streams [file] to the platform decoder; JPEG XL, AVIF, and any image below API 28, is read whole first. */
     fun decode(file: File, target: Target): Bitmap {
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
         if (kind == ImageKind.TIFF) {
             val source = if (measuresCrop(target)) size(file) else null
             return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), target.capPixels) }, target, source) }
         }
-        if (kind == ImageKind.JXL || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        if (kind == ImageKind.JXL || kind == ImageKind.AVIF || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return file.inputStream().use { decode(it, target) }
         }
         val source = if (measuresCrop(target)) size(file) else null
@@ -100,7 +102,10 @@ object Decoders {
         /** The encoded image, for a format whose quick preview ([preview]) is a proper one; [decoded] is not called then. */
         fun encoded(bytes: ByteArray)
 
-        /** The image at its decoded size, before any crop or resampling; must leave it as it is. */
+        /**
+         * The image at its decoded size, before any crop or resampling (of a layered AVIF,
+         * its first layer, as soon as it is decoded); must leave it as it is.
+         */
         fun decoded(full: Bitmap)
     }
 
@@ -187,6 +192,7 @@ object Decoders {
     fun size(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
         ImageKind.PNG -> pngSize(bytes) { platformSize(bytes) }
         ImageKind.JXL -> jxlSize(bytes)
+        ImageKind.AVIF -> Avif.size(bytes)
         ImageKind.TIFF -> Tiff.size(Tiff.ByteInput(bytes))
         else -> platformSize(bytes)
     }
@@ -196,9 +202,10 @@ object Decoders {
     /**
      * Like [size] on an image's first [ImageHeaders.PREFIX_BYTES] alone, without reading
      * the rest of [input]: null when they do not tell, so the caller reads it whole.
-     * JPEG, PNG and JPEG XL headers are parsed here; other formats go to the platform's
-     * header pass, which needs only their start too. TIFF is left to the whole read. A
-     * JPEG's frame header usually lies in its first [JPEG_HEADER_BYTES], read first.
+     * JPEG, PNG and JPEG XL headers are parsed here, AVIF metadata by libavif; other
+     * formats go to the platform's header pass, which needs only their start too. TIFF
+     * is left to the whole read. A JPEG's frame header usually lies in its first
+     * [JPEG_HEADER_BYTES], read first.
      */
     fun headerSize(input: InputStream): IntArray? {
         val head = ByteArray(ImageHeaders.PREFIX_BYTES)
@@ -213,18 +220,21 @@ object Decoders {
                 ImageKind.JPEG -> ImageHeaders.jpegSize(bytes) ?: platformSize(bytes)
                 ImageKind.PNG -> pngSize(bytes) { platformSize(bytes) }
                 ImageKind.JXL -> ImageHeaders.jxlSize(bytes)
+                ImageKind.AVIF -> Avif.size(bytes, complete = n < head.size)
                 ImageKind.TIFF -> null
                 else -> platformSize(bytes)
             }
         }.getOrNull()
     }
 
-    /** Like [size] on bytes, reading only the first [ImageHeaders.PREFIX_BYTES] unless a JPEG XL header lies beyond. */
+    /** Like [size] on bytes, reading only the first [ImageHeaders.PREFIX_BYTES] unless a JPEG XL header or AVIF metadata lies beyond. */
     fun size(file: File): IntArray? = runCatching {
         val head = readPrefix(file, ImageHeaders.PREFIX_BYTES)
         when (ImageKind.sniff(head)) {
             ImageKind.PNG -> pngSize(head) { platformSize(file) }
             ImageKind.JXL -> ImageHeaders.jxlSize(head) ?: file.inputStream().use { jxlSize(BitmapUtils.readCapped(it)) }
+            ImageKind.AVIF -> Avif.size(head, complete = head.size < ImageHeaders.PREFIX_BYTES)
+                ?: file.inputStream().use { Avif.size(BitmapUtils.readCapped(it)) }
             ImageKind.TIFF -> RandomAccessFile(file, "r").use { Tiff.size(Tiff.FileInput(it)) }
             else -> platformSize(file)
         }
@@ -248,7 +258,7 @@ object Decoders {
     }
 
     /** Runs a decode of a [kind] image, turning every failure into a [DecodeException] that says why. */
-    private inline fun reported(kind: ImageKind?, decode: () -> Bitmap): Bitmap {
+    private inline fun <T> reported(kind: ImageKind?, decode: () -> T): T {
         val label = kind?.name ?: "unrecognized"
         return try {
             decode()
@@ -356,16 +366,14 @@ object Decoders {
     /**
      * Kinds with a quick preview: JPEG and WebP decoders shrink while decoding, far
      * faster than a full decode (libjpeg-turbo's DCT scaling down to 1/8, libwebp's
-     * scaled output); AVIF, from API 31, when the file holds a thumbnail or a layered
-     * image's small first layer ([AvifPreview]). JPEG XL (jxl-coder has no progressive
-     * pass), PNG and TIFF decode whole.
+     * scaled output); AVIF when the file holds a thumbnail or a layered image's small
+     * first layer ([AvifPreview]). JPEG XL (jxl-coder has no progressive pass), PNG and
+     * TIFF decode whole.
      */
-    private val QUICK = setOf(ImageKind.JPEG, ImageKind.WEBP) +
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setOf(ImageKind.AVIF) else emptySet()
+    private val QUICK = setOf(ImageKind.JPEG, ImageKind.WEBP, ImageKind.AVIF)
 
     /** File extensions of the [QUICK] kinds, for judging pages before reading them ([QuickPreviews]). */
-    val QUICK_EXTENSIONS = setOf("jpg", "jpeg", "webp") +
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setOf("avif") else emptySet()
+    val QUICK_EXTENSIONS = setOf("jpg", "jpeg", "webp", "avif")
 
     /** Kinds whose quick preview is as good as one made from the full decode, so a capture takes their bytes. */
     private val QUICK_ENCODED = setOf(ImageKind.JPEG, ImageKind.WEBP)
@@ -412,10 +420,7 @@ object Decoders {
     fun preview(bytes: ByteArray): Bitmap? {
         val kind = ImageKind.sniff(bytes)
         if (kind !in QUICK) return null
-        if (kind == ImageKind.AVIF && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val small = AvifPreview.extract(bytes, Previews::sizeOf) ?: return null
-            return reported(kind) { quickAvif(ImageDecoder.createSource(ByteBuffer.wrap(small))) }
-        }
+        if (kind == ImageKind.AVIF) return reported(kind) { quickAvif(bytes) }
         return reported(kind) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 quickPlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), kind == ImageKind.JPEG)
@@ -423,15 +428,6 @@ object Decoders {
                 quickLegacy(bytes)
             }
         }
-    }
-
-    /** An AVIF thumbnail or first layer, decoded as it is and then made the preview of its own size. */
-    @RequiresApi(Build.VERSION_CODES.P)
-    private fun quickAvif(source: ImageDecoder.Source): Bitmap {
-        val small = eightBit(ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-        })
-        return finishPreview(small, Previews.sizeOf(small.width, small.height))
     }
 
     /** JPEG at the largest DCT scaling that still covers the preview; WebP straight at the preview size. */
@@ -473,6 +469,35 @@ object Decoders {
         } finally {
             reduced.recycle()
         }
+    }
+
+    // ------------------------------------------------------------------ AVIF
+
+    /**
+     * Full decode through libavif. Of a layered image, the first layer goes to this
+     * thread's preview sink ([capturing]) as soon as it is decoded; it never fails the
+     * decode.
+     */
+    private fun decodeAvif(bytes: ByteArray, target: Target): Bitmap {
+        val sink = sinks.get() ?: return Avif.decode(bytes, target.capPixels)
+        return Avif.decode(bytes, target.capPixels) { layer ->
+            sinks.set(null)
+            try {
+                runCatching { sink.decoded(layer) }
+            } finally {
+                layer.recycle()
+            }
+        }
+    }
+
+    /** An AVIF thumbnail or first layer ([AvifPreview]) made the preview of its own size; null when the file has none. */
+    private fun quickAvif(bytes: ByteArray): Bitmap? {
+        AvifPreview.thumbnail(bytes, Previews::sizeOf)?.let { file ->
+            val small = Avif.decode(file, Target.DEFAULT_CAP_PIXELS)
+            return finishPreview(small, Previews.sizeOf(small.width, small.height))
+        }
+        val layer = Avif.firstLayer(bytes, Previews::sizeOf) ?: return null
+        return finishPreview(layer, Previews.sizeOf(layer.width, layer.height))
     }
 
     // ------------------------------------------------------------------ JPEG XL

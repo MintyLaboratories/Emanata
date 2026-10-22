@@ -3,18 +3,13 @@ package com.infinity.comicreader.reader
 import java.io.ByteArrayOutputStream
 
 /**
- * Quick previews held inside AVIF files, cut out as small standalone AVIF files that
- * the platform decoder reads like any other ([extract]):
+ * Quick previews held inside AVIF files, and how much of a file each needs ([needed]):
  *  - an embedded thumbnail: an `av01` item linked to the primary item by a `thmb`
- *    reference;
- *  - the first layer of a layered image (`a1lx`, as libavif's `--layered` writes it):
- *    the primary item's first layer of AV1 data alone, its size in `ispe`, and the
- *    sequence header's maximum frame size set to that layer's own. Left at the full
- *    size, Android 16's decoder (Codec2 dav1d) took seconds over it instead of tens of
- *    milliseconds.
- * Either needs only the start of the file ([needed]). Pure byte work: nothing is decoded.
- * A preview is only taken when it is at least the size `minSize` asks of a file's full
- * size, so it never stands in for a sharper one.
+ *    reference, cut out as a small standalone AVIF file ([thumbnail]);
+ *  - the first layer of a layered image (`a1lx`, as libavif's `--layered` writes it),
+ *    which [Avif.firstLayer] decodes from the start of the file alone.
+ * Pure byte work: nothing is decoded here. A thumbnail is only taken when it is at least
+ * the size `minSize` asks of a file's full size, so it never stands in for a sharper one.
  */
 object AvifPreview {
     /** Longest start of a file read for a preview. */
@@ -23,7 +18,8 @@ object AvifPreview {
     /**
      * How many leading bytes of a file whose first [length] bytes are in [head] its
      * preview needs: more than [length] while its metadata is not all in (call again
-     * with at least that many), 0 when it has no preview of at least `minSize`.
+     * with at least that many), 0 when it has no thumbnail of at least `minSize` nor
+     * layers.
      */
     fun needed(head: ByteArray, length: Int, minSize: (Int, Int) -> IntArray): Int {
         val meta = when (val found = findMeta(head, length)) {
@@ -37,25 +33,17 @@ object AvifPreview {
     }
 
     /**
-     * The preview of the AVIF file starting with [bytes] as an AVIF file of its own, or
-     * null when it has none of at least `minSize` (or [bytes] stop short of it).
+     * The embedded thumbnail of the AVIF file starting with [bytes] as an AVIF file of its
+     * own, or null when it has none of at least `minSize` (or [bytes] stop short of it).
      */
-    fun extract(bytes: ByteArray, minSize: (Int, Int) -> IntArray): ByteArray? {
+    fun thumbnail(bytes: ByteArray, minSize: (Int, Int) -> IntArray): ByteArray? {
         val meta = (findMeta(bytes, bytes.size) as? Found.At)?.box ?: return null
         val parsed = parseMeta(bytes, meta) ?: return null
-        val plan = plan(parsed, minSize) ?: return null
+        val plan = plan(parsed, minSize) as? Plan.Thumbnail ?: return null
         if (plan.end > bytes.size) return null
         val item = parsed.items[plan.item] ?: return null
         val data = itemData(bytes, item, plan.length) ?: return null
-        return when (plan) {
-            is Plan.Thumbnail -> build(parsed, item, data, plan.width, plan.height, layered = false)
-            is Plan.FirstLayer -> {
-                val layer = Av1.firstLayer(data) ?: return null
-                val want = minSize(plan.fullWidth, plan.fullHeight)
-                if (layer.width < want[0] || layer.height < want[1]) return null
-                build(parsed, item, layer.data, layer.width, layer.height, layered = true)
-            }
-        }
+        return build(parsed, item, data, plan.width, plan.height)
     }
 
     // ------------------------------------------------------------------ boxes
@@ -244,7 +232,7 @@ object AvifPreview {
 
     private sealed class Plan(val item: Int, val length: Long, val end: Long) {
         class Thumbnail(item: Int, length: Long, end: Long, val width: Int, val height: Int) : Plan(item, length, end)
-        class FirstLayer(item: Int, length: Long, end: Long, val fullWidth: Int, val fullHeight: Int) : Plan(item, length, end)
+        class FirstLayer(item: Int, length: Long, end: Long) : Plan(item, length, end)
     }
 
     /** The thumbnail that covers `minSize`, smallest first; else the first layer of a layered primary item. */
@@ -267,7 +255,7 @@ object AvifPreview {
         val large = (meta.bytes[a1lx.body].toInt() and 1) != 0
         val first = if (large) u32(meta.bytes, a1lx.body + 1) else u16(meta.bytes, a1lx.body + 1).toLong()
         if (first <= 0) return null
-        return Plan.FirstLayer(primary.id, first, endOf(primary, first) ?: return null, full[0], full[1])
+        return Plan.FirstLayer(primary.id, first, endOf(primary, first) ?: return null)
     }
 
     /** Where the first [length] bytes of [item]'s data end in the file; null when its extents hold fewer. */
@@ -298,18 +286,15 @@ object AvifPreview {
 
     // ------------------------------------------------------------------ output
 
-    /** Properties not carried over: replaced (`ispe`), or about layers and full-size geometry. */
-    private val LAYER_ONLY = setOf("a1lx", "lsel", "a1op", "clap")
-
     /** One-item AVIF of [data] at [width] x [height], with [item]'s other properties. */
-    private fun build(meta: Meta, item: Item, data: ByteArray, width: Int, height: Int, layered: Boolean): ByteArray {
+    private fun build(meta: Meta, item: Item, data: ByteArray, width: Int, height: Int): ByteArray {
         val props = ByteArrayOutputStream()
         val associations = ArrayList<Int>()
         props.write(fullBox("ispe", 0, u32Bytes(width.toLong()) + u32Bytes(height.toLong())))
         associations += 1
         for ((index, essential) in item.properties) {
             val p = meta.properties.getOrNull(index - 1) ?: continue
-            if (p.type == "ispe" || (layered && p.type in LAYER_ONLY)) continue
+            if (p.type == "ispe") continue
             // Config OBUs could hold the old sequence header: decoders take it from the data.
             val bytes = if (p.type == "av1C" && p.end - p.body > 4) box("av1C", meta.bytes.copyOfRange(p.body, p.body + 4))
             else meta.bytes.copyOfRange(p.start, p.end)

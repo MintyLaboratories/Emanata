@@ -33,7 +33,6 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
 
         private val SECURE_SCHEMES = listOf("https://", "davs://")
         private val PLAIN_SCHEMES = listOf("http://", "dav://")
-        private val IPV4_LOOPBACK = Regex("""127(\.\d{1,3}){3}""")
 
         fun defaultPort(secure: Boolean) = if (secure) HTTPS_PORT else HTTP_PORT
 
@@ -41,9 +40,8 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
         fun hasWebScheme(text: String): Boolean =
             (SECURE_SCHEMES + PLAIN_SCHEMES).any { text.trimStart().startsWith(it, ignoreCase = true) }
 
-        /** True for a host that is this device. */
-        fun isLoopback(host: String): Boolean =
-            host.equals("localhost", ignoreCase = true) || IPV4_LOOPBACK.matches(host) || host == "::1"
+        /** True for a host that is this device, as the network security config names it (`res/xml`). */
+        fun isLoopback(host: String): Boolean = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
 
         fun parse(input: String): Parsed {
             var text = input.trim()

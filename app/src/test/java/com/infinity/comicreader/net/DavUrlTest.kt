@@ -47,11 +47,21 @@ class DavUrlTest {
     fun plainHttpOnlyToThisDevice() {
         assertEquals(DavUrl(false, "localhost", 8080, "dav"), valid("http://localhost:8080/dav"))
         assertEquals(DavUrl(false, "127.0.0.1", 80, ""), valid("dav://127.0.0.1"))
-        assertEquals(DavUrl(false, "::1", 80, ""), valid("http://[::1]/"))
+        assertEquals(Problem.INSECURE, problem("http://127.0.0.2/"))
         assertEquals(Problem.INSECURE, problem("http://nas.local/dav"))
         assertEquals(Problem.INSECURE, problem("http://192.0.2.10/dav"))
         assertTrue(DavUrl.isLoopback("LOCALHOST"))
         assertFalse(DavUrl.isLoopback("127.0.0.1.example"))
+    }
+
+    @Test
+    fun theNetworkSecurityConfigAllowsPlainHttpToTheSameHosts() {
+        val xml = java.io.File("src/main/res/xml/network_security_config.xml").readText()
+        assertTrue(xml.contains("""<base-config cleartextTrafficPermitted="false" />"""))
+        val hosts = Regex("""<domain[^>]*>([^<]+)</domain>""").findAll(xml).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("localhost", "127.0.0.1"), hosts)
+        assertTrue(hosts.all { DavUrl.isLoopback(it) })
+        assertTrue(java.io.File("src/main/AndroidManifest.xml").readText().contains("@xml/network_security_config"))
     }
 
     @Test

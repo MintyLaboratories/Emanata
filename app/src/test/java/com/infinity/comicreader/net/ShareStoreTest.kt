@@ -60,11 +60,23 @@ class ShareStoreTest {
     }
 
     @Test
-    fun anotherKeyCannotOpenThemAndTheyReadEmpty() {
+    fun anotherKeyCannotOpenThemAndTheyReadEmptyAndLost() {
         ShareStore(context, box).put(share("a1", "Share A", "pw-a"))
-        val other = AesGcmBox { SecretKeySpec(ByteArray(32) { 7 }, "AES") }
-        assertEquals("", ShareStore(context, other).get("a1")?.password)
-        assertEquals("Share A", ShareStore(context, other).get("a1")?.name)
+        ShareStore(context, box).put(share("b2", "Share B", ""))
+        val other = ShareStore(context, AesGcmBox { SecretKeySpec(ByteArray(32) { 7 }, "AES") })
+        assertEquals("", other.get("a1")?.password)
+        assertTrue(other.get("a1")!!.passwordLost)
+        assertEquals("Share A", other.get("a1")?.name)
+        // No password is not a lost one.
+        assertFalse(other.get("b2")!!.passwordLost)
+        // Editing it without a new password keeps it lost; a new one ends that.
+        val kept = (ShareForm.build("Share A", "nas.local/books", "user", "", other.get("a1")) as ShareForm.Result.Ok).share
+        other.put(kept)
+        assertTrue(ShareStore(context, box).get("a1")!!.passwordLost)
+        val entered = (ShareForm.build("Share A", "nas.local/books", "user", "pw-new", other.get("a1")) as ShareForm.Result.Ok).share
+        other.put(entered)
+        assertFalse(other.get("a1")!!.passwordLost)
+        assertEquals("pw-new", other.get("a1")?.password)
     }
 
     @Test

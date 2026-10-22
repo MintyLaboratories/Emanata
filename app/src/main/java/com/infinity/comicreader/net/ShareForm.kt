@@ -10,7 +10,7 @@ object ShareForm {
     /**
      * The share the form describes, keeping [previous]'s id when editing one. A blank
      * [name] takes the path's last folder (or the share's name); a blank [password]
-     * while editing keeps [previous]'s.
+     * while editing keeps [previous]'s, lost or not.
      */
     fun build(name: String, path: String, user: String, password: String, previous: Share?): Result {
         val parsed = when (val p = SharePath.parse(path)) {
@@ -18,7 +18,9 @@ object ShareForm {
             is SharePath.Parsed.Valid -> p.path
         }
         val label = name.trim().ifEmpty { parsed.dir.substringAfterLast('/').ifEmpty { parsed.share } }
-        val secret = if (password.isEmpty() && previous != null) previous.password else password
-        return Result.Ok(Share(previous?.id ?: ShareStore.newId(), label, parsed, user.trim(), secret))
+        val keep = password.isEmpty() && previous != null
+        val secret = if (keep) previous!!.password else password
+        val lost = keep && previous!!.passwordLost
+        return Result.Ok(Share(previous?.id ?: ShareStore.newId(), label, parsed, user.trim(), secret, passwordLost = lost))
     }
 }

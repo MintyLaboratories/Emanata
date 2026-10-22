@@ -161,6 +161,20 @@ class RemotesTest {
     }
 
     @Test
+    fun aLostPasswordIsNeverSignedInWith() {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(password = "", passwordLost = true))) { fake }
+        try {
+            Remotes.list("/net/s1/Series")
+            fail("signed in with a lost password")
+        } catch (e: RemoteException) {
+            assertEquals(RemoteException.Reason.DENIED, e.reason)
+        }
+        Remotes.retry("s1")
+        assertNull(Remotes.file("/net/s1/Series").listFiles())
+        assertEquals(0, fake.attempts)
+    }
+
+    @Test
     fun offlineNothingIsTried() {
         Remotes.online = { false }
         assertTrue(Remotes.unreachable("s1"))

@@ -15,7 +15,7 @@ import java.util.UUID
 class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
     private val sp = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    /** Every share; a password that cannot be opened any more (keystore reset) reads as empty. */
+    /** Every share; a password that cannot be opened any more (keystore reset) reads as empty and lost. */
     fun all(): List<Share> {
         val arr = try {
             JSONArray(sp.getString(KEY_LIST, "[]") ?: "[]")
@@ -27,7 +27,9 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
             val o = arr.optJSONObject(i) ?: continue
             val id = o.optString("id").takeIf { it.isNotEmpty() } ?: continue
             val path = SharePath(o.optString("host"), o.optInt("port", SharePath.DEFAULT_PORT), o.optString("share"), o.optString("dir"))
-            out.add(Share(id, o.optString("name"), path, o.optString("user"), unseal(o.optString("secret"))))
+            val password = unseal(o.optString("secret"))
+            val lost = password == null || o.optBoolean(KEY_LOST)
+            out.add(Share(id, o.optString("name"), path, o.optString("user"), password.orEmpty(), passwordLost = lost))
         }
         return out
     }
@@ -58,6 +60,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
                     .put("id", s.id).put("name", s.name)
                     .put("host", s.path.host).put("port", s.path.port).put("share", s.path.share).put("dir", s.path.dir)
                     .put("user", s.user).put("secret", seal(s.password))
+                    .apply { if (s.passwordLost) put(KEY_LOST, true) }
             )
         }
         sp.edit().putString(KEY_LIST, arr.toString()).commit()
@@ -66,12 +69,14 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
     private fun seal(password: String): String =
         if (password.isEmpty()) "" else Base64.encodeToString(box.seal(password.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
 
-    private fun unseal(secret: String): String =
-        if (secret.isEmpty()) "" else runCatching { String(box.open(Base64.decode(secret, Base64.NO_WRAP)), Charsets.UTF_8) }.getOrDefault("")
+    /** The password [secret] seals; null when it cannot be opened. */
+    private fun unseal(secret: String): String? =
+        if (secret.isEmpty()) "" else runCatching { String(box.open(Base64.decode(secret, Base64.NO_WRAP)), Charsets.UTF_8) }.getOrNull()
 
     companion object {
         private const val FILE = "shares"
         private const val KEY_LIST = "list"
+        private const val KEY_LOST = "lost"
         private val LOCK = Any()
 
         /** How passwords are sealed; tests stand in a key the JVM has. */

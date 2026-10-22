@@ -42,7 +42,8 @@ class ShareDialog : DialogFragment() {
             field(R.id.share_user).setText(previous.user)
         }
         if (previous != null) {
-            form.findViewById<TextInputLayout>(R.id.share_password_layout).helperText = getString(R.string.share_password_keep)
+            form.findViewById<TextInputLayout>(R.id.share_password_layout).helperText =
+                getString(if (previous.passwordLost) R.string.share_password_lost else R.string.share_password_keep)
         }
         val dialog = AlertDialog.Builder(context)
             .setTitle(if (previous == null) R.string.share_add_title else R.string.share_edit_title)

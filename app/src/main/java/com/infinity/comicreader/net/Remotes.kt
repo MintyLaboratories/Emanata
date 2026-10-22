@@ -196,6 +196,8 @@ object Remotes {
     private fun <T> call(path: String, block: (RemoteFs) -> T): T {
         val id = idOf(path) ?: throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
         synchronized(this) { refused[id] }?.let { throw RemoteException(it.reason, it.message, it, lasting = true) }
+        // A password that could not be opened is never tried: signing in with a wrong one could lock the account.
+        if (share(id)?.passwordLost == true) throw RemoteException(RemoteException.Reason.DENIED, "Password to enter again", lasting = true)
         if (unreachable(id)) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         // Never from the main thread: a caller there gets what is remembered, or a guess.
         if (onMainThread()) throw RemoteException(RemoteException.Reason.UNREACHABLE, "Network on the main thread")

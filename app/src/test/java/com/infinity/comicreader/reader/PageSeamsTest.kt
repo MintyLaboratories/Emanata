@@ -53,6 +53,25 @@ class PageSeamsTest {
         assertEquals(emptyList<Int>(), PageSeams.unchecked(analysis(1), PageSeams.Found(1), from = 0))
     }
 
+    @Test
+    fun beyondTheWindowOnlyCheapPagesAreChecked() {
+        val found = PageSeams.Found(12)
+        // Pages 8 and 9 are costly: the seams on either side of them wait for the reader.
+        val cheap = { i: Int -> i != 8 && i != 9 }
+        assertEquals(setOf(0, 1, 2, 3, 4, 5, 6, 10), PageSeams.unchecked(analysis(12), found, from = 1, window = 2, cheap = cheap).toSet())
+        assertEquals(setOf(6, 7, 8, 9, 10), PageSeams.unchecked(analysis(12), found, from = 8, window = 2, cheap = { false }).toSet())
+    }
+
+    @Test
+    fun pagesNamedAsStripFormatsAreCheap() {
+        assertTrue(Decoders.regionNamed("a/p01.JPG"))
+        assertTrue(Decoders.regionNamed("p01.webp"))
+        assertTrue(Decoders.regionNamed("p01.png"))
+        assertFalse(Decoders.regionNamed("p01.avif"))
+        assertFalse(Decoders.regionNamed("p01.jxl"))
+        assertFalse(Decoders.regionNamed(null))
+    }
+
     /** Pages whose sides are given, and a count of the sides read of each page. */
     private class Sided(private val sides: List<SpreadSeams.Sides?>) : PageSource {
         val reads = IntArray(sides.size)

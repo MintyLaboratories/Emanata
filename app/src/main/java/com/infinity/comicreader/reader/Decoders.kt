@@ -14,6 +14,7 @@ import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlResizeFilter
 import com.awxkee.jxlcoder.PreferredColorConfig
 import com.awxkee.jxlcoder.ScaleMode
+import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -317,6 +318,12 @@ object Decoders {
 
     /** Kinds [edge] decodes only a strip of. */
     private val REGION_KINDS = setOf(ImageKind.JPEG, ImageKind.PNG, ImageKind.WEBP)
+
+    /** File extensions of the [REGION_KINDS], for judging pages before reading them. */
+    private val REGION_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
+
+    /** True when page [name] is named as a kind whose [edge] and [sides] decode only strips. */
+    fun regionNamed(name: String?): Boolean = Formats.ext(name.orEmpty()) in REGION_EXTENSIONS
 
     /**
      * A region decoder of [bytes], a [REGION_KINDS] image shown [w] x [h], whose pixels are

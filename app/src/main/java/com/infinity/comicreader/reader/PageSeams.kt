@@ -106,13 +106,20 @@ class PageSeams(val dir: File) {
         /**
          * The pages whose seam with the next page [found] lacks, where [analysis] lets the two
          * share a screen at all (neither wider than tall, in a book of portrait pages): nearest
-         * page [from] first ([PageSizes.outward]), and only within [window] pages of it when given.
+         * page [from] first ([PageSizes.outward]); beyond [window] pages of it, when given,
+         * only those whose sides and the next page's are [cheap] to read.
          */
-        fun unchecked(analysis: Spreads.Analysis, found: Found, from: Int, window: Int? = null): List<Int> {
+        fun unchecked(
+            analysis: Spreads.Analysis,
+            found: Found,
+            from: Int,
+            window: Int? = null,
+            cheap: (Int) -> Boolean = { false }
+        ): List<Int> {
             if (analysis.landscape) return emptyList()
             val last = minOf(analysis.size, found.count) - 1
             return PageSizes.outward(maxOf(last, 0), from).filter { i ->
-                (window == null || i in from - window..from + window) && !found.checked(i) &&
+                (window == null || i in from - window..from + window || (cheap(i) && cheap(i + 1))) && !found.checked(i) &&
                     analysis.pages[i].aspect <= 1.0 && analysis.pages[i + 1].aspect <= 1.0
             }
         }

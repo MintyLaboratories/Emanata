@@ -2,6 +2,8 @@ package com.infinity.comicreader.util
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.Executors
 
 /**
  * The single place where the app binds to platform coroutine dispatchers.
@@ -15,6 +17,14 @@ import kotlinx.coroutines.Dispatchers
 object AppDispatchers {
     /** For disk, archive and bitmap work that must stay off the main thread. */
     val io: CoroutineDispatcher = Dispatchers.IO
+
+    /** For analysis nobody waits for, one task at a time at the lowest priority, behind page decodes. */
+    val background: CoroutineDispatcher = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "background-analysis").apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+        }
+    }.asCoroutineDispatcher()
 
     /** For touching views and adapters. */
     val main: CoroutineDispatcher = Dispatchers.Main.immediate

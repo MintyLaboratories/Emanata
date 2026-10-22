@@ -80,6 +80,7 @@ import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.reader.Chapter
 import com.infinity.comicreader.reader.Chapters
 import com.infinity.comicreader.reader.ComicInfo
+import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fit
@@ -1343,10 +1344,11 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Checks the seams between the open book's pages that its layout may read, in the
-     * background, nearest the page on screen first: all of them where pages are cheap to
-     * read ([PageSource.cheapSizes]), else those within [SEAM_WINDOW] pages, again as the
-     * reader moves on. They are kept for the book ([PageSeams]), and the book is laid out
+     * Checks the seams between the open book's pages that its layout may read, one at a
+     * time in the background ([AppDispatchers.background]), nearest the page on screen
+     * first: those within [SEAM_WINDOW] pages, again as the reader moves on, and beyond
+     * them those of pages read alone ([PageSource.cheapSizes]) in a format that decodes
+     * only strips ([Decoders.regionNamed]). They are kept for the book ([PageSeams]), and the book is laid out
      * again whenever they change it.
      */
     private fun checkSeams() {
@@ -1354,16 +1356,17 @@ class ViewerActivity : AppCompatActivity() {
         val book = file ?: return
         val a = analysis ?: return
         if (seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
-        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, if (src.cheapSizes) null else SEAM_WINDOW)
-        if (pages.isEmpty()) return
         val names = pageNames
+        val cheap = { i: Int -> src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
+        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap)
+        if (pages.isEmpty()) return
         val found = pageSeams.copy()
         seamsJob = lifecycleScope.launch {
             var at = 0
             var batch = SEAM_FIRST
             while (at < pages.size) {
                 val next = pages.subList(at, minOf(pages.size, at + batch))
-                val done = withContext(AppDispatchers.io) {
+                val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
                     PageSeams.check(src, next, found) { !job.isActive }.also { checked ->
                         if (checked) PageSeams(PageSeams.dirIn(cacheDir)).write(PreviewStore.bookId(book), names, found)

@@ -82,13 +82,66 @@ class AvifTest {
     fun firstLayerIsHandedOverBeforeTheFullImage() {
         val codec = layered()
         var first: Bitmap? = null
-        val bitmap = Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { first = it }
+        var fullSize: IntArray? = null
+        val bitmap = Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { it, size ->
+            first = it
+            fullSize = size
+        }
+        assertArrayEquals(intArrayOf(600, 900), fullSize)
         assertEquals(true, codec.layersAsked)
         assertEquals(2, codec.nexts)
         assertArrayEquals(intArrayOf(150, 225), intArrayOf(first!!.width, first!!.height))
         assertEquals(layer, first!!.getPixel(10, 10))
         assertEquals(full, bitmap.getPixel(10, 10))
         assertEquals(listOf(1, 1), codec.samples)
+    }
+
+    @Test
+    fun firstLayerThatFailsToRenderIsSkipped() {
+        val file = FakeAvifCodec.info(600, 900)
+        val codec = use(FakeAvifCodec(file, listOf(FakeAvifCodec.info(150, 225), file), listOf(layer, full), failRenderOf = 0))
+        var handed = false
+        val bitmap = Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { _, _ -> handed = true }
+        assertFalse(handed)
+        assertEquals(full, bitmap.getPixel(10, 10))
+        assertEquals(1, codec.closed)
+    }
+
+    @Test
+    fun firstLayerTakerThatFailsDoesNotFailTheDecode() {
+        layered()
+        val bitmap = Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { _, _ -> throw OutOfMemoryError("test") }
+        assertEquals(full, bitmap.getPixel(10, 10))
+    }
+
+    @Test
+    fun firstLayerOverHalfTheSizeIsNotHandedOver() {
+        val file = FakeAvifCodec.info(600, 900)
+        val codec = use(FakeAvifCodec(file, listOf(FakeAvifCodec.info(301, 450), file), listOf(layer, full)))
+        var handed = false
+        Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { _, _ -> handed = true }
+        assertFalse(handed)
+        assertEquals(2, codec.nexts)
+        assertEquals(listOf(1), codec.samples)
+    }
+
+    @Test
+    fun previewLayerIsAtMostHalfEachWayRoundedUp() {
+        val file = AvifInfo(FakeAvifCodec.info(601, 900))
+        assertTrue(Avif.isPreviewLayer(AvifInfo(FakeAvifCodec.info(301, 450)), file))
+        assertFalse(Avif.isPreviewLayer(AvifInfo(FakeAvifCodec.info(302, 450)), file))
+        assertFalse(Avif.isPreviewLayer(AvifInfo(FakeAvifCodec.info(301, 451)), file))
+        assertFalse(Avif.isPreviewLayer(AvifInfo(FakeAvifCodec.info(1200, 1800)), file))
+    }
+
+    @Test
+    fun firstLayerLargerThanTheImageIsNone() {
+        val file = FakeAvifCodec.info(600, 900)
+        use(FakeAvifCodec(file, listOf(FakeAvifCodec.info(1200, 1800), file), listOf(layer, full)))
+        assertNull(Avif.firstLayer(bytes))
+        var handed = false
+        Avif.decode(bytes, Target.DEFAULT_CAP_PIXELS) { _, _ -> handed = true }
+        assertFalse(handed)
     }
 
     @Test
@@ -211,26 +264,53 @@ class AvifTest {
     /** A file [Decoders] takes for AVIF: an `ftyp` box with the `avif` brand. */
     private val avifBytes = byteArrayOf(0, 0, 0, 16) + "ftypavif".toByteArray() + ByteArray(4) + ByteArray(64)
 
+    /** A sink that keeps the size of what it is handed. */
+    private class SizeSink : Decoders.PreviewSink {
+        var previewed: IntArray? = null
+
+        override fun encoded(bytes: ByteArray) = fail()
+
+        override fun decoded(full: Bitmap) {
+            previewed = intArrayOf(full.width, full.height)
+        }
+    }
+
     @Test
     fun decodersShowTheFirstLayerAndKeepItsPreview() {
+        val file = FakeAvifCodec.info(1200, 1800)
+        use(FakeAvifCodec(file, listOf(FakeAvifCodec.info(300, 450), file), listOf(layer, full)))
+        var standIn: Bitmap? = null
+        val sink = SizeSink()
+        val page = Decoders.capturing(sink) {
+            Decoders.standingIn({ standIn = it }) { Decoders.decode(avifBytes, Target(600, 900)) }
+        }
+        assertArrayEquals(intArrayOf(600, 900), intArrayOf(page.width, page.height))
+        assertArrayEquals(intArrayOf(300, 450), sink.previewed)
+        // Made to the page's target, but never enlarged.
+        assertArrayEquals(intArrayOf(300, 450), intArrayOf(standIn!!.width, standIn!!.height))
+        assertEquals(layer, standIn!!.getPixel(150, 200))
+    }
+
+    @Test
+    fun decodersPreviewFromTheFullImageWhenTheFirstLayerIsSmaller() {
         layered()
         var standIn: Bitmap? = null
-        var previewed: IntArray? = null
-        val sink = object : Decoders.PreviewSink {
-            override fun encoded(bytes: ByteArray) = fail()
-
-            override fun decoded(full: Bitmap) {
-                previewed = intArrayOf(full.width, full.height)
-            }
-        }
-        val page = Decoders.capturing(sink) {
+        val sink = SizeSink()
+        Decoders.capturing(sink) {
             Decoders.standingIn({ standIn = it }) { Decoders.decode(avifBytes, Target(300, 450)) }
         }
-        assertArrayEquals(intArrayOf(300, 450), intArrayOf(page.width, page.height))
-        assertArrayEquals(intArrayOf(150, 225), previewed)
-        // Made to the page's target, but never enlarged.
+        // 150 x 225 is under the preview size of 600 x 900; it still stands in.
+        assertArrayEquals(intArrayOf(600, 900), sink.previewed)
         assertArrayEquals(intArrayOf(150, 225), intArrayOf(standIn!!.width, standIn!!.height))
-        assertEquals(layer, standIn!!.getPixel(75, 100))
+    }
+
+    @Test
+    fun decodersMakeNoStandInWhileNoneIsWanted() {
+        layered()
+        var shown = false
+        val page = Decoders.standingIn({ shown = true }, { false }) { Decoders.decode(avifBytes, Target(300, 450)) }
+        assertFalse(shown)
+        assertEquals(full, page.getPixel(10, 10))
     }
 
     @Test

@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.ColorSpace
 import android.graphics.Matrix
+import android.util.Log
 import java.io.IOException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Semaphore
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -96,6 +98,8 @@ internal class AvifInfo(v: IntArray) {
  * on its own ([firstLayer]), or handed over on its way to the full image ([decode]).
  */
 object Avif {
+    private const val TAG = "Avif"
+
     /** Largest AVIF image decoded: libavif holds all of it in native memory, whatever the cap. */
     const val MAX_PIXELS = 40_000_000L
 
@@ -117,10 +121,12 @@ object Avif {
     /**
      * The image of AVIF file [bytes], reduced inside the decoder by the power-of-two
      * sample that brings it under [capPixels] ([Decoders.capSample]), point-sampled.
-     * Of a layered image, [firstLayer] gets the first layer as soon as it is decoded,
-     * to keep, before the rest decodes.
+     * Of a layered image whose first layer is at most half its size ([isPreviewLayer]),
+     * [firstLayer] gets that layer as soon as it is decoded, to keep, with the full
+     * image's shown size, before the rest decodes. A first layer that fails to render
+     * or to be taken is skipped; the full image still decodes.
      */
-    fun decode(bytes: ByteArray, capPixels: Long, firstLayer: ((Bitmap) -> Unit)? = null): Bitmap {
+    fun decode(bytes: ByteArray, capPixels: Long, firstLayer: ((Bitmap, IntArray) -> Unit)? = null): Bitmap {
         val codec = codec()
         gate.acquireUninterruptibly()
         try {
@@ -131,7 +137,8 @@ object Avif {
                 checkSize(file)
                 next(codec, handle)
                 if (file.layers > 1 && firstLayer != null) {
-                    firstLayer(render(codec, handle, file, AvifInfo(codec.info(handle)), 1))
+                    val layer = AvifInfo(codec.info(handle))
+                    if (isPreviewLayer(layer, file)) handOver(codec, handle, file, layer, firstLayer)
                     repeat(file.layers - 1) { next(codec, handle) }
                 }
                 val image = AvifInfo(codec.info(handle))
@@ -162,6 +169,7 @@ object Avif {
                 checkSize(file)
                 if (!codec.next(handle)) return null
                 val layer = AvifInfo(codec.info(handle))
+                if (layer.width > file.width || layer.height > file.height) return null
                 val want = minSize(file.width, file.height)
                 if (layer.width < want[0] || layer.height < want[1]) return null
                 return render(codec, handle, file, layer, 1)
@@ -199,6 +207,27 @@ object Avif {
     private fun checkSize(file: AvifInfo) {
         if (file.width.toLong() * file.height > MAX_PIXELS) {
             throw DecodeException("AVIF image is too large (${file.width} x ${file.height})")
+        }
+    }
+
+    /**
+     * True when [layer], the first layer of [file], is at most half [file]'s size each
+     * way (rounded up): a preview worth handing over. A larger one would cost about as
+     * much as the full image; one larger than the full image is not a preview at all.
+     */
+    internal fun isPreviewLayer(layer: AvifInfo, file: AvifInfo): Boolean =
+        layer.width > 0 && layer.height > 0 && layer.width <= (file.width + 1) / 2 && layer.height <= (file.height + 1) / 2
+
+    /** [layer] rendered and given to [take]; skipped, the decode going on, when either fails. */
+    private fun handOver(codec: AvifCodec, handle: Long, file: AvifInfo, layer: AvifInfo, take: (Bitmap, IntArray) -> Unit) {
+        try {
+            take(render(codec, handle, file, layer, 1), file.shownSize)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "First AVIF layer skipped", e)
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "First AVIF layer skipped", e)
         }
     }
 

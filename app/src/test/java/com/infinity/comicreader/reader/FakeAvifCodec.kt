@@ -8,7 +8,8 @@ import java.io.IOException
  * layer, the last the full image), each rendered as one solid color ([colors]). Opened
  * without layers, a layered file steps straight to its last image, as libavif does.
  * An incomplete file shorter than [metadataBytes] does not open; one shorter than
- * [layerBytes] has none of its layers. [failOpen] and [failRender] fail as libavif does.
+ * [layerBytes] has none of its layers. [failOpen] and [failRender] fail as libavif does;
+ * [failRenderOf] fails only the image of that index.
  */
 internal class FakeAvifCodec(
     private val file: IntArray,
@@ -17,7 +18,8 @@ internal class FakeAvifCodec(
     private val metadataBytes: Int = 0,
     private val layerBytes: Int = 0,
     private val failOpen: Boolean = false,
-    private val failRender: Boolean = false
+    private val failRender: Boolean = false,
+    private val failRenderOf: Int = -1
 ) : AvifCodec {
     var layersAsked: Boolean? = null
     var opened = 0
@@ -56,7 +58,7 @@ internal class FakeAvifCodec(
     }
 
     override fun render(handle: Long, bitmap: Bitmap, sample: Int, threads: Int) {
-        if (failRender) throw IOException("Could not convert AVIF")
+        if (failRender || index == failRenderOf) throw IOException("Could not convert AVIF")
         val image = images[index]
         check(bitmap.width == (image[0] + sample - 1) / sample && bitmap.height == (image[1] + sample - 1) / sample)
         samples += sample

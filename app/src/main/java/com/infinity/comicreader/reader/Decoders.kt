@@ -8,6 +8,7 @@ import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Rect
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlResizeFilter
@@ -61,6 +62,7 @@ class DecodeException(
  * [BitmapFactory] below that.
  */
 object Decoders {
+    private const val TAG = "Decoders"
 
     fun decode(bytes: ByteArray, target: Target): Bitmap {
         val kind = ImageKind.sniff(bytes)
@@ -127,17 +129,20 @@ object Decoders {
         }
     }
 
+    private class StandIn(val show: (Bitmap) -> Unit, val wanted: () -> Boolean)
+
     /** Where this thread's next decode leaves its stand-in ([standingIn]). */
-    private val standIns = ThreadLocal<((Bitmap) -> Unit)?>()
+    private val standIns = ThreadLocal<StandIn?>()
 
     /**
      * Runs [block], handing [show] a stand-in for the first image decoded in it on this
      * thread, when that image has one ready well before itself: the first layer of a
-     * layered AVIF, made to the same target but never enlarged ([fit]), to keep.
+     * layered AVIF, made to the same target but never enlarged ([fit]), to keep. It is
+     * made only when [wanted] says so as it arrives.
      */
-    fun <T> standingIn(show: (Bitmap) -> Unit, block: () -> T): T {
+    fun <T> standingIn(show: (Bitmap) -> Unit, wanted: () -> Boolean = { true }, block: () -> T): T {
         val outer = standIns.get()
-        standIns.set(show)
+        standIns.set(StandIn(show, wanted))
         try {
             return block()
         } finally {
@@ -500,22 +505,34 @@ object Decoders {
 
     /**
      * Full decode through libavif. Of a layered image, the first layer goes to this
-     * thread's preview sink ([capturing]) and stand-in ([standingIn]) as soon as it is
-     * decoded; neither ever fails the decode.
+     * thread's preview sink ([capturing]) when it is as large as the preview, and to its
+     * stand-in ([standingIn]) while one is wanted, as soon as it is decoded; neither ever
+     * fails the decode. A sink left without it gets the full image ([fit]).
      */
     private fun decodeAvif(bytes: ByteArray, target: Target): Bitmap {
         if (sinks.get() == null && standIns.get() == null) return Avif.decode(bytes, target.capPixels)
-        return Avif.decode(bytes, target.capPixels) { layer ->
+        return Avif.decode(bytes, target.capPixels) { layer, full ->
             sinks.get()?.let { sink ->
-                sinks.set(null)
-                runCatching { sink.decoded(layer) }
+                val size = Previews.sizeOf(full[0], full[1])
+                if (layer.width >= size[0] && layer.height >= size[1]) {
+                    sinks.set(null)
+                    runCatching { sink.decoded(layer) }
+                }
             }
-            val show = standIns.get()
-            if (show == null) {
+            val standIn = standIns.get()
+            if (standIn == null || !standIn.wanted()) {
                 layer.recycle()
             } else {
                 standIns.set(null)
-                runCatching { show(fit(layer, target, standIn = true)) }
+                try {
+                    standIn.show(fit(layer, target, standIn = true))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Stand-in skipped", e)
+                } catch (e: OutOfMemoryError) {
+                    Log.w(TAG, "Stand-in skipped", e)
+                }
             }
         }
     }

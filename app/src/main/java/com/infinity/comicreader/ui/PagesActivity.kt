@@ -11,7 +11,9 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.AppDispatchers
@@ -23,7 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Shows a grid of page thumbnails and returns the chosen page to the viewer. */
+/** Shows a grid of page thumbnails, hidden pages left out, and returns the chosen page to the viewer. */
 class PagesActivity : AppCompatActivity() {
 
     private var adapter: ThumbAdapter? = null
@@ -55,7 +57,8 @@ class PagesActivity : AppCompatActivity() {
             val result = withContext(AppDispatchers.io) {
                 // Backing out stops fetching a book from a share.
                 val fetch = PageSources.Fetch(canceled = { !isActive })
-                val opened = runCatching { PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = fetch) }
+                val hidden = Library(this@PagesActivity).hiddenPages(path)
+                val opened = runCatching { HiddenPages.wrap(PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = fetch), hidden) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

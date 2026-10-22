@@ -955,7 +955,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val passing = if (filter.isActive) searched.filter { filter.accepts(it, live, browsing) } else searched
 
         shown.clear()
-        shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it) })
+        val hidden = library.hiddenCounts()
+        shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it, hidden) })
         filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
         if (resort) scheduleFacts(sort.keys + filter.keys)
         adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
@@ -974,15 +975,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /**
-     * [entry] with the page count read from its book when it has none of its own, and
-     * the direction detected in it when its folder has none set, so a wraparound cover
-     * without a barcode shows the half the book starts on.
+     * [entry] with the page count read from its book when it has none of its own, less
+     * the pages it hides ([hidden] counts by path), and the direction detected in it when
+     * its folder has none set, so a wraparound cover without a barcode shows the half the
+     * book starts on.
      */
-    private fun withFacts(entry: BookEntry): BookEntry {
+    private fun withFacts(entry: BookEntry, hidden: Map<String, Int>): BookEntry {
         if (entry.isDir) return entry
         val facts = factsCache.get(entry.path, entry.size) ?: return entry
         var out = entry
-        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.pages)
+        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = (facts.pages - (hidden[entry.path] ?: 0)).coerceAtLeast(1))
         val detected = facts.detected?.direction
         if (detected != null && !entry.directionSet && prefs.detectDirection && detected != entry.direction) out = out.copy(direction = detected)
         return out
@@ -1222,7 +1224,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val filter = prefs.filter(Prefs.TAB_BROWSE)
         val live = values()
         val passing = if (filter.isActive) entries.filter { filter.accepts(it, live, true) } else entries
-        return passing.sortedWith(LibrarySort.comparator(sort, live.frozen(passing, sort.keys))).map { withFacts(it) }
+        val hidden = library.hiddenCounts()
+        return passing.sortedWith(LibrarySort.comparator(sort, live.frozen(passing, sort.keys))).map { withFacts(it, hidden) }
     }
 
     /** The comic or folder under list point ([x], [y]) and the view its cover is drawn in, or null. */

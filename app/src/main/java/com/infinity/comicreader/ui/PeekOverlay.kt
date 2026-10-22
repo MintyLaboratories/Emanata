@@ -24,7 +24,9 @@ import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverStyle
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.PeekMode
+import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.AppDispatchers
@@ -160,7 +162,9 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
         val started = SystemClock.elapsedRealtime()
         val timing = FillTiming(started)
         loadJob = scope.launch {
-            val opened = withContext(AppDispatchers.io) { runCatching { PageSources.open(entry.file, charset, cacheDir) }.getOrNull() }
+            val opened = withContext(AppDispatchers.io) {
+                runCatching { HiddenPages.wrap(PageSources.open(entry.file, charset, cacheDir), Library(context).hiddenPages(entry.path)) }.getOrNull()
+            }
             if (opened == null || this@PeekOverlay.entry !== entry) {
                 opened?.let { withContext(AppDispatchers.io) { runCatching { it.close() } } }
                 if (this@PeekOverlay.entry === entry) showMessage(R.string.error_open)

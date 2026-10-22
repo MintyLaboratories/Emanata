@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
+import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PdfSource
@@ -79,7 +80,7 @@ object Thumbs {
         cached(context, entry, width, height, style)?.let { return it }
         val page = entry.bookmarkPage
         val rightToLeft = entry.direction == ReadingDirection.RTL
-        val k = coverKey(entry, width, height, style)
+        val k = coverKey(context, entry, width, height, style)
         val disk = diskFile(context, k)
 
         val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height) ?: return null
@@ -92,7 +93,7 @@ object Thumbs {
         }
         val bitmap = if (page < 0) cover else {
             val (w, h) = CoverArt.pageBox(width, height)
-            val front = pageOf(entry.file, page, charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear))
+            val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear))
             if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
         memory.put(k, bitmap)
@@ -108,7 +109,7 @@ object Thumbs {
      * disk, never generated. Blocking; null when there is none yet.
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
-        val k = coverKey(entry, width, height, style)
+        val k = coverKey(context, entry, width, height, style)
         memory.get(k)?.let { return it }
         val disk = diskFile(context, k)
         if (!disk.isFile) return null
@@ -118,9 +119,13 @@ object Thumbs {
         return cached
     }
 
-    /** What a cover is cached by: its file, box size, style, the direction it starts on, and a bookmark's page. */
-    private fun coverKey(entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
-        val page = entry.bookmarkPage
+    /** The book index of [entry]'s bookmarked page, which counts pages as shown ([Library.hiddenPages]). */
+    private fun bookPage(context: Context, entry: BookEntry): Int =
+        HiddenPages.toBook(entry.bookmarkPage, Library(context).hiddenPages(entry.path))
+
+    /** What a cover is cached by: its file, box size, style, the direction it starts on, and a bookmark's page in the book. */
+    private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
+        val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
         val rightToLeft = entry.direction == ReadingDirection.RTL
         return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}" + if (page >= 0) "|p$page" else ""
     }

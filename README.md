@@ -278,14 +278,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   this book* (its folders, or the inner archives of a nested book) and *In this
   folder* (the files beside it), the current ones highlighted; tap one to go there.
 - **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
-  save the page as an image, crop it, or rotate the screen.
+  save the page as an image, crop it, hide it, or rotate the screen.
+- **Hide this page:** a hidden page is left out of reading, page counts, the
+  seek strip, page grids and peeks for that book; history and bookmarks keep
+  their pages. Book info lists hidden pages (**Unhide pages…**) to show them
+  again. Kept per book, moved with it, and backed up.
 - **Apply to: This folder / All books** at the top of the reader settings:
   *This folder* keeps the whole layout (paged or continuous, direction, fit,
   two-page, spreads, auto-crop, page gap) for the book's folder; *All books* changes the defaults and
   keeps only a direction chosen for the folder. Layouts
   remembered by older versions that matched the defaults keep only their direction.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
-  "CBZ (ZIP)", or "CBR (actually ZIP)" for a misnamed one), size, pages, the
+  "CBZ (ZIP)", or "CBR (actually ZIP)" for a misnamed one), size, pages (and how
+  many are hidden), the
   reading direction with where it comes from, and every ComicInfo field.
 - **Adjustments:** brightness, contrast and saturation, each -100..+100, computed
   in OKLab on the GPU in the same pass as the page's scaling (Android 13+), live

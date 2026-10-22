@@ -188,6 +188,17 @@ class RemotesTest {
     }
 
     @Test
+    fun namesNoFileCanHaveAreLeftOut() {
+        val names = listOf("ok.cbz", "", ".", "..", "a/b", "..\\up", "nul\u0000.cbz", ".hidden")
+        Remotes.serve(listOf(FakeRemoteFs.share())) {
+            object : RemoteFs by fake {
+                override fun list(path: String) = names.map { RemoteStat(it, false, 1, 0, 0) }
+            }
+        }
+        assertEquals(listOf("ok.cbz", ".hidden"), Remotes.list("/net/s1").map { it.name })
+    }
+
+    @Test
     fun sharesAreReadOnly() {
         val f = Remotes.file("/net/s1/Series/001.cbz")
         assertFalse(f.delete())

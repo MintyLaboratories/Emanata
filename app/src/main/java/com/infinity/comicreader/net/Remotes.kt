@@ -147,16 +147,23 @@ object Remotes {
 
     private fun isRoot(path: String) = isRemote(path) && relOf(path).isEmpty()
 
-    /** The entries of the folder at [path], their stats remembered. Throws when the share fails. */
+    /**
+     * The entries of the folder at [path], their stats remembered; names no file can
+     * have (empty, `.`, `..`, or holding `/`, `\` or NUL) are left out. Throws when
+     * the share fails.
+     */
     fun list(path: String): List<RemoteFile> {
         val found = call(path) { it.list(relOf(path)) }
         val base = path.trimEnd('/')
-        return found.map { s ->
+        return found.filter { isName(it.name) }.map { s ->
             val child = "$base/${s.name}"
             remember(child, s)
             RemoteFile(child, s)
         }
     }
+
+    private fun isName(name: String): Boolean =
+        name.isNotEmpty() && name != "." && name != ".." && name.none { it == '/' || it == '\\' || it == '\u0000' }
 
     /** What is at [path] now; null when nothing is. Throws when the share fails. */
     fun stat(path: String): RemoteStat? {

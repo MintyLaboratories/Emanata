@@ -98,7 +98,8 @@ class PageSeams(val dir: File) {
         File(dir, Hashes.sha256Hex(bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() }) + ".bin")
 
     companion object {
-        private const val VERSION = 1
+        /** Of the file format and of [SpreadSeams.compare]: seams kept under another are checked again. */
+        private const val VERSION = 2
 
         /** Where seams are kept under [cacheDir]. */
         fun dirIn(cacheDir: File) = File(cacheDir, "page-seams")

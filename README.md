@@ -540,6 +540,7 @@ license and NOTICE text under Settings → About (files in
 | [ZXing](https://github.com/zxing/zxing) (`core`) | Apache-2.0 |
 | [SMBJ](https://github.com/hierynomus/smbj), ASN-One | Apache-2.0 |
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
+| [OkHttp](https://github.com/square/okhttp), Okio | Apache-2.0 |
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
 | Material Symbols | Apache-2.0 |
 

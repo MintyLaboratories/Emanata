@@ -137,9 +137,11 @@ dependencies {
     implementation("io.github.awxkee:jxl-coder:2.6.1")         // JPEG XL decoding
     implementation("com.google.zxing:core:3.5.3")             // barcodes on wraparound covers
     implementation("com.hierynomus:smbj:0.15.0")              // SMB 2/3 network shares
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")      // WebDAV network shares
     // PDF uses the platform android.graphics.pdf.PdfRenderer (no dependency)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

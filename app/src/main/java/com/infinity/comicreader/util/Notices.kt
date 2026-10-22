@@ -158,6 +158,10 @@ object Notices {
             "Bouncy Castle", MIT, "https://www.bouncycastle.org/", listOf("bouncycastle.txt"),
             listOf("org.bouncycastle:*"), note = "The Bouncy Castle Licence, an MIT License; the provider (bcprov), used by SMBJ."
         ),
+        Notice(
+            "OkHttp and Okio", APACHE_2, "https://square.github.io/okhttp/", APACHE,
+            listOf("com.squareup.okhttp3:*", "com.squareup.okio:*"), note = "Used for WebDAV shares."
+        ),
         Notice("MBassador", MIT, "https://github.com/bennidi/mbassador", listOf("mbassador.txt"), listOf("net.engio:mbassador")),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )

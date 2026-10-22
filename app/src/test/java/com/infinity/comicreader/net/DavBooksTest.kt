@@ -68,6 +68,28 @@ class DavBooksTest {
     }
 
     @Test
+    fun withoutRangesCoversAndFactsDownloadNothing() {
+        server.ranges = false
+        assertFalse(Remotes.seekable("/net/d1/a.cbz"))
+        val gets = server.paths("GET").size
+        repeat(2) {
+            try {
+                PageSources.openCover(remote("a.cbz"), "UTF-8", cacheDir)
+                fail("a cover read from a server without ranges")
+            } catch (e: IOException) {
+                // Expected: not fetched.
+            }
+            try {
+                BookFactsReader.read(remote("a.cbz"), "UTF-8", cacheDir)
+                fail("facts read from a server without ranges")
+            } catch (e: IOException) {
+                // Expected: not fetched.
+            }
+        }
+        assertEquals(gets, server.paths("GET").size)
+    }
+
+    @Test
     fun oneFilesServerErrorLeavesTheShareReachable() {
         Fixtures.zip(File(share, "b.cbz"), entry("01.jpg"))
         server.errors["b.cbz"] = 500

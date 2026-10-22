@@ -4,6 +4,7 @@ import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
@@ -22,15 +23,19 @@ object BookFactsReader {
     fun read(file: File, charsetName: String, cacheDir: File): BookFacts = when (Formats.typeOf(file.name)) {
         EntryType.IMAGE -> BookFacts(pages = 1, year = 0)
         EntryType.PDF, EntryType.ARCHIVE -> {
-            val kind = ArchiveKind.detect(file)
+            // A book on a share is read from its local copy when there is one: on a server
+            // sending files only whole, that is the only way, sniffing its kind included.
+            val source = if (file is RemoteFile) {
+                RemoteCache.cached(file, cacheDir) ?: file.takeIf { Remotes.seekable(it.path) } ?: throw IOException("Not fetched")
+            } else {
+                file
+            }
+            val kind = ArchiveKind.detect(source)
             if (kind == ArchiveKind.PDF) {
                 // A PDF on a share is counted only once fetched for reading.
-                val local = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: throw IOException("Not fetched") else file
-                PdfSource(local).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
+                if (source is RemoteFile) throw IOException("Not fetched")
+                PdfSource(source).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
-                // A book on a share is read from its local copy when there is one: on a server
-                // sending files only whole, that is the only way.
-                val source = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: file else file
                 val reader = ArchiveReader.open(source, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
             }

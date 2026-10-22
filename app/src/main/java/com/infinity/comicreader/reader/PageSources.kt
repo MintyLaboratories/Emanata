@@ -77,13 +77,14 @@ object PageSources {
         if (file is RemoteFile && (type == EntryType.IMAGE || type == EntryType.PDF || type == EntryType.ARCHIVE)) {
             RemoteCache.cached(file, cacheDir)?.let { return local(it, file, charsetName, nested, firstPageOnly) }
             if (type == EntryType.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
-            val kind = if (type == EntryType.IMAGE) null else ArchiveKind.detect(file)
-            if (kind == ArchiveKind.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
-            val archive = kind != null && kind != ArchiveKind.PDF
-            if (archive && !Remotes.seekable(file.path)) {
+            // From a server sending files only whole, even sniffing a book's first bytes starts a whole download.
+            if (type != EntryType.IMAGE && !Remotes.seekable(file.path)) {
                 if (!fetchWhole) throw IOException("Not fetched: ${file.name}")
                 return local(RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress), file, charsetName, nested, firstPageOnly)
             }
+            val kind = if (type == EntryType.IMAGE) null else ArchiveKind.detect(file)
+            if (kind == ArchiveKind.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
+            val archive = kind != null && kind != ArchiveKind.PDF
             val inPlace = kind == ArchiveKind.ZIP || (archive && !fetchArchives)
             if (!inPlace) {
                 val copy = RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress)

@@ -18,6 +18,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -52,7 +53,9 @@ class PagesActivity : AppCompatActivity() {
         val prefs = Prefs(this)
         lifecycleScope.launch {
             val result = withContext(AppDispatchers.io) {
-                val opened = runCatching { PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = PageSources.Fetch()) }
+                // Backing out stops fetching a book from a share.
+                val fetch = PageSources.Fetch(canceled = { !isActive })
+                val opened = runCatching { PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = fetch) }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {

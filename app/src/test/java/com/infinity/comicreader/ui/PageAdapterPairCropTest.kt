@@ -109,6 +109,28 @@ class PageAdapterPairCropTest {
     }
 
     @Test
+    fun theHalvesOfOnePictureKeepTheirGutterEdges() {
+        val source = PngSource(listOf(page(40, 60, 360, 540), page(20, 120, 380, 480)))
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            twoPage = true, autoCrop = true, preload = 0,
+            pageLayout = PageLayout.of(listOf(intArrayOf(0, 1)), spread = true, rtl = false, joined = setOf(0))
+        )
+        val rv = recycler(adapter, 1200, 800)
+        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        val shown = source.requests.filter { it.second.box != null }.associate { it.first to it.second }
+        val left = shown.getValue(0).box!!
+        val right = shown.getValue(1).box!!
+        assertEquals(left.top, right.top, 0.0)
+        // The left page's right edge and the right page's left edge stay whole; the outer sides crop.
+        assertEquals(1.0, left.right, 0.0)
+        assertEquals(0.0, right.left, 0.0)
+        assertEquals(36.0 / 400, left.left, 1e-9)
+        assertEquals(384.0 / 400, right.right, 1e-9)
+        adapter.release()
+    }
+
+    @Test
     fun withoutAutoCropPagesFitTheirHalvesAndMeetAtTheGutter() {
         val source = PngSource(listOf(page(40, 60, 360, 540), page(20, 120, 380, 480)))
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, twoPage = true, preload = 0)

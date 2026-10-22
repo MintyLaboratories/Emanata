@@ -8,15 +8,24 @@ import com.infinity.comicreader.reader.Half
  * With [views], item i shows `views[i]`: one or two parts, each a page or one half of
  * one, in reading order, as the spread engine laid them out; a page split in halves
  * spans two items. A [spread] layout's items are two-slot rows; [rtl] puts the first
- * part of a pair on the right.
+ * part of a pair on the right. The items in [joined] show two pages that are one picture,
+ * a spread in two files.
  */
-class PageLayout(val spread: Boolean, private val rtl: Boolean = false, private val views: List<List<Part>>? = null) {
+class PageLayout(
+    val spread: Boolean,
+    private val rtl: Boolean = false,
+    private val views: List<List<Part>>? = null,
+    private val joined: Set<Int> = emptySet()
+) {
 
     /** What one slot shows: [page], whole or one [half] of it. */
     data class Part(val page: Int, val half: Half = Half.WHOLE)
 
     /** True when [other] maps items to the same parts on screen. */
-    fun sameAs(other: PageLayout): Boolean = spread == other.spread && rtl == other.rtl && views == other.views
+    fun sameAs(other: PageLayout): Boolean = spread == other.spread && rtl == other.rtl && views == other.views && joined == other.joined
+
+    /** True when [item] shows the two halves of one picture, in two files. */
+    fun joined(item: Int): Boolean = item in joined
 
     /** True when items are laid out from [views] (or as pairs), so chapters cannot be laid end to end. */
     val grouped: Boolean get() = spread || views != null
@@ -121,9 +130,9 @@ class PageLayout(val spread: Boolean, private val rtl: Boolean = false, private 
     companion object {
         const val NONE = -1
 
-        /** A [spread] layout of [views] given as page indices in reading order, each page whole. */
-        fun of(views: List<IntArray>, spread: Boolean, rtl: Boolean): PageLayout =
-            PageLayout(spread, rtl, views.map { v -> v.map { Part(it) } })
+        /** A [spread] layout of [views] given as page indices in reading order, each page whole; [joined] as for [PageLayout]. */
+        fun of(views: List<IntArray>, spread: Boolean, rtl: Boolean, joined: Set<Int> = emptySet()): PageLayout =
+            PageLayout(spread, rtl, views.map { v -> v.map { Part(it) } }, joined)
 
         /**
          * One page a screen for [count] pages, each page [splittable] says is a spread in

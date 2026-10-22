@@ -212,4 +212,17 @@ class PageLayoutTest {
         assertEquals(listOf(PageLayout.Part(1, Half.LEFT)), rtl.parts(2, 3).toList())
         assertEquals(listOf(PageLayout.Part(2)), rtl.parts(3, 3).toList())
     }
+
+    @Test
+    fun joinedItemsShowOnePictureAndCountForSameness() {
+        val views = listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3))
+        val joined = PageLayout.of(views, spread = true, rtl = false, joined = setOf(1))
+        assertTrue(joined.joined(1))
+        assertFalse(joined.joined(0))
+        assertFalse(joined.sameAs(PageLayout.of(views, spread = true, rtl = false)))
+        assertTrue(joined.sameAs(PageLayout.of(views, spread = true, rtl = false, joined = setOf(1))))
+        // A lone page of such a layout has its row to itself.
+        assertTrue(joined.alone(0, 4))
+        assertFalse(joined.alone(1, 4))
+    }
 }

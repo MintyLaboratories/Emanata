@@ -83,7 +83,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * spread engine's pairs, or pages split in halves), else pages pair by position with
  * [twoPage]. With [autoCrop], the two pages of a pair share one top and bottom crop and
  * show at one height ([PairCrop]), from what auto-crop found on each, kept in [bounds];
- * a page not measured yet is measured first. Paired pages meet at the gutter.
+ * a page not measured yet is measured first; the halves of one picture ([PageLayout.joined])
+ * keep their gutter edges. Paired pages meet at the gutter.
  *
  * A continuous column may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
@@ -664,7 +665,8 @@ class PageAdapter(
         val right = parts[1] ?: return PageKey(part.page, target)
         val foundLeft = bounds[left.page] ?: return null
         val foundRight = bounds[right.page] ?: return null
-        val (boxLeft, boxRight) = PairCrop.boxes(foundLeft.box, foundRight.box, spread = false)
+        // The halves of one picture keep their gutter edges whole.
+        val (boxLeft, boxRight) = PairCrop.boxes(foundLeft.box, foundRight.box, spread = layout.joined(layout.itemOf(part)))
         if (fitMode == ZoomImageView.FitMode.SCREEN) {
             val la = foundLeft.aspect(boxLeft)
             val ra = foundRight.aspect(boxRight)

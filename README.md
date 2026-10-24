@@ -146,11 +146,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Resume reading at startup:** Ask (default), Yes or No. As the app starts,
   Ask offers to reopen the book read last at its page; ticking *Don't ask
   again* turns the answer into Yes or No. A finished book is not offered.
-- Long-press a file or folder for its file operations, a row of icons on top:
-  **Rename**, **Delete** (asks first), **Move**, **Copy**, and **More** when it
-  holds anything (for now a folder's "Set as startup folder"). Below them, the
-  comic operations: peek, favorite, mark read/unread, show it in its folder
-  (except from that folder itself). They work on the device and on shares
+- Long-press a file or folder in Browse for its file operations, a row of icons
+  on top: **Rename**, **Delete** (asks first), **Move**, **Copy**, and **More**
+  once it holds anything (file tools to come). Below them, the comic
+  operations: peek, favorite, mark read/unread, show it in its folder (except
+  from that folder itself), set a folder as the startup folder. Favorites and
+  History list the comic operations only. File operations work on the device and on shares
   (SMB through smbj, WebDAV through MKCOL/PUT/MOVE/COPY/DELETE).
 - **Move** and **Copy** pick the item up: a **Paste** button shows at the
   bottom left (the List/Grid button's mirror), with a short hint. Tap it to

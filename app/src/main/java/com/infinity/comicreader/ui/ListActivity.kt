@@ -1483,6 +1483,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             }
             if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
+            if (entry.isDir) {
+                add(getString(R.string.menu_set_startup)) {
+                    prefs.setStartupFolder(path)
+                    toast(R.string.startup_folder_set)
+                }
+            }
         }
         if (mode == TAB_HISTORY) {
             add(getString(R.string.pref_clear_history)) {
@@ -1528,27 +1534,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * True when [entry] can be renamed, deleted, moved and copied: a file or folder on the
-     * device or a share, listed outside Bookmarks, never a location itself.
+     * device or a share, listed in Browse, never a location itself.
      */
     private fun canChangeFiles(entry: BookEntry): Boolean {
-        if (mode == TAB_BOOKMARKS) return false
+        if (mode != TAB_BROWSE) return false
         val path = entry.path
         if (roots.any { it.path == path }) return false
         if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)
         return entry.file.exists()
     }
 
-    /** What the long-press menu's More holds for [entry]: tools beyond the four file operations. */
-    private fun moreActions(entry: BookEntry): List<Pair<String, () -> Unit>> {
-        val out = ArrayList<Pair<String, () -> Unit>>()
-        if (entry.isDir) {
-            out += getString(R.string.menu_set_startup) to {
-                prefs.setStartupFolder(entry.path)
-                toast(R.string.startup_folder_set)
-            }
-        }
-        return out
-    }
+    /** What the long-press menu's More holds for [entry]: file tools beyond the four file operations, none yet. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun moreActions(entry: BookEntry): List<Pair<String, () -> Unit>> = emptyList()
 
     private fun showMore(entry: BookEntry, more: List<Pair<String, () -> Unit>>) {
         AlertDialog.Builder(this)

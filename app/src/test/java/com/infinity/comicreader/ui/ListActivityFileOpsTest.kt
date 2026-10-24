@@ -181,10 +181,30 @@ class ListActivityFileOpsTest {
         assertTrue(menu.items().contains(context.getString(R.string.menu_peek)))
         menu.dismiss()
 
+        // A folder's startup choice is a comic operation; More holds nothing yet.
         val folder = activity.longPress(other.absolutePath)
-        assertNotNull(folder.op(R.id.file_op_more)!!.performClick())
-        idle()
-        assertEquals(listOf(context.getString(R.string.menu_set_startup)), latest().items())
+        assertNull(folder.op(R.id.file_op_more))
+        assertTrue(folder.items().contains(context.getString(R.string.menu_set_startup)))
+    }
+
+    @Test
+    fun favoritesAndHistoryHaveNoFileOperations() {
+        val activity = launch()
+        for (tab in listOf(1, 2)) {
+            activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
+            idle()
+            val menu = activity.longPress(book.absolutePath)
+            assertEquals(View.GONE, menu.findViewById<LinearLayout>(R.id.file_ops)!!.visibility)
+            menu.dismiss()
+        }
+    }
+
+    @Test
+    fun aLocationRootCanStillBeTheStartupFolder() {
+        Prefs(context).lastPath = Environment.getExternalStorageDirectory().absolutePath
+        val activity = launch()
+        val menu = activity.longPress(shelf.absolutePath)
+        assertTrue(menu.items().contains(context.getString(R.string.menu_set_startup)))
     }
 
     @Test

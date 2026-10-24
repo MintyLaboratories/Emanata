@@ -304,9 +304,12 @@ class PrefsUpgradeTest {
     }
 
     @Test
-    fun languageEntryShowsItsCodeUnderneath() {
-        val entries = context.resources.getTextArray(R.array.locale_entries).map { it.toString() }
-        assertEquals("English (Simplified)\nen-US", entries[Prefs.LOCALES.indexOf("en-US")])
+    fun languageEntryShowsItsCodeSmallerOnTheSameLine() {
+        val entry = context.resources.getTextArray(R.array.locale_entries)[Prefs.LOCALES.indexOf("en-US")]
+        assertEquals("English (Simplified)\u00A0\u00A0\u00A0en-US", entry.toString())
+        val spanned = entry as android.text.Spanned
+        val small = spanned.getSpans(0, entry.length, android.text.style.RelativeSizeSpan::class.java).single()
+        assertEquals("en-US", entry.subSequence(spanned.getSpanStart(small), spanned.getSpanEnd(small)).toString())
     }
 
     @Test

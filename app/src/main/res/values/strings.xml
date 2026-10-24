@@ -677,7 +677,7 @@
 
     <string-array name="locale_entries">
         <item>System default</item>
-        <item>English (Simplified)\n<small>en-US</small></item>
+        <item>English (Simplified)\u00A0\u00A0\u00A0<small>en-US</small></item>
     </string-array>
     <string-array name="locale_values">
         <item>system</item>

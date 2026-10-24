@@ -101,7 +101,8 @@
     <string name="share_answering">%1$s is answering now</string>
     <string name="share_open">Open</string>
     <string name="share_remove_title">Remove network share?</string>
-    <string name="share_remove_msg">%1$s leaves the locations. Its favorites, history and bookmarks are kept.</string>
+    <string name="share_remove_msg">%1$s leaves the locations.</string>
+    <string name="share_remove_library">Also forget its favorites, history and bookmarks</string>
     <string name="share_connecting">Connecting…</string>
     <string name="share_unreachable">Not reachable</string>
     <string name="share_denied">Sign-in failed</string>

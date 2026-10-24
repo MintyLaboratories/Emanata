@@ -304,12 +304,8 @@ class ListActivitySharesTest {
         assertEquals(listOf("Share A"), ShareStore(context, box).all().map { it.name })
     }
 
-    @Test
-    fun aLongPressEditsOrRemovesAShare() {
-        val prefs = Prefs(context)
-        prefs.setLocationStart("/net/s1", "/net/s1/Series")
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+    /** Removes "Share A" from the location picker, ticking "forget its library" when [forget]. */
+    private fun removeShare(activity: ListActivity, forget: Boolean) {
         openSheet(activity)
         row("Share A").performLongClick()
         idle()
@@ -318,11 +314,47 @@ class ListActivitySharesTest {
         val remove = labels.indexOf(activity.getString(R.string.share_remove))
         menu.listView.performItemClick(null, remove, remove.toLong())
         idle()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        val confirm = ShadowDialog.getLatestDialog() as AlertDialog
+        val check = confirm.findViewById<android.widget.CheckBox>(R.id.dialog_check)!!
+        assertFalse("not ticked at first", check.isChecked)
+        assertEquals(activity.getString(R.string.share_remove_library), check.text.toString())
+        check.isChecked = forget
+        confirm.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
+    }
+
+    private fun fillLibrary(): Library = Library(context).apply {
+        toggleFavorite("/net/s1/Series")
+        addHistory(com.infinity.comicreader.data.HistoryItem("/net/s1/Loose.cbz", "Loose.cbz", 2, 10, 1000))
+        addBookmark(com.infinity.comicreader.data.Bookmark("/net/s1/Loose.cbz", "Loose.cbz", 3, "", 1000))
+        toggleFavorite("/books/attic")
+    }
+
+    @Test
+    fun aLongPressEditsOrRemovesAShare() {
+        val prefs = Prefs(context)
+        prefs.setLocationStart("/net/s1", "/net/s1/Series")
+        val library = fillLibrary()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        removeShare(activity, forget = false)
         assertEquals(emptyList<String>(), ShareStore(context, box).all().map { it.name })
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
         assertEquals("its start folder goes with it", "/net/s1", prefs.locationStart("/net/s1"))
+        assertEquals("its library stays unless asked", 2, library.favorites().size)
+        assertEquals(1, library.history().size)
+        assertEquals(1, library.bookmarks().size)
+    }
+
+    @Test
+    fun removingAShareCanForgetItsFavoritesHistoryAndBookmarks() {
+        val library = fillLibrary()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        removeShare(activity, forget = true)
+        assertEquals(listOf("/books/attic"), library.favorites())
+        assertEquals(0, library.history().size)
+        assertEquals(0, library.bookmarks().size)
     }
 
     @Test
@@ -340,7 +372,6 @@ class ListActivitySharesTest {
         assertEquals("shown as kept, without asking", free, row("Share A").findViewById<TextView>(R.id.location_detail).text.toString())
         assertEquals(asked, fake.attempts)
     }
-
 
     @Test
     fun theFormClearsAPasswordAndTurnsThumbnailsOff() {
@@ -370,7 +401,6 @@ class ListActivitySharesTest {
         assertFalse(saved.thumbnails)
         assertFalse(Remotes.thumbnails("/net/s1/Loose.cbz"))
     }
-
 
     @Test
     fun favoritesAndHistoryOnAShareShowWithoutTheNetwork() {

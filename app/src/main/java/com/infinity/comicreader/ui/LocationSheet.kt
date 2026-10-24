@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -226,19 +227,38 @@ class LocationSheet : BottomSheetDialogFragment() {
                 } else if (which == 1) {
                     pickStart(root)
                 } else {
-                    val app = context.applicationContext
-                    confirm(context, R.string.share_remove_title, getString(R.string.share_remove_msg, name), R.string.share_remove) {
-                        owner.lifecycleScope.launch {
-                            // Closing the share's connection may wait on the network.
-                            withContext(NonCancellable + AppDispatchers.io) {
-                                ShareStore(app).remove(id)
-                                Prefs(app).setLocationStart(root.path, null)
-                            }
-                            (owner as? Host)?.onSharesChanged()
-                        }
-                    }
+                    confirmRemove(owner, id, root)
                 }
             }
+            .show()
+    }
+
+    /**
+     * Asks before removing share [id] at [root], offering to forget its favorites, history
+     * and bookmarks too (not ticked).
+     */
+    private fun confirmRemove(owner: FragmentActivity, id: String, root: StorageRoot) {
+        val app = owner.applicationContext
+        val extra = LayoutInflater.from(owner).inflate(R.layout.dialog_check, null)
+        val forget = extra.findViewById<CheckBox>(R.id.dialog_check).apply { setText(R.string.share_remove_library) }
+        AlertDialog.Builder(owner)
+            .setTitle(R.string.share_remove_title)
+            .setMessage(getString(R.string.share_remove_msg, root.name))
+            .setView(extra)
+            .setPositiveButton(R.string.share_remove) { _, _ ->
+                val dropLibrary = forget.isChecked
+                owner.lifecycleScope.launch {
+                    // Closing the share's connection may wait on the network.
+                    withContext(NonCancellable + AppDispatchers.io) {
+                        ShareStore(app).remove(id)
+                        Prefs(app).setLocationStart(root.path, null)
+                        LocationSpace(app).remove(root.path)
+                        if (dropLibrary) Library(app).removePathsUnder(root.path)
+                    }
+                    (owner as? Host)?.onSharesChanged()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 

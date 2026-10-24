@@ -1,5 +1,6 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.ClosedChannelException
@@ -78,10 +79,12 @@ class RemoteChannel(
         val length = minOf(maxOf(window, reach).toLong(), size - start).toInt()
         val bytes = ByteArray(length)
         var n = 0
-        while (n < length) {
-            val r = input.read(start + n, bytes, n, length - n)
-            if (r < 0) break
-            n += r
+        Timing.span("share read ${length / 1024} KB") {
+            while (n < length) {
+                val r = input.read(start + n, bytes, n, length - n)
+                if (r < 0) break
+                n += r
+            }
         }
         fetches++
         val run = Run(start, if (n == length) bytes else bytes.copyOf(n))

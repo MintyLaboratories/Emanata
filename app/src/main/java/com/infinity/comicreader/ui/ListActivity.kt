@@ -79,20 +79,25 @@ import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.RemoteStat
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.BookFactsReader
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.Timing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -767,14 +772,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         invalidateOptionsMenu()
 
         showProgress(true)
+        Timing.mark("browse start, share=${dir is RemoteFile}")
         launchListing {
-            val listed = withContext(AppDispatchers.io) {
-                runCatching {
-                    val entries = buildDirectoryEntries(dir, prelisted)
-                    val prefix = sharedPrefixOf(entries)
-                    Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
-                }
+            val remote = dir as? RemoteFile
+            // A share's folder listed before shows at once as it was, while it is listed again.
+            val kept = if (remote != null && prelisted == null) withContext(AppDispatchers.io) { runCatching { keptListing(remote) }.getOrNull() } else null
+            if (kept != null) {
+                showListed(kept.first, highlight)
+                Timing.mark("browse shown as kept")
             }
+            val listed = withContext(AppDispatchers.io) { runCatching { listedOf(dir, buildDirectoryEntries(dir, prelisted)) } }
             val failure = listed.exceptionOrNull()?.let {
                 // Anything that stops a share's listing shows as that share failing, with Retry.
                 if (it is RemoteException || dir !is RemoteFile) it
@@ -786,17 +793,29 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     shareFolderGone(dir, noted)
                     return@launchListing
                 }
+                // What was kept stays shown while the share cannot be asked.
+                if (kept != null) return@launchListing
                 progress.visibility = View.GONE
                 listError = failure
                 setPrefix = null
                 displayEntries(emptyList())
                 return@launchListing
             }
-            val (list, prefix, kind) = listed.getOrThrow()
-            setPrefix = prefix.takeIf { kind == FavoriteKind.SET }
-            progress.visibility = View.GONE
-            displayEntries(list)
-            if (highlight != null) scrollToHighlight(highlight)
+            var latest = listed.getOrThrow()
+            Timing.mark("browse listed ${latest.entries.size}")
+            if (latest != kept?.first) {
+                showListed(latest, highlight.takeIf { kept == null })
+                Timing.mark("browse shown")
+            }
+            if (remote != null && refreshSubfolders(latest.entries, kept?.second.orEmpty())) {
+                val counted = withContext(AppDispatchers.io) { runCatching { listedOf(dir, buildDirectoryEntries(dir, kept = true)) }.getOrNull() }
+                if (counted != null && counted != latest) {
+                    latest = counted
+                    showListed(counted, null)
+                }
+                Timing.mark("browse subfolders listed")
+            }
+            val (_, prefix, kind) = latest
             // A folder its listing does not settle is looked into after it shows.
             if (prefix != null && kind == null) {
                 val found = withContext(AppDispatchers.io) {
@@ -809,6 +828,51 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             }
         }
+    }
+
+    /** A folder's rows, the series name their titles share, and the folder's kind when its rows settle it. */
+    private data class Listed(val entries: List<BookEntry>, val prefix: String?, val kind: FavoriteKind?)
+
+    private fun listedOf(dir: File, entries: List<BookEntry>): Listed {
+        val prefix = sharedPrefixOf(entries)
+        return Listed(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
+    }
+
+    /** Shows [listed], scrolled to [highlight] when given. */
+    private fun showListed(listed: Listed, highlight: String?) {
+        setPrefix = listed.prefix.takeIf { listed.kind == FavoriteKind.SET }
+        progress.visibility = View.GONE
+        displayEntries(listed.entries)
+        if (highlight != null) scrollToHighlight(highlight)
+    }
+
+    /**
+     * Share folder [dir] as last listed ([Remotes.cachedList]), with the stats its entries
+     * had then, by path; null when it never was. Blocking, never asking the network.
+     */
+    private fun keptListing(dir: RemoteFile): Pair<Listed, Map<String, RemoteStat?>>? {
+        val files = Remotes.cachedList(dir.absolutePath) ?: return null
+        val stats = files.associate { it.absolutePath to it.stat() }
+        return listedOf(dir, buildDirectoryEntries(dir, files)) to stats
+    }
+
+    /**
+     * Lists again, [SUBFOLDER_LISTS] at a time, the subfolders among share [entries] whose
+     * kept listing may be out of date, so their counts show: none is kept, their stat
+     * differs from the one kept with their parent's listing ([before]), or the share tells
+     * no time. One that fails stays as kept. True when any was listed.
+     */
+    private suspend fun refreshSubfolders(entries: List<BookEntry>, before: Map<String, RemoteStat?>): Boolean = withContext(AppDispatchers.io) {
+        val stale = entries.filter { e ->
+            val file = e.file as? RemoteFile ?: return@filter false
+            if (!e.isDir) return@filter false
+            val now = file.stat()
+            now == null || now.modified <= 0 || now != before[e.path] || Remotes.cachedList(e.path) == null
+        }
+        if (stale.isEmpty()) return@withContext false
+        val gate = Semaphore(SUBFOLDER_LISTS)
+        stale.map { e -> async { gate.withPermit { runCatching { Remotes.list(e.path) } } } }.awaitAll()
+        true
     }
 
     /** Goes to the nearest parent of [dir], a share's folder its listing found gone, saying so unless [noted]. */
@@ -866,10 +930,18 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
     private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
 
-    /** The entries of [dir]; throws [RemoteException] when its share cannot be reached. */
-    /** The rows of [dir], from its listing made just before ([prelisted]), else from listing it now. */
-    private fun buildDirectoryEntries(dir: File, prelisted: List<File>? = null): List<BookEntry> {
-        val files = prelisted?.toTypedArray() ?: (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
+    /**
+     * The rows of [dir], from its listing made just before ([prelisted]), else, on a share
+     * with [kept], from its last listing ([Remotes.cachedList]), else from listing it now;
+     * throws [RemoteException] when its share cannot be reached. Folders on a share are
+     * counted from their kept listings, never listed here.
+     */
+    private fun buildDirectoryEntries(dir: File, prelisted: List<File>? = null, kept: Boolean = false): List<BookEntry> {
+        val files = prelisted?.toTypedArray() ?: when {
+            dir is RemoteFile && kept -> Remotes.cachedList(dir.absolutePath)?.toTypedArray<File>()
+            dir is RemoteFile -> dir.entries().toTypedArray<File>()
+            else -> dir.listFiles()
+        } ?: return emptyList()
         val showHidden = prefs.showHidden
         val snap = snapshot()
         val out = ArrayList<BookEntry>(files.size)
@@ -877,9 +949,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             if (!showHidden && f.name.startsWith(".")) continue
             val isDir = f.isDirectory
             if (!isDir && Formats.typeOf(f.name) == EntryType.OTHER) continue
-            out.add(entryFor(f, snap))
+            out.add(if (f is RemoteFile) shareEntry(f, isDir, snap) else entryFor(f, snap))
         }
         return out
+    }
+
+    /** The row of [file] on a share; a folder counted from its kept listing, never asking the network. */
+    private fun shareEntry(file: RemoteFile, isDir: Boolean, snap: LibrarySnapshot): BookEntry {
+        val children = if (isDir) Remotes.cachedList(file.absolutePath)?.let { LibrarySnapshot.visibleOf(it, prefs.showHidden) } else null
+        return snap.entry(file, children)
     }
 
     private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry = snap.entry(file, prefs.showHidden)
@@ -1181,7 +1259,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in books.withIndex()) {
                 val read = withContext(AppDispatchers.io) {
-                    runCatching { factsCache.put(e.path, e.size, BookFactsReader.read(e.file, charset, cacheDir)) }.isSuccess
+                    runCatching { factsCache.put(e.path, e.size, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) }) }.isSuccess
                 }
                 if (!read) factsFailed[e.path] = e.size
                 val now = SystemClock.uptimeMillis()
@@ -2058,6 +2136,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         const val SHARE_RETRY_MAX_MS = 300_000L
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
+
+        /** Subfolders of a share listed at once, to count their items. */
+        private const val SUBFOLDER_LISTS = 4
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

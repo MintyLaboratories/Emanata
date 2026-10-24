@@ -334,4 +334,49 @@ class ListActivitySharesTest {
         assertEquals(0, fake.stats + fake.lists)
         assertNotNull(activity)
     }
+
+    /** The subtitle of the row titled [name]. */
+    private fun subtitleOf(recycler: RecyclerView, name: String): String {
+        rows(recycler)
+        return (0 until recycler.childCount).map { recycler.getChildAt(it) }
+            .first { (it.findViewById<View>(R.id.title) as? TitleView)?.text?.toString() == name }
+            .findViewById<TextView>(R.id.subtitle).text.toString()
+    }
+
+    @Test
+    fun aShareFolderShowsItsSubfoldersCountedThenAsKeptWhileUnreachable() {
+        // Covers would list folders too.
+        Prefs(context).thumbnails = false
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
+        // Counted from a listing of its own, made after the folder shows.
+        assertEquals(activity.getString(R.string.books_count, 1), subtitleOf(recycler, "Series"))
+        val lists = fake.lists
+
+        // Back on the device, then the share again: shown as kept, the unchanged subfolder not listed again.
+        openSheet(activity)
+        row("Device").performClick()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
+        assertEquals(lists + 1, fake.lists)
+
+        // Unreachable: what was kept stays shown.
+        fake.offline = true
+        openSheet(activity)
+        row("Device").performClick()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
+        assertEquals(activity.getString(R.string.books_count, 1), subtitleOf(recycler, "Series"))
+    }
 }

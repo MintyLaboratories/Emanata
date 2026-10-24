@@ -193,12 +193,56 @@ class RemotesTest {
     }
 
     @Test
-    fun aChangedShareDropsItsConnectionAndFindings() {
+    fun aShareReachedAnotherWayDropsItsConnectionFindingsAndListings() {
+        var shares = listOf(FakeRemoteFs.share())
+        Remotes.serve({ shares }, listingsDir = tmp.newFolder("listings")) { fake }
         Remotes.file("/net/s1/Series").listFiles()
         assertEquals(10L, Remotes.cachedStat("/net/s1/Series/001.cbz")?.size)
+        shares = listOf(FakeRemoteFs.share().copy(user = "someone else"))
         Remotes.changed("s1")
         assertTrue(fake.closed)
         assertNull(Remotes.cachedStat("/net/s1/Series/001.cbz"))
+        assertNull(Remotes.cachedList("/net/s1/Series"))
+    }
+
+    @Test
+    fun aShareRenamedKeepsItsConnectionAndListings() {
+        var shares = listOf(FakeRemoteFs.share())
+        Remotes.serve({ shares }) { fake }
+        Remotes.list("/net/s1/Series")
+        shares = listOf(FakeRemoteFs.share().copy(name = "Share B"))
+        Remotes.changed("s1")
+        assertFalse(fake.closed)
+        assertEquals("Share B", Remotes.share("s1")?.name)
+        assertEquals(10L, Remotes.cachedStat("/net/s1/Series/001.cbz")?.size)
+        assertEquals(2, Remotes.cachedList("/net/s1/Series")?.size)
+    }
+
+    @Test
+    fun listingsAreKeptAcrossRestartsAndNeverAskTheNetwork() {
+        val dir = tmp.newFolder("listings")
+        Remotes.serve(listOf(FakeRemoteFs.share()), listingsDir = dir) { fake }
+        assertNull(Remotes.cachedList("/net/s1/Series"))
+        Remotes.list("/net/s1/Series/")
+        // As after a restart: nothing in memory, the share not asked.
+        Remotes.serve(listOf(FakeRemoteFs.share()), listingsDir = dir) { fake }
+        Remotes.online = { false }
+        val kept = Remotes.cachedList("/net/s1/Series")!!
+        assertEquals(listOf("001.cbz", "002.cbz"), kept.map { it.name }.sorted())
+        assertEquals(20L, kept.first { it.name == "002.cbz" }.length())
+        assertEquals(1, fake.lists)
+    }
+
+    @Test
+    fun aRemovedShareHasNoListings() {
+        var shares = listOf(FakeRemoteFs.share())
+        val dir = tmp.newFolder("listings")
+        Remotes.serve({ shares }, listingsDir = dir) { fake }
+        Remotes.list("/net/s1/Series")
+        shares = emptyList()
+        Remotes.changed("s1")
+        assertNull(Remotes.cachedList("/net/s1/Series"))
+        assertFalse(File(dir, "s1").exists())
     }
 
     @Test

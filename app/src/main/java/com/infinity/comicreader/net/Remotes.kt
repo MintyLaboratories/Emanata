@@ -3,6 +3,7 @@ package com.infinity.comicreader.net
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Looper
+import com.infinity.comicreader.util.Timing
 import java.io.File
 import java.io.InputStream
 
@@ -52,6 +53,10 @@ object Remotes {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
 
+    /** Folder listings as last found ([cachedList]); on disk once [init] names where. */
+    @Volatile
+    private var listings = Listings(null)
+
     /** Serves the shares stored for [context]'s app, checking the network through its connectivity service. */
     fun init(context: Context) {
         val app = context.applicationContext
@@ -60,12 +65,17 @@ object Remotes {
         source = { store.all() }
         online = { connectivity == null || runCatching { connectivity.activeNetwork != null }.getOrDefault(true) }
         onMainThread = { runCatching { Looper.getMainLooper().thread === Thread.currentThread() }.getOrDefault(false) }
+        listings = Listings(Listings.dirIn(app.cacheDir))
         changed(null)
     }
 
-    /** Serves [list] through [fs], online, as if from a background thread; for tests. */
-    fun serve(list: List<Share>, fs: (Share) -> RemoteFs) {
-        source = { list }
+    /** Serves [list] through [fs], online, as if from a background thread, listings kept in [listingsDir]; for tests. */
+    fun serve(list: List<Share>, listingsDir: File? = null, fs: (Share) -> RemoteFs) = serve({ list }, listingsDir, fs)
+
+    /** Serves the shares [list] gives at each [changed]; for tests. */
+    fun serve(list: () -> List<Share>, listingsDir: File? = null, fs: (Share) -> RemoteFs) {
+        source = list
+        listings = Listings(listingsDir)
         connector = fs
         online = { true }
         onMainThread = { false }
@@ -99,11 +109,22 @@ object Remotes {
     /** True for a path on a share that was removed from the app: nothing is there any more. */
     fun isOrphan(path: String): Boolean = idOf(path)?.let { share(it) == null } == true
 
-    /** Forgets what was held for share [id] (every share when null): its connection, findings and failures. */
+    /**
+     * Forgets what was held for share [id] (every share when null): its connection,
+     * findings, failures and listings. A share changed in nothing that reaching it takes
+     * (its address, user and password), or not at all, keeps all but its failures.
+     */
     fun changed(id: String?) {
         val closing = ArrayList<RemoteFs>()
+        var forget = false
         synchronized(this) {
+            val before = shares?.firstOrNull { it.id == id }
             shares = null
+            if (id != null && before != null && sameWay(before, share(id))) {
+                retry(id)
+                return
+            }
+            forget = id != null
             if (id == null) {
                 closing += open.values
                 open.clear()
@@ -119,7 +140,12 @@ object Remotes {
             }
         }
         for (fs in closing) runCatching { fs.close() }
+        if (forget && id != null) listings.forget(id)
     }
+
+    /** True when [b] is reached as [a] is: the same address, user and password. */
+    private fun sameWay(a: Share, b: Share?): Boolean =
+        b != null && a.path == b.path && a.user == b.user && a.password == b.password && a.passwordLost == b.passwordLost
 
     /** True while share [id] counts as unreachable: offline, or it failed less than [QUIET_MS] ago. */
     @Synchronized
@@ -153,13 +179,27 @@ object Remotes {
      * the share fails.
      */
     fun list(path: String): List<RemoteFile> {
-        val found = call(path) { it.list(relOf(path)) }
         val base = path.trimEnd('/')
-        return found.filter { isName(it.name) }.map { s ->
-            val child = "$base/${s.name}"
-            remember(child, s)
-            RemoteFile(child, s)
-        }
+        val found = Timing.span("share list") { call(path) { it.list(relOf(path)) } }.filter { isName(it.name) }
+        listings.put(base, found)
+        return filesOf(base, found)
+    }
+
+    /**
+     * The entries of the folder at [path] as last listed, in memory or on disk, their
+     * stats remembered; null when it never was. Never asks the network.
+     */
+    fun cachedList(path: String): List<RemoteFile>? {
+        val base = path.trimEnd('/')
+        val id = idOf(base) ?: return null
+        if (share(id) == null) return null
+        return listings.get(base)?.let { filesOf(base, it) }
+    }
+
+    private fun filesOf(base: String, found: List<RemoteStat>): List<RemoteFile> = found.map { s ->
+        val child = "$base/${s.name}"
+        remember(child, s)
+        RemoteFile(child, s)
     }
 
     private fun isName(name: String): Boolean =
@@ -168,11 +208,11 @@ object Remotes {
     /** What is at [path] now; null when nothing is. Throws when the share fails. */
     fun stat(path: String): RemoteStat? {
         if (isRoot(path)) return ROOT
-        return call(path) { it.stat(relOf(path)) }.also { remember(path, it) }
+        return Timing.span("share stat") { call(path) { it.stat(relOf(path)) } }.also { remember(path, it) }
     }
 
     /** Opens the file at [path]. */
-    fun open(path: String): RemoteInput = call(path) { it.open(relOf(path)) }
+    fun open(path: String): RemoteInput = Timing.span("share open") { call(path) { it.open(relOf(path)) } }
 
     /** False when the file at [path] can be read only front to back ([RemoteFs.seekable]). */
     fun seekable(path: String): Boolean = call(path) { it.seekable(relOf(path)) }
@@ -194,7 +234,7 @@ object Remotes {
     }
 
     /** Free and total bytes of share [id]; null when it does not say. Throws when it fails. */
-    fun space(id: String): Pair<Long, Long>? = call(rootOf(id)) { it.space() }
+    fun space(id: String): Pair<Long, Long>? = Timing.span("share space") { call(rootOf(id)) { it.space() } }
 
     private fun <T> call(path: String, block: (RemoteFs) -> T): T {
         val id = idOf(path) ?: throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)

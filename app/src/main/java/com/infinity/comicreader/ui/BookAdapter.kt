@@ -26,6 +26,7 @@ import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
+import com.infinity.comicreader.util.Timing
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
@@ -509,7 +510,7 @@ class BookAdapter(
         val job = scope.launch {
             val got = withContext(AppDispatchers.io) {
                 runCatching { source.cached(appContext, item, w, h, style) }.getOrNull()?.let { Thumbs.Cover(it, full = true) }
-            } ?: gated { canceled -> runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() }
+            } ?: gated { canceled -> Timing.span("cover first") { runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
             if (holder.wanted != id) return@launch
             if (got == null) {
                 // The same book's earlier cover stood in for one there is none of now.
@@ -540,7 +541,7 @@ class BookAdapter(
         val source = covers
         val job = scope.launch {
             firstPasses.first { it == 0 }
-            val bitmap = gated { canceled -> runCatching { source.load(appContext, item, charset, w, h, style, canceled) }.getOrNull() }
+            val bitmap = gated { canceled -> Timing.span("cover full") { runCatching { source.load(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
             if (bitmap != null && holder.wanted == id) draw(holder, bitmap, id)
         }
         track(holder, job)
@@ -561,6 +562,7 @@ class BookAdapter(
 
     /** Shows [bitmap], the cover with [coverId] [id], in [holder]. */
     private fun draw(holder: BookHolder, bitmap: Bitmap, id: String) {
+        Timing.mark("cover drawn at ${holder.bindingAdapterPosition}")
         holder.thumb.setImageBitmap(bitmap)
         holder.drawn = id
         holder.quick = null

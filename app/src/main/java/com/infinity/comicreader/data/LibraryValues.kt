@@ -208,10 +208,11 @@ class LibrarySnapshot(
 
     companion object {
         /** Items a user would see inside [dir]: sub-folders and openable files, minus hidden ones unless [showHidden]. */
-        fun visibleChildren(dir: File, showHidden: Boolean): List<File> =
-            dir.listFiles()?.filter {
-                (showHidden || !it.name.startsWith(".")) && (it.isDirectory || Formats.isOpenable(it.name))
-            } ?: emptyList()
+        fun visibleChildren(dir: File, showHidden: Boolean): List<File> = dir.listFiles()?.let { visibleOf(it.asList(), showHidden) } ?: emptyList()
+
+        /** The items of [files] a user would see: sub-folders and openable files, minus hidden ones unless [showHidden]. */
+        fun visibleOf(files: List<File>, showHidden: Boolean): List<File> =
+            files.filter { (showHidden || !it.name.startsWith(".")) && (it.isDirectory || Formats.isOpenable(it.name)) }
 
         /** The page count of a folder of loose page images named [names], or -1 when it is not one. */
         internal fun looseImages(names: List<String>): Int =

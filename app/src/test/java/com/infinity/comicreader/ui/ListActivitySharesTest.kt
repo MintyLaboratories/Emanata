@@ -326,6 +326,23 @@ class ListActivitySharesTest {
     }
 
     @Test
+    fun freeSpaceShowsAsKeptAndIsAskedAgainOnlyWhenOld() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        val asked = fake.attempts
+        val free = activity.getString(R.string.location_free, "3.0 GB", "8.0 GB")
+        assertEquals(free, row("Share A").findViewById<TextView>(R.id.location_detail).text.toString())
+        ShadowDialog.getLatestDialog().dismiss()
+        idle()
+        fake.offline = true
+        openSheet(activity)
+        assertEquals("shown as kept, without asking", free, row("Share A").findViewById<TextView>(R.id.location_detail).text.toString())
+        assertEquals(asked, fake.attempts)
+    }
+
+
+    @Test
     fun theFormClearsAPasswordAndTurnsThumbnailsOff() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()

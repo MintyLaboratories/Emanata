@@ -64,6 +64,7 @@ import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
+import com.infinity.comicreader.data.LocationSpace
 import com.infinity.comicreader.data.MissingFolder
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RemovalNotices
@@ -755,6 +756,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead, noted = true)
         }
         switchingTo(TAB_BROWSE, dir)
+        val entering = Remotes.idOf(dir.absolutePath)?.takeIf { it != currentDir?.absolutePath?.let(Remotes::idOf) }
         mode = TAB_BROWSE
         applyView()
         currentDir = dir
@@ -803,6 +805,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
             var latest = listed.getOrThrow()
             Timing.mark("browse listed ${latest.entries.size}")
+            if (entering != null) checkSpace(entering)
             if (latest != kept?.first) {
                 showListed(latest, highlight.takeIf { kept == null })
                 Timing.mark("browse shown")
@@ -827,6 +830,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     applyFilterAndSort()
                 }
             }
+        }
+    }
+
+    /** Reads the free space of share [id], just opened, for the location picker ([LocationSpace]). */
+    private fun checkSpace(id: String) {
+        val app = applicationContext
+        lifecycleScope.launch(AppDispatchers.io) {
+            runCatching { Remotes.space(id) }.getOrNull()?.let { (free, total) -> LocationSpace(app).put(Remotes.rootOf(id), free, total) }
         }
     }
 

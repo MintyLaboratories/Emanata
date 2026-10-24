@@ -18,6 +18,8 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LocationSpace
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
@@ -40,7 +42,8 @@ import kotlinx.coroutines.withContext
  * press on the device does.
  * Tapping a root hands it to the [Host] activity. [update] redraws an open sheet as
  * drives and shares come and go; the sheet comes back after a rotation. Free space
- * is read off the main thread, a share's over the network.
+ * is read off the main thread and kept ([LocationSpace]): a share's shows as kept and
+ * is asked over the network only when that is over an hour old.
  */
 class LocationSheet : BottomSheetDialogFragment() {
     /** The activity showing the sheet. */
@@ -140,26 +143,39 @@ class LocationSheet : BottomSheetDialogFragment() {
         }
         container.addView(addRow(inflater, container))
         cancelSpace()
+        val spaces = LocationSpace(context)
         for ((i, root) in roots.withIndex()) {
+            val kept = spaces.get(root.path)
+            if (kept != null) showSpace(details[i], kept.free, kept.total)
+            if (Remotes.idOf(root.path) != null && !spaces.stale(kept)) continue
             spaceJobs += lifecycleScope.launch {
                 val space = withContext(AppDispatchers.io) { runCatching { StorageRoots.space(root) } }
-                details[i].text = space.fold(
+                space.fold(
                     onSuccess = { found ->
                         val (free, total) = found ?: run {
                             details[i].visibility = View.GONE
                             return@launch
                         }
-                        context.getString(
-                            R.string.location_free,
-                            Formatter.formatShortFileSize(context, free),
-                            Formatter.formatShortFileSize(context, total)
-                        )
+                        spaces.put(root.path, free, total)
+                        showSpace(details[i], free, total)
                     },
-                    onFailure = { context.getString(failureText(it)) }
+                    onFailure = {
+                        details[i].text = context.getString(failureText(it))
+                        details[i].visibility = View.VISIBLE
+                    }
                 )
-                details[i].visibility = View.VISIBLE
             }
         }
+    }
+
+    private fun showSpace(detail: TextView, free: Long, total: Long) {
+        val context = detail.context
+        detail.text = context.getString(
+            R.string.location_free,
+            Formatter.formatShortFileSize(context, free),
+            Formatter.formatShortFileSize(context, total)
+        )
+        detail.visibility = View.VISIBLE
     }
 
     /** The "Add network share…" row. */

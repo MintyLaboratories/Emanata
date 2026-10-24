@@ -202,7 +202,7 @@ class SmbFs(private val share: Share) : RemoteFs {
     /**
      * Copies with the server's own copy (SMB copychunk) in [COPY_BYTES] pieces, so
      * [progress] hears each and may stop it; false, leaving nothing at [to], when the
-     * server turns the first piece down.
+     * server turns the first piece down, as one without copychunk or denying it does.
      */
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
         val source = once { d ->
@@ -227,7 +227,9 @@ class SmbFs(private val share: Share) : RemoteFs {
                     try {
                         once { source.remoteCopyTo(at, target, at, n) }
                     } catch (e: IOException) {
-                        if (at > 0 || e is RemoteException || e.cause !is SMBApiException) throw e
+                        // Turned down by the server (no copychunk, or denied it): copied through the device instead.
+                        val dropped = e is RemoteException && e.reason == RemoteException.Reason.UNREACHABLE
+                        if (at > 0 || dropped || e.cause !is SMBApiException) throw e
                         runCatching { target.close() }
                         runCatching { once { d -> d.rm(smbPath(to)) } }
                         return false

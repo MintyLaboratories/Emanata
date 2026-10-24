@@ -14,6 +14,10 @@
     <!-- Network shares the user adds, and only those; nothing is sent on the app's own. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Copies and moves go on with the app in the background or the screen off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
         allowBackup is off: the app's data (reading history, bookmarks, preferences,
@@ -98,6 +102,11 @@
         <activity
             android:name=".ui.PagesActivity"
             android:label="@string/pages_title" />
+
+        <service
+            android:name=".files.FileWorkService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

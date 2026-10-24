@@ -218,6 +218,7 @@
     <string name="clash_keep_both">Keep both</string>
     <string name="clash_skip">Skip</string>
     <string name="clash_folder">Replace deletes the folder here with everything in it; the two are not merged.</string>
+    <string name="file_work_channel">File operations</string>
     <string name="file_busy">Wait until the current file operation ends</string>
     <string name="file_copying">Copying</string>
     <string name="file_moving">Moving</string>

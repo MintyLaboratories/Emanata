@@ -15,8 +15,9 @@ import java.util.concurrent.CancellationException
 
 /**
  * The one file operation under way, run in the app's process rather than in a screen,
- * so turning the device does not stop it. Whichever library screen is there shows its
- * [status], and [acknowledge]s the outcome once it has shown it.
+ * so turning the device does not stop it, and [onStart] keeps the app running meanwhile
+ * ([FileWorkService]). Whichever library screen is there shows its [status], and
+ * [acknowledge]s the outcome once it has shown it.
  */
 object FileWork {
     enum class Kind { COPY, MOVE, DELETE, RENAME }
@@ -69,6 +70,10 @@ object FileWork {
     @Volatile
     var dispatcher: CoroutineDispatcher = AppDispatchers.io
 
+    /** Hears each operation start, to keep the app running while it does. */
+    @Volatile
+    var onStart: () -> Unit = {}
+
     /** Milliseconds for [Status.started] and for spacing progress reports. */
     @Volatile
     var clock: () -> Long = { System.nanoTime() / 1_000_000 }
@@ -110,6 +115,7 @@ object FileWork {
             }
             flow.update { it?.copy(outcome = outcome) }
         }
+        onStart()
         return true
     }
 

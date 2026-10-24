@@ -169,7 +169,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   copy, WebDAV COPY) where it can. Progress shows once an operation takes a
   moment, with Cancel while canceling can stop it (not during a rename or a
   WebDAV COPY, which the server makes in one request); it goes on when the
-  device turns. Favorites,
+  device turns, and in the background (a notification shows it). Favorites,
   read marks, history, bookmarks, hidden pages, color settings, folder layouts
   and start folders follow an item moved or renamed, and go with one deleted.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
@@ -555,6 +555,10 @@ The debug build installs beside the release build (`minty.emanata.debug`).
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
   add; the app sends nothing on its own.
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
+  move or delete goes on with the app in the background or the screen off,
+  shown in a notification with its progress (and Cancel). The device is kept
+  awake only while it makes progress, 10 minutes at most past the last.
 
 ## Notes
 

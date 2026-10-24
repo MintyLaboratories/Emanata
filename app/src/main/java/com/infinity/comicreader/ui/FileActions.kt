@@ -114,7 +114,7 @@ internal class FileActions(
             if (!caseOnly && space.stat(target) != null) throw FileWork.NameTaken(name)
             if (!space.rename(path, target)) throw IOException("Could not rename $path")
             followMove(path, target)
-            FileWork.Outcome.Done(target)
+            FileWork.Outcome.Done(target, gone = path)
         }
     }
 
@@ -137,7 +137,7 @@ internal class FileActions(
                     // Even a partial failure may have removed it: forget what is gone.
                     if (runCatching { space.stat(path) == null }.getOrDefault(false)) forget(path)
                 }
-                FileWork.Outcome.Done(null)
+                FileWork.Outcome.Done(null, gone = path)
             }
         }
     }
@@ -211,7 +211,7 @@ internal class FileActions(
                     if (FileClipboard.clip?.path == target) FileClipboard.clip = null
                 }
             }
-            FileWork.Outcome.Done(target, result.sourceLeft)
+            FileWork.Outcome.Done(target, result.sourceLeft, gone = clip.path.takeIf { clip.move && !result.sourceLeft })
         }
     }
 

@@ -22,8 +22,11 @@ object FileWork {
     enum class Kind { COPY, MOVE, DELETE, RENAME }
 
     sealed class Outcome {
-        /** Finished: [path] is the item to show, if any; [sourceLeft] when a move could not delete its source. */
-        data class Done(val path: String?, val sourceLeft: Boolean = false) : Outcome()
+        /**
+         * Finished: [path] is the item to show, if any; [gone] what is no longer where it was
+         * (deleted, or moved away); [sourceLeft] when a move could not delete its source.
+         */
+        data class Done(val path: String?, val sourceLeft: Boolean = false, val gone: String? = null) : Outcome()
 
         object Canceled : Outcome()
 

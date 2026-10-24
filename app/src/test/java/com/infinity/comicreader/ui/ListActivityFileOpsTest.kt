@@ -249,6 +249,22 @@ class ListActivityFileOpsTest {
     }
 
     @Test
+    fun aDeletedFolderLeavesNoForwardCrumb() {
+        val activity = launch()
+        activity.open(other)
+        @Suppress("DEPRECATION")
+        activity.onBackPressed()
+        idle()
+        val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
+        assertTrue(bar.crumbs.any { it.label == "Other" })
+        activity.longPress(other.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { !other.exists() }
+        assertFalse(bar.crumbs.any { it.label == "Other" })
+    }
+
+    @Test
     fun movePicksUpAndPasteMovesIntoTheFolderBrowsed() {
         val activity = launch()
         assertEquals(View.GONE, activity.paste().visibility)

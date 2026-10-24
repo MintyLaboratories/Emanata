@@ -45,7 +45,7 @@ class PageDetailTest {
     fun regionRendersAsTheResamplerDoes() {
         val region = Region(0.1, 0.2, 0.45, 0.5)
         val out = detail().render(region, 50, 37, false)
-        val expected = Lanczos.resample(pixels, w, h, Lanczos.Window(0.1 * w, 0.2 * h, 0.45 * w, 0.5 * h), 50, 37)
+        val expected = Resampler.resample(pixels, w, h, Resampler.Window(0.1 * w, 0.2 * h, 0.45 * w, 0.5 * h), 50, 37)
         assertEquals(50, out.width)
         assertEquals(37, out.height)
         assertArrayEquals(expected, pixelsOf(out))
@@ -62,7 +62,7 @@ class PageDetailTest {
     fun regionPastTheEdgeRepeatsIt() {
         // Half a pixel beyond the left edge at scale 1 resamples, from repeated edge pixels.
         val out = detail().render(Region(-0.5 / w, 0.0, 1.0, 1.0), w, h, false)
-        val expected = Lanczos.resample(pixels, w, h, Lanczos.Window(-0.5, 0.0, w.toDouble(), h.toDouble()), w, h)
+        val expected = Resampler.resample(pixels, w, h, Resampler.Window(-0.5, 0.0, w.toDouble(), h.toDouble()), w, h)
         assertArrayEquals(expected, pixelsOf(out))
     }
 

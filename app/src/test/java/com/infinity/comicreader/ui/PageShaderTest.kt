@@ -5,8 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Filters
-import com.infinity.comicreader.reader.Lanczos
 import com.infinity.comicreader.reader.Look
+import com.infinity.comicreader.reader.Resampler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,7 +21,7 @@ import kotlin.random.Random
 
 /**
  * [PageShader]'s AGSL run by the host's software Skia: Lanczos3 against the CPU resampler
- * ([Lanczos]) plus the 2 x 2 clamp, and the color stage against [Look.apply].
+ * ([Resampler]) plus the 2 x 2 clamp, and the color stage against [Look.apply].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -54,7 +54,7 @@ class PageShaderTest {
 
     /** The CPU resampler's enlargement, each channel clamped to the 2 x 2 source pixels nearest the output's center. */
     private fun expected(src: IntArray, w: Int, h: Int, scale: Float, outW: Int, outH: Int): IntArray {
-        val cpu = Lanczos.resample(src, w, h, Lanczos.Window.of(w, h), (w * scale).toInt(), (h * scale).toInt(), threads = 1)
+        val cpu = Resampler.resample(src, w, h, Resampler.Window.of(w, h), (w * scale).toInt(), (h * scale).toInt(), threads = 1)
         val cpuW = (w * scale).toInt()
         return IntArray(outW * outH) { o ->
             val x = o % outW

@@ -90,7 +90,7 @@ class DecodersPlatformTest {
             val bitmap = Decoders.decode(png, target)
             assertEquals(plan.width, bitmap.width)
             assertEquals(plan.height, bitmap.height)
-            val expected = Lanczos.resample(full, 90, 60, Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH), plan.width, plan.height)
+            val expected = Resampler.resample(full, 90, 60, Resampler.Window(plan.x, plan.y, plan.spanW, plan.spanH), plan.width, plan.height)
             val actual = pixels(bitmap)
             for (i in expected.indices) {
                 // The bitmap stores premultiplied 8-bit values, so a translucent color

@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import com.infinity.comicreader.util.Timing
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import kotlin.math.abs
@@ -103,22 +104,25 @@ object BitmapUtils {
     // ------------------------------------------------------------------ resampling
 
     /**
-     * [src] resampled with [Lanczos] as [plan] says, into a new ARGB_8888 bitmap. Reads
+     * [src] resampled through [Resampler] as [plan] and [scaling] say, into a new ARGB_8888 bitmap. Reads
      * and writes rows in place, so no second full-size copy of [src] is ever made.
-     * Stops early, throwing, once this thread's [Cancellation] mark is set.
+     * Stops early, throwing, once this thread's [Cancellation] mark is set. Timed ([Timing]).
      */
-    fun resample(src: Bitmap, plan: Plan, linear: Boolean): Bitmap {
+    fun resample(src: Bitmap, plan: Plan, linear: Boolean, scaling: Scaling = Scaling.PLAIN): Bitmap {
         val w = src.width
         val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
         try {
-            Lanczos.resample(
-                w, src.height,
-                { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
-                Lanczos.Window(plan.x, plan.y, plan.spanW, plan.spanH),
-                plan.width, plan.height, linear,
-                { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
-                canceled = Cancellation.current()
-            )
+            Timing.span("resample ${w}x${src.height} to ${plan.width}x${plan.height} ${scaling.filter.key} ${scaling.upRing}/${scaling.downRing}") {
+                Resampler.resample(
+                    w, src.height,
+                    { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
+                    Resampler.Window(plan.x, plan.y, plan.spanW, plan.spanH),
+                    plan.width, plan.height, linear,
+                    { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
+                    scaling,
+                    canceled = Cancellation.current()
+                )
+            }
         } catch (t: Throwable) {
             out.recycle()
             throw t

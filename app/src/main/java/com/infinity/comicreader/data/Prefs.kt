@@ -40,6 +40,11 @@ class Prefs(context: Context) {
 
     // ---------------------------------------------------------------- general
 
+    /** Settings marked advanced stay out of sight. */
+    var keepSimple: Boolean
+        get() = bool(KEY_KEEP_SIMPLE, true)
+        set(v) = put(KEY_KEEP_SIMPLE, v)
+
     var theme: String
         get() = str(KEY_THEME, "system")
         set(v) = put(KEY_THEME, v)
@@ -466,6 +471,11 @@ class Prefs(context: Context) {
     /** The home folder older versions kept with the browsing state. */
     private val legacyHome: String? get() = ui.getString("home_path", null)
 
+    /** Settings sections the user folded away, by key. */
+    var collapsedSettings: Set<String>
+        get() = ui.getStringSet("collapsed_settings", null).orEmpty().toSet()
+        set(v) = ui.edit().putStringSet("collapsed_settings", v).apply()
+
     /** Favorites tab sections the user folded away, by [FavoriteKind.key]. */
     var collapsedSections: Set<FavoriteKind>
         get() = ui.getStringSet("collapsed_sections", null).orEmpty().mapNotNull { FavoriteKind.of(it) }.toSet()
@@ -553,6 +563,7 @@ class Prefs(context: Context) {
         /** The key of [tab]'s filter; kept out of backups like other browsing state. */
         private fun filterKey(tab: String) = "pref_library_filter_$tab"
 
+        private const val KEY_KEEP_SIMPLE = "pref_keep_simple"
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"
         private const val KEY_CHARSET = "pref_name_charset"
@@ -617,7 +628,7 @@ class Prefs(context: Context) {
         private const val KEY_JOIN_SPREADS = "pref_join_spreads"
 
         private val KNOWN_KEYS = setOf(
-            KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
+            KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, OLD_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,

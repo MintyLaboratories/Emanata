@@ -398,6 +398,11 @@
 
     <!-- ===================== Settings ===================== -->
     <string name="pref_cat_general">General</string>
+    <string name="pref_keep_simple">Keep it simple</string>
+    <string name="pref_keep_simple_desc">Hides advanced options</string>
+    <string name="advanced_tag">Advanced</string>
+    <string name="section_collapsed">Collapsed</string>
+    <string name="section_expanded">Expanded</string>
     <string name="pref_cat_appearance">Appearance</string>
     <string name="pref_cat_reader">Reader</string>
     <string name="pref_cat_gestures">Gestures &amp; controls</string>

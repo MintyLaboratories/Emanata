@@ -11,6 +11,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceGroup
+import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -149,6 +151,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setPreferencesFromResource(R.xml.settings, rootKey)
         val prefs = Prefs(requireContext())
         val library = Library(requireContext())
+        setUpSections(prefs)
 
         findPreference<Preference>("pref_theme")?.setOnPreferenceChangeListener { _, value ->
             val mode = when (value as String) {
@@ -284,6 +287,37 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 toast(R.string.pref_reset_done)
                 activity?.recreate()
             }
+            true
+        }
+    }
+
+    /**
+     * Folds the sections left folded, gives advanced settings their look ([AdvancedSettings]),
+     * and shows what Keep it simple and the folds leave, again as either changes.
+     */
+    private fun setUpSections(prefs: Prefs) {
+        val screen = preferenceScreen
+        val tertiary = MaterialColors.getColor(requireContext(), com.google.android.material.R.attr.colorTertiary, 0)
+        val tag = getString(R.string.advanced_tag)
+        val density = resources.displayMetrics.density
+        val collapsed = prefs.collapsedSettings
+        for (i in 0 until screen.preferenceCount) {
+            val section = screen.getPreference(i) as? PreferenceGroup ?: continue
+            if (section is CollapsibleCategory) {
+                section.collapsed = section.key in collapsed
+                section.onToggle = { s ->
+                    prefs.collapsedSettings = if (s.collapsed) prefs.collapsedSettings + s.key else prefs.collapsedSettings - s.key
+                    AdvancedSettings.apply(screen, prefs.keepSimple)
+                }
+            }
+            for (j in 0 until section.preferenceCount) {
+                val pref = section.getPreference(j)
+                if (AdvancedSettings.isAdvanced(pref)) pref.title = AdvancedSettings.styled(pref.title ?: "", tag, tertiary, density)
+            }
+        }
+        AdvancedSettings.apply(screen, prefs.keepSimple)
+        findPreference<Preference>("pref_keep_simple")?.setOnPreferenceChangeListener { _, value ->
+            AdvancedSettings.apply(screen, value as Boolean)
             true
         }
     }

@@ -77,7 +77,12 @@ class SmbFs(private val share: Share) : RemoteFs {
         call { d ->
             d.list(smbPath(path))
                 .filter { it.fileName != "." && it.fileName != ".." }
-                .map { RemoteStat(it.fileName, isDirectory(it.fileAttributes), it.endOfFile, millis(it.lastWriteTime), millis(it.creationTime)) }
+                .map {
+                    RemoteStat(
+                        it.fileName, isDirectory(it.fileAttributes), it.endOfFile, millis(it.lastWriteTime), millis(it.creationTime),
+                        isLink(it.fileAttributes)
+                    )
+                }
         }
     }
 
@@ -88,7 +93,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             val dir = info.standardInformation.isDirectory || isDirectory(basic.fileAttributes)
             RemoteStat(
                 path.substringAfterLast('/'), dir, if (dir) 0 else info.standardInformation.endOfFile,
-                millis(basic.lastWriteTime), millis(basic.creationTime)
+                millis(basic.lastWriteTime), millis(basic.creationTime), isLink(basic.fileAttributes)
             )
         }
     } catch (e: RemoteException) {
@@ -142,10 +147,40 @@ class SmbFs(private val share: Share) : RemoteFs {
         ).use { it.rename(smbPath(to), false) }
     }
 
-    override fun delete(path: String) = call { d ->
-        val p = smbPath(path)
-        require(p.isNotEmpty()) { "Not deleting the share" }
-        if (d.getFileInformation(p).standardInformation.isDirectory) d.rmdir(p, true) else d.rm(p)
+    /** Entry by entry ([deleteTree]): SMBJ's own recursive delete walks into links, deleting what they point to. */
+    override fun delete(path: String) {
+        require(path.trim('/').isNotEmpty()) { "Not deleting the share" }
+        deleteTree(entryAt(smbPath(path)), ::entriesOf, ::removeEntry)
+    }
+
+    override fun remove(path: String) {
+        require(path.trim('/').isNotEmpty()) { "Not deleting the share" }
+        removeEntry(entryAt(smbPath(path)))
+    }
+
+    /** What is at [p], a link as itself rather than what it points to. */
+    private fun entryAt(p: String): Entry = call { d ->
+        d.open(
+            p, EnumSet.of(AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_OPEN_REPARSE_POINT)
+        ).use { entryOf(p, it.fileInformation.basicInformation.fileAttributes) }
+    }
+
+    /** The entries of folder [dir], by their paths inside the share. */
+    private fun entriesOf(dir: String): List<Entry> = call { d ->
+        d.list(dir).filter { it.fileName != "." && it.fileName != ".." }.map { entryOf("$dir\\${it.fileName}", it.fileAttributes) }
+    }
+
+    /** Deletes one file, link or empty folder: a link opened as itself, so it never reaches what it points to. */
+    private fun removeEntry(e: Entry) = call { d ->
+        when {
+            e.isLink -> d.open(
+                e.path, EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_OPEN_REPARSE_POINT)
+            ).use { it.deleteOnClose() }
+            e.isDirectory -> d.rmdir(e.path, false)
+            else -> d.rm(e.path)
+        }
     }
 
     /**
@@ -510,6 +545,9 @@ class SmbFs(private val share: Share) : RemoteFs {
     /** What [idleCheck] does to a connection. */
     internal enum class IdleAction { NONE, ECHO, CLOSE }
 
+    /** A file, folder or link to delete, by its path inside the share. */
+    internal data class Entry(val path: String, val isDirectory: Boolean, val isLink: Boolean)
+
     companion object {
         private const val TAG = "SmbFs"
 
@@ -588,6 +626,23 @@ class SmbFs(private val share: Share) : RemoteFs {
             }
 
         private fun isDirectory(attributes: Long) = attributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
+
+        /** True for a reparse point: a junction, symbolic link or mount point. */
+        private fun isLink(attributes: Long) = attributes and FileAttributes.FILE_ATTRIBUTE_REPARSE_POINT.value != 0L
+
+        private fun entryOf(path: String, attributes: Long) = Entry(path, isDirectory(attributes), isLink(attributes))
+
+        /**
+         * Deletes [top] with everything inside, deepest first: a folder's entries from
+         * [list], each by [remove], then the folder, emptied. A link is removed as itself,
+         * never listed, so nothing it points to goes.
+         */
+        internal fun deleteTree(top: Entry, list: (String) -> List<Entry>, remove: (Entry) -> Unit) {
+            if (top.isDirectory && !top.isLink) {
+                for (e in list(top.path)) deleteTree(e, list, remove)
+            }
+            remove(top)
+        }
 
         private fun millis(time: FileTime?): Long = time?.toEpochMillis()?.takeIf { it > 0 } ?: 0L
     }

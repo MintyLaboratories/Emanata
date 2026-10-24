@@ -43,8 +43,14 @@ interface RemoteFs : Closeable {
     /** Renames or moves [from] to [to] on this share; fails when anything is at [to]. */
     fun rename(from: String, to: String): Unit = throw readOnly()
 
-    /** Deletes the file or folder [path], with everything inside. */
+    /**
+     * Deletes the file or folder [path], with everything inside; a link inside (a junction
+     * or symbolic link) goes itself, never what it points to.
+     */
     fun delete(path: String): Unit = throw readOnly()
+
+    /** Deletes the file, link or empty folder [path]; fails on a folder with anything inside. */
+    fun remove(path: String): Unit = throw readOnly()
 
     /**
      * Copies file [from] to the new file [to] on the server itself, telling [progress] the
@@ -58,9 +64,17 @@ private fun readOnly() = IOException("Read-only share")
 
 /**
  * A file or folder on a share: sizes in bytes (-1 for a file the server lists without
- * one), times in milliseconds since the epoch (0 = unknown).
+ * one), times in milliseconds since the epoch (0 = unknown); [isLink] for a junction or
+ * symbolic link the server tells of.
  */
-data class RemoteStat(val name: String, val isDirectory: Boolean, val size: Long, val modified: Long, val created: Long)
+data class RemoteStat(
+    val name: String,
+    val isDirectory: Boolean,
+    val size: Long,
+    val modified: Long,
+    val created: Long,
+    val isLink: Boolean = false
+)
 
 /** An open file on a share, read at any position. */
 interface RemoteInput : Closeable {

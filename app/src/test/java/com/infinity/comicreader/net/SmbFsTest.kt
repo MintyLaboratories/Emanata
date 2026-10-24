@@ -124,4 +124,32 @@ class SmbFsTest {
         assertEquals(SmbFs.IdleAction.NONE, SmbFs.idleAction(used + SmbFs.IDLE_MS, used, used, open = false, connected = false))
         assertTrue(SmbFs.IDLE_MS >= 10 * 60_000L)
     }
+
+    @Test
+    fun deletingAFolderRemovesLinksInsideWithoutWalkingIntoThem() {
+        fun dir(path: String) = SmbFs.Entry(path, isDirectory = true, isLink = false)
+        fun file(path: String) = SmbFs.Entry(path, isDirectory = false, isLink = false)
+        val junction = SmbFs.Entry("books\\Series\\Elsewhere", isDirectory = true, isLink = true)
+        val tree = mapOf(
+            "books\\Series" to listOf(file("books\\Series\\001.cbz"), dir("books\\Series\\Extras"), junction),
+            "books\\Series\\Extras" to listOf(file("books\\Series\\Extras\\cover.jpg")),
+            // What the link points to: never listed, never removed.
+            "books\\Series\\Elsewhere" to listOf(file("books\\Series\\Elsewhere\\other.cbz"))
+        )
+        val listed = ArrayList<String>()
+        val removed = ArrayList<String>()
+        SmbFs.deleteTree(dir("books\\Series"), { listed += it; tree.getValue(it) }, { removed += it.path })
+        assertEquals(listOf("books\\Series", "books\\Series\\Extras"), listed)
+        assertEquals(
+            listOf(
+                "books\\Series\\001.cbz", "books\\Series\\Extras\\cover.jpg", "books\\Series\\Extras",
+                "books\\Series\\Elsewhere", "books\\Series"
+            ),
+            removed
+        )
+        // A link deleted by itself goes alone.
+        removed.clear()
+        SmbFs.deleteTree(junction, { throw AssertionError("listed $it") }, { removed += it.path })
+        assertEquals(listOf("books\\Series\\Elsewhere"), removed)
+    }
 }

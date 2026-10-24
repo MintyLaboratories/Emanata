@@ -11,17 +11,23 @@ import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.infinity.comicreader.reader.Look
+import com.infinity.comicreader.reader.ScaleFilter
 
 /**
  * Draws a bitmap on the GPU (AGSL) through one of three [Kernel]s, optionally followed
  * by the color stage of a [Look] in the same pass.
  *
- * [Kernel.LANCZOS], for zooming:
- * - Each screen pixel maps to a source position and weighs the 6 x 6 source pixels
- *   around it, one unfiltered fetch each; the weights are normalized per axis.
- * - The result is clamped to the range of the 2 x 2 source pixels nearest it, which
- *   keeps the kernel's ringing out of flat areas beside hard edges.
- * - Past the bitmap's edges its edge pixels repeat.
+ * [Kernel.FILTERED], for zooming in, runs [filter] as the CPU resampler ([Resampler])
+ * does when enlarging:
+ * - Each screen pixel maps to a source position and weighs the `2r x 2r` source pixels
+ *   around it (`r` the filter's radius), one unfiltered fetch each; the weights are
+ *   normalized per axis.
+ * - With [antiRing], each row's horizontal sum is blended toward itself clamped to the
+ *   two source pixels either side, by the `ring` strength ([paint]), then the vertical
+ *   sum toward itself clamped to the two rows either side: the CPU's steps, per axis.
+ *   Without it there is no clamp code at all.
+ * - Past the bitmap's edges its edge pixels repeat; the result is clamped into range,
+ *   as the CPU's is.
  * - Made for enlarging: shrinking keeps the kernel at source size, so it aliases as
  *   point sampling would.
  *
@@ -36,24 +42,28 @@ import com.infinity.comicreader.reader.Look
 class PageShader internal constructor(
     val kernel: Kernel,
     val colored: Boolean,
+    val filter: ScaleFilter = ScaleFilter.DEFAULT,
+    val antiRing: Boolean = false,
     dialect: (String) -> String = { it }
 ) {
     enum class Kernel(val filterMode: Int) {
-        LANCZOS(BitmapShader.FILTER_MODE_NEAREST),
+        FILTERED(BitmapShader.FILTER_MODE_NEAREST),
         NEAREST(BitmapShader.FILTER_MODE_NEAREST),
         LINEAR(BitmapShader.FILTER_MODE_LINEAR)
     }
 
-    private val shader = RuntimeShader(dialect(source(kernel, colored)))
+    private val ringing = kernel == Kernel.FILTERED && antiRing
+    private val shader = RuntimeShader(dialect(source(kernel, colored, filter, ringing)))
     private val paint = Paint().apply { shader = this@PageShader.shader }
     private var bitmap: Bitmap? = null
     private var look: Look? = null
+    private var ring = -1f
 
     /**
      * The paint drawing [bitmap] with [look] (ignored unless [colored]), then [colorFilter]
-     * and [alpha].
+     * and [alpha]; [ring] is the anti-ringing strength, 0..1, used with [antiRing].
      */
-    fun paint(bitmap: Bitmap, colorFilter: ColorFilter?, alpha: Int, look: Look = Look.NONE): Paint {
+    fun paint(bitmap: Bitmap, colorFilter: ColorFilter?, alpha: Int, look: Look = Look.NONE, ring: Float = 0f): Paint {
         if (bitmap !== this.bitmap) {
             val image = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
             image.filterMode = kernel.filterMode
@@ -61,6 +71,10 @@ class PageShader internal constructor(
             this.bitmap = bitmap
         }
         if (colored && look !== this.look) setLook(look)
+        if (ringing && ring != this.ring) {
+            shader.setFloatUniform("ring", floatArrayOf(ring))
+            this.ring = ring
+        }
         paint.colorFilter = colorFilter
         paint.alpha = alpha
         return paint
@@ -96,9 +110,9 @@ class PageShader internal constructor(
     private val empty by lazy { LinearGradient(0f, 0f, 1f, 0f, Color.TRANSPARENT, Color.TRANSPARENT, Shader.TileMode.CLAMP) }
 
     internal companion object {
-        /** The AGSL for [kernel], with the color stage when [colored]. */
-        fun source(kernel: Kernel, colored: Boolean): String {
-            val filtered = if (kernel == Kernel.LANCZOS) LANCZOS else SAMPLE
+        /** The AGSL for [kernel], with the color stage when [colored]; [filter] and [antiRing] for [Kernel.FILTERED]. */
+        fun source(kernel: Kernel, colored: Boolean, filter: ScaleFilter = ScaleFilter.DEFAULT, antiRing: Boolean = false): String {
+            val filtered = if (kernel == Kernel.FILTERED) filtered(filter, antiRing) else SAMPLE
             val main = if (colored) "$COLOR\nhalf4 main(float2 p) {\n    return look(filtered(p));\n}\n"
             else "half4 main(float2 p) {\n    return filtered(p);\n}\n"
             return "uniform shader image;\n$filtered\n$main"
@@ -110,62 +124,83 @@ half4 filtered(float2 p) {
 }
 """
 
-        // Source pixel i has its center at i + 0.5. A position p lies between the
-        // pixels at base and base + 1 on each axis; the taps run from base - 2 to
-        // base + 3, at offsets k - f for k = -2..3.
-        private const val LANCZOS = """
-const float PI = 3.14159265358979;
-
-// Lanczos3 at offsets |x| <= 3; the floor keeps sinc(0) finite.
-float3 lanczos3(float3 x) {
-    float3 px = PI * max(abs(x), float3(1e-4));
-    return 3.0 * sin(px) * sin(px / 3.0) / (px * px);
-}
-
-// Six pixels from the one centered at 'at' rightward, weighted; the middle two out.
-float4 row(float2 at, float3 lo, float3 hi, out float4 left, out float4 right) {
-    left = float4(image.eval(at + float2(2.0, 0.0)));
-    right = float4(image.eval(at + float2(3.0, 0.0)));
-    return float4(image.eval(at)) * lo.x
-        + float4(image.eval(at + float2(1.0, 0.0))) * lo.y
-        + left * lo.z
-        + right * hi.x
-        + float4(image.eval(at + float2(4.0, 0.0))) * hi.y
-        + float4(image.eval(at + float2(5.0, 0.0))) * hi.z;
-}
-
-half4 filtered(float2 p) {
-    float2 c = p - 0.5;
-    float2 base = floor(c);
-    float2 f = c - base;
-
-    float3 xlo = lanczos3(float3(-2.0, -1.0, 0.0) - f.x);
-    float3 xhi = lanczos3(float3(1.0, 2.0, 3.0) - f.x);
-    float sx = dot(xlo + xhi, float3(1.0));
-    xlo /= sx;
-    xhi /= sx;
-    float3 ylo = lanczos3(float3(-2.0, -1.0, 0.0) - f.y);
-    float3 yhi = lanczos3(float3(1.0, 2.0, 3.0) - f.y);
-    float sy = dot(ylo + yhi, float3(1.0));
-    ylo /= sy;
-    yhi /= sy;
-
-    float2 at = base - 1.5;
-    float4 a;
-    float4 b;
-    float4 sum = row(at, xlo, xhi, a, b) * ylo.x;
-    sum += row(at + float2(0.0, 1.0), xlo, xhi, a, b) * ylo.y;
-    sum += row(at + float2(0.0, 2.0), xlo, xhi, a, b) * ylo.z;
-    float4 lo = min(a, b);
-    float4 hi = max(a, b);
-    sum += row(at + float2(0.0, 3.0), xlo, xhi, a, b) * yhi.x;
-    lo = min(lo, min(a, b));
-    hi = max(hi, max(a, b));
-    sum += row(at + float2(0.0, 4.0), xlo, xhi, a, b) * yhi.y;
-    sum += row(at + float2(0.0, 5.0), xlo, xhi, a, b) * yhi.z;
-    return half4(clamp(sum, lo, hi));
+        /** [filter]'s weights at four offsets at once, as [ScaleFilter.weight] computes each. */
+        private fun weight(filter: ScaleFilter): String = when (filter) {
+            ScaleFilter.HERMITE -> """
+float4 weight(float4 x) {
+    float4 a = abs(x);
+    return ((2.0 * a - 3.0) * a * a + 1.0) * (1.0 - step(1.0, a));
 }
 """
+            ScaleFilter.CATMULL_ROM -> """
+float4 weight(float4 x) {
+    float4 a = abs(x);
+    float4 inner = (1.5 * a - 2.5) * a * a + 1.0;
+    float4 outer = (((-0.5 * a + 2.5) * a - 4.0) * a + 2.0) * (1.0 - step(2.0, a));
+    return mix(outer, inner, 1.0 - step(1.0, a));
+}
+"""
+            ScaleFilter.LANCZOS3, ScaleFilter.LANCZOS6 -> """
+const float PI = 3.14159265358979;
+const float R = ${filter.radius}.0;
+
+// sinc(x) * sinc(x / R) on |x| < R, from sin itself; the floor keeps sinc(0) finite.
+float4 weight(float4 x) {
+    float4 a = abs(x);
+    float4 px = PI * max(a, float4(1e-4));
+    return R * sin(px) * sin(px / R) / (px * px) * (1.0 - step(R, a));
+}
+"""
+        }
+
+        /**
+         * The filtered sample for [filter], weights unrolled: source pixel i has its center at
+         * i + 0.5, and a position p lies between the pixels at base and base + 1 on each
+         * axis; the taps run from base - r + 1 to base + r, at offsets k - f. Taps r - 1
+         * and r are the two nearest, which anti-ringing clamps to.
+         */
+        private fun filtered(filter: ScaleFilter, antiRing: Boolean): String {
+            val r = filter.radius
+            val n = 2 * r
+            val (a, b) = r - 1 to r
+            val out = StringBuilder()
+            if (antiRing) out.append("\nuniform float ring;\n")
+            out.append(weight(filter))
+            out.append("\nhalf4 filtered(float2 p) {\n")
+            out.append("    float2 c = p - 0.5;\n    float2 base = floor(c);\n    float2 f = c - base;\n")
+            out.append("    float wx[$n];\n    float wy[$n];\n")
+            // Two taps on both axes a call: x and y of one tap, then of the next.
+            for (t in 0 until n step 2) {
+                out.append("    float4 w$t = weight(float4(${t - r + 1}.0, ${t - r + 1}.0, ${t - r + 2}.0, ${t - r + 2}.0) - f.xyxy);\n")
+                out.append("    wx[$t] = w$t.x;\n    wy[$t] = w$t.y;\n    wx[${t + 1}] = w$t.z;\n    wy[${t + 1}] = w$t.w;\n")
+            }
+            for (axis in listOf("x", "y")) {
+                out.append("    float s$axis = 1.0 / (${(0 until n).joinToString(" + ") { "w$axis[$it]" }});\n")
+            }
+            out.append("    float2 at = base - ${r - 1}.0 + 0.5;\n")
+            // Rows, then taps, in loops: few values live, a row's sum h, its two nearest
+            // pixels (na, nb) and the two nearest rows' sums (ha, hb).
+            out.append("    float4 sum = float4(0.0);\n")
+            if (antiRing) out.append("    float4 ha = float4(0.0);\n    float4 hb = float4(0.0);\n")
+            out.append("    for (int j = 0; j < $n; j++) {\n        float4 h = float4(0.0);\n")
+            if (antiRing) out.append("        float4 na = float4(0.0);\n        float4 nb = float4(0.0);\n")
+            out.append("        for (int i = 0; i < $n; i++) {\n")
+            out.append("            float4 e = float4(image.eval(at + float2(float(i), float(j))));\n")
+            out.append("            h += e * wx[i];\n")
+            if (antiRing) out.append("            if (i == $a) {\n                na = e;\n            }\n            if (i == $b) {\n                nb = e;\n            }\n")
+            out.append("        }\n        h *= sx;\n")
+            if (antiRing) {
+                out.append("        h += ring * (clamp(h, min(na, nb), max(na, nb)) - h);\n")
+                out.append("        if (j == $a) {\n            ha = h;\n        }\n        if (j == $b) {\n            hb = h;\n        }\n")
+            }
+            out.append("        sum += h * wy[j];\n    }\n")
+            out.append("    sum *= sy;\n")
+            if (antiRing) out.append("    sum += ring * (clamp(sum, min(ha, hb), max(ha, hb)) - sum);\n")
+            // Into range as the CPU packs it: alpha 0..1, premultiplied color 0..alpha.
+            out.append("    float alpha = clamp(sum.a, 0.0, 1.0);\n")
+            out.append("    return half4(half3(clamp(sum.rgb, 0.0, alpha)), half(alpha));\n}\n")
+            return out.toString()
+        }
 
         // Look.apply on the GPU: the filter matrix on sRGB values, then in OKLab the
         // invert, brightness, contrast and saturation, then the gamut clamp by bisection.

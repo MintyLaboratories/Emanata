@@ -25,6 +25,7 @@ import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.Scaling
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -33,7 +34,8 @@ import kotlin.math.roundToInt
  * Image view with pinch-to-zoom, panning, double-tap zoom and configurable fit modes.
  * Uses [ScaleType.MATRIX] and manipulates the image matrix directly; at 1:1 the
  * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); enlarged through
- * Lanczos3 on the GPU ([PageShader], API 33+); shrunk, or below API 33, bilinear.
+ * [zoomScaling]'s filter on the GPU ([PageShader], API 33+); shrunk, or below API 33,
+ * bilinear.
  * A zoom that settles is re-rendered from the full-detail page ([DetailSource]).
  * A [look] beyond a plain color matrix runs in the same GPU pass, at every scale.
  *
@@ -140,6 +142,19 @@ class ZoomImageView @JvmOverloads constructor(
                 colorFilter = if (value.invert) Filters.colorFilter(Filters.INVERT) else value.matrix?.let { ColorMatrixColorFilter(it) }
             }
             updateLayer()
+            invalidate()
+        }
+
+    /** The filter and enlarging anti-ringing the GPU zooms with. */
+    var zoomScaling: Scaling = Scaling.DEFAULT
+        set(value) {
+            if (field == value) return
+            field = value
+            // Shaders are made per filter; the ones held drew with the old one.
+            clearShaders(pageShaders)
+            clearShaders(detailShaders)
+            pageShaders.fill(null)
+            detailShaders.fill(null)
             invalidate()
         }
 
@@ -666,8 +681,9 @@ class ZoomImageView @JvmOverloads constructor(
 
     /**
      * How the page bitmap is drawn through a [PageShader], or null for a plain draw: an
-     * enlarged page through Lanczos3; with a [colored] look also a 1:1 page unfiltered and
-     * a shrunk one bilinear, which aliases less than the Lanczos3 shader would.
+     * enlarged page through [zoomScaling]'s filter; with a [colored] look also a 1:1 page
+     * unfiltered and a shrunk one bilinear, which aliases less than the filter would at
+     * source size.
      */
     private val pageKernel: PageShader.Kernel?
         get() {
@@ -679,7 +695,7 @@ class ZoomImageView @JvmOverloads constructor(
             if (drawValues[Matrix.MSCALE_X] < 1f - ONE_TO_ONE || drawValues[Matrix.MSCALE_Y] < 1f - ONE_TO_ONE) {
                 return if (colored) PageShader.Kernel.LINEAR else null
             }
-            return PageShader.Kernel.LANCZOS
+            return PageShader.Kernel.FILTERED
         }
 
     /** The bitmap drawn through a [PageShader]; for tests. */
@@ -706,7 +722,7 @@ class ZoomImageView @JvmOverloads constructor(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
         val slot = shaderSlot(kernel, colored)
         shaders[slot]?.let { return it }
-        return runCatching { PageShader(kernel, colored, shaderDialect) }
+        return runCatching { PageShader(kernel, colored, zoomScaling.filter, zoomScaling.upRing > 0, shaderDialect) }
             .onFailure {
                 Log.w(TAG, "Page shader unavailable, drawing plainly", it)
                 shaderFailed = true
@@ -751,7 +767,7 @@ class ZoomImageView @JvmOverloads constructor(
             detailDraw.getValues(values)
             tileAtOneToOne = snapOneToOne(values)
             if (tileAtOneToOne) detailDraw.setValues(values)
-            // Shrinking it through Lanczos3 at source size would alias: the page shows instead.
+            // Shrinking it through the filter at source size would alias: the page shows instead.
             if (values[Matrix.MSCALE_X] >= 1f - ONE_TO_ONE && values[Matrix.MSCALE_Y] >= 1f - ONE_TO_ONE) {
                 tileRect.set(0f, 0f, tile.width.toFloat(), tile.height.toFloat())
                 detailDraw.mapRect(tileRect)
@@ -780,7 +796,7 @@ class ZoomImageView @JvmOverloads constructor(
         } else {
             val d = drawable as BitmapDrawable
             val bitmap = d.bitmap
-            val paint = shader.paint(bitmap, if (colored) null else d.colorFilter, d.paint.alpha, look)
+            val paint = shader.paint(bitmap, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
             val w = (width - paddingLeft - paddingRight).toFloat()
             val h = (height - paddingTop - paddingBottom).toFloat()
             val bands = if (hole == null) listOf(RectF(0f, 0f, w, h)) else bandsAround(0f, 0f, w, h, hole)
@@ -810,7 +826,7 @@ class ZoomImageView @JvmOverloads constructor(
     private fun first(edge: Float): Int = ceil(edge - 0.5f).toInt()
 
     /**
-     * [tile] where [detailDraw] puts it: at 1:1 unfiltered, else enlarged through Lanczos3;
+     * [tile] where [detailDraw] puts it: at 1:1 unfiltered, else enlarged through [zoomScaling];
      * a [colored] look runs in the same shader.
      */
     private fun drawDetail(canvas: Canvas, tile: Bitmap, d: BitmapDrawable, oneToOne: Boolean) {
@@ -819,12 +835,12 @@ class ZoomImageView @JvmOverloads constructor(
         canvas.concat(detailDraw)
         val colored = this.colored
         val shader = when {
-            !oneToOne -> shader(detailShaders, PageShader.Kernel.LANCZOS, colored)
+            !oneToOne -> shader(detailShaders, PageShader.Kernel.FILTERED, colored)
             colored -> shader(detailShaders, PageShader.Kernel.NEAREST, true)
             else -> null
         }
         if (shader != null) {
-            val paint = shader.paint(tile, if (colored) null else d.colorFilter, d.paint.alpha, look)
+            val paint = shader.paint(tile, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
             canvas.drawRect(0f, 0f, tile.width.toFloat(), tile.height.toFloat(), paint)
         } else {
             val paint = if (oneToOne) plainPaint else filteredPaint

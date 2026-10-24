@@ -7,6 +7,8 @@ import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Resampler
+import com.infinity.comicreader.reader.ScaleFilter
+import com.infinity.comicreader.reader.Scaling
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,21 +17,25 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.random.Random
 
 /**
- * [PageShader]'s AGSL run by the host's software Skia: Lanczos3 against the CPU resampler
- * ([Resampler]) plus the 2 x 2 clamp, and the color stage against [Look.apply].
+ * [PageShader]'s AGSL run by the host's software Skia: every filter, with and without
+ * anti-ringing, against the CPU resampler ([Resampler]), and the color stage against
+ * [Look.apply].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PageShaderTest {
 
-    private fun shader(kernel: PageShader.Kernel = PageShader.Kernel.LANCZOS, colored: Boolean = false) =
-        PageShader(kernel, colored, HOST_DIALECT)
+    private fun shader(
+        kernel: PageShader.Kernel = PageShader.Kernel.FILTERED,
+        colored: Boolean = false,
+        filter: ScaleFilter = ScaleFilter.LANCZOS3,
+        antiRing: Boolean = false
+    ) = PageShader(kernel, colored, filter, antiRing, HOST_DIALECT)
 
     /** [src] ([w] x [h]) drawn through [shader] with [look], scaled by [scale] into an [outW] x [outH] bitmap. */
     private fun shaded(
@@ -40,7 +46,8 @@ class PageShaderTest {
         scale: Float,
         outW: Int,
         outH: Int,
-        look: Look = Look.NONE
+        look: Look = Look.NONE,
+        ring: Float = 0f
     ): IntArray {
         val bitmap = Bitmap.createBitmap(src, w, h, Bitmap.Config.ARGB_8888)
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
@@ -48,30 +55,15 @@ class PageShaderTest {
         // The software canvas refuses runtime shaders unless told otherwise.
         Canvas::class.java.getMethod("setHwFeaturesInSwModeEnabled", Boolean::class.javaPrimitiveType).invoke(canvas, true)
         canvas.scale(scale, scale)
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255, look))
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255, look, ring))
         return IntArray(outW * outH).also { out.getPixels(it, 0, outW, 0, 0, outW, outH) }
     }
 
-    /** The CPU resampler's enlargement, each channel clamped to the 2 x 2 source pixels nearest the output's center. */
-    private fun expected(src: IntArray, w: Int, h: Int, scale: Float, outW: Int, outH: Int): IntArray {
-        val cpu = Resampler.resample(src, w, h, Resampler.Window.of(w, h), (w * scale).toInt(), (h * scale).toInt(), threads = 1)
+    /** The CPU resampler's enlargement by [scale] through [scaling], cut to [outW] x [outH]. */
+    private fun expected(src: IntArray, w: Int, h: Int, scale: Float, outW: Int, outH: Int, scaling: Scaling = Scaling.PLAIN): IntArray {
         val cpuW = (w * scale).toInt()
-        return IntArray(outW * outH) { o ->
-            val x = o % outW
-            val y = o / outW
-            val bx = floor((x + 0.5) / scale - 0.5).toInt()
-            val by = floor((y + 0.5) / scale - 0.5).toInt()
-            val near = listOf(bx to by, bx + 1 to by, bx to by + 1, bx + 1 to by + 1)
-                .map { (sx, sy) -> src[sy.coerceIn(0, h - 1) * w + sx.coerceIn(0, w - 1)] }
-            var pixel = 0xFF shl 24
-            for (shift in 0..16 step 8) {
-                val c = (cpu[y * cpuW + x] shr shift) and 0xFF
-                val lo = near.minOf { (it shr shift) and 0xFF }
-                val hi = near.maxOf { (it shr shift) and 0xFF }
-                pixel = pixel or (c.coerceIn(lo, hi) shl shift)
-            }
-            pixel
-        }
+        val cpu = Resampler.resample(src, w, h, Resampler.Window.of(w, h), cpuW, (h * scale).toInt(), scaling = scaling, threads = 1)
+        return IntArray(outW * outH) { o -> cpu[(o / outW) * cpuW + o % outW] }
     }
 
     private fun maxDiff(a: IntArray, b: IntArray): Int {
@@ -88,25 +80,42 @@ class PageShaderTest {
     }
 
     @Test
-    fun enlargingMatchesTheCpuKernelWithTheClamp() {
-        val w = 12
-        val h = 8
+    fun enlargingMatchesTheCpuForEveryFilterAndStrength() {
+        // Sides that every scale maps to whole pixels.
+        val w = 16
+        val h = 12
         val src = noise(w, h, 1)
-        for (scale in listOf(2.5f, 3f, 1.75f)) {
-            val outW = (w * scale).toInt()
-            val outH = (h * scale).toInt()
-            val got = shaded(shader(), src, w, h, scale, outW, outH)
-            val diff = maxDiff(expected(src, w, h, scale, outW, outH), got)
-            assertTrue("scale $scale differs by $diff", diff <= 2)
+        for (filter in ScaleFilter.entries) {
+            for (ring in listOf(0, 50, 100)) {
+                val shader = shader(filter = filter, antiRing = ring > 0)
+                for (scale in listOf(2.5f, 3f, 1.75f)) {
+                    val outW = (w * scale).toInt()
+                    val outH = (h * scale).toInt()
+                    val got = shaded(shader, src, w, h, scale, outW, outH, ring = ring / 100f)
+                    val diff = maxDiff(expected(src, w, h, scale, outW, outH, Scaling(filter, ring, 0)), got)
+                    assertTrue("$filter at $ring %, scale $scale differs by $diff", diff <= 2)
+                }
+            }
         }
     }
 
     @Test
-    fun hardEdgeDoesNotRing() {
+    fun withoutAntiRingingTheShaderHasNoClamp() {
+        assertTrue(!PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, antiRing = false).contains("ring"))
+        assertTrue(PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, antiRing = true).contains("ring * (clamp("))
+        // Lanczos6 weighs 12 x 12 pixels; Hermite 2 x 2.
+        val lanczos6 = PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS6)
+        assertTrue(lanczos6.contains("j < 12") && lanczos6.contains("i < 12"))
+        val hermite = PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.HERMITE)
+        assertTrue(hermite.contains("j < 2") && hermite.contains("i < 2"))
+    }
+
+    @Test
+    fun hardEdgeDoesNotRingAtFullStrength() {
         val w = 8
         val h = 4
         val src = IntArray(w * h) { if (it % w < 4) 0xFF202020.toInt() else 0xFFE0E0E0.toInt() }
-        val got = shaded(shader(), src, w, h, 4f, 32, 16)
+        val got = shaded(shader(antiRing = true), src, w, h, 4f, 32, 16, ring = 1f)
         val row = (0 until 32).map { got[8 * 32 + it] and 0xFF }
         // Raw Lanczos3 overshoots past both levels beside the edge; clamped, it stays between them.
         assertTrue(row.all { it in 0x20..0xE0 })
@@ -201,7 +210,7 @@ class PageShaderTest {
         val h = 8
         val src = noise(w, h, 4)
         val plain = shaded(shader(), src, w, h, 2.5f, 30, 20)
-        val shader = shader(PageShader.Kernel.LANCZOS, colored = true)
+        val shader = shader(PageShader.Kernel.FILTERED, colored = true)
         // Near-threshold contrast flips on any rounding; the 1:1 test covers it.
         for (look in looks.filter { it.adjustments.contrastFactor < 4f }) {
             val got = shaded(shader, src, w, h, 2.5f, 30, 20, look)

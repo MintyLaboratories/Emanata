@@ -808,6 +808,8 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
         if (s.coverAlone != old.coverAlone && spread) rebuild = true
+        // Built into the seek strip's previews.
+        if (s.thumbScaling != old.thumbScaling || s.linearLight != old.linearLight) dropSeekPreviews()
         if (rebuild) attach()
         if (rebuild || s.autoNext != old.autoNext) {
             if (s.autoNext) prepareStripAhead() else dropStripAhead()

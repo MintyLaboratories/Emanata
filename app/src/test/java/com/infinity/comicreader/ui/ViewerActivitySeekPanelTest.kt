@@ -16,8 +16,11 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.ScaleFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -139,6 +142,24 @@ class ViewerActivitySeekPanelTest {
         assertEquals(12, strip.itemCount)
         assertEquals(5, strip.current)
         assertEquals((1..12).map { "$it" }, strip.cells.map { it.label })
+    }
+
+    @Test
+    fun theStripTakesANewThumbnailFilter() {
+        val viewer = launch()
+        viewer.openSeekPanel()
+        val first = viewer.panel().adapter
+        viewer.onBackPressedDispatcher.onBackPressed()
+        idle()
+        assertFalse(viewer.seekPanelShown)
+        // Opened again unchanged, the strip keeps its previews.
+        viewer.openSeekPanel()
+        assertSame(first, viewer.panel().adapter)
+        viewer.onBackPressedDispatcher.onBackPressed()
+        prefs.scaleThumbs = ScaleFilter.HERMITE
+        idle()
+        viewer.openSeekPanel()
+        assertNotSame(first, viewer.panel().adapter)
     }
 
     @Test

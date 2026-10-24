@@ -199,7 +199,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   in the background, and changes in place only if something changed; item
   counts of its subfolders fill in after it shows, listing again only those
   whose time changed. Books are read in place, only the parts needed
-  travelling: CBZ, CBT, and CBR and CB7 that are not solid, straight from
+  traveling: CBZ, CBT, and CBR and CB7 that are not solid, straight from
   their entries; a solid CBR or CB7 is streamed once, front to back, its pages
   kept as they are unpacked, so even a book of several GB opens without being
   downloaded whole. PDFs and loose images are fetched to a **Network cache**

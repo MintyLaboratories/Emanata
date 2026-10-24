@@ -43,7 +43,7 @@ class BookAdapterCoversTest {
     private lateinit var adapter: BookAdapter
     private val release = CountDownLatch(1)
 
-    /** Books whose covers are made slowly (until [release]), and one whose cover was made before. */
+    /** Books whose covers are made slowly (named "slow…", until [release]), one whose cover was made before, and others made at once. */
     private inner class Fake : CoverSource {
         val started: MutableList<String> = Collections.synchronizedList(ArrayList())
         val stops: MutableList<() -> Boolean> = Collections.synchronizedList(ArrayList())
@@ -64,7 +64,7 @@ class BookAdapterCoversTest {
         ): Bitmap? {
             started += entry.name
             stops += canceled
-            release.await(10, TimeUnit.SECONDS)
+            if (entry.name.startsWith("slow")) release.await(10, TimeUnit.SECONDS)
             return if (canceled()) null else Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }
 
@@ -209,6 +209,21 @@ class BookAdapterCoversTest {
         assertTrue("the slow covers were told to stop", fake.stops.all { it() })
         release.countDown()
         until { false }
-        assertEquals("the covers waiting their turn never started", 3, fake.started.size)
+        assertEquals("the covers waiting their turn never started " + fake.started, 3, fake.started.size)
+    }
+
+    @Test
+    fun coversStuckAfterSwitchingAwayLeaveRoomForTheNewView() {
+        adapter.submit((1..8).map { book("slow $it.cbz") })
+        layout()
+        until { fake.started.size == 3 }
+
+        adapter.cancelCovers()
+        adapter.submit(listOf(book("new.cbz")))
+        layout()
+        until { drawn(0) != null }
+
+        assertNotNull("made while the slow covers are still stuck", drawn(0))
+        assertEquals(fake.started.toString(), 4, fake.started.size)
     }
 }

@@ -31,14 +31,16 @@ import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
 /** How rows look beyond grid or list: list thumbnail size, cover shape, titles and details. */
@@ -138,6 +140,29 @@ class BookAdapter(
 
     /** Caps concurrent covers being made; a row scrolled away before its turn is never made. Cached covers skip it. */
     private val gate = Semaphore(THUMB_THREADS)
+
+    /** Where covers are made ([gated]), apart from the loads asking for them. */
+    private val makers = CoroutineScope(SupervisorJob() + AppDispatchers.io)
+
+    /**
+     * What [make] gives, made with one of the [gate]'s places. Canceled, the load gives its
+     * place back at once, as one stuck on a slow share would hold it, while [make], told so
+     * by its argument, stops at its next step.
+     */
+    private suspend fun <T> gated(make: (canceled: () -> Boolean) -> T): T {
+        val asker = coroutineContext.job
+        gate.acquire()
+        try {
+            return makers.async {
+                // A load canceled while it waited for its place makes nothing.
+                asker.ensureActive()
+                make { !asker.isActive }
+            }.await()
+        } finally {
+            // A canceled load's place is given back once the others are canceled too ([cancelCovers]), so none takes it.
+            if (asker.isActive) gate.release() else mainHandler.post { gate.release() }
+        }
+    }
 
     /** Where covers come from; tests stand in their own. */
     var covers: CoverSource = CoverSource.THUMBS
@@ -484,11 +509,7 @@ class BookAdapter(
         val job = scope.launch {
             val got = withContext(AppDispatchers.io) {
                 runCatching { source.cached(appContext, item, w, h, style) }.getOrNull()?.let { Thumbs.Cover(it, full = true) }
-                    ?: gate.withPermit {
-                        val work = coroutineContext.job
-                        runCatching { source.loadFirst(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
-                    }
-            }
+            } ?: gated { canceled -> runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() }
             if (holder.wanted != id) return@launch
             if (got == null) {
                 // The same book's earlier cover stood in for one there is none of now.
@@ -519,12 +540,7 @@ class BookAdapter(
         val source = covers
         val job = scope.launch {
             firstPasses.first { it == 0 }
-            val bitmap = withContext(AppDispatchers.io) {
-                gate.withPermit {
-                    val work = coroutineContext.job
-                    runCatching { source.load(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
-                }
-            }
+            val bitmap = gated { canceled -> runCatching { source.load(appContext, item, charset, w, h, style, canceled) }.getOrNull() }
             if (bitmap != null && holder.wanted == id) draw(holder, bitmap, id)
         }
         track(holder, job)
@@ -565,6 +581,7 @@ class BookAdapter(
 
     fun release() {
         scope.cancel()
+        makers.cancel()
     }
 
     // ------------------------------------------------------------------ helpers

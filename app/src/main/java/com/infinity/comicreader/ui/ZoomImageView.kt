@@ -574,10 +574,13 @@ class ZoomImageView @JvmOverloads constructor(
     internal var shadedFilter: ScaleFilter? = null
         private set
 
-    /** Still again: drawn once more with [zoomScaling]'s own filter if the move drew with another. */
+    /**
+     * Still again: drawn once more with [zoomScaling]'s own filter if the move drew with
+     * another, unless a detail, about to be asked for ([settle]), will cover the page anyway.
+     */
     private val still = Runnable {
         moving = false
-        if (shadedFilter != null && shadedFilter != zoomScaling.filter) invalidate()
+        if (shadedFilter != null && shadedFilter != zoomScaling.filter && !(zoomed && detailSource != null)) invalidate()
     }
 
     /** Runs [settle] whether or not the view is attached yet. */

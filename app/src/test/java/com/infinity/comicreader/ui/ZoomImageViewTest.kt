@@ -542,6 +542,17 @@ class ZoomImageViewTest {
             v.zoomTo(2.2f, 150f, 200f)
             draw(v)
             assertEquals(ScaleFilter.LANCZOS3, v.shadedFilter)
+            // Still with a detail on its way, the page is not shaded again only to be covered.
+            v.detailSource = RecordingDetail()
+            v.zoomTo(2.3f, 150f, 200f)
+            draw(v)
+            pass(160)
+            assertFalse(v.isDirty)
+            v.detailSource = null
+            v.zoomTo(2.35f, 150f, 200f)
+            draw(v)
+            pass(160)
+            assertTrue(v.isDirty)
             // The others draw as chosen, moving or not.
             v.zoomScaling = Scaling(ScaleFilter.CATMULL_ROM)
             v.zoomTo(2.4f, 150f, 200f)

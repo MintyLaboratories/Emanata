@@ -175,6 +175,26 @@ class TransferTest {
     }
 
     @Test
+    fun cancelingCannotStopRenamesNorCopiesAServerMakesInOneRequest() {
+        write(File(device, "A/book.cbz"), 10)
+        File(device, "B").mkdirs()
+        val heard = ArrayList<Boolean>()
+        Transfer(stoppable = { heard += it }).run(p("A/book.cbz"), p("B"), "book.cbz", move = true, replace = false)
+        assertEquals(listOf(false), heard)
+
+        val dav = tmp.newFolder("dav")
+        FakeDavServer(dav).use { server ->
+            Remotes.serve(listOf(server.share("d1"))) { DavFs(it) }
+            write(File(dav, "a.cbz"), 1000)
+            File(dav, "Copies").mkdirs()
+            heard.clear()
+            Transfer(stoppable = { heard += it }).run("/net/d1/a.cbz", "/net/d1/Copies", "a.cbz", move = false, replace = false)
+            assertEquals(listOf(false, true), heard)
+            assertEquals(1, server.paths("COPY").size)
+        }
+    }
+
+    @Test
     fun cancelingDeletesThePartCopy() {
         write(File(device, "big.cbz"), 4_000_000)
         File(device, "B").mkdirs()

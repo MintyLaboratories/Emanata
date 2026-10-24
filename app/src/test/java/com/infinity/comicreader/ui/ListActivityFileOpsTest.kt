@@ -404,6 +404,46 @@ class ListActivityFileOpsTest {
         assertArrayEquals(bytes, File(other, "kept.cbz").readBytes())
     }
 
+    @Test
+    fun cancelShowsOnlyWhileItCanStopTheStepUnderWay() {
+        val activity = launch()
+        val clock = FileWork.clock
+        var now = 1_000L
+        FileWork.clock = { now }
+        val go = java.util.concurrent.Semaphore(0)
+        val at = java.util.concurrent.Semaphore(0)
+        try {
+            FileWork.start(FileWork.Kind.COPY, "big.cbz") { p ->
+                at.release()
+                go.acquire()
+                p.report(5, 10)
+                at.release()
+                go.acquire()
+                p.stoppable(false)
+                at.release()
+                go.acquire()
+                FileWork.Outcome.Done(null)
+            }
+            at.acquire()
+            // Long enough under way for its progress to show.
+            now = 2_000L
+            go.release()
+            at.acquire()
+            idle()
+            val dialog = latest()
+            assertEquals(View.VISIBLE, dialog.getButton(DialogInterface.BUTTON_NEGATIVE).visibility)
+            go.release()
+            at.acquire()
+            idle()
+            assertEquals(View.GONE, dialog.getButton(DialogInterface.BUTTON_NEGATIVE).visibility)
+            go.release()
+            settle()
+        } finally {
+            FileWork.clock = clock
+        }
+        assertNotNull(activity)
+    }
+
     /** Serves a share from a folder, returned. */
     private fun serveShare(): File {
         val shareDir = tmp.newFolder("share")

@@ -156,14 +156,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   bottom left (the List/Grid button's mirror), with a short hint. Tap it to
   paste into the folder browsed, long-press it to drop the item. A name already
   there asks **Replace / Keep both / Skip** (Keep both names it `Book (2).cbz`).
-  A move within one place is a rename; between places (device and share, two
-  shares) it copies, checks each file's size and reads it back to compare its
-  CRC-32, then deletes the source. Copies are written under a hidden side name
-  and renamed into place once complete, so a canceled or failed one never
-  leaves a half-written file; what one cut off part way (the app closed) left
-  is put right when its folder is next listed. Within one share the server copies itself (SMB
-  server-side copy, WebDAV COPY) where it can. Progress with Cancel shows once
-  an operation takes a moment; it goes on when the device turns. Favorites,
+  A folder is replaced whole, never merged, and the dialog says so. A move
+  within one place is a rename; between places (device and share, two shares,
+  internal storage and SD card) it copies, checks each file's size and reads it
+  back to compare its CRC-32, then deletes what it copied from the source.
+  Links (junctions, symbolic links) are neither copied nor followed when
+  deleting. Copies are written under a hidden side name and renamed into place
+  once complete, so a canceled or failed one never leaves a half-written file;
+  what one cut off part way (the app closed) left is put right when its folder
+  is next listed. Within one share the server copies itself (SMB server-side
+  copy, WebDAV COPY) where it can. Progress shows once an operation takes a
+  moment, with Cancel while canceling can stop it (not during a rename or a
+  WebDAV COPY, which the server makes in one request); it goes on when the
+  device turns. Favorites,
   read marks, history, bookmarks, hidden pages, color settings, folder layouts
   and start folders follow an item moved or renamed, and go with one deleted.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots

@@ -55,6 +55,7 @@ internal class FileActions(
     private var progressName: TextView? = null
     private var progressBar: LinearProgressIndicator? = null
     private var progressAmount: TextView? = null
+    private var progressCancel: View? = null
 
     /** When the operation this screen saw running started; null when it saw none. */
     private var watching: Long? = null
@@ -206,7 +207,7 @@ internal class FileActions(
         val kind = if (clip.move) FileWork.Kind.MOVE else FileWork.Kind.COPY
         start(kind, clip.name) { p ->
             val target = Transfer.child(targetDir, name)
-            val result = Transfer(alive = { p.alive }, progress = p::report).run(clip.path, targetDir, name, clip.move, replace)
+            val result = Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable).run(clip.path, targetDir, name, clip.move, replace)
             // What was kept for a replaced item goes with it.
             if (replace) library.removePathsUnder(target)
             if (clip.move) {
@@ -299,6 +300,8 @@ internal class FileActions(
             amount.visibility = View.GONE
         }
         if (!dialog.isShowing) dialog.show()
+        // Cancel only while it can stop the step under way.
+        progressCancel?.visibility = if (status.stoppable) View.VISIBLE else View.GONE
     }
 
     private fun makeProgress(kind: FileWork.Kind): AlertDialog {
@@ -306,7 +309,8 @@ internal class FileActions(
         progressName = view.findViewById(R.id.progress_name)
         progressBar = view.findViewById(R.id.progress_bar)
         progressAmount = view.findViewById(R.id.progress_amount)
-        // Only copies stop part way: a share deletes or renames in one request.
+        // Only copies stop part way: a share deletes or renames in one request, and copies
+        // made by a server in one request hide Cancel while under way ([FileWork.Status.stoppable]).
         val cancelable = kind == FileWork.Kind.COPY || kind == FileWork.Kind.MOVE
         val builder = AlertDialog.Builder(activity)
             .setTitle(
@@ -322,9 +326,11 @@ internal class FileActions(
         if (cancelable) builder.setNegativeButton(R.string.cancel, null)
         val dialog = builder.show()
         // Cancel waits for the work to clean up: the dialog goes with its outcome.
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setOnClickListener {
-            it.isEnabled = false
-            FileWork.cancel()
+        progressCancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            setOnClickListener {
+                it.isEnabled = false
+                FileWork.cancel()
+            }
         }
         return dialog
     }
@@ -333,6 +339,7 @@ internal class FileActions(
         handler.removeCallbacks(showLater)
         progress?.dismiss()
         progress = null
+        progressCancel = null
     }
 
     private fun tell(status: FileWork.Status, outcome: FileWork.Outcome) {

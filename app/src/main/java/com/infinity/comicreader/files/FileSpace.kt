@@ -1,6 +1,7 @@
 package com.infinity.comicreader.files
 
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareKind
 import com.infinity.comicreader.util.FileUtils
 import java.io.File
 import java.io.FileOutputStream
@@ -57,6 +58,9 @@ interface FileSpace {
 
     /** Copies file [from] to the new file [to] without passing through the device; false when it cannot. */
     fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = false
+
+    /** False when [copy] is one request that canceling cannot stop part way. */
+    val copyStops: Boolean get() = true
 }
 
 /** The device's storage, through [File]. */
@@ -149,6 +153,9 @@ class ShareSpace(val id: String) : FileSpace {
     override fun discard(path: String) = Remotes.discard(path)
 
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = Remotes.copy(from, to, progress)
+
+    /** WebDAV copies a file in one COPY; SMB in pieces. */
+    override val copyStops: Boolean get() = Remotes.share(id)?.kind != ShareKind.WEBDAV
 }
 
 object FileSpaces {

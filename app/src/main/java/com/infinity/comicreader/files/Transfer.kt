@@ -26,6 +26,8 @@ class Transfer(
     private val spaceOf: (String) -> FileSpace = FileSpaces::of,
     private val alive: () -> Boolean = { true },
     private val progress: (done: Long, total: Long) -> Unit = { _, _ -> },
+    /** Hears whether canceling can stop the step under way: not a rename, nor a copy the server makes in one request. */
+    private val stoppable: (Boolean) -> Unit = {},
     private val stamp: () -> String = { System.currentTimeMillis().toString(36) },
     /** Waits between tries to delete what a failure left ([discard]). */
     private val pause: (Long) -> Unit = { Thread.sleep(it) }
@@ -64,7 +66,11 @@ class Transfer(
         if (existing != null && !replace) throw FileWork.NameTaken(name)
         // Replacing what holds the source would delete the source with it.
         if (existing != null && isWithin(source, target, ignoreCase = true)) throw FileProblem(FileProblem.Kind.HOLDS_SOURCE, name)
-        if (move && from.sameAs(to)) renamed(from, source, targetDir, name, existing != null)?.let { return it }
+        if (move && from.sameAs(to)) {
+            stoppable(false)
+            renamed(from, source, targetDir, name, existing != null)?.let { return it }
+            stoppable(true)
+        }
 
         total = sizeOf(from, source, node) * if (move) 2 else 1
         done = 0
@@ -212,10 +218,18 @@ class Transfer(
     private fun copyFile(from: FileSpace, source: String, node: Node, to: FileSpace, target: String, verify: Boolean) {
         val base = done
         // A copy a move deletes the source for is read back, so never made by a server unseen.
-        if (!verify && from.sameAs(to) && to.copy(source, target) { n -> checkAlive(); report(base + n) }) {
-            done = base + node.size.coerceAtLeast(0)
-            checkSize(to, target, node.size, source)
-            return
+        if (!verify && from.sameAs(to)) {
+            if (!to.copyStops) stoppable(false)
+            val copied = try {
+                to.copy(source, target) { n -> checkAlive(); report(base + n) }
+            } finally {
+                stoppable(true)
+            }
+            if (copied) {
+                done = base + node.size.coerceAtLeast(0)
+                checkSize(to, target, node.size, source)
+                return
+            }
         }
         val crc = CRC32()
         val read = Checked(from.open(source), crc)

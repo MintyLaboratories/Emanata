@@ -33,13 +33,18 @@ object FileWork {
         data class Failed(val error: Throwable) : Outcome()
     }
 
-    /** An operation on [name], [done] of [total] bytes (0 when it counts none), [started] by [clock]; finished once [outcome] is set. */
+    /**
+     * An operation on [name], [done] of [total] bytes (0 when it counts none), [started] by
+     * [clock]; [stoppable] while canceling can stop the step under way; finished once
+     * [outcome] is set.
+     */
     data class Status(
         val kind: Kind,
         val name: String,
         val started: Long,
         val done: Long = 0,
         val total: Long = 0,
+        val stoppable: Boolean = true,
         val outcome: Outcome? = null
     )
 
@@ -49,6 +54,9 @@ object FileWork {
         val alive: Boolean
 
         fun report(done: Long, total: Long)
+
+        /** Tells whether canceling can stop the step under way: not a server copying a file in one request. */
+        fun stoppable(can: Boolean)
     }
 
     @Volatile
@@ -87,6 +95,10 @@ object FileWork {
                     if (now - reported < REPORT_MS && done < total) return
                     reported = now
                     flow.update { it?.copy(done = done, total = total) }
+                }
+
+                override fun stoppable(can: Boolean) {
+                    flow.update { it?.copy(stoppable = can) }
                 }
             }
             val outcome = try {

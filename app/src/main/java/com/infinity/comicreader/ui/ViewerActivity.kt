@@ -1265,6 +1265,8 @@ class ViewerActivity : AppCompatActivity() {
             startAutoScroll()
         }
 
+        // Recorded on opening, so the library's "Recent" row follows at once.
+        saveHistory()
         if (start.ask) askStartPage(saved, src.pageCount)
     }
 

@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.HiddenPages
 import org.json.JSONArray
@@ -111,6 +112,17 @@ class Library(context: Context) {
     }
 
     fun clearHistory() = sp.edit().putString(KEY_HISTORY, "[]").apply()
+
+    /**
+     * Calls [onChange] on the main thread after each write to the history, from any
+     * screen of this process, until the returned handle is closed. The caller keeps the
+     * handle: SharedPreferences holds its listener only weakly.
+     */
+    fun watchHistory(onChange: () -> Unit): AutoCloseable {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == KEY_HISTORY) onChange() }
+        sp.registerOnSharedPreferenceChangeListener(listener)
+        return AutoCloseable { sp.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     // ---------------- bookmarks ----------------
     fun bookmarks(): MutableList<Bookmark> {

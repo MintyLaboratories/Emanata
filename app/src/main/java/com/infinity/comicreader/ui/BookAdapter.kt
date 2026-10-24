@@ -140,20 +140,36 @@ class BookAdapter(
     /** Path to draw a focus ring around, used after "open file location". */
     var highlightPath: String? = null
 
-    /** Optional first row of the list — currently only the "Recent" shortcut. */
-    data class Header(
+    /**
+     * Optional first row of the list — currently only the "Recent" shortcut. Two are equal
+     * when they look the same: what a tap does is not compared.
+     */
+    class Header(
         val title: String,
         val subtitle: String,
         val iconRes: Int,
         val onClick: () -> Unit
-    )
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is Header && other.title == title && other.subtitle == subtitle && other.iconRes == iconRes
 
-    /** A header occupies position 0, so every entry shifts down by this much. */
+        override fun hashCode(): Int = (title.hashCode() * 31 + subtitle.hashCode()) * 31 + iconRes
+    }
+
+    /**
+     * A header occupies position 0, so every entry shifts down by this much. Only a header
+     * that looks different redraws its row; a tap always runs the latest one's action.
+     */
     var header: Header? = null
         set(value) {
-            if (field == value) return
+            val old = field
             field = value
-            notifyDataSetChanged()
+            when {
+                old == value -> Unit
+                old == null -> notifyItemInserted(0)
+                value == null -> notifyItemRemoved(0)
+                else -> notifyItemChanged(0)
+            }
         }
 
     val itemOffset: Int get() = if (header != null) 1 else 0
@@ -243,7 +259,7 @@ class BookAdapter(
             holder.subtitle.text = h.subtitle
             holder.subtitle.visibility = if (h.subtitle.isEmpty()) View.GONE else View.VISIBLE
             holder.icon.setImageResource(h.iconRes)
-            holder.itemView.setOnClickListener { h.onClick() }
+            holder.itemView.setOnClickListener { header?.onClick?.invoke() }
             return
         }
         val row = items[position - itemOffset]

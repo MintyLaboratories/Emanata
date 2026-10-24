@@ -89,8 +89,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Search; the others step aside while searching. Settings → **Toolbar
   buttons** shows, hides and reorders them (checkboxes and drag handles); a
   hidden one stays in the menu.
-- A **Recent** row sits above the browsing list and opens the folder holding the
-  last chapter you read.
+- A **Recent** row sits above the browsing list, empty folders included, and
+  opens the folder holding the last chapter you read; it follows a book the
+  moment it is opened, names a share's folder after the share, and redraws
+  only when it changes.
 - **Sort** (toolbar, per tab): Name, Year, Added, Accessed, Size, Length,
   File type or Reading direction, each named by its direction (`newest first`);
   tap the selected option to flip it. Changes apply live; tap outside to close.

@@ -187,6 +187,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
     private var listJob: Job? = null
+
+    /** Keeps the "Recent" row on the book opened last, as the reader records it. */
+    private var historyWatch: AutoCloseable? = null
     private lateinit var kindCache: FavoriteKindCache
 
     /** Follows drives as they are plugged in and pulled out, while started. */
@@ -212,6 +215,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         settings = SettingsRepository.get(this)
         kindCache = FavoriteKindCache(this)
         factsCache = BookFactsCache(this)
+        historyWatch = library.watchHistory { if (started && mode == TAB_BROWSE) updateRecentHeader() }
         lifecycleScope.launch {
             withContext(AppDispatchers.io) { factsCache.load() }
             // A list shown before the facts were in sorts again with them.
@@ -347,6 +351,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onDestroy() {
         super.onDestroy()
+        historyWatch?.close()
         peek.hide()
         adapter.release()
     }
@@ -1043,17 +1048,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * straight back to it.
      */
     private fun updateRecentHeader() {
-        val show = mode == TAB_BROWSE && query.isBlank() && shown.isNotEmpty()
-        val dir = if (show) library.history().firstOrNull()?.let { Remotes.file(it.path).parentFile } else null
+        val show = mode == TAB_BROWSE && query.isBlank()
+        val dir = if (show) RecentRow.folderOf(library.history()) else null
         adapter.header = dir?.let {
             BookAdapter.Header(
                 title = getString(R.string.recent),
-                subtitle = relativePath(it).ifEmpty { StorageRoot.of(it.absolutePath, roots)?.name ?: it.absolutePath },
+                subtitle = RecentRow.subtitle(it, roots) { id -> Remotes.share(id)?.name },
                 iconRes = R.drawable.ic_history,
-                onClick = { loadDirectory(it) }
+                onClick = { loadDirectory(Remotes.file(it)) }
             )
         }
-        // Grid rows share the height the header leaves.
+        // Grid rows share the height the header and section headers leave.
         if (view.grid && view.rows > 0) updateCellSize()
     }
 

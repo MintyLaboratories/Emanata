@@ -165,6 +165,20 @@ class RemoteBooksTest {
     }
 
     @Test
+    fun factsOfASolidRarSkipAComicInfoStoredAfterThePages() {
+        val big = bigPages(4, 13)
+        val info = entry("ComicInfo.xml", "<ComicInfo><Year>2004</Year></ComicInfo>".toByteArray())
+        File(share, "late.cbr").writeBytes(Fixtures.rar4Bytes(*big, info, solid = true))
+        File(share, "early.cbr").writeBytes(Fixtures.rar4Bytes(info, *big, solid = true))
+        val before = fake.bytesRead
+        val late = com.infinity.comicreader.reader.BookFactsReader.read(remote("late.cbr"), "UTF-8", cacheDir)
+        assertEquals(4, late.pages)
+        assertEquals(0, late.year)
+        assertTrue("read ${fake.bytesRead - before} bytes", fake.bytesRead - before < File(share, "late.cbr").length() / 2)
+        assertEquals(2004, com.infinity.comicreader.reader.BookFactsReader.read(remote("early.cbr"), "UTF-8", cacheDir).year)
+    }
+
+    @Test
     fun keptPagesAreTrimmedWithTheCopies() {
         val big = bigPages(4, 9)
         File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*big, solid = true))

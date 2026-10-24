@@ -14,6 +14,7 @@ import java.io.IOException
  * Reads what sorting and filtering need from inside a book: its page count, ComicInfo
  * year, the reading direction its contents tell ([DirectionDetection], without the
  * cover, which would take a decode) and whether its pages' headers tell slices ([Slices]).
+ * A solid archive on a share has its ComicInfo read only when stored before its pages.
  */
 object BookFactsReader {
     /**
@@ -45,8 +46,10 @@ object BookFactsReader {
 
     private fun readArchive(reader: ArchiveReader, file: File, charsetName: String, cacheDir: File): BookFacts {
         val entries = reader.entries.filter { !ArchiveJunk.isJunk(it.path, it.size) }
-        val info = ComicInfo.read(reader)
         val images = entries.filter { Formats.isImageName(it.path) }
+        // On a share, a solid archive's ComicInfo stored after its pages would stream them all.
+        val costly = file is RemoteFile && !reader.randomAccess
+        val info = ComicInfo.read(reader, before = if (costly) images.minOfOrNull { it.index } ?: Int.MAX_VALUE else Int.MAX_VALUE)
         val nested = entries.any { Formats.isArchiveName(it.path) }
         val pages = if (nested) {
             // Inner archives count as chapters; only ones already copied out can be counted,

@@ -77,7 +77,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page"). Covers already made show at once, ahead of those being made; switching
   tab or folder drops covers still loading, so the view shown goes first.
   Facts found later (page counts, read marks) change only a row's text, never
-  its cover.
+  its cover. Books whose cover page is a layered AVIF show every visible cover
+  from its first layer first, then each full cover replaces it in place.
 - **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top

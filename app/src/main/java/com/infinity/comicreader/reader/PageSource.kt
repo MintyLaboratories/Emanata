@@ -46,6 +46,13 @@ interface PageSource : Closeable {
     fun loadPreview(index: Int): Bitmap? = null
 
     /**
+     * The first layer of page [index] at its own size, when the page is a layered image
+     * whose first layer decodes on its own, from the start of the page alone (a layered
+     * AVIF, [Decoders.firstLayer]); null otherwise. Blocking.
+     */
+    fun loadFirstLayer(index: Int): Bitmap? = null
+
+    /**
      * The [Seams.Profile] of page [index]'s [bottom] or top edge, decoded as a thin strip
      * where its format allows ([Decoders.edge]); null when it cannot be read. Blocking.
      */

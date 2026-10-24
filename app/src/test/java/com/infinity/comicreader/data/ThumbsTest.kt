@@ -7,11 +7,16 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.infinity.comicreader.reader.Avif
+import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -266,6 +271,45 @@ class ThumbsTest {
         assertTrue(moved != Thumbs.hiddenTag(folder, mapOf(inside to setOf(0, 1))))
         // A folder whose name only starts the same is not inside.
         assertEquals("", Thumbs.hiddenTag(folder, mapOf(File(context.cacheDir, "Shelf 2/a.cbz").path to setOf(0))))
+    }
+
+    /** A book whose cover page is a layered AVIF: a red first layer and a blue full image ([FakeAvifCodec]). */
+    private fun layeredBook(name: String): BookEntry {
+        Avif.codec = FakeAvifCodec(
+            FakeAvifCodec.info(600, 900), listOf(FakeAvifCodec.info(150, 225), FakeAvifCodec.info(600, 900)), listOf(Color.RED, Color.BLUE)
+        )
+        val avif = javaClass.classLoader!!.getResourceAsStream("avif/layered.avif")!!.use { it.readBytes() }
+        val file = Fixtures.zip(File(context.cacheDir, name), Fixtures.entry("01.avif", avif), Fixtures.entry("02.png", png(Color.WHITE)))
+        return BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+    }
+
+    @After
+    fun dropCodec() {
+        Avif.codec = null
+    }
+
+    @Test
+    fun aLayeredCoverComesFromItsFirstLayerUntilTheFullOneIsMade() {
+        val book = layeredBook("layered.cbz")
+        val first = Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!
+        assertFalse(first.full)
+        assertEquals(100, first.bitmap.width)
+        assertEquals(Color.RED, first.bitmap.getPixel(50, 75))
+        // The quick cover is never kept as the cover.
+        assertNull(Thumbs.cached(context, book, 100, 150))
+        assertFalse(Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!.full)
+
+        assertEquals(Color.BLUE, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        val after = Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!
+        assertTrue(after.full)
+        assertEquals(Color.BLUE, after.bitmap.getPixel(50, 75))
+    }
+
+    @Test
+    fun aCoverWithoutLayersIsWholeAtOnce() {
+        val first = Thumbs.loadFirst(context, rgbBook("plain.cbz"), "UTF-8", 100, 150)!!
+        assertTrue(first.full)
+        assertEquals(Color.RED, first.bitmap.getPixel(50, 75))
     }
 
     @Test

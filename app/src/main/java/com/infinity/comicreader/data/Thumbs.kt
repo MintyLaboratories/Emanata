@@ -7,11 +7,13 @@ import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.HiddenPages
+import com.infinity.comicreader.reader.ImageSource
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PdfSource
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.Hashes
 import com.infinity.comicreader.util.NaturalOrder
@@ -26,6 +28,10 @@ import java.io.File
  * says, so the view draws them 1:1. They
  * are cached per size and style in memory (bounded by heap) and losslessly on disk
  * under `cacheDir/covers`. A bookmark's cover has its page in front ([CoverArt.withPage]).
+ *
+ * A cover page that is a layered image (a layered AVIF) can first give a quick cover made
+ * from its first layer alone ([loadFirst]), kept in memory only, until [load] makes the
+ * full one.
  */
 object Thumbs {
     private const val DISK_DIR = "covers"
@@ -65,6 +71,15 @@ object Thumbs {
         fronts.put(key(file), front?.ordinal ?: NO_FRONT)
     }
 
+    /** Quick covers ([loadFirst]) by their cover's key; a few screens' worth. */
+    private val quicks = object : LruCache<String, Bitmap>(QUICK_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+    private const val QUICK_BYTES = 24 * 1024 * 1024
+
+    /** Each book's typical inner page shape ([Wraparound.innerRatio]) by [key]; NaN when it has none. */
+    private val inners = LruCache<String, Double>(1024)
+
     private fun key(entry: BookEntry): String = key(entry.path, entry.size, entry.lastModified, entry.isDir)
 
     private fun key(file: File): String = key(file.absolutePath, file.length(), file.lastModified(), false)
@@ -85,8 +100,42 @@ object Thumbs {
         height: Int,
         style: CoverStyle = CoverStyle(),
         canceled: () -> Boolean = { false }
-    ): Bitmap? {
-        cached(context, entry, width, height, style)?.let { return it }
+    ): Bitmap? = make(context, entry, charset, width, height, style, canceled, quickFirst = false)?.bitmap
+
+    /** A cover, and whether it is the [full] one or a quick one standing in for it. */
+    class Cover(val bitmap: Bitmap, val full: Boolean)
+
+    /**
+     * The cover of [entry] as [load] makes it, or when its cover page is a layered image
+     * ([PageSource.loadFirstLayer]) and no full cover was made yet, a quick one made the same
+     * way from its first layer alone ([Cover.full] false), for [load] to replace. Blocking.
+     */
+    fun loadFirst(
+        context: Context,
+        entry: BookEntry,
+        charset: String,
+        width: Int,
+        height: Int,
+        style: CoverStyle = CoverStyle(),
+        canceled: () -> Boolean = { false }
+    ): Cover? {
+        cached(context, entry, width, height, style)?.let { return Cover(it, full = true) }
+        quicks.get(coverKey(context, entry, width, height, style))?.let { return Cover(it, full = false) }
+        return make(context, entry, charset, width, height, style, canceled, quickFirst = entry.bookmarkPage < 0)
+    }
+
+    /** The cover of [entry] ([load]); with [quickFirst], a quick one when its cover page has a first layer ([loadFirst]). */
+    private fun make(
+        context: Context,
+        entry: BookEntry,
+        charset: String,
+        width: Int,
+        height: Int,
+        style: CoverStyle,
+        canceled: () -> Boolean,
+        quickFirst: Boolean
+    ): Cover? {
+        cached(context, entry, width, height, style)?.let { return Cover(it, full = true) }
         val page = entry.bookmarkPage
         val rightToLeft = entry.direction == ReadingDirection.RTL
         val k = coverKey(context, entry, width, height, style)
@@ -94,18 +143,24 @@ object Thumbs {
 
         val hidden = Library(context).hiddenAll()
         if (canceled()) return null
-        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height, hidden, canceled) ?: return null
+        val made = generate(entry, charset, context.cacheDir, width, height, hidden, canceled, quickFirst) ?: return null
+        val full = made.bitmap
         if (canceled()) {
             full.recycle()
             return null
         }
         val cover = try {
-            CoverArt.cover(full, width, height, style, innerRatio, rightToLeft) { src -> frontOf(entry, src) }
+            CoverArt.cover(full, width, height, style, made.innerRatio, rightToLeft) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
             return null
         } finally {
             full.recycle()
         }
+        if (!made.full) {
+            quicks.put(k, cover)
+            return Cover(cover, full = false)
+        }
+        quicks.remove(k)
         val bitmap = if (page < 0) cover else {
             val (w, h) = CoverArt.pageBox(width, height)
             val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear))
@@ -116,7 +171,7 @@ object Thumbs {
             disk.parentFile?.mkdirs()
             disk.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
         }
-        return bitmap
+        return Cover(bitmap, full = true)
     }
 
     /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
@@ -200,16 +255,22 @@ object Thumbs {
 
     fun clear(context: Context) {
         memory.evictAll()
+        quicks.evictAll()
+        inners.evictAll()
         fronts.evictAll()
         runCatching { File(context.cacheDir, DISK_DIR).deleteRecursively() }
     }
 
     // ------------------------------------------------------------------ internals
 
+    /** A cover image as decoded, with its book's typical inner page shape; not [full] when it is a first layer. */
+    private class Made(val bitmap: Bitmap, val innerRatio: Double?, val full: Boolean = true)
+
     /**
      * The cover image of [entry] at full size, up to [THUMB_CAP_PIXELS] (a PDF's
      * rendered just large enough for a [width] x [height] box), with its book's
      * typical inner page shape when the cover is wide enough to be a wraparound.
+     * With [quickFirst], the first layer of a layered cover page instead.
      */
     private fun generate(
         entry: BookEntry,
@@ -218,17 +279,25 @@ object Thumbs {
         width: Int,
         height: Int,
         hidden: Map<String, Set<Int>>,
-        canceled: () -> Boolean = { false }
-    ): Pair<Bitmap, Double?>? = try {
-        val target = Target(capPixels = THUMB_CAP_PIXELS)
+        canceled: () -> Boolean = { false },
+        quickFirst: Boolean = false
+    ): Made? = try {
         fun pageOf(book: File) = coverPage(hidden[book.absolutePath].orEmpty())
         when {
-            entry.isDir -> findCover(entry.file, 2)?.takeIf { !canceled() }?.let { coverOf(it, charset, cacheDir, width, height, pageOf(it), canceled) }
-            entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target) to null
-            else -> coverOf(entry.file, charset, cacheDir, width, height, pageOf(entry.file), canceled)
+            entry.isDir -> findCover(entry.file, 2)?.takeIf { !canceled() }?.let {
+                coverOf(it, charset, cacheDir, width, height, pageOf(it), canceled, quickFirst)
+            }
+            entry.type == EntryType.IMAGE -> imageCover(entry.file, quickFirst)
+            else -> coverOf(entry.file, charset, cacheDir, width, height, pageOf(entry.file), canceled, quickFirst)
         }
     } catch (t: Throwable) {
         null
+    }
+
+    /** Image [file] as its own cover; with [quickFirst], the first layer of a layered one stands in. */
+    private fun imageCover(file: File, quickFirst: Boolean): Made {
+        if (quickFirst && file !is RemoteFile) ImageSource(file).loadFirstLayer(0)?.let { return Made(it, null, full = false) }
+        return Made(Decoders.decode(file, Target(capPixels = THUMB_CAP_PIXELS)), null)
     }
 
     /** The cover of book [file]: its page [page] (book index), or its first page when it has fewer. */
@@ -239,21 +308,23 @@ object Thumbs {
         width: Int,
         height: Int,
         page: Int = 0,
-        canceled: () -> Boolean = { false }
-    ): Pair<Bitmap, Double?>? {
+        canceled: () -> Boolean = { false },
+        quickFirst: Boolean = false
+    ): Made? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         val full = Target(capPixels = THUMB_CAP_PIXELS)
-        if (Formats.typeOf(file.name) == EntryType.IMAGE) {
-            return Decoders.decode(file, full) to null
-        }
+        if (Formats.typeOf(file.name) == EntryType.IMAGE) return imageCover(file, quickFirst)
         val source = runCatching { PageSources.openCover(file, charset, cacheDir, page) }.getOrNull() ?: return null
+        var layered = false
         val cover = try {
             if (canceled()) return null
             val index = if (page < source.pageCount) page else 0
+            val first = if (quickFirst && source.pageCount > 0) runCatching { source.loadFirstLayer(index) }.getOrNull() else null
+            layered = first != null
             val target = if (!source.isVector) full else {
                 source.pageSize(index)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
             }
-            if (source.pageCount <= 0) null else source.loadPage(index, target)
+            first ?: if (source.pageCount <= 0) null else source.loadPage(index, target)
         } catch (t: Throwable) {
             null
         } finally {
@@ -264,19 +335,26 @@ object Thumbs {
             return null
         }
         val inner = if (Wraparound.isCandidate(cover.width, cover.height)) innerRatioOf(file, charset, cacheDir) else null
-        return cover to inner
+        return Made(cover, inner, full = !layered)
     }
 
-    /** The typical inner page shape of the book [file] ([Wraparound.innerRatio]); null when it has none or cannot be read. */
+    /**
+     * The typical inner page shape of the book [file] ([Wraparound.innerRatio]), found once a
+     * session; null when it has none or cannot be read.
+     */
     private fun innerRatioOf(file: File, charset: String, cacheDir: File): Double? {
+        val k = key(file)
+        inners.get(k)?.let { return it.takeIf { !it.isNaN() } }
         val source = runCatching { PageSources.open(file, charset, cacheDir, copyNested = false) }.getOrNull() ?: return null
-        return try {
+        val found = try {
             BookDirection.innerRatio(source)
         } catch (t: Throwable) {
-            null
+            return null
         } finally {
             runCatching { source.close() }
         }
+        inners.put(k, found ?: Double.NaN)
+        return found
     }
 
     /** Page [index] of the book [file] (its last page if it has fewer) made to [target]; null when it cannot be read. */

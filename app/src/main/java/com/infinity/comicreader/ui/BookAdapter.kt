@@ -32,6 +32,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -286,9 +288,10 @@ class BookAdapter(
         var entry: BookEntry? = null
         var requested = 0L
 
-        /** The [coverId] of the entry bound here, and of the cover drawn, if any. */
+        /** The [coverId] of the entry bound here, of the cover drawn, if any, and of a quick cover drawn until it is. */
         var wanted: String? = null
         var drawn: String? = null
+        var quick: String? = null
     }
 
     class SectionHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -381,9 +384,10 @@ class BookAdapter(
         val icon = EntryIcons.iconFor(item)
         holder.placeholder.setImageResource(icon)
         holder.placeholder.imageTintList = ColorStateList.valueOf(EntryIcons.tintFor(context, item))
-        if (holder.drawn != id) {
+        if (holder.drawn != id && holder.quick != id) {
             holder.thumb.setImageDrawable(null)
             holder.drawn = null
+            holder.quick = null
             holder.placeholder.visibility = View.VISIBLE
         }
         // The cover is requested at its view's exact size, once that is laid out.
@@ -436,6 +440,10 @@ class BookAdapter(
      * size already requested, or a view not laid out yet, asks for nothing. A cover
      * drawn meanwhile stays until the new one replaces it. One in memory shows at once,
      * one on disk without waiting for covers being made ([gate]).
+     *
+     * Covers are made in two passes: a layered cover page first gives a quick cover from its
+     * first layer ([CoverSource.loadFirst]); the full one replaces it once every cover asked
+     * for has had its first pass ([finishCover]).
      */
     private fun requestCover(holder: BookHolder) {
         val item = holder.entry ?: return
@@ -456,15 +464,53 @@ class BookAdapter(
             draw(holder, it, id)
             return
         }
+        firstPasses.value++
         val job = scope.launch {
+            val got = withContext(AppDispatchers.io) {
+                runCatching { source.cached(appContext, item, w, h, style) }.getOrNull()?.let { Thumbs.Cover(it, full = true) }
+                    ?: gate.withPermit {
+                        val work = coroutineContext.job
+                        runCatching { source.loadFirst(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
+                    }
+            }
+            if (got == null || holder.wanted != id) return@launch
+            if (got.full) {
+                draw(holder, got.bitmap, id)
+                return@launch
+            }
+            holder.thumb.setImageBitmap(got.bitmap)
+            holder.quick = id
+            holder.placeholder.visibility = View.GONE
+            finishCover(holder, item, id, w, h)
+        }
+        track(holder, job)
+        job.invokeOnCompletion { firstPasses.value-- }
+    }
+
+    /** First passes ([requestCover]) not done yet; full covers wait for none to be left. */
+    private val firstPasses = MutableStateFlow(0)
+
+    /** Replaces the quick cover of [item] in [holder] by its full [w] x [h] one, once no first pass is left. */
+    private fun finishCover(holder: BookHolder, item: BookEntry, id: String, w: Int, h: Int) {
+        val appContext = holder.itemView.context.applicationContext
+        val charset = prefs.charset
+        val style = prefs.coverStyle
+        val source = covers
+        val job = scope.launch {
+            firstPasses.first { it == 0 }
             val bitmap = withContext(AppDispatchers.io) {
-                runCatching { source.cached(appContext, item, w, h, style) }.getOrNull() ?: gate.withPermit {
+                gate.withPermit {
                     val work = coroutineContext.job
                     runCatching { source.load(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
                 }
             }
             if (bitmap != null && holder.wanted == id) draw(holder, bitmap, id)
         }
+        track(holder, job)
+    }
+
+    /** Makes [job] the cover load of [holder], dropped by [cancelCovers]. */
+    private fun track(holder: BookHolder, job: Job) {
         holder.job = job
         loads[job] = holder
         job.invokeOnCompletion { loads.remove(job) }
@@ -474,6 +520,7 @@ class BookAdapter(
     private fun draw(holder: BookHolder, bitmap: Bitmap, id: String) {
         holder.thumb.setImageBitmap(bitmap)
         holder.drawn = id
+        holder.quick = null
         holder.placeholder.visibility = View.GONE
     }
 
@@ -485,6 +532,7 @@ class BookAdapter(
         holder.entry = null
         holder.wanted = null
         holder.drawn = null
+        holder.quick = null
         holder.thumb.setImageDrawable(null)
     }
 

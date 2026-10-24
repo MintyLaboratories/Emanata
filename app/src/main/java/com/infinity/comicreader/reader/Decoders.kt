@@ -506,12 +506,41 @@ object Decoders {
         val kind = ImageKind.sniff(head, n)
         if (kind !in QUICK) return null
         if (kind != ImageKind.AVIF) return head.copyOf(n) + BitmapUtils.readCapped(input)
+        return avifPrefix(input, head, n, Previews::sizeOf)
+    }
+
+    /**
+     * The start of the AVIF file [input] continues from [head] (its first [length] bytes)
+     * that its preview ([AvifPreview.needed], thumbnails of at least [minSize]) needs; null
+     * when it has none or [input] ends first.
+     */
+    private fun avifPrefix(input: InputStream, head: ByteArray, length: Int, minSize: (Int, Int) -> IntArray): ByteArray? {
+        var buf = head
+        var n = length
         while (true) {
-            val needed = AvifPreview.needed(head, n, Previews::sizeOf)
-            if (needed <= 0 || (needed > n && n < head.size)) return null
-            if (needed <= n) return head.copyOf(needed)
-            head = head.copyOf(needed)
-            n = readFully(input, head, n)
+            val needed = AvifPreview.needed(buf, n, minSize)
+            if (needed <= 0 || (needed > n && n < buf.size)) return null
+            if (needed <= n) return buf.copyOf(needed)
+            buf = buf.copyOf(needed)
+            n = readFully(input, buf, n)
+        }
+    }
+
+    /**
+     * The first layer of the layered AVIF image [input] holds, at its own size, read from
+     * as little of [input] as that layer needs; null for any other image, or when it does
+     * not decode. Blocking.
+     */
+    fun firstLayer(input: InputStream): Bitmap? {
+        val head = ByteArray(ImageKind.HEADER_BYTES)
+        val n = readFully(input, head, 0)
+        if (ImageKind.sniff(head, n) != ImageKind.AVIF) return null
+        // No thumbnail is that large, so the plan is the first layer.
+        val prefix = avifPrefix(input, head, n) { _, _ -> intArrayOf(Int.MAX_VALUE, Int.MAX_VALUE) } ?: return null
+        return try {
+            Avif.firstLayer(prefix)?.let { eightBit(it) }
+        } catch (e: IOException) {
+            null
         }
     }
 

@@ -322,6 +322,24 @@ class AvifTest {
     }
 
     @Test
+    fun decodersTakeTheFirstLayerFromTheStartOfALayeredFileOnly() {
+        layered()
+        val file = javaClass.classLoader!!.getResourceAsStream("avif/layered.avif")!!.use { it.readBytes() }
+        var read = 0
+        val input = object : java.io.ByteArrayInputStream(file) {
+            override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) read += it }
+        }
+        val first = Decoders.firstLayer(input)!!
+        assertArrayEquals(intArrayOf(150, 225), intArrayOf(first.width, first.height))
+        assertEquals(layer, first.getPixel(10, 10))
+        assertTrue("read $read of ${file.size}", read < file.size)
+        // Any other image has none, nor does an AVIF without layers.
+        assertNull(Decoders.firstLayer(ByteArray(64) { 0x7f }.inputStream()))
+        single(FakeAvifCodec.info(600, 900))
+        assertNull(Decoders.firstLayer(javaClass.classLoader!!.getResourceAsStream("avif/single.avif")!!))
+    }
+
+    @Test
     fun decodersReadTheSizeThroughLibavif() {
         single(FakeAvifCodec.info(600, 900, rotation = 1))
         assertArrayEquals(intArrayOf(900, 600), Decoders.size(avifBytes))

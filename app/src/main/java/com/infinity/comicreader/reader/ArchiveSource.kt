@@ -173,6 +173,13 @@ class ArchiveSource(
         return bytes?.let { Decoders.preview(it) }
     }
 
+    /** Read only for a page named as AVIF, the one format with layers that decode on their own. */
+    override fun loadFirstLayer(index: Int): Bitmap? {
+        val path = pages.getOrNull(index)?.path ?: return null
+        if (!Formats.ext(path).equals("avif", ignoreCase = true)) return null
+        return readPage(index) { Decoders.firstLayer(it) }
+    }
+
     /** From the entry's header when it tells, else from the whole entry. */
     override fun pageSize(index: Int): IntArray? {
         if (index !in pages.indices) return null

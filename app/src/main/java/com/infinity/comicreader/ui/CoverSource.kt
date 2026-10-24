@@ -17,6 +17,17 @@ interface CoverSource {
     /** The cover made now; null when there is none, or once [canceled] turns true. Blocking. */
     fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle, canceled: () -> Boolean): Bitmap?
 
+    /** Like [load], but a quick cover from a layered cover page's first layer when it has one ([Thumbs.loadFirst]). Blocking. */
+    fun loadFirst(
+        context: Context,
+        entry: BookEntry,
+        charset: String,
+        width: Int,
+        height: Int,
+        style: CoverStyle,
+        canceled: () -> Boolean
+    ): Thumbs.Cover?
+
     companion object {
         val THUMBS: CoverSource = object : CoverSource {
             override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle) =
@@ -34,6 +45,16 @@ interface CoverSource {
                 style: CoverStyle,
                 canceled: () -> Boolean
             ) = Thumbs.load(context, entry, charset, width, height, style, canceled)
+
+            override fun loadFirst(
+                context: Context,
+                entry: BookEntry,
+                charset: String,
+                width: Int,
+                height: Int,
+                style: CoverStyle,
+                canceled: () -> Boolean
+            ) = Thumbs.loadFirst(context, entry, charset, width, height, style, canceled)
         }
     }
 }

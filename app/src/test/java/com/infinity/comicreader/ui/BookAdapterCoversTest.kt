@@ -3,6 +3,8 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
@@ -15,6 +17,7 @@ import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.Thumbs
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -64,6 +67,55 @@ class BookAdapterCoversTest {
             release.await(10, TimeUnit.SECONDS)
             return if (canceled()) null else Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }
+
+        override fun loadFirst(
+            context: Context,
+            entry: BookEntry,
+            charset: String,
+            width: Int,
+            height: Int,
+            style: CoverStyle,
+            canceled: () -> Boolean
+        ): Thumbs.Cover? = load(context, entry, charset, width, height, style, canceled)?.let { Thumbs.Cover(it, full = true) }
+    }
+
+    /** Layered covers: a red quick cover first, then the blue full one, each step logged. */
+    private class Layered : CoverSource {
+        val steps: MutableList<String> = Collections.synchronizedList(ArrayList())
+
+        private fun colored(width: Int, height: Int, color: Int) =
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+
+        override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? = null
+
+        override fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? = null
+
+        override fun load(
+            context: Context,
+            entry: BookEntry,
+            charset: String,
+            width: Int,
+            height: Int,
+            style: CoverStyle,
+            canceled: () -> Boolean
+        ): Bitmap {
+            steps += "full ${entry.name}"
+            return colored(width, height, Color.BLUE)
+        }
+
+        override fun loadFirst(
+            context: Context,
+            entry: BookEntry,
+            charset: String,
+            width: Int,
+            height: Int,
+            style: CoverStyle,
+            canceled: () -> Boolean
+        ): Thumbs.Cover {
+            steps += "first ${entry.name}"
+            Thread.sleep(30)
+            return Thumbs.Cover(colored(width, height, Color.RED), full = false)
+        }
     }
 
     private val fake = Fake()
@@ -105,7 +157,21 @@ class BookAdapterCoversTest {
         }
     }
 
-    private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder).thumb.drawable
+    private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder?)?.thumb?.drawable
+
+    @Test
+    fun layeredCoversShowTheirFirstLayersFirstThenTheFullCovers() {
+        val layered = Layered()
+        adapter.covers = layered
+        adapter.submit((1..6).map { book("$it.cbz") })
+        layout()
+        until { layered.steps.size == 12 }
+        assertEquals((1..6).map { "first $it.cbz" }.toSet(), layered.steps.take(6).toSet())
+        assertEquals((1..6).map { "full $it.cbz" }.toSet(), layered.steps.drop(6).toSet())
+        val shown = 0 until recycler.childCount
+        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
+        for (i in shown) assertEquals(Color.BLUE, (drawn(i) as BitmapDrawable).bitmap.getPixel(0, 0))
+    }
 
     @Test
     fun aCoverMadeBeforeShowsAtOnceAfterSwitchingAway() {

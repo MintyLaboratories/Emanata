@@ -413,6 +413,11 @@
     <string name="pref_language">Language</string>
     <string name="pref_charset">Archive filename charset</string>
     <string name="charset_auto">Auto</string>
+    <string name="charset_follow_setting">Use the setting (%1$s)</string>
+    <string name="menu_name_charset">Filename charset…</string>
+    <string name="info_name_charset">Filename charset</string>
+    <string name="info_charset_auto">Auto (%1$s)</string>
+    <string name="info_charset_book">%1$s, this book only</string>
 
     <string name="pref_fullscreen">Start in fullscreen</string>
     <string name="pref_keep_on">Keep the screen on while reading</string>

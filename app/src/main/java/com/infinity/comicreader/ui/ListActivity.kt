@@ -1484,6 +1484,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             }
             if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
+            // An advanced setting: shown once Keep it simple is off.
+            if (!entry.isDir && !prefs.keepSimple && NameCharsetDialog.applies(entry.name)) {
+                add(getString(R.string.menu_name_charset)) {
+                    NameCharsetDialog.builder(this, library, path, prefs.charset) { adapter.notifyDataSetChanged() }.show()
+                }
+            }
             if (entry.isDir) {
                 add(getString(R.string.menu_set_startup)) {
                     prefs.setStartupFolder(path)

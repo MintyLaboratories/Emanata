@@ -3226,13 +3226,22 @@ class ViewerActivity : AppCompatActivity() {
             row(R.string.info_size, FileUtils.formatSize(this@ViewerActivity, size))
             row(R.string.info_pages, if (hidden > 0) getString(R.string.info_pages_hidden, pages, hidden) else pages.toString())
             row(R.string.menu_reading_dir, direction)
+            val read = src.nameCharset
+            val book = favoriteFile()?.absolutePath
+            if (read != null && book != null) row(R.string.info_name_charset, NameCharsetDialog.describe(this@ViewerActivity, library, book, prefs.charset, read))
             val fields = info?.fields.orEmpty()
             if (fields.isNotEmpty()) row(R.string.info_comic_info, fields.joinToString("\n") { (k, v) -> "$k: $v" })
-            AlertDialog.Builder(this@ViewerActivity)
+            val dialog = AlertDialog.Builder(this@ViewerActivity)
                 .setTitle(chapterLabel(f))
                 .setMessage(text)
                 .setPositiveButton(R.string.close, null)
-                .showKeepingFullscreen()
+            // An advanced setting: offered once Keep it simple is off.
+            if (read != null && book != null && !prefs.keepSimple) {
+                dialog.setNeutralButton(R.string.menu_name_charset) { _, _ ->
+                    NameCharsetDialog.builder(this@ViewerActivity, library, book, prefs.charset) { reopen() }.showKeepingFullscreen()
+                }
+            }
+            dialog.showKeepingFullscreen()
         }
     }
 

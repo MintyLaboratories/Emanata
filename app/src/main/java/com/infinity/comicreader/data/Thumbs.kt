@@ -7,6 +7,7 @@ import android.util.LruCache
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.HiddenPages
+import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.reader.ImageSource
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.PageSources
@@ -223,7 +224,8 @@ object Thumbs {
 
     /**
      * What a cover is cached by: its file, box size, style, the direction it starts on, the
-     * hidden pages that move it ([hiddenTag]), and a bookmark's page in the book.
+     * hidden pages that move it ([hiddenTag]), a bookmark's page in the book, and the book's
+     * own file name charset, which may reorder its pages ([NameCharset.overrides]).
      */
     private fun coverKey(
         context: Context,
@@ -235,7 +237,8 @@ object Thumbs {
     ): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
         val hidden = hiddenTag(entry, Library(context).hiddenAll())
-        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}$hidden" + if (page >= 0) "|p$page" else ""
+        val names = NameCharset.overrides[entry.path]?.let { "|n$it" }.orEmpty()
+        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}$hidden$names" + if (page >= 0) "|p$page" else ""
     }
 
     /** The book index of the cover of a book hiding [hidden]: its first page not hidden. */

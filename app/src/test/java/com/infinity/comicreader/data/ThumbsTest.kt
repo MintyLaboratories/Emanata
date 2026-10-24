@@ -264,6 +264,22 @@ class ThumbsTest {
     }
 
     @Test
+    fun aBooksOwnCharsetMakesItsOwnCover() {
+        // Its own charset may order its pages anew: the cover made before is not taken.
+        val book = rgbBook("charset.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        try {
+            Library(context).setNameCharset(book.path, "windows-1251")
+            assertEquals(null, Thumbs.cached(context, book, 100, 150))
+            assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+            assertTrue(Thumbs.cached(context, book, 100, 150) != null)
+        } finally {
+            Library(context).setNameCharset(book.path, null)
+        }
+        assertTrue(Thumbs.cached(context, book, 100, 150) != null)
+    }
+
+    @Test
     fun aFolderCoverSkipsTheHiddenPagesOfItsBook() {
         val dir = File(context.cacheDir, "Series").apply { mkdirs() }
         val book = rgbBook("01.cbz", dir)

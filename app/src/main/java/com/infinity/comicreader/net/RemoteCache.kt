@@ -25,8 +25,15 @@ object RemoteCache {
     @Volatile
     var limitBytes: Long = DEFAULT_LIMIT_BYTES
 
-    /** Copies being written now, by path, so trimming leaves them be. */
-    private val writing = HashSet<String>()
+    /** Copies being written and page folders in use now, by path, each with its users, so trimming leaves them be. */
+    private val writing = HashMap<String, Int>()
+
+    private fun hold(path: String) = synchronized(writing) { writing[path] = (writing[path] ?: 0) + 1 }
+
+    private fun letGo(path: String) = synchronized(writing) {
+        val left = (writing[path] ?: 0) - 1
+        if (left > 0) writing[path] = left else writing -= path
+    }
 
     fun dirIn(cacheDir: File) = File(cacheDir, DIR)
 
@@ -34,19 +41,20 @@ object RemoteCache {
 
     /**
      * The folder pages unpacked from [file] are kept in, by its path, size and
-     * modification time, marked as just used and held from trimming until [release].
+     * modification time, marked as just used and held from trimming until [release]d as
+     * often as asked for.
      */
     fun pagesOf(file: RemoteFile, cacheDir: File): File {
         val stat = file.stat()
         val dir = File(pagesIn(cacheDir), Hashes.sha256Hex("${file.path}\n${stat?.size}\n${stat?.modified}"))
-        synchronized(writing) { writing += dir.path }
+        hold(dir.path)
         if (dir.isDirectory) touch(dir)
         return dir
     }
 
     /** Lets trimming take [pages], a folder from [pagesOf], again, then trims what [cacheDir] keeps. */
     fun release(pages: File, cacheDir: File) {
-        synchronized(writing) { writing -= pages.path }
+        letGo(pages.path)
         trim(dirIn(cacheDir))
     }
 
@@ -82,7 +90,7 @@ object RemoteCache {
         if (stat.size > limitBytes) throw TooLargeException(stat.size, limitBytes)
         dir.mkdirs()
         val part = File.createTempFile(target.name, PART_SUFFIX, dir)
-        synchronized(writing) { writing += part.path }
+        hold(part.path)
         try {
             Remotes.open(file.path).use { input ->
                 // A size the listing left out comes with the file.
@@ -110,7 +118,7 @@ object RemoteCache {
             return target
         } finally {
             part.delete()
-            synchronized(writing) { writing -= part.path }
+            letGo(part.path)
         }
     }
 
@@ -119,7 +127,7 @@ object RemoteCache {
      * it, until those left take at most [maxBytes]; ones being written or read are left be.
      */
     fun trim(dir: File, maxBytes: Long = limitBytes) {
-        val busy = synchronized(writing) { writing.toSet() }
+        val busy = synchronized(writing) { writing.keys.toSet() }
         val copies = dir.listFiles()?.filter { it.isFile && it.path !in busy }.orEmpty().map { it to it.length() }
         val pages = File(dir.parentFile, PAGES_DIR).listFiles()?.filter { it.isDirectory && it.path !in busy }.orEmpty()
             .map { d -> d to d.walkTopDown().filter { it.isFile }.sumOf { it.length() } }

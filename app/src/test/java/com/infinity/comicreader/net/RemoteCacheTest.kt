@@ -97,4 +97,16 @@ class RemoteCacheTest {
         RemoteCache.fetch(remote("3.cbr"), cacheDir) { done, total -> last = done to total }
         assertEquals(3000L to 3000L, last)
     }
+
+    @Test
+    fun keptPagesInUseTwiceStayUntilBothLetGo() {
+        val pages = RemoteCache.pagesOf(remote("1.cbr"), cacheDir).apply { mkdirs() }
+        File(pages, "001.png").writeBytes(ByteArray(4000))
+        assertEquals(pages, RemoteCache.pagesOf(remote("1.cbr"), cacheDir))
+        RemoteCache.limitBytes = 0
+        RemoteCache.release(pages, cacheDir)
+        assertTrue("still in use", File(pages, "001.png").isFile)
+        RemoteCache.release(pages, cacheDir)
+        assertFalse("trimmed once let go", pages.exists())
+    }
 }

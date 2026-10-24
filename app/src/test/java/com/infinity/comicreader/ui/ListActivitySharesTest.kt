@@ -461,5 +461,13 @@ class ListActivitySharesTest {
         idle()
         assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
         assertEquals(activity.getString(R.string.books_count, 1), subtitleOf(recycler, "Series"))
+        // Saying so, with Retry.
+        val note = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+        assertEquals(activity.getString(R.string.share_unreachable_named, "Share A"), note?.text?.toString())
+        fake.offline = false
+        File(tmp.root, "share/Added.cbz").writeBytes(ByteArray(10))
+        activity.findViewById<View>(com.google.android.material.R.id.snackbar_action).performClick()
+        idle()
+        assertEquals(listOf("Added.cbz", "Loose.cbz", "Series"), rows(recycler).sorted())
     }
 }

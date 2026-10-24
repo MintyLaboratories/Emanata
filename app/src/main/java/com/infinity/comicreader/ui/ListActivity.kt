@@ -139,6 +139,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Why the folder browsed could not be listed (its share is unreachable); null when it was. */
     private var listError: RemoteException? = null
 
+    /** Says a share's kept listing shows because the share failed, with Retry; gone with the next listing. */
+    private var keptNote: Snackbar? = null
+
     private var currentDir: File? = null
 
     /** The deepest folder of the branch browsed, shown as forward crumbs past [currentDir]. */
@@ -798,8 +801,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 // A password restored from another device's backup is asked for.
                 val share = Remotes.idOf(dir.absolutePath)?.let(Remotes::share)
                 if (failure.reason == RemoteException.Reason.DENIED && share?.passwordLost == true) ShareDialog.show(this@ListActivity, share.id)
-                // What was kept stays shown while the share cannot be asked.
-                if (kept != null) return@launchListing
+                // What was kept stays shown while the share cannot be asked, saying so.
+                if (kept != null) {
+                    keptNote = Snackbar.make(recycler, unreachableText(failure), Snackbar.LENGTH_INDEFINITE)
+                        .setAction(R.string.retry) { retryListing() }
+                        .also { it.show() }
+                    return@launchListing
+                }
                 progress.visibility = View.GONE
                 listError = failure
                 setPrefix = null
@@ -933,6 +941,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
         if (peek.isShowing) peek.hide()
         listError = null
+        keptNote?.dismiss()
+        keptNote = null
         listJob?.cancel()
         classifyJob?.cancel()
         factsJob?.cancel()

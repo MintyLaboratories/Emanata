@@ -146,9 +146,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Resume reading at startup:** Ask (default), Yes or No. As the app starts,
   Ask offers to reopen the book read last at its page; ticking *Don't ask
   again* turns the answer into Yes or No. A finished book is not offered.
-- Long-press a file or folder to favorite it, make a folder the startup folder,
-  show it in its folder (except from that folder itself), rename, mark
-  read/unread or delete it.
+- Long-press a file or folder for its file operations, a row of icons on top:
+  **Rename**, **Delete** (asks first), **Move**, **Copy**, and **More** when it
+  holds anything (for now a folder's "Set as startup folder"). Below them, the
+  comic operations: peek, favorite, mark read/unread, show it in its folder
+  (except from that folder itself). They work on the device and on shares
+  (SMB through smbj, WebDAV through MKCOL/PUT/MOVE/COPY/DELETE).
+- **Move** and **Copy** pick the item up: a **Paste** button shows at the
+  bottom left (the List/Grid button's mirror), with a short hint. Tap it to
+  paste into the folder browsed, long-press it to drop the item. A name already
+  there asks **Replace / Keep both / Skip** (Keep both names it `Book (2).cbz`).
+  A move within one place is a rename; between places (device and share, two
+  shares) it copies, checks each file's size and reads it back to compare its
+  CRC-32, then deletes the source. Copies are written under a hidden side name
+  and renamed into place once complete, so a canceled or failed one never
+  leaves a half-written file; within one share the server copies itself (SMB
+  server-side copy, WebDAV COPY) where it can. Progress with Cancel shows once
+  an operation takes a moment; it goes on when the device turns. Favorites,
+  read marks, history, bookmarks, hidden pages, color settings, folder layouts
+  and start folders follow an item moved or renamed, and go with one deleted.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward
@@ -210,8 +226,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   refused sign-in is not tried again until you retry or edit the share, so a
   wrong password cannot lock the account; favorites and history show shares
   without waiting for the network, and a favorite folder there is sorted into
-  its section once looked into (a spinner meanwhile). Shares are read-only:
-  no rename, delete or new folder. An SMB connection stays signed in for 10
+  its section once looked into (a spinner meanwhile). Items on shares can be
+  renamed, deleted, moved and copied, and New folder works there too. An SMB connection stays signed in for 10
   minutes unused (30 while a book on it is open), echoed every 2 minutes so
   the server and network keep it, and is made again silently when it dropped;
   coming back to a share within that time signs in no more. Backups include
@@ -471,6 +487,8 @@ app/src/main/java/com/infinity/comicreader/
   App.kt                     application; applies theme + locale
   data/                      Prefs, Library (history/bookmarks/favorites),
                              Thumbs, models
+  files/                     FileSpace (device and shares), Transfer (copy/move
+                             with checks), FileWork, FileClipboard
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,

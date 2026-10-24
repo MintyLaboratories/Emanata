@@ -574,6 +574,9 @@ class SmbFs(private val share: Share) : RemoteFs {
                 NtStatus.STATUS_BAD_NETWORK_NAME -> Known(RemoteException(RemoteException.Reason.NO_SHARE, e.message, e))
                 NtStatus.STATUS_NETWORK_NAME_DELETED, NtStatus.STATUS_USER_SESSION_DELETED,
                 NtStatus.STATUS_NETWORK_SESSION_EXPIRED, NtStatus.STATUS_FILE_CLOSED -> Dropped(e)
+                NtStatus.STATUS_DISK_FULL -> Known(ChangeRefused(ChangeRefused.Why.FULL, e.message))
+                NtStatus.STATUS_SHARING_VIOLATION -> Known(ChangeRefused(ChangeRefused.Why.IN_USE, e.message))
+                NtStatus.STATUS_OBJECT_NAME_COLLISION -> Known(ChangeRefused(ChangeRefused.Why.TAKEN, e.message))
                 else -> Known(IOException(e.message, e))
             }
         }

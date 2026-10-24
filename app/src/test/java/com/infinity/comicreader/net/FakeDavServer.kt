@@ -52,6 +52,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     @Volatile
     var copyAnswer: Int? = null
 
+    /** Answers every MKCOL, PUT, MOVE, COPY and DELETE with this code instead, when set. */
+    @Volatile
+    var changeAnswer: Int? = null
+
     @Volatile
     var password = ""
 
@@ -101,7 +105,11 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         return when (request.method) {
             "PROPFIND" -> propfind(request, file, raw)
             "GET" -> get(request, file)
-            "MKCOL", "PUT", "MOVE", "COPY", "DELETE" -> if (readOnly) MockResponse().setResponseCode(403) else change(request, file)
+            "MKCOL", "PUT", "MOVE", "COPY", "DELETE" -> when {
+                readOnly -> MockResponse().setResponseCode(403)
+                changeAnswer != null -> MockResponse().setResponseCode(changeAnswer!!)
+                else -> change(request, file)
+            }
             else -> MockResponse().setResponseCode(405)
         }
     }

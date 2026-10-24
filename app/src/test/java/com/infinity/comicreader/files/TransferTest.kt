@@ -145,8 +145,9 @@ class TransferTest {
         try {
             Transfer(spaceOf = spaces).run(p("book.cbz"), "/net/s1", "book.cbz", move = true, replace = false)
             fail("no failure")
-        } catch (e: IOException) {
-            assertTrue(e.message!!.contains("differs"))
+        } catch (e: FileProblem) {
+            assertEquals(FileProblem.Kind.DIFFERS, e.kind)
+            assertEquals("book.cbz", e.name)
         }
         assertArrayEquals(bytes, File(device, "book.cbz").readBytes())
         assertEquals(emptyList<String>(), names(shareDir))
@@ -166,8 +167,8 @@ class TransferTest {
         try {
             Transfer(spaceOf = { otherDrive }).run(p("A/book.cbz"), p("B"), "book.cbz", move = true, replace = false)
             fail("no failure")
-        } catch (e: IOException) {
-            assertTrue(e.message!!.contains("differs"))
+        } catch (e: FileProblem) {
+            assertEquals(FileProblem.Kind.DIFFERS, e.kind)
         }
         assertArrayEquals(bytes, File(device, "A/book.cbz").readBytes())
         assertEquals(emptyList<String>(), names(File(device, "B")))
@@ -440,6 +441,17 @@ class TransferTest {
         strict.files.remove("/net/s1/Shelf/sample.cbz")
         assertEquals("/net/s1/Shelf/SAMPLE.cbz", Transfer(spaceOf = { strict }).rename("/net/s1/Shelf/Sample.cbz", "SAMPLE.cbz"))
         assertEquals(listOf("/net/s1/Shelf/SAMPLE.cbz"), strict.paths())
+    }
+
+    @Test
+    fun messagesNameItemsWithoutTheirPaths() {
+        assertEquals(
+            "book.cbz: open failed: EACCES (Permission denied)",
+            FileProblem.namesOnly("/storage/emulated/0/A b/book.cbz: open failed: EACCES (Permission denied)")
+        )
+        assertEquals("Could not rename Old name.cbz", FileProblem.namesOnly("Could not rename /net/s1/Shelf/Old name.cbz"))
+        assertEquals("Not a folder: Shelf", FileProblem.namesOnly("Not a folder: /net/s1/Shelf/"))
+        assertEquals("HTTP 500", FileProblem.namesOnly("HTTP 500"))
     }
 
     @Test

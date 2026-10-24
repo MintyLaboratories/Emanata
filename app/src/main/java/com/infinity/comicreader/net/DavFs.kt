@@ -179,14 +179,21 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
 
     /**
      * Sends a change, never following a redirect (one could turn it into a GET); fails
-     * unless answered with one of [ok]. 412 means something is in the way.
+     * unless answered with one of [ok], a refusal as [ChangeRefused].
      */
     private fun change(request: Request.Builder, path: String, vararg ok: Int) {
-        execute(request.build(), via = direct).use { answer ->
+        val built = request.build()
+        execute(built, via = direct).use { answer ->
             val code = answer.response.code
             if (code in ok) return
-            if (code == 412 || code == 405 && request.build().method == "MKCOL") throw IOException("Already there: $path")
-            throw failure(answer.response)
+            throw when {
+                // Something in the way: If-None-Match or Overwrite turned it down, or a folder is there.
+                code == 412 || code == 405 && built.method == "MKCOL" -> ChangeRefused(ChangeRefused.Why.TAKEN, "Already there: $path")
+                code == 405 || code == 501 -> ChangeRefused(ChangeRefused.Why.READ_ONLY, "HTTP $code")
+                code == 507 -> ChangeRefused(ChangeRefused.Why.FULL, "HTTP $code")
+                code == 423 -> ChangeRefused(ChangeRefused.Why.IN_USE, "HTTP $code")
+                else -> failure(answer.response)
+            }
         }
     }
 

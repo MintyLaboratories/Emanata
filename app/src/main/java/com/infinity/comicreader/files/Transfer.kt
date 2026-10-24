@@ -59,7 +59,7 @@ class Transfer(
         require(target != source) { "Onto itself: $source" }
         require(!isWithin(targetDir, source, ignoreCase = true)) { "Into itself: $source" }
         val node = from.stat(source) ?: throw FileNotFoundException(source)
-        if (node.isLink) throw IOException("A link, not copied: $source")
+        if (node.isLink) throw FileProblem(FileProblem.Kind.LINK, nameOf(source))
         val existing = to.stat(target)
         if (existing != null && !replace) throw FileWork.NameTaken(name)
         // Replacing what holds the source would delete the source with it.
@@ -214,19 +214,19 @@ class Transfer(
         // A copy a move deletes the source for is read back, so never made by a server unseen.
         if (!verify && from.sameAs(to) && to.copy(source, target) { n -> checkAlive(); report(base + n) }) {
             done = base + node.size.coerceAtLeast(0)
-            checkSize(to, target, node.size)
+            checkSize(to, target, node.size, source)
             return
         }
         val crc = CRC32()
         val read = Checked(from.open(source), crc)
         read.use { to.create(target, it, node.size, node.modified) }
         checkAlive()
-        if (node.size >= 0 && read.count != node.size) throw IOException("Changed while copied: $source")
-        checkSize(to, target, read.count)
+        if (node.size >= 0 && read.count != node.size) throw FileProblem(FileProblem.Kind.CHANGED, nameOf(source))
+        checkSize(to, target, read.count, source)
         if (verify) {
             val back = CRC32()
             Checked(to.open(target), back).use { drain(it) }
-            if (back.value != crc.value) throw IOException("Copy differs from its source: $target")
+            if (back.value != crc.value) throw FileProblem(FileProblem.Kind.DIFFERS, nameOf(source))
         }
     }
 
@@ -235,9 +235,10 @@ class Transfer(
         while (input.read(buffer) >= 0) Unit
     }
 
-    private fun checkSize(space: FileSpace, path: String, size: Long) {
-        val stored = space.stat(path) ?: throw IOException("Missing after copying: $path")
-        if (size >= 0 && stored.size >= 0 && stored.size != size) throw IOException("Copy has ${stored.size} of $size bytes: $path")
+    /** Fails unless the copy at [path] holds [size] bytes, as [source] does. */
+    private fun checkSize(space: FileSpace, path: String, size: Long, source: String) {
+        val stored = space.stat(path)
+        if (stored == null || size >= 0 && stored.size >= 0 && stored.size != size) throw FileProblem(FileProblem.Kind.INCOMPLETE, nameOf(source))
     }
 
     private fun checkAlive() {
@@ -356,6 +357,9 @@ class Transfer(
             val sep = separator(dir)
             return dir.trimEnd(sep) + sep + name
         }
+
+        /** The last name in [path]. */
+        fun nameOf(path: String): String = path.substringAfterLast(separator(path))
 
         /** The folder holding [path]. */
         fun parentOf(path: String): String = path.substringBeforeLast(separator(path), "")

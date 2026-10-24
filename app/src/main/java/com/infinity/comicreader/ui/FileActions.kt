@@ -22,6 +22,7 @@ import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
+import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
@@ -348,11 +349,27 @@ internal class FileActions(
         toast(text)
     }
 
+    /** [error] for the user: what went wrong, naming items without their paths. */
     private fun describe(error: Throwable): String = when {
         error is FileWork.NameTaken -> activity.getString(R.string.file_exists)
-        error is FileProblem -> when (error.kind) {
-            FileProblem.Kind.HOLDS_SOURCE -> activity.getString(R.string.file_holds_source, error.name)
-        }
+        error is FileProblem -> activity.getString(
+            when (error.kind) {
+                FileProblem.Kind.HOLDS_SOURCE -> R.string.file_holds_source
+                FileProblem.Kind.LINK -> R.string.file_link
+                FileProblem.Kind.CHANGED -> R.string.file_changed
+                FileProblem.Kind.DIFFERS -> R.string.file_differs
+                FileProblem.Kind.INCOMPLETE -> R.string.file_incomplete
+            },
+            error.name
+        )
+        error is ChangeRefused -> activity.getString(
+            when (error.why) {
+                ChangeRefused.Why.READ_ONLY -> R.string.file_read_only
+                ChangeRefused.Why.FULL -> R.string.file_full
+                ChangeRefused.Why.IN_USE -> R.string.file_in_use
+                ChangeRefused.Why.TAKEN -> R.string.file_exists
+            }
+        )
         error is RemoteException -> activity.getString(
             when (error.reason) {
                 RemoteException.Reason.DENIED -> R.string.file_denied
@@ -360,7 +377,7 @@ internal class FileActions(
                 else -> R.string.share_unreachable
             }
         )
-        else -> error.message ?: error.javaClass.simpleName
+        else -> FileProblem.namesOnly(error.message ?: error.javaClass.simpleName)
     }
 
     private fun toast(text: String) = Toast.makeText(activity, text, Toast.LENGTH_SHORT).show()

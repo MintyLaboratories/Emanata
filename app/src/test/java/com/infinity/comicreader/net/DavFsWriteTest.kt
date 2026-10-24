@@ -128,6 +128,28 @@ class DavFsWriteTest {
     }
 
     @Test
+    fun refusedChangesSayWhy() {
+        File(dir, "a.cbz").writeBytes(ByteArray(10))
+        for ((code, why) in listOf(405 to ChangeRefused.Why.READ_ONLY, 507 to ChangeRefused.Why.FULL, 423 to ChangeRefused.Why.IN_USE)) {
+            server.changeAnswer = code
+            try {
+                fs.delete("a.cbz")
+                fail("no failure")
+            } catch (e: ChangeRefused) {
+                assertEquals(why, e.why)
+            }
+        }
+        server.changeAnswer = null
+        File(dir, "b.cbz").writeBytes(ByteArray(3))
+        try {
+            fs.rename("a.cbz", "b.cbz")
+            fail("no failure")
+        } catch (e: ChangeRefused) {
+            assertEquals(ChangeRefused.Why.TAKEN, e.why)
+        }
+    }
+
+    @Test
     fun aFailingSourceOrCancelingPassesThroughUnchanged() {
         val failing = object : InputStream() {
             var n = 0

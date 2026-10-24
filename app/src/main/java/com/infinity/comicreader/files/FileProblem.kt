@@ -6,6 +6,26 @@ import java.io.IOException
 class FileProblem(val kind: Kind, val name: String) : IOException("$kind: $name") {
     enum class Kind {
         /** What it would replace holds the item itself. */
-        HOLDS_SOURCE
+        HOLDS_SOURCE,
+
+        /** A link: links are not copied. */
+        LINK,
+
+        /** Its source changed while it was copied. */
+        CHANGED,
+
+        /** Its copy read back differs from the source. */
+        DIFFERS,
+
+        /** Its copy is missing or shorter than the source. */
+        INCOMPLETE
+    }
+
+    companion object {
+        /** A path in a failure's message: from a `/` up to `: ` or the end. */
+        private val PATH = Regex("""/[^\n]*?(?=: |$)""")
+
+        /** [text] with each path in it cut to its last name, for the user. */
+        fun namesOnly(text: String): String = PATH.replace(text) { m -> m.value.trimEnd('/').substringAfterLast('/') }
     }
 }

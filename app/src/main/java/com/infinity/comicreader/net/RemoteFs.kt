@@ -60,7 +60,24 @@ interface RemoteFs : Closeable {
     fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = false
 }
 
-private fun readOnly() = IOException("Read-only share")
+private fun readOnly() = ChangeRefused(ChangeRefused.Why.READ_ONLY)
+
+/** A change the share turned down, by [why]; the share itself stays reachable. */
+class ChangeRefused(val why: Why, message: String? = null) : IOException(message ?: why.name) {
+    enum class Why {
+        /** The share takes no changes. */
+        READ_ONLY,
+
+        /** No room left. */
+        FULL,
+
+        /** Another program has the item open, or locked it. */
+        IN_USE,
+
+        /** Something is there by that name. */
+        TAKEN
+    }
+}
 
 /**
  * A file or folder on a share: sizes in bytes (-1 for a file the server lists without

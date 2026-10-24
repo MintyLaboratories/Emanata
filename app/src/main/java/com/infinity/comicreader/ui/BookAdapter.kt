@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
@@ -134,11 +135,21 @@ class BookAdapter(
     /** Caps concurrent cover decodes; a row scrolled away before its turn is never decoded. */
     private val gate = Semaphore(THUMB_THREADS)
 
-    /** Left out of the titles that start with it: the series name inside a Set. Set before [submit]. */
+    /** Left out of the titles that start with it: the series name inside a Set. A change redraws every row. */
     var titlePrefix: String? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
 
-    /** Path to draw a focus ring around, used after "open file location". */
+    /** Path to draw a focus ring around, used after "open file location". A change redraws every row. */
     var highlightPath: String? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
 
     /**
      * Optional first row of the list — currently only the "Recent" shortcut. Two are equal
@@ -174,11 +185,49 @@ class BookAdapter(
 
     val itemOffset: Int get() = if (header != null) 1 else 0
 
-    /** Shows [list]: [BookEntry] rows, optionally between [SectionRow] headers. */
+    /**
+     * Shows [list]: [BookEntry] rows, optionally between [SectionRow] headers. When the rows
+     * are the same as shown, in the same order, only those that changed are redrawn, and
+     * of those whose cover stays ([coverId]) only the text: facts found later (page counts,
+     * read marks) never reload or blank a cover.
+     */
     fun submit(list: List<Any>) {
+        val old = ArrayList(items)
         items.clear()
         items.addAll(list)
-        notifyDataSetChanged()
+        if (!RowChanges.sameRows(old, list)) {
+            notifyDataSetChanged()
+            return
+        }
+        for (i in list.indices) {
+            val before = old[i]
+            val now = list[i]
+            if (before == now) continue
+            val textOnly = before is BookEntry && now is BookEntry && coverId(before) == coverId(now)
+            notifyItemChanged(i + itemOffset, if (textOnly) DETAILS else null)
+        }
+    }
+
+    /** Pages hidden in each book, by path, as covers skip them ([Thumbs.hiddenTag]). */
+    var hiddenPages: () -> Map<String, Set<Int>> = { emptyMap() }
+
+    /** Everything the cover of [item] is made from: two entries with the same id show the same cover. */
+    private fun coverId(item: BookEntry): String =
+        "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|${item.direction == ReadingDirection.RTL}|" +
+            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${prefs.charset}|${prefs.thumbnails}"
+
+    init {
+        setHasStableIds(true)
+    }
+
+    /** The header, each section and each entry ([RowChanges.keyOf]) keep their id, so rows keep their views through a refresh. */
+    override fun getItemId(position: Int): Long {
+        if (position == 0 && header != null) return HEADER_ID
+        return when (val row = items[position - itemOffset]) {
+            is SectionRow -> SECTION_ID - row.kind.ordinal
+            is BookEntry -> RowChanges.idOf(row)
+            else -> RecyclerView.NO_ID
+        }
     }
 
     /** True for rows that span the whole grid width: the header and section headers. */
@@ -209,6 +258,10 @@ class BookAdapter(
         /** The entry bound here, and the cover size last requested for it (width in the high half). */
         var entry: BookEntry? = null
         var requested = 0L
+
+        /** The [coverId] of the entry bound here, and of the cover drawn, if any. */
+        var wanted: String? = null
+        var drawn: String? = null
     }
 
     class SectionHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -252,6 +305,15 @@ class BookAdapter(
 
     override fun getItemCount(): Int = items.size + itemOffset
 
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
+        val row = items.getOrNull(position - itemOffset)
+        if (holder is BookHolder && row is BookEntry && payloads.isNotEmpty() && payloads.all { it == DETAILS }) {
+            bindDetails(holder, row)
+            return
+        }
+        onBindViewHolder(holder, position)
+    }
+
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         if (holder is HeaderHolder) {
             val h = header ?: return
@@ -275,10 +337,39 @@ class BookAdapter(
         bindBook(holder as BookHolder, row as BookEntry)
     }
 
+    /**
+     * Binds [item] to [holder]. A cover already drawn there for the same [coverId] stays as it
+     * is (a refresh, a re-sort), else the type icon stands in until the cover is loaded.
+     */
     private fun bindBook(holder: BookHolder, item: BookEntry) {
         val context = holder.itemView.context
-        holder.job?.cancel()
+        val id = coverId(item)
+        val keep = holder.wanted == id
+        if (!keep) holder.job?.cancel()
+        holder.wanted = id
 
+        bindDetails(holder, item)
+        if (grid) sizeCell(holder) else sizeThumb(holder)
+
+        val icon = EntryIcons.iconFor(item)
+        holder.placeholder.setImageResource(icon)
+        holder.placeholder.imageTintList = ColorStateList.valueOf(EntryIcons.tintFor(context, item))
+        if (holder.drawn != id) {
+            holder.thumb.setImageDrawable(null)
+            holder.drawn = null
+            holder.placeholder.visibility = View.VISIBLE
+        }
+        // The cover is requested at its view's exact size, once that is laid out.
+        if (!keep) holder.requested = 0L
+        // At once when nothing about the cell changed, else after its next layout.
+        if (!holder.itemView.isLayoutRequested) requestCover(holder)
+        mainHandler.post { requestCover(holder) }
+    }
+
+    /** Everything of [item] in [holder] but its cover: title, details, star, badge, highlight and taps. */
+    private fun bindDetails(holder: BookHolder, item: BookEntry) {
+        val context = holder.itemView.context
+        holder.entry = item
         val mode = TitleMotion.effective(options.title, ValueAnimator.areAnimatorsEnabled())
         holder.title.mode = mode
         holder.title.reserve = grid
@@ -295,27 +386,18 @@ class BookAdapter(
         val comfortable = options.detail == DetailDisplay.COMFORTABLE
         val subtitle = if (comfortable) item.subtitle ?: subtitleFor(context, item) else ""
         holder.subtitle.text = subtitle
-        holder.subtitle.visibility = if (subtitle.isNotEmpty()) View.VISIBLE else View.GONE
-        if (grid) sizeCell(holder, comfortable) else sizeThumb(holder)
+        holder.subtitle.visibility = when {
+            subtitle.isNotEmpty() -> View.VISIBLE
+            // The same text height in every cell keeps the covers of a row equal (titles reserve their lines).
+            grid && cellHeight > 0 && comfortable -> View.INVISIBLE
+            else -> View.GONE
+        }
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }
 
         bindBadge(holder.badge, item)
         applyHighlight(holder, item)
-
-        val icon = EntryIcons.iconFor(item)
-        holder.placeholder.setImageResource(icon)
-        holder.placeholder.imageTintList = ColorStateList.valueOf(EntryIcons.tintFor(context, item))
-        holder.thumb.setImageDrawable(null)
-        holder.placeholder.visibility = View.VISIBLE
-
-        // The cover is requested at its view's exact size, once that is laid out.
-        holder.entry = item
-        holder.requested = 0L
-        // At once when nothing about the cell changed, else after its next layout.
-        if (!holder.itemView.isLayoutRequested) requestCover(holder)
-        mainHandler.post { requestCover(holder) }
 
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener { onLongClick(item); true }
@@ -324,10 +406,12 @@ class BookAdapter(
     /**
      * Loads the cover of the entry [holder] shows at the cover view's size, so it is
      * drawn 1:1. Runs after each bind and again whenever the view changes size; a
-     * size already requested, or a view not laid out yet, asks for nothing.
+     * size already requested, or a view not laid out yet, asks for nothing. A cover
+     * drawn meanwhile stays until the new one replaces it.
      */
     private fun requestCover(holder: BookHolder) {
         val item = holder.entry ?: return
+        val id = holder.wanted ?: return
         val w = holder.thumb.width
         val h = holder.thumb.height
         if (!prefs.thumbnails || w <= 0 || h <= 0) return
@@ -345,8 +429,9 @@ class BookAdapter(
                     runCatching { Thumbs.load(appContext, item, charset, w, h, style) }.getOrNull()
                 }
             }
-            if (bitmap != null && holder.entry === item) {
+            if (bitmap != null && holder.wanted == id) {
                 holder.thumb.setImageBitmap(bitmap)
+                holder.drawn = id
                 holder.placeholder.visibility = View.GONE
             }
         }
@@ -358,6 +443,8 @@ class BookAdapter(
         holder.job?.cancel()
         holder.job = null
         holder.entry = null
+        holder.wanted = null
+        holder.drawn = null
         holder.thumb.setImageDrawable(null)
     }
 
@@ -373,7 +460,7 @@ class BookAdapter(
      * as its shape asks for the cell width (a fixed height for the cell's shape) and
      * the card wraps it. Either way the box inside is the cover shape's largest fit.
      */
-    private fun sizeCell(holder: BookHolder, showDetails: Boolean) {
+    private fun sizeCell(holder: BookHolder) {
         val cover = holder.cover ?: return
         val ratio = options.shape.ratio
         cover.ratio = ratio
@@ -396,10 +483,6 @@ class BookAdapter(
             if (rows) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
         coverParams.height = if (rows) 0 else ViewGroup.LayoutParams.WRAP_CONTENT
         coverParams.weight = if (rows) 1f else 0f
-        // The same text height in every cell keeps the covers of a row equal (titles reserve their lines).
-        if (rows && showDetails && holder.subtitle.visibility == View.GONE) {
-            holder.subtitle.visibility = View.INVISIBLE
-        }
         card.layoutParams = cardParams
     }
 
@@ -502,6 +585,10 @@ class BookAdapter(
     }
 
     private companion object {
+        /** Redraws a row's text only: its cover stays. */
+        const val DETAILS = "details"
+        const val HEADER_ID = Long.MIN_VALUE
+        const val SECTION_ID = Long.MIN_VALUE + 16
         const val THUMB_THREADS = 3
         const val VIEW_LIST = 0
         const val VIEW_GRID = 1

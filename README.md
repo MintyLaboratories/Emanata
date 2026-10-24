@@ -74,7 +74,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (Settings, 0–32 dp, default 8) sets the gap between grid covers.
 - Covers are made at the exact size of their cell (Lanczos3-scaled, drawn 1:1)
   and cached losslessly, from the book's first page not hidden ("Hide this
-  page").
+  page"). Facts found later (page counts, read marks) change only a row's
+  text, never its cover.
 - **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top

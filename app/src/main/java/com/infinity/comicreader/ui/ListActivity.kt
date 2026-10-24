@@ -253,6 +253,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             onStarClick = { toggleFavorite(it.file.absolutePath) }
         )
         adapter.onSectionClick = { toggleSection(it.kind) }
+        adapter.hiddenPages = library::hiddenAll
         // Folder peeks from list rows reuse the grid's covers at this size.
         adapter.onGridCover = { w, h -> prefs.setGridCover(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE, w, h) }
         recycler.adapter = adapter

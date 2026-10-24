@@ -798,9 +798,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     shareFolderGone(dir, noted)
                     return@launchListing
                 }
-                // A password restored from another device's backup is asked for.
+                // A password restored from another device's backup is asked for, unless a share form is open already.
                 val share = Remotes.idOf(dir.absolutePath)?.let(Remotes::share)
-                if (failure.reason == RemoteException.Reason.DENIED && share?.passwordLost == true) ShareDialog.show(this@ListActivity, share.id)
+                if (failure.reason == RemoteException.Reason.DENIED && share?.passwordLost == true && ShareDialog.find(this@ListActivity) == null) {
+                    ShareDialog.show(this@ListActivity, share.id)
+                }
                 // What was kept stays shown while the share cannot be asked, saying so.
                 if (kept != null) {
                     keptNote = Snackbar.make(recycler, unreachableText(failure), Snackbar.LENGTH_INDEFINITE)

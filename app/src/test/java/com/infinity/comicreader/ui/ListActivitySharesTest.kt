@@ -418,6 +418,30 @@ class ListActivitySharesTest {
         assertNotNull(activity)
     }
 
+    @Test
+    fun aLostPasswordIsAskedForWithoutReplacingAFormBeingFilled() {
+        ShareStore(context, box).put(FakeRemoteFs.share().copy(password = "", passwordLost = true))
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        val asked = ShareDialog.find(activity)
+        assertNotNull("asked for", asked)
+        asked!!.dismiss()
+        idle()
+
+        ShareDialog.show(activity, null)
+        idle()
+        val typing = ShareDialog.find(activity)!!
+        (typing.dialog as AlertDialog).findViewById<TextView>(R.id.share_name)!!.text = "Half typed"
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertTrue("the form being filled stays", typing === ShareDialog.find(activity))
+        assertEquals("Half typed", (typing.dialog as AlertDialog).findViewById<TextView>(R.id.share_name)!!.text.toString())
+    }
+
     /** The subtitle of the row titled [name]. */
     private fun subtitleOf(recycler: RecyclerView, name: String): String {
         rows(recycler)

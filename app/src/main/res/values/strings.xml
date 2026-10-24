@@ -480,6 +480,7 @@
     <string name="backup_done">Backup saved</string>
     <string name="backup_passwords_msg">Share passwords are sealed for this device: restored here they work at once; restored on another device, each share asks for its password when opened.</string>
     <string name="backup_without_passwords">Without passwords</string>
+    <string name="backup_passwords_unsealable">This device gives no ID to seal share passwords with, so the backup leaves them out: each share asks for its password when opened after a restore.</string>
     <string name="backup_export">Export</string>
     <string name="restore_done">Backup restored</string>
     <string name="restore_failed">That file is not an Emanata backup</string>

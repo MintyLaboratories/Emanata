@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.ShareBackup
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.PreviewStore
@@ -63,7 +64,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     /**
      * Exports a backup; when a share has a saved password, first offers "Without passwords"
-     * (not ticked), saying where they can be opened again.
+     * (not ticked), saying where they can be opened again, or says they are left out when
+     * this device has no ID to seal them with.
      */
     private fun askBackup() {
         val context = requireContext()
@@ -74,6 +76,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
             if (!saved) {
                 exportPasswords = true
                 exportLauncher.launch(BACKUP_NAME)
+                return@launch
+            }
+            if (ShareBackup.deviceId(context) == null) {
+                AlertDialog.Builder(context)
+                    .setTitle(R.string.pref_backup)
+                    .setMessage(R.string.backup_passwords_unsealable)
+                    .setPositiveButton(R.string.backup_export) { _, _ ->
+                        exportPasswords = false
+                        exportLauncher.launch(BACKUP_NAME)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
                 return@launch
             }
             val extra = layoutInflater.inflate(R.layout.dialog_check, null)

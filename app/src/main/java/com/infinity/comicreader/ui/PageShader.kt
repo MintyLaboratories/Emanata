@@ -30,6 +30,8 @@ import com.infinity.comicreader.reader.ScaleFilter
  *   as the CPU's is.
  * - Made for enlarging: shrinking keeps the kernel at source size, so it aliases as
  *   point sampling would.
+ * - Lanczos6 costs four times Lanczos3's fetches: moving pictures draw through
+ *   [moving]'s filter.
  *
  * [Kernel.NEAREST] (1:1) and [Kernel.LINEAR] (shrinking) fetch once, unfiltered or
  * bilinear, as a plain bitmap draw would; they exist for the color stage, which mirrors
@@ -110,6 +112,13 @@ class PageShader internal constructor(
     private val empty by lazy { LinearGradient(0f, 0f, 1f, 0f, Color.TRANSPARENT, Color.TRANSPARENT, Shader.TileMode.CLAMP) }
 
     internal companion object {
+        /**
+         * The filter drawn with while the picture moves, in place of [filter]: one pass
+         * fetches `(2r)²` source pixels a screen pixel, so Lanczos6 (144) draws as Lanczos3
+         * (36) until the view is still; the others as they are.
+         */
+        fun moving(filter: ScaleFilter): ScaleFilter = if (filter == ScaleFilter.LANCZOS6) ScaleFilter.LANCZOS3 else filter
+
         /** The AGSL for [kernel], with the color stage when [colored]; [filter] and [antiRing] for [Kernel.FILTERED]. */
         fun source(kernel: Kernel, colored: Boolean, filter: ScaleFilter = ScaleFilter.DEFAULT, antiRing: Boolean = false): String {
             val filtered = if (kernel == Kernel.FILTERED) filtered(filter, antiRing) else SAMPLE

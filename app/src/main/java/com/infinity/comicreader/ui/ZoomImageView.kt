@@ -25,6 +25,7 @@ import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -517,6 +518,11 @@ class ZoomImageView @JvmOverloads constructor(
         // Every move restarts the wait for the view to settle.
         cancelDetailRender()
         settler.removeCallbacks(settle)
+        if (PageShader.moving(zoomScaling.filter) != zoomScaling.filter) {
+            moving = true
+            settler.removeCallbacks(still)
+            settler.postDelayed(still, SETTLE_MS)
+        }
         if (oneToOne || !zoomed) dropDetail() else if (detailSource != null) settler.postDelayed(settle, SETTLE_MS)
         follower?.follow(this)
     }
@@ -560,6 +566,19 @@ class ZoomImageView @JvmOverloads constructor(
     private var detailCancel: (() -> Unit)? = null
     private var detailRequest = 0
     private val settle = Runnable { requestDetail() }
+
+    /** True from a move until the view has been still for [SETTLE_MS]: shaders then draw with [PageShader.moving]. */
+    private var moving = false
+
+    /** The filter the shaders last drew with; for tests. */
+    internal var shadedFilter: ScaleFilter? = null
+        private set
+
+    /** Still again: drawn once more with [zoomScaling]'s own filter if the move drew with another. */
+    private val still = Runnable {
+        moving = false
+        if (shadedFilter != null && shadedFilter != zoomScaling.filter) invalidate()
+    }
 
     /** Runs [settle] whether or not the view is attached yet. */
     private val settler = Handler(Looper.getMainLooper())
@@ -666,6 +685,8 @@ class ZoomImageView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        settler.removeCallbacks(still)
+        moving = false
         stopFling()
         dropDetail()
         clearShaders(pageShaders)
@@ -704,9 +725,12 @@ class ZoomImageView @JvmOverloads constructor(
 
     private val drawValues = FloatArray(9)
 
-    /** Shaders by [shaderSlot], each holding the bitmap it last drew: for the page and for its detail. */
-    private val pageShaders = arrayOfNulls<PageShader>(SHADER_SLOTS)
-    private val detailShaders = arrayOfNulls<PageShader>(SHADER_SLOTS)
+    /**
+     * Shaders by [shaderSlot], each holding the bitmap it last drew: for the page and for its
+     * detail, with [zoomScaling]'s filter and with the one drawn while moving.
+     */
+    private val pageShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
+    private val detailShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
     private var shaderFailed = false
 
     /** The bitmaps the shaders hold; for tests. */
@@ -715,14 +739,17 @@ class ZoomImageView @JvmOverloads constructor(
     private fun shaderSlot(kernel: PageShader.Kernel, colored: Boolean) = kernel.ordinal * 2 + if (colored) 1 else 0
 
     /**
-     * The shader in [shaders] for [kernel], with the color stage when [colored]: made on
-     * first use, or null where it cannot run, after which the view draws plainly.
+     * The shader in [shaders] for [kernel], with the color stage when [colored], through
+     * [zoomScaling]'s filter or, while [moving], [PageShader.moving]'s: made on first use,
+     * or null where it cannot run, after which the view draws plainly.
      */
     private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean): PageShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
-        val slot = shaderSlot(kernel, colored)
+        val filter = if (moving && kernel == PageShader.Kernel.FILTERED) PageShader.moving(zoomScaling.filter) else zoomScaling.filter
+        if (kernel == PageShader.Kernel.FILTERED) shadedFilter = filter
+        val slot = shaderSlot(kernel, colored) + if (filter != zoomScaling.filter) SHADER_SLOTS else 0
         shaders[slot]?.let { return it }
-        return runCatching { PageShader(kernel, colored, zoomScaling.filter, zoomScaling.upRing > 0, shaderDialect) }
+        return runCatching { PageShader(kernel, colored, filter, zoomScaling.upRing > 0, shaderDialect) }
             .onFailure {
                 Log.w(TAG, "Page shader unavailable, drawing plainly", it)
                 shaderFailed = true

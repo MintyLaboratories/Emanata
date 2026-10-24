@@ -17,6 +17,8 @@ import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.ScaleFilter
+import com.infinity.comicreader.reader.Scaling
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -519,6 +521,32 @@ class ZoomImageViewTest {
             assertEquals(listOf(page), v.shadersHold)
             v.setImageDrawable(null)
             assertTrue(v.shadersHold.isEmpty())
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun lanczos6ZoomsAsLanczos3UntilStill() {
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
+        try {
+            val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
+            v.zoomScaling = Scaling(ScaleFilter.LANCZOS6)
+            v.zoomTo(2f, 150f, 200f)
+            draw(v)
+            assertEquals(ScaleFilter.LANCZOS3, v.shadedFilter)
+            pass(160)
+            draw(v)
+            assertEquals(ScaleFilter.LANCZOS6, v.shadedFilter)
+            v.zoomTo(2.2f, 150f, 200f)
+            draw(v)
+            assertEquals(ScaleFilter.LANCZOS3, v.shadedFilter)
+            // The others draw as chosen, moving or not.
+            v.zoomScaling = Scaling(ScaleFilter.CATMULL_ROM)
+            v.zoomTo(2.4f, 150f, 200f)
+            draw(v)
+            assertEquals(ScaleFilter.CATMULL_ROM, v.shadedFilter)
         } finally {
             ZoomImageView.shaderDialect = { it }
         }

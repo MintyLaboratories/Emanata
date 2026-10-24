@@ -9,6 +9,10 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
+import com.infinity.comicreader.net.AesGcmBox
+import com.infinity.comicreader.net.Share
+import com.infinity.comicreader.net.SharePath
+import com.infinity.comicreader.net.ShareStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import javax.crypto.spec.SecretKeySpec
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -75,5 +80,30 @@ class BackupTest {
         assertEquals(FolderLayout.Direction("rtl"), library.folderLayout("/books/a"))
         assertTrue(library.folderLayout("/books/b") is FolderLayout.Frozen)
         assertFalse(FolderLayout.isLegacy(JSONObject(context.getSharedPreferences("library", Context.MODE_PRIVATE).getString("series", "{}")!!).getJSONObject("/books/b")))
+    }
+
+    @Test
+    fun sharesRoundTripWithPasswordsSealedForThisDevice() {
+        val before = ShareStore.defaultBox
+        ShareStore.defaultBox = AesGcmBox { SecretKeySpec(ByteArray(32) { it.toByte() }, "AES") }
+        try {
+            val shares = context.getSharedPreferences("shares", Context.MODE_PRIVATE)
+            shares.edit().clear().commit()
+            val share = Share("a1b2c3", "Share A", SharePath("nas.local", 445, "books", ""), "user", "pw")
+            ShareStore(context).put(share)
+            val sealed = Backup.export(context, deviceId = "device-1")
+            val bare = Backup.export(context, withPasswords = false, deviceId = "device-1")
+            assertFalse(sealed.contains("\"pw\""))
+
+            shares.edit().clear().commit()
+            assertTrue(Backup.import(context, sealed, deviceId = "device-1"))
+            assertEquals(listOf(share), ShareStore(context).all())
+
+            shares.edit().clear().commit()
+            assertTrue(Backup.import(context, bare, deviceId = "device-1"))
+            assertEquals(listOf(share.copy(password = "", passwordLost = true)), ShareStore(context).all())
+        } finally {
+            ShareStore.defaultBox = before
+        }
     }
 }

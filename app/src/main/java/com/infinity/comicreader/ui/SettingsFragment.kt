@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import android.text.TextUtils
@@ -16,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.AppDispatchers
@@ -27,16 +29,66 @@ import kotlin.concurrent.thread
 
 class SettingsFragment : PreferenceFragmentCompat() {
 
+    /** False when the backup being exported leaves share passwords out. */
+    private var exportPasswords = true
+
     private val exportLauncher =
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             if (uri == null) return@registerForActivityResult
-            val ok = runCatching {
-                requireContext().contentResolver.openOutputStream(uri, "wt")!!.use {
-                    it.write(Backup.export(requireContext()).toByteArray(Charsets.UTF_8))
+            val app = requireContext().applicationContext
+            val withPasswords = exportPasswords
+            lifecycleScope.launch {
+                // Sealing share passwords takes a moment.
+                val ok = withContext(AppDispatchers.io) {
+                    runCatching {
+                        app.contentResolver.openOutputStream(uri, "wt")!!.use {
+                            it.write(Backup.export(app, withPasswords).toByteArray(Charsets.UTF_8))
+                        }
+                    }.isSuccess
                 }
-            }.isSuccess
-            toast(if (ok) R.string.backup_done else R.string.op_failed)
+                toast(if (ok) R.string.backup_done else R.string.op_failed)
+            }
         }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        exportPasswords = savedInstanceState?.getBoolean(STATE_PASSWORDS, true) ?: true
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_PASSWORDS, exportPasswords)
+    }
+
+    /**
+     * Exports a backup; when a share has a saved password, first offers "Without passwords"
+     * (not ticked), saying where they can be opened again.
+     */
+    private fun askBackup() {
+        val context = requireContext()
+        lifecycleScope.launch {
+            val saved = withContext(AppDispatchers.io) {
+                runCatching { ShareStore(context).all().any { it.password.isNotEmpty() } }.getOrDefault(false)
+            }
+            if (!saved) {
+                exportPasswords = true
+                exportLauncher.launch(BACKUP_NAME)
+                return@launch
+            }
+            val extra = layoutInflater.inflate(R.layout.dialog_check, null)
+            val without = extra.findViewById<CheckBox>(R.id.dialog_check).apply { setText(R.string.backup_without_passwords) }
+            AlertDialog.Builder(context)
+                .setTitle(R.string.pref_backup)
+                .setMessage(R.string.backup_passwords_msg)
+                .setView(extra)
+                .setPositiveButton(R.string.backup_export) { _, _ ->
+                    exportPasswords = !without.isChecked
+                    exportLauncher.launch(BACKUP_NAME)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
 
     private val importLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -131,7 +183,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<Preference>("pref_backup")?.setOnPreferenceClickListener {
-            exportLauncher.launch("emanata-backup.json")
+            askBackup()
             true
         }
 
@@ -242,6 +294,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun toast(res: Int) =
-        Toast.makeText(requireContext(), res, Toast.LENGTH_SHORT).show()
+    private fun toast(res: Int) {
+        val context = context ?: return
+        Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
+    }
+
+    private companion object {
+        const val BACKUP_NAME = "emanata-backup.json"
+        const val STATE_PASSWORDS = "export_passwords"
+    }
 }

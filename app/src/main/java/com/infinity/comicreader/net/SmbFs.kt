@@ -6,8 +6,10 @@ import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.msfscc.fileinformation.FileStandardInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2Packet
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
+import com.hierynomus.mssmb2.messages.SMB2Echo
 import com.hierynomus.protocol.commons.socket.ProxySocketFactory
 import com.hierynomus.security.bc.BCSecurityProvider
 import com.hierynomus.smbj.SMBClient
@@ -18,6 +20,7 @@ import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
 import android.util.Log
+import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.util.EnumSet
 import java.util.concurrent.Executors
@@ -28,9 +31,12 @@ import com.hierynomus.smbj.share.File as SmbFile
 /**
  * A [Share] over SMB 2 or 3 (SMBJ): the dialect is negotiated, never SMB1; signing
  * and encryption are used as the server requires; NTLM signs in, without a user
- * name anonymously, else as a guest. One connection per share, made on first use, made again once when it
- * drops, and closed after [IDLE_MS] without use while no file is open, so nothing
- * goes over the network unless the share is browsed or read. A sign-in or share the
+ * name anonymously, else as a guest. One connection per share, its own even beside
+ * another share on the same host, made on first use and made again silently when it
+ * drops. Kept signed in while unused, echoed every [KEEPALIVE_MS], so coming back to
+ * the share within [IDLE_MS] signs in no more; closed after [IDLE_MS] without use
+ * while no file is open, so nothing goes over the network for long unless the share
+ * is browsed or read. A sign-in or share the
  * host turned down is not tried again until [retry]; a host that could not be
  * reached, not for [Remotes.QUIET_MS]; so callers waiting to connect meanwhile fail
  * at once.
@@ -44,11 +50,16 @@ class SmbFs(private val share: Share) : RemoteFs {
     /** Serializes connecting, so one sign-in at a time is under way. */
     private val connecting = Any()
 
+    private var client: SMBClient? = null
     private var connection: Connection? = null
     private var session: Session? = null
     private var disk: DiskShare? = null
     private var lastUsed = 0L
+    private var lastEcho = 0L
     private val inputs = HashSet<SmbInput>()
+
+    /** True while [idleCheck] is scheduled. */
+    private var checking = false
 
     @Volatile
     private var closed = false
@@ -57,14 +68,12 @@ class SmbFs(private val share: Share) : RemoteFs {
     private var failure: RemoteException? = null
     private var failedAt = 0L
 
-    init {
-        idleCheck()
-    }
-
-    override fun list(path: String): List<RemoteStat> = call { d ->
-        d.list(smbPath(path))
-            .filter { it.fileName != "." && it.fileName != ".." }
-            .map { RemoteStat(it.fileName, isDirectory(it.fileAttributes), it.endOfFile, millis(it.lastWriteTime), millis(it.creationTime)) }
+    override fun list(path: String): List<RemoteStat> = Timing.span("smb list") {
+        call { d ->
+            d.list(smbPath(path))
+                .filter { it.fileName != "." && it.fileName != ".." }
+                .map { RemoteStat(it.fileName, isDirectory(it.fileAttributes), it.endOfFile, millis(it.lastWriteTime), millis(it.creationTime)) }
+        }
     }
 
     override fun stat(path: String): RemoteStat? = try {
@@ -130,11 +139,21 @@ class SmbFs(private val share: Share) : RemoteFs {
         }
     }
 
-    /** The open connection's share, marked as used; null when there is none. */
-    private fun current(): DiskShare? = synchronized(lock) {
-        if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
-        lastUsed = System.currentTimeMillis()
-        disk?.takeIf { connection?.isConnected == true }
+    /**
+     * The open connection's share, marked as used; null when there is none, or when it
+     * went unheard for longer than echoes keep it (the device slept) and fails an echo now.
+     */
+    private fun current(): DiskShare? {
+        val now = System.currentTimeMillis()
+        val (d, c, quiet) = synchronized(lock) {
+            if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+            val quiet = now - maxOf(lastUsed, lastEcho) > KEEPALIVE_MS + ECHO_SLACK_MS
+            lastUsed = now
+            Triple(disk?.takeIf { connection?.isConnected == true }, connection, quiet)
+        }
+        if (d == null || c == null || !quiet) return d
+        // Checked quickly, so a connection the network dropped meanwhile is not waited on for a whole timeout.
+        return d.takeIf { echo(c, WAKE_ECHO_TIMEOUT_S) }
     }
 
     private fun connected(): DiskShare {
@@ -144,22 +163,32 @@ class SmbFs(private val share: Share) : RemoteFs {
             remembered()?.let { throw it }
             disconnect()
             val p = where
+            // Its own client: SMBJ's shares one connection per host among its callers, and
+            // after one closes it may hand out a connection that never answers again.
+            val own = SMBClient(config)
             var c: Connection? = null
             var s: Session? = null
             try {
-                c = client.connect(p.host, p.port)
-                val (signed, d) = signIn(c)
+                c = Timing.span("smb connect") { own.connect(p.host, p.port) }
+                val (signed, d) = Timing.span("smb sign-in") { signIn(c) }
                 s = signed
                 synchronized(lock) {
                     if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
+                    client = own
                     connection = c
                     session = s
                     disk = d
+                    lastEcho = System.currentTimeMillis()
+                    if (!checking) {
+                        checking = true
+                        idleCheck()
+                    }
                 }
                 return d
             } catch (e: Throwable) {
                 runCatching { s?.close() }
-                runCatching { c?.close() }
+                runCatching { c?.close(true) }
+                runCatching { own.close() }
                 // A missing platform class (SMBJ code Android lacks) reads as a failure, not a crash.
                 if (e !is Exception) Log.w(TAG, "Connecting failed", e)
                 throw remember(translate(e as? Exception ?: IOException(e)).toRemote())
@@ -217,30 +246,76 @@ class SmbFs(private val share: Share) : RemoteFs {
         synchronized(lock) { take() }?.let(::shut)
     }
 
+    /** A connection's parts, closed together. */
+    private class Parts(val disk: DiskShare?, val session: Session?, val connection: Connection?, val client: SMBClient?)
+
     /** Takes the connection's parts away for [shut]; null when there is none. Under [lock]. */
-    private fun take(): Triple<DiskShare?, Session?, Connection?>? {
-        if (connection == null && session == null && disk == null) return null
-        return Triple(disk, session, connection).also {
+    private fun take(): Parts? {
+        if (connection == null && session == null && disk == null && client == null) return null
+        return Parts(disk, session, connection, client).also {
             disk = null
             session = null
             connection = null
+            client = null
         }
     }
 
-    private fun shut(parts: Triple<DiskShare?, Session?, Connection?>) {
-        runCatching { parts.first?.close() }
-        runCatching { parts.second?.close() }
-        runCatching { parts.third?.close() }
+    private fun shut(parts: Parts) {
+        runCatching { parts.disk?.close() }
+        runCatching { parts.session?.close() }
+        runCatching { parts.connection?.close(true) }
+        runCatching { parts.client?.close() }
     }
 
-    /** Closes the connection once it has been idle for [IDLE_MS] with no file open. */
+    /**
+     * Every [KEEPALIVE_MS] while connected ([idleAction]): closes the connection once it
+     * has been unused for [IDLE_MS] with no file open, else echoes it when unused since the
+     * last check, so the host and the network between keep it. Stops with the connection.
+     */
     private fun idleCheck() {
         timer.schedule({
-            synchronized(lock) {
-                if (inputs.isEmpty() && System.currentTimeMillis() - lastUsed >= IDLE_MS) take() else null
-            }?.let(::shut)
-            if (!closed) idleCheck()
-        }, IDLE_MS / 2, TimeUnit.MILLISECONDS)
+            val now = System.currentTimeMillis()
+            var echoing: Connection? = null
+            val dropped = synchronized(lock) {
+                when (idleAction(now, lastUsed, lastEcho, inputs.isNotEmpty(), connection != null)) {
+                    IdleAction.CLOSE -> take()
+                    IdleAction.ECHO -> {
+                        echoing = connection
+                        null
+                    }
+                    IdleAction.NONE -> null
+                }
+            }
+            dropped?.let(::shut)
+            echoing?.let { echo(it, ECHO_TIMEOUT_S) }
+            val again = synchronized(lock) {
+                checking = !closed && connection != null
+                checking
+            }
+            if (again) idleCheck()
+        }, KEEPALIVE_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /**
+     * Echoes [c], waiting up to [timeoutS] seconds; true when it answered. One that does
+     * not is dropped, to be made again on next use.
+     */
+    private fun echo(c: Connection, timeoutS: Long): Boolean {
+        val ok = runCatching {
+            c.send<SMB2Packet>(SMB2Echo(c.negotiatedProtocol.dialect)).get(timeoutS, TimeUnit.SECONDS)
+        }.isSuccess
+        Timing.mark(if (ok) "smb echo" else "smb echo failed")
+        synchronized(lock) {
+            if (ok) {
+                lastEcho = System.currentTimeMillis()
+                null
+            } else if (connection === c) {
+                take()
+            } else {
+                null
+            }
+        }?.let(::shut)
+        return ok
     }
 
     /** A file open for reading; it opens again on a new connection when the old one dropped. */
@@ -312,11 +387,24 @@ class SmbFs(private val share: Share) : RemoteFs {
         return Dropped(e)
     }
 
+    /** What [idleCheck] does to a connection. */
+    internal enum class IdleAction { NONE, ECHO, CLOSE }
+
     companion object {
         private const val TAG = "SmbFs"
 
         /** How long a connection stays open unused. */
-        const val IDLE_MS = 60_000L
+        const val IDLE_MS = 10 * 60_000L
+
+        /** How often an unused connection is echoed, and checked for [IDLE_MS]. */
+        const val KEEPALIVE_MS = 2 * 60_000L
+
+        /** Lets a check that runs a little early still echo. */
+        private const val ECHO_SLACK_MS = 5_000L
+        private const val ECHO_TIMEOUT_S = 10L
+
+        /** How long a connection unheard for a while (the device slept) gets to answer before it is made anew. */
+        private const val WAKE_ECHO_TIMEOUT_S = 2L
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val READ_TIMEOUT_S = 30L
 
@@ -336,7 +424,17 @@ class SmbFs(private val share: Share) : RemoteFs {
                 .build()
         }
 
-        private val client: SMBClient by lazy { SMBClient(config) }
+        /**
+         * What a connection last used at [lastUsed] and last echoed at [lastEcho] needs at
+         * [now]: closing once unused for [IDLE_MS] with no file [open], an echo when unused
+         * since the last [KEEPALIVE_MS], else nothing; nothing without a connection.
+         */
+        internal fun idleAction(now: Long, lastUsed: Long, lastEcho: Long, open: Boolean, connected: Boolean): IdleAction = when {
+            !connected -> IdleAction.NONE
+            !open && now - lastUsed >= IDLE_MS -> IdleAction.CLOSE
+            now - maxOf(lastUsed, lastEcho) >= KEEPALIVE_MS - ECHO_SLACK_MS -> IdleAction.ECHO
+            else -> IdleAction.NONE
+        }
 
         private val timer: ScheduledExecutorService by lazy {
             Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "smb-idle").apply { isDaemon = true } }

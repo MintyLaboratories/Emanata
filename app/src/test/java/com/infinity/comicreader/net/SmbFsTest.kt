@@ -106,4 +106,20 @@ class SmbFsTest {
             assertTrue("failed with ${failure.get()}", failure.get() is RemoteException)
         }
     }
+
+    @Test
+    fun anUnusedConnectionIsEchoedThenClosedAfterTheIdleTime() {
+        val used = 1_000_000L
+        fun at(after: Long, open: Boolean = false, echoed: Long = used) =
+            SmbFs.idleAction(used + after, used, echoed, open, connected = true)
+        assertEquals(SmbFs.IdleAction.NONE, at(SmbFs.KEEPALIVE_MS / 2))
+        assertEquals(SmbFs.IdleAction.ECHO, at(SmbFs.KEEPALIVE_MS))
+        // Echoed just now: not again until another interval passes.
+        assertEquals(SmbFs.IdleAction.NONE, at(SmbFs.KEEPALIVE_MS + 1_000, echoed = used + SmbFs.KEEPALIVE_MS))
+        assertEquals(SmbFs.IdleAction.CLOSE, at(SmbFs.IDLE_MS))
+        // A file open keeps it, echoed.
+        assertEquals(SmbFs.IdleAction.ECHO, at(SmbFs.IDLE_MS, open = true))
+        assertEquals(SmbFs.IdleAction.NONE, SmbFs.idleAction(used + SmbFs.IDLE_MS, used, used, open = false, connected = false))
+        assertTrue(SmbFs.IDLE_MS >= 10 * 60_000L)
+    }
 }

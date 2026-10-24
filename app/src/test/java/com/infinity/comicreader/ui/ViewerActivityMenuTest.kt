@@ -104,7 +104,7 @@ class ViewerActivityMenuTest {
         assertEquals(
             listOf(
                 R.id.menu_bookmark, R.id.menu_tune, R.id.menu_jump, R.id.menu_bookmark_list, R.id.menu_favorites,
-                R.id.menu_auto_scroll, R.id.menu_page_tools, R.id.menu_book_info, R.id.menu_settings
+                R.id.menu_auto_scroll, R.id.menu_page_tools, R.id.menu_unhide_pages, R.id.menu_book_info, R.id.menu_settings
             ),
             shown
         )

@@ -2448,6 +2448,7 @@ class ViewerActivity : AppCompatActivity() {
         val drawer = ChapterDrawer.hasEntries(bookChapters, chapters)
         menu.findItem(R.id.menu_book_chapters)?.isVisible = drawer
         menu.findItem(R.id.menu_chapters)?.isVisible = drawer
+        menu.findItem(R.id.menu_unhide_pages)?.isEnabled = hiddenCount() > 0
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -2511,6 +2512,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             R.id.menu_crop -> { startCrop(); true }
             R.id.menu_hide_page -> { hidePageOnScreen(); true }
+            R.id.menu_unhide_pages -> { showHiddenPages(); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -3147,7 +3149,7 @@ class ViewerActivity : AppCompatActivity() {
         val f = file ?: return
         val src = source ?: return
         val pages = src.pageCount
-        val hidden = HiddenPages.bookCount(src) - pages
+        val hidden = hiddenCount()
         val direction = directionInfo()
         val known = bookComicInfo?.takeIf { it.first === src }
         progress.visibility = View.VISIBLE
@@ -3181,12 +3183,11 @@ class ViewerActivity : AppCompatActivity() {
             row(R.string.menu_reading_dir, direction)
             val fields = info?.fields.orEmpty()
             if (fields.isNotEmpty()) row(R.string.info_comic_info, fields.joinToString("\n") { (k, v) -> "$k: $v" })
-            val dialog = AlertDialog.Builder(this@ViewerActivity)
+            AlertDialog.Builder(this@ViewerActivity)
                 .setTitle(chapterLabel(f))
                 .setMessage(text)
                 .setPositiveButton(R.string.close, null)
-            if (hidden > 0) dialog.setNeutralButton(R.string.menu_unhide_pages) { _, _ -> showHiddenPages() }
-            dialog.show()
+                .showKeepingFullscreen()
         }
     }
 
@@ -3224,8 +3225,11 @@ class ViewerActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.hide_which_page)
             .setItems(pages.map { getString(R.string.page_number, it + 1) }.toTypedArray()) { _, which -> hidePage(pages[which]) }
-            .show()
+            .showKeepingFullscreen()
     }
+
+    /** Pages hidden in the open book. */
+    private fun hiddenCount(): Int = source?.let { HiddenPages.bookCount(it) - it.pageCount } ?: 0
 
     /** Leaves [page] out of the open book; the last page shown stays. */
     private fun hidePage(page: Int) {

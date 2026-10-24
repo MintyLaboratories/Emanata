@@ -8,7 +8,7 @@
     <item name="toolbar_buttons_list" type="id" />
     <!-- The location picker's "Add network share…" row. -->
     <item name="location_add" type="id" />
-    <!-- Book info's grid of hidden pages. -->
+    <!-- The grid of hidden pages, from "Unhide pages…". -->
     <item name="hidden_pages_grid" type="id" />
     <!-- The long-press menu's file operations, added in code. -->
     <item name="file_op_rename" type="id" />

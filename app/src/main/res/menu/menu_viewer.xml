@@ -4,7 +4,7 @@
   reading: the page's bookmark, the chapter drawer and the reader settings sheet,
   where every reading option lives. The overflow stays short: going somewhere,
   favorites, auto-scroll, the page's actions (also on a long-press of the page),
-  the book's details and Settings.
+  unhiding pages, the book's details and Settings.
 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
@@ -88,6 +88,11 @@
                 android:title="@string/menu_rotate" />
         </menu>
     </item>
+
+    <item
+        android:id="@+id/menu_unhide_pages"
+        android:title="@string/menu_unhide_pages"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/menu_book_info"

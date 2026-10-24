@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.view.MenuItem
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -35,7 +36,7 @@ import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 
-/** "Hide this page": hidden pages leave the reader, and Book info shows them again. */
+/** "Hide this page": hidden pages leave the reader, and "Unhide pages…" shows them again. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ViewerActivityHiddenPagesTest {
@@ -95,6 +96,13 @@ class ViewerActivityHiddenPagesTest {
 
     private fun AlertDialog.message() = findViewById<TextView>(android.R.id.message)!!.text.toString()
 
+    /** The overflow's "Unhide pages…", as the menu shows it now. */
+    private fun ViewerActivity.unhideItem(): MenuItem {
+        invalidateOptionsMenu()
+        idle()
+        return findViewById<androidx.appcompat.widget.Toolbar>(R.id.viewer_toolbar).menu.findItem(R.id.menu_unhide_pages)
+    }
+
     @Test
     fun aHiddenPageLeavesTheReaderAndComesBack() {
         val book = book(5)
@@ -102,8 +110,9 @@ class ViewerActivityHiddenPagesTest {
         library.addBookmark(Bookmark(path, book.name, 4, "", 1))
         val viewer = launch(book, 2)
         assertEquals(2, viewer.pager().currentItem)
-        assertEquals(View.GONE, viewer.bookInfo().getButton(AlertDialog.BUTTON_NEUTRAL).visibility)
-        ShadowDialog.getLatestDialog().dismiss()
+        // Shown but disabled while nothing is hidden.
+        assertTrue(viewer.unhideItem().isVisible)
+        assertFalse(viewer.unhideItem().isEnabled)
 
         shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
         viewer.settle()
@@ -116,7 +125,11 @@ class ViewerActivityHiddenPagesTest {
 
         val info = viewer.bookInfo()
         assertTrue(info.message(), info.message().contains(context.getString(R.string.info_pages_hidden, 4, 1)))
-        info.getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+        // Unhiding is the menu's own entry, no longer Book info's.
+        assertEquals(View.GONE, info.getButton(AlertDialog.BUTTON_NEUTRAL).visibility)
+        info.dismiss()
+        assertTrue(viewer.unhideItem().isEnabled)
+        shadowOf(viewer).clickMenuItem(R.id.menu_unhide_pages)
         idle()
         val unhide = ShadowDialog.getLatestDialog() as AlertDialog
         val grid = unhide.findViewById<RecyclerView>(R.id.hidden_pages_grid)!!

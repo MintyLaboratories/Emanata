@@ -46,7 +46,13 @@ class FileWorkService : Service() {
         }
         val status = FileWork.status.value
         // Started as a foreground service: in the foreground at once, even to stop.
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(status), TYPE)
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(status), TYPE)
+        } catch (e: IllegalStateException) {
+            // Refused (the app went to the background first): the operation runs unkept.
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (status == null || status.outcome != null) {
             finish()
             return START_NOT_STICKY

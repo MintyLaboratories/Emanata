@@ -113,6 +113,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.BitSet
+import java.util.stream.Collectors
 import kotlin.math.abs
 
 /**
@@ -255,6 +256,12 @@ class ViewerActivity : AppCompatActivity() {
 
     /** True until the reader turns a page of the book just opened: until then seams may re-pair the page on screen. */
     private var seamsSettling = true
+
+    /** Pages of the open book the reader has had on screen: a lone seam match near one may settle its run. */
+    private val visitedPages = BitSet()
+
+    /** [visitedPages] counted when the layout was last made from them. */
+    private var shownVisits = 0
 
     /** The page the open book first showed, -1 until it shows. */
     private var openedPage = -1
@@ -1336,6 +1343,8 @@ class ViewerActivity : AppCompatActivity() {
         shownSeams = pageSeams
         seamsSettling = true
         openedPage = -1
+        visitedPages.clear()
+        shownVisits = 0
     }
 
     /**
@@ -1405,10 +1414,13 @@ class ViewerActivity : AppCompatActivity() {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames)
+        if (currentIndex >= 0) visitedPages.set(currentIndex)
+        shownVisits = visitedPages.cardinality()
+        val visited = visitedPages.stream().boxed().collect(Collectors.toSet())
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames, visited)
         if (spread) {
             val views = Spreads.pair(a, options)
-            return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
+            return PageLayout.of(views, spread = true, rtl = rtl, joined = if (noMerge) emptySet() else Spreads.joined(views, options))
         }
         if (topToBottom()) return PageLayout(false, rtl)
         if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
@@ -1478,39 +1490,32 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Lays the book out with the seams found since the layout was made, unless, once the
-     * reader turned a page ([seamsSettling]), that re-pairs the pages on screen or next to
-     * them, or would interrupt a swipe or a zoom: those wait, until the reader moves on or
-     * the book opens again. A layout the reader asks for takes them all ([attach]).
+     * Lays the book out with the seams found since the layout was made, and the pages the
+     * reader reached since ([visitedPages]). Once the reader turned a page ([seamsSettling])
+     * the screen shown and those before it keep their pages ([PageLayout.keeping]); only the
+     * pages after it re-pair, and not during a swipe or a zoom, which waits for the next
+     * call. A layout the reader asks for takes them all ([attach]).
      */
     private fun showSeams() {
-        if (shownSeams === pageSeams) return
+        if (shownSeams === pageSeams && shownVisits == visitedPages.cardinality()) return
         val shown = shownSeams
+        val visits = shownVisits
         shownSeams = pageSeams
         val next = buildLayout()
         if (next.sameAs(layout)) {
             updateSpreadRotation()
             return
         }
-        val busy = pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || adapter?.zoomed() == true
-        if (!seamsSettling && (busy || nearChanged(next))) {
+        if (seamsSettling) return attach(fresh = false)
+        val count = source?.pageCount ?: return
+        if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || adapter?.zoomed() == true) {
             shownSeams = shown
+            shownVisits = visits
             return
         }
-        attach(fresh = false)
-    }
-
-    /** True when [next] shows the open book's item on screen, or one next to it, other than [layout] does. */
-    private fun nearChanged(next: PageLayout): Boolean {
-        val count = source?.pageCount ?: return false
-        val item = layout.itemOf(currentIndex)
-        for (i in item - 1..item + 1) {
-            if (i < 0 || i >= layout.itemCount(count)) continue
-            val parts = layout.parts(i, count).filterNotNull()
-            val at = next.itemOf(parts.firstOrNull() ?: continue)
-            if (next.parts(at, count).filterNotNull() != parts || next.joined(at) != layout.joined(i)) return true
-        }
-        return false
+        val kept = layout.keeping(layout.itemOf(currentIndex), next, count)
+        if (kept.sameItems(layout, count)) return
+        attach(fresh = false, laid = if (kept.sameItems(next, count)) next else kept)
     }
 
     /** Shifts the open book's two-page pairing by one page, or back, and keeps the choice. */
@@ -1560,7 +1565,7 @@ class ViewerActivity : AppCompatActivity() {
      * ([showSeams]). The pages the old adapter decoded show at once in the new one.
      * These are only emitted from the UI thread.
      */
-    private fun attach(fresh: Boolean = true) {
+    private fun attach(fresh: Boolean = true, laid: PageLayout? = null) {
         val src = source ?: return
         if (fresh) shownSeams = pageSeams
         val decoded = adapter?.decoded(src).orEmpty()
@@ -1571,7 +1576,7 @@ class ViewerActivity : AppCompatActivity() {
 
         spread = useSpread()
         shownCrop = cropOn()
-        layout = buildLayout()
+        layout = laid ?: buildLayout()
         val a = PageAdapter(
             source = src,
             mode = adapterMode(),
@@ -1936,6 +1941,11 @@ class ViewerActivity : AppCompatActivity() {
         }
         updateSpreadRotation()
         if (openedPage < 0) openedPage = currentIndex else if (currentIndex != openedPage) seamsSettling = false
+        // A page reached anew may bring a lone seam match near enough to settle what follows.
+        if (currentIndex >= 0 && !visitedPages.get(currentIndex)) {
+            visitedPages.set(currentIndex)
+            if (seamsUsed()) pager.post { showSeams() }
+        }
         checkSeams()
         if (seekPanel.visibility == View.VISIBLE) {
             seekPreviews?.highlight(shownItem())

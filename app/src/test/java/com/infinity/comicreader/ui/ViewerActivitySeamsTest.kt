@@ -182,24 +182,54 @@ class ViewerActivitySeamsTest {
     }
 
     @Test
-    fun seamsFoundLaterWaitRatherThanRePairThePagesOnScreen() {
+    fun aLoneMatchRePairsOnlyThePagesAfterTheReaderOnceNear() {
         prefs.twoPage = TwoPage.ON
         // By number: [000] [001|002] … [029|030], 16 screens; page 020 running on into 021 pairs
-        // even left pages instead: [000] [001] [002|003] … [028|029] [030], 17 screens.
+        // even left pages instead.
         val book = book(count = 31, first = 20)
         val viewer = launch(book)
-        // Once the reader turns a page, seams found after re-pair nothing near it.
         viewer.next()
         assertEquals("2 / 31", viewer.indicator())
         val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
         await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
         repeat(100) { Thread.sleep(10); idle() }
+        // One match far from the reader settles nothing.
         assertEquals(16, viewer.items())
+        // On [017|018] the match is near: that screen and those before it stay, the pages after
+        // re-pair: [019] [020|021] … [028|029] [030].
+        repeat(8) { viewer.next() }
+        assertEquals("18 / 31", viewer.indicator())
+        await { viewer.items() == 17 }
+        assertEquals(17, viewer.items())
+        assertEquals("18 / 31", viewer.indicator())
+        viewer.next()
+        assertEquals("20 / 31", viewer.indicator())
+        viewer.next()
+        assertEquals("21 / 31", viewer.indicator())
         viewer.finish()
-        // Opened again, the seams pair the run from the start.
+        // Opened again at the start, the lone match is far again.
         val again = launch(book)
-        await { again.items() == 17 }
-        assertEquals(17, again.items())
+        repeat(50) { Thread.sleep(10); idle() }
+        assertEquals(16, again.items())
+    }
+
+    @Test
+    fun dontMergeInThisBookKeepsItsPagesApart() {
+        val book = book(count = 7, first = 3)
+        val viewer = launch(book)
+        await { viewer.items() == 6 }
+        val sheet = ReaderSheet(viewer)
+        sheet.tap(R.id.sheet_no_merge)
+        assertEquals(7, viewer.items())
+        assertTrue(com.infinity.comicreader.data.Library(viewer).isNoMerge(book.absolutePath))
+        viewer.finish()
+        // Kept for the book: opened again, its pages stay apart.
+        val again = launch(book)
+        repeat(50) { Thread.sleep(10); idle() }
+        assertEquals(7, again.items())
+        ReaderSheet(again).tap(R.id.sheet_no_merge)
+        await { again.items() == 6 }
+        assertEquals(6, again.items())
     }
 
     @Test

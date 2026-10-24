@@ -478,8 +478,8 @@ class SpreadsTest {
     fun aMatchingSeamAcrossTwoScreensShiftsTheRun() {
         val paths = book(run("page", 1..9, pad = 2))
         assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page"))
-        // page03 runs on into page04: they share a screen.
-        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)))
+        // page03 runs on into page04: they share a screen, the reader being near.
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)), visited = setOf(0))
         assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = options))
         // A seam that agrees with the pairing changes nothing.
         assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page", options = Spreads.Options(seams = seams(paths.size, mapOf(3 to match)))))
@@ -497,9 +497,27 @@ class SpreadsTest {
     }
 
     @Test
+    fun aLoneStrongMatchSettlesItsRunOnlyNearTheReader() {
+        val paths = book(run("page", 1..30, pad = 2))
+        val plain = screens(paths, "page")
+        assertTrue(plain.startsWith("[01][02|03][04|05]"))
+        // page21 runs on into page22, against the pairing by number.
+        val lone = Spreads.Options(seams = seams(paths.size, mapOf(20 to match)))
+        assertEquals(plain, screens(paths, "page", options = lone))
+        assertEquals(plain, screens(paths, "page", options = lone.copy(visited = setOf(0, 1, 2))))
+        val shifted = "[01][02][03|04][05|06]"
+        assertTrue(screens(paths, "page", options = lone.copy(visited = setOf(20 - Spreads.NEAR))).startsWith(shifted))
+        assertTrue(screens(paths, "page", options = lone.copy(visited = setOf(21 + Spreads.NEAR))).startsWith(shifted))
+        assertEquals(plain, screens(paths, "page", options = lone.copy(visited = setOf(22 + Spreads.NEAR))))
+        // A second match settles it wherever the reader is.
+        val two = Spreads.Options(seams = seams(paths.size, mapOf(20 to match, 24 to weakMatch)))
+        assertTrue(screens(paths, "page", options = two).startsWith(shifted))
+    }
+
+    @Test
     fun theManualShiftStillFlipsASeamCorrection() {
         val paths = book(run("page", 1..9, pad = 2))
-        val options = Spreads.Options(shift = true, seams = seams(paths.size, mapOf(2 to match)))
+        val options = Spreads.Options(shift = true, seams = seams(paths.size, mapOf(2 to match)), visited = setOf(0))
         assertEquals("[01][02|03][04|05][06|07][08|09]", screens(paths, "page", options = options))
     }
 
@@ -519,7 +537,8 @@ class SpreadsTest {
     @Test
     fun seamsOutrankSpreadVotesFromElsewhere() {
         // The spread votes odd left pages; after it, page 026 runs on into 027.
-        val options = Spreads.Options(seams = seams(harbor.size, mapOf(harbor.indexOfFirst { Spreads.stemOf(it) == "Pale Harbor 018-026" } to match)))
+        val at = harbor.indexOfFirst { Spreads.stemOf(it) == "Pale Harbor 018-026" }
+        val options = Spreads.Options(seams = seams(harbor.size, mapOf(at to match)), visited = setOf(at))
         assertTrue(screens(harbor, "Pale Harbor 018-", options = options).endsWith("[023-024][025][026|027][028|029][030][zWave]"))
         assertTrue(screens(harbor, "Pale Harbor 018-", options = options).startsWith("[000][001|002]"))
     }
@@ -528,7 +547,7 @@ class SpreadsTest {
     fun unnumberedPagesShiftByTheirSeams() {
         val paths = listOf("alpha.jpg", "bravo.jpg", "charlie.jpg", "delta.jpg", "echo.jpg", "foxtrot.jpg")
         assertEquals("[alpha][bravo|charlie][delta|echo][foxtrot]", screens(paths, ""))
-        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)))
+        val options = Spreads.Options(seams = seams(paths.size, mapOf(2 to match)), visited = setOf(0))
         assertEquals("[alpha][bravo][charlie|delta][echo|foxtrot]", screens(paths, "", options = options))
         assertEquals("[alpha][bravo|charlie][delta|echo][foxtrot]", screens(paths, "", options = options.copy(shift = true)))
     }

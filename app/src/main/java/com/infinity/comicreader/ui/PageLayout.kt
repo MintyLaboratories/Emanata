@@ -24,6 +24,14 @@ class PageLayout(
     /** True when [other] maps items to the same parts on screen. */
     fun sameAs(other: PageLayout): Boolean = spread == other.spread && rtl == other.rtl && views == other.views && joined == other.joined
 
+    /** True when [other] shows the same items as this, out of [pageCount] pages, however either is made. */
+    fun sameItems(other: PageLayout, pageCount: Int): Boolean {
+        if (spread != other.spread || rtl != other.rtl) return false
+        val n = itemCount(pageCount)
+        if (n != other.itemCount(pageCount)) return false
+        return (0 until n).all { readingParts(it, pageCount) == other.readingParts(it, pageCount) && joined(it) == other.joined(it) }
+    }
+
     /** True when [item] shows the two halves of one picture, in two files. */
     fun joined(item: Int): Boolean = item in joined
 
@@ -120,6 +128,39 @@ class PageLayout(
         val first = partOrNone(item * 2, pageCount)
         val second = partOrNone(item * 2 + 1, pageCount)
         return if (rtl) arrayOf(second, first) else arrayOf(first, second)
+    }
+
+    /** The parts of [item] in reading order, out of [pageCount] pages. */
+    private fun readingParts(item: Int, pageCount: Int): List<Part> {
+        views?.let { v -> return v.getOrNull(item)?.filter { it.page in 0 until pageCount }.orEmpty() }
+        val first = if (spread) item * 2 else item
+        return (first..(if (spread) first + 1 else first)).filter { it in 0 until pageCount }.map { Part(it) }
+    }
+
+    /**
+     * This layout through [item], then [next] for the pages after it: [next]'s items that
+     * start past them, each page in between alone. The items up to
+     * [item] keep their parts and joins whatever [next] makes of them.
+     */
+    fun keeping(item: Int, next: PageLayout, pageCount: Int): PageLayout {
+        val kept = (0..item.coerceAtMost(itemCount(pageCount) - 1)).map { readingParts(it, pageCount) }
+        val last = kept.lastOrNull()?.maxOfOrNull { it.page } ?: -1
+        val out = ArrayList<List<Part>>(kept)
+        val outJoined = (0 until kept.size).filterTo(HashSet()) { joined(it) }
+        var page = last + 1
+        for (i in 0 until next.itemCount(pageCount)) {
+            val parts = next.readingParts(i, pageCount)
+            val first = parts.firstOrNull()?.page ?: continue
+            if (first <= last) continue
+            while (page < first) out += listOf(Part(page++))
+            if (next.joined(i)) outJoined += out.size
+            out += parts
+            page = parts.maxOf { it.page } + 1
+        }
+        while (page < pageCount) out += listOf(Part(page++))
+        // Two-slot rows only where some item holds two parts, as a merged layout has them.
+        val rows = if (out.any { it.size > 1 }) spread || next.spread else spread
+        return PageLayout(rows, next.rtl, out, outJoined)
     }
 
     /** The slot of its item that [page] shows in, left to right on screen; -1 when out of the book. */

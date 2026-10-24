@@ -20,7 +20,7 @@ import java.util.Locale
  * outside any family. Pairing restarts after each of them. Within a run of story
  * pages, the left pages' parity comes from the seams between them when they tell
  * ([Options.seams]: the picture runs on from one page into the next, so those two share
- * a screen), else from what spreads say (a spread starts on a left page), else the run's
+ * a screen; one match alone tells only near the reader), else from what spreads say (a spread starts on a left page), else the run's
  * first page is a left page; [Options.shift] flips it (a shift from before seams flips
  * the parity without them, [Options.shiftByNames]). In one-page reading, two pages
  * whose seam matches show as one ([merge]).
@@ -111,20 +111,29 @@ object Spreads {
      * Pairing choices: the [coverAlone] option, the book's manual [shift] by one page and
      * the [seams] found so far, by page: the seam between that page and the next in
      * reading order, null where not checked. A shift chosen before seams paired pages
-     * ([shiftByNames]) flips the pairing names and spreads give, seams unread.
+     * ([shiftByNames]) flips the pairing names and spreads give, seams unread. [visited]
+     * holds the pages the reader has had on screen: a lone seam match settles a run only
+     * within [NEAR] pages of one of them.
      */
     data class Options(
         val coverAlone: Boolean = true,
         val shift: Boolean = false,
         val seams: List<SpreadSeams.Verdict?> = emptyList(),
-        val shiftByNames: Boolean = false
+        val shiftByNames: Boolean = false,
+        val visited: Set<Int> = emptySet()
     ) {
         /** True when the picture runs on from page [i] into the next. */
         fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
 
         /** True when seams may settle pairing. */
         val pairsBySeams: Boolean get() = !(shift && shiftByNames)
+
+        /** True when the seam after page [i] lies within [NEAR] pages of a page the reader has had on screen. */
+        fun near(i: Int): Boolean = visited.isNotEmpty() && (i - NEAR..i + 1 + NEAR).any { it in visited }
     }
+
+    /** Pages either way of a seam within which the reader sees it, so a lone match there may settle its run. */
+    const val NEAR = 4
 
     // ------------------------------------------------------------------ tokens
 
@@ -436,26 +445,31 @@ object Spreads {
     fun joined(views: List<IntArray>, options: Options): Set<Int> =
         views.indices.filterTo(HashSet()) { v -> views[v].size == 2 && views[v][1] == views[v][0] + 1 && options.joins(views[v][0]) }
 
-    /** A seam that runs on: the side, 0 or 1, that puts its first page on the left, and how sure it is. */
-    private class SeamVote(val side: Int, val confidence: Double)
+    /** A seam that runs on: the side, 0 or 1, that puts its first page on the left, how sure it is, and whether the reader is [near] it. */
+    private class SeamVote(val side: Int, val confidence: Double, val near: Boolean)
 
     /** Seams that run on between consecutive numbers of [seg], each voting the parity of its first page's number. */
     private fun numberedSeams(seg: Segment, pages: List<Page>, options: Options): List<SeamVote> =
         seg.pages.zipWithNext().mapNotNull { (a, b) ->
             val v = options.seams.getOrNull(a)
-            if (v?.match == true && pages[b].number == pages[a].number + 1) SeamVote(Math.floorMod(pages[a].number, 2L).toInt(), v.confidence) else null
+            if (v?.match == true && pages[b].number == pages[a].number + 1) {
+                SeamVote(Math.floorMod(pages[a].number, 2L).toInt(), v.confidence, options.near(a))
+            } else {
+                null
+            }
         }
 
     /** Seams that run on within [seg], each voting the offset that puts its first page on the left. */
     private fun positionalSeams(seg: Segment, options: Options): List<SeamVote> =
         seg.pages.withIndex().toList().dropLast(1).mapNotNull { (k, a) ->
             val v = options.seams.getOrNull(a)
-            if (v?.match == true) SeamVote(k % 2, v.confidence) else null
+            if (v?.match == true) SeamVote(k % 2, v.confidence, options.near(a)) else null
         }
 
     /**
      * The side seams settle: one with at least two matches and three times the other's, or
-     * a lone [SpreadSeams.STRONG] match with none against it; null when they do not tell.
+     * a lone [SpreadSeams.STRONG] match with none against it near the reader
+     * ([Options.near]); null when they do not tell.
      */
     private fun seamSide(votes: List<SeamVote>): Int? {
         if (votes.isEmpty()) return null
@@ -463,7 +477,7 @@ object Spreads {
             val mine = votes.filter { it.side == side }
             val other = votes.size - mine.size
             if (mine.size >= 2 && mine.size >= 3 * other) return side
-            if (mine.size == 1 && other == 0 && mine[0].confidence >= SpreadSeams.STRONG) return side
+            if (mine.size == 1 && other == 0 && mine[0].confidence >= SpreadSeams.STRONG && mine[0].near) return side
         }
         return null
     }

@@ -225,4 +225,37 @@ class PageLayoutTest {
         assertTrue(joined.alone(0, 4))
         assertFalse(joined.alone(1, 4))
     }
+
+    private fun items(layout: PageLayout, pageCount: Int): String =
+        (0 until layout.itemCount(pageCount)).joinToString("") { item ->
+            val slots = layout.slots(item, pageCount).filter { it != NONE }
+            slots.joinToString("|", "[", "]") + if (layout.joined(item)) "*" else ""
+        }
+
+    @Test
+    fun keepingHoldsTheScreensThroughOneAndRePairsAfter() {
+        val old = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3, 4), intArrayOf(5, 6), intArrayOf(7, 8)), spread = true, rtl = false)
+        val next = PageLayout.of(
+            listOf(intArrayOf(0), intArrayOf(1), intArrayOf(2, 3), intArrayOf(4, 5), intArrayOf(6, 7), intArrayOf(8)),
+            spread = true, rtl = false, joined = setOf(1, 4)
+        )
+        // Through [3|4]: page 5 alone, then the new pairs; joins follow the new layout after.
+        val kept = old.keeping(2, next, 9)
+        assertEquals("[0][1|2][3|4][5][6|7]*[8]", items(kept, 9))
+        assertTrue(kept.sameItems(old.keeping(2, next, 9), 9))
+        assertFalse(kept.sameItems(old, 9))
+        // Kept through the last screen, nothing changes.
+        assertTrue(old.keeping(4, next, 9).sameItems(old, 9))
+        // Kept through the first, the rest is the new layout.
+        assertTrue(old.keeping(0, next, 9).sameItems(next, 9))
+    }
+
+    @Test
+    fun keepingWorksFromPlainLayouts() {
+        val merged = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1), intArrayOf(2, 3), intArrayOf(4)), spread = true, rtl = false, joined = setOf(2))
+        // One page a screen: the screen on page 2 stays alone; 3 cannot join it.
+        val kept = single.keeping(2, merged, 5)
+        assertEquals("[0][1][2][3][4]", items(kept, 5))
+        assertEquals("[0][1][2|3]*[4]", items(single.keeping(1, merged, 5), 5))
+    }
 }

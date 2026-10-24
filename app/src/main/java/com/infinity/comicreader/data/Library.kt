@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.HiddenPages
+import com.infinity.comicreader.reader.NameCharset
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -11,7 +12,8 @@ import java.time.LocalDate
 
 /**
  * Favorites, read marks, reading history, bookmarks, per-folder layouts, per-book
- * color adjustments and hidden pages, and reading statistics, persisted as JSON documents in SharedPreferences.
+ * color adjustments, hidden pages and file name charsets, and reading statistics, persisted
+ * as JSON documents in SharedPreferences.
  *
  * Every read tolerates a corrupted document (it yields an empty value instead of
  * throwing) and every read-modify-write runs under one process-wide lock, because
@@ -286,6 +288,7 @@ class Library(context: Context) {
                 all.keys().forEach { k -> moved.put(remap(k), all.get(k)) }
                 sp.edit().putString(key, moved.toString()).apply()
             }
+            publishNameCharsets()
             writeHistory(
                 history().map { h ->
                     if (under(h.path, old)) {
@@ -326,6 +329,7 @@ class Library(context: Context) {
                 all.keys().forEach { k -> if (!under(k, root)) kept.put(k, all.get(k)) }
                 sp.edit().putString(key, kept.toString()).apply()
             }
+            publishNameCharsets()
             writeHistory(history().filterNot { under(it.path, root) })
             writeBookmarks(bookmarks().filterNot { under(it.path, root) })
         }
@@ -397,6 +401,33 @@ class Library(context: Context) {
             }
             sp.edit().putString(KEY_ADJUST, all.toString()).apply()
         }
+    }
+
+    // ---------------- per-book file name charsets ----------------
+    /** The charset the book at [path] reads its file names in ([NameCharset]), or null when it follows the setting. */
+    fun nameCharset(path: String): String? = readObject(KEY_CHARSETS).optString(path).ifEmpty { null }
+
+    /** Every book's own file name charset, by path. */
+    fun nameCharsets(): Map<String, String> {
+        val all = readObject(KEY_CHARSETS)
+        val out = HashMap<String, String>()
+        all.keys().forEach { k -> all.optString(k).takeIf { it.isNotEmpty() }?.let { out[k] = it } }
+        return out
+    }
+
+    /** Makes [charset] the one the book at [path] reads its file names in, or lets it follow the setting when null. */
+    fun setNameCharset(path: String, charset: String?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_CHARSETS)
+            if (charset == null) all.remove(path) else all.put(path, charset)
+            sp.edit().putString(KEY_CHARSETS, all.toString()).apply()
+            publishNameCharsets()
+        }
+    }
+
+    /** Hands the books' own file name charsets to the archive readers ([NameCharset.overrides]). */
+    fun publishNameCharsets() {
+        NameCharset.overrides = nameCharsets()
     }
 
     // ---------------- reading statistics ----------------
@@ -483,6 +514,7 @@ class Library(context: Context) {
             for (k in ARRAY_KEYS) data.optJSONArray(k)?.let { e.putString(k, sanitizeArray(k, it).toString()) }
             for (k in OBJECT_KEYS) data.optJSONObject(k)?.let { e.putString(k, it.toString()) }
             e.apply()
+            publishNameCharsets()
         }
     }
 
@@ -567,15 +599,18 @@ class Library(context: Context) {
 
         /** Books whose pages seams never merge ([isNoMerge]). */
         const val KEY_NO_MERGE = "no_merge"
+
+        /** Books' own file name charsets ([nameCharset]). */
+        const val KEY_CHARSETS = "name_charsets"
         const val MAX_HISTORY = 200
         const val MAX_DAYS = 3650
         val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
         /** Lists of book paths, one per per-book choice. */
         val BOOK_FLAG_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
-        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN)
+        val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS)
 
         /** Documents keyed by file or folder path. */
-        val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST, KEY_HIDDEN)
+        val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS)
         val LOCK = Any()
 
         /** The stored hidden pages [hiddenAll] parsed last, with the text they were parsed from. */

@@ -31,16 +31,18 @@ object PageSources {
     /**
      * Opens [file]. Nested-archive copying stops once [canceled] turns true; without
      * [copyNested] only cached copies are used, and a book needing a new one fails.
-     * [fetch] hears a book on a share fetched whole first, where one must be.
+     * [fetch] hears a book on a share fetched whole first, where one must be. Its names
+     * are read as the book's own choice says, else as [setting] ([NameCharset.forBook]).
      */
     fun open(
         file: File,
-        charsetName: String,
+        setting: String,
         cacheDir: File,
         canceled: () -> Boolean = { false },
         copyNested: Boolean = true,
         fetch: Fetch? = null
     ): PageSource {
+        val charsetName = NameCharset.forBook(file.absolutePath, setting)
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
         val raw = openRaw(file, charsetName, cacheDir, nested, pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchWhole = true)
         return previewing(file, cacheDir, GuardedSource(raw))
@@ -50,15 +52,18 @@ object PageSources {
      * Like [open], but an archive holds only its pages up to [page], the cover's (its first
      * page unless that is hidden): enough for a cover, and cheaper.
      */
-    fun openCover(file: File, charsetName: String, cacheDir: File, page: Int = 0): PageSource = previewing(
-        file, cacheDir,
-        GuardedSource(
-            openRaw(
-                file, charsetName, cacheDir, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName),
-                pageLimit = page.coerceAtLeast(0) + 1, fetch = Fetch(), fetchWhole = false
+    fun openCover(file: File, setting: String, cacheDir: File, page: Int = 0): PageSource {
+        val charsetName = NameCharset.forBook(file.absolutePath, setting)
+        return previewing(
+            file, cacheDir,
+            GuardedSource(
+                openRaw(
+                    file, charsetName, cacheDir, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName),
+                    pageLimit = page.coerceAtLeast(0) + 1, fetch = Fetch(), fetchWhole = false
+                )
             )
         )
-    )
+    }
 
     /** [source] leaving page previews under [cacheDir] ([PreviewingSource]). */
     private fun previewing(file: File, cacheDir: File, source: PageSource): PageSource =

@@ -18,10 +18,10 @@
             app:title="@string/pref_language"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
-            app:defaultValue="UTF-8"
+            app:defaultValue="auto"
             app:entries="@array/charset_entries"
             app:entryValues="@array/charset_values"
-            app:key="pref_charset"
+            app:key="pref_name_charset"
             app:title="@string/pref_charset"
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>

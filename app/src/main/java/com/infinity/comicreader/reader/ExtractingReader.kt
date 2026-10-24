@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -24,6 +25,8 @@ class ExtractingReader(
 
     /** False: an entry not reached yet still unpacks those before it. */
     override val randomAccess: Boolean get() = false
+
+    override val nameCharset: Charset? get() = inner.nameCharset
 
     /** Entries in the order the archive stores them. */
     private val stored = inner.entries.sortedBy { it.index }

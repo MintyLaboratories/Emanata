@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import java.io.Closeable
+import java.nio.charset.Charset
 
 /** A random-access sequence of pages that can each be rendered to a [Bitmap]. */
 interface PageSource : Closeable {
@@ -75,4 +76,7 @@ interface PageSource : Closeable {
 
     /** True when the book has a ComicInfo.xml that [comicInfo] with `cheapOnly` skips. */
     fun comicInfoCostly(): Boolean = false
+
+    /** The charset the book's file names were read in ([ArchiveReader.nameCharset]); null where none applies. */
+    val nameCharset: Charset? get() = null
 }

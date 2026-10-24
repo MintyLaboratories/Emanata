@@ -2,13 +2,21 @@ package com.infinity.comicreader.reader
 
 import java.io.File
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
-/** Reads a zip/cbz archive. [ZipFile] streams entries concurrently, so reads are not serialized. */
+/**
+ * Reads a zip/cbz archive, its names in the charset [charsetName] gives ([NameCharset.resolve]).
+ * [ZipFile] streams entries concurrently, so reads are not serialized.
+ */
 class ZipReader(file: File, charsetName: String) : ArchiveReader {
-    private val zip: ZipFile = runCatching { ZipFile(file, Charset.forName(charsetName)) }
+    override val nameCharset: Charset = NameCharset.resolve(charsetName, {
+        runCatching { RandomAccessFile(file, "r").use { ZipNames.read(it.channel) } }.getOrDefault(emptyList())
+    })
+
+    private val zip: ZipFile = runCatching { ZipFile(file, nameCharset) }
         .getOrElse { ZipFile(file) }
 
     private val native: List<ZipEntry>

@@ -407,6 +407,7 @@
     <string name="pref_theme">Theme</string>
     <string name="pref_language">Language</string>
     <string name="pref_charset">Archive filename charset</string>
+    <string name="charset_auto">Auto</string>
 
     <string name="pref_fullscreen">Start in fullscreen</string>
     <string name="pref_keep_on">Keep the screen on while reading</string>
@@ -684,18 +685,26 @@
     </string-array>
 
     <string-array name="charset_entries">
+        <item>@string/charset_auto</item>
         <item>UTF-8</item>
+        <item>CP437 (DOS)</item>
+        <item>Windows-1252 (Western European)</item>
+        <item>Windows-1251 (Cyrillic)</item>
         <item>CP949 (Korean)</item>
         <item>Shift_JIS (Japanese)</item>
-        <item>GBK (Chinese)</item>
-        <item>Windows-1251 (Cyrillic)</item>
+        <item>GBK (Simplified Chinese)</item>
+        <item>Big5 (Traditional Chinese)</item>
     </string-array>
     <string-array name="charset_values">
+        <item>auto</item>
         <item>UTF-8</item>
+        <item>IBM437</item>
+        <item>windows-1252</item>
+        <item>windows-1251</item>
         <item>CP949</item>
         <item>Shift_JIS</item>
         <item>GBK</item>
-        <item>windows-1251</item>
+        <item>Big5</item>
     </string-array>
 
     <string-array name="reading_dir_entries">

@@ -19,9 +19,10 @@ import java.io.IOException
 object BookFactsReader {
     /**
      * The facts of [file]; pages are -1 when they cannot be counted without copying
-     * an inner archive out first. Blocking; throws when the book cannot be opened.
+     * an inner archive out first. Blocking; throws when the book cannot be opened. Names
+     * are read as the book's own choice says, else as [setting] ([NameCharset.forBook]).
      */
-    fun read(file: File, charsetName: String, cacheDir: File): BookFacts = when (Formats.typeOf(file.name)) {
+    fun read(file: File, setting: String, cacheDir: File): BookFacts = when (Formats.typeOf(file.name)) {
         EntryType.IMAGE -> BookFacts(pages = 1, year = 0)
         EntryType.PDF, EntryType.ARCHIVE -> {
             // A book on a share is read from its local copy when there is one: on a server
@@ -37,6 +38,7 @@ object BookFactsReader {
                 if (source is RemoteFile) throw IOException("Not fetched")
                 PdfSource(source).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
+                val charsetName = NameCharset.forBook(file.absolutePath, setting)
                 val reader = ArchiveReader.open(source, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
             }

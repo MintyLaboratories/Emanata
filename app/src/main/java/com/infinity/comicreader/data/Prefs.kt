@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.AutoScroll
+import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.TapZones
@@ -47,8 +48,9 @@ class Prefs(context: Context) {
         get() = str(KEY_LOCALE, "system")
         set(v) = put(KEY_LOCALE, v)
 
+    /** What archive file names are read in: [NameCharset.AUTO] or a charset's name. */
     var charset: String
-        get() = str(KEY_CHARSET, "UTF-8")
+        get() = str(KEY_CHARSET, NameCharset.AUTO)
         set(v) = put(KEY_CHARSET, v)
 
     // ---------------------------------------------------------------- reader
@@ -553,7 +555,7 @@ class Prefs(context: Context) {
 
         private const val KEY_THEME = "pref_theme"
         private const val KEY_LOCALE = "pref_locale"
-        private const val KEY_CHARSET = "pref_charset"
+        private const val KEY_CHARSET = "pref_name_charset"
         private const val KEY_FULLSCREEN = "pref_fullscreen"
         private const val KEY_KEEP_ON = "pref_keep_screen_on"
         private const val KEY_READING_DIR = "pref_reading_dir"
@@ -615,7 +617,7 @@ class Prefs(context: Context) {
         private const val KEY_JOIN_SPREADS = "pref_join_spreads"
 
         private val KNOWN_KEYS = setOf(
-            KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
+            KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, OLD_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
@@ -661,6 +663,9 @@ class Prefs(context: Context) {
 
         /** Retired language tags and the [LOCALES] value that replaced each. */
         private val OLD_LOCALES = mapOf("en" to "en-US")
+
+        /** Replaced by [KEY_CHARSET], whose default reads UTF-8 names as UTF-8 did; other charsets move. */
+        private const val OLD_CHARSET = "pref_charset"
 
         /** Replaced by [KEY_TWO_PAGE]: on meant [TwoPage.ON]. */
         private const val OLD_TWO_PAGE = "pref_two_page"
@@ -757,6 +762,11 @@ class Prefs(context: Context) {
                 out[OLD_FILENAMES] = null
             }
             if (OLD_AUTO_SPEED in stored) out[OLD_AUTO_SPEED] = null
+            if (OLD_CHARSET in stored) {
+                val old = stored[OLD_CHARSET] as? String
+                if (KEY_CHARSET !in stored && old != null && old != "UTF-8") out[KEY_CHARSET] = old
+                out[OLD_CHARSET] = null
+            }
             if (OLD_TWO_PAGE in stored) {
                 val on = stored[OLD_TWO_PAGE] as? Boolean
                 if (KEY_TWO_PAGE !in stored && on != null) out[KEY_TWO_PAGE] = TwoPage.of(on).key

@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.charset.Charset
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -213,6 +214,8 @@ class ArchiveSource(
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? = withRoot { reader ->
         ComicInfo.read(reader, before = if (cheapOnly) cheapBefore(reader) else Int.MAX_VALUE)
     }
+
+    override val nameCharset: Charset? = slots[0].reader?.nameCharset
 
     override fun comicInfoCostly(): Boolean = withRoot { reader ->
         val entry = ComicInfo.entryOf(reader)

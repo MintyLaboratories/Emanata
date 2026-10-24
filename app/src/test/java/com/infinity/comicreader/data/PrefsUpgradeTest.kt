@@ -396,4 +396,16 @@ class PrefsUpgradeTest {
         assertEquals(ReaderLayout.MODES, context.resources.getStringArray(R.array.page_mode_values).toList())
         assertEquals(ReaderLayout.DIRS, context.resources.getStringArray(R.array.reading_dir_values).toList())
     }
+
+    @Test
+    fun oldCharsetMovesUnlessUtf8() {
+        // UTF-8 was the old default; Auto reads UTF-8 names the same.
+        assertEquals(mapOf("pref_charset" to null), Prefs.upgrade(mapOf("pref_charset" to "UTF-8")))
+        assertEquals(
+            mapOf("pref_name_charset" to "Shift_JIS", "pref_charset" to null),
+            Prefs.upgrade(mapOf("pref_charset" to "Shift_JIS"))
+        )
+        assertEquals(mapOf("pref_charset" to null), Prefs.upgrade(mapOf("pref_charset" to "GBK", "pref_name_charset" to "auto")))
+        assertEquals("auto", Prefs(context).charset)
+    }
 }

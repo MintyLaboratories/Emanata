@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import java.nio.charset.Charset
 
 /**
  * Pages a reader left out of a book by hand ("Hide this page"), kept by their index in
@@ -90,6 +91,8 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? = inner.comicInfo(cheapOnly)
 
     override fun comicInfoCostly(): Boolean = inner.comicInfoCostly()
+
+    override val nameCharset: Charset? get() = inner.nameCharset
 
     override fun close() = inner.close()
 }

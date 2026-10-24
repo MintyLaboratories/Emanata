@@ -27,7 +27,10 @@ class App : Application() {
         Timing.enabled = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val prefs = Prefs(this)
         prefs.upgrade()
-        Library(this).migrateFolderLayouts(ReaderLayout.of(prefs))
+        Library(this).apply {
+            migrateFolderLayouts(ReaderLayout.of(prefs))
+            publishNameCharsets()
+        }
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         Remotes.init(this)

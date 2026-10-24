@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import java.io.IOException
+import java.nio.charset.Charset
 
 /**
  * Makes [close] safe while reads are in flight: the archive is closed once the last
@@ -121,6 +122,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
             exit()
         }
     }
+
+    override val nameCharset: Charset? get() = inner.nameCharset
 
     override fun close() {
         synchronized(lock) {

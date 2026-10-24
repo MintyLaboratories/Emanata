@@ -7,6 +7,7 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.charset.Charset
 
 /** A file inside an archive: its [path] in the archive, its uncompressed [size] (-1 when unknown). */
 class ArchiveEntry(val path: String, val size: Long, internal val index: Int)
@@ -21,6 +22,9 @@ interface ArchiveReader : Closeable {
      * block), so reading out of [ArchiveEntry.index] order is costly.
      */
     val randomAccess: Boolean get() = true
+
+    /** The charset its file names were read in, where the format leaves that open (zip, tar). */
+    val nameCharset: Charset? get() = null
 
     /** Runs [block] on the contents of [entry]; implementations serialize this where the backend needs it. */
     fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T

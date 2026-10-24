@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -151,5 +152,32 @@ class SmbFsTest {
         removed.clear()
         SmbFs.deleteTree(junction, { throw AssertionError("listed $it") }, { removed += it.path })
         assertEquals(listOf("books\\Series\\Elsewhere"), removed)
+    }
+
+    @Test
+    fun aChangeIsMadeAgainAfterADropOnlyWhenItDidNotLand() {
+        val dropped = IOException("dropped")
+        val failed = { e: Exception -> (e as? IOException ?: IOException(e)) to (e === dropped) }
+        var connects = 0
+        var made = 0
+        fun run(landed: Boolean, failFirst: Exception?) {
+            connects = 0
+            made = 0
+            SmbFs.changeOnce({ ++connects }, failed, { landed }) { _ ->
+                made++
+                if (made == 1 && failFirst != null) throw failFirst
+            }
+        }
+        run(landed = false, failFirst = null)
+        assertEquals(1 to 1, connects to made)
+        // Made before the connection dropped: not made again, so no failure for a second rename or delete.
+        run(landed = true, failFirst = dropped)
+        assertEquals(2 to 1, connects to made)
+        run(landed = false, failFirst = dropped)
+        assertEquals(2 to 2, connects to made)
+        // Any other failure is final.
+        val refused = IOException("refused")
+        assertEquals(refused, assertThrows(IOException::class.java) { run(landed = false, failFirst = refused) })
+        assertEquals(1 to 1, connects to made)
     }
 }

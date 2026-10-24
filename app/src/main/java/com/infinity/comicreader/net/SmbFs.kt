@@ -115,7 +115,10 @@ class SmbFs(private val share: Share) : RemoteFs {
         synchronized(lock) { failure = null }
     }
 
-    override fun mkdir(path: String) = call { d -> d.mkdir(smbPath(path)) }
+    override fun mkdir(path: String) {
+        val p = smbPath(path)
+        change({ d -> d.folderExists(p) }) { d -> d.mkdir(p) }
+    }
 
     /** Written in [WRITE_BYTES] pieces, each marking the connection as used; never repeated, as [input] is consumed. */
     override fun create(path: String, input: InputStream, length: Long) {
@@ -140,11 +143,24 @@ class SmbFs(private val share: Share) : RemoteFs {
         }
     }
 
-    override fun rename(from: String, to: String) = call { d ->
-        d.open(
-            smbPath(from), EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null,
-            SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null
-        ).use { it.rename(smbPath(to), false) }
+    override fun rename(from: String, to: String) {
+        val source = smbPath(from)
+        val target = smbPath(to)
+        val landed = { d: DiskShare ->
+            if (source.equals(target, ignoreCase = true)) {
+                // A change of case only: the item is found under either name, so its listed name tells.
+                val name = target.substringAfterLast('\\')
+                d.list(target.substringBeforeLast('\\', ""), name).any { it.fileName == name }
+            } else {
+                exists(d, target) && !exists(d, source)
+            }
+        }
+        change(landed) { d ->
+            d.open(
+                source, EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null,
+                SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null
+            ).use { it.rename(target, false) }
+        }
     }
 
     /** Entry by entry ([deleteTree]): SMBJ's own recursive delete walks into links, deleting what they point to. */
@@ -172,7 +188,7 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     /** Deletes one file, link or empty folder: a link opened as itself, so it never reaches what it points to. */
-    private fun removeEntry(e: Entry) = call { d ->
+    private fun removeEntry(e: Entry) = change({ d -> !exists(d, e.path) }) { d ->
         when {
             e.isLink -> d.open(
                 e.path, EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
@@ -245,6 +261,29 @@ class SmbFs(private val share: Share) : RemoteFs {
     /** [path] inside the share, with the share's folder in front and `\` between names. */
     private fun smbPath(path: String): String =
         listOf(where.dir, path).filter { it.isNotEmpty() }.joinToString("/").replace('/', '\\')
+
+    /** Makes a change on the share ([changeOnce]), connecting first. */
+    private fun change(landed: (DiskShare) -> Boolean, block: (DiskShare) -> Unit) =
+        changeOnce(::connected, ::failed, landed, block)
+
+    /** What failure [e] of a call means, and whether the connection dropped; a dropped one is let go. */
+    private fun failed(e: Exception): Pair<IOException, Boolean> {
+        val failure = translate(e)
+        if (failure is Dropped) disconnect()
+        return failure.toRemote() to (failure is Dropped)
+    }
+
+    /** True when anything is at [p], a link counting as itself. */
+    private fun exists(d: DiskShare, p: String): Boolean = try {
+        d.open(
+            p, EnumSet.of(AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_OPEN_REPARSE_POINT)
+        ).close()
+        true
+    } catch (e: SMBApiException) {
+        if (e.status !in MISSING_STATUSES) throw e
+        false
+    }
 
     /** Runs [block] on the share, connecting first; once more on a new connection when the old one dropped. */
     private fun <T> call(block: (DiskShare) -> T): T {
@@ -526,9 +565,7 @@ class SmbFs(private val share: Share) : RemoteFs {
         if (e is RemoteException) return Known(e)
         if (e is SMBApiException) {
             return when (e.status) {
-                NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND,
-                NtStatus.STATUS_NO_SUCH_FILE, NtStatus.STATUS_NOT_A_DIRECTORY ->
-                    Known(RemoteException(RemoteException.Reason.MISSING, e.message, e))
+                in MISSING_STATUSES -> Known(RemoteException(RemoteException.Reason.MISSING, e.message, e))
                 NtStatus.STATUS_LOGON_FAILURE, NtStatus.STATUS_ACCESS_DENIED, NtStatus.STATUS_ACCOUNT_DISABLED,
                 NtStatus.STATUS_PASSWORD_EXPIRED, NtStatus.STATUS_LOGON_TYPE_NOT_GRANTED ->
                     Known(RemoteException(RemoteException.Reason.DENIED, e.message, e))
@@ -624,6 +661,34 @@ class SmbFs(private val share: Share) : RemoteFs {
             } else {
                 listOf(AuthenticationContext(share.account, share.password.toCharArray(), share.domain))
             }
+
+        /**
+         * Makes a change with [block] on what [connect] gives. When the connection drops on
+         * the way ([failed] says which failures are drops) the change may have been made all
+         * the same: on a new connection it is made again only when [landed] does not find it
+         * made, so a change made once never fails as repeated.
+         */
+        internal fun <D> changeOnce(connect: () -> D, failed: (Exception) -> Pair<IOException, Boolean>, landed: (D) -> Boolean, block: (D) -> Unit) {
+            try {
+                block(connect())
+                return
+            } catch (e: Exception) {
+                val (error, dropped) = failed(e)
+                if (!dropped) throw error
+            }
+            val d = connect()
+            try {
+                if (!landed(d)) block(d)
+            } catch (e: Exception) {
+                throw failed(e).first
+            }
+        }
+
+        /** What a server answers for a path where nothing is. */
+        private val MISSING_STATUSES = setOf(
+            NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND,
+            NtStatus.STATUS_NO_SUCH_FILE, NtStatus.STATUS_NOT_A_DIRECTORY
+        )
 
         private fun isDirectory(attributes: Long) = attributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
 

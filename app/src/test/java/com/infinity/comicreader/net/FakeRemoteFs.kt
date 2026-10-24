@@ -22,6 +22,10 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var readOnly = false
 
+    /** Fails each write after this many bytes as a dropped network would, going [offline]; never when negative. */
+    @Volatile
+    var dropWritesAfter = -1L
+
     /** Calls that reached the host, failed or not. */
     @Volatile
     var attempts = 0
@@ -105,6 +109,12 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
         checkWrite()
         val f = at(path)
         if (!f.createNewFile()) throw java.io.IOException("Already there: $path")
+        val limit = dropWritesAfter
+        if (limit >= 0) {
+            f.outputStream().use { out -> out.write(input.readNBytes(limit.toInt())) }
+            offline = true
+            throw RemoteException(RemoteException.Reason.UNREACHABLE, "dropped")
+        }
         f.outputStream().use { input.copyTo(it) }
     }
 

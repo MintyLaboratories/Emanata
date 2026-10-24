@@ -52,6 +52,9 @@ interface FileSpace {
     /** Deletes the file, link or empty folder [path]; fails on a folder with anything inside. */
     fun remove(path: String)
 
+    /** Deletes [path], left behind by a failure: tried even while its share counts as unreachable. */
+    fun discard(path: String) = delete(path)
+
     /** Copies file [from] to the new file [to] without passing through the device; false when it cannot. */
     fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = false
 }
@@ -147,6 +150,8 @@ class ShareSpace(val id: String) : FileSpace {
     override fun delete(path: String) = Remotes.delete(path)
 
     override fun remove(path: String) = Remotes.remove(path)
+
+    override fun discard(path: String) = Remotes.discard(path)
 
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = Remotes.copy(from, to, progress)
 }

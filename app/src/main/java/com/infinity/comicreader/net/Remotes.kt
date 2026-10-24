@@ -289,6 +289,19 @@ object Remotes {
         }
     }
 
+    /**
+     * Deletes the file or folder at [path], left behind by a failure: tried even while the
+     * share counts as unreachable, as the failure may have made it so.
+     */
+    fun discard(path: String) {
+        require(!isRoot(path)) { "Not deleting a share" }
+        try {
+            Timing.span("share discard") { call(path, eager = true) { it.delete(relOf(path)) } }
+        } finally {
+            changedAt(path)
+        }
+    }
+
     /** Deletes the file, link or empty folder at [path] ([RemoteFs.remove]). */
     fun remove(path: String) {
         require(!isRoot(path)) { "Not deleting a share" }
@@ -320,15 +333,17 @@ object Remotes {
     /** Free and total bytes of share [id]; null when it does not say. Throws when it fails. */
     fun space(id: String): Pair<Long, Long>? = Timing.span("share space") { call(rootOf(id)) { it.space() } }
 
-    private fun <T> call(path: String, block: (RemoteFs) -> T): T {
+    /** Runs [block] on [path]'s share; when [eager], even while it counts as unreachable, its own memory of failing too. */
+    private fun <T> call(path: String, eager: Boolean = false, block: (RemoteFs) -> T): T {
         val id = idOf(path) ?: throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
         synchronized(this) { refused[id] }?.let { throw RemoteException(it.reason, it.message, it, lasting = true) }
         // A password that could not be opened is never tried: signing in with a wrong one could lock the account.
         if (share(id)?.passwordLost == true) throw RemoteException(RemoteException.Reason.DENIED, "Password to enter again", lasting = true)
-        if (unreachable(id)) throw RemoteException(RemoteException.Reason.UNREACHABLE)
+        if (!eager && unreachable(id)) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         // Never from the main thread: a caller there gets what is remembered, or a guess.
         if (onMainThread()) throw RemoteException(RemoteException.Reason.UNREACHABLE, "Network on the main thread")
         val fs = fsOf(id)
+        if (eager) fs.retry()
         return try {
             block(fs)
         } catch (e: RemoteException) {

@@ -3,6 +3,7 @@ package com.infinity.comicreader.files
 import com.infinity.comicreader.net.DavFs
 import com.infinity.comicreader.net.FakeDavServer
 import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -184,6 +185,25 @@ class TransferTest {
         }
         assertEquals(emptyList<String>(), names(File(device, "B")))
         assertTrue(File(device, "big.cbz").isFile)
+    }
+
+    @Test
+    fun aCopyDroppedByTheNetworkIsDeletedOnceTheShareIsBack() {
+        write(File(device, "book.cbz"), 300_000)
+        fake.dropWritesAfter = 100_000
+        val waits = ArrayList<Long>()
+        try {
+            // The network comes back after the first wait.
+            Transfer(pause = { waits += it; fake.offline = false }).run(p("book.cbz"), "/net/s1", "book.cbz", move = true, replace = false)
+            fail("no failure")
+        } catch (e: RemoteException) {
+            assertEquals("dropped", e.message)
+        }
+        // Deleted although the share counts as unreachable for a while after the failure.
+        assertTrue(Remotes.unreachable("s1"))
+        assertEquals(1, waits.size)
+        assertEquals(emptyList<String>(), names(shareDir))
+        assertTrue(File(device, "book.cbz").isFile)
     }
 
     @Test

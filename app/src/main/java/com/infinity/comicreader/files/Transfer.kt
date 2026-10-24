@@ -1,5 +1,6 @@
 package com.infinity.comicreader.files
 
+import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
 import java.io.File
 import java.io.FileNotFoundException
@@ -25,7 +26,9 @@ class Transfer(
     private val spaceOf: (String) -> FileSpace = FileSpaces::of,
     private val alive: () -> Boolean = { true },
     private val progress: (done: Long, total: Long) -> Unit = { _, _ -> },
-    private val stamp: () -> String = { System.currentTimeMillis().toString(36) }
+    private val stamp: () -> String = { System.currentTimeMillis().toString(36) },
+    /** Waits between tries to delete what a failure left ([discard]). */
+    private val pause: (Long) -> Unit = { Thread.sleep(it) }
 ) {
     /** Where the item ended up; [sourceLeft] when a move copied it but could not delete the source. */
     data class Result(val path: String, val sourceLeft: Boolean = false)
@@ -60,7 +63,7 @@ class Transfer(
             copyTree(from, source, node, to, part, verify = move)
             checkAlive()
         } catch (e: Throwable) {
-            runCatching { to.delete(part) }
+            discard(to, part)
             throw e
         }
         commit(to, part, targetDir, name, existing != null)
@@ -97,7 +100,7 @@ class Transfer(
             space.rename(old, target)
             return null
         }
-        runCatching { space.delete(old) }
+        discard(space, old)
         return Result(target)
     }
 
@@ -114,10 +117,31 @@ class Transfer(
                 throw e
             }
         } catch (e: Throwable) {
-            runCatching { space.delete(part) }
+            discard(space, part)
             throw e
         }
-        if (old != null) runCatching { space.delete(old) }
+        if (old != null) discard(space, old)
+    }
+
+    /**
+     * Deletes [path], a copy left by a failure or set aside, trying again after each of
+     * [DISCARD_WAITS_MS]: the failure may have been the share's, which then counts as
+     * unreachable for a while. Never fails: what is left is swept later.
+     */
+    private fun discard(space: FileSpace, path: String) {
+        for (wait in DISCARD_WAITS_MS) {
+            try {
+                if (wait > 0) pause(wait)
+                space.discard(path)
+                return
+            } catch (e: RemoteException) {
+                if (e.reason == RemoteException.Reason.MISSING) return
+            } catch (e: InterruptedException) {
+                return
+            } catch (e: Exception) {
+                // Tried again.
+            }
+        }
     }
 
     private fun sizeOf(space: FileSpace, path: String, node: Node): Long {
@@ -219,6 +243,9 @@ class Transfer(
         private const val PART = "emanata-new"
         private const val OLD = "emanata-old"
         private const val BUFFER = 1 shl 20
+
+        /** Waits before each try to delete what a failure left. */
+        private val DISCARD_WAITS_MS = longArrayOf(0, 1_000, 4_000)
 
         /** What separates names in [path]: `/` on shares, the device's separator elsewhere. */
         private fun separator(path: String): Char = if (Remotes.isRemote(path)) '/' else File.separatorChar

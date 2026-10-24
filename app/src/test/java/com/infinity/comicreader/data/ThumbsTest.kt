@@ -219,6 +219,55 @@ class ThumbsTest {
         assertArrayEquals(pixels(made), pixels(stored))
     }
 
+    /** A three-page book: red, green, blue. */
+    private fun rgbBook(name: String, dir: File = context.cacheDir): BookEntry {
+        val file = Fixtures.zip(
+            File(dir, name), Fixtures.entry("01.png", png(Color.RED)), Fixtures.entry("02.png", png(Color.GREEN)), Fixtures.entry("03.png", png(Color.BLUE))
+        )
+        return BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+    }
+
+    @Test
+    fun theCoverIsTheFirstPageNotHidden() {
+        val book = rgbBook("hiding.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        // Hiding the first page makes a new cover, though the old one is cached.
+        Library(context).setHiddenPages(book.path, setOf(0), 3)
+        assertEquals(Color.GREEN, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        Library(context).setHiddenPages(book.path, setOf(0, 1), 3)
+        assertEquals(Color.BLUE, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        // With every page hidden every page shows, so the first is the cover again.
+        Library(context).setHiddenPages(book.path, setOf(0, 1, 2), 3)
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+    }
+
+    @Test
+    fun aFolderCoverSkipsTheHiddenPagesOfItsBook() {
+        val dir = File(context.cacheDir, "Series").apply { mkdirs() }
+        val book = rgbBook("01.cbz", dir)
+        val folder = BookEntry(dir, dir.name, true, EntryType.OTHER, 0, dir.lastModified())
+        assertEquals(Color.RED, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        Library(context).setHiddenPages(book.path, setOf(0), 3)
+        assertEquals(Color.GREEN, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
+    }
+
+    @Test
+    fun onlyHiddenPagesThatMoveACoverChangeItsKey() {
+        val dir = File(context.cacheDir, "Shelf")
+        val book = BookEntry(File(dir, "a.cbz"), "a.cbz", false, EntryType.ARCHIVE, 1, 1)
+        val folder = BookEntry(dir, "Shelf", true, EntryType.OTHER, 0, 1)
+        val inside = File(dir, "a.cbz").path
+        assertEquals("", Thumbs.hiddenTag(book, emptyMap()))
+        assertEquals("", Thumbs.hiddenTag(book, mapOf(inside to setOf(3))))
+        assertEquals("|c2", Thumbs.hiddenTag(book, mapOf(inside to setOf(0, 1, 4))))
+        assertEquals("", Thumbs.hiddenTag(folder, mapOf(inside to setOf(3))))
+        val moved = Thumbs.hiddenTag(folder, mapOf(inside to setOf(0)))
+        assertTrue(moved.startsWith("|h"))
+        assertTrue(moved != Thumbs.hiddenTag(folder, mapOf(inside to setOf(0, 1))))
+        // A folder whose name only starts the same is not inside.
+        assertEquals("", Thumbs.hiddenTag(folder, mapOf(File(context.cacheDir, "Shelf 2/a.cbz").path to setOf(0))))
+    }
+
     @Test
     fun eachSizeIsItsOwnCover() {
         val entry = cover()

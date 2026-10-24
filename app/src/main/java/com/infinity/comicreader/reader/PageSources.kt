@@ -43,18 +43,21 @@ object PageSources {
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
         val raw = openRaw(
             file, charsetName, cacheDir, nested,
-            firstPageOnly = false, fetch = fetch ?: Fetch(canceled), fetchArchives = fetch != null, fetchWhole = true
+            pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchArchives = fetch != null, fetchWhole = true
         )
         return previewing(file, cacheDir, GuardedSource(raw))
     }
 
-    /** Like [open], but an archive holds only its first page: enough for a cover, and cheaper. */
-    fun openCover(file: File, charsetName: String, cacheDir: File): PageSource = previewing(
+    /**
+     * Like [open], but an archive holds only its pages up to [page], the cover's (its first
+     * page unless that is hidden): enough for a cover, and cheaper.
+     */
+    fun openCover(file: File, charsetName: String, cacheDir: File, page: Int = 0): PageSource = previewing(
         file, cacheDir,
         GuardedSource(
             openRaw(
                 file, charsetName, cacheDir, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName),
-                firstPageOnly = true, fetch = Fetch(), fetchArchives = false, fetchWhole = false
+                pageLimit = page.coerceAtLeast(0) + 1, fetch = Fetch(), fetchArchives = false, fetchWhole = false
             )
         )
     )
@@ -68,19 +71,19 @@ object PageSources {
         charsetName: String,
         cacheDir: File,
         nested: NestedArchives,
-        firstPageOnly: Boolean,
+        pageLimit: Int,
         fetch: Fetch,
         fetchArchives: Boolean,
         fetchWhole: Boolean
     ): PageSource {
         val type = Formats.typeOf(file.name)
         if (file is RemoteFile && (type == EntryType.IMAGE || type == EntryType.PDF || type == EntryType.ARCHIVE)) {
-            RemoteCache.cached(file, cacheDir)?.let { return local(it, file, charsetName, nested, firstPageOnly) }
+            RemoteCache.cached(file, cacheDir)?.let { return local(it, file, charsetName, nested, pageLimit) }
             if (type == EntryType.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
             // From a server sending files only whole, even sniffing a book's first bytes starts a whole download.
             if (type != EntryType.IMAGE && !Remotes.seekable(file.path)) {
                 if (!fetchWhole) throw IOException("Not fetched: ${file.name}")
-                return local(RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress), file, charsetName, nested, firstPageOnly)
+                return local(RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress), file, charsetName, nested, pageLimit)
             }
             val kind = if (type == EntryType.IMAGE) null else ArchiveKind.detect(file)
             if (kind == ArchiveKind.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
@@ -88,26 +91,26 @@ object PageSources {
             val inPlace = kind == ArchiveKind.ZIP || (archive && !fetchArchives)
             if (!inPlace) {
                 val copy = RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress)
-                return local(copy, file, charsetName, nested, firstPageOnly)
+                return local(copy, file, charsetName, nested, pageLimit)
             }
-            return archive(file, file, charsetName, nested, firstPageOnly, kind)
+            return archive(file, file, charsetName, nested, pageLimit, kind)
         }
-        return local(file, file, charsetName, nested, firstPageOnly)
+        return local(file, file, charsetName, nested, pageLimit)
     }
 
     /** Opens [file], which is [book] or its local copy; nested copies are keyed by [book]. */
-    private fun local(file: File, book: File, charsetName: String, nested: NestedArchives, firstPageOnly: Boolean): PageSource =
+    private fun local(file: File, book: File, charsetName: String, nested: NestedArchives, pageLimit: Int): PageSource =
         when (Formats.typeOf(file.name)) {
             EntryType.IMAGE -> ImageSource(file)
             EntryType.PDF, EntryType.ARCHIVE -> {
                 val kind = ArchiveKind.detect(file)
-                if (kind == ArchiveKind.PDF) PdfSource(file) else archive(file, book, charsetName, nested, firstPageOnly, kind)
+                if (kind == ArchiveKind.PDF) PdfSource(file) else archive(file, book, charsetName, nested, pageLimit, kind)
             }
             else -> throw IOException("Unsupported file type: ${file.name}")
         }
 
-    private fun archive(file: File, book: File, charsetName: String, nested: NestedArchives, firstPageOnly: Boolean, kind: ArchiveKind?): PageSource {
+    private fun archive(file: File, book: File, charsetName: String, nested: NestedArchives, pageLimit: Int, kind: ArchiveKind?): PageSource {
         val reader = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Unsupported archive: ${file.name}")
-        return ArchiveSource(reader, NestedArchives.keyOf(book), nested, firstPageOnly)
+        return ArchiveSource(reader, NestedArchives.keyOf(book), nested, pageLimit)
     }
 }

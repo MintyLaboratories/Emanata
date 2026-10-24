@@ -34,8 +34,8 @@ class NestedArchivesTest {
         copy: Boolean = true
     ) = NestedArchives(cache, "UTF-8", maxBytes, maxEntryBytes, canceled, copy) { message, _ -> warnings += message }
 
-    private fun open(file: File, nested: NestedArchives = nested(), firstPageOnly: Boolean = false) =
-        ArchiveSource(ZipReader(file, "UTF-8"), NestedArchives.keyOf(file), nested, firstPageOnly)
+    private fun open(file: File, nested: NestedArchives = nested(), pageLimit: Int = Int.MAX_VALUE) =
+        ArchiveSource(ZipReader(file, "UTF-8"), NestedArchives.keyOf(file), nested, pageLimit)
 
     private fun ArchiveSource.text(index: Int) = readPage(index) { String(it.readBytes()) }
 
@@ -183,7 +183,7 @@ class NestedArchivesTest {
             entry("Issue 2.cbz", Fixtures.zipBytes(entry("01.jpg", "issue2".toByteArray()))),
             entry("Issue 1.cbz", Fixtures.zipBytes(entry("01.jpg", "issue1".toByteArray())))
         )
-        open(f, firstPageOnly = true).use { src ->
+        open(f, pageLimit = 1).use { src ->
             assertEquals(listOf("Issue 1.cbz/01.jpg"), src.pagePaths)
             assertEquals("issue1", src.text(0))
         }
@@ -197,7 +197,7 @@ class NestedArchivesTest {
             entry("Issue 1.cbz", Fixtures.zipBytes(entry("notes.txt"))),
             entry("Issue 2.cbz", Fixtures.zipBytes(entry("01.jpg")))
         )
-        open(f, firstPageOnly = true).use { assertEquals(listOf("Issue 2.cbz/01.jpg"), it.pagePaths) }
+        open(f, pageLimit = 1).use { assertEquals(listOf("Issue 2.cbz/01.jpg"), it.pagePaths) }
     }
 
     @Test

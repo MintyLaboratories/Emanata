@@ -169,6 +169,21 @@ class Library(context: Context) {
     /** The pages left out of the book at [path] ("Hide this page"), by book index. */
     fun hiddenPages(path: String): Set<Int> = parseHidden(readObject(KEY_HIDDEN).optJSONArray(path))
 
+    /** The pages every book leaves out, by path; parsed once per change of what is stored. */
+    fun hiddenAll(): Map<String, Set<Int>> {
+        val raw = sp.getString(KEY_HIDDEN, "{}") ?: "{}"
+        hiddenParsed?.let { (from, map) -> if (from == raw) return map }
+        val all = try {
+            JSONObject(raw)
+        } catch (e: JSONException) {
+            JSONObject()
+        }
+        val out = HashMap<String, Set<Int>>()
+        all.keys().forEach { k -> parseHidden(all.optJSONArray(k)).takeIf { it.isNotEmpty() }?.let { out[k] = it } }
+        hiddenParsed = raw to out
+        return out
+    }
+
     /** How many pages each book leaves out, by path. */
     fun hiddenCounts(): Map<String, Int> {
         val all = readObject(KEY_HIDDEN)
@@ -538,5 +553,9 @@ class Library(context: Context) {
         /** Documents keyed by file or folder path. */
         val PATH_OBJECT_KEYS = listOf(KEY_SERIES, KEY_ADJUST, KEY_HIDDEN)
         val LOCK = Any()
+
+        /** The stored hidden pages [hiddenAll] parsed last, with the text they were parsed from. */
+        @Volatile
+        var hiddenParsed: Pair<String, Map<String, Set<Int>>>? = null
     }
 }

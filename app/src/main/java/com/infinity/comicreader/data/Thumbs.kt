@@ -19,7 +19,7 @@ import java.io.File
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
- * render their first page; folders fall back to the first image/openable file
+ * render their first page not hidden ([coverPage]); folders fall back to the first image/openable file
  * found a couple of levels deep. Covers are made at exactly the size of the view
  * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]; a PDF rendered
  * just covering the box), then made into the box by [CoverArt] as the [CoverStyle]
@@ -83,7 +83,8 @@ object Thumbs {
         val k = coverKey(context, entry, width, height, style)
         val disk = diskFile(context, k)
 
-        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height) ?: return null
+        val hidden = Library(context).hiddenAll()
+        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height, hidden) ?: return null
         val cover = try {
             CoverArt.cover(full, width, height, style, innerRatio, rightToLeft) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
@@ -123,11 +124,38 @@ object Thumbs {
     private fun bookPage(context: Context, entry: BookEntry): Int =
         HiddenPages.toBook(entry.bookmarkPage, Library(context).hiddenPages(entry.path))
 
-    /** What a cover is cached by: its file, box size, style, the direction it starts on, and a bookmark's page in the book. */
+    /**
+     * What a cover is cached by: its file, box size, style, the direction it starts on, the
+     * hidden pages that move it ([hiddenTag]), and a bookmark's page in the book.
+     */
     private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
         val rightToLeft = entry.direction == ReadingDirection.RTL
-        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}" + if (page >= 0) "|p$page" else ""
+        val hidden = hiddenTag(entry, Library(context).hiddenAll())
+        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}$hidden" + if (page >= 0) "|p$page" else ""
+    }
+
+    /** The book index of the cover of a book hiding [hidden]: its first page not hidden. */
+    fun coverPage(hidden: Set<Int>): Int {
+        var page = 0
+        while (page in hidden) page++
+        return page
+    }
+
+    /**
+     * What [hidden] (pages hidden by book path) adds to the key of [entry]'s cover: a book's
+     * cover page when it is not the first, and for a folder, which books below it start later.
+     * Empty when no hidden page moves the cover, so such keys stay as they were.
+     */
+    internal fun hiddenTag(entry: BookEntry, hidden: Map<String, Set<Int>>): String {
+        if (hidden.isEmpty() || (!entry.isDir && entry.type == EntryType.IMAGE)) return ""
+        if (!entry.isDir) return coverPage(hidden[entry.path].orEmpty()).takeIf { it > 0 }?.let { "|c$it" }.orEmpty()
+        val dir = entry.path
+        val moved = hidden.entries
+            .filter { (path, pages) -> path.length > dir.length && path.startsWith(dir) && isSeparator(path[dir.length]) && coverPage(pages) > 0 }
+            .sortedBy { it.key }
+        if (moved.isEmpty()) return ""
+        return "|h" + Hashes.sha256Hex(moved.joinToString("\u0000") { (path, pages) -> path + ":" + coverPage(pages) }).take(16)
     }
 
     /** WebP lossless where the platform writes it, PNG before that. */
@@ -165,29 +193,39 @@ object Thumbs {
      * rendered just large enough for a [width] x [height] box), with its book's
      * typical inner page shape when the cover is wide enough to be a wraparound.
      */
-    private fun generate(entry: BookEntry, charset: String, cacheDir: File, width: Int, height: Int): Pair<Bitmap, Double?>? = try {
+    private fun generate(
+        entry: BookEntry,
+        charset: String,
+        cacheDir: File,
+        width: Int,
+        height: Int,
+        hidden: Map<String, Set<Int>>
+    ): Pair<Bitmap, Double?>? = try {
         val target = Target(capPixels = THUMB_CAP_PIXELS)
+        fun pageOf(book: File) = coverPage(hidden[book.absolutePath].orEmpty())
         when {
-            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, width, height) }
+            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, width, height, pageOf(it)) }
             entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target) to null
-            else -> coverOf(entry.file, charset, cacheDir, width, height)
+            else -> coverOf(entry.file, charset, cacheDir, width, height, pageOf(entry.file))
         }
     } catch (t: Throwable) {
         null
     }
 
-    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int): Pair<Bitmap, Double?>? {
+    /** The cover of book [file]: its page [page] (book index), or its first page when it has fewer. */
+    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int, page: Int = 0): Pair<Bitmap, Double?>? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         val full = Target(capPixels = THUMB_CAP_PIXELS)
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
             return Decoders.decode(file, full) to null
         }
-        val source = runCatching { PageSources.openCover(file, charset, cacheDir) }.getOrNull() ?: return null
+        val source = runCatching { PageSources.openCover(file, charset, cacheDir, page) }.getOrNull() ?: return null
         val cover = try {
+            val index = if (page < source.pageCount) page else 0
             val target = if (!source.isVector) full else {
-                source.pageSize(0)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
+                source.pageSize(index)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
             }
-            if (source.pageCount <= 0) null else source.loadPage(0, target)
+            if (source.pageCount <= 0) null else source.loadPage(index, target)
         } catch (t: Throwable) {
             null
         } finally {

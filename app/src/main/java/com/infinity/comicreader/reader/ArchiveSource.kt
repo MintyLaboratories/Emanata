@@ -14,8 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Image pages of an archive, in natural order of their paths. With [nested], archives
  * inside the archive contribute their pages too, as if the inner archive were a
  * folder: `Book/Issue 2.cbz/01.jpg`. [rootKey] identifies [root] for the nested-archive
- * cache. With [firstPageOnly] only the first page is collected, so a cover never
- * extracts more than the inner archive it comes from.
+ * cache. Only the first [pageLimit] pages are collected, so a cover never extracts more
+ * than the inner archives its page comes from.
  *
  * At most [maxOpenInner] inner archives stay open, least recently read closing first,
  * since each open reader keeps its decoder state; a closed one reopens from its copy
@@ -25,7 +25,7 @@ class ArchiveSource(
     root: ArchiveReader,
     rootKey: String = "",
     private val nested: NestedArchives? = null,
-    private val firstPageOnly: Boolean = false,
+    private val pageLimit: Int = Int.MAX_VALUE,
     private val maxOpenInner: Int = MAX_OPEN_INNER
 ) : PageSource {
     /**
@@ -53,7 +53,7 @@ class ArchiveSource(
         throw t
     }
 
-    /** Adds the pages of [slot] to [out] in order; true once [firstPageOnly] is satisfied. */
+    /** Adds the pages of [slot] to [out] in order; true once [pageLimit] pages are in. */
     private fun collect(slot: Slot, key: String, prefix: String, depth: Int, out: MutableList<Page>): Boolean {
         val reader = acquire(slot)
         try {
@@ -66,7 +66,7 @@ class ArchiveSource(
             for (entry in items) {
                 if (Formats.isImageName(entry.path)) {
                     out += Page(prefix + entry.path, slot, entry)
-                    if (firstPageOnly) return true
+                    if (out.size >= pageLimit) return true
                     continue
                 }
                 val inner = nested?.open(reader, key, entry) ?: continue

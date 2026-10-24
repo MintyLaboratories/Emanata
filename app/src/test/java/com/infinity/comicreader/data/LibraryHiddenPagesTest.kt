@@ -40,6 +40,16 @@ class LibraryHiddenPagesTest {
     }
 
     @Test
+    fun allHiddenPagesAreParsedOncePerChange() {
+        library.setHiddenPages("/books/a.cbz", setOf(0, 4), 10)
+        val first = library.hiddenAll()
+        assertEquals(mapOf("/books/a.cbz" to setOf(0, 4)), first)
+        assertTrue(first === library.hiddenAll())
+        library.setHiddenPages("/books/b.cbz", setOf(1), 10)
+        assertEquals(mapOf("/books/a.cbz" to setOf(0, 4), "/books/b.cbz" to setOf(1)), library.hiddenAll())
+    }
+
+    @Test
     fun historyAndBookmarksStayOnTheirPages() {
         val path = "/books/a.cbz"
         library.addHistory(HistoryItem(path, "a.cbz", 6, 10, 1))

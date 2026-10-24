@@ -215,8 +215,9 @@ class Transfer(
     }
 
     companion object {
-        private const val PART = "part"
-        private const val OLD = "old"
+        /** Side name endings: neutral, as some servers take `.part` files for their own uploads under way. */
+        private const val PART = "emanata-new"
+        private const val OLD = "emanata-old"
         private const val BUFFER = 1 shl 20
 
         /** What separates names in [path]: `/` on shares, the device's separator elsewhere. */

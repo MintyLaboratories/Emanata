@@ -77,6 +77,17 @@ class Library(context: Context) {
         }
     }
 
+    /** True when [path]'s pages are never merged or joined into one picture by their seams. */
+    fun isNoMerge(path: String): Boolean = readStringList(KEY_NO_MERGE).contains(path)
+
+    fun setNoMerge(path: String, noMerge: Boolean) {
+        synchronized(LOCK) {
+            val set = readStringList(KEY_NO_MERGE).toHashSet()
+            val changed = if (noMerge) set.add(path) else set.remove(path)
+            if (changed) writeStringList(KEY_NO_MERGE, set.toList())
+        }
+    }
+
     // ---------------- history ----------------
     fun history(): MutableList<HistoryItem> {
         val arr = readArray(KEY_HISTORY)
@@ -268,7 +279,7 @@ class Library(context: Context) {
             fun remap(p: String) = if (under(p, old)) new + p.removePrefix(old) else p
             writeStringList(KEY_FAVORITES, favorites().map { remap(it) })
             writeStringList(KEY_READ, readSet().map { remap(it) })
-            for (key in SHIFT_KEYS) writeStringList(key, readStringList(key).map { remap(it) })
+            for (key in BOOK_FLAG_KEYS) writeStringList(key, readStringList(key).map { remap(it) })
             for (key in PATH_OBJECT_KEYS) {
                 val all = readObject(key)
                 val moved = JSONObject()
@@ -308,7 +319,7 @@ class Library(context: Context) {
         synchronized(LOCK) {
             writeStringList(KEY_FAVORITES, favorites().filterNot { under(it, root) })
             writeStringList(KEY_READ, readSet().filterNot { under(it, root) })
-            for (key in SHIFT_KEYS) writeStringList(key, readStringList(key).filterNot { under(it, root) })
+            for (key in BOOK_FLAG_KEYS) writeStringList(key, readStringList(key).filterNot { under(it, root) })
             for (key in PATH_OBJECT_KEYS) {
                 val all = readObject(key)
                 val kept = JSONObject()
@@ -480,7 +491,7 @@ class Library(context: Context) {
         val out = JSONArray()
         for (i in 0 until arr.length()) {
             when (key) {
-                KEY_FAVORITES, KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
+                KEY_FAVORITES, KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
                 else -> arr.optJSONObject(i)?.takeIf { it.optString("path").isNotEmpty() }?.let { out.put(it) }
             }
         }
@@ -553,10 +564,14 @@ class Library(context: Context) {
 
         /** Books shifted since. */
         const val KEY_SHIFTED_SEAMS = "shifted_seams"
+
+        /** Books whose pages seams never merge ([isNoMerge]). */
+        const val KEY_NO_MERGE = "no_merge"
         const val MAX_HISTORY = 200
         const val MAX_DAYS = 3650
-        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS)
-        val SHIFT_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS)
+        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
+        /** Lists of book paths, one per per-book choice. */
+        val BOOK_FLAG_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
         val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN)
 
         /** Documents keyed by file or folder path. */

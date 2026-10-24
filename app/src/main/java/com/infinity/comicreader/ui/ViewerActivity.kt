@@ -243,6 +243,9 @@ class ViewerActivity : AppCompatActivity() {
     private var shifted = false
     private var shiftedByNames = false
 
+    /** True when the open book's pages are never merged or joined into one picture by their seams. */
+    private var noMerge = false
+
     /** The seams between the open book's pages checked so far, and the job checking more ([checkSeams]). */
     private var pageSeams = PageSeams.Found(0)
     private var seamsJob: Job? = null
@@ -1327,6 +1330,7 @@ class ViewerActivity : AppCompatActivity() {
         val path = favoriteFile()?.absolutePath
         shifted = path != null && library.isShifted(path)
         shiftedByNames = path != null && library.isShiftedByNames(path)
+        noMerge = path != null && library.isNoMerge(path)
         analysis = known.analysis
         pageSeams = known.seams
         shownSeams = pageSeams
@@ -1410,7 +1414,7 @@ class ViewerActivity : AppCompatActivity() {
         if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
             return PageLayout.split(a.size, rtl) { a.splittable(it) }
         }
-        if (spreadDisplay == SpreadDisplay.MERGE) {
+        if (spreadDisplay == SpreadDisplay.MERGE && !noMerge) {
             val views = Spreads.merge(a, options)
             if (views.size < a.size) return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
         }
@@ -1421,7 +1425,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun seamsRead() = prefs.joinSpreads && !topToBottom()
 
     /** True when the open book's layout reads its seams: paged left or right, two pages a screen or spreads merged. */
-    private fun seamsUsed() = mode == MODE_PAGED && seamsRead() && (spread || spreadDisplay == SpreadDisplay.MERGE)
+    private fun seamsUsed() = mode == MODE_PAGED && seamsRead() && (spread || (spreadDisplay == SpreadDisplay.MERGE && !noMerge))
 
     /** Lays the open book out again with seams read or not, as [Prefs.joinSpreads] now says. */
     private fun applyJoinSpreads() {
@@ -1516,6 +1520,14 @@ class ViewerActivity : AppCompatActivity() {
         shiftedByNames = false
         favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
         if (spread) attach()
+    }
+
+    /** Keeps the open book's pages from merging or joining by their seams, or lets them again, and keeps the choice. */
+    private fun setNoMerge(value: Boolean) {
+        if (noMerge == value) return
+        noMerge = value
+        favoriteFile()?.let { library.setNoMerge(it.absolutePath, value) }
+        applyJoinSpreads()
     }
 
     /**
@@ -2773,6 +2785,7 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(id).setOnCheckedChangeListener { _, checked -> if (!syncingSheet) set(checked) }
         switch(R.id.sheet_auto_crop) { setAutoCrop(it) }
         switch(R.id.sheet_shift) { setShifted(it) }
+        switch(R.id.sheet_no_merge) { setNoMerge(it) }
         switch(R.id.sheet_join_spreads) {
             prefs.joinSpreads = it
             applyJoinSpreads()
@@ -2838,6 +2851,10 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<MaterialSwitch>(R.id.sheet_join_spreads).apply {
                 isChecked = prefs.joinSpreads
                 isEnabled = sideways
+            }
+            view.findViewById<MaterialSwitch>(R.id.sheet_no_merge).apply {
+                isChecked = noMerge
+                isEnabled = sideways && prefs.joinSpreads && favoriteFile() != null
             }
             view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {

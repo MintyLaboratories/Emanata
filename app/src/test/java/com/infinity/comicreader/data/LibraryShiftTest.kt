@@ -55,4 +55,19 @@ class LibraryShiftTest {
         assertTrue(library.isShifted("/books/new/b.cbz"))
         assertFalse(library.isShiftedByNames("/books/new/b.cbz"))
     }
+
+    @Test
+    fun noMergeFollowsRenamesDeletesAndBackups() {
+        library.setNoMerge("/books/old/a.cbz", true)
+        assertTrue(library.isNoMerge("/books/old/a.cbz"))
+        library.replacePath("/books/old", "/books/new")
+        assertTrue(library.isNoMerge("/books/new/a.cbz"))
+        val backup = library.exportAll()
+        library.removePathsUnder("/books/new")
+        assertFalse(library.isNoMerge("/books/new/a.cbz"))
+        library.importAll(backup)
+        assertTrue(library.isNoMerge("/books/new/a.cbz"))
+        library.setNoMerge("/books/new/a.cbz", false)
+        assertFalse(library.isNoMerge("/books/new/a.cbz"))
+    }
 }

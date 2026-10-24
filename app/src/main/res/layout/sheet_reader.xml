@@ -211,6 +211,13 @@
             android:text="@string/pref_join_spreads" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sheet_no_merge"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/menu_no_merge" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_auto_crop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

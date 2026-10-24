@@ -289,6 +289,16 @@ object Remotes {
         }
     }
 
+    /** Deletes the file, link or empty folder at [path] ([RemoteFs.remove]). */
+    fun remove(path: String) {
+        require(!isRoot(path)) { "Not deleting a share" }
+        try {
+            Timing.span("share remove") { call(path) { it.remove(relOf(path)) } }
+        } finally {
+            changedAt(path)
+        }
+    }
+
     /** Copies file [from] to the new file [to] on the share's server itself; false when it cannot ([RemoteFs.copy]). */
     fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
         require(idOf(from) != null && idOf(from) == idOf(to)) { "Not on one share: $from, $to" }

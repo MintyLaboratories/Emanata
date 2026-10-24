@@ -6,9 +6,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
 
-/** A file or folder as a [FileSpace] finds it: a folder's size is 0, a file's -1 when unknown. */
-data class Node(val name: String, val isDirectory: Boolean, val size: Long, val modified: Long = 0)
+/**
+ * A file or folder as a [FileSpace] finds it: a folder's size is 0, a file's -1 when
+ * unknown; [isLink] for a symbolic link or junction.
+ */
+data class Node(val name: String, val isDirectory: Boolean, val size: Long, val modified: Long = 0, val isLink: Boolean = false)
 
 /**
  * Where files live, by the app's paths: the device's storage, or one share. Every call
@@ -42,8 +46,11 @@ interface FileSpace {
      */
     fun rename(from: String, to: String): Boolean
 
-    /** Deletes the file or folder [path] with everything inside. */
+    /** Deletes the file or folder [path] with everything inside; a link inside goes itself, never what it points to. */
     fun delete(path: String)
+
+    /** Deletes the file, link or empty folder [path]; fails on a folder with anything inside. */
+    fun remove(path: String)
 
     /** Copies file [from] to the new file [to] without passing through the device; false when it cannot. */
     fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = false
@@ -56,15 +63,15 @@ object DeviceSpace : FileSpace {
     override fun stat(path: String): Node? {
         val f = File(path)
         if (!f.exists()) return null
-        val dir = f.isDirectory
-        return Node(f.name, dir, if (dir) 0 else f.length(), f.lastModified())
+        return nodeOf(f)
     }
 
-    override fun list(path: String): List<Node> =
-        (File(path).listFiles() ?: throw IOException("Not a folder: $path")).map { f ->
-            val dir = f.isDirectory
-            Node(f.name, dir, if (dir) 0 else f.length(), f.lastModified())
-        }
+    override fun list(path: String): List<Node> = (File(path).listFiles() ?: throw IOException("Not a folder: $path")).map(::nodeOf)
+
+    private fun nodeOf(f: File): Node {
+        val dir = f.isDirectory
+        return Node(f.name, dir, if (dir) 0 else f.length(), f.lastModified(), Files.isSymbolicLink(f.toPath()))
+    }
 
     override fun mkdir(path: String) {
         if (!File(path).mkdir()) throw IOException("Could not make $path")
@@ -97,6 +104,11 @@ object DeviceSpace : FileSpace {
         if (!FileUtils.deleteTree(file) && file.exists()) throw IOException("Could not delete $path")
     }
 
+    override fun remove(path: String) {
+        val file = File(path)
+        if (!file.delete() && (file.exists() || Files.isSymbolicLink(file.toPath()))) throw IOException("Could not delete $path")
+    }
+
     /** True when [a] and [b] differ only in case and name one file (on storage that ignores case). */
     private fun sameFileOtherCase(a: String, b: String): Boolean =
         a != b && a.equals(b, ignoreCase = true) &&
@@ -113,11 +125,11 @@ object DeviceSpace : FileSpace {
 class ShareSpace(val id: String) : FileSpace {
     override fun sameAs(other: FileSpace) = other is ShareSpace && other.id == id
 
-    override fun stat(path: String): Node? = Remotes.stat(path)?.let { Node(it.name, it.isDirectory, it.size, it.modified) }
+    override fun stat(path: String): Node? = Remotes.stat(path)?.let { Node(it.name, it.isDirectory, it.size, it.modified, it.isLink) }
 
     override fun list(path: String): List<Node> = Remotes.list(path).map { f ->
         val s = f.stat()
-        Node(f.name, s?.isDirectory == true, s?.size ?: -1, s?.modified ?: 0)
+        Node(f.name, s?.isDirectory == true, s?.size ?: -1, s?.modified ?: 0, s?.isLink == true)
     }
 
     override fun mkdir(path: String) = Remotes.mkdir(path)
@@ -133,6 +145,8 @@ class ShareSpace(val id: String) : FileSpace {
     }
 
     override fun delete(path: String) = Remotes.delete(path)
+
+    override fun remove(path: String) = Remotes.remove(path)
 
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = Remotes.copy(from, to, progress)
 }

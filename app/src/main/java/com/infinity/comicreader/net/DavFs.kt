@@ -140,6 +140,14 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         change(request(urlOf(path, isFolder(path))).delete(), path, 200, 204)
     }
 
+    /** DELETE, of a folder only once it is empty: DELETE takes a folder with everything inside. */
+    override fun remove(path: String) {
+        require(path.isNotEmpty()) { "Not deleting the share" }
+        val folder = isFolder(path)
+        if (folder && list(path).isNotEmpty()) throw IOException("Not empty: $path")
+        change(request(urlOf(path, folder)).delete(), path, 200, 204)
+    }
+
     /** COPY of one file; false when the server has no COPY. */
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
         val r = request(urlOf(from, folder = false)).method("COPY", null)

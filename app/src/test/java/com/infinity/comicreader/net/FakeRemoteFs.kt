@@ -120,6 +120,12 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
         if (!at(path).deleteRecursively()) throw java.io.IOException("Could not delete $path")
     }
 
+    override fun remove(path: String) {
+        checkWrite()
+        if (!at(path).exists()) throw RemoteException(RemoteException.Reason.MISSING)
+        if (!at(path).delete()) throw java.io.IOException("Could not delete $path")
+    }
+
     override fun close() {
         closed = true
     }

@@ -230,6 +230,50 @@ class TransferTest {
     }
 
     @Test
+    fun aMoveDeletesOnlyWhatItCopied() {
+        write(File(device, "Series/001.cbz"), 1000)
+        // A file comes into the folder while it is copied.
+        val growing = object : FileSpace by DeviceSpace {
+            override fun open(path: String): InputStream {
+                File(device, "Series/002.cbz").writeBytes(ByteArray(5))
+                return DeviceSpace.open(path)
+            }
+        }
+        val result = Transfer(spaceOf = { if (Remotes.isRemote(it)) ShareSpace("s1") else growing })
+            .run(p("Series"), "/net/s1", "Series", move = true, replace = false)
+        assertTrue(result.sourceLeft)
+        assertEquals(listOf("001.cbz"), names(File(shareDir, "Series")))
+        assertEquals(listOf("002.cbz"), names(File(device, "Series")))
+    }
+
+    @Test
+    fun linksAreLeftOutAndKeptWithWhatTheyPointTo() {
+        write(File(device, "Series/001.cbz"), 100)
+        val target = write(File(device, "Series/Elsewhere/other.cbz"), 200)
+        val links = object : FileSpace by DeviceSpace {
+            override fun list(path: String) = DeviceSpace.list(path).map { if (it.name == "Elsewhere") it.copy(isLink = true) else it }
+
+            override fun stat(path: String) = DeviceSpace.stat(path)?.let { if (it.name == "Elsewhere") it.copy(isLink = true) else it }
+        }
+        val spaces = { path: String -> if (Remotes.isRemote(path)) ShareSpace("s1") else links }
+        Transfer(spaceOf = spaces).run(p("Series"), "/net/s1", "Series", move = false, replace = false)
+        assertEquals(listOf("001.cbz"), names(File(shareDir, "Series")))
+        File(shareDir, "Series").deleteRecursively()
+
+        val result = Transfer(spaceOf = spaces).run(p("Series"), "/net/s1", "Series", move = true, replace = false)
+        assertTrue(result.sourceLeft)
+        assertEquals(listOf("Elsewhere"), names(File(device, "Series")))
+        assertArrayEquals(target, File(device, "Series/Elsewhere/other.cbz").readBytes())
+        // A link itself is not copied.
+        try {
+            Transfer(spaceOf = spaces).run(p("Series/Elsewhere"), "/net/s1", "Elsewhere", move = false, replace = false)
+            fail("no failure")
+        } catch (e: IOException) {
+            // Expected.
+        }
+    }
+
+    @Test
     fun keepBothNumbersNamesOn() {
         val taken = setOf("Book (2).cbz", "Book (3).cbz", "Series (2)")
         assertEquals("Book (4).cbz", Transfer.keepBothName("Book.cbz", false) { it in taken })

@@ -15,9 +15,11 @@ import java.util.zip.CRC32
  * side name in the target folder ([sideName]) and renamed into place once complete,
  * and a failed or canceled one is deleted. Every file copied is checked for its size;
  * a move between spaces also reads each copy back and compares its CRC-32 with the
- * source's before the source is deleted. A move within one space is a rename.
- * [progress] hears bytes done of the total, reading back included; [alive] going false
- * cancels at the next piece.
+ * source's before the source is deleted: only what was copied, so whatever came into a
+ * folder meanwhile stays, and the folder with it. A move within one space is a rename.
+ * Links (symbolic links, junctions) are left out: what they point to may be anywhere,
+ * even around the folder itself. [progress] hears bytes done of the total, reading back
+ * included; [alive] going false cancels at the next piece.
  */
 class Transfer(
     private val spaceOf: (String) -> FileSpace = FileSpaces::of,
@@ -31,6 +33,9 @@ class Transfer(
     private var done = 0L
     private var total = 0L
 
+    /** The source's files and folders copied so far, folders before what they hold. */
+    private val copied = ArrayList<String>()
+
     /**
      * Copies, or moves when [move], [source] into folder [targetDir] as [name]; what is
      * there by that name is replaced when [replace], else fails the transfer.
@@ -42,6 +47,7 @@ class Transfer(
         require(target != source) { "Onto itself: $source" }
         require(!isWithin(targetDir, source)) { "Into itself: $source" }
         val node = from.stat(source) ?: throw FileNotFoundException(source)
+        if (node.isLink) throw IOException("A link, not copied: $source")
         val existing = to.stat(target)
         if (existing != null && !replace) throw IOException("Already there: $target")
         if (move && from.sameAs(to)) renamed(from, source, targetDir, name, existing != null)?.let { return it }
@@ -59,12 +65,20 @@ class Transfer(
         }
         commit(to, part, targetDir, name, existing != null)
         if (!move) return Result(target)
-        return try {
-            from.delete(source)
-            Result(target)
-        } catch (e: IOException) {
-            Result(target, sourceLeft = true)
+        return Result(target, sourceLeft = !removeCopied(from))
+    }
+
+    /** Deletes what was copied from the source, deepest first, each folder once emptied; false when anything is left. */
+    private fun removeCopied(space: FileSpace): Boolean {
+        var all = true
+        for (path in copied.asReversed()) {
+            try {
+                space.remove(path)
+            } catch (e: IOException) {
+                all = false
+            }
         }
+        return all
     }
 
     /** Moves by renaming, setting aside what it replaces until it is in place; null when the space cannot. */
@@ -108,14 +122,21 @@ class Transfer(
 
     private fun sizeOf(space: FileSpace, path: String, node: Node): Long {
         checkAlive()
+        if (node.isLink) return 0
         if (!node.isDirectory) return node.size.coerceAtLeast(0)
         return space.list(path).sumOf { sizeOf(space, child(path, it.name), it) }
     }
 
     private fun copyTree(from: FileSpace, source: String, node: Node, to: FileSpace, target: String, verify: Boolean) {
         checkAlive()
-        if (!node.isDirectory) return copyFile(from, source, node, to, target, verify)
+        if (node.isLink) return
+        if (!node.isDirectory) {
+            copyFile(from, source, node, to, target, verify)
+            copied += source
+            return
+        }
         to.mkdir(target)
+        copied += source
         for (c in from.list(source).sortedBy { it.name }) copyTree(from, child(source, c.name), c, to, child(target, c.name), verify)
     }
 

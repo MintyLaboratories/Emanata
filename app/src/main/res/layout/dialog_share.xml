@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The network share form: SMB or WebDAV, name, path, user and password; everything else
-    is defaulted. Kept from autofill, so password managers neither offer nor save share passwords.
+    The network share form: SMB or WebDAV, name, path, user and password (which an edit can
+    clear), and whether covers are made; everything else is defaulted. Kept from autofill, so
+    password managers neither offer nor save share passwords.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -98,5 +99,31 @@
                 android:inputType="textPassword"
                 android:maxLines="1" />
         </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/share_password_clear"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:text="@string/share_password_clear"
+            android:visibility="gone" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/share_thumbnails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_2"
+            android:checked="true"
+            android:minHeight="48dp"
+            android:text="@string/share_thumbnails" />
+
+        <TextView
+            android:id="@+id/share_thumbnails_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/share_thumbnails_hint"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 </ScrollView>

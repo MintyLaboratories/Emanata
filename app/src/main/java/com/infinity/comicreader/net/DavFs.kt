@@ -22,8 +22,9 @@ import java.util.concurrent.locks.ReentrantLock
  * Range sends whole files: they are then read front to back only, and [seekable] says
  * so, for books to be fetched whole instead. Basic sign-in goes with each request when
  * a user or password is set; one turned down (401) is not tried again until the user
- * retries ([Remotes] remembers it). HTTPS, or plain HTTP only to this device
- * ([DavUrl]); redirects are followed, never between the two, and the sign-in never
+ * retries ([Remotes] remembers it). HTTPS, or plain HTTP only to a private address
+ * ([DavUrl.isPrivate]); redirects are followed, never between the two nor to plain
+ * HTTP elsewhere, and the sign-in never
  * goes to another host. Idle connections close after [IDLE_MS]. Closing the share or
  * a file cancels its requests, bodies still coming included, and never waits. Ranges
  * ask for the version first read (If-Range): a file changed meanwhile fails to read.
@@ -443,6 +444,12 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
                 .writeTimeout(30, TimeUnit.SECONDS)
                 // Never from HTTPS to plain HTTP.
                 .followSslRedirects(false)
+                // Plain HTTP only within the local network, redirects included.
+                .addNetworkInterceptor { chain ->
+                    val url = chain.request().url
+                    if (!url.isHttps && !DavUrl.isPrivate(url.host)) throw IOException("Plain HTTP only to private addresses")
+                    chain.proceed(chain.request())
+                }
                 .connectionPool(ConnectionPool(4, IDLE_MS, TimeUnit.MILLISECONDS))
                 .build()
         }

@@ -224,10 +224,14 @@ class ListActivitySharesTest {
         idle()
         assertEquals(activity.getString(R.string.share_address), pathLayout.hint.toString())
         assertEquals(null, pathLayout.error)
-        dialog.findViewById<TextView>(R.id.share_path)!!.text = "http://nas.local/dav"
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "http://nas.example/dav"
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
         assertEquals(activity.getString(R.string.share_problem_insecure), pathLayout.error.toString())
+        // Plain http within the local network is taken, with a warning.
+        dialog.findViewById<TextView>(R.id.share_path)!!.text = "http://192.168.200.7/dav"
+        idle()
+        assertEquals(activity.getString(R.string.share_http_warning), pathLayout.helperText.toString())
         dialog.findViewById<TextView>(R.id.share_path)!!.text = "https://nas.local/dav/comics"
         dialog.findViewById<TextView>(R.id.share_user)!!.text = "user"
         dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
@@ -320,6 +324,36 @@ class ListActivitySharesTest {
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
         assertEquals("its start folder goes with it", "/net/s1", prefs.locationStart("/net/s1"))
     }
+
+    @Test
+    fun theFormClearsAPasswordAndTurnsThumbnailsOff() {
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        row("Share A").performLongClick()
+        idle()
+        val menu = ShadowDialog.getLatestDialog() as AlertDialog
+        menu.listView.performItemClick(null, 0, 0)
+        idle()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val clear = dialog.findViewById<View>(R.id.share_password_clear)!!
+        assertEquals(View.VISIBLE, clear.visibility)
+        clear.performClick()
+        assertEquals(View.GONE, clear.visibility)
+        assertEquals(
+            activity.getString(R.string.share_password_cleared),
+            dialog.findViewById<TextInputLayout>(R.id.share_password_layout)!!.helperText.toString()
+        )
+        dialog.findViewById<android.widget.CompoundButton>(R.id.share_thumbnails)!!.isChecked = false
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        val saved = ShareStore(context, box).all().single()
+        assertEquals("", saved.password)
+        assertFalse(saved.passwordLost)
+        assertFalse(saved.thumbnails)
+        assertFalse(Remotes.thumbnails("/net/s1/Loose.cbz"))
+    }
+
 
     @Test
     fun favoritesAndHistoryOnAShareShowWithoutTheNetwork() {

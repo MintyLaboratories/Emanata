@@ -34,7 +34,12 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
             }
             val password = unseal(o.optString("secret"))
             val lost = password == null || o.optBoolean(KEY_LOST)
-            out.add(Share(id, o.optString("name"), path, o.optString("user"), password.orEmpty(), passwordLost = lost))
+            out.add(
+                Share(
+                    id, o.optString("name"), path, o.optString("user"), password.orEmpty(),
+                    passwordLost = lost, thumbnails = o.optBoolean(KEY_THUMBNAILS, true)
+                )
+            )
         }
         return out
     }
@@ -72,6 +77,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
                     }
                     .put("user", s.user).put("secret", seal(s.password))
                     .apply { if (s.passwordLost) put(KEY_LOST, true) }
+                    .apply { if (!s.thumbnails) put(KEY_THUMBNAILS, false) }
             )
         }
         sp.edit().putString(KEY_LIST, arr.toString()).commit()
@@ -88,6 +94,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
         private const val FILE = "shares"
         private const val KEY_LIST = "list"
         private const val KEY_LOST = "lost"
+        private const val KEY_THUMBNAILS = "thumbnails"
 
         /** How a share is reached: absent for SMB, as stored before WebDAV. */
         private const val KEY_KIND = "kind"

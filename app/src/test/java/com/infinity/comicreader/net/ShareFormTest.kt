@@ -55,8 +55,9 @@ class ShareFormTest {
         assertEquals("nas.local", ok(ShareForm.build("", "nas.local", "", "", null, ShareKind.WEBDAV)).name)
         assertEquals(
             ShareForm.Result.Invalid(SharePath.Problem.INSECURE),
-            ShareForm.build("A", "http://nas.local/dav", "user", "pw", null, ShareKind.WEBDAV)
+            ShareForm.build("A", "http://nas.example/dav", "user", "pw", null, ShareKind.WEBDAV)
         )
+        assertEquals(DavUrl(false, "nas.local", 80, "dav"), ok(ShareForm.build("A", "http://nas.local/dav", "user", "pw", null, ShareKind.WEBDAV)).path)
         assertEquals(
             ShareForm.Result.Invalid(SharePath.Problem.WEB_ADDRESS),
             ShareForm.build("A", "https://nas.local/dav", "user", "pw", null, ShareKind.SMB)
@@ -96,5 +97,26 @@ class ShareFormTest {
     fun thePasswordStaysOutOfText() {
         val share = ok(ShareForm.build("A", "nas.local/books", "user", "hunter2", null))
         assertFalse(share.toString().contains("hunter2"))
+    }
+
+    @Test
+    fun clearingThePasswordStoresNoneEvenWhenItWasLost() {
+        val first = ok(ShareForm.build("A", "nas.local/books", "user", "pw", null))
+        val cleared = ok(ShareForm.build("A", "nas.local/books", "user", "", first, clearPassword = true))
+        assertEquals("", cleared.password)
+        val lost = first.copy(password = "", passwordLost = true)
+        val fresh = ok(ShareForm.build("A", "nas.local/books", "user", "", lost, clearPassword = true))
+        assertEquals(false, fresh.passwordLost)
+        // Typed after clearing, the new one counts; another host needs no password again.
+        assertEquals("new", ok(ShareForm.build("A", "nas.local/books", "user", "new", first, clearPassword = true)).password)
+        assertEquals("", ok(ShareForm.build("A", "other.local/books", "user", "", first, clearPassword = true)).password)
+    }
+
+    @Test
+    fun thumbnailsFollowTheSwitchAndStayOnAnEdit() {
+        val off = ok(ShareForm.build("A", "nas.local/books", "user", "pw", null, thumbnails = false))
+        assertEquals(false, off.thumbnails)
+        assertEquals(false, ok(ShareForm.build("B", "nas.local/books", "user", "", off)).thumbnails)
+        assertEquals(true, ok(ShareForm.build("A", "nas.local/books", "user", "pw", null)).thumbnails)
     }
 }

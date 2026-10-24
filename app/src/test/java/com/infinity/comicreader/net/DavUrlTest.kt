@@ -44,23 +44,26 @@ class DavUrlTest {
     }
 
     @Test
-    fun plainHttpOnlyToThisDevice() {
+    fun plainHttpOnlyToPrivateAddresses() {
         assertEquals(DavUrl(false, "localhost", 8080, "dav"), valid("http://localhost:8080/dav"))
         assertEquals(DavUrl(false, "127.0.0.1", 80, ""), valid("dav://127.0.0.1"))
-        assertEquals(Problem.INSECURE, problem("http://127.0.0.2/"))
-        assertEquals(Problem.INSECURE, problem("http://nas.local/dav"))
-        assertEquals(Problem.INSECURE, problem("http://192.0.2.10/dav"))
+        assertEquals(DavUrl(false, "nas.local", 80, "dav"), valid("http://nas.local/dav"))
+        for (host in listOf("10.1.2.3", "172.16.0.9", "172.31.255.1", "192.168.200.7", "169.254.7.7", "[fe80::1]")) {
+            assertEquals(host, false, valid("http://$host/dav").secure)
+        }
+        for (host in listOf("192.0.2.10", "172.32.0.1", "172.15.0.1", "8.8.8.8", "nas.example", "nas", "192.168.200", "[2001:db8::1]", "local")) {
+            assertEquals(host, Problem.INSECURE, problem("http://$host/dav"))
+        }
         assertTrue(DavUrl.isLoopback("LOCALHOST"))
         assertFalse(DavUrl.isLoopback("127.0.0.1.example"))
+        assertFalse(DavUrl.isPrivate("192.168.200.7.example"))
+        assertTrue(DavUrl.isPrivate("NAS.Local."))
     }
 
     @Test
-    fun theNetworkSecurityConfigAllowsPlainHttpToTheSameHosts() {
+    fun theNetworkSecurityConfigLeavesPlainHttpToTheApp() {
         val xml = java.io.File("src/main/res/xml/network_security_config.xml").readText()
-        assertTrue(xml.contains("""<base-config cleartextTrafficPermitted="false" />"""))
-        val hosts = Regex("""<domain[^>]*>([^<]+)</domain>""").findAll(xml).map { it.groupValues[1] }.toList()
-        assertEquals(listOf("localhost", "127.0.0.1"), hosts)
-        assertTrue(hosts.all { DavUrl.isLoopback(it) })
+        assertTrue(xml.contains("""<base-config cleartextTrafficPermitted="true" />"""))
         assertTrue(java.io.File("src/main/AndroidManifest.xml").readText().contains("@xml/network_security_config"))
     }
 

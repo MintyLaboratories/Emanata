@@ -106,6 +106,9 @@ object Remotes {
 
     fun share(id: String): Share? = shares().firstOrNull { it.id == id }
 
+    /** False for a path on a share set not to load thumbnails ([Share.thumbnails]). */
+    fun thumbnails(path: String): Boolean = idOf(path)?.let { share(it)?.thumbnails } ?: true
+
     /** True for a path on a share that was removed from the app: nothing is there any more. */
     fun isOrphan(path: String): Boolean = idOf(path)?.let { share(it) == null } == true
 

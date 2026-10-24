@@ -136,4 +136,12 @@ class ShareStoreTest {
             // Expected: the tag no longer matches.
         }
     }
+
+    @Test
+    fun loadingThumbnailsIsKeptPerShare() {
+        val store = ShareStore(context, box)
+        store.put(share("a1", "Share A", "pw").copy(thumbnails = false))
+        store.put(share("b2", "Share B", "pw"))
+        assertEquals(listOf(false, true), ShareStore(context, box).all().map { it.thumbnails })
+    }
 }

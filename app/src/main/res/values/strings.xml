@@ -70,6 +70,12 @@
     <string name="share_password">Password</string>
     <string name="share_password_keep">Blank keeps the saved one</string>
     <string name="share_password_lost">The saved password can no longer be read; enter it again</string>
+    <string name="share_password_clear">Clear password</string>
+    <string name="share_password_cleared">Saving removes the stored password</string>
+    <string name="share_password_none">No password is stored</string>
+    <string name="share_thumbnails">Load thumbnails</string>
+    <string name="share_thumbnails_hint">Turn off for slow drives: covers already made still show</string>
+    <string name="share_http_warning">Plain http: the password and comics cross the network unencrypted</string>
     <string name="share_save_failed">The password could not be stored securely; try again</string>
     <string name="share_problem_empty">Enter the share\'s path, such as nas.local/share/folder</string>
     <string name="share_problem_no_share">Add the share\'s name after the host: host/share</string>
@@ -84,7 +90,7 @@
     <string name="share_user_hint_webdav">Blank when the server asks for none</string>
     <string name="share_problem_empty_webdav">Enter the server\'s address, such as https://nas.local/comics</string>
     <string name="share_problem_name_webdav">Folder names cannot be . or .., or hold / or \\</string>
-    <string name="share_problem_insecure">Use https://; plain http:// reaches only this device</string>
+    <string name="share_problem_insecure">Use https://; plain http:// reaches only private addresses (such as 192.168.x.x or nas.local)</string>
     <string name="share_problem_password_again">Enter the password again for the new server</string>
     <string name="share_edit">Edit…</string>
     <string name="share_remove">Remove</string>

@@ -7,15 +7,19 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.autofill.AutofillManager
+import android.widget.CompoundButton
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.DavUrl
+import com.infinity.comicreader.net.Share
 import com.infinity.comicreader.net.ShareForm
 import com.infinity.comicreader.net.ShareKind
 import com.infinity.comicreader.net.SharePath
@@ -27,19 +31,24 @@ import kotlinx.coroutines.withContext
 
 /**
  * The form that adds a network share, or edits one: SMB or WebDAV, name, path
- * (`host/share/folder`, or an `https://` address for WebDAV), user and password,
- * everything else defaulted. Saving checks the path, stores the
- * share (its password sealed) off the main thread and tells the [LocationSheet.Host];
+ * (`host/share/folder`, or an `https://` address for WebDAV, plain `http://` to a
+ * private address with a warning), user and password (an edit can clear a stored one),
+ * and whether covers of its books are made; everything else defaulted. Saving checks
+ * the path, stores the share (its password sealed) off the main thread and tells the [LocationSheet.Host];
  * a bad path, or a password the keystore could not seal, keeps the form open, saying
  * what is wrong. It comes back after a rotation with what was typed.
  */
 class ShareDialog : DialogFragment() {
     private lateinit var form: View
 
+    /** True once "Clear password" was tapped: a blank password then stores none. */
+    private var clearing = false
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
         val store = ShareStore(context)
         val previous = arguments?.getString(ARG_ID)?.let { store.get(it) }
+        clearing = savedInstanceState?.getBoolean(STATE_CLEARING) == true
         form = LayoutInflater.from(context).inflate(R.layout.dialog_share, null)
         val kinds = form.findViewById<MaterialButtonToggleGroup>(R.id.share_kind)
         kinds.addOnButtonCheckedListener { _, _, checked -> if (checked) showKind() }
@@ -48,11 +57,10 @@ class ShareDialog : DialogFragment() {
             field(R.id.share_name).setText(previous.name)
             field(R.id.share_path).setText(previous.path.toString())
             field(R.id.share_user).setText(previous.user)
+            form.findViewById<CompoundButton>(R.id.share_thumbnails).isChecked = previous.thumbnails
         }
-        if (previous != null) {
-            form.findViewById<TextInputLayout>(R.id.share_password_layout).helperText =
-                getString(if (previous.passwordLost) R.string.share_password_lost else R.string.share_password_keep)
-        }
+        field(R.id.share_path).doAfterTextChanged { showPathHint() }
+        if (previous != null) showPassword(previous)
         val dialog = AlertDialog.Builder(context)
             .setTitle(if (previous == null) R.string.share_add_title else R.string.share_edit_title)
             .setView(form)
@@ -66,6 +74,31 @@ class ShareDialog : DialogFragment() {
             button.setOnClickListener { save(store, button) }
         }
         return dialog
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_CLEARING, clearing)
+    }
+
+    /** What is stored of [previous]'s password, and "Clear password" while there is one to clear. */
+    private fun showPassword(previous: Share) {
+        val stored = previous.password.isNotEmpty() || previous.passwordLost
+        val clear = form.findViewById<View>(R.id.share_password_clear)
+        clear.visibility = if (stored && !clearing) View.VISIBLE else View.GONE
+        clear.setOnClickListener {
+            clearing = true
+            field(R.id.share_password).text = null
+            showPassword(previous)
+        }
+        form.findViewById<TextInputLayout>(R.id.share_password_layout).helperText = getString(
+            when {
+                clearing && stored -> R.string.share_password_cleared
+                previous.passwordLost -> R.string.share_password_lost
+                stored -> R.string.share_password_keep
+                else -> R.string.share_password_none
+            }
+        )
     }
 
     override fun onCancel(dialog: DialogInterface) {
@@ -93,11 +126,24 @@ class ShareDialog : DialogFragment() {
         val webDav = kind() == ShareKind.WEBDAV
         form.findViewById<TextInputLayout>(R.id.share_path_layout).apply {
             hint = getString(if (webDav) R.string.share_address else R.string.share_path)
-            helperText = getString(if (webDav) R.string.share_address_hint else R.string.share_path_hint)
             error = null
         }
+        showPathHint()
         form.findViewById<TextInputLayout>(R.id.share_user_layout).helperText =
             getString(if (webDav) R.string.share_user_hint_webdav else R.string.share_user_hint)
+    }
+
+    /** The path's example, or a warning for a WebDAV address over plain http. */
+    private fun showPathHint() {
+        val webDav = kind() == ShareKind.WEBDAV
+        val plain = webDav && (DavUrl.parse(text(R.id.share_path)) as? DavUrl.Parsed.Valid)?.url?.secure == false
+        form.findViewById<TextInputLayout>(R.id.share_path_layout).helperText = getString(
+            when {
+                plain -> R.string.share_http_warning
+                webDav -> R.string.share_address_hint
+                else -> R.string.share_path_hint
+            }
+        )
     }
 
     private fun text(id: Int): String = field(id).text?.toString().orEmpty()
@@ -108,7 +154,11 @@ class ShareDialog : DialogFragment() {
         val pathLayout = form.findViewById<TextInputLayout>(R.id.share_path_layout)
         val passwordLayout = form.findViewById<TextInputLayout>(R.id.share_password_layout)
         val kind = kind()
-        val result = ShareForm.build(text(R.id.share_name), text(R.id.share_path), text(R.id.share_user), text(R.id.share_password), previous, kind)
+        val thumbnails = form.findViewById<CompoundButton>(R.id.share_thumbnails).isChecked
+        val result = ShareForm.build(
+            text(R.id.share_name), text(R.id.share_path), text(R.id.share_user), text(R.id.share_password), previous, kind,
+            thumbnails = thumbnails, clearPassword = clearing
+        )
         when (result) {
             is ShareForm.Result.Invalid -> {
                 val onPassword = result.problem == SharePath.Problem.PASSWORD_AGAIN
@@ -139,6 +189,7 @@ class ShareDialog : DialogFragment() {
     companion object {
         private const val TAG = "share"
         private const val ARG_ID = "id"
+        private const val STATE_CLEARING = "clearing"
 
         /** Opens the form over [activity]: a new share, or the one with [id]. */
         fun show(activity: FragmentActivity, id: String?) {

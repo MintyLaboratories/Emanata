@@ -8,8 +8,8 @@ import java.nio.ByteBuffer
  * Where a WebDAV share lives: [host] and [port] over HTTPS ([secure]), and the folder
  * [dir] on the server (`/`-separated, decoded, empty for the server's top). Written
  * as the form takes it: `https://host/folder`; `davs://` and a bare `host/folder` mean
- * the same. Plain `http://` (or `dav://`) is taken only for this device (loopback),
- * where the password never crosses a network.
+ * the same. Plain `http://` (or `dav://`) is taken only for a private address
+ * ([isPrivate]): this device, the local network, or a `.local` name.
  */
 data class DavUrl(val secure: Boolean, override val host: String, override val port: Int, override val dir: String) : ShareAddress {
     /** As the form shows it: the port only when it is not the scheme's default; `%`, `?` and `#` escaped. */
@@ -40,8 +40,31 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
         fun hasWebScheme(text: String): Boolean =
             (SECURE_SCHEMES + PLAIN_SCHEMES).any { text.trimStart().startsWith(it, ignoreCase = true) }
 
-        /** True for a host that is this device, as the network security config names it (`res/xml`). */
-        fun isLoopback(host: String): Boolean = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
+        /** True for a host that is this device. */
+        fun isLoopback(host: String): Boolean = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1" || host == "::1"
+
+        /**
+         * True for a host plain http may reach: this device, a private IPv4 address
+         * (RFC 1918), a link-local address (169.254.x.x, fe80::/10), or a `.local` name.
+         */
+        fun isPrivate(host: String): Boolean {
+            val h = host.lowercase().removePrefix("[").removeSuffix("]").trimEnd('.')
+            if (isLoopback(h) || h.endsWith(".local")) return true
+            ipv4(h)?.let { (a, b) -> return a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) || (a == 169 && b == 254) }
+            if (':' in h) {
+                val first = h.substringBefore(':').toIntOrNull(16) ?: return false
+                return first and 0xffc0 == 0xfe80
+            }
+            return false
+        }
+
+        /** The first two numbers of a dotted IPv4 address; null when [host] is not one. */
+        private fun ipv4(host: String): Pair<Int, Int>? {
+            val parts = host.split('.')
+            if (parts.size != 4) return null
+            val n = parts.map { p -> p.takeIf { it.isNotEmpty() && it.length <= 3 && it.all(Char::isDigit) }?.toInt()?.takeIf { it <= 255 } ?: return null }
+            return n[0] to n[1]
+        }
 
         fun parse(input: String): Parsed {
             var text = input.trim()
@@ -59,7 +82,7 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
             if ('@' in authority) return Parsed.Invalid(Problem.BAD_HOST)
             val (host, port) = SharePath.hostAndPort(authority, defaultPort(secure)) ?: return Parsed.Invalid(Problem.BAD_HOST)
             if (port == null) return Parsed.Invalid(Problem.BAD_PORT)
-            if (!secure && !isLoopback(host)) return Parsed.Invalid(Problem.INSECURE)
+            if (!secure && !isPrivate(host)) return Parsed.Invalid(Problem.INSECURE)
             val names = rest.split('/').filter { it.isNotEmpty() }.map { decode(it) ?: return Parsed.Invalid(Problem.BAD_NAME) }
             if (names.any { !validName(it) }) return Parsed.Invalid(Problem.BAD_NAME)
             return Parsed.Valid(DavUrl(secure, host, port, names.joinToString("/")))

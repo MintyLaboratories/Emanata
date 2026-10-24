@@ -2094,6 +2094,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onSharesChanged() {
         refreshRoots()
+        // Covers follow a share's "Load thumbnails".
+        adapter.notifyDataSetChanged()
     }
 
     /** The open location picker; for tests. */

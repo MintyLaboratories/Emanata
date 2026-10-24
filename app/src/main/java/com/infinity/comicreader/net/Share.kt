@@ -7,7 +7,7 @@ package com.infinity.comicreader.net
  * empty user and password sign in as no one.
  * [passwordLost] says the stored password can no longer be opened (the keystore was
  * reset, or the share came from another device): it is never signed in with until
- * entered again.
+ * entered again. Without [thumbnails], covers of its books are not made (for slow drives).
  */
 data class Share(
     val id: String,
@@ -15,7 +15,8 @@ data class Share(
     val path: ShareAddress,
     val user: String,
     val password: String,
-    val passwordLost: Boolean = false
+    val passwordLost: Boolean = false,
+    val thumbnails: Boolean = true
 ) {
     val kind: ShareKind get() = if (path is DavUrl) ShareKind.WEBDAV else ShareKind.SMB
 

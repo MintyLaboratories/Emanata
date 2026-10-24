@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    WebDAV shares use HTTPS with the system's certificate authorities. Plain HTTP only
-    to this device itself, where nothing crosses a network (DavUrl.isLoopback).
+    WebDAV shares use HTTPS with the system's certificate authorities. Plain HTTP is
+    allowed here because the platform cannot name address ranges; the app itself sends
+    plain HTTP only to private addresses (DavUrl.isPrivate, checked for every request
+    and redirect in DavFs).
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

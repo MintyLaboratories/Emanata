@@ -69,6 +69,17 @@ class RemoteChannelTest {
     }
 
     @Test
+    fun readsGoingOnFromAnUnalignedRunKeepGrowing() {
+        val input = Bytes(data)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096)
+        channel.position(100)
+        channel.read(ByteBuffer.allocate(1500))
+        val piece = ByteBuffer.allocate(500)
+        while (channel.read(piece.apply { clear() }) > 0) Unit
+        assertEquals(listOf(0L to 1600, 1600L to 2048, 3648L to 4096, 7744L to 2256), input.asked)
+    }
+
+    @Test
     fun onlyTheMostRecentRunsAreKept() {
         val input = Bytes(data)
         val channel = RemoteChannel(input, minBlock = 1000, maxBlock = 1000, maxCached = 2000)

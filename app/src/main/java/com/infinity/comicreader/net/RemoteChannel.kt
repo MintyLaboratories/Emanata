@@ -73,8 +73,10 @@ class RemoteChannel(
                 return run
             }
         }
-        val start = at - at % minBlock
-        window = if (start == lastEnd) minOf(window.toLong() * 2, maxBlock.toLong()).toInt() else minBlock
+        // A read going on from the last run fetched continues it; any other starts at an aligned offset.
+        val follows = at == lastEnd
+        val start = if (follows) at else at - at % minBlock
+        window = if (follows || start == lastEnd) minOf(window.toLong() * 2, maxBlock.toLong()).toInt() else minBlock
         val reach = (at - start + wanted).coerceAtMost(maxBlock.toLong()).toInt()
         val length = minOf(maxOf(window, reach).toLong(), size - start).toInt()
         val bytes = ByteArray(length)

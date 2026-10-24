@@ -35,6 +35,23 @@ class PrefsStartupTest {
     }
 
     @Test
+    fun startFoldersFollowAFolderMovedOrRenamed() {
+        val prefs = Prefs(context)
+        prefs.setStartupFolder("/net/s1/Series/Arc")
+        prefs.setLocationStart("/net/s1", "/net/s1/Series/Arc")
+        prefs.setLocationStart("/storage/emulated/0", "/storage/emulated/0/Comics")
+        prefs.lastPath = "/net/s1/Series"
+        prefs.followPath("/net/s1/Series", "/net/s1/Sets/Series Two")
+        assertEquals("/net/s1/Sets/Series Two/Arc", prefs.startupPath)
+        assertEquals("/net/s1/Sets/Series Two/Arc", prefs.locationStart("/net/s1"))
+        assertEquals("/storage/emulated/0/Comics", prefs.locationStart("/storage/emulated/0"))
+        assertEquals("/net/s1/Sets/Series Two", prefs.lastPath)
+        // A name that only starts the same is another folder.
+        prefs.followPath("/storage/emulated/0/Com", "/storage/emulated/0/X")
+        assertEquals("/storage/emulated/0/Comics", prefs.locationStart("/storage/emulated/0"))
+    }
+
+    @Test
     fun eachLocationKeepsItsOwnStartFolder() {
         val prefs = Prefs(context)
         assertEquals("/storage/emulated/0", prefs.locationStart("/storage/emulated/0"))

@@ -21,6 +21,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -42,6 +43,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
@@ -79,6 +81,9 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
+import com.infinity.comicreader.files.FileClipboard
+import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.RemoteStat
@@ -118,6 +123,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private lateinit var tabs: TabLayout
     private lateinit var pathbar: CrumbBar
     private lateinit var fab: FloatingActionButton
+
+    /** Pastes the item Move or Copy picked up ([FileClipboard]) into the folder browsed; a long press drops it. */
+    private lateinit var pasteFab: FloatingActionButton
+    private lateinit var fileActions: FileActions
+
+    /** The hint shown beside [pasteFab] as an item is picked up. */
+    private var pasteBubble: PopupWindow? = null
     private lateinit var filterChip: Chip
     private lateinit var peek: PeekOverlay
     private lateinit var pinch: PinchPeek
@@ -252,6 +264,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         pathbar = findViewById(R.id.pathbar)
         recycler = findViewById(R.id.recycler)
         fab = findViewById(R.id.fab)
+        pasteFab = findViewById(R.id.paste_fab)
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
@@ -304,6 +317,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         })
 
         fab.setOnClickListener { toggleGrid() }
+        fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, ::updatePasteButton)
+        pasteFab.setOnClickListener {
+            hidePasteBubble()
+            currentDir?.let { fileActions.paste(it) }
+        }
+        pasteFab.setOnLongClickListener {
+            hidePasteBubble()
+            fileActions.drop()
+            toast(R.string.paste_dropped)
+            true
+        }
         updateFabIcon()
         fab.visibility = View.GONE
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
@@ -379,6 +403,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         super.onDestroy()
         historyWatch?.close()
         resumeOffer?.dismiss()
+        hidePasteBubble()
+        fileActions.release()
         peek.hide()
         adapter.release()
     }
@@ -723,6 +749,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         applyLayoutManager()
         updateCellSize()
         updateFabIcon()
+        updatePasteButton()
         invalidateOptionsMenu()
     }
 
@@ -771,6 +798,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         adapter.highlightPath = highlight
         selectTab(TAB_BROWSE)
 
+        updatePasteButton()
         val atRoot = roots.any { it.path == dir.absolutePath }
         supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
         showCrumbs(dir)
@@ -1409,6 +1437,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
     }
 
+    /**
+     * The long-press menu: the item's file operations as a row of icons (Rename, Delete,
+     * Move, Copy, and More when it holds anything) above its comic operations as a list.
+     */
     private fun onEntryLongClick(entry: BookEntry) {
         val path = entry.path
         val labels = ArrayList<String>()
@@ -1445,16 +1477,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             }
             if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
-            if (entry.isDir) {
-                add(getString(R.string.menu_set_startup)) {
-                    prefs.setStartupFolder(path)
-                    toast(R.string.startup_folder_set)
-                }
-            }
-            if (entry.file !is RemoteFile && entry.file.exists()) {
-                add(getString(R.string.menu_rename)) { renameEntry(entry.file) }
-                add(getString(R.string.delete)) { confirmDelete(entry.file) }
-            }
         }
         if (mode == TAB_HISTORY) {
             add(getString(R.string.pref_clear_history)) {
@@ -1465,10 +1487,121 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
         }
 
-        AlertDialog.Builder(this)
-            .setTitle(entry.name)
+        val head = layoutInflater.inflate(R.layout.dialog_entry_title, null)
+        head.findViewById<TextView>(R.id.entry_title).text = entry.name
+        val ops = head.findViewById<LinearLayout>(R.id.file_ops)
+        var menu: AlertDialog? = null
+        fun op(id: Int, icon: Int, label: Int, action: () -> Unit) {
+            val view = layoutInflater.inflate(R.layout.item_file_op, ops, false)
+            view.id = id
+            view.findViewById<ImageView>(R.id.file_op_icon).setImageResource(icon)
+            view.findViewById<TextView>(R.id.file_op_label).setText(label)
+            view.contentDescription = getString(label)
+            view.setOnClickListener {
+                menu?.dismiss()
+                action()
+            }
+            ops.addView(view)
+        }
+        if (canChangeFiles(entry)) {
+            val more = moreActions(entry)
+            op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
+            op(R.id.file_op_delete, R.drawable.ic_delete, R.string.delete) { fileActions.delete(entry.file, entry.isDir) }
+            op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
+            op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
+            if (more.isNotEmpty()) op(R.id.file_op_more, R.drawable.ic_more_horiz, R.string.file_op_more) { showMore(entry, more) }
+        } else {
+            ops.visibility = View.GONE
+        }
+
+        menu = AlertDialog.Builder(this)
+            .setCustomTitle(head)
             .setItems(labels.toTypedArray()) { _, which -> actions[which].invoke() }
             .show()
+    }
+
+    /**
+     * True when [entry] can be renamed, deleted, moved and copied: a file or folder on the
+     * device or a share, listed outside Bookmarks, never a location itself.
+     */
+    private fun canChangeFiles(entry: BookEntry): Boolean {
+        if (mode == TAB_BOOKMARKS) return false
+        val path = entry.path
+        if (roots.any { it.path == path }) return false
+        if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)
+        return entry.file.exists()
+    }
+
+    /** What the long-press menu's More holds for [entry]: tools beyond the four file operations. */
+    private fun moreActions(entry: BookEntry): List<Pair<String, () -> Unit>> {
+        val out = ArrayList<Pair<String, () -> Unit>>()
+        if (entry.isDir) {
+            out += getString(R.string.menu_set_startup) to {
+                prefs.setStartupFolder(entry.path)
+                toast(R.string.startup_folder_set)
+            }
+        }
+        return out
+    }
+
+    private fun showMore(entry: BookEntry, more: List<Pair<String, () -> Unit>>) {
+        AlertDialog.Builder(this)
+            .setTitle(entry.name)
+            .setItems(more.map { it.first }.toTypedArray()) { _, which -> more[which].second.invoke() }
+            .show()
+    }
+
+    /** Puts [entry] on the clipboard for Paste, saying how Paste works. */
+    private fun pickUp(entry: BookEntry, move: Boolean) {
+        fileActions.pickUp(entry.file, entry.isDir, move)
+        if (pasteFab.visibility == View.VISIBLE) pasteFab.post { showPasteBubble() } else toast(R.string.paste_hint_browse)
+    }
+
+    /** Shows Paste while an item is picked up and a folder is browsed. */
+    private fun updatePasteButton() {
+        val clip = FileClipboard.clip
+        val shown = clip != null && mode == TAB_BROWSE && currentDir != null
+        pasteFab.visibility = if (shown) View.VISIBLE else View.GONE
+        pasteFab.contentDescription = clip?.let { getString(R.string.paste_named, it.name) } ?: getString(R.string.paste)
+        if (!shown) hidePasteBubble()
+    }
+
+    /** A short hint above Paste: tap pastes, a long press cancels. Goes by itself. */
+    private fun showPasteBubble() {
+        hidePasteBubble()
+        if (pasteFab.visibility != View.VISIBLE || !pasteFab.isAttachedToWindow) return
+        val text = TextView(this).apply {
+            id = R.id.paste_bubble
+            setText(R.string.paste_hint)
+            setBackgroundResource(R.drawable.bg_bubble)
+            setTextColor(MaterialColors.getColor(pasteFab, com.google.android.material.R.attr.colorOnSurfaceInverse))
+            val pad = resources.getDimensionPixelSize(R.dimen.space_3)
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+        text.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val bubble = PopupWindow(text, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        bubble.isOutsideTouchable = true
+        text.setOnClickListener { hidePasteBubble() }
+        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
+        bubble.showAsDropDown(pasteFab, 0, -(pasteFab.height + text.measuredHeight + gap))
+        pasteBubble = bubble
+        pasteFab.postDelayed({ if (pasteBubble === bubble) hidePasteBubble() }, PASTE_BUBBLE_MS)
+    }
+
+    private fun hidePasteBubble() {
+        pasteBubble?.dismiss()
+        pasteBubble = null
+    }
+
+    /** Lists again after a file operation, showing the item it ended on where it is listed. */
+    private fun fileWorkDone(outcome: FileWork.Outcome) {
+        val path = (outcome as? FileWork.Outcome.Done)?.path
+        val dir = currentDir
+        if (mode == TAB_BROWSE && dir != null) {
+            loadDirectory(dir, highlight = path?.takeIf { Transfer.parentOf(it) == dir.absolutePath })
+        } else {
+            refreshCurrent()
+        }
     }
 
     /** True when [entry] is listed in the folder Browse shows: "Show in folder" would lead nowhere new. */
@@ -1628,56 +1761,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val found = dir.isDirectory
         loadDirectory(dir, highlight = file.absolutePath)
         if (found) toast(R.string.menu_open_location)
-    }
-
-    private fun renameEntry(file: File) {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(file.name)
-            selectAll()
-        }
-        val container = LinearLayout(this).apply {
-            setPadding(48, 24, 48, 0)
-            addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.menu_rename)
-            .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isEmpty() || name == file.name) return@setPositiveButton
-                if (!FileUtils.isSafeName(name)) {
-                    toast(R.string.invalid_name)
-                    return@setPositiveButton
-                }
-                val target = File(file.parentFile, name)
-                // renameTo silently replaces an existing file, so refuse to.
-                val ok = !target.exists() && runCatching { file.renameTo(target) }.getOrDefault(false)
-                if (ok) library.replacePath(file.absolutePath, target.absolutePath)
-                toast(if (ok) R.string.renamed else R.string.rename_failed)
-                refreshCurrent()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmDelete(file: File) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.delete_confirm_title)
-            .setMessage(R.string.delete_confirm_msg)
-            .setPositiveButton(R.string.delete) { _, _ ->
-                lifecycleScope.launch {
-                    val ok = withContext(AppDispatchers.io) {
-                        runCatching { FileUtils.deleteTree(file) }.getOrDefault(false)
-                    }
-                    // Even a partial failure may have removed some files: forget what is gone.
-                    if (!file.exists()) library.removePathsUnder(file.absolutePath)
-                    toast(if (ok) getString(R.string.deleted_format, 1) else getString(R.string.op_failed))
-                    refreshCurrent()
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
     }
 
     private fun newFolder() {
@@ -2159,6 +2242,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L
+
+        /** How long the hint beside Paste stays. */
+        private const val PASTE_BUBBLE_MS = 3_500L
 
         /** How long the startup folder's share has to answer before the device's start folder opens instead. */
         const val SHARE_WAIT_MS = 3_000L

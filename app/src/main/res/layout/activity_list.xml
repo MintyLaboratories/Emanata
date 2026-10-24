@@ -144,6 +144,19 @@
         app:backgroundTint="?attr/colorPrimaryContainer"
         app:tint="?attr/colorOnPrimaryContainer" />
 
+    <!-- Pastes the item Move or Copy picked up into the folder browsed; a long press drops it. -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/paste_fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="@dimen/space_4"
+        android:contentDescription="@string/paste"
+        android:src="@drawable/ic_content_paste"
+        android:visibility="gone"
+        app:backgroundTint="?attr/colorTertiaryContainer"
+        app:tint="?attr/colorOnTertiaryContainer" />
+
     <ProgressBar
         android:id="@+id/progress"
         android:layout_width="wrap_content"

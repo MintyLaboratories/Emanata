@@ -30,3 +30,17 @@ fun confirm(
     @StringRes action: Int,
     onConfirm: () -> Unit
 ): AlertDialog = confirm(context, title, context.getText(message), action, onConfirm)
+
+/** [confirm] with a title made in code, as one naming the item it acts on. */
+fun confirm(
+    context: Context,
+    title: CharSequence,
+    message: CharSequence,
+    @StringRes action: Int,
+    onConfirm: () -> Unit
+): AlertDialog = AlertDialog.Builder(context)
+    .setTitle(title)
+    .setMessage(message)
+    .setPositiveButton(action) { _, _ -> onConfirm() }
+    .setNegativeButton(R.string.cancel, null)
+    .show()

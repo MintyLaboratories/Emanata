@@ -348,6 +348,20 @@ class Prefs(context: Context) {
         put(KEY_LOCATION_STARTS, LocationStarts.encode(starts))
     }
 
+    /** Re-points the startup folder, the locations' start folders and the last folder browsed after [old] moved to [new]. */
+    fun followPath(old: String, new: String) {
+        fun moved(p: String?) = p != null && (p == old || p.startsWith("$old/"))
+        fun remap(p: String) = new + p.removePrefix(old)
+        val e = sp.edit()
+        sp.getString(KEY_STARTUP_PATH, null)?.takeIf { moved(it) }?.let { e.putString(KEY_STARTUP_PATH, remap(it)) }
+        val starts = LocationStarts.decode(sp.getString(KEY_LOCATION_STARTS, null))
+        if (starts.values.any { moved(it) }) {
+            e.putString(KEY_LOCATION_STARTS, LocationStarts.encode(starts.mapValues { (_, v) -> if (moved(v)) remap(v) else v }))
+        }
+        e.apply()
+        lastPath?.takeIf { moved(it) }?.let { lastPath = remap(it) }
+    }
+
     /** Whether the app, as it starts, reopens the book read last: asks (the default), always, or never. */
     var startupResume: ResumeMode
         get() = ResumeMode.of(sp.getString(KEY_STARTUP_RESUME, null))

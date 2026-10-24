@@ -10,4 +10,12 @@
     <item name="location_add" type="id" />
     <!-- Book info's grid of hidden pages. -->
     <item name="hidden_pages_grid" type="id" />
+    <!-- The long-press menu's file operations, added in code. -->
+    <item name="file_op_rename" type="id" />
+    <item name="file_op_delete" type="id" />
+    <item name="file_op_move" type="id" />
+    <item name="file_op_copy" type="id" />
+    <item name="file_op_more" type="id" />
+    <!-- The hint beside the Paste button. -->
+    <item name="paste_bubble" type="id" />
 </resources>

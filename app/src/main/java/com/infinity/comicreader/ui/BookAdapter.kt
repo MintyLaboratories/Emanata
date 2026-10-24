@@ -145,13 +145,17 @@ class BookAdapter(
     /** Cover loads running or waiting, with the row each is for. */
     private val loads = HashMap<Job, BookHolder>()
 
-    /** Set by [cancelCovers]: the next [submit] redraws every row, so each asks for its cover again. */
+    /**
+     * Set by [cancelCovers] until the next [submit]: rows still shown ask for no cover (the
+     * new tab's view may redraw them meanwhile), and the next list redraws every row, so
+     * each asks anew.
+     */
     private var redrawAll = false
 
     /**
      * Drops every cover load running or waiting: the screen moves to another tab or folder,
-     * whose covers go first. One being made stops at its next step. Rows shown again ask
-     * anew; covers already drawn stay.
+     * whose covers go first. One being made stops at its next step. Until the next list
+     * ([submit]) no cover is asked for; then rows ask anew, and covers already drawn stay.
      */
     fun cancelCovers() {
         // A load not started yet ends, and leaves [loads], within cancel().
@@ -446,6 +450,8 @@ class BookAdapter(
      * for has had its first pass ([finishCover]).
      */
     private fun requestCover(holder: BookHolder) {
+        // A row left over from the list before (a request posted before it changed) asks nothing.
+        if (redrawAll || holder.bindingAdapterPosition == RecyclerView.NO_POSITION) return
         val item = holder.entry ?: return
         val id = holder.wanted ?: return
         val w = holder.thumb.width

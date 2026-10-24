@@ -174,6 +174,26 @@ class BookAdapterCoversTest {
     }
 
     @Test
+    fun rowsLeftBehindAskForNoCoverUntilTheNextList() {
+        val layered = Layered()
+        adapter.covers = layered
+        val books = (1..2).map { book("$it.cbz") }
+        adapter.submit(books)
+        layout()
+        until { layered.steps.size == 4 }
+        adapter.cancelCovers()
+        // The next tab's view redraws the old rows before its own list arrives.
+        adapter.options = RowOptions(density = com.infinity.comicreader.data.ListDensity.LARGE)
+        layout()
+        until { false }
+        assertEquals(4, layered.steps.size)
+        adapter.submit(listOf(book("3.cbz")))
+        layout()
+        until { layered.steps.size == 6 }
+        assertEquals(listOf("first 3.cbz", "full 3.cbz"), layered.steps.drop(4))
+    }
+
+    @Test
     fun aCoverMadeBeforeShowsAtOnceAfterSwitchingAway() {
         adapter.submit((1..8).map { book("slow $it.cbz") })
         layout()

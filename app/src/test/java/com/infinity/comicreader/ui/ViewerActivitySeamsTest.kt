@@ -19,6 +19,7 @@ import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -262,6 +263,16 @@ class ViewerActivitySeamsTest {
         ReaderSheet(again).tap(R.id.sheet_no_merge)
         await { again.items() == 6 }
         assertEquals(6, again.items())
+    }
+
+    @Test
+    fun dontMergeWaitsWhereNothingJoins() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        val viewer = launch(book(count = 7, first = 3))
+        val sheet = ReaderSheet(viewer)
+        assertFalse(sheet.view<View>(R.id.sheet_no_merge).isEnabled)
+        sheet.tap(R.id.btn_spreads_merge)
+        assertTrue(sheet.view<View>(R.id.sheet_no_merge).isEnabled)
     }
 
     @Test

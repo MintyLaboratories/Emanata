@@ -2877,9 +2877,10 @@ class ViewerActivity : AppCompatActivity() {
                 isChecked = prefs.joinSpreads
                 isEnabled = sideways
             }
+            // Only two pages a screen or spreads merged join pages; split ones never do.
             view.findViewById<MaterialSwitch>(R.id.sheet_no_merge).apply {
                 isChecked = noMerge
-                isEnabled = sideways && prefs.joinSpreads && favoriteFile() != null
+                isEnabled = sideways && prefs.joinSpreads && favoriteFile() != null && (spread || spreadDisplay == SpreadDisplay.MERGE)
             }
             view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {

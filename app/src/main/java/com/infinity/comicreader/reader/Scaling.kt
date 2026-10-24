@@ -54,8 +54,12 @@ data class Scaling(val filter: ScaleFilter = ScaleFilter.DEFAULT, val upRing: In
     /** Anti-ringing strength, 0..1, for an axis [enlarged] or not. */
     fun ring(enlarged: Boolean): Float = (if (enlarged) upRing else downRing) / 100f
 
-    /** Part of a cache key: empty for [DEFAULT], which covers made before these settings carry no token for. */
-    val key: String get() = if (this == DEFAULT) "" else "${filter.key}r$upRing-$downRing"
+    /**
+     * Part of a cache key for images that shrink, as covers do: [filter] and [downRing] only, so
+     * a change to [upRing] keeps them. Empty for [DEFAULT]'s, which covers made before these
+     * settings carry no token for.
+     */
+    val shrinkKey: String get() = if (filter == DEFAULT.filter && downRing == DEFAULT.downRing) "" else "${filter.key}r$downRing"
 
     companion object {
         const val DEFAULT_DOWN_RING = 50

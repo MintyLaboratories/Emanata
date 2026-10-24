@@ -39,9 +39,9 @@ data class CoverStyle(
     val linear: Boolean = false,
     val scaling: Scaling = Scaling.DEFAULT
 ) {
-    /** Part of the cache key: one token per setting. */
+    /** Part of the cache key: one token per setting a cover shows. */
     val key: String
-        get() = "${fit.key}|${anchor.key}" + (if (linear) "|linear" else "") + scaling.key.let { if (it.isEmpty()) "" else "|$it" }
+        get() = "${fit.key}|${anchor.key}" + (if (linear) "|linear" else "") + scaling.shrinkKey.let { if (it.isEmpty()) "" else "|$it" }
 
     /** True when a [srcW] x [srcH] cover fills a [boxW] x [boxH] box (cropped) rather than fits inside it. */
     fun fills(srcW: Int, srcH: Int, boxW: Int, boxH: Int): Boolean = when (fit) {

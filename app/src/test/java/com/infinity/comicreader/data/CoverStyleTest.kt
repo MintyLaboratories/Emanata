@@ -1,5 +1,7 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.reader.ScaleFilter
+import com.infinity.comicreader.reader.Scaling
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -41,6 +43,13 @@ class CoverStyleTest {
         }
         assertEquals(keys.size, keys.toSet().size)
         assertNotEquals(CoverStyle().key, CoverStyle(linear = true).key)
+    }
+
+    @Test
+    fun coversKeepTheirKeyWhenOnlyEnlargingChanges() {
+        assertEquals(CoverStyle().key, CoverStyle(scaling = Scaling(upRing = 40)).key)
+        assertNotEquals(CoverStyle().key, CoverStyle(scaling = Scaling(downRing = 20)).key)
+        assertNotEquals(CoverStyle().key, CoverStyle(scaling = Scaling(ScaleFilter.HERMITE)).key)
     }
 
     @Test

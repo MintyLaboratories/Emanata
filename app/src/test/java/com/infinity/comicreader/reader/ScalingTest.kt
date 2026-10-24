@@ -82,9 +82,12 @@ class ScalingTest {
         assertEquals(ScaleFilter.LANCZOS3, ScaleFilter.of(null))
         assertEquals(ScaleFilter.LANCZOS6, ScaleFilter.of("lanczos6"))
         assertEquals(ScaleFilter.CATMULL_ROM, ScaleFilter.of("bicubic"))
-        assertEquals("", Scaling.DEFAULT.key)
-        assertTrue(Scaling(ScaleFilter.HERMITE).key.isNotEmpty())
-        assertTrue(Scaling.PLAIN.key != Scaling(upRing = 10).key)
+        assertEquals("", Scaling.DEFAULT.shrinkKey)
+        assertTrue(Scaling(ScaleFilter.HERMITE).shrinkKey.isNotEmpty())
+        assertTrue(Scaling.PLAIN.shrinkKey != Scaling.DEFAULT.shrinkKey)
+        // Only what shrinking uses counts.
+        assertEquals("", Scaling(upRing = 10).shrinkKey)
+        assertEquals(Scaling(ScaleFilter.LANCZOS6, 0, 30).shrinkKey, Scaling(ScaleFilter.LANCZOS6, 80, 30).shrinkKey)
         assertEquals(0.5f, Scaling.DEFAULT.ring(enlarged = false))
         assertEquals(0f, Scaling.DEFAULT.ring(enlarged = true))
         assertThrows(IllegalArgumentException::class.java) { Scaling(upRing = 101) }

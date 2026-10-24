@@ -82,6 +82,7 @@ import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.files.FileClipboard
+import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.RemoteException
@@ -1780,9 +1781,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     toast(R.string.invalid_name)
                     return@setPositiveButton
                 }
-                val created = File(dir, name).mkdir()
-                toast(if (created) R.string.folder_created else R.string.error_open)
-                refreshCurrent()
+                val path = dir.absolutePath
+                lifecycleScope.launch {
+                    val created = withContext(AppDispatchers.io) {
+                        runCatching { FileSpaces.of(path).mkdir(Transfer.child(path, name)) }.isSuccess
+                    }
+                    toast(if (created) R.string.folder_created else R.string.error_open)
+                    refreshCurrent()
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -2095,9 +2101,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 if (currentDir?.let { library.isFavorite(it.absolutePath) } == true)
                     R.string.menu_remove_favorite else R.string.menu_add_favorite
             )
-        // Shares are read-only, and too slow to search for duplicates.
+        // Shares are too slow to search for duplicates.
         val local = currentDir !is RemoteFile
-        menu.findItem(R.id.menu_new_folder)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_new_folder)?.isVisible = browsing
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing

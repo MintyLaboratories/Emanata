@@ -163,7 +163,7 @@ class ListActivitySharesTest {
     }
 
     @Test
-    fun aShareIsReadOnly() {
+    fun aShareTakesNewFoldersButIsNotSearchedForDuplicates() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         openSheet(activity)
@@ -172,7 +172,7 @@ class ListActivitySharesTest {
         activity.invalidateOptionsMenu()
         idle()
         val menu = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).menu
-        assertFalse(menu.findItem(R.id.menu_new_folder).isVisible)
+        assertTrue(menu.findItem(R.id.menu_new_folder).isVisible)
         assertFalse(menu.findItem(R.id.menu_dupes).isVisible)
     }
 

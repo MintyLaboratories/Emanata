@@ -323,14 +323,35 @@ class ListActivityFileOpsTest {
         assertTrue(other.isDirectory)
     }
 
-    @Test
-    fun copiesOntoAShareAndRenamesThere() {
+    /** Serves a share from a folder, returned. */
+    private fun serveShare(): File {
         val shareDir = tmp.newFolder("share")
         val fake = FakeRemoteFs(shareDir)
         ShareStore.defaultBox = AesGcmBox { SecretKeySpec(ByteArray(32) { it.toByte() }, "AES") }
         ShareStore(context).put(FakeRemoteFs.share())
         Remotes.init(context)
         Remotes.connector = { fake }
+        return shareDir
+    }
+
+    @Test
+    fun makesNewFoldersOnShares() {
+        val shareDir = serveShare()
+        Prefs(context).lastPath = "/net/s1"
+        val activity = launch()
+        val item = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).menu.findItem(R.id.menu_new_folder)
+        activity.onOptionsItemSelected(item)
+        idle()
+        val ask = latest()
+        ask.edit().setText("Fresh")
+        ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { File(shareDir, "Fresh").isDirectory }
+        activity.row("/net/s1/Fresh")
+    }
+
+    @Test
+    fun copiesOntoAShareAndRenamesThere() {
+        val shareDir = serveShare()
         val activity = launch()
         activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
         idle()

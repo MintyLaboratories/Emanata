@@ -251,6 +251,19 @@ class PageLayoutTest {
     }
 
     @Test
+    fun firstPairingFindsAScreenThatPairsAPageNeedingItsOwn() {
+        val old = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3, 4), intArrayOf(5, 6)), spread = true, rtl = false)
+        assertEquals(-1, old.firstPairing(3, 7) { false })
+        assertEquals(2, old.firstPairing(3, 7) { it == 4 || it == 6 })
+        // Only screens through the one asked for count; a lone page pairs nothing.
+        assertEquals(-1, old.firstPairing(1, 7) { it == 4 })
+        assertEquals(-1, old.firstPairing(3, 7) { it == 0 })
+        // Kept through the screen before it, the new layout takes over from there.
+        val next = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3), intArrayOf(4), intArrayOf(5, 6)), spread = true, rtl = false)
+        assertEquals("[0][1|2][3][4][5|6]", items(old.keeping(1, next, 7), 7))
+    }
+
+    @Test
     fun keepingWorksFromPlainLayouts() {
         val merged = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1), intArrayOf(2, 3), intArrayOf(4)), spread = true, rtl = false, joined = setOf(2))
         // One page a screen: the screen on page 2 stays alone; 3 cannot join it.

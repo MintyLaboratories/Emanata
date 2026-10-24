@@ -163,6 +163,13 @@ class PageLayout(
         return PageLayout(rows, next.rtl, out, outJoined)
     }
 
+    /** The first item through [item] that pairs a whole page [alone] says needs a screen of its own; -1 for none. */
+    fun firstPairing(item: Int, pageCount: Int, alone: (Int) -> Boolean): Int =
+        (0..item.coerceAtMost(itemCount(pageCount) - 1)).firstOrNull { i ->
+            val parts = readingParts(i, pageCount)
+            parts.size > 1 && parts.any { it.half == Half.WHOLE && alone(it.page) }
+        } ?: -1
+
     /** The slot of its item that [page] shows in, left to right on screen; -1 when out of the book. */
     fun slotOf(page: Int, pageCount: Int): Int = slots(itemOf(page), pageCount).indexOf(page)
 

@@ -33,6 +33,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Duration
 
 /** Spreads in two files, told by their seams: shown as one, or paired, in place of the pairing by number. */
 @RunWith(RobolectricTestRunner::class)
@@ -64,8 +65,11 @@ class ViewerActivitySeamsTest {
         return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
-    /** [count] pages `Tale 001-000`…, each its own picture, but pages [first] and the next the halves of one. */
-    private fun book(count: Int, first: Int): File {
+    /**
+     * [count] pages `Tale 001-000`…, each its own picture, but pages [first] and the next the halves of one;
+     * a [solid] archive is read in order only, its page sizes learned as pages load.
+     */
+    private fun book(count: Int, first: Int, solid: Boolean = false): File {
         val art = SyntheticArt.art(width * 2, height, seed = 77)
         val pages = (0 until count).map { i ->
             when (i) {
@@ -74,7 +78,9 @@ class ViewerActivitySeamsTest {
                 else -> SyntheticArt.art(width, height, seed = i.toLong())
             }
         }
-        return Fixtures.zip(File(dir, "Tale 001.cbz"), *pages.mapIndexed { i, p -> Fixtures.entry("Tale 001-%03d.png".format(i), png(p)) }.toTypedArray())
+        val entries = pages.mapIndexed { i, p -> Fixtures.entry("Tale 001-%03d.png".format(i), png(p)) }.toTypedArray()
+        if (solid) return File(dir, "Tale 001.cbr").apply { writeBytes(Fixtures.rar4Bytes(*entries, solid = true)) }
+        return Fixtures.zip(File(dir, "Tale 001.cbz"), *entries)
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -102,6 +108,11 @@ class ViewerActivitySeamsTest {
 
     private fun ViewerActivity.next() {
         findViewById<View>(R.id.btn_next_page).performClick()
+        idle()
+    }
+
+    private fun ViewerActivity.previous() {
+        findViewById<View>(R.id.btn_prev_page).performClick()
         idle()
     }
 
@@ -211,6 +222,27 @@ class ViewerActivitySeamsTest {
         val again = launch(book)
         repeat(50) { Thread.sleep(10); idle() }
         assertEquals(16, again.items())
+    }
+
+    @Test
+    fun pageSizesLearnedLaterKeepTheScreensAlreadyRead() {
+        prefs.twoPage = TwoPage.ON
+        // As above, in a book whose page sizes are learned as its pages load.
+        val viewer = launch(book(count = 31, first = 20, solid = true))
+        repeat(9) { viewer.next() }
+        assertEquals("18 / 31", viewer.indicator())
+        await { viewer.items() == 17 }
+        // Pages loaded from here teach their sizes; [017|018] and those before it still stay.
+        viewer.next()
+        assertEquals("20 / 31", viewer.indicator())
+        repeat(20) {
+            Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        }
+        viewer.previous()
+        assertEquals("18 / 31", viewer.indicator())
+        viewer.previous()
+        assertEquals("16 / 31", viewer.indicator())
     }
 
     @Test

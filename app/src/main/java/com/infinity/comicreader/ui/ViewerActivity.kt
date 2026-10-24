@@ -251,7 +251,7 @@ class ViewerActivity : AppCompatActivity() {
     private var pageSeams = PageSeams.Found(0)
     private var seamsJob: Job? = null
 
-    /** The seams the layout reads: [pageSeams] as they were when last shown ([showSeams]). */
+    /** The seams the layout reads: [pageSeams] as they were when last shown ([relayout]). */
     private var shownSeams = PageSeams.Found(0)
 
     /** True until the reader turns a page of the book just opened: until then seams may re-pair the page on screen. */
@@ -262,6 +262,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** [visitedPages] counted when the layout was last made from them. */
     private var shownVisits = 0
+
+    /** True when page sizes changed since the layout was made ([relayout]). */
+    private var layoutStale = false
 
     /** The page the open book first showed, -1 until it shows. */
     private var openedPage = -1
@@ -429,7 +432,7 @@ class ViewerActivity : AppCompatActivity() {
             override fun onPageScrollStateChanged(state: Int) {
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) stopAutoScroll()
                 // Seams held back while the reader was on their pages may show now.
-                if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) pager.post { showSeams() }
+                if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) pager.post { relayout() }
             }
 
             override fun onPageSelected(position: Int) {
@@ -1370,8 +1373,8 @@ class ViewerActivity : AppCompatActivity() {
             if (found == null || source !== src || file != book) return@launch
             pageSizes = sizes
             analysis = found
-            // The same layout may still show a page now known to be wide.
-            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach(fresh = false)
+            layoutStale = true
+            relayout()
         }
     }
 
@@ -1400,7 +1403,8 @@ class ViewerActivity : AppCompatActivity() {
             }
             if (round != learnRound || source !== src || file != book) return@launch
             analysis = found
-            if (buildLayout().sameAs(layout)) updateSpreadRotation() else attach(fresh = false)
+            layoutStale = true
+            relayout()
         }
     }
 
@@ -1479,7 +1483,7 @@ class ViewerActivity : AppCompatActivity() {
                 }
                 if (!done || source !== src || file != book) return@launch
                 pageSeams = found.copy()
-                showSeams()
+                relayout()
                 at += next.size
                 batch = SEAM_BATCH
             }
@@ -1490,31 +1494,38 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
-     * Lays the book out with the seams found since the layout was made, and the pages the
-     * reader reached since ([visitedPages]). Once the reader turned a page ([seamsSettling])
-     * the screen shown and those before it keep their pages ([PageLayout.keeping]); only the
-     * pages after it re-pair, and not during a swipe or a zoom, which waits for the next
-     * call. A layout the reader asks for takes them all ([attach]).
+     * Lays the book out with what changed on its own since the layout was made: seams
+     * found, pages the reader reached ([visitedPages]), sizes learned ([layoutStale]).
+     * Once the reader turned a page ([seamsSettling]) in a layout that reads seams, the
+     * screen shown and those before it keep their pages ([PageLayout.keeping]), but for
+     * one pairing a page now known to be wide; only the pages after it re-pair, and not
+     * during a swipe or a zoom, which waits for the next call. A layout the reader asks
+     * for takes them all ([attach]).
      */
-    private fun showSeams() {
-        if (shownSeams === pageSeams && shownVisits == visitedPages.cardinality()) return
+    private fun relayout() {
+        if (!layoutStale && shownSeams === pageSeams && shownVisits == visitedPages.cardinality()) return
         val shown = shownSeams
         val visits = shownVisits
         shownSeams = pageSeams
+        layoutStale = false
         val next = buildLayout()
         if (next.sameAs(layout)) {
             updateSpreadRotation()
             return
         }
-        if (seamsSettling) return attach(fresh = false)
+        if (seamsSettling || !seamsUsed()) return attach(fresh = false)
         val count = source?.pageCount ?: return
+        val a = analysis ?: return
         if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE || adapter?.zoomed() == true) {
             shownSeams = shown
             shownVisits = visits
+            layoutStale = true
             return
         }
-        val kept = layout.keeping(layout.itemOf(currentIndex), next, count)
-        if (kept.sameItems(layout, count)) return
+        val item = layout.itemOf(currentIndex)
+        val paired = layout.firstPairing(item, count) { a.wide(it) }
+        val kept = layout.keeping(if (paired >= 0) paired - 1 else item, next, count)
+        if (kept.sameItems(layout, count)) return updateSpreadRotation()
         attach(fresh = false, laid = if (kept.sameItems(next, count)) next else kept)
     }
 
@@ -1562,12 +1573,13 @@ class ViewerActivity : AppCompatActivity() {
      * a fixed item view type, so changing the mode, spread or reading direction
      * requires a new instance. Paged reading top to bottom turns the pager upright.
      * A [fresh] layout, one the reader asked for, takes every seam found so far
-     * ([showSeams]). The pages the old adapter decoded show at once in the new one.
+     * ([relayout]). The pages the old adapter decoded show at once in the new one.
      * These are only emitted from the UI thread.
      */
     private fun attach(fresh: Boolean = true, laid: PageLayout? = null) {
         val src = source ?: return
         if (fresh) shownSeams = pageSeams
+        layoutStale = false
         val decoded = adapter?.decoded(src).orEmpty()
         pager.adapter = null
         vertical.adapter = null
@@ -1946,7 +1958,7 @@ class ViewerActivity : AppCompatActivity() {
         // A page reached anew may bring a lone seam match near enough to settle what follows.
         if (currentIndex >= 0 && !visitedPages.get(currentIndex)) {
             visitedPages.set(currentIndex)
-            if (seamsUsed()) pager.post { showSeams() }
+            if (seamsUsed()) pager.post { relayout() }
         }
         checkSeams()
         if (seekPanel.visibility == View.VISIBLE) {

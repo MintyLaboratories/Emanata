@@ -217,6 +217,7 @@
     <string name="clash_replace">Replace</string>
     <string name="clash_keep_both">Keep both</string>
     <string name="clash_skip">Skip</string>
+    <string name="clash_folder">Replace deletes the folder here with everything in it; the two are not merged.</string>
     <string name="file_busy">Wait until the current file operation ends</string>
     <string name="file_copying">Copying</string>
     <string name="file_moving">Moving</string>
@@ -231,6 +232,7 @@
     <string name="file_exists">That name is already taken</string>
     <string name="file_denied">Not allowed there</string>
     <string name="file_missing">Not found</string>
+    <string name="file_holds_source">%1$s holds the item itself</string>
     <string name="paste_hint_browse">Picked up: open a folder in Browse and tap Paste</string>
     <string name="delete_item_title">Delete %1$s?</string>
     <string name="delete_file_msg">This permanently deletes it from %1$s.</string>

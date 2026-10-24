@@ -31,6 +31,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -329,6 +330,45 @@ class ListActivityFileOpsTest {
         idle()
         assertNull(FileClipboard.clip)
         assertEquals(View.GONE, activity.paste().visibility)
+    }
+
+    @Test
+    fun aNameTakenInAnotherCaseAsksToo() {
+        File(other, "ONE.cbz").writeBytes(ByteArray(3))
+        // Only where the storage ignores case, as the device's shared storage does.
+        assumeTrue(File(other, "one.cbz").exists())
+        val activity = launch()
+        activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
+        idle()
+        activity.open(other)
+        activity.pasteAsking().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
+        settle { other.list()!!.size == 2 }
+        assertEquals(listOf("ONE.cbz", "one (2).cbz"), other.list()!!.sorted())
+    }
+
+    @Test
+    fun replacingAFolderSaysItIsReplacedWholeAndNeverWhatHoldsTheItem() {
+        File(shelf, "Sub").mkdirs()
+        File(other, "Sub").mkdirs()
+        File(other, "Other").mkdirs()
+        val activity = launch()
+        activity.longPress(File(shelf, "Sub").absolutePath).op(R.id.file_op_copy)!!.performClick()
+        idle()
+        activity.open(other)
+        val ask = activity.pasteAsking()
+        assertEquals(context.getString(R.string.clash_folder), ask.findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString())
+        ask.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        idle()
+
+        // An item inside the folder its name takes: no Replace.
+        activity.longPress(File(other, "Other").absolutePath).op(R.id.file_op_move)!!.performClick()
+        idle()
+        @Suppress("DEPRECATION")
+        activity.onBackPressed()
+        idle()
+        val inside = activity.pasteAsking()
+        assertEquals(View.GONE, inside.getButton(DialogInterface.BUTTON_POSITIVE).visibility)
+        assertEquals(View.VISIBLE, inside.getButton(DialogInterface.BUTTON_NEUTRAL).visibility)
     }
 
     @Test

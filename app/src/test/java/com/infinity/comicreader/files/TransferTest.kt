@@ -258,6 +258,18 @@ class TransferTest {
     }
 
     @Test
+    fun neverReplacesWhatHoldsTheSource() {
+        val inner = write(File(device, "Box/Box/inner.cbz"), 40)
+        try {
+            Transfer().run(p("Box/Box"), device.path, "Box", move = true, replace = true)
+            fail("no failure")
+        } catch (e: FileProblem) {
+            assertEquals(FileProblem.Kind.HOLDS_SOURCE, e.kind)
+        }
+        assertArrayEquals(inner, File(device, "Box/Box/inner.cbz").readBytes())
+    }
+
+    @Test
     fun neverPutsAFolderInsideItself() {
         File(device, "Series/Sub").mkdirs()
         for (into in listOf(p("Series"), p("Series/Sub"))) {

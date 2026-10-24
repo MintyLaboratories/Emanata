@@ -18,6 +18,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
+import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
@@ -27,6 +28,7 @@ import com.infinity.comicreader.util.FileUtils
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 /**
  * The file operations of the library's long-press menu, on the device and on shares:
@@ -156,37 +158,45 @@ internal class FileActions(
         val clip = FileClipboard.clip ?: return toast(activity.getString(R.string.paste_dropped))
         if (FileWork.busy) return toast(activity.getString(R.string.file_busy))
         val targetDir = dir.absolutePath
-        if (Transfer.isWithin(targetDir, clip.path)) return toast(activity.getString(R.string.paste_into_itself))
+        if (Transfer.isWithin(targetDir, clip.path, ignoreCase = true)) return toast(activity.getString(R.string.paste_into_itself))
         val sameFolder = Transfer.parentOf(clip.path) == targetDir
         if (clip.move && sameFolder) return toast(activity.getString(R.string.paste_already_here))
         activity.lifecycleScope.launch {
+            val target = Transfer.child(targetDir, clip.name)
+            // The name is taken as the folder's storage tells: most storage ignores case.
             val found = withContext(AppDispatchers.io) {
                 runCatching {
-                    val source = FileSpaces.of(clip.path).stat(clip.path)
-                    val names = if (source == null) emptySet() else FileSpaces.of(targetDir).list(targetDir).map { it.name }.toSet()
-                    (source != null) to names
+                    if (FileSpaces.of(clip.path).stat(clip.path) == null) return@runCatching null
+                    val space = FileSpaces.of(targetDir)
+                    val there = space.stat(target)
+                    val names = if (there == null) emptySet() else space.list(targetDir).map { it.name.lowercase(Locale.ROOT) }.toSet()
+                    there to names
                 }
             }
             val (there, names) = found.getOrElse {
                 toast(activity.getString(R.string.file_failed, describe(it)))
                 return@launch
-            }
-            if (!there) {
+            } ?: run {
                 toast(activity.getString(R.string.paste_gone, clip.name))
                 drop()
                 return@launch
             }
-            fun keepBoth() = Transfer.keepBothName(clip.name, clip.isDir) { it in names }
+            fun keepBoth() = Transfer.keepBothName(clip.name, clip.isDir) { it.lowercase(Locale.ROOT) in names }
             when {
-                clip.name !in names -> transfer(clip, targetDir, clip.name, replace = false)
+                there == null -> transfer(clip, targetDir, clip.name, replace = false)
                 // A copy beside itself is a second copy.
                 sameFolder -> transfer(clip, targetDir, keepBoth(), replace = false)
-                else -> AlertDialog.Builder(activity)
-                    .setTitle(activity.getString(R.string.clash_title, clip.name))
-                    .setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, clip.name, replace = true) }
-                    .setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, keepBoth(), replace = false) }
-                    .setNegativeButton(R.string.clash_skip, null)
-                    .show()
+                else -> AlertDialog.Builder(activity).apply {
+                    setTitle(activity.getString(R.string.clash_title, clip.name))
+                    // Folders are replaced whole, never merged.
+                    if (there.isDirectory) setMessage(R.string.clash_folder)
+                    // Never replacing what holds the item: it would go with it.
+                    if (!Transfer.isWithin(clip.path, target, ignoreCase = true)) {
+                        setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, clip.name, replace = true) }
+                    }
+                    setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, keepBoth(), replace = false) }
+                    setNegativeButton(R.string.clash_skip, null)
+                }.show()
             }
         }
     }
@@ -340,6 +350,9 @@ internal class FileActions(
 
     private fun describe(error: Throwable): String = when {
         error is FileWork.NameTaken -> activity.getString(R.string.file_exists)
+        error is FileProblem -> when (error.kind) {
+            FileProblem.Kind.HOLDS_SOURCE -> activity.getString(R.string.file_holds_source, error.name)
+        }
         error is RemoteException -> activity.getString(
             when (error.reason) {
                 RemoteException.Reason.DENIED -> R.string.file_denied

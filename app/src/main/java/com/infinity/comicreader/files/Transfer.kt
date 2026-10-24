@@ -57,11 +57,13 @@ class Transfer(
         val to = spaceOf(targetDir)
         val target = child(targetDir, name)
         require(target != source) { "Onto itself: $source" }
-        require(!isWithin(targetDir, source)) { "Into itself: $source" }
+        require(!isWithin(targetDir, source, ignoreCase = true)) { "Into itself: $source" }
         val node = from.stat(source) ?: throw FileNotFoundException(source)
         if (node.isLink) throw IOException("A link, not copied: $source")
         val existing = to.stat(target)
-        if (existing != null && !replace) throw IOException("Already there: $target")
+        if (existing != null && !replace) throw FileWork.NameTaken(name)
+        // Replacing what holds the source would delete the source with it.
+        if (existing != null && isWithin(source, target, ignoreCase = true)) throw FileProblem(FileProblem.Kind.HOLDS_SOURCE, name)
         if (move && from.sameAs(to)) renamed(from, source, targetDir, name, existing != null)?.let { return it }
 
         total = sizeOf(from, source, node) * if (move) 2 else 1
@@ -358,10 +360,10 @@ class Transfer(
         /** The folder holding [path]. */
         fun parentOf(path: String): String = path.substringBeforeLast(separator(path), "")
 
-        /** True when [path] is [dir] or inside it. */
-        fun isWithin(path: String, dir: String): Boolean {
+        /** True when [path] is [dir] or inside it; [ignoreCase] for storage that may ignore case. */
+        fun isWithin(path: String, dir: String, ignoreCase: Boolean = false): Boolean {
             val sep = separator(dir)
-            return path == dir || path.startsWith(dir.trimEnd(sep) + sep)
+            return path.equals(dir, ignoreCase) || path.startsWith(dir.trimEnd(sep) + sep, ignoreCase)
         }
 
         /**

@@ -259,5 +259,12 @@ class LocationSheet : BottomSheetDialogFragment() {
             RemoteException.Reason.NO_SHARE -> R.string.share_missing
             else -> R.string.share_unreachable
         }
+
+        /** What stopped a share, by its name (one argument), when asking it failed with [error]. */
+        fun failureTextNamed(error: Throwable): Int = when ((error as? RemoteException)?.reason) {
+            RemoteException.Reason.DENIED -> R.string.share_denied_named
+            RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+            else -> R.string.share_unreachable_named
+        }
     }
 }

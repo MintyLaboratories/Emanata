@@ -4,6 +4,8 @@ import android.content.Context
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.RemoteException
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FavoriteLabels
@@ -62,25 +64,27 @@ class FolderPicker(
     /**
      * Lists the folders inside [dir]; tapping one goes into it, "Choose" picks [dir]. A
      * [dir] gone by then lists its nearest existing parent instead, saying so, or the
-     * first storage root when its whole root is gone.
+     * first storage root when its whole root is gone. A share that fails to list says why
+     * and lists nothing, so nothing on it is taken for gone.
      */
     private fun browse(dir: File) {
         scope.launch {
-            val found = withContext(AppDispatchers.io) {
-                if (dir.isDirectory) dir
-                else MissingFolder.nearest(dir.absolutePath, roots) { Remotes.file(it).isDirectory }?.let { Remotes.file(it) }
-                    ?: Remotes.file(roots.first().path).takeIf { it.isDirectory }
-            }
-            if (found != dir) {
-                Toast.makeText(context, R.string.folder_gone, Toast.LENGTH_SHORT).show()
-                if (found != null) browse(found)
+            val listed = withContext(AppDispatchers.io) { runCatching { foldersIn(dir) } }
+            val failure = listed.exceptionOrNull()
+            if (failure != null && dir is RemoteFile) {
+                val name = StorageRoot.bound(dir.absolutePath, roots)?.name.orEmpty()
+                Toast.makeText(context, context.getString(LocationSheet.failureTextNamed(failure), name), Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            val folders = withContext(AppDispatchers.io) {
-                dir.listFiles()
-                    ?.filter { it.isDirectory && !it.name.startsWith(".") }
-                    ?.sortedWith(compareBy(NaturalOrder) { it.name })
-                    .orEmpty()
+            val folders = listed.getOrNull()
+            if (folders == null) {
+                val found = withContext(AppDispatchers.io) {
+                    MissingFolder.nearest(dir.absolutePath, roots) { Remotes.file(it).isDirectory }?.let { Remotes.file(it) }
+                        ?: Remotes.file(roots.first().path).takeIf { it.isDirectory }
+                }
+                Toast.makeText(context, R.string.folder_gone, Toast.LENGTH_SHORT).show()
+                if (found != null && found != dir) browse(found)
+                return@launch
             }
             val path = dir.absolutePath
             val root = StorageRoot.bound(path, roots)
@@ -93,6 +97,22 @@ class FolderPicker(
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    /** The folders in [dir] by name; null when [dir] is gone. Throws when its share fails. Blocking. */
+    private fun foldersIn(dir: File): List<File>? {
+        val all: List<File> = if (dir is RemoteFile) {
+            try {
+                dir.entries()
+            } catch (e: RemoteException) {
+                if (e.reason == RemoteException.Reason.MISSING) return null
+                throw e
+            }
+        } else {
+            if (!dir.isDirectory) return null
+            dir.listFiles()?.toList().orEmpty()
+        }
+        return all.filter { it.isDirectory && !it.name.startsWith(".") }.sortedWith(compareBy(NaturalOrder) { it.name })
     }
 
     companion object {

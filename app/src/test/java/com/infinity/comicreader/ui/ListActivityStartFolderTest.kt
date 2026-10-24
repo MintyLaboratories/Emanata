@@ -163,6 +163,21 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun anUnreachableShareKeepsItsStartFolderAndSaysWhy() {
+        prefs.setLocationStart("/net/s1", "/net/s1/Series")
+        val activity = launch()
+        fake.offline = true
+        location(activity, "Share A").performLongClick()
+        idle()
+        val menu = ShadowDialog.getLatestDialog() as AlertDialog
+        shadowOf(menu.listView).performItemClick(1)
+        idle()
+        assertEquals(activity.getString(R.string.share_unreachable_named, "Share A"), ShadowToast.getTextOfLatestToast())
+        assertEquals("no folders offered", menu, ShadowDialog.getLatestDialog())
+        assertEquals("/net/s1/Series", prefs.locationStart("/net/s1"))
+    }
+
+    @Test
     fun aStartupShareSlowToAnswerGivesWayToTheDevice() {
         prefs.setLocationStart(device.absolutePath, comics.absolutePath)
         prefs.lastPath = "/net/s1/Series"

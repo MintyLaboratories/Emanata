@@ -221,7 +221,8 @@ class BookAdapter(
      * Shows [list]: [BookEntry] rows, optionally between [SectionRow] headers. When the rows
      * are the same as shown, in the same order, only those that changed are redrawn, and
      * of those whose cover stays ([coverId]) only the text: facts found later (page counts,
-     * read marks) never reload or blank a cover.
+     * read marks) never reload or blank a cover. A book whose cover changes is redrawn in the
+     * same view, its old cover shown until the new one is drawn.
      */
     fun submit(list: List<Any>) {
         val old = ArrayList(items)
@@ -236,17 +237,25 @@ class BookAdapter(
             val before = old[i]
             val now = list[i]
             if (before == now) continue
-            val textOnly = before is BookEntry && now is BookEntry && coverId(before) == coverId(now)
-            notifyItemChanged(i + itemOffset, if (textOnly) DETAILS else null)
+            val payload = when {
+                before !is BookEntry || now !is BookEntry -> null
+                coverId(before) == coverId(now) -> DETAILS
+                else -> COVER
+            }
+            notifyItemChanged(i + itemOffset, payload)
         }
     }
 
     /** Pages hidden in each book, by path, as covers skip them ([Thumbs.hiddenTag]). */
     var hiddenPages: () -> Map<String, Set<Int>> = { emptyMap() }
 
-    /** Everything the cover of [item] is made from: two entries with the same id show the same cover. */
+    /**
+     * Everything the cover of [item] is made from: two entries with the same id show the same
+     * cover. The direction counts only for a cover not known to look the same either way.
+     */
     private fun coverId(item: BookEntry): String =
-        "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|${item.direction == ReadingDirection.RTL}|" +
+        "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
+            "${item.direction == ReadingDirection.RTL && covers.directionMatters(item)}|" +
             "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${prefs.charset}|${prefs.thumbnails}"
 
     init {
@@ -341,8 +350,8 @@ class BookAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
         val row = items.getOrNull(position - itemOffset)
-        if (holder is BookHolder && row is BookEntry && payloads.isNotEmpty() && payloads.all { it == DETAILS }) {
-            bindDetails(holder, row)
+        if (holder is BookHolder && row is BookEntry && payloads.isNotEmpty() && payloads.all { it == DETAILS || it == COVER }) {
+            if (COVER in payloads) bindBook(holder, row) else bindDetails(holder, row)
             return
         }
         onBindViewHolder(holder, position)
@@ -373,10 +382,12 @@ class BookAdapter(
 
     /**
      * Binds [item] to [holder]. A cover already drawn there for the same [coverId] stays as it
-     * is (a refresh, a re-sort), else the type icon stands in until the cover is loaded.
+     * is (a refresh, a re-sort); one of the same book stays until its new cover replaces it (a
+     * direction found, another cover style); else the type icon stands in until the cover is loaded.
      */
     private fun bindBook(holder: BookHolder, item: BookEntry) {
         val context = holder.itemView.context
+        val before = holder.entry?.path
         val id = coverId(item)
         val keep = holder.wanted == id
         if (!keep) holder.job?.cancel()
@@ -389,10 +400,9 @@ class BookAdapter(
         holder.placeholder.setImageResource(icon)
         holder.placeholder.imageTintList = ColorStateList.valueOf(EntryIcons.tintFor(context, item))
         if (holder.drawn != id && holder.quick != id) {
-            holder.thumb.setImageDrawable(null)
             holder.drawn = null
             holder.quick = null
-            holder.placeholder.visibility = View.VISIBLE
+            if (before != item.path || !prefs.thumbnails) clearCover(holder)
         }
         // The cover is requested at its view's exact size, once that is laid out.
         if (!keep) holder.requested = 0L
@@ -479,7 +489,12 @@ class BookAdapter(
                         runCatching { source.loadFirst(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
                     }
             }
-            if (got == null || holder.wanted != id) return@launch
+            if (holder.wanted != id) return@launch
+            if (got == null) {
+                // The same book's earlier cover stood in for one there is none of now.
+                if (holder.drawn == null && holder.quick == null) clearCover(holder)
+                return@launch
+            }
             if (got.full) {
                 draw(holder, got.bitmap, id)
                 return@launch
@@ -520,6 +535,12 @@ class BookAdapter(
         holder.job = job
         loads[job] = holder
         job.invokeOnCompletion { loads.remove(job) }
+    }
+
+    /** Shows the type icon in [holder] instead of a cover. */
+    private fun clearCover(holder: BookHolder) {
+        holder.thumb.setImageDrawable(null)
+        holder.placeholder.visibility = View.VISIBLE
     }
 
     /** Shows [bitmap], the cover with [coverId] [id], in [holder]. */
@@ -681,6 +702,9 @@ class BookAdapter(
     private companion object {
         /** Redraws a row's text only: its cover stays. */
         const val DETAILS = "details"
+
+        /** Redraws a book's row in the view it is in, which keeps its cover until the new one is drawn. */
+        const val COVER = "cover"
         const val HEADER_ID = Long.MIN_VALUE
         const val SECTION_ID = Long.MIN_VALUE + 16
         const val THUMB_THREADS = 3

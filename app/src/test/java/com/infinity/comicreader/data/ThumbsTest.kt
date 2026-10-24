@@ -150,6 +150,23 @@ class ThumbsTest {
     }
 
     @Test
+    fun aCoverThatLooksTheSameEitherWayIsFoundForBothDirections() {
+        val book = cover(name = "plain cover.png")
+        assertTrue("unknown until made", Thumbs.directionMatters(book))
+        Thumbs.load(context, book, "UTF-8", 50, 75, CoverStyle(ThumbFit.FILL))!!
+        val rtl = book.copy(direction = ReadingDirection.RTL)
+        assertFalse(Thumbs.directionMatters(rtl))
+        assertNotNull(Thumbs.inMemory(context, rtl, 50, 75, CoverStyle(ThumbFit.FILL)))
+
+        val file = File(context.cacheDir, "sided.png")
+        file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
+        val sided = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
+        Thumbs.load(context, sided, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertTrue(Thumbs.directionMatters(sided))
+        assertNull(Thumbs.inMemory(context, sided.copy(direction = ReadingDirection.RTL), 130, 200, CoverStyle(ThumbFit.FILL)))
+    }
+
+    @Test
     fun aBookCoverTwoInnerPagesWideShowsItsFrontWithoutTheSpine() {
         // Back blue, a green spine 60 wide, front red; inner pages 2:3 at another scale.
         val file = Fixtures.zip(

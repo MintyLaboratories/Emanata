@@ -157,7 +157,7 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     /**
      * COPY of one file, waited on as long as copying its size at [SLOWEST_COPY_BYTES_PER_MS]
      * takes, beyond [CHANGE_WAIT_MS]: the server answers only once done. False when the
-     * server has no COPY.
+     * server has no COPY or refuses it ([COPY_REFUSED]), to be copied through the device.
      */
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
         val size = stat(from)?.size?.coerceAtLeast(0) ?: throw RemoteException(RemoteException.Reason.MISSING, from)
@@ -167,7 +167,7 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         execute(r.build(), via = patient).use { answer ->
             when (answer.response.code) {
                 201, 204 -> return true
-                405, 501 -> return false
+                in COPY_REFUSED -> return false
                 else -> throw failure(answer.response)
             }
         }
@@ -529,6 +529,13 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
 
         /** How much a write reads from its source at a time. */
         private const val WRITE_BYTES = 256 * 1024
+
+        /**
+         * Answers to COPY that the device copying instead may get past: no COPY (405, 501),
+         * a rule against it (403), or a proxy in front that takes the destination for
+         * another server's (502, as Apache behind a TLS proxy answers).
+         */
+        private val COPY_REFUSED = setOf(403, 405, 501, 502)
 
         /** How long a change may take to be answered. */
         const val CHANGE_WAIT_MS = 5 * 60_000L

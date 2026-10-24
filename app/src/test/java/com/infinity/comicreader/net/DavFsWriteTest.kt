@@ -97,6 +97,14 @@ class DavFsWriteTest {
         server.noCopy = true
         assertFalse(fs.copy("a.cbz", "c.cbz") {})
         assertFalse(File(dir, "c.cbz").exists())
+        // Refused by a rule or by a proxy in front: copied through the device.
+        server.noCopy = false
+        for (code in listOf(403, 502)) {
+            server.copyAnswer = code
+            assertFalse(fs.copy("a.cbz", "c.cbz") {})
+        }
+        server.copyAnswer = null
+        assertFalse(File(dir, "c.cbz").exists())
     }
 
     @Test

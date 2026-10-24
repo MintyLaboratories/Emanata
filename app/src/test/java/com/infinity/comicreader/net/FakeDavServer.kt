@@ -48,6 +48,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     @Volatile
     var noCopy = false
 
+    /** Answers every COPY with this code instead, when set. */
+    @Volatile
+    var copyAnswer: Int? = null
+
     @Volatile
     var password = ""
 
@@ -168,6 +172,7 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
             "DELETE" -> if (!file.exists()) 404 else if (file.deleteRecursively()) 204 else 500
             else -> {
                 if (request.method == "COPY" && noCopy) return MockResponse().setResponseCode(501)
+                if (request.method == "COPY") copyAnswer?.let { return MockResponse().setResponseCode(it) }
                 val destination = request.getHeader("Destination") ?: return MockResponse().setResponseCode(400)
                 val raw = destination.toHttpUrl().encodedPath
                 if (!raw.startsWith(prefix)) return MockResponse().setResponseCode(502)

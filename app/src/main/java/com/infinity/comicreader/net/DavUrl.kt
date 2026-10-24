@@ -58,11 +58,16 @@ data class DavUrl(val secure: Boolean, override val host: String, override val p
             return false
         }
 
-        /** The first two numbers of a dotted IPv4 address; null when [host] is not one. */
+        /**
+         * The first two numbers of a dotted IPv4 address; null when [host] is not one. A
+         * number with a leading zero is refused: some resolvers read it as octal.
+         */
         private fun ipv4(host: String): Pair<Int, Int>? {
             val parts = host.split('.')
             if (parts.size != 4) return null
-            val n = parts.map { p -> p.takeIf { it.isNotEmpty() && it.length <= 3 && it.all(Char::isDigit) }?.toInt()?.takeIf { it <= 255 } ?: return null }
+            val n = parts.map { p ->
+                p.takeIf { it.length in 1..3 && it.all { c -> c in '0'..'9' } && (it == "0" || it[0] != '0') }?.toInt()?.takeIf { it <= 255 } ?: return null
+            }
             return n[0] to n[1]
         }
 

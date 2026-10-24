@@ -51,13 +51,15 @@ class DavUrlTest {
         for (host in listOf("10.1.2.3", "172.16.0.9", "172.31.255.1", "192.168.200.7", "169.254.7.7", "[fe80::1]")) {
             assertEquals(host, false, valid("http://$host/dav").secure)
         }
-        for (host in listOf("192.0.2.10", "172.32.0.1", "172.15.0.1", "8.8.8.8", "nas.example", "nas", "192.168.200", "[2001:db8::1]", "local")) {
+        for (host in listOf("192.0.2.10", "172.32.0.1", "172.15.0.1", "8.8.8.8", "nas.example", "nas", "192.168.200", "[2001:db8::1]", "local",
+            "010.0.0.1", "10.01.0.1", "0172.16.0.1", "0x0a.0.0.1")) {
             assertEquals(host, Problem.INSECURE, problem("http://$host/dav"))
         }
         assertTrue(DavUrl.isLoopback("LOCALHOST"))
         assertFalse(DavUrl.isLoopback("127.0.0.1.example"))
         assertFalse(DavUrl.isPrivate("192.168.200.7.example"))
         assertTrue(DavUrl.isPrivate("NAS.Local."))
+        assertFalse("digits of other scripts", DavUrl.isPrivate("\u0661\u0660.0.0.1"))
     }
 
     @Test

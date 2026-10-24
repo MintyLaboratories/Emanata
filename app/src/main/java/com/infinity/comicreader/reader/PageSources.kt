@@ -16,12 +16,13 @@ import java.io.IOException
  * [cacheDir] as they decode ([PreviewingSource]).
  *
  * A book on a share ([RemoteFile]) is read from its local copy when one is cached
- * ([RemoteCache]). Otherwise a zip is read in place; loose images are fetched
- * first, and PDFs too except for covers, which a PDF not fetched yet lacks; rar, 7z
- * and tar books are fetched when a [Fetch] asks for it (the reader, where reading in
- * place would unpack solid blocks over and over), else read in place too (covers,
- * peeks, page counts). On a server that sends files only whole ([Remotes.seekable]),
- * no book is read in place: each is fetched, except for a cover, which it then lacks.
+ * ([RemoteCache]). Otherwise archives are read in place, fetching only the parts
+ * needed: zip, tar, and rar and 7z that are not solid straight from their entries; a
+ * solid one is streamed once, front to back, its pages kept as they are unpacked
+ * ([ExtractingReader], [RemoteCache.pagesOf]). Loose images are fetched first, and PDFs
+ * too except for covers, which a PDF not fetched yet lacks. On a server that sends
+ * files only whole ([Remotes.seekable]), no book is read in place: each is fetched,
+ * except for a cover, which it then lacks.
  */
 object PageSources {
     /** Fetching a book from a share before reading it: stops once [canceled] turns true; [progress] hears bytes done of the total. */
@@ -30,7 +31,7 @@ object PageSources {
     /**
      * Opens [file]. Nested-archive copying stops once [canceled] turns true; without
      * [copyNested] only cached copies are used, and a book needing a new one fails.
-     * With [fetch], a rar, 7z or tar book on a share is fetched whole first.
+     * [fetch] hears a book on a share fetched whole first, where one must be.
      */
     fun open(
         file: File,
@@ -41,10 +42,7 @@ object PageSources {
         fetch: Fetch? = null
     ): PageSource {
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
-        val raw = openRaw(
-            file, charsetName, cacheDir, nested,
-            pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchArchives = fetch != null, fetchWhole = true
-        )
+        val raw = openRaw(file, charsetName, cacheDir, nested, pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchWhole = true)
         return previewing(file, cacheDir, GuardedSource(raw))
     }
 
@@ -57,7 +55,7 @@ object PageSources {
         GuardedSource(
             openRaw(
                 file, charsetName, cacheDir, NestedArchives(NestedArchives.dirIn(cacheDir), charsetName),
-                pageLimit = page.coerceAtLeast(0) + 1, fetch = Fetch(), fetchArchives = false, fetchWhole = false
+                pageLimit = page.coerceAtLeast(0) + 1, fetch = Fetch(), fetchWhole = false
             )
         )
     )
@@ -73,7 +71,6 @@ object PageSources {
         nested: NestedArchives,
         pageLimit: Int,
         fetch: Fetch,
-        fetchArchives: Boolean,
         fetchWhole: Boolean
     ): PageSource {
         val type = Formats.typeOf(file.name)
@@ -87,15 +84,26 @@ object PageSources {
             }
             val kind = if (type == EntryType.IMAGE) null else ArchiveKind.detect(file)
             if (kind == ArchiveKind.PDF && !fetchWhole) throw IOException("Not fetched: ${file.name}")
-            val archive = kind != null && kind != ArchiveKind.PDF
-            val inPlace = kind == ArchiveKind.ZIP || (archive && !fetchArchives)
-            if (!inPlace) {
+            if (type == EntryType.IMAGE || kind == ArchiveKind.PDF) {
                 val copy = RemoteCache.fetch(file, cacheDir, fetch.canceled, fetch.progress)
                 return local(copy, file, charsetName, nested, pageLimit)
             }
-            return archive(file, file, charsetName, nested, pageLimit, kind)
+            return inPlace(file, charsetName, cacheDir, nested, pageLimit, kind ?: throw IOException("Unsupported archive: ${file.name}"))
         }
         return local(file, file, charsetName, nested, pageLimit)
+    }
+
+    /** Archive [file] on a share read in place; a solid one through its kept pages ([ExtractingReader]). */
+    private fun inPlace(file: RemoteFile, charsetName: String, cacheDir: File, nested: NestedArchives, pageLimit: Int, kind: ArchiveKind): PageSource {
+        val opened = ArchiveReader.open(file, charsetName, kind) ?: throw IOException("Unsupported archive: ${file.name}")
+        val reader = if (opened.randomAccess) {
+            opened
+        } else {
+            val pages = RemoteCache.pagesOf(file, cacheDir)
+            ExtractingReader(opened, pages) { RemoteCache.release(pages, cacheDir) }
+        }
+        // Failing, the source closes the reader.
+        return ArchiveSource(reader, NestedArchives.keyOf(file), nested, pageLimit)
     }
 
     /** Opens [file], which is [book] or its local copy; nested copies are keyed by [book]. */

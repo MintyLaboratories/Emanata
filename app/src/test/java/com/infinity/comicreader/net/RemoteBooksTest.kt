@@ -22,7 +22,7 @@ import java.io.File
 import java.io.IOException
 import kotlin.random.Random
 
-/** Books on a share: zips and covers read in place, other books fetched for the reader only. */
+/** Books on a share: archives read in place, solid ones streamed once with their pages kept; PDFs and images fetched. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class RemoteBooksTest {
@@ -121,21 +121,59 @@ class RemoteBooksTest {
         assertEquals(0, copies())
     }
 
+    private fun bigPages(count: Int, seed: Int) = Random(seed).let { r -> Array(count) { entry("%02d.jpg".format(it), r.nextBytes(256 * 1024)) } }
+
     @Test
-    fun theReaderFetchesARarFirstAndReusesTheCopy() {
-        File(share, "b.cbr").writeBytes(Fixtures.rar4Bytes(*pages))
-        var progress = 0L to 0L
-        PageSources.open(remote("b.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch { done, total -> progress = done to total }).use {
-            assertEquals(3, it.pageCount)
+    fun theReaderReadsRarAnd7zThatAreNotSolidInPlace() {
+        val big = bigPages(8, 3)
+        File(share, "b.cbr").writeBytes(Fixtures.rar4Bytes(*big))
+        Fixtures.sevenZip(File(share, "c.cb7"), *big)
+        for (name in listOf("b.cbr", "c.cb7")) {
+            val before = fake.bytesRead
+            PageSources.open(remote(name), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
+                assertEquals(8, src.pageCount)
+                src.pageSize(6)
+            }
+            val read = fake.bytesRead - before
+            assertTrue("$name: read $read of ${File(share, name).length()} bytes", read < File(share, name).length() / 2)
         }
-        assertEquals(1, copies())
-        val size = File(share, "b.cbr").length()
-        assertEquals(size to size, progress)
-        val read = fake.bytesRead
-        // Covers and the reader alike use the copy from then on.
-        PageSources.openCover(remote("b.cbr"), "UTF-8", cacheDir).use { assertEquals(1, it.pageCount) }
-        PageSources.open(remote("b.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { assertEquals(3, it.pageCount) }
-        assertEquals(read, fake.bytesRead)
+        assertEquals(0, copies())
+        assertEquals(0, RemoteCache.pagesIn(cacheDir).list()?.size ?: 0)
+    }
+
+    @Test
+    fun aSolidRarIsStreamedOnceKeepingItsPages() {
+        val big = bigPages(6, 5)
+        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*big, solid = true))
+        PageSources.open(remote("s.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
+            assertEquals(6, src.pageCount)
+            src.pageSize(3)
+            val streamed = fake.bytesRead
+            // Pages passed on the way are kept: reading them again fetches nothing.
+            for (i in 0..3) src.pageSize(i)
+            assertEquals(streamed, fake.bytesRead)
+        }
+        assertEquals(0, copies())
+        val kept = RemoteCache.pagesIn(cacheDir).listFiles()!!.single()
+        assertEquals(4, kept.list()!!.size)
+        // Opened again, kept pages come from the cache: only the headers are fetched.
+        val before = fake.bytesRead
+        PageSources.open(remote("s.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
+            src.pageSize(2)
+        }
+        assertTrue("read ${fake.bytesRead - before} bytes", fake.bytesRead - before < File(share, "s.cbr").length() / 2)
+    }
+
+    @Test
+    fun keptPagesAreTrimmedWithTheCopies() {
+        val big = bigPages(4, 9)
+        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*big, solid = true))
+        PageSources.open(remote("s.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
+            src.pageSize(3)
+        }
+        assertEquals(1, RemoteCache.pagesIn(cacheDir).list()!!.size)
+        RemoteCache.trim(RemoteCache.dirIn(cacheDir), maxBytes = 1024)
+        assertEquals(0, RemoteCache.pagesIn(cacheDir).list()!!.size)
     }
 
     @Test

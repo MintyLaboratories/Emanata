@@ -7,13 +7,16 @@ import java.io.IOException
 import java.io.InterruptedIOException
 
 /**
- * Local copies of files on shares, for what cannot be read in place: rar, 7z and tar
- * books, PDFs and loose images. Kept under `cacheDir/network` by path, size and
- * modification time, so a changed file is fetched again; the least recently used
- * go once the copies pass [limitBytes] (the "Network cache" setting).
+ * Local copies of files on shares, for what cannot be read in place: PDFs, loose images,
+ * and books on servers that send files only whole. Kept under `cacheDir/network` by
+ * path, size and modification time, so a changed file is fetched again. Pages unpacked
+ * from solid archives read in place are kept beside them, a folder per book under
+ * `cacheDir/network-pages` ([pagesOf]). The least recently used copies and folders go
+ * once together they pass [limitBytes] (the "Network cache" setting).
  */
 object RemoteCache {
     const val DIR = "network"
+    const val PAGES_DIR = "network-pages"
     private const val PART_SUFFIX = ".part"
     private const val CHUNK_BYTES = 1 shl 20
     const val DEFAULT_LIMIT_BYTES = 2L * 1024 * 1024 * 1024
@@ -26,6 +29,26 @@ object RemoteCache {
     private val writing = HashSet<String>()
 
     fun dirIn(cacheDir: File) = File(cacheDir, DIR)
+
+    fun pagesIn(cacheDir: File) = File(cacheDir, PAGES_DIR)
+
+    /**
+     * The folder pages unpacked from [file] are kept in, by its path, size and
+     * modification time, marked as just used and held from trimming until [release].
+     */
+    fun pagesOf(file: RemoteFile, cacheDir: File): File {
+        val stat = file.stat()
+        val dir = File(pagesIn(cacheDir), Hashes.sha256Hex("${file.path}\n${stat?.size}\n${stat?.modified}"))
+        synchronized(writing) { writing += dir.path }
+        if (dir.isDirectory) touch(dir)
+        return dir
+    }
+
+    /** Lets trimming take [pages], a folder from [pagesOf], again, then trims what [cacheDir] keeps. */
+    fun release(pages: File, cacheDir: File) {
+        synchronized(writing) { writing -= pages.path }
+        trim(dirIn(cacheDir))
+    }
 
     /**
      * The local copy of [file] when one is complete; null otherwise. Touches no network.
@@ -91,14 +114,19 @@ object RemoteCache {
         }
     }
 
-    /** Deletes the least recently used copies until those left take at most [maxBytes]. */
+    /**
+     * Deletes the least recently used copies in [dir], and folders of kept pages beside
+     * it, until those left take at most [maxBytes]; ones being written or read are left be.
+     */
     fun trim(dir: File, maxBytes: Long = limitBytes) {
-        val files = dir.listFiles()?.filter { it.isFile && synchronized(writing) { it.path !in writing } } ?: return
-        var total = files.sumOf { it.length() }
-        for (f in files.sortedBy { it.lastModified() }) {
+        val busy = synchronized(writing) { writing.toSet() }
+        val copies = dir.listFiles()?.filter { it.isFile && it.path !in busy }.orEmpty().map { it to it.length() }
+        val pages = File(dir.parentFile, PAGES_DIR).listFiles()?.filter { it.isDirectory && it.path !in busy }.orEmpty()
+            .map { d -> d to d.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+        var total = copies.sumOf { it.second } + pages.sumOf { it.second }
+        for ((f, size) in (copies + pages).sortedBy { it.first.lastModified() }) {
             if (total <= maxBytes) break
-            val size = f.length()
-            if (f.delete()) total -= size
+            if (f.deleteRecursively()) total -= size
         }
     }
 

@@ -269,6 +269,14 @@ class ThumbsTest {
     }
 
     @Test
+    fun aCanceledCoverIsNeitherMadeNorKept() {
+        val book = rgbBook("dropped.cbz")
+        assertEquals(null, Thumbs.load(context, book, "UTF-8", 100, 150, CoverStyle(), canceled = { true }))
+        assertEquals(null, File(context.cacheDir, "covers").listFiles()?.firstOrNull())
+        assertEquals(null, Thumbs.cached(context, book, 100, 150))
+    }
+
+    @Test
     fun eachSizeIsItsOwnCover() {
         val entry = cover()
         val small = Thumbs.load(context, entry, "UTF-8", 50, 75)!!

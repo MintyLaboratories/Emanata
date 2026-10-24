@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.animation.ValueAnimator
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -31,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -132,8 +134,32 @@ class BookAdapter(
         super.onDetachedFromRecyclerView(recyclerView)
     }
 
-    /** Caps concurrent cover decodes; a row scrolled away before its turn is never decoded. */
+    /** Caps concurrent covers being made; a row scrolled away before its turn is never made. Cached covers skip it. */
     private val gate = Semaphore(THUMB_THREADS)
+
+    /** Where covers come from; tests stand in their own. */
+    var covers: CoverSource = CoverSource.THUMBS
+
+    /** Cover loads running or waiting, with the row each is for. */
+    private val loads = HashMap<Job, BookHolder>()
+
+    /** Set by [cancelCovers]: the next [submit] redraws every row, so each asks for its cover again. */
+    private var redrawAll = false
+
+    /**
+     * Drops every cover load running or waiting: the screen moves to another tab or folder,
+     * whose covers go first. One being made stops at its next step. Rows shown again ask
+     * anew; covers already drawn stay.
+     */
+    fun cancelCovers() {
+        // A load not started yet ends, and leaves [loads], within cancel().
+        for ((job, holder) in loads.toList()) {
+            job.cancel()
+            if (holder.job === job) holder.requested = 0L
+        }
+        loads.clear()
+        redrawAll = true
+    }
 
     /** Left out of the titles that start with it: the series name inside a Set. A change redraws every row. */
     var titlePrefix: String? = null
@@ -195,7 +221,8 @@ class BookAdapter(
         val old = ArrayList(items)
         items.clear()
         items.addAll(list)
-        if (!RowChanges.sameRows(old, list)) {
+        if (redrawAll || !RowChanges.sameRows(old, list)) {
+            redrawAll = false
             notifyDataSetChanged()
             return
         }
@@ -407,7 +434,8 @@ class BookAdapter(
      * Loads the cover of the entry [holder] shows at the cover view's size, so it is
      * drawn 1:1. Runs after each bind and again whenever the view changes size; a
      * size already requested, or a view not laid out yet, asks for nothing. A cover
-     * drawn meanwhile stays until the new one replaces it.
+     * drawn meanwhile stays until the new one replaces it. One in memory shows at once,
+     * one on disk without waiting for covers being made ([gate]).
      */
     private fun requestCover(holder: BookHolder) {
         val item = holder.entry ?: return
@@ -423,18 +451,30 @@ class BookAdapter(
         val appContext = holder.itemView.context.applicationContext
         val charset = prefs.charset
         val style = prefs.coverStyle
-        holder.job = scope.launch {
+        val source = covers
+        runCatching { source.inMemory(appContext, item, w, h, style) }.getOrNull()?.let {
+            draw(holder, it, id)
+            return
+        }
+        val job = scope.launch {
             val bitmap = withContext(AppDispatchers.io) {
-                gate.withPermit {
-                    runCatching { Thumbs.load(appContext, item, charset, w, h, style) }.getOrNull()
+                runCatching { source.cached(appContext, item, w, h, style) }.getOrNull() ?: gate.withPermit {
+                    val work = coroutineContext.job
+                    runCatching { source.load(appContext, item, charset, w, h, style) { !work.isActive } }.getOrNull()
                 }
             }
-            if (bitmap != null && holder.wanted == id) {
-                holder.thumb.setImageBitmap(bitmap)
-                holder.drawn = id
-                holder.placeholder.visibility = View.GONE
-            }
+            if (bitmap != null && holder.wanted == id) draw(holder, bitmap, id)
         }
+        holder.job = job
+        loads[job] = holder
+        job.invokeOnCompletion { loads.remove(job) }
+    }
+
+    /** Shows [bitmap], the cover with [coverId] [id], in [holder]. */
+    private fun draw(holder: BookHolder, bitmap: Bitmap, id: String) {
+        holder.thumb.setImageBitmap(bitmap)
+        holder.drawn = id
+        holder.placeholder.visibility = View.GONE
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {

@@ -607,6 +607,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             val instead = nearestFolder(missing)?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
             if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead, noted = true)
         }
+        switchingTo(TAB_BROWSE, dir)
         mode = TAB_BROWSE
         applyView()
         currentDir = dir
@@ -700,6 +701,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         )
     }
 
+    /**
+     * Before showing tab [tab] (Browse at [dir]): covers still loading for another tab or
+     * folder are dropped, so those of the view about to show come first.
+     */
+    private fun switchingTo(tab: Int, dir: File? = null) {
+        if (mode != tab || (tab == TAB_BROWSE && currentDir?.absolutePath != dir?.absolutePath)) adapter.cancelCovers()
+    }
+
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
     private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
         if (peek.isShowing) peek.hide()
@@ -733,6 +742,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry = snap.entry(file, prefs.showHidden)
 
     private fun showFavorites() {
+        switchingTo(TAB_FAVORITES)
         mode = TAB_FAVORITES
         applyView()
         adapter.highlightPath = null
@@ -834,6 +844,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     )
 
     private fun showHistory() {
+        switchingTo(TAB_HISTORY)
         mode = TAB_HISTORY
         applyView()
         adapter.highlightPath = null
@@ -853,6 +864,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     private fun showBookmarks() {
+        switchingTo(TAB_BOOKMARKS)
         mode = TAB_BOOKMARKS
         applyView()
         adapter.highlightPath = null

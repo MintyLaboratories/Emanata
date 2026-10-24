@@ -73,10 +73,19 @@ object Thumbs {
 
     /**
      * The cover of [entry], exactly [width] x [height]. Blocking — call from a background
-     * dispatcher. Returns null when no cover exists. A wraparound without a barcode shows
-     * the half its [BookEntry.direction] starts on, so the direction is part of the key.
+     * dispatcher. Returns null when no cover exists, or once [canceled] turns true between
+     * its steps (nothing is kept then). A wraparound without a barcode shows the half its
+     * [BookEntry.direction] starts on, so the direction is part of the key.
      */
-    fun load(context: Context, entry: BookEntry, charset: String, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
+    fun load(
+        context: Context,
+        entry: BookEntry,
+        charset: String,
+        width: Int,
+        height: Int,
+        style: CoverStyle = CoverStyle(),
+        canceled: () -> Boolean = { false }
+    ): Bitmap? {
         cached(context, entry, width, height, style)?.let { return it }
         val page = entry.bookmarkPage
         val rightToLeft = entry.direction == ReadingDirection.RTL
@@ -84,7 +93,12 @@ object Thumbs {
         val disk = diskFile(context, k)
 
         val hidden = Library(context).hiddenAll()
-        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height, hidden) ?: return null
+        if (canceled()) return null
+        val (full, innerRatio) = generate(entry, charset, context.cacheDir, width, height, hidden, canceled) ?: return null
+        if (canceled()) {
+            full.recycle()
+            return null
+        }
         val cover = try {
             CoverArt.cover(full, width, height, style, innerRatio, rightToLeft) { src -> frontOf(entry, src) }
         } catch (t: Throwable) {
@@ -104,6 +118,10 @@ object Thumbs {
         }
         return bitmap
     }
+
+    /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
+    fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? =
+        memory.get(coverKey(context, entry, width, height, style))
 
     /**
      * The cover of [entry] as [load] makes it, when one was made before: from memory or
@@ -199,21 +217,30 @@ object Thumbs {
         cacheDir: File,
         width: Int,
         height: Int,
-        hidden: Map<String, Set<Int>>
+        hidden: Map<String, Set<Int>>,
+        canceled: () -> Boolean = { false }
     ): Pair<Bitmap, Double?>? = try {
         val target = Target(capPixels = THUMB_CAP_PIXELS)
         fun pageOf(book: File) = coverPage(hidden[book.absolutePath].orEmpty())
         when {
-            entry.isDir -> findCover(entry.file, 2)?.let { coverOf(it, charset, cacheDir, width, height, pageOf(it)) }
+            entry.isDir -> findCover(entry.file, 2)?.takeIf { !canceled() }?.let { coverOf(it, charset, cacheDir, width, height, pageOf(it), canceled) }
             entry.type == EntryType.IMAGE -> Decoders.decode(entry.file, target) to null
-            else -> coverOf(entry.file, charset, cacheDir, width, height, pageOf(entry.file))
+            else -> coverOf(entry.file, charset, cacheDir, width, height, pageOf(entry.file), canceled)
         }
     } catch (t: Throwable) {
         null
     }
 
     /** The cover of book [file]: its page [page] (book index), or its first page when it has fewer. */
-    private fun coverOf(file: File, charset: String, cacheDir: File, width: Int, height: Int, page: Int = 0): Pair<Bitmap, Double?>? {
+    private fun coverOf(
+        file: File,
+        charset: String,
+        cacheDir: File,
+        width: Int,
+        height: Int,
+        page: Int = 0,
+        canceled: () -> Boolean = { false }
+    ): Pair<Bitmap, Double?>? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
         val full = Target(capPixels = THUMB_CAP_PIXELS)
         if (Formats.typeOf(file.name) == EntryType.IMAGE) {
@@ -221,6 +248,7 @@ object Thumbs {
         }
         val source = runCatching { PageSources.openCover(file, charset, cacheDir, page) }.getOrNull() ?: return null
         val cover = try {
+            if (canceled()) return null
             val index = if (page < source.pageCount) page else 0
             val target = if (!source.isVector) full else {
                 source.pageSize(index)?.let { PdfSource.coverTarget(it[0], it[1], width, height, THUMB_CAP_PIXELS) } ?: full
@@ -231,6 +259,10 @@ object Thumbs {
         } finally {
             runCatching { source.close() }
         } ?: return null
+        if (canceled()) {
+            cover.recycle()
+            return null
+        }
         val inner = if (Wraparound.isCandidate(cover.width, cover.height)) innerRatioOf(file, charset, cacheDir) else null
         return cover to inner
     }

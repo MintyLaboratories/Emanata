@@ -214,7 +214,10 @@ class LocationSheet : BottomSheetDialogFragment() {
                     confirm(context, R.string.share_remove_title, getString(R.string.share_remove_msg, name), R.string.share_remove) {
                         owner.lifecycleScope.launch {
                             // Closing the share's connection may wait on the network.
-                            withContext(NonCancellable + AppDispatchers.io) { ShareStore(app).remove(id) }
+                            withContext(NonCancellable + AppDispatchers.io) {
+                                ShareStore(app).remove(id)
+                                Prefs(app).setLocationStart(root.path, null)
+                            }
                             (owner as? Host)?.onSharesChanged()
                         }
                     }

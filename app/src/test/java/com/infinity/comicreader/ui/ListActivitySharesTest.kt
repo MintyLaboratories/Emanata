@@ -302,6 +302,8 @@ class ListActivitySharesTest {
 
     @Test
     fun aLongPressEditsOrRemovesAShare() {
+        val prefs = Prefs(context)
+        prefs.setLocationStart("/net/s1", "/net/s1/Series")
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         openSheet(activity)
@@ -316,6 +318,7 @@ class ListActivitySharesTest {
         idle()
         assertEquals(emptyList<String>(), ShareStore(context, box).all().map { it.name })
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
+        assertEquals("its start folder goes with it", "/net/s1", prefs.locationStart("/net/s1"))
     }
 
     @Test

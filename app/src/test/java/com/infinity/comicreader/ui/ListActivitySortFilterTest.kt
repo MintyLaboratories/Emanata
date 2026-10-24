@@ -122,6 +122,25 @@ class ListActivitySortFilterTest {
     }
 
     @Test
+    fun pageCountsWaitWhileTheLibraryIsOutOfSight() {
+        BookFactsCache.reset()
+        val page = com.infinity.comicreader.reader.TestImages.png(4, 6)
+        val books = (1..5).map { com.infinity.comicreader.reader.Fixtures.zip(File(dir, "d$it.cbz"), "01.png" to page, "02.png" to page) }
+        prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
+        // Created but not yet in sight, as under a book opened over it.
+        val controller = Robolectric.buildActivity(ListActivity::class.java).create()
+        idle()
+        fun counted(): Int {
+            val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
+            return books.count { cache.get(it.absolutePath, it.length())?.pages == 2 }
+        }
+        assertTrue("read ${counted()} while out of sight", counted() < books.size)
+        controller.start().resume()
+        idle()
+        assertEquals(books.size, counted())
+    }
+
+    @Test
     fun bookmarksSortBySize() {
         File(dir, "a (2001).cbz").writeBytes(ByteArray(10))
         File(dir, "b (2010).cbz").writeBytes(ByteArray(30))

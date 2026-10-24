@@ -36,6 +36,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withStarted
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -1261,7 +1262,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * counts, ComicInfo years and detected directions of books, and folder totals. Books fill in as they
      * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
      * reorder the list once all are in. Work already running for the same listing
-     * goes on undisturbed.
+     * goes on undisturbed. It waits while the library is out of sight, as while a book
+     * is read, so it never competes with the reader for the share or the battery.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
@@ -1284,6 +1286,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             val charset = prefs.charset
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in books.withIndex()) {
+                withStarted {}
                 val read = withContext(AppDispatchers.io) {
                     runCatching { factsCache.put(e.path, e.size, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) }) }.isSuccess
                 }
@@ -1295,6 +1298,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
             if (folders.isEmpty()) return@launch
             for (f in folders) {
+                withStarted {}
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
             applyFilterAndSort()

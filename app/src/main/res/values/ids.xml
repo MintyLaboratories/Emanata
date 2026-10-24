@@ -18,4 +18,6 @@
     <item name="file_op_more" type="id" />
     <!-- The hint beside the Paste button. -->
     <item name="paste_bubble" type="id" />
+    <!-- Tags an activity's window whose system bars Immersive hid. -->
+    <item name="immersive_bars" type="id" />
 </resources>

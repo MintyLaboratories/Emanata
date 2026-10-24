@@ -20,7 +20,7 @@ fun confirm(
     .setMessage(message)
     .setPositiveButton(action) { _, _ -> onConfirm() }
     .setNegativeButton(R.string.cancel, null)
-    .show()
+    .showKeepingFullscreen()
 
 /** [confirm] with a message from resources. */
 fun confirm(
@@ -43,4 +43,4 @@ fun confirm(
     .setMessage(message)
     .setPositiveButton(action) { _, _ -> onConfirm() }
     .setNegativeButton(R.string.cancel, null)
-    .show()
+    .showKeepingFullscreen()

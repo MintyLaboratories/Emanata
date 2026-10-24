@@ -41,8 +41,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.FileProvider
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -1288,7 +1286,7 @@ class ViewerActivity : AppCompatActivity() {
             .setView(extra)
             .setPositiveButton(R.string.resume_page) { _, _ -> answer(resume = true) }
             .setNegativeButton(R.string.first_page) { _, _ -> answer(resume = false) }
-            .show()
+            .showKeepingFullscreen()
     }
 
     // ------------------------------------------------------------------ spreads
@@ -2384,15 +2382,12 @@ class ViewerActivity : AppCompatActivity() {
         invalidateOptionsMenu()
     }
 
-    private fun applyFullscreen(enabled: Boolean) {
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        if (enabled) {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        }
+    private fun applyFullscreen(enabled: Boolean) = Immersive.apply(window, enabled)
+
+    /** Back from a dialog, sheet or menu, the bars hide again in fullscreen. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && prefs.fullscreen) applyFullscreen(true)
     }
 
     private fun toggleBars() {
@@ -2703,7 +2698,7 @@ class ViewerActivity : AppCompatActivity() {
         sheet = view
         sheetDialog = dialog
         syncSheet()
-        dialog.show()
+        Immersive.follow(dialog).show()
     }
 
     /** The sheet opens over half the screen, in either orientation. */
@@ -3138,7 +3133,7 @@ class ViewerActivity : AppCompatActivity() {
         )
         // Two rows of context above the current chapter.
         if (current > 2) lm.scrollToPositionWithOffset(current - 2, 0)
-        dialog.show()
+        Immersive.follow(dialog).show()
     }
 
     // ------------------------------------------------------------------ book info
@@ -3218,7 +3213,7 @@ class ViewerActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.page_actions_title, page + 1))
             .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, which -> actions[which].second() }
-            .show()
+            .showKeepingFullscreen()
     }
 
     /** Hides the page on screen, or the one picked when two pages share it. */
@@ -3283,7 +3278,7 @@ class ViewerActivity : AppCompatActivity() {
             .setNeutralButton(R.string.unhide_all) { _, _ -> applyHidden(emptySet()) }
             .setNegativeButton(R.string.cancel, null)
             .setOnDismissListener { thumbs.release() }
-            .show()
+            .showKeepingFullscreen()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = false
     }
 
@@ -3390,7 +3385,7 @@ class ViewerActivity : AppCompatActivity() {
                     invalidateOptionsMenu()
                 }
             }
-            .show()
+            .showKeepingFullscreen()
     }
 
     private fun showJumpDialog() {
@@ -3417,7 +3412,7 @@ class ViewerActivity : AppCompatActivity() {
                 else goTo((n - 1).coerceIn(0, count - 1))
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showKeepingFullscreen()
     }
 
     // ------------------------------------------------------------------ crop / pages

@@ -16,6 +16,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -354,6 +355,79 @@ class TransferTest {
         // Once it ended, the same name is swept.
         write(File(dir, ".big.cbz.1.emanata-new"), 3)
         assertTrue(Transfer.sweep(DeviceSpace, dir.path, names(dir)))
+    }
+
+    /** Files in memory by `/` paths, where names differ in case only unless [ignoreCase]. */
+    private class Memory(private val ignoreCase: Boolean) : FileSpace {
+        val files = LinkedHashMap<String, String>()
+
+        private fun key(path: String) = if (ignoreCase) path.lowercase() else path
+
+        fun add(path: String) {
+            files[key(path)] = path
+        }
+
+        fun paths() = files.values.sorted()
+
+        override fun sameAs(other: FileSpace) = other === this
+
+        override fun stat(path: String) = files[key(path)]?.let { Node(it.substringAfterLast('/'), false, 1) }
+
+        override fun list(path: String) = files.values.filter { it.substringBeforeLast('/') == path }.map { stat(it)!! }
+
+        override fun mkdir(path: String) = throw IOException("no folders")
+
+        override fun open(path: String): InputStream = throw IOException("no reading")
+
+        override fun create(path: String, input: InputStream, length: Long, modified: Long) = throw IOException("no writing")
+
+        override fun rename(from: String, to: String): Boolean {
+            val stored = files.remove(key(from)) ?: throw FileNotFoundException(from)
+            if (key(to) in files) {
+                files[key(from)] = stored
+                throw IOException("Already there: $to")
+            }
+            files[key(to)] = to
+            return true
+        }
+
+        override fun delete(path: String) {
+            files.remove(key(path))
+        }
+
+        override fun remove(path: String) = delete(path)
+    }
+
+    @Test
+    fun renamingChangesCaseOnlyWhereCaseIsIgnored() {
+        val blind = Memory(ignoreCase = true).apply { add("/net/s1/Shelf/Sample.cbz") }
+        assertEquals("/net/s1/Shelf/sample.cbz", Transfer(spaceOf = { blind }).rename("/net/s1/Shelf/Sample.cbz", "sample.cbz"))
+        assertEquals(listOf("/net/s1/Shelf/sample.cbz"), blind.paths())
+        // Another item by that name is a clash.
+        blind.add("/net/s1/Shelf/Other.cbz")
+        try {
+            Transfer(spaceOf = { blind }).rename("/net/s1/Shelf/sample.cbz", "OTHER.cbz")
+            fail("no failure")
+        } catch (e: FileWork.NameTaken) {
+            // Expected.
+        }
+        assertEquals(listOf("/net/s1/Shelf/Other.cbz", "/net/s1/Shelf/sample.cbz"), blind.paths())
+
+        // Where case tells names apart, an item differing in case only is another one.
+        val strict = Memory(ignoreCase = false).apply {
+            add("/net/s1/Shelf/Sample.cbz")
+            add("/net/s1/Shelf/sample.cbz")
+        }
+        try {
+            Transfer(spaceOf = { strict }).rename("/net/s1/Shelf/Sample.cbz", "sample.cbz")
+            fail("no failure")
+        } catch (e: FileWork.NameTaken) {
+            // Expected.
+        }
+        assertEquals(listOf("/net/s1/Shelf/Sample.cbz", "/net/s1/Shelf/sample.cbz"), strict.paths())
+        strict.files.remove("/net/s1/Shelf/sample.cbz")
+        assertEquals("/net/s1/Shelf/SAMPLE.cbz", Transfer(spaceOf = { strict }).rename("/net/s1/Shelf/Sample.cbz", "SAMPLE.cbz"))
+        assertEquals(listOf("/net/s1/Shelf/SAMPLE.cbz"), strict.paths())
     }
 
     @Test

@@ -27,7 +27,6 @@ import com.infinity.comicreader.util.FileUtils
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.IOException
 
 /**
  * The file operations of the library's long-press menu, on the device and on shares:
@@ -108,11 +107,7 @@ internal class FileActions(
         val old = File(path).name
         val target = Transfer.child(Transfer.parentOf(path), name)
         start(FileWork.Kind.RENAME, old) {
-            val space = FileSpaces.of(path)
-            // Only the case changing: on storage that ignores case the "other" item is this one.
-            val caseOnly = name.equals(old, ignoreCase = true)
-            if (!caseOnly && space.stat(target) != null) throw FileWork.NameTaken(name)
-            if (!space.rename(path, target)) throw IOException("Could not rename $path")
+            Transfer().rename(path, name)
             followMove(path, target)
             FileWork.Outcome.Done(target, gone = path)
         }

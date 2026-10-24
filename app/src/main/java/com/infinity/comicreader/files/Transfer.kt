@@ -80,6 +80,40 @@ class Transfer(
         return Result(target, sourceLeft = !removeCopied(from))
     }
 
+    /**
+     * Renames [path] to [name] in its folder; where the item ended up. A change of case only
+     * goes through a side name, as storage that ignores case finds the new name taken by
+     * the item itself; another item by that name fails it.
+     */
+    fun rename(path: String, name: String): String = try {
+        renameInPlace(path, name)
+    } finally {
+        release()
+    }
+
+    private fun renameInPlace(path: String, name: String): String {
+        val space = spaceOf(path)
+        val dir = parentOf(path)
+        val target = child(dir, name)
+        val old = path.substring(dir.length + 1)
+        if (space.stat(target) == null) {
+            if (!space.rename(path, target)) throw IOException("Could not rename $path")
+            return target
+        }
+        if (!name.equals(old, ignoreCase = true)) throw FileWork.NameTaken(name)
+        val side = sideName(space, dir, old, OLD)
+        if (!space.rename(path, side)) throw IOException("Could not rename $path")
+        try {
+            // Still there: another item, on storage that tells case apart.
+            if (space.stat(target) != null) throw FileWork.NameTaken(name)
+            check(space.rename(side, target)) { "Could not rename $path" }
+        } catch (e: Throwable) {
+            runCatching { space.rename(side, path) }
+            throw e
+        }
+        return target
+    }
+
     /** Deletes what was copied from the source, deepest first, each folder once emptied; false when anything is left. */
     private fun removeCopied(space: FileSpace): Boolean {
         var all = true

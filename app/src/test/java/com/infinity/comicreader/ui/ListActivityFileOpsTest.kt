@@ -218,6 +218,20 @@ class ListActivityFileOpsTest {
         assertEquals(context.getString(R.string.renamed), ShadowToast.getTextOfLatestToast())
     }
 
+    @Test
+    fun renamingChangesTheCaseOnly() {
+        val activity = launch()
+        activity.longPress(book.absolutePath).op(R.id.file_op_rename)!!.performClick()
+        idle()
+        val ask = latest()
+        ask.edit().setText("One.cbz")
+        ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { "One.cbz" in shelf.list()!! }
+        assertEquals(listOf("One.cbz", "Other"), shelf.list()!!.sorted())
+        assertTrue(library.isFavorite(File(shelf, "One.cbz").absolutePath))
+        assertEquals(context.getString(R.string.renamed), ShadowToast.getTextOfLatestToast())
+    }
+
     private fun findEdit(group: android.view.ViewGroup): EditText? {
         for (i in 0 until group.childCount) {
             when (val c = group.getChildAt(i)) {

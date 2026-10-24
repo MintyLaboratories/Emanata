@@ -95,7 +95,7 @@ object DeviceSpace : FileSpace {
 
     override fun rename(from: String, to: String): Boolean {
         val target = File(to)
-        if (target.exists() && !sameFileOtherCase(from, to)) throw IOException("Already there: $to")
+        if (target.exists()) throw FileWork.NameTaken(target.name)
         if (File(from).renameTo(target)) return true
         // Across drives renameTo fails: copied instead. Elsewhere a failure is one.
         if (File(from).exists() && !target.exists() && driveOf(from) != driveOf(to)) return false
@@ -111,11 +111,6 @@ object DeviceSpace : FileSpace {
         val file = File(path)
         if (!file.delete() && (file.exists() || Files.isSymbolicLink(file.toPath()))) throw IOException("Could not delete $path")
     }
-
-    /** True when [a] and [b] differ only in case and name one file (on storage that ignores case). */
-    private fun sameFileOtherCase(a: String, b: String): Boolean =
-        a != b && a.equals(b, ignoreCase = true) &&
-            runCatching { File(a).canonicalPath == File(b).canonicalPath }.getOrDefault(false)
 
     /** The mount [path] is on, as far as paths tell: `/storage/<volume>`, else its first two names. */
     private fun driveOf(path: String): String =

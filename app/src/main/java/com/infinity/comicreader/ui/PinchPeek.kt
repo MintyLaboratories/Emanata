@@ -12,6 +12,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.PeekMode
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.net.Remotes
 import java.io.File
 import kotlin.math.hypot
 
@@ -99,7 +100,7 @@ class PinchPeek(
             val landscape = activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             PeekOverlay.Folder(
                 cover?.let { intArrayOf(it.width, it.height) }, prefs.coverStyle, folderEntries, prefs.thumbnails,
-                gridCover = prefs.gridCover(landscape)
+                gridCover = prefs.gridCover(landscape), makeCovers = Remotes.thumbnails(entry.path)
             )
         }
         overlay.begin(entry, tile, full, activity.lifecycleScope, prefs.charset, activity.cacheDir, prefs.linearLight, folder)

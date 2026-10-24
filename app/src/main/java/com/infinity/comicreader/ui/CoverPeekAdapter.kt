@@ -29,7 +29,8 @@ import kotlinx.coroutines.withContext
  * [coverWidth] x [coverHeight] in [style], as the library draws it, so covers the
  * library made come straight from [Thumbs]' caches. Missing ones are made
  * [GENERATORS] at a time, those nearest the middle of the view first ([NearestFirst]).
- * Without [showCovers] (the library's covers setting off) cells show type icons only.
+ * Without [showCovers] (the library's covers setting off) cells show type icons only;
+ * without [makeCovers] (a share whose thumbnails are off) only covers already made show.
  */
 class CoverPeekAdapter(
     context: Context,
@@ -39,6 +40,7 @@ class CoverPeekAdapter(
     private val style: CoverStyle,
     private val charset: String,
     private val showCovers: Boolean,
+    private val makeCovers: Boolean = true,
     private val onPick: (BookEntry) -> Unit
 ) : RecyclerView.Adapter<CoverPeekAdapter.Holder>() {
 
@@ -111,6 +113,9 @@ class CoverPeekAdapter(
             }
             if (cached != null) {
                 if (holder.bound == position) show(holder, position, cached)
+            } else if (!makeCovers) {
+                coverless += position
+                if (holder.bound == position) show(holder, position, null)
             } else if (position !in making) {
                 missing += position
                 generate()

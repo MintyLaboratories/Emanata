@@ -323,6 +323,29 @@ class ListActivityPeekTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun folderPeekNotMakingCoversShowsOnlyThoseMade() {
+        val extras = extrasWithBooks()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        val entries = activity.peekedEntries(extras)
+        val style = Prefs(activity).coverStyle
+        assertTrue(com.infinity.comicreader.data.Thumbs.load(activity, entries[0], "UTF-8", 60, 90, style) != null)
+        val adapter = CoverPeekAdapter(activity, entries, 60, 90, style, "UTF-8", showCovers = true, makeCovers = false) {}
+        val grid = RecyclerView(activity).apply {
+            layoutManager = androidx.recyclerview.widget.GridLayoutManager(activity, 3)
+            this.adapter = adapter
+        }
+        activity.findViewById<ViewGroup>(android.R.id.content).addView(grid, ViewGroup.LayoutParams(600, 600))
+        grid.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY))
+        grid.layout(0, 0, 600, 600)
+        idle(1000)
+        val covers = (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
+        assertEquals(listOf(true, false, false), covers.map { it != null })
+        adapter.release()
+    }
+
+    @Test
     fun spreadingFullyOnAFolderOpensIt() {
         val extras = extrasWithBooks()
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

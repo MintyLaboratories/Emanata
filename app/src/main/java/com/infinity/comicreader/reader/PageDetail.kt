@@ -24,11 +24,11 @@ interface PageDetail {
     val byteCount: Long
 
     /**
-     * [region] at [width] x [height], Lanczos3 for any change of size ([linear] for
-     * shrinking in linear light). Blocks; stops early, throwing, once this thread's
-     * [Cancellation] mark is set. Safe to call from several threads.
+     * [region] at [width] x [height], resampled as [scaling] says for any change of size
+     * ([linear] for shrinking in linear light). Blocks; stops early, throwing, once this
+     * thread's [Cancellation] mark is set. Safe to call from several threads.
      */
-    fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap
+    fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling = Scaling.PLAIN): Bitmap
 
     /** Frees its memory; no [render] may be running or follow. */
     fun release()
@@ -38,7 +38,7 @@ interface PageDetail {
 class BitmapDetail(val bitmap: Bitmap) : PageDetail {
     override val byteCount: Long get() = bitmap.byteCount.toLong()
 
-    override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+    override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap {
         val w = bitmap.width
         val h = bitmap.height
         val plan = region.plan(width, height, 0.0, 0.0, w.toDouble(), h.toDouble())
@@ -46,7 +46,7 @@ class BitmapDetail(val bitmap: Bitmap) : PageDetail {
         return if (plan.isCrop() && inside) {
             Bitmap.createBitmap(bitmap, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
         } else {
-            BitmapUtils.resample(bitmap, plan, linear && plan.shrinks())
+            BitmapUtils.resample(bitmap, plan, linear && plan.shrinks(), scaling)
         }
     }
 

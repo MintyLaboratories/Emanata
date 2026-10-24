@@ -164,6 +164,45 @@
             app:key="pref_linear_light"
             app:summary="@string/pref_linear_light_desc"
             app:title="@string/pref_linear_light" />
+        <ListPreference
+            app:defaultValue="lanczos3"
+            app:entries="@array/scale_entries"
+            app:entryValues="@array/scale_values"
+            app:key="pref_scale_pages"
+            app:title="@string/pref_scale_pages"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="lanczos3"
+            app:entries="@array/scale_entries"
+            app:entryValues="@array/scale_values"
+            app:key="pref_scale_zoom"
+            app:title="@string/pref_scale_zoom"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="lanczos3"
+            app:entries="@array/scale_entries"
+            app:entryValues="@array/scale_values"
+            app:key="pref_scale_thumbs"
+            app:title="@string/pref_scale_thumbs"
+            app:useSimpleSummaryProvider="true" />
+        <SeekBarPreference
+            android:max="100"
+            app:defaultValue="0"
+            app:key="pref_ring_up"
+            app:min="0"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            app:summary="@string/pref_ring_desc"
+            app:title="@string/pref_ring_up" />
+        <SeekBarPreference
+            android:max="100"
+            app:defaultValue="50"
+            app:key="pref_ring_down"
+            app:min="0"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            app:summary="@string/pref_ring_desc"
+            app:title="@string/pref_ring_down" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_per_series"

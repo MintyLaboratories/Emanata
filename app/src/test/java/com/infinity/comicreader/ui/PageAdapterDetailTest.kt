@@ -11,6 +11,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -33,7 +34,7 @@ class PageAdapterDetailTest {
         /** Set to make renders throw, as when memory runs out. */
         @Volatile var failing = false
         override val byteCount = 0L
-        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap {
             if (failing) throw OutOfMemoryError("synthetic")
             return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }

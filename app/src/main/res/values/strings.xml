@@ -450,6 +450,12 @@
     <string name="pref_spreads">Spreads</string>
     <string name="pref_cover_alone">First page alone</string>
     <string name="pref_cover_alone_desc">Two-page reading shows the first page or cover on its own</string>
+    <string name="pref_scale_pages">Scaling: pages at rest</string>
+    <string name="pref_scale_zoom">Scaling: zoom</string>
+    <string name="pref_scale_thumbs">Scaling: thumbnails and covers</string>
+    <string name="pref_ring_up">Anti-ringing when enlarging (%)</string>
+    <string name="pref_ring_down">Anti-ringing when shrinking (%)</string>
+    <string name="pref_ring_desc">Holds back the halos sharp filters leave beside hard edges</string>
     <string name="pref_join_spreads">Join spreads by their edges</string>
     <string name="pref_join_spreads_desc">Show or pair two pages as one picture when their facing edges run on</string>
     <string name="pref_rotate_spreads">Rotate for spreads</string>
@@ -846,6 +852,18 @@
         <item>marquee</item>
     </string-array>
 
+    <string-array name="scale_entries">
+        <item>Hermite (fastest)</item>
+        <item>Bicubic (Catmull-Rom)</item>
+        <item>Lanczos3</item>
+        <item>Lanczos6 (sharpest, rings more)</item>
+    </string-array>
+    <string-array name="scale_values">
+        <item>hermite</item>
+        <item>bicubic</item>
+        <item>lanczos3</item>
+        <item>lanczos6</item>
+    </string-array>
     <string-array name="preload_entries">
         <item>Off</item>
         <item>1 page</item>

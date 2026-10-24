@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.os.Looper
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.Scaling
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,7 +30,7 @@ class DetailStoreTest {
     private class FakeDetail(val name: String) : PageDetail {
         @Volatile var released = false
         override val byteCount = 0L
-        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap = throw UnsupportedOperationException()
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap = throw UnsupportedOperationException()
         override fun release() {
             released = true
         }

@@ -177,7 +177,7 @@ object Thumbs {
         directional.put(key(entry), sided)
         val bitmap = if (page < 0) cover else {
             val (w, h) = CoverArt.pageBox(width, height)
-            val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear))
+            val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear, scaling = style.scaling))
             if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
         memory.put(k, bitmap)

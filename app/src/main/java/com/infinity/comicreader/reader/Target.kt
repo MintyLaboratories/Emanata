@@ -52,8 +52,8 @@ enum class Fit {
 
 /**
  * The bitmap a decode produces: the source (or, with [autoCrop], its content without
- * blank borders) mapped onto [width] x [height] as [fit] says, with Lanczos3 for any
- * change of size. A dimension of 0 or less leaves that axis free: `Target(1848, 0)`
+ * blank borders) mapped onto [width] x [height] as [fit] says, resampled as [scaling]
+ * says for any change of size. A dimension of 0 or less leaves that axis free: `Target(1848, 0)`
  * fits the width, and both free keep the source size. [COVER][Fit.COVER] and
  * [STRETCH][Fit.STRETCH] need both dimensions and act as [INSIDE][Fit.INSIDE] without.
  *
@@ -80,7 +80,8 @@ data class Target(
     val capPixels: Long = DEFAULT_CAP_PIXELS,
     val anchorTop: Boolean = false,
     val half: Half = Half.WHOLE,
-    val box: Box? = null
+    val box: Box? = null,
+    val scaling: Scaling = Scaling.PLAIN
 ) {
     /**
      * `[left, top, right, bottom]` of a [srcW] x [srcH] source that this target shows: its
@@ -166,7 +167,7 @@ data class Target(
      * the source whole first (up to [capPixels]), beside its crop with auto-crop.
      */
     fun detail(size: IntArray?, maxBytes: Long): Target {
-        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half, box = box)
+        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half, box = box, scaling = scaling)
         if (size == null || size[0] <= 0 || size[1] <= 0) return full
         val bytes = size[0].toLong() * size[1] * 4
         if (bytes <= maxBytes) return full

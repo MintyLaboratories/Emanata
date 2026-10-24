@@ -84,7 +84,7 @@ class GuardedSourceTest {
 
         override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail = object : PageDetail {
             override val byteCount = 0L
-            override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+            override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap {
                 renders++
                 started.countDown()
                 proceed.await(5, TimeUnit.SECONDS)

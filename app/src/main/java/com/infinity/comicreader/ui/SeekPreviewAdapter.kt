@@ -16,6 +16,7 @@ import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CancellationException
@@ -33,7 +34,7 @@ import kotlinx.coroutines.withContext
 /**
  * The seek bar's strip of page previews ([SeekStrip.Cell] each), [thumbHeight] pixels
  * tall, the [current] cell highlighted. A part shows its page's stored or quick preview
- * ([PageSource.loadPreview]) at once, then its Lanczos3 rendering at the part's exact
+ * ([PageSource.loadPreview]) at once, then its [scaling] rendering at the part's exact
  * size: with [exact] from the page, without it (a book whose pages are costly to reach)
  * from the preview, the page read only when it has none. Both are cached while the
  * adapter lives, so the strip opens again at once.
@@ -42,6 +43,7 @@ class SeekPreviewAdapter(
     private val source: PageSource,
     private val thumbHeight: Int,
     private val linear: Boolean,
+    private val scaling: Scaling = Scaling.PLAIN,
     private val exact: Boolean,
     private val onPick: (Int) -> Unit
 ) : RecyclerView.Adapter<SeekPreviewAdapter.Holder>() {
@@ -181,7 +183,7 @@ class SeekPreviewAdapter(
                     // Without [exact], the preview itself is scaled: no page is read.
                     if (preview != null && !exact) scaleGate.withPermit { scaled(preview, key) }
                     else renderGate.withPermit {
-                        source.loadPage(key.page, Target(key.width, key.height, Fit.COVER, linear = linear, half = key.half))
+                        source.loadPage(key.page, Target(key.width, key.height, Fit.COVER, linear = linear, half = key.half, scaling = scaling))
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -199,11 +201,11 @@ class SeekPreviewAdapter(
         }
     }
 
-    /** [preview] cropped and Lanczos3-scaled to fill [key]'s size; stops early once this coroutine is canceled. */
+    /** [preview] cropped and scaled through [scaling] to fill [key]'s size; stops early once this coroutine is canceled. */
     private suspend fun scaled(preview: Bitmap, key: PartKey): Bitmap {
         val job = currentCoroutineContext().job
         val plan = Target(key.width, key.height, Fit.COVER).plan(preview.width.toDouble(), preview.height.toDouble())
-        return Cancellation.during({ !job.isActive }) { CoverArt.render(preview, plan, linear) }
+        return Cancellation.during({ !job.isActive }) { CoverArt.render(preview, plan, linear, scaling) }
     }
 
     private fun showError(slot: Slot, page: Int) {

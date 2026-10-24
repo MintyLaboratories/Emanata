@@ -75,7 +75,7 @@ class PdfSource(file: File) : PageSource {
     private inner class VectorDetail(private val index: Int, private val page: Plan) : PageDetail {
         override val byteCount: Long get() = 0L
 
-        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap =
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap =
             renderPlan(index, region.plan(width, height, page.x, page.y, page.spanW, page.spanH))
 
         override fun release() {

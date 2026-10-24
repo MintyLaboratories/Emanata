@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.reader.Scaling
 import kotlin.math.abs
 
 /** How a cover meets its box. */
@@ -35,10 +36,12 @@ enum class CropAnchor(val key: String) {
 data class CoverStyle(
     val fit: ThumbFit = ThumbFit.AUTO,
     val anchor: CropAnchor = CropAnchor.TOP,
-    val linear: Boolean = false
+    val linear: Boolean = false,
+    val scaling: Scaling = Scaling.DEFAULT
 ) {
     /** Part of the cache key: one token per setting. */
-    val key: String get() = "${fit.key}|${anchor.key}" + if (linear) "|linear" else ""
+    val key: String
+        get() = "${fit.key}|${anchor.key}" + (if (linear) "|linear" else "") + scaling.key.let { if (it.isEmpty()) "" else "|$it" }
 
     /** True when a [srcW] x [srcH] cover fills a [boxW] x [boxH] box (cropped) rather than fits inside it. */
     fun fills(srcW: Int, srcH: Int, boxW: Int, boxH: Int): Boolean = when (fit) {

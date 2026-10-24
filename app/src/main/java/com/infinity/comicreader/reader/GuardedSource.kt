@@ -72,10 +72,10 @@ class GuardedSource(private val inner: PageSource) : PageSource {
     private inner class Detail(private val detail: PageDetail) : PageDetail {
         override val byteCount: Long get() = detail.byteCount
 
-        override fun render(region: Region, width: Int, height: Int, linear: Boolean): Bitmap {
+        override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap {
             if (!enter()) throw IOException("Source closed")
             try {
-                return detail.render(region, width, height, linear)
+                return detail.render(region, width, height, linear, scaling)
             } finally {
                 exit()
             }

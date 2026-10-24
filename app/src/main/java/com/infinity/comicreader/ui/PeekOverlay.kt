@@ -26,6 +26,7 @@ import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.PeekMode
+import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSources
@@ -175,7 +176,7 @@ class PeekOverlay(context: Context) : FrameLayout(context) {
             source = opened
             spinner.visibility = GONE
             if (opened.pageCount == 0) showMessage(R.string.peek_no_pages)
-            val a = ThumbAdapter(opened, entry.progressPage, linear, thumbHeight = (cell * PAGE_ASPECT).roundToInt()) { page ->
+            val a = ThumbAdapter(opened, entry.progressPage, linear, Prefs(context).thumbScaling, thumbHeight = (cell * PAGE_ASPECT).roundToInt()) { page ->
                 onOpen?.invoke(entry, page)
                 hide()
             }

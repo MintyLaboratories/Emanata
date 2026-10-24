@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CancellationException
@@ -28,7 +29,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Grid of page thumbnails used to jump to a page. Each is made at its view's exact
- * size, cropped and Lanczos3-scaled to fill it, and drawn 1:1. Until it is ready the
+ * size, cropped and scaled through [scaling] to fill it, and drawn 1:1. Until it is ready the
  * page's preview stands in, stored or quickly decoded ([PageSource.loadPreview]) and
  * cropped the same way, so the exact one replaces it in place. [thumbHeight], when
  * above 0, replaces the layout's thumbnail height in pixels. [currentPage] is outlined,
@@ -38,6 +39,7 @@ class ThumbAdapter(
     private val source: PageSource,
     private val currentPage: Int,
     private val linear: Boolean = false,
+    private val scaling: Scaling = Scaling.PLAIN,
     private val thumbHeight: Int = 0,
     private val marked: (Int) -> Boolean = { false },
     private val labelOf: (Int) -> String = { (it + 1).toString() },
@@ -133,7 +135,7 @@ class ThumbAdapter(
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
                     try {
-                        source.loadPage(position, Target(w, h, Fit.COVER, linear = linear))
+                        source.loadPage(position, Target(w, h, Fit.COVER, linear = linear, scaling = scaling))
                     } catch (t: Throwable) {
                         Log.w(TAG, "Failed to load thumbnail $position", t)
                         null

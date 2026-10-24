@@ -6,6 +6,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.AutoScroll
+import com.infinity.comicreader.reader.ScaleFilter
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.TapZones
 
 /**
@@ -167,6 +169,35 @@ class Prefs(context: Context) {
         get() = bool(KEY_LINEAR_LIGHT, false)
         set(v) = put(KEY_LINEAR_LIGHT, v)
 
+    /** The filter pages are scaled with to show at rest. */
+    var scalePages: ScaleFilter
+        get() = ScaleFilter.of(sp.getString(KEY_SCALE_PAGES, null))
+        set(v) = put(KEY_SCALE_PAGES, v.key)
+
+    /** The filter zooming scales pages with, while moving (GPU) and once settled. */
+    var scaleZoom: ScaleFilter
+        get() = ScaleFilter.of(sp.getString(KEY_SCALE_ZOOM, null))
+        set(v) = put(KEY_SCALE_ZOOM, v.key)
+
+    /** The filter thumbnails and covers are made with. */
+    var scaleThumbs: ScaleFilter
+        get() = ScaleFilter.of(sp.getString(KEY_SCALE_THUMBS, null))
+        set(v) = put(KEY_SCALE_THUMBS, v.key)
+
+    /** Anti-ringing, in percent, where an image is enlarged. */
+    var ringUp: Int
+        get() = integer(KEY_RING_UP, 0).coerceIn(0, 100)
+        set(v) = put(KEY_RING_UP, v.coerceIn(0, 100))
+
+    /** Anti-ringing, in percent, where an image is shrunk. */
+    var ringDown: Int
+        get() = integer(KEY_RING_DOWN, Scaling.DEFAULT_DOWN_RING).coerceIn(0, 100)
+        set(v) = put(KEY_RING_DOWN, v.coerceIn(0, 100))
+
+    val pageScaling: Scaling get() = Scaling(scalePages, ringUp, ringDown)
+    val zoomScaling: Scaling get() = Scaling(scaleZoom, ringUp, ringDown)
+    val thumbScaling: Scaling get() = Scaling(scaleThumbs, ringUp, ringDown)
+
     /** How many pages ahead to decode (0 = off). Stored as a string by the list preference. */
     var preload: Int
         get() = str(KEY_PRELOAD, "2").toIntOrNull()?.coerceIn(0, 6) ?: 2
@@ -258,7 +289,7 @@ class Prefs(context: Context) {
         set(v) = put(KEY_CROP_ANCHOR, v.key)
 
     /** How covers are made from their images. */
-    val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight)
+    val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight, thumbScaling)
 
     /** The library toolbar's buttons, in order. */
     var toolbarButtons: ToolbarButtons
@@ -573,6 +604,11 @@ class Prefs(context: Context) {
         private const val KEY_PER_SERIES = "pref_per_series"
         private const val KEY_DETECT_DIRECTION = "pref_detect_direction"
         private const val KEY_LINEAR_LIGHT = "pref_linear_light"
+        private const val KEY_SCALE_PAGES = "pref_scale_pages"
+        private const val KEY_SCALE_ZOOM = "pref_scale_zoom"
+        private const val KEY_SCALE_THUMBS = "pref_scale_thumbs"
+        private const val KEY_RING_UP = "pref_ring_up"
+        private const val KEY_RING_DOWN = "pref_ring_down"
         private const val KEY_SPREADS = "pref_spreads"
         private const val KEY_COVER_ALONE = "pref_cover_alone"
         private const val KEY_ROTATE_SPREADS = "pref_rotate_spreads"
@@ -585,7 +621,7 @@ class Prefs(context: Context) {
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
             OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, KEY_PINCH_PEEK, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, OLD_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
-            KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
+            KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS

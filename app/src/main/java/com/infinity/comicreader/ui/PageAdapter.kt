@@ -28,6 +28,7 @@ import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PairCrop
 import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CompletableDeferred
@@ -71,15 +72,16 @@ import java.util.concurrent.atomic.AtomicInteger
  * read error is tried again the next time it is shown.
  *
  * A new fit, page gap or item size shows at once: each page keeps its bitmap, scaled
- * to the new size on the GPU (Lanczos3 when enlarged), while the bitmap for the new
+ * to the new size on the GPU (the zoom filter when enlarged), while the bitmap for the new
  * size is made in the background, from the page's full detail when a zoom already
  * holds it, and then takes over in place ([ZoomImageView.swapBitmap]). The shown pages'
  * bitmaps for other sizes stay cached while room allows, so going back to a recent size
  * is instant too.
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
- * instance whenever the mode, spread, reading direction, [autoCrop] or [linear]
- * (linear-light scaling) changes. Paged items follow [pageLayout] when one is given (the
+ * instance whenever the mode, spread, reading direction, [autoCrop], [linear]
+ * (linear-light scaling) or the scaling of pages at rest ([pageScaling]) or zoomed
+ * ([zoomScaling]) changes. Paged items follow [pageLayout] when one is given (the
  * spread engine's pairs, or pages split in halves), else pages pair by position with
  * [twoPage]. With [autoCrop], the two pages of a pair share one top and bottom crop and
  * show at one height ([PairCrop]), from what auto-crop found on each, kept in [bounds];
@@ -101,6 +103,8 @@ class PageAdapter(
     private val verticalDrag: ZoomImageView.VerticalDrag? = null,
     val autoCrop: Boolean = false,
     private val linear: Boolean = false,
+    private val pageScaling: Scaling = Scaling.PLAIN,
+    private val zoomScaling: Scaling = Scaling.PLAIN,
     private val preload: Int = 2,
     private val fling: Boolean = false,
     private val onLongPress: ((Int) -> Unit)? = null,
@@ -131,7 +135,7 @@ class PageAdapter(
      * Shows every page at the size the layout now asks for, in place: decodes for an
      * old size are dropped, as are its cached bitmaps of pages not shown, and the items
      * rebind on their own holders ([RESIZE]), which keep their bitmaps until the new ones
-     * arrive. Meanwhile [ZoomImageView] draws a kept bitmap enlarged through Lanczos3 and
+     * arrive. Meanwhile [ZoomImageView] draws a kept bitmap enlarged through the zoom filter and
      * shrunk bilinear, which aliases less than the shader at source size. Timed by [timing].
      */
     private fun resize() {
@@ -397,6 +401,7 @@ class PageAdapter(
     private fun makeImage(context: Context): ZoomImageView = ZoomImageView(context).apply {
         doubleTapEnabled = doubleTapZoom
         flingEnabled = fling
+        zoomScaling = this@PageAdapter.zoomScaling
         onTap = { x, y -> tapped(this, x, y) }
         if (this@PageAdapter.onLongPress != null) onLongPress = { pressed(this) }
         verticalDrag = this@PageAdapter.verticalDrag
@@ -539,7 +544,10 @@ class PageAdapter(
     private fun detailKey(key: PageKey) =
         PageKey(
             key.page,
-            Target(autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels, half = key.target.half, box = key.target.box)
+            Target(
+                autoCrop = key.target.autoCrop, linear = key.target.linear, capPixels = key.target.capPixels, half = key.target.half,
+                box = key.target.box, scaling = key.target.scaling
+            )
         )
 
     /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
@@ -552,7 +560,7 @@ class PageAdapter(
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
-            val job = details.render(detailKey, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear)) }, done = done)
+            val job = details.render(detailKey, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear, zoomScaling)) }, done = done)
             return { job.cancel() }
         }
 
@@ -658,7 +666,7 @@ class PageAdapter(
         // [failed] can run before [DetailStore.render] returns, the decode then waited on.
         var decoding = false
         val job = details.render(detail.detailKey, detailKeys(holder), detail.loader(), {
-            frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear))
+            frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear, pageScaling))
         }, failed = {
             decoding = true
             decodeInto(holder, slot, key)
@@ -717,7 +725,7 @@ class PageAdapter(
         sizedH = h
         val slot = slotOf(part)
         val view = PageTargets.viewSize(mode, spread && !merged, w, h, spacingPx, slot)
-        var target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear)
+        var target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear, pageScaling)
         if (part.half != Half.WHOLE) target = target.copy(half = part.half)
         if (slot == PageTargets.Slot.ALONE || !autoCrop || fitMode == ZoomImageView.FitMode.STRETCH) return PageKey(part.page, target)
         val parts = layout.parts(layout.itemOf(part), end)

@@ -785,7 +785,7 @@ class ViewerActivity : AppCompatActivity() {
 
         // Built into the page adapter.
         if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
-            s.linearLight != old.linearLight ||
+            s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
             s.preload != old.preload
         ) {
             rebuild = true
@@ -1587,6 +1587,8 @@ class ViewerActivity : AppCompatActivity() {
             verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
             autoCrop = shownCrop,
             linear = prefs.linearLight,
+            pageScaling = prefs.pageScaling,
+            zoomScaling = prefs.zoomScaling,
             preload = prefs.preload,
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
@@ -2149,6 +2151,7 @@ class ViewerActivity : AppCompatActivity() {
             src,
             resources.getDimensionPixelSize(R.dimen.seek_thumb_h),
             prefs.linearLight,
+            prefs.thumbScaling,
             exact = src.cheapSizes
         ) { item ->
             closeSeekPanel()
@@ -3290,7 +3293,7 @@ class ViewerActivity : AppCompatActivity() {
         // Never closed here: it reads through the open book, which the reader closes.
         val pages = HidingSource(src.inner, hidden.toIntArray())
         val thumbs = ThumbAdapter(
-            pages, -1, prefs.linearLight,
+            pages, -1, prefs.linearLight, prefs.thumbScaling,
             marked = { it in picked },
             labelOf = { (hidden[it] + 1).toString() }
         ) { position ->

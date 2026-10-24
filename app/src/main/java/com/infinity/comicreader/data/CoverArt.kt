@@ -9,6 +9,7 @@ import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Blur
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Plan
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
 import kotlin.math.roundToInt
@@ -114,12 +115,12 @@ object CoverArt {
         val fill = !fit && style.fills(r.width(), r.height(), width, height)
         val plan = { t: Target -> t.plan(r.width().toDouble(), r.height().toDouble(), r.left.toDouble(), r.top.toDouble()) }
         if (fill) {
-            return render(src, plan(Target(width, height, Fit.COVER, anchorTop = style.anchor == CropAnchor.TOP)), style.linear)
+            return render(src, plan(Target(width, height, Fit.COVER, anchorTop = style.anchor == CropAnchor.TOP)), style.linear, style.scaling)
         }
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         drawBackground(canvas, src, plan, width, height, style.linear)
-        val front = render(src, plan(Target(width, height, Fit.INSIDE)), style.linear)
+        val front = render(src, plan(Target(width, height, Fit.INSIDE)), style.linear, style.scaling)
         canvas.drawBitmap(front, ((width - front.width) / 2).toFloat(), ((height - front.height) / 2).toFloat(), null)
         front.recycle()
         return out
@@ -140,10 +141,10 @@ object CoverArt {
         canvas.drawColor(BACKGROUND_DIM)
     }
 
-    /** A new bitmap of [src] as [plan] says; never [src] itself. */
-    fun render(src: Bitmap, plan: Plan, linear: Boolean): Bitmap = when {
+    /** A new bitmap of [src] as [plan] and [scaling] say; never [src] itself. */
+    fun render(src: Bitmap, plan: Plan, linear: Boolean, scaling: Scaling = Scaling.PLAIN): Bitmap = when {
         plan.isIdentity(src.width, src.height) -> src.copy(Bitmap.Config.ARGB_8888, false)
         plan.isCrop() -> Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
-        else -> BitmapUtils.resample(src, plan, linear && plan.shrinks())
+        else -> BitmapUtils.resample(src, plan, linear && plan.shrinks(), scaling)
     }
 }

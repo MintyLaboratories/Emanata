@@ -74,7 +74,7 @@ class PagesActivity : AppCompatActivity() {
                 val f = File(path)
                 val dot = f.name.lastIndexOf('.')
                 toolbar.subtitle = if (dot > 0) f.name.substring(0, dot) else f.name
-                val a = ThumbAdapter(opened, current, prefs.linearLight) { page ->
+                val a = ThumbAdapter(opened, current, prefs.linearLight, prefs.thumbScaling) { page ->
                     setResult(RESULT_OK, Intent().putExtra(EXTRA_RESULT_PAGE, page))
                     finish()
                 }

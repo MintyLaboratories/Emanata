@@ -3,6 +3,7 @@ package com.infinity.comicreader.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.Scaling
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +31,8 @@ data class ListSettings(
     val groupFavorites: Boolean,
     val linearLight: Boolean,
     val detectDirection: Boolean,
-    val charset: String
+    val charset: String,
+    val thumbScaling: Scaling = Scaling.DEFAULT
 ) {
     companion object {
         fun from(p: Prefs) = ListSettings(
@@ -53,7 +55,8 @@ data class ListSettings(
             groupFavorites = p.groupFavorites,
             linearLight = p.linearLight,
             detectDirection = p.detectDirection,
-            charset = p.charset
+            charset = p.charset,
+            thumbScaling = p.thumbScaling
         )
     }
 }
@@ -88,7 +91,10 @@ data class ReaderSettings(
     val spreads: SpreadDisplay = SpreadDisplay.MERGE,
     val coverAlone: Boolean = true,
     val rotateSpreads: Boolean = true,
-    val joinSpreads: Boolean = true
+    val joinSpreads: Boolean = true,
+    val pageScaling: Scaling = Scaling.DEFAULT,
+    val zoomScaling: Scaling = Scaling.DEFAULT,
+    val thumbScaling: Scaling = Scaling.DEFAULT
 ) {
     companion object {
         fun from(p: Prefs) = ReaderSettings(
@@ -120,7 +126,10 @@ data class ReaderSettings(
             spreads = p.spreads,
             coverAlone = p.coverAlone,
             rotateSpreads = p.rotateSpreads,
-            joinSpreads = p.joinSpreads
+            joinSpreads = p.joinSpreads,
+            pageScaling = p.pageScaling,
+            zoomScaling = p.zoomScaling,
+            thumbScaling = p.thumbScaling
         )
     }
 }

@@ -461,7 +461,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         ) {
             applyFilterAndSort()
         } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
-            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor
+            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor ||
+            s.thumbScaling != old.thumbScaling
         ) {
             adapter.notifyDataSetChanged()
         }

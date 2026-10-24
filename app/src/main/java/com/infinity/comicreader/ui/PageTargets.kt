@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.reader.Fit
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -44,13 +45,14 @@ object PageTargets {
         viewW: Int,
         viewH: Int,
         autoCrop: Boolean = false,
-        linear: Boolean = false
+        linear: Boolean = false,
+        scaling: Scaling = Scaling.PLAIN
     ): Target = when {
-        mode == PageAdapter.Mode.CONTINUOUS -> Target(viewW, 0, autoCrop = autoCrop, linear = linear)
-        fit == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = autoCrop, linear = linear)
-        fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear)
-        fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear)
-        else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear)
+        mode == PageAdapter.Mode.CONTINUOUS -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling)
+        fit == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling)
+        fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling)
+        fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear, scaling = scaling)
+        else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling)
     }
 
     /**

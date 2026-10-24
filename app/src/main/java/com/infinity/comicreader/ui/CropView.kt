@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 /**
  * Displays a bitmap fitted to the view and lets the user drag a crop rectangle
  * over it. Corners resize; the inside of the rectangle moves it. The bitmap is shown
- * through a Lanczos3 copy at its on-screen size, drawn 1:1.
+ * through a resampled copy at its on-screen size, drawn 1:1.
  */
 class CropView @JvmOverloads constructor(
     context: Context,

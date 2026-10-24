@@ -45,7 +45,7 @@ class DecodeException(
  *  1. the image is decoded at full resolution, with no decoder-side scaling;
  *  2. with [Target.autoCrop], blank borders are found on that full image, and
  *     [Target.half] takes one half of what is left;
- *  3. it is resampled with Lanczos3 ([BitmapUtils.resample]) to the target size,
+ *  3. it is resampled as [Target.scaling] says ([BitmapUtils.resample]) to the target size,
  *     and the full-resolution bitmap is recycled at once.
  *
  * Memory guard: a source above [Target.capPixels] (50 MP by default) is first reduced
@@ -218,7 +218,7 @@ object Decoders {
         if (plan.isIdentity(src.width, src.height)) return src
         try {
             return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
-            else BitmapUtils.resample(src, plan, target.linear && plan.shrinks())
+            else BitmapUtils.resample(src, plan, target.linear && plan.shrinks(), target.scaling)
         } finally {
             // Frees the full-resolution pixels before the caller keeps the result.
             src.recycle()

@@ -14,8 +14,8 @@ import java.util.zip.CRC32
  * half-written is ever left under the final name: a copy is written under a hidden
  * side name in the target folder ([sideName]) and renamed into place once complete,
  * and a failed or canceled one is deleted. Every file copied is checked for its size;
- * a move between spaces also reads each copy back and compares its CRC-32 with the
- * source's before the source is deleted: only what was copied, so whatever came into a
+ * a move that copies (between spaces, or between the device's drives) also reads each
+ * copy back and compares its CRC-32 with the source's before the source is deleted: only what was copied, so whatever came into a
  * folder meanwhile stays, and the folder with it. A move within one space is a rename.
  * Links (symbolic links, junctions) are left out: what they point to may be anywhere,
  * even around the folder itself. [progress] hears bytes done of the total, reading back
@@ -52,12 +52,12 @@ class Transfer(
         if (existing != null && !replace) throw IOException("Already there: $target")
         if (move && from.sameAs(to)) renamed(from, source, targetDir, name, existing != null)?.let { return it }
 
-        total = sizeOf(from, source, node) * if (move && !from.sameAs(to)) 2 else 1
+        total = sizeOf(from, source, node) * if (move) 2 else 1
         done = 0
         progress(0, total)
         val part = sideName(to, targetDir, name, PART)
         try {
-            copyTree(from, source, node, to, part, verify = move && !from.sameAs(to))
+            copyTree(from, source, node, to, part, verify = move)
             checkAlive()
         } catch (e: Throwable) {
             runCatching { to.delete(part) }
@@ -142,7 +142,8 @@ class Transfer(
 
     private fun copyFile(from: FileSpace, source: String, node: Node, to: FileSpace, target: String, verify: Boolean) {
         val base = done
-        if (from.sameAs(to) && to.copy(source, target) { n -> checkAlive(); report(base + n) }) {
+        // A copy a move deletes the source for is read back, so never made by a server unseen.
+        if (!verify && from.sameAs(to) && to.copy(source, target) { n -> checkAlive(); report(base + n) }) {
             done = base + node.size.coerceAtLeast(0)
             checkSize(to, target, node.size)
             return

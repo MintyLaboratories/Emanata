@@ -151,6 +151,27 @@ class TransferTest {
     }
 
     @Test
+    fun aMoveToAnotherDriveOfTheDeviceChecksEveryCopy() {
+        val bytes = write(File(device, "A/book.cbz"), 50_000)
+        File(device, "B").mkdirs()
+        // Another drive: renaming fails, so the move copies; this one stores a byte wrong.
+        val otherDrive = object : FileSpace by DeviceSpace {
+            override fun rename(from: String, to: String) = false
+
+            override fun create(path: String, input: InputStream, length: Long, modified: Long) =
+                DeviceSpace.create(path, Flip(input), length, modified)
+        }
+        try {
+            Transfer(spaceOf = { otherDrive }).run(p("A/book.cbz"), p("B"), "book.cbz", move = true, replace = false)
+            fail("no failure")
+        } catch (e: IOException) {
+            assertTrue(e.message!!.contains("differs"))
+        }
+        assertArrayEquals(bytes, File(device, "A/book.cbz").readBytes())
+        assertEquals(emptyList<String>(), names(File(device, "B")))
+    }
+
+    @Test
     fun cancelingDeletesThePartCopy() {
         write(File(device, "big.cbz"), 4_000_000)
         File(device, "B").mkdirs()

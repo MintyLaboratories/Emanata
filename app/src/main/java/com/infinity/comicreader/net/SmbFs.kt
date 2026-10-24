@@ -4,6 +4,7 @@ import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msdtyp.FileTime
 import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
+import com.hierynomus.msfscc.fileinformation.FileBasicInformation
 import com.hierynomus.msfscc.fileinformation.FileStandardInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2CreateOptions
@@ -179,7 +180,7 @@ class SmbFs(private val share: Share) : RemoteFs {
         d.open(
             p, EnumSet.of(AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
             SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_OPEN_REPARSE_POINT)
-        ).use { entryOf(p, it.fileInformation.basicInformation.fileAttributes) }
+        ).use { entryOf(p, it.getFileInformation(FileBasicInformation::class.java).fileAttributes) }
     }
 
     /** The entries of folder [dir], by their paths inside the share. */

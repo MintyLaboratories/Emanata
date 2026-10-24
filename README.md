@@ -143,6 +143,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   `books…Comics`, `Device…Comics`).
 - **Startup tab** and **startup location** (last seen, first or most recent
   favorite folder, or a custom folder picked from the favorites).
+- **Resume reading at startup:** Ask (default), Yes or No. As the app starts,
+  Ask offers to reopen the book read last at its page; ticking *Don't ask
+  again* turns the answer into Yes or No. A finished book is not offered.
 - Long-press a file or folder to favorite it, make a folder the startup folder,
   show it in its folder (except from that folder itself), rename, mark
   read/unread or delete it.

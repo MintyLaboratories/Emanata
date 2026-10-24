@@ -17,6 +17,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -65,6 +66,7 @@ import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.MissingFolder
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RemovalNotices
+import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortValues
@@ -149,6 +151,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Overrides the startup tab setting for the first [startUp]. */
     private var startTab: Int? = null
+
+    /** True when the app is starting afresh: the first [startUp] offers the book read last ([offerResume]). */
+    private var appStart = false
 
     /** A folder handed in by another app, browsed by the first [startUp] instead of the startup location. */
     private var incomingDir: File? = null
@@ -303,6 +308,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (savedInstanceState == null) {
             incomingDir = handleIncoming(intent)
             if (intent.data != null) startTab = TAB_BROWSE
+            appStart = intent.data == null
         }
 
         if (!hasStorageAccess()) {
@@ -492,6 +498,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         started = true
         val dir = savedDir ?: incomingDir
         incomingDir = null
+        if (appStart) {
+            appStart = false
+            offerResume()
+        }
         if (tab == TAB_BROWSE) {
             if (dir != null) loadDirectory(dir) else openStartDirectory()
             return
@@ -508,6 +518,45 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             TAB_HISTORY -> showHistory()
             else -> showBookmarks()
         }
+    }
+
+    /**
+     * As the app starts, reopens the book read last where it was left, asking first unless
+     * the setting says always: Yes / No, with "Don't ask again" making the answer the
+     * setting ([ResumeMode.afterAnswer]). Nothing is offered for a finished book, nor for
+     * one that is gone.
+     */
+    private fun offerResume() {
+        val mode = prefs.startupResume
+        if (mode == ResumeMode.NO) return
+        val last = library.history().firstOrNull { it.path.isNotEmpty() } ?: return
+        if (library.isRead(last.path) || Remotes.isOrphan(last.path)) return
+        val file = Remotes.file(last.path, askNetwork = false)
+        if (!file.exists()) return
+        val page = last.page.coerceAtLeast(0)
+        if (mode == ResumeMode.YES) {
+            openViewer(file, page)
+            return
+        }
+        val extra = layoutInflater.inflate(R.layout.dialog_resume, null)
+        val dontAsk = extra.findViewById<CheckBox>(R.id.resume_dont_ask)
+        fun answer(resume: Boolean) {
+            prefs.startupResume = prefs.startupResume.afterAnswer(resume, dontAsk.isChecked)
+            if (resume) openViewer(file, page)
+        }
+        val message = if (last.total > 0) {
+            val percent = ((page + 1) * 100f / last.total).toInt().coerceIn(1, 100)
+            last.name + "\n" + getString(R.string.resume_progress, page + 1, last.total, percent)
+        } else {
+            last.name
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.startup_resume_title)
+            .setMessage(message)
+            .setView(extra)
+            .setPositiveButton(R.string.resume_yes) { _, _ -> answer(resume = true) }
+            .setNegativeButton(R.string.resume_no) { _, _ -> answer(resume = false) }
+            .show()
     }
 
     private fun tabOf(value: String): Int = when (value) {

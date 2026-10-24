@@ -335,6 +335,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /** Whether the app, as it starts, reopens the book read last: asks (the default), always, or never. */
+    var startupResume: ResumeMode
+        get() = ResumeMode.of(sp.getString(KEY_STARTUP_RESUME, null))
+        set(v) = put(KEY_STARTUP_RESUME, v.value)
+
     /** The tab the library opens on: one of [TAB_BROWSE], [TAB_FAVORITES], [TAB_HISTORY], [TAB_BOOKMARKS]. */
     var startupTab: String
         get() = str(KEY_STARTUP_TAB, TAB_BROWSE)
@@ -533,6 +538,7 @@ class Prefs(context: Context) {
         private const val KEY_STARTUP_TAB = "pref_startup_tab"
         private const val KEY_STARTUP_LOCATION = "pref_startup_location"
         private const val KEY_STARTUP_PATH = "pref_startup_path"
+        private const val KEY_STARTUP_RESUME = "pref_startup_resume"
         private const val KEY_AUTO_CROP = "pref_auto_crop"
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_scroll_speed"
@@ -553,7 +559,7 @@ class Prefs(context: Context) {
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, OLD_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
-            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
+            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 

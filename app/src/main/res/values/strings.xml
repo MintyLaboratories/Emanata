@@ -435,6 +435,8 @@
     <string name="pref_list_quickfab">Show the list/grid button</string>
     <string name="pref_startup_tab">Startup tab</string>
     <string name="pref_startup_location">Startup location</string>
+    <string name="pref_startup_resume">Resume reading at startup</string>
+    <string name="startup_resume_title">Resume reading?</string>
     <string name="pref_startup_custom">Startup folder</string>
     <string name="startup_last">Last seen</string>
     <string name="startup_first_favorite">First favorite folder</string>

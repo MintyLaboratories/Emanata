@@ -102,6 +102,13 @@ class BackupTest {
             shares.edit().clear().commit()
             assertTrue(Backup.import(context, bare, deviceId = "device-1"))
             assertEquals(listOf(share.copy(password = "", passwordLost = true)), ShareStore(context).all())
+
+            // A working password here outlives a backup without passwords, or an older one.
+            ShareStore(context).put(share.copy(password = "pw-new"))
+            assertTrue(Backup.import(context, bare, deviceId = "device-1"))
+            assertEquals(listOf(share.copy(password = "pw-new")), ShareStore(context).all())
+            assertTrue(Backup.import(context, sealed, deviceId = "device-1"))
+            assertEquals(listOf(share.copy(password = "pw-new")), ShareStore(context).all())
         } finally {
             ShareStore.defaultBox = before
         }

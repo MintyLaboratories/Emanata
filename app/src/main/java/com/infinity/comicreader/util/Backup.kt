@@ -46,7 +46,8 @@ object Backup {
 
     /**
      * Restores a backup, share passwords opened for [deviceId]; shares are added to those
-     * there, replacing any with the same id. Returns false when [json] is not a backup of
+     * there, replacing any with the same id but keeping its working password for the same
+     * server ([ShareBackup.merged]). Returns false when [json] is not a backup of
      * this app or its upstream. Blocking: opening passwords takes a moment.
      */
     fun import(context: Context, json: String, deviceId: String? = ShareBackup.deviceId(context)): Boolean {
@@ -68,8 +69,9 @@ object Backup {
         }
         root.optJSONObject("shares")?.let { s ->
             val store = ShareStore(context)
+            val here = store.all().associateBy { it.id }
             // A share whose password cannot be sealed here is skipped; the rest still restore.
-            for (share in ShareBackup.import(s, deviceId)) runCatching { store.put(share) }
+            for (share in ShareBackup.import(s, deviceId)) runCatching { store.put(ShareBackup.merged(share, here[share.id])) }
         }
         // Folder layouts of older versions, judged against the defaults just restored.
         library.migrateFolderLayouts(ReaderLayout.of(Prefs(context)))

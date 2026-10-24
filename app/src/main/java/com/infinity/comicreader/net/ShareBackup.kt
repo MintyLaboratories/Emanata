@@ -100,6 +100,17 @@ object ShareBackup {
         return out
     }
 
+    /**
+     * [restored] as it replaces [local], the share with its id here: a password that works
+     * here for the same server and user stays, so neither a backup without passwords nor
+     * an older one undoes it.
+     */
+    fun merged(restored: Share, local: Share?): Share {
+        if (local == null || local.password.isEmpty() || local.passwordLost) return restored
+        if (local.user != restored.user || ShareForm.serverOf(local.path) != ShareForm.serverOf(restored.path)) return restored
+        return restored.copy(password = local.password, passwordLost = false)
+    }
+
     /** What a sealed password is bound to: the share and the server and user it signs in to. */
     private fun boundTo(share: Share): ByteArray {
         val p = share.path

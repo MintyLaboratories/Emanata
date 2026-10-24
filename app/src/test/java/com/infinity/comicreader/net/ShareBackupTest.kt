@@ -71,6 +71,22 @@ class ShareBackupTest {
     }
 
     @Test
+    fun aRestoredShareKeepsAPasswordThatWorksHereOnlyForTheSameServerAndUser() {
+        val lost = smb.copy(password = "", passwordLost = true)
+        val local = smb.copy(name = "Old name", password = "pw-here")
+        assertEquals(smb.copy(password = "pw-here"), ShareBackup.merged(lost, local))
+        assertEquals("an older password", smb.copy(password = "pw-here"), ShareBackup.merged(smb, local))
+        assertEquals("nothing here", lost, ShareBackup.merged(lost, null))
+        assertEquals("lost here too", lost, ShareBackup.merged(lost, local.copy(password = "", passwordLost = true)))
+        val elsewhere = lost.copy(path = SharePath("nas2.local", 445, "books", "comics"))
+        assertEquals("another server", elsewhere, ShareBackup.merged(elsewhere, local))
+        val someone = lost.copy(user = "someone")
+        assertEquals("another user", someone, ShareBackup.merged(someone, local))
+        val folder = lost.copy(path = SharePath("NAS.local", 445, "other", "x"))
+        assertEquals("same server, other folder", folder.copy(password = "pw-here", passwordLost = false), ShareBackup.merged(folder, local))
+    }
+
+    @Test
     fun aBackupAskingForEndlessIterationsIsCapped() {
         val json = ShareBackup.export(listOf(smb), "device-1", withPasswords = true).put("iterations", Int.MAX_VALUE)
         val started = System.nanoTime()

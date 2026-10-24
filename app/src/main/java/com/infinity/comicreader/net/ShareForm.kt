@@ -51,6 +51,6 @@ object ShareForm {
     }
 
     /** What a password is sent to: the protocol, host and port. */
-    private fun serverOf(address: ShareAddress): List<Any> =
+    internal fun serverOf(address: ShareAddress): List<Any> =
         listOf(address::class, address.host.lowercase(), address.port, (address as? DavUrl)?.secure ?: false)
 }

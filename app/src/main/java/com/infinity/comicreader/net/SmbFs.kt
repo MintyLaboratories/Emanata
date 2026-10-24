@@ -36,8 +36,9 @@ import com.hierynomus.smbj.share.File as SmbFile
  * another share on the same host, made on first use and made again silently when it
  * drops. Kept signed in while unused, echoed every [KEEPALIVE_MS], so coming back to
  * the share within [IDLE_MS] signs in no more; closed after [IDLE_MS] without use
- * while no file is open, so nothing goes over the network for long unless the share
- * is browsed or read. A sign-in or share the
+ * while no file is open, or [OPEN_IDLE_MS] while one is (it opens again when next
+ * read), so nothing goes over the network for long unless the share is browsed or
+ * read. A sign-in or share the
  * host turned down is not tried again until [retry]; a host that could not be
  * reached, not for [Remotes.QUIET_MS]; so callers waiting to connect meanwhile fail
  * at once.
@@ -270,31 +271,44 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     /**
      * Every [KEEPALIVE_MS] while connected ([idleAction]): closes the connection once it
-     * has been unused for [IDLE_MS] with no file open, else echoes it when unused since the
-     * last check, so the host and the network between keep it. Stops with the connection.
+     * has been unused for [IDLE_MS] with no file open ([OPEN_IDLE_MS] with one), else
+     * echoes it when unused since the last check, so the host and the network between
+     * keep it. Stops with the connection.
      */
     private fun idleCheck() {
-        timer.schedule({
-            val now = System.currentTimeMillis()
-            var echoing: Connection? = null
-            val dropped = synchronized(lock) {
-                when (idleAction(now, lastUsed, lastEcho, inputs.isNotEmpty(), connection != null)) {
-                    IdleAction.CLOSE -> take()
-                    IdleAction.ECHO -> {
-                        echoing = connection
-                        null
-                    }
-                    IdleAction.NONE -> null
+        timer.schedule(::idleStep, KEEPALIVE_MS, TimeUnit.MILLISECONDS)
+    }
+
+    private fun idleStep() {
+        val now = System.currentTimeMillis()
+        var echoing: Connection? = null
+        var open: List<SmbInput> = emptyList()
+        var unused = 0L
+        val dropped = synchronized(lock) {
+            when (idleAction(now, lastUsed, lastEcho, inputs.isNotEmpty(), connection != null)) {
+                IdleAction.CLOSE -> {
+                    open = inputs.toList()
+                    unused = now - lastUsed
+                    take()
                 }
+                IdleAction.ECHO -> {
+                    echoing = connection
+                    null
+                }
+                IdleAction.NONE -> null
             }
-            dropped?.let(::shut)
-            echoing?.let { echo(it, ECHO_TIMEOUT_S) }
-            val again = synchronized(lock) {
-                checking = !closed && connection != null
-                checking
-            }
-            if (again) idleCheck()
-        }, KEEPALIVE_MS, TimeUnit.MILLISECONDS)
+        }
+        if (dropped != null) {
+            Timing.mark("smb idle close after ${unused / 1000} s, ${open.size} files open")
+            open.forEach { it.forget() }
+            shut(dropped)
+        }
+        echoing?.let { echo(it, ECHO_TIMEOUT_S) }
+        val again = synchronized(lock) {
+            checking = !closed && connection != null
+            checking
+        }
+        if (again) idleCheck()
     }
 
     /**
@@ -344,11 +358,16 @@ class SmbFs(private val share: Share) : RemoteFs {
             }
         }
 
-        override fun close() {
+        /** Lets go of the file on a connection closing for idleness; the next read opens it again. */
+        fun forget() {
             synchronized(this) {
                 runCatching { file?.close() }
                 file = null
             }
+        }
+
+        override fun close() {
+            forget()
             synchronized(lock) {
                 inputs -= this
                 lastUsed = System.currentTimeMillis()
@@ -398,6 +417,9 @@ class SmbFs(private val share: Share) : RemoteFs {
         /** How long a connection stays open unused. */
         const val IDLE_MS = 10 * 60_000L
 
+        /** How long a connection stays open unused while a file on it is open, as in a book left open. */
+        const val OPEN_IDLE_MS = 30 * 60_000L
+
         /** How often an unused connection is echoed, and checked for [IDLE_MS]. */
         const val KEEPALIVE_MS = 2 * 60_000L
 
@@ -431,12 +453,13 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /**
          * What a connection last used at [lastUsed] and last echoed at [lastEcho] needs at
-         * [now]: closing once unused for [IDLE_MS] with no file [open], an echo when unused
+         * [now]: closing once unused for [IDLE_MS] with no file [open] ([OPEN_IDLE_MS] with
+         * one), an echo when unused
          * since the last [KEEPALIVE_MS], else nothing; nothing without a connection.
          */
         internal fun idleAction(now: Long, lastUsed: Long, lastEcho: Long, open: Boolean, connected: Boolean): IdleAction = when {
             !connected -> IdleAction.NONE
-            !open && now - lastUsed >= IDLE_MS -> IdleAction.CLOSE
+            now - lastUsed >= if (open) OPEN_IDLE_MS else IDLE_MS -> IdleAction.CLOSE
             now - maxOf(lastUsed, lastEcho) >= KEEPALIVE_MS - ECHO_SLACK_MS -> IdleAction.ECHO
             else -> IdleAction.NONE
         }

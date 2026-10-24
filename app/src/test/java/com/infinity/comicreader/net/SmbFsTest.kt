@@ -117,8 +117,10 @@ class SmbFsTest {
         // Echoed just now: not again until another interval passes.
         assertEquals(SmbFs.IdleAction.NONE, at(SmbFs.KEEPALIVE_MS + 1_000, echoed = used + SmbFs.KEEPALIVE_MS))
         assertEquals(SmbFs.IdleAction.CLOSE, at(SmbFs.IDLE_MS))
-        // A file open keeps it, echoed.
+        // A file open keeps it, echoed, for longer, but not for ever.
         assertEquals(SmbFs.IdleAction.ECHO, at(SmbFs.IDLE_MS, open = true))
+        assertEquals(SmbFs.IdleAction.CLOSE, at(SmbFs.OPEN_IDLE_MS, open = true))
+        assertTrue(SmbFs.OPEN_IDLE_MS > SmbFs.IDLE_MS)
         assertEquals(SmbFs.IdleAction.NONE, SmbFs.idleAction(used + SmbFs.IDLE_MS, used, used, open = false, connected = false))
         assertTrue(SmbFs.IDLE_MS >= 10 * 60_000L)
     }

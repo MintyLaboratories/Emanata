@@ -107,7 +107,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Favorites start by name, History and Bookmarks by last access (adding a
   bookmark counts). Page counts, ComicInfo years, detected directions (slices
   by their header shape, or as the reader found them) and folder totals are
-  found in the background; reading direction sorts top to bottom between left
+  found in the background, paused while a book is open; reading direction sorts top to bottom between left
   to right and right to left. Page counts fill in without moving
   rows. A book with inner archives not yet copied out takes ComicInfo's
   `PageCount`.
@@ -205,19 +205,22 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   downloaded whole. PDFs and loose images are fetched to a **Network cache**
   (Settings, 2 GB by default, which also holds the kept pages; least recently
   read first out) before the reader opens them; a PDF gets its cover once read.
-  A share that cannot be reached says so ("Not reachable") with a Retry; a
+  A share that cannot be reached says so ("Not reachable") with a Retry, also
+  over a folder shown as last listed; a
   refused sign-in is not tried again until you retry or edit the share, so a
   wrong password cannot lock the account; favorites and history show shares
   without waiting for the network, and a favorite folder there is sorted into
   its section once looked into (a spinner meanwhile). Shares are read-only:
   no rename, delete or new folder. An SMB connection stays signed in for 10
-  minutes unused, echoed every 2 minutes so the server and network keep it,
-  and is made again silently when it dropped; coming back to a share within
-  that time signs in no more. Backups include the shares; their passwords are
-  sealed with a key derived from the app's device ID, so a restore on the
-  same device (even after a reinstall) keeps them, while on another device
-  each share asks for its password when opened. "Without passwords" in the
-  export leaves them out.
+  minutes unused (30 while a book on it is open), echoed every 2 minutes so
+  the server and network keep it, and is made again silently when it dropped;
+  coming back to a share within that time signs in no more. Backups include
+  the shares; their passwords are sealed with a key derived from the app's
+  device ID, bound to the share's server and user, so a restore on the same
+  device (even after a reinstall) keeps them, while on another device each
+  share asks for its password when opened. "Without passwords" in the export
+  leaves them out; a restore never replaces a password that works with one
+  left out or older.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.

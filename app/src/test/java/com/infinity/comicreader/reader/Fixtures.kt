@@ -73,11 +73,11 @@ object Fixtures {
         file.apply { writeBytes(tarBytes(*entries)) }
 
     /** A RAR 4 archive with every entry stored (method 0x30), per the RAR 2.9-4.x format notes. */
-    fun rar4Bytes(vararg entries: Pair<String, ByteArray>): ByteArray {
+    fun rar4Bytes(vararg entries: Pair<String, ByteArray>, solid: Boolean = false): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(bytes(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00))
-        // Main header: type, flags, size, reserved.
-        rar4Block(out, LeBytes().u8(0x73).u16(0).u16(13).u16(0).u32(0).bytes())
+        // Main header: type, flags (0x0008 marks the archive solid), size, reserved.
+        rar4Block(out, LeBytes().u8(0x73).u16(if (solid) 0x0008 else 0).u16(13).u16(0).u32(0).bytes())
         for ((path, content) in entries) {
             val name = path.replace('/', '\\').toByteArray(Charsets.ISO_8859_1)
             val head = LeBytes().u8(0x74).u16(0x8000).u16(32 + name.size)

@@ -53,19 +53,24 @@ class ArchiveSourceTest {
     @Test
     fun cheapComicInfoOnlyAheadOfTheFirstPageInSolidArchives() {
         val info = entry("ComicInfo.xml", "<ComicInfo><Year>2004</Year></ComicInfo>".toByteArray())
-        // 7z: stored after the pages, so reading it would unpack them first.
-        val after = Fixtures.sevenZip(File(tmp.root, "after.cb7"), entry("01.jpg"), entry("02.jpg"), info)
+        // Solid rar: stored after the pages, so reading it would unpack them first.
+        val after = File(tmp.root, "after.cbr").apply { writeBytes(Fixtures.rar4Bytes(entry("01.jpg"), entry("02.jpg"), info, solid = true)) }
         open(after).use { src ->
             assertNull(src.comicInfo(cheapOnly = true))
             assertTrue(src.comicInfoCostly())
             assertEquals(2004, src.comicInfo()?.year)
         }
-        val before = Fixtures.sevenZip(File(tmp.root, "before.cb7"), info, entry("01.jpg"), entry("02.jpg"))
+        val before = File(tmp.root, "before.cbr").apply { writeBytes(Fixtures.rar4Bytes(info, entry("01.jpg"), entry("02.jpg"), solid = true)) }
         open(before).use {
             assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
             assertFalse(it.comicInfoCostly())
         }
-        // Zip reads any entry directly.
+        // Zip, and 7z made of a block per entry, read any entry directly.
+        val separate = Fixtures.sevenZip(File(tmp.root, "after.cb7"), entry("01.jpg"), entry("02.jpg"), info)
+        open(separate).use {
+            assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
+            assertFalse(it.comicInfoCostly())
+        }
         val zip = Fixtures.zip(File(tmp.root, "book.cbz"), entry("01.jpg"), info)
         open(zip).use {
             assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
@@ -139,11 +144,11 @@ class ArchiveSourceTest {
 
     @Test
     fun aSolidInnerArchiveClosedForRoomStillMakesSizesCostly() {
-        val solid = Fixtures.sevenZip(File(tmp.root, "a.cb7"), entry("01.jpg"), entry("02.jpg")).readBytes()
+        val solid = Fixtures.rar4Bytes(entry("01.jpg"), entry("02.jpg"), solid = true)
         val plain = { name: String -> Fixtures.zip(File(tmp.root, name), entry("01.jpg"), entry("02.jpg")).readBytes() }
         val outer = Fixtures.zip(
             File(tmp.root, "set.cbz"),
-            "a.cb7" to solid, "b.cbz" to plain("b.cbz"), "c.cbz" to plain("c.cbz")
+            "a.cbr" to solid, "b.cbz" to plain("b.cbz"), "c.cbz" to plain("c.cbz")
         )
         val cache = tmp.newFolder("nested")
         ArchiveSource(ZipReader(outer, "UTF-8"), NestedArchives.keyOf(outer), NestedArchives(cache, "UTF-8"), maxOpenInner = 1).use { src ->
@@ -154,5 +159,14 @@ class ArchiveSourceTest {
         ArchiveSource(ZipReader(zips, "UTF-8"), NestedArchives.keyOf(zips), NestedArchives(tmp.newFolder("nested2"), "UTF-8"), maxOpenInner = 1).use {
             assertTrue(it.cheapSizes)
         }
+    }
+
+    @Test
+    fun sevenZipWithABlockPerEntryReadsAnyEntryDirectly() {
+        val f = Fixtures.sevenZip(File(tmp.root, "book.cb7"), entry("01.jpg"), entry("02.jpg"), entry("empty.txt", ByteArray(0)))
+        SevenZipReader(f).use { assertTrue(it.randomAccess) }
+        assertTrue(SevenZipReader.separateBlocks("Archive with packed streams starting at offset 32, 2 pack sizes, 2 CRCs, 2 folders, 3 files and ...", 2))
+        assertFalse(SevenZipReader.separateBlocks("Archive with packed streams starting at offset 32, 1 pack sizes, 1 CRCs, 1 folders, 3 files and ...", 2))
+        assertFalse("unreadable means solid", SevenZipReader.separateBlocks("something else", 2))
     }
 }

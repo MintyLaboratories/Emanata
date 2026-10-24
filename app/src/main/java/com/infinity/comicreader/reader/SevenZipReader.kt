@@ -16,7 +16,12 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
 
     override val entries: List<ArchiveEntry>
 
-    override val randomAccess: Boolean get() = false
+    /**
+     * True when no two entries share a compressed block (a "folder"), so each unpacks on
+     * its own: the archive is not solid. Told by the description Commons Compress gives of
+     * the archive; false when that cannot be read.
+     */
+    override val randomAccess: Boolean
 
     init {
         try {
@@ -28,6 +33,7 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
             }
             native = list
             entries = native.mapIndexed { i, n -> ArchiveEntry(n.name, n.size, i) }
+            randomAccess = separateBlocks(sz.toString(), native.count { it.hasStream() })
         } catch (t: Throwable) {
             runCatching { sz.close() }
             throw t
@@ -46,5 +52,15 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
 
     override fun close() {
         runCatching { sz.close() }
+    }
+
+    companion object {
+        private val FOLDERS = Regex("""(\d+) folders""")
+
+        /** True when [description] (the archive's, as Commons Compress words it) names a block for each of [streams] entries with contents. */
+        internal fun separateBlocks(description: String, streams: Int): Boolean {
+            val folders = FOLDERS.find(description)?.groupValues?.get(1)?.toIntOrNull() ?: return false
+            return folders >= streams
+        }
     }
 }

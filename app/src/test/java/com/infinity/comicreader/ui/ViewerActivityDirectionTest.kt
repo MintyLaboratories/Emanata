@@ -118,7 +118,9 @@ class ViewerActivityDirectionTest {
     @Test
     fun aComicInfoStoredAfterThePagesOfASolidArchiveTurnsTheBookOnceRead() {
         val pages = (0 until 4).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
-        val book = Fixtures.sevenZip(File(dir, "Series B v01.cb7"), *(pages + Fixtures.entry("ComicInfo.xml", rtlInfo.toByteArray())).toTypedArray())
+        val book = File(dir, "Series B v01.cbr").apply {
+            writeBytes(Fixtures.rar4Bytes(*(pages + Fixtures.entry("ComicInfo.xml", rtlInfo.toByteArray())).toTypedArray(), solid = true))
+        }
         val viewer = launch(book).get()
         awaitOpen(viewer)
         val deadline = System.currentTimeMillis() + 5_000

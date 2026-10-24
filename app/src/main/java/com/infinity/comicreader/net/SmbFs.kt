@@ -23,6 +23,7 @@ import android.util.Log
 import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.util.EnumSet
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -165,7 +166,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             val p = where
             // Its own client: SMBJ's shares one connection per host among its callers, and
             // after one closes it may hand out a connection that never answers again.
-            val own = SMBClient(config)
+            val own = SMBClient(config())
             var c: Connection? = null
             var s: Session? = null
             try {
@@ -301,10 +302,11 @@ class SmbFs(private val share: Share) : RemoteFs {
      * not is dropped, to be made again on next use.
      */
     private fun echo(c: Connection, timeoutS: Long): Boolean {
-        val ok = runCatching {
+        val answer = runCatching {
             c.send<SMB2Packet>(SMB2Echo(c.negotiatedProtocol.dialect)).get(timeoutS, TimeUnit.SECONDS)
-        }.isSuccess
-        Timing.mark(if (ok) "smb echo" else "smb echo failed")
+        }
+        val ok = answer.isSuccess
+        Timing.mark("smb echo ${answer.exceptionOrNull()?.let { "failed: $it" } ?: "answered"}")
         synchronized(lock) {
             if (ok) {
                 lastEcho = System.currentTimeMillis()
@@ -408,21 +410,24 @@ class SmbFs(private val share: Share) : RemoteFs {
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val READ_TIMEOUT_S = 30L
 
-        private val config: SmbConfig by lazy {
+        /** A connection's settings: its own client id, so the host never takes two connections for one client. */
+        private fun config(): SmbConfig =
             SmbConfig.builder()
+                .withClientGuid(UUID.randomUUID())
                 // Android's JCE lacks MD4 and AES-CMAC, which NTLM and SMB 3 signing need.
                 .withSecurityProvider(BCSecurityProvider())
                 // SPNEGO/Kerberos needs javax.security.auth.kerberos and org.ietf.jgss, absent on Android.
                 .withAuthenticators(NtlmAuthenticator.Factory())
                 .withSocketFactory(ProxySocketFactory(CONNECT_TIMEOUT_MS))
                 .withTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
-                .withSoTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
+                // No socket timeout: SMBJ's reader would take a quiet connection for a dead one
+                // and drop it; answers are timed per request, and echoes find a dead link.
+                .withSoTimeout(0, TimeUnit.SECONDS)
                 .withSigningRequired(false)
                 .withEncryptData(false)
                 .withMultiProtocolNegotiate(false)
                 .withDfsEnabled(false)
                 .build()
-        }
 
         /**
          * What a connection last used at [lastUsed] and last echoed at [lastEcho] needs at

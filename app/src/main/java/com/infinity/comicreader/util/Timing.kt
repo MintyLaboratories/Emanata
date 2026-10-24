@@ -24,11 +24,14 @@ object Timing {
     inline fun <T> span(what: String, block: () -> T): T {
         if (!enabled) return block()
         val start = SystemClock.uptimeMillis()
-        var ok = false
+        var failure: Throwable? = null
         try {
-            return block().also { ok = true }
+            return block()
+        } catch (t: Throwable) {
+            failure = t
+            throw t
         } finally {
-            mark("$what ${SystemClock.uptimeMillis() - start} ms${if (ok) "" else " (failed)"}")
+            mark("$what ${SystemClock.uptimeMillis() - start} ms${failure?.let { " (failed: ${it.javaClass.simpleName})" }.orEmpty()}")
         }
     }
 }

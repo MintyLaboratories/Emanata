@@ -339,6 +339,17 @@ class ListActivityFileOpsTest {
         assertTrue(other.isDirectory)
     }
 
+    @Test
+    fun listingAFolderPutsBackWhatAnUnfinishedMoveSetAside() {
+        File(other, ".kept.cbz.1.emanata-old").writeBytes(bytes)
+        File(other, ".copy.cbz.1.emanata-new").writeBytes(ByteArray(3))
+        val activity = launch()
+        activity.open(other)
+        activity.row(File(other, "kept.cbz").absolutePath)
+        assertEquals(listOf("kept.cbz"), other.list()!!.toList())
+        assertArrayEquals(bytes, File(other, "kept.cbz").readBytes())
+    }
+
     /** Serves a share from a folder, returned. */
     private fun serveShare(): File {
         val shareDir = tmp.newFolder("share")

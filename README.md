@@ -160,7 +160,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shares) it copies, checks each file's size and reads it back to compare its
   CRC-32, then deletes the source. Copies are written under a hidden side name
   and renamed into place once complete, so a canceled or failed one never
-  leaves a half-written file; within one share the server copies itself (SMB
+  leaves a half-written file; what one cut off part way (the app closed) left
+  is put right when its folder is next listed. Within one share the server copies itself (SMB
   server-side copy, WebDAV COPY) where it can. Progress with Cancel shows once
   an operation takes a moment; it goes on when the device turns. Favorites,
   read marks, history, bookmarks, hidden pages, color settings, folder layouts

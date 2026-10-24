@@ -993,11 +993,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * counted from their kept listings, never listed here.
      */
     private fun buildDirectoryEntries(dir: File, prelisted: List<File>? = null, kept: Boolean = false): List<BookEntry> {
-        val files = prelisted?.toTypedArray() ?: when {
+        var files = prelisted?.toTypedArray() ?: when {
             dir is RemoteFile && kept -> Remotes.cachedList(dir.absolutePath)?.toTypedArray<File>()
             dir is RemoteFile -> dir.entries().toTypedArray<File>()
             else -> dir.listFiles()
         } ?: return emptyList()
+        // What copies and moves stopped part way left here is put right, then listed again.
+        val path = dir.absolutePath
+        if (!kept && files.any { Transfer.isSideName(it.name) } && Transfer.sweep(FileSpaces.of(path), path, files.map { it.name })) {
+            files = (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
+        }
         val showHidden = prefs.showHidden
         val snap = snapshot()
         val out = ArrayList<BookEntry>(files.size)

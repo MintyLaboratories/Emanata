@@ -39,11 +39,20 @@ class Transfer(
     /** The source's files and folders copied so far, folders before what they hold. */
     private val copied = ArrayList<String>()
 
+    /** The side names this transfer made, kept from [sweep] until it ends. */
+    private val sides = ArrayList<String>()
+
     /**
      * Copies, or moves when [move], [source] into folder [targetDir] as [name]; what is
      * there by that name is replaced when [replace], else fails the transfer.
      */
-    fun run(source: String, targetDir: String, name: String, move: Boolean, replace: Boolean): Result {
+    fun run(source: String, targetDir: String, name: String, move: Boolean, replace: Boolean): Result = try {
+        transfer(source, targetDir, name, move, replace)
+    } finally {
+        release()
+    }
+
+    private fun transfer(source: String, targetDir: String, name: String, move: Boolean, replace: Boolean): Result {
         val from = spaceOf(source)
         val to = spaceOf(targetDir)
         val target = child(targetDir, name)
@@ -233,9 +242,19 @@ class Transfer(
         var i = 0
         while (true) {
             val path = child(dir, if (i == 0) "$stem.$kind" else "$stem-$i.$kind")
-            if (space.stat(path) == null) return path
+            if (space.stat(path) == null) {
+                synchronized(inUse) { inUse += path }
+                sides += path
+                return path
+            }
             i++
         }
+    }
+
+    /** Lets [sweep] see this transfer's side names again, once it ended. */
+    private fun release() {
+        synchronized(inUse) { inUse -= sides.toSet() }
+        sides.clear()
     }
 
     companion object {
@@ -246,6 +265,52 @@ class Transfer(
 
         /** Waits before each try to delete what a failure left. */
         private val DISCARD_WAITS_MS = longArrayOf(0, 1_000, 4_000)
+
+        /** How old a side name is before [sweep] takes it for left behind: another device may be copying. */
+        const val SWEEP_AGE_MS = 60_000L
+
+        /** Side names of transfers under way in this process. */
+        private val inUse = HashSet<String>()
+
+        /** A side name: what it stands for, when it was made (base 36 milliseconds), and its kind. */
+        private val SIDE = Regex("""\.(.+)\.([0-9a-z]{1,13})(?:-\d{1,6})?\.($PART|$OLD)""")
+
+        /** True when [name] may be a side name ([sweep]): cheap, for listings. */
+        fun isSideName(name: String): Boolean = name.startsWith('.') && (name.endsWith(".$PART") || name.endsWith(".$OLD"))
+
+        /**
+         * Puts right what transfers that never finished (the app was stopped) left in folder
+         * [dir], listed as [names]: a copy under way is deleted; an item set aside goes back
+         * under its name when nothing took it, else is deleted. Side names in use, or made in
+         * the last [SWEEP_AGE_MS], stay. True when anything changed. Blocking I/O.
+         */
+        fun sweep(space: FileSpace, dir: String, names: Collection<String>, now: Long = System.currentTimeMillis()): Boolean {
+            class Side(val path: String, val name: String, val made: Long, val old: Boolean)
+            val busy = synchronized(inUse) { inUse.toSet() }
+            val left = names.mapNotNull { n ->
+                val m = SIDE.matchEntire(n) ?: return@mapNotNull null
+                val made = m.groupValues[2].toLongOrNull(36) ?: return@mapNotNull null
+                val path = child(dir, n)
+                if (now - made < SWEEP_AGE_MS || path in busy) return@mapNotNull null
+                Side(path, m.groupValues[1], made, m.groupValues[3] == OLD)
+            }
+            var changed = false
+            for (side in left.filter { !it.old }) changed = attempt { space.delete(side.path) } || changed
+            for ((name, set) in left.filter { it.old }.groupBy { it.name }) {
+                val target = child(dir, name)
+                // Unknown whether the name is free: all stay, for a later sweep.
+                val free = runCatching { space.stat(target) == null }.getOrNull() ?: continue
+                val newest = set.maxBy { it.made }
+                if (free) {
+                    if (!attempt { check(space.rename(newest.path, target)) }) continue
+                    changed = true
+                }
+                for (side in set) if (!free || side !== newest) changed = attempt { space.delete(side.path) } || changed
+            }
+            return changed
+        }
+
+        private fun attempt(block: () -> Unit): Boolean = runCatching(block).isSuccess
 
         /** What separates names in [path]: `/` on shares, the device's separator elsewhere. */
         private fun separator(path: String): Char = if (Remotes.isRemote(path)) '/' else File.separatorChar

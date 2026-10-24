@@ -315,6 +315,48 @@ class TransferTest {
     }
 
     @Test
+    fun sweepingPutsRightWhatUnfinishedTransfersLeft() {
+        val now = 10_000_000_000L
+        val old = (now - Transfer.SWEEP_AGE_MS).toString(36)
+        val young = (now - 1_000).toString(36)
+        val dir = File(device, "Shelf").apply { mkdirs() }
+        // A copy under way: deleted.
+        write(File(dir, ".new.cbz.$old.emanata-new"), 10)
+        File(dir, ".Series.$old.emanata-new/001.cbz").let { write(it, 10) }
+        // Set aside, its name free: back. Two set aside: the newer comes back, the other goes.
+        val series = write(File(dir, ".Kept.$old.emanata-old/001.cbz"), 20)
+        write(File(dir, ".Kept.${(now - 2 * Transfer.SWEEP_AGE_MS).toString(36)}.emanata-old/001.cbz"), 30)
+        // Set aside with its name taken again: the replacement finished, so it goes.
+        write(File(dir, ".done.cbz.$old-1.emanata-old"), 5)
+        val done = write(File(dir, "done.cbz"), 6)
+        // Too young: another device may be copying it.
+        write(File(dir, ".fresh.cbz.$young.emanata-new"), 7)
+        write(File(dir, ".notes.txt"), 8)
+        assertTrue(Transfer.sweep(DeviceSpace, dir.path, names(dir), now))
+        assertEquals(listOf(".fresh.cbz.$young.emanata-new", ".notes.txt", "Kept", "done.cbz"), names(dir))
+        assertArrayEquals(series, File(dir, "Kept/001.cbz").readBytes())
+        assertArrayEquals(done, File(dir, "done.cbz").readBytes())
+        assertFalse(Transfer.sweep(DeviceSpace, dir.path, names(dir), now))
+    }
+
+    @Test
+    fun sweepingLeavesTheSideNamesOfTransfersUnderWay() {
+        write(File(device, "big.cbz"), 3_000_000)
+        val dir = File(device, "B").apply { mkdirs() }
+        var swept = false
+        // Made long ago, as far as its name tells.
+        Transfer(stamp = { "1" }, alive = {
+            if (!swept && dir.list()!!.isNotEmpty()) swept = !Transfer.sweep(DeviceSpace, dir.path, names(dir))
+            true
+        }).run(p("big.cbz"), dir.path, "big.cbz", move = false, replace = false)
+        assertTrue(swept)
+        assertEquals(listOf("big.cbz"), names(dir))
+        // Once it ended, the same name is swept.
+        write(File(dir, ".big.cbz.1.emanata-new"), 3)
+        assertTrue(Transfer.sweep(DeviceSpace, dir.path, names(dir)))
+    }
+
+    @Test
     fun keepBothNumbersNamesOn() {
         val taken = setOf("Book (2).cbz", "Book (3).cbz", "Series (2)")
         assertEquals("Book (4).cbz", Transfer.keepBothName("Book.cbz", false) { it in taken })

@@ -180,26 +180,44 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   servers untested, and HTTPS needs a certificate Android trusts, so
   self-signed ones fail): the address is `https://host/folder` (`davs://` or a
   bare `host/folder` work too), signing in with Basic over HTTPS; plain
-  `http://` only to `localhost`, so a password never crosses a network
-  readable. Books are read with HTTP Range requests; a server without them
+  `http://` only to private addresses (192.168.x.x, 10.x.x.x, 172.16–31.x.x,
+  link-local, `.local` names), with a warning that the password then crosses
+  the local network readable. Books are read with HTTP Range requests; a server without them
   sends whole files, so its books are always fetched to the cache first, and
-  get their covers once fetched. WebDAV shares show a cloud in the sheet, and
-  their free space when the server tells it. Passwords are sealed with a
-  key in the Android Keystore. Long-press a share in the sheet to edit or
-  remove it; a blank password keeps the saved one only on the same server. A share is browsed like a drive: its name is the root crumb and
+  get their covers once fetched. WebDAV shares show a cloud in the sheet, SMB
+  ones a server, with their free space when the server tells it (kept, and
+  asked again when the share is opened, or when the sheet opens and it is over
+  an hour old). Passwords are sealed with a key in the Android Keystore.
+  Long-press a share in the sheet to edit or remove it; a blank password keeps
+  the saved one only on the same server, and "Clear password" removes it.
+  "Load thumbnails" (on by default) can be turned off per share for slow
+  drives: covers already made still show. Removing a share can also forget
+  its favorites, history and bookmarks (not ticked by default). A share is browsed like a drive: its name is the root crumb and
   the root of same-name labels; favorites, history, bookmarks, the startup
-  location, sort, filter and peek work there. CBZ books are read in place
-  (only the parts needed travel); CBR, CB7, CBT, PDFs and loose images are
-  fetched to a **Network cache** (Settings, 2 GB by default, least recently
-  read first out) before the reader opens them, while covers and peeks of
-  rar, 7z and tar books read them in place; a PDF gets its cover once read.
+  location, sort, filter and peek work there. A folder browsed before shows
+  at once as it was last listed (kept in memory and on disk), is listed again
+  in the background, and changes in place only if something changed; item
+  counts of its subfolders fill in after it shows, listing again only those
+  whose time changed. Books are read in place, only the parts needed
+  travelling: CBZ, CBT, and CBR and CB7 that are not solid, straight from
+  their entries; a solid CBR or CB7 is streamed once, front to back, its pages
+  kept as they are unpacked, so even a book of several GB opens without being
+  downloaded whole. PDFs and loose images are fetched to a **Network cache**
+  (Settings, 2 GB by default, which also holds the kept pages; least recently
+  read first out) before the reader opens them; a PDF gets its cover once read.
   A share that cannot be reached says so ("Not reachable") with a Retry; a
   refused sign-in is not tried again until you retry or edit the share, so a
   wrong password cannot lock the account; favorites and history show shares
   without waiting for the network, and a favorite folder there is sorted into
   its section once looked into (a spinner meanwhile). Shares are read-only:
-  no rename, delete or new folder. The connection closes after a minute
-  unused.
+  no rename, delete or new folder. An SMB connection stays signed in for 10
+  minutes unused, echoed every 2 minutes so the server and network keep it,
+  and is made again silently when it dropped; coming back to a share within
+  that time signs in no more. Backups include the shares; their passwords are
+  sealed with a key derived from the app's device ID, so a restore on the
+  same device (even after a reinstall) keeps them, while on another device
+  each share asks for its password when opened. "Without passwords" in the
+  export leaves them out.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.
@@ -209,8 +227,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Housekeeping: **duplicate file finder** (bit-identical copies, SHA-256
   verified, shown as one cover with every place a copy is; spread two fingers
   on it to peek), **largest files** list,
-  reading **statistics**, and **backup / restore** of your library and settings
-  (Settings → Your data) to a JSON file you choose.
+  reading **statistics**, and **backup / restore** of your library, settings
+  and network shares (Settings → Your data) to a JSON file you choose.
 
 ### Reader
 - **Formats:** images (`jpg`, `jpeg`, `png`, `gif` (first frame), `bmp`, `webp`,

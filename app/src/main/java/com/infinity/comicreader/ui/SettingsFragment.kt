@@ -23,6 +23,7 @@ import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.thread
@@ -93,22 +94,28 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private val importLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@registerForActivityResult
-            val text = runCatching { readCapped(uri) }.getOrNull()
-            if (text != null && Backup.import(requireContext(), text)) {
+            val app = requireContext().applicationContext
+            lifecycleScope.launch {
+                // Opening share passwords takes a moment, and closing their connections may wait on the network.
+                val ok = withContext(NonCancellable + AppDispatchers.io) {
+                    runCatching { readCapped(app, uri) }.getOrNull()?.let { text -> runCatching { Backup.import(app, text) }.getOrDefault(false) } ?: false
+                }
+                if (!ok) {
+                    toast(R.string.restore_failed)
+                    return@launch
+                }
                 // Theme and language come from the restored settings.
-                val restored = Prefs(requireContext())
+                val restored = Prefs(app)
                 AppCompatDelegate.setDefaultNightMode(restored.nightMode)
                 Locales.apply(restored.localeTag)
                 toast(R.string.restore_done)
                 activity?.recreate()
-            } else {
-                toast(R.string.restore_failed)
             }
         }
 
-    /** Reads at most [Backup.MAX_BYTES] from [uri]; a larger file is not a backup. */
-    private fun readCapped(uri: android.net.Uri): String? {
-        requireContext().contentResolver.openInputStream(uri)?.use { input ->
+    /** Reads at most [Backup.MAX_BYTES] from [uri]; a larger file is not a backup. Blocking. */
+    private fun readCapped(context: android.content.Context, uri: android.net.Uri): String? {
+        context.contentResolver.openInputStream(uri)?.use { input ->
             val out = java.io.ByteArrayOutputStream()
             val buf = ByteArray(16 * 1024)
             var total = 0L

@@ -50,6 +50,15 @@ class ShareBackupTest {
     }
 
     @Test
+    fun aBackupAskingForEndlessIterationsIsCapped() {
+        val json = ShareBackup.export(listOf(smb), "device-1", withPasswords = true).put("iterations", Int.MAX_VALUE)
+        val started = System.nanoTime()
+        val restored = ShareBackup.import(json, "device-1").single()
+        assertTrue("capped", System.nanoTime() - started < 60_000_000_000L)
+        assertTrue("another key", restored.passwordLost)
+    }
+
+    @Test
     fun malformedOrUnsafeEntriesAreSkipped() {
         val json = ShareBackup.export(listOf(smb), "device-1", withPasswords = true)
         val list = json.getJSONArray("list")

@@ -21,6 +21,9 @@ import javax.crypto.spec.SecretKeySpec
  */
 object ShareBackup {
     private const val ITERATIONS = 120_000
+
+    /** Most iterations a backup may ask for, so a crafted one cannot stall a restore. */
+    private const val MAX_ITERATIONS = 1_000_000
     private const val SALT_BYTES = 16
     private const val KEY_BITS = 256
     private const val CONTEXT = "emanata-share-passwords:"
@@ -62,7 +65,7 @@ object ShareBackup {
     fun import(data: JSONObject, deviceId: String?): List<Share> {
         val list = data.optJSONArray("list") ?: return emptyList()
         val salt = runCatching { Base64.getDecoder().decode(data.optString("salt")) }.getOrNull()
-        val iterations = data.optInt("iterations", ITERATIONS).coerceIn(1, 10_000_000)
+        val iterations = data.optInt("iterations", ITERATIONS).coerceIn(1, MAX_ITERATIONS)
         // Derived only when a password is there to open: it takes a moment.
         val box: SecretBox? by lazy {
             if (deviceId == null || salt == null || salt.isEmpty()) null else keyOf(deviceId, salt, iterations).let { k -> AesGcmBox { k } }

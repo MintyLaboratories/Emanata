@@ -47,7 +47,7 @@ object Backup {
     /**
      * Restores a backup, share passwords opened for [deviceId]; shares are added to those
      * there, replacing any with the same id. Returns false when [json] is not a backup of
-     * this app or its upstream.
+     * this app or its upstream. Blocking: opening passwords takes a moment.
      */
     fun import(context: Context, json: String, deviceId: String? = ShareBackup.deviceId(context)): Boolean {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return false

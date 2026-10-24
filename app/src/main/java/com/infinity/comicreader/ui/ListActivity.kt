@@ -1180,7 +1180,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     refreshCurrent()
                 }
             }
-            if (mode != TAB_HISTORY) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
+            if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
             if (entry.isDir) {
                 add(getString(R.string.menu_set_startup)) {
                     prefs.setStartupFolder(path)
@@ -1206,6 +1206,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             .setItems(labels.toTypedArray()) { _, which -> actions[which].invoke() }
             .show()
     }
+
+    /** True when [entry] is listed in the folder Browse shows: "Show in folder" would lead nowhere new. */
+    private fun isBrowsedHere(entry: BookEntry): Boolean =
+        mode == TAB_BROWSE && currentDir?.absolutePath?.let { it == entry.file.parent } == true
 
     // ------------------------------------------------------------------ peek
 

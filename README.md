@@ -139,7 +139,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Startup tab** and **startup location** (last seen, first or most recent
   favorite folder, or a custom folder picked from the favorites).
 - Long-press a file or folder to favorite it, make a folder the startup folder,
-  show it in its folder, rename, mark read/unread or delete it.
+  show it in its folder (except from that folder itself), rename, mark
+  read/unread or delete it.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward

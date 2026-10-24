@@ -174,6 +174,12 @@ object Remotes {
         if (stat == null) stats.remove(path) else stats[path] = stat
     }
 
+    /** Remembers [stat] for [path] only when none is: a kept one never replaces a newer one. */
+    @Synchronized
+    private fun rememberIfUnknown(path: String, stat: RemoteStat) {
+        if (path !in stats) stats[path] = stat
+    }
+
     private fun isRoot(path: String) = isRemote(path) && relOf(path).isEmpty()
 
     /**
@@ -185,23 +191,30 @@ object Remotes {
         val base = path.trimEnd('/')
         val found = Timing.span("share list") { call(path) { it.list(relOf(path)) } }.filter { isName(it.name) }
         listings.put(base, found)
-        return filesOf(base, found)
+        return filesOf(base, found, fresh = true)
     }
 
     /**
-     * The entries of the folder at [path] as last listed, in memory or on disk, their
-     * stats remembered; null when it never was. Never asks the network.
+     * The entries of the folder at [path] as last listed, in memory or on disk, with the
+     * stats they had then (remembered only where none is); null when it never was. Never
+     * asks the network.
      */
     fun cachedList(path: String): List<RemoteFile>? {
         val base = path.trimEnd('/')
         val id = idOf(base) ?: return null
         if (share(id) == null) return null
-        return listings.get(base)?.let { filesOf(base, it) }
+        return listings.get(base)?.let { filesOf(base, it, fresh = false) }
     }
 
-    private fun filesOf(base: String, found: List<RemoteStat>): List<RemoteFile> = found.map { s ->
+    /** True when the folder at [path] was listed before ([cachedList]). Never asks the network. */
+    fun isListed(path: String): Boolean {
+        val base = path.trimEnd('/')
+        return idOf(base)?.let(::share) != null && listings.get(base) != null
+    }
+
+    private fun filesOf(base: String, found: List<RemoteStat>, fresh: Boolean): List<RemoteFile> = found.map { s ->
         val child = "$base/${s.name}"
-        remember(child, s)
+        if (fresh) remember(child, s) else rememberIfUnknown(child, s)
         RemoteFile(child, s)
     }
 

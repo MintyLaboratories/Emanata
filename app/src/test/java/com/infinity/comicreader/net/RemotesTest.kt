@@ -234,6 +234,18 @@ class RemotesTest {
     }
 
     @Test
+    fun aKeptListingNeverReplacesANewerStat() {
+        Remotes.list("/net/s1/Series")
+        File(tmp.root, "share/Series/002.cbz").writeBytes(ByteArray(30))
+        assertEquals(30L, Remotes.stat("/net/s1/Series/002.cbz")?.size)
+        val kept = Remotes.cachedList("/net/s1/Series")!!
+        assertEquals("as kept", 20L, kept.first { it.name == "002.cbz" }.length())
+        assertEquals("the newer stat stays", 30L, Remotes.cachedStat("/net/s1/Series/002.cbz")?.size)
+        assertTrue(Remotes.isListed("/net/s1/Series/"))
+        assertFalse(Remotes.isListed("/net/s1"))
+    }
+
+    @Test
     fun aRemovedShareHasNoListings() {
         var shares = listOf(FakeRemoteFs.share())
         val dir = tmp.newFolder("listings")

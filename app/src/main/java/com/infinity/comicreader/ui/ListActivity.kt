@@ -891,7 +891,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             val file = e.file as? RemoteFile ?: return@filter false
             if (!e.isDir) return@filter false
             val now = file.stat()
-            now == null || now.modified <= 0 || now != before[e.path] || Remotes.cachedList(e.path) == null
+            now == null || now.modified <= 0 || now != before[e.path] || !Remotes.isListed(e.path)
         }
         if (stale.isEmpty()) return@withContext false
         val gate = Semaphore(SUBFOLDER_LISTS)

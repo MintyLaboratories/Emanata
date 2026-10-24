@@ -122,4 +122,15 @@ class ListActivityStartupResumeTest {
         idle()
         assertNull(offered())
     }
+
+    @Test
+    fun anOfferNotAnsweredYetIsAskedAgainAfterARecreate() {
+        val controller = start()
+        offered()!!
+        ShadowDialog.reset()
+        controller.recreate()
+        idle()
+        answer(offered()!!, yes = true)
+        assertEquals(book.absolutePath, controller.opened().getStringExtra(ViewerActivity.EXTRA_PATH))
+    }
 }

@@ -160,6 +160,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** True when the app is starting afresh: the first [startUp] offers the book read last ([offerResume]). */
     private var appStart = false
 
+    /** The startup offer ([offerResume]) while it waits for an answer; asked again after a recreate. */
+    private var resumeOffer: AlertDialog? = null
+
     /** A folder handed in by another app, browsed by the first [startUp] instead of the startup location. */
     private var incomingDir: File? = null
     /** The options menu shown, so searching can hide the other toolbar buttons without rebuilding it. */
@@ -328,6 +331,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         outState.putInt(STATE_MODE, mode)
         currentDir?.let { outState.putString(STATE_DIR, it.absolutePath) }
         trail?.let { outState.putString(STATE_TRAIL, it) }
+        if (resumeOffer?.isShowing == true) outState.putBoolean(STATE_OFFER, true)
     }
 
     override fun onResume() {
@@ -364,6 +368,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     override fun onDestroy() {
         super.onDestroy()
         historyWatch?.close()
+        resumeOffer?.dismiss()
         peek.hide()
         adapter.release()
     }
@@ -503,7 +508,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         started = true
         val dir = savedDir ?: incomingDir
         incomingDir = null
-        if (appStart) {
+        if (appStart || state?.getBoolean(STATE_OFFER) == true) {
             appStart = false
             offerResume()
         }
@@ -555,7 +560,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         } else {
             last.name
         }
-        AlertDialog.Builder(this)
+        resumeOffer = AlertDialog.Builder(this)
             .setTitle(R.string.startup_resume_title)
             .setMessage(message)
             .setView(extra)
@@ -2040,6 +2045,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val STATE_MODE = "mode"
         private const val STATE_DIR = "dir"
         private const val STATE_TRAIL = "trail"
+        private const val STATE_OFFER = "resume_offer"
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L

@@ -300,7 +300,9 @@ internal class FileActions(
         progressName = view.findViewById(R.id.progress_name)
         progressBar = view.findViewById(R.id.progress_bar)
         progressAmount = view.findViewById(R.id.progress_amount)
-        val dialog = AlertDialog.Builder(activity)
+        // Only copies stop part way: a share deletes or renames in one request.
+        val cancelable = kind == FileWork.Kind.COPY || kind == FileWork.Kind.MOVE
+        val builder = AlertDialog.Builder(activity)
             .setTitle(
                 when (kind) {
                     FileWork.Kind.COPY -> R.string.file_copying
@@ -310,11 +312,11 @@ internal class FileActions(
                 }
             )
             .setView(view)
-            .setNegativeButton(R.string.cancel, null)
             .setCancelable(false)
-            .show()
+        if (cancelable) builder.setNegativeButton(R.string.cancel, null)
+        val dialog = builder.show()
         // Cancel waits for the work to clean up: the dialog goes with its outcome.
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setOnClickListener {
             it.isEnabled = false
             FileWork.cancel()
         }

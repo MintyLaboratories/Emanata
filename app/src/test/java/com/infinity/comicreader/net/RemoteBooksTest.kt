@@ -116,7 +116,8 @@ class RemoteBooksTest {
             val before = fake.bytesRead
             ArchiveReader.open(remote(name), "UTF-8")!!.use { assertEquals(20, it.entries.size) }
             val read = fake.bytesRead - before
-            assertTrue("$name: read $read bytes", read < 2L * 1024 * 1024)
+            // A small fetch around each of 20 headers, never a page's worth.
+            assertTrue("$name: read $read bytes", read < 20L * 2 * RemoteChannel.HEADER_BLOCK_BYTES)
         }
         assertEquals(0, copies())
     }

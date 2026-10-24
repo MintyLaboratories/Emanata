@@ -52,7 +52,11 @@ interface ArchiveReader : Closeable {
                 ArchiveKind.ZIP -> ChannelZipReader(channel, charsetName)
                 ArchiveKind.RAR -> RarReader.inPlace(channel)
                 ArchiveKind.SEVEN_ZIP -> closingOnFailure(channel) { SevenZipReader(channel) }
-                ArchiveKind.TAR -> closingOnFailure(channel) { TarReader(channel, charsetName) }
+                ArchiveKind.TAR -> closingOnFailure(channel) {
+                    // Each entry's header sits before its data: small fetches while walking them.
+                    channel.seekBlock = RemoteChannel.HEADER_BLOCK_BYTES
+                    TarReader(channel, charsetName).also { channel.seekBlock = RemoteChannel.MIN_BLOCK_BYTES }
+                }
                 ArchiveKind.PDF -> null
             }
         }

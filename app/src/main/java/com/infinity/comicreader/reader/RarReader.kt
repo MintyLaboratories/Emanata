@@ -65,12 +65,15 @@ class RarReader private constructor(private val archive: Archive, private val ow
 
         /** Reads the rar on a share through [channel], in place; the reader closes it. */
         fun inPlace(channel: RemoteChannel): RarReader {
+            // Each entry's header sits before its data: small fetches while walking them.
+            channel.seekBlock = RemoteChannel.HEADER_BLOCK_BYTES
             val archive = try {
                 Archive(RemoteRar(channel), null as UnrarCallback?, null as String?)
             } catch (t: Throwable) {
                 runCatching { channel.close() }
                 throw t
             }
+            channel.seekBlock = RemoteChannel.MIN_BLOCK_BYTES
             return RarReader(archive, channel)
         }
     }

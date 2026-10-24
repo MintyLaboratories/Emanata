@@ -9,21 +9,31 @@ import java.nio.channels.SeekableByteChannel
 
 /**
  * A read-only channel over a file on a share, for archive readers that seek (zip,
- * 7z, tar, rar). Reads go through runs fetched from [minBlock]-aligned offsets: a
- * run after a seek is [minBlock] long, so walking an archive's headers fetches little
+ * 7z, tar, rar). Reads go through runs fetched from [seekBlock]-aligned offsets: a
+ * run after a seek is [seekBlock] long, so walking an archive's headers fetches little
  * around each; each run that follows on from the last fetched doubles, up to
  * [maxBlock], so a page streamed in small pieces costs few round trips. The most
  * recently used runs are kept, up to [maxCached] bytes. Calls are serialized.
  */
 class RemoteChannel(
     private val input: RemoteInput,
-    private val minBlock: Int = MIN_BLOCK_BYTES,
+    minBlock: Int = MIN_BLOCK_BYTES,
     private val maxBlock: Int = MAX_BLOCK_BYTES,
     private val maxCached: Long = MAX_CACHED_BYTES
 ) : SeekableByteChannel {
     private var position = 0L
     private var open = true
     private val size = input.length
+    private var minBlock = minBlock
+
+    /** How long a run fetched after a seek is: small while walking an archive's headers, larger for its pages. */
+    var seekBlock: Int
+        @Synchronized get() = minBlock
+        @Synchronized set(value) {
+            require(value > 0) { "Block of $value bytes" }
+            minBlock = value
+            window = value
+        }
 
     /** A fetched run of the file, from [start]. */
     private class Run(val start: Long, val bytes: ByteArray) {
@@ -138,6 +148,9 @@ class RemoteChannel(
 
     companion object {
         const val MIN_BLOCK_BYTES = 64 * 1024
+
+        /** [seekBlock] while walking headers spread through an archive (rar, tar): a few fit, a page's worth is not fetched with each. */
+        const val HEADER_BLOCK_BYTES = 8 * 1024
         const val MAX_BLOCK_BYTES = 1 shl 20
         const val MAX_CACHED_BYTES = 8L shl 20
 

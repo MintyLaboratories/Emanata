@@ -349,12 +349,14 @@ class ListActivitySharesTest {
     @Test
     fun removingAShareCanForgetItsFavoritesHistoryAndBookmarks() {
         val library = fillLibrary()
+        library.setRead("/net/s1/Loose.cbz", true)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         removeShare(activity, forget = true)
         assertEquals(listOf("/books/attic"), library.favorites())
         assertEquals(0, library.history().size)
         assertEquals(0, library.bookmarks().size)
+        assertTrue("read marks are not named, so they stay", library.isRead("/net/s1/Loose.cbz"))
     }
 
     @Test

@@ -253,7 +253,7 @@ class LocationSheet : BottomSheetDialogFragment() {
                         ShareStore(app).remove(id)
                         Prefs(app).setLocationStart(root.path, null)
                         LocationSpace(app).remove(root.path)
-                        if (dropLibrary) Library(app).removePathsUnder(root.path)
+                        if (dropLibrary) Library(app).removeListsUnder(root.path)
                     }
                     (owner as? Host)?.onSharesChanged()
                 }

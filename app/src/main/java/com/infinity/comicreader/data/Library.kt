@@ -294,6 +294,15 @@ class Library(context: Context) {
         }
     }
 
+    /** Forgets the favorites, history and bookmarks under [root], keeping all else stored for it. */
+    fun removeListsUnder(root: String) {
+        synchronized(LOCK) {
+            writeStringList(KEY_FAVORITES, favorites().filterNot { under(it, root) })
+            writeHistory(history().filterNot { under(it.path, root) })
+            writeBookmarks(bookmarks().filterNot { under(it.path, root) })
+        }
+    }
+
     /** Forgets everything stored for a deleted file or folder. */
     fun removePathsUnder(root: String) {
         synchronized(LOCK) {

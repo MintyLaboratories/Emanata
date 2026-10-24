@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
@@ -17,6 +18,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.net.RemoteException
@@ -34,7 +36,8 @@ import kotlinx.coroutines.withContext
  * cloud for a WebDAV share), name and free space, the current one highlighted (or a
  * drive just plugged in), then "Add network share…". A share says "Not reachable" (or
  * why it failed) instead of its free space; tapping it tries it again, a long press
- * edits or removes it.
+ * edits or removes it, or sets its start folder ([Prefs.locationStart]), as a long
+ * press on the device does.
  * Tapping a root hands it to the [Host] activity. [update] redraws an open sheet as
  * drives and shares come and go; the sheet comes back after a rotation. Free space
  * is read off the main thread, a share's over the network.
@@ -114,11 +117,17 @@ class LocationSheet : BottomSheetDialogFragment() {
                 detail.setText(R.string.share_connecting)
                 detail.visibility = View.VISIBLE
                 row.setOnLongClickListener {
-                    shareMenu(share, root.name)
+                    shareMenu(share, root)
                     true
                 }
             } else {
                 detail.visibility = View.GONE
+                if (root.kind == StorageRoot.Kind.DEVICE) {
+                    row.setOnLongClickListener {
+                        deviceMenu(root)
+                        true
+                    }
+                }
             }
             details += detail
             row.isActivated = root.path == current
@@ -164,15 +173,42 @@ class LocationSheet : BottomSheetDialogFragment() {
         return row
     }
 
-    /** Edit or remove the share [id], named [name]. */
-    private fun shareMenu(id: String, name: String) {
+    /** The device's start folder. */
+    private fun deviceMenu(root: StorageRoot) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(root.name)
+            .setItems(arrayOf(startLabel(root))) { _, _ -> pickStart(root) }
+            .show()
+    }
+
+    /** "Start folder…", naming where [root] opens when that is not its top. */
+    private fun startLabel(root: StorageRoot): String {
+        val below = root.segments(Prefs(requireContext()).locationStart(root.path))
+        return if (below.isEmpty()) getString(R.string.location_start_folder) else getString(R.string.location_start_folder_set, below.joinToString("/"))
+    }
+
+    /** Browses [root] for the folder it opens at from now on; choosing its top clears it. */
+    private fun pickStart(root: StorageRoot) {
+        val owner = activity ?: return
+        val prefs = Prefs(owner)
+        FolderPicker(owner, owner.lifecycleScope) { picked ->
+            prefs.setLocationStart(root.path, picked)
+            Toast.makeText(owner, owner.getString(R.string.location_start_set, FolderPicker.describe(owner, prefs.locationStart(root.path))), Toast.LENGTH_SHORT).show()
+        }.browseFrom(prefs.locationStart(root.path))
+    }
+
+    /** Edit or remove the share [id] at [root], or set its start folder. */
+    private fun shareMenu(id: String, root: StorageRoot) {
         val context = requireContext()
+        val name = root.name
         AlertDialog.Builder(context)
             .setTitle(name)
-            .setItems(arrayOf(getString(R.string.share_edit), getString(R.string.share_remove))) { _, which ->
+            .setItems(arrayOf(getString(R.string.share_edit), startLabel(root), getString(R.string.share_remove))) { _, which ->
                 val owner = activity ?: return@setItems
                 if (which == 0) {
                     ShareDialog.show(owner, id)
+                } else if (which == 1) {
+                    pickStart(root)
                 } else {
                     val app = context.applicationContext
                     confirm(context, R.string.share_remove_title, getString(R.string.share_remove_msg, name), R.string.share_remove) {

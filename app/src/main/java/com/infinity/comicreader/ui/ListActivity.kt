@@ -42,6 +42,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.chip.Chip
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
@@ -85,11 +86,14 @@ import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class ListActivity : AppCompatActivity(), LocationSheet.Host {
@@ -579,15 +583,77 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             isDir = { Remotes.file(it, askNetwork = false).isDirectory },
             reachable = { nearestFolder(it) != null }
         )
-        return path?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
+        return path?.let { Remotes.file(it) } ?: deviceStart()
     }
+
+    /** Where the device's storage opens ([Prefs.locationStart]). */
+    private fun deviceStart(): File = File(prefs.locationStart(Environment.getExternalStorageDirectory().absolutePath))
 
     /** Browses the startup location, unless another listing starts while it is worked out. */
     private fun openStartDirectory() {
         showProgress(true)
         launchListing {
             val dir = withContext(AppDispatchers.io) { startDirectory() }
+            if (dir is RemoteFile && !answersSoon(dir)) {
+                startOnDevice(dir)
+                return@launchListing
+            }
             loadDirectory(dir)
+        }
+    }
+
+    /**
+     * True when the share of [dir] answers listing it within [SHARE_WAIT_MS]: lists it, or
+     * says why not (a refused sign-in, a folder gone), which browsing it then shows. Otherwise,
+     * also when it cannot be reached at all, it is asked again in the background ([keepTrying]).
+     */
+    private suspend fun answersSoon(dir: RemoteFile): Boolean {
+        val attempt = lifecycleScope.async(AppDispatchers.io) { listingAnswer(dir) }
+        val answer = withTimeoutOrNull(SHARE_WAIT_MS) { attempt.await() }
+        if (answer != null && answer != RemoteException.Reason.UNREACHABLE) return true
+        keepTrying(dir, attempt)
+        return false
+    }
+
+    /** Lists [dir]: null when that works, else why not. Blocking. */
+    private fun listingAnswer(dir: RemoteFile): RemoteException.Reason? = try {
+        dir.entries()
+        null
+    } catch (e: RemoteException) {
+        e.reason
+    } catch (e: Exception) {
+        RemoteException.Reason.UNREACHABLE
+    }
+
+    /** Opens the device's start folder instead of [dir], on a share slow to answer, saying so. */
+    private fun startOnDevice(dir: File) {
+        val share = StorageRoot.of(dir.absolutePath, roots)?.name ?: Remotes.idOf(dir.absolutePath)?.let { Remotes.share(it)?.name }.orEmpty()
+        toast(getString(R.string.share_slow_start, share))
+        loadDirectory(deviceStart())
+    }
+
+    /**
+     * Waits for [attempt] at listing [dir], then asks again a few times further apart while
+     * it fails. Once the share answers, offers to open [dir], unless another folder or tab
+     * was opened meanwhile.
+     */
+    private fun keepTrying(dir: RemoteFile, attempt: Deferred<RemoteException.Reason?>) {
+        val fallback = deviceStart().absolutePath
+        lifecycleScope.launch {
+            var answered = attempt.await() == null
+            var wait = SHARE_RETRY_MS
+            repeat(SHARE_RETRIES) {
+                if (answered) return@repeat
+                delay(wait)
+                wait *= 2
+                Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
+                answered = withContext(AppDispatchers.io) { listingAnswer(dir) } == null
+            }
+            if (!answered || mode != TAB_BROWSE || currentDir?.absolutePath != fallback) return@launch
+            val share = StorageRoot.of(dir.absolutePath, roots)?.name.orEmpty()
+            Snackbar.make(recycler, getString(R.string.share_answering, share), Snackbar.LENGTH_LONG)
+                .setAction(R.string.share_open) { loadDirectory(dir) }
+                .show()
         }
     }
 
@@ -1914,9 +1980,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override val locationRoots: List<StorageRoot> get() = roots
 
+    /** Opens [root] at its start folder ([Prefs.locationStart]); [loadDirectory] climbs out of one that is gone. */
     override fun onLocationPicked(root: StorageRoot) {
         Remotes.idOf(root.path)?.let { Remotes.retry(it) }
-        loadDirectory(Remotes.file(root.path))
+        loadDirectory(Remotes.file(prefs.locationStart(root.path)))
     }
 
     override fun onSharesChanged() {
@@ -1953,6 +2020,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L
+
+        /** How long the startup folder's share has to answer before the device's start folder opens instead. */
+        const val SHARE_WAIT_MS = 3_000L
+
+        /** Then the share is asked again this much later, twice as late each time, this many times. */
+        private const val SHARE_RETRY_MS = 10_000L
+        private const val SHARE_RETRIES = 3
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
         private const val DEEP_SEARCH_DEPTH = 8

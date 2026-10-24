@@ -163,6 +163,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   disappear live; plugging one in opens the sheet with it highlighted (at once
   in the library, else on returning to it); pulling one out while a book on it
   is open closes the book and says why.
+- **Start folder per location:** long-press the device or a share in the
+  Locations sheet to pick the folder it opens at (its top by default); picking
+  that location opens there. When the startup folder is on a share that has
+  not answered within 3 s, or cannot be reached, the device's start folder
+  opens instead with a note; the share is asked again in the background, and a
+  bar offers to open it once it answers.
 - **Network shares (SMB 2/3 and WebDAV):** "Add network share…" in the
   Locations sheet asks SMB or WebDAV, then takes a name, a path, a user and a
   password; everything else is defaulted. SMB: the path is `host/share/folder`

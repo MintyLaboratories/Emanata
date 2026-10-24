@@ -35,6 +35,29 @@ class PrefsStartupTest {
     }
 
     @Test
+    fun eachLocationKeepsItsOwnStartFolder() {
+        val prefs = Prefs(context)
+        assertEquals("/storage/emulated/0", prefs.locationStart("/storage/emulated/0"))
+        prefs.setLocationStart("/storage/emulated/0", "/storage/emulated/0/Comics")
+        prefs.setLocationStart("/net/s1", "/net/s1/Series/Arc")
+        assertEquals("/storage/emulated/0/Comics", prefs.locationStart("/storage/emulated/0"))
+        assertEquals("/net/s1/Series/Arc", prefs.locationStart("/net/s1"))
+        assertEquals("/net/s2", prefs.locationStart("/net/s2"))
+        // The top itself, or a folder elsewhere, clears it.
+        prefs.setLocationStart("/net/s1", "/net/s1")
+        assertEquals("/net/s1", prefs.locationStart("/net/s1"))
+        prefs.setLocationStart("/storage/emulated/0", "/net/s1/Series")
+        assertEquals("/storage/emulated/0", prefs.locationStart("/storage/emulated/0"))
+        assertEquals("/net/s10", Prefs(context).also { it.setLocationStart("/net/s1", "/net/s10/x") }.locationStart("/net/s10"))
+        assertEquals("/net/s1", prefs.locationStart("/net/s1"))
+    }
+
+    @Test
+    fun theStartupResumeAsksByDefault() {
+        assertEquals(ResumeMode.ASK, Prefs(context).startupResume)
+    }
+
+    @Test
     fun anOlderHomeFolderIsACustomLocation() {
         ui().edit().putString("home_path", "/home").commit()
         val prefs = Prefs(context)

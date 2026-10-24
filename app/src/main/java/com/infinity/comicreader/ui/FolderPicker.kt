@@ -56,6 +56,9 @@ class FolderPicker(
         }
     }
 
+    /** Browses for a folder from [path] ([browse]), without the favorites and roots first. */
+    fun browseFrom(path: String) = browse(Remotes.file(path))
+
     /**
      * Lists the folders inside [dir]; tapping one goes into it, "Choose" picks [dir]. A
      * [dir] gone by then lists its nearest existing parent instead, saying so, or the

@@ -335,6 +335,19 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /**
+     * The folder a location ([StorageRoot], by its [root] path) opens at when picked: one
+     * set below it ([setLocationStart]), else the root itself.
+     */
+    fun locationStart(root: String): String = LocationStarts.decode(sp.getString(KEY_LOCATION_STARTS, null))[root] ?: root
+
+    /** Makes [folder] where the location at [root] opens; the root itself, null, or a folder elsewhere clears it. */
+    fun setLocationStart(root: String, folder: String?) {
+        val starts = LocationStarts.decode(sp.getString(KEY_LOCATION_STARTS, null)).toMutableMap()
+        if (LocationStarts.isBelow(folder, root)) starts[root] = folder!! else starts.remove(root)
+        put(KEY_LOCATION_STARTS, LocationStarts.encode(starts))
+    }
+
     /** Whether the app, as it starts, reopens the book read last: asks (the default), always, or never. */
     var startupResume: ResumeMode
         get() = ResumeMode.of(sp.getString(KEY_STARTUP_RESUME, null))
@@ -539,6 +552,7 @@ class Prefs(context: Context) {
         private const val KEY_STARTUP_LOCATION = "pref_startup_location"
         private const val KEY_STARTUP_PATH = "pref_startup_path"
         private const val KEY_STARTUP_RESUME = "pref_startup_resume"
+        private const val KEY_LOCATION_STARTS = "pref_location_starts"
         private const val KEY_AUTO_CROP = "pref_auto_crop"
         private const val KEY_PRELOAD = "pref_preload"
         private const val KEY_AUTO_SPEED = "pref_auto_scroll_speed"
@@ -559,7 +573,7 @@ class Prefs(context: Context) {
             KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, OLD_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
             KEY_LINEAR_LIGHT, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
-            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
+            KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 

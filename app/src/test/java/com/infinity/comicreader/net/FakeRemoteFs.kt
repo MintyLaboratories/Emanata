@@ -6,11 +6,15 @@ import java.io.RandomAccessFile
 /**
  * A share served from a local folder [dir], counting what is asked of it; [offline]
  * makes every call fail as an unreachable host would, [refuse] as a host turning the
- * sign-in down would.
+ * sign-in down would, and [slow] holds every call until it opens, as a host slow to
+ * answer would.
  */
 class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var offline = false
+
+    @Volatile
+    var slow: java.util.concurrent.CountDownLatch? = null
 
     @Volatile
     var refuse: RemoteException.Reason? = null
@@ -39,6 +43,7 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     private fun at(path: String) = if (path.isEmpty()) dir else File(dir, path)
 
     private fun check() {
+        slow?.await(10, java.util.concurrent.TimeUnit.SECONDS)
         if (offline) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         attempts++
         refuse?.let { throw RemoteException(it, lasting = true) }

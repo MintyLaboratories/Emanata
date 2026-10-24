@@ -308,7 +308,9 @@ class ListActivitySharesTest {
         row("Share A").performLongClick()
         idle()
         val menu = ShadowDialog.getLatestDialog() as AlertDialog
-        menu.listView.performItemClick(null, 1, 1)
+        val labels = (0 until menu.listView.adapter.count).map { menu.listView.adapter.getItem(it).toString() }
+        val remove = labels.indexOf(activity.getString(R.string.share_remove))
+        menu.listView.performItemClick(null, remove, remove.toLong())
         idle()
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()

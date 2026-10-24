@@ -88,6 +88,12 @@
     <string name="share_problem_password_again">Enter the password again for the new server</string>
     <string name="share_edit">Edit…</string>
     <string name="share_remove">Remove</string>
+    <string name="location_start_folder">Start folder…</string>
+    <string name="location_start_folder_set">Start folder: %1$s</string>
+    <string name="location_start_set">Opens at %1$s</string>
+    <string name="share_slow_start">%1$s is not answering yet, so Device opened instead</string>
+    <string name="share_answering">%1$s is answering now</string>
+    <string name="share_open">Open</string>
     <string name="share_remove_title">Remove network share?</string>
     <string name="share_remove_msg">%1$s leaves the locations. Its favorites, history and bookmarks are kept.</string>
     <string name="share_connecting">Connecting…</string>

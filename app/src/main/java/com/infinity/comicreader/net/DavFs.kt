@@ -46,8 +46,14 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     private val calls = HashSet<Call>()
     private val inputs = HashSet<DavInput>()
 
-    /** [client] without redirects, for changes. */
-    private val direct: OkHttpClient by lazy { client.newBuilder().followRedirects(false).build() }
+    /**
+     * [client] without redirects, for changes, waiting up to [CHANGE_WAIT_MS] for an answer:
+     * a server answers a change only once it is done, which on a sleeping disk or a large
+     * folder takes a while.
+     */
+    private val direct: OkHttpClient by lazy {
+        client.newBuilder().followRedirects(false).readTimeout(CHANGE_WAIT_MS, TimeUnit.MILLISECONDS).build()
+    }
 
     /** Whether the server honors Range requests; null until a file larger than [HEAD_BYTES] was opened. */
     @Volatile
@@ -148,11 +154,17 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         change(request(urlOf(path, folder)).delete(), path, 200, 204)
     }
 
-    /** COPY of one file; false when the server has no COPY. */
+    /**
+     * COPY of one file, waited on as long as copying its size at [SLOWEST_COPY_BYTES_PER_MS]
+     * takes, beyond [CHANGE_WAIT_MS]: the server answers only once done. False when the
+     * server has no COPY.
+     */
     override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
+        val size = stat(from)?.size?.coerceAtLeast(0) ?: throw RemoteException(RemoteException.Reason.MISSING, from)
         val r = request(urlOf(from, folder = false)).method("COPY", null)
             .header("Destination", urlOf(to, folder = false).toString()).header("Overwrite", "F").header("Depth", "0")
-        execute(r.build(), via = direct).use { answer ->
+        val patient = direct.newBuilder().readTimeout(copyWaitMs(size), TimeUnit.MILLISECONDS).build()
+        execute(r.build(), via = patient).use { answer ->
             when (answer.response.code) {
                 201, 204 -> return true
                 405, 501 -> return false
@@ -517,6 +529,15 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
 
         /** How much a write reads from its source at a time. */
         private const val WRITE_BYTES = 256 * 1024
+
+        /** How long a change may take to be answered. */
+        const val CHANGE_WAIT_MS = 5 * 60_000L
+
+        /** The slowest a server is expected to copy, in bytes per millisecond (10 MB/s). */
+        private const val SLOWEST_COPY_BYTES_PER_MS = 10_000L
+
+        /** How long a COPY of [size] bytes may take to be answered. */
+        internal fun copyWaitMs(size: Long): Long = CHANGE_WAIT_MS + size / SLOWEST_COPY_BYTES_PER_MS
 
         /** First, last and total bytes of a `Content-Range: bytes a-b/total` (total -1 when `*`), or of `bytes *\/total` (first and last -1). */
         internal fun contentRange(response: Response): Triple<Long, Long, Long>? = parseContentRange(response.header("Content-Range"))

@@ -100,6 +100,14 @@ class DavFsWriteTest {
     }
 
     @Test
+    fun changesAreWaitedOnLongerThanReads() {
+        assertTrue(DavFs.CHANGE_WAIT_MS >= 5 * 60_000L)
+        // A 5 GB copy is waited on for over 13 minutes.
+        assertTrue(DavFs.copyWaitMs(5_000_000_000L) > 13 * 60_000L)
+        assertEquals(DavFs.CHANGE_WAIT_MS, DavFs.copyWaitMs(0))
+    }
+
+    @Test
     fun aReadOnlyShareTurnsChangesDownWithoutLockingTheShare() {
         server.readOnly = true
         try {

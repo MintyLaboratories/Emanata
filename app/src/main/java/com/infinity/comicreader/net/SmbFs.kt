@@ -6,6 +6,7 @@ import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.msfscc.fileinformation.FileStandardInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2CreateOptions
 import com.hierynomus.mssmb2.SMB2Packet
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
@@ -22,6 +23,7 @@ import com.hierynomus.smbj.share.DiskShare
 import android.util.Log
 import com.infinity.comicreader.util.Timing
 import java.io.IOException
+import java.io.InputStream
 import java.util.EnumSet
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -108,6 +110,89 @@ class SmbFs(private val share: Share) : RemoteFs {
         synchronized(lock) { failure = null }
     }
 
+    override fun mkdir(path: String) = call { d -> d.mkdir(smbPath(path)) }
+
+    /** Written in [WRITE_BYTES] pieces, each marking the connection as used; never repeated, as [input] is consumed. */
+    override fun create(path: String, input: InputStream, length: Long) {
+        val file = once { d ->
+            d.openFile(
+                smbPath(path), EnumSet.of(AccessMask.GENERIC_WRITE), EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
+                SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_CREATE, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE)
+            )
+        }
+        try {
+            val buffer = ByteArray(WRITE_BYTES)
+            var at = 0L
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                if (n == 0) continue
+                once { file.write(buffer, at, 0, n) }
+                at += n
+            }
+        } finally {
+            runCatching { file.close() }
+        }
+    }
+
+    override fun rename(from: String, to: String) = call { d ->
+        d.open(
+            smbPath(from), EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null,
+            SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null
+        ).use { it.rename(smbPath(to), false) }
+    }
+
+    override fun delete(path: String) = call { d ->
+        val p = smbPath(path)
+        require(p.isNotEmpty()) { "Not deleting the share" }
+        if (d.getFileInformation(p).standardInformation.isDirectory) d.rmdir(p, true) else d.rm(p)
+    }
+
+    /**
+     * Copies with the server's own copy (SMB copychunk) in [COPY_BYTES] pieces, so
+     * [progress] hears each and may stop it; false, leaving nothing at [to], when the
+     * server turns the first piece down.
+     */
+    override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
+        val source = once { d ->
+            d.openFile(
+                smbPath(from), EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE)
+            )
+        }
+        try {
+            val length = once { source.getFileInformation(FileStandardInformation::class.java).endOfFile }
+            val target = once { d ->
+                d.openFile(
+                    smbPath(to), EnumSet.of(AccessMask.GENERIC_READ, AccessMask.GENERIC_WRITE),
+                    EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL), SMB2ShareAccess.ALL,
+                    SMB2CreateDisposition.FILE_CREATE, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE)
+                )
+            }
+            var at = 0L
+            try {
+                while (at < length) {
+                    val n = minOf(COPY_BYTES, length - at)
+                    try {
+                        once { source.remoteCopyTo(at, target, at, n) }
+                    } catch (e: IOException) {
+                        if (at > 0 || e is RemoteException || e.cause !is SMBApiException) throw e
+                        runCatching { target.close() }
+                        runCatching { once { d -> d.rm(smbPath(to)) } }
+                        return false
+                    }
+                    at += n
+                    progress(at)
+                }
+            } finally {
+                runCatching { target.close() }
+            }
+            return true
+        } finally {
+            runCatching { source.close() }
+        }
+    }
+
     /** Closes the connection at once, even while another thread is connecting; that one then fails. */
     override fun close() {
         closed = true
@@ -139,6 +224,18 @@ class SmbFs(private val share: Share) : RemoteFs {
                 retried = true
                 disconnect()
             }
+        }
+    }
+
+    /** Runs [block] on the share once, connecting first: for writes, which a new connection must not repeat. */
+    private fun <T> once(block: (DiskShare) -> T): T {
+        val d = connected()
+        try {
+            return block(d)
+        } catch (e: Exception) {
+            val failure = translate(e)
+            if (failure is Dropped) disconnect()
+            throw failure.toRemote()
         }
     }
 
@@ -432,6 +529,12 @@ class SmbFs(private val share: Share) : RemoteFs {
         /** How long a connection unheard for a while (the device slept) gets to answer before it is made anew. */
         private const val WAKE_ECHO_TIMEOUT_S = 2L
         private const val CONNECT_TIMEOUT_MS = 5_000
+
+        /** How much a write sends at a time. */
+        private const val WRITE_BYTES = 1 shl 20
+
+        /** How much one server-side copy request copies, so progress shows and canceling is heard. */
+        private const val COPY_BYTES = 16L shl 20
         private const val READ_TIMEOUT_S = 30L
 
         /** A connection's settings: its own client id, so the host never takes two connections for one client. */

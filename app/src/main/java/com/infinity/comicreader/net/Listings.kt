@@ -40,6 +40,12 @@ class Listings(private val dir: File?, private val maxFolders: Int = MAX_IN_MEMO
         dir?.let { File(it, id).deleteRecursively() }
     }
 
+    /** Forgets the listing of folder [path] and, in memory, those of the folders inside it. */
+    fun drop(path: String) {
+        synchronized(memory) { memory.keys.removeAll { it == path || it.startsWith("$path/") } }
+        fileOf(path)?.delete()
+    }
+
     /** Forgets every listing kept in memory; those on disk stay. */
     fun clearMemory() {
         synchronized(memory) { memory.clear() }

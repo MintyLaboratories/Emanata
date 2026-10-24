@@ -249,6 +249,64 @@ object Remotes {
         if (n == bytes.size) bytes else bytes.copyOf(n)
     }
 
+    /** Makes the folder [path]; fails when anything is there. */
+    fun mkdir(path: String) {
+        try {
+            Timing.span("share mkdir") { call(path) { it.mkdir(relOf(path)) } }
+        } finally {
+            changedAt(path)
+        }
+    }
+
+    /** Writes [length] bytes from [input] as the new file [path] ([RemoteFs.create]). */
+    fun create(path: String, input: InputStream, length: Long) {
+        try {
+            Timing.span("share create") { call(path) { it.create(relOf(path), input, length) } }
+        } finally {
+            changedAt(path)
+        }
+    }
+
+    /** Renames or moves [from] to [to] on the same share; fails when anything is at [to]. */
+    fun rename(from: String, to: String) {
+        require(idOf(from) != null && idOf(from) == idOf(to)) { "Not on one share: $from, $to" }
+        require(!isRoot(from) && !isRoot(to)) { "Not renaming a share" }
+        try {
+            Timing.span("share rename") { call(from) { it.rename(relOf(from), relOf(to)) } }
+        } finally {
+            changedAt(from)
+            changedAt(to)
+        }
+    }
+
+    /** Deletes the file or folder at [path], with everything inside; never a share's root. */
+    fun delete(path: String) {
+        require(!isRoot(path)) { "Not deleting a share" }
+        try {
+            Timing.span("share delete") { call(path) { it.delete(relOf(path)) } }
+        } finally {
+            changedAt(path)
+        }
+    }
+
+    /** Copies file [from] to the new file [to] on the share's server itself; false when it cannot ([RemoteFs.copy]). */
+    fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
+        require(idOf(from) != null && idOf(from) == idOf(to)) { "Not on one share: $from, $to" }
+        try {
+            return Timing.span("share copy") { call(from) { it.copy(relOf(from), relOf(to), progress) } }
+        } finally {
+            changedAt(to)
+        }
+    }
+
+    /** Forgets what was found at and below [path], and the kept listings of its folder and of itself. */
+    private fun changedAt(path: String) {
+        val base = path.trimEnd('/')
+        synchronized(this) { stats.keys.removeAll { it == base || it.startsWith("$base/") } }
+        listings.drop(base)
+        base.substringBeforeLast('/', "").takeIf { isRemote(it) }?.let { listings.drop(it) }
+    }
+
     /** Free and total bytes of share [id]; null when it does not say. Throws when it fails. */
     fun space(id: String): Pair<Long, Long>? = Timing.span("share space") { call(rootOf(id)) { it.space() } }
 

@@ -7,7 +7,7 @@ import java.io.RandomAccessFile
  * A share served from a local folder [dir], counting what is asked of it; [offline]
  * makes every call fail as an unreachable host would, [refuse] as a host turning the
  * sign-in down would, and [slow] holds every call until it opens, as a host slow to
- * answer would.
+ * answer would. Changes go to [dir], unless [readOnly] turns them down.
  */
 class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
@@ -18,6 +18,9 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
 
     @Volatile
     var refuse: RemoteException.Reason? = null
+
+    @Volatile
+    var readOnly = false
 
     /** Calls that reached the host, failed or not. */
     @Volatile
@@ -86,6 +89,35 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     override fun space(): Pair<Long, Long>? {
         check()
         return 3_000_000_000L to 8_000_000_000L
+    }
+
+    private fun checkWrite() {
+        check()
+        if (readOnly) throw RemoteException(RemoteException.Reason.DENIED, "Read-only")
+    }
+
+    override fun mkdir(path: String) {
+        checkWrite()
+        if (!at(path).mkdir()) throw java.io.IOException("Could not make $path")
+    }
+
+    override fun create(path: String, input: java.io.InputStream, length: Long) {
+        checkWrite()
+        val f = at(path)
+        if (!f.createNewFile()) throw java.io.IOException("Already there: $path")
+        f.outputStream().use { input.copyTo(it) }
+    }
+
+    override fun rename(from: String, to: String) {
+        checkWrite()
+        if (at(to).exists()) throw java.io.IOException("Already there: $to")
+        if (!at(from).renameTo(at(to))) throw java.io.IOException("Could not rename $from")
+    }
+
+    override fun delete(path: String) {
+        checkWrite()
+        if (!at(path).exists()) throw RemoteException(RemoteException.Reason.MISSING)
+        if (!at(path).deleteRecursively()) throw java.io.IOException("Could not delete $path")
     }
 
     override fun close() {

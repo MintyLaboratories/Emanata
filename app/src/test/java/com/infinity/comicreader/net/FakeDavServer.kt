@@ -1,5 +1,6 @@
 package com.infinity.comicreader.net
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -18,8 +19,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * A WebDAV server on this machine serving local folder [dir] under [prefix], for
- * tests: PROPFIND (depth 0 and 1) and GET, with Range unless [ranges] is off, and
- * Basic sign-in when [password] is set. It records each request and the file bytes it sends.
+ * tests: PROPFIND (depth 0 and 1) and GET, with Range unless [ranges] is off; MKCOL,
+ * PUT, MOVE, COPY and DELETE, unless [readOnly]; and Basic sign-in when [password] is
+ * set. It records each request and the file bytes it sends.
  */
 class FakeDavServer(private val dir: File, private val prefix: String = "/dav") : Closeable {
     private val server = MockWebServer()
@@ -37,6 +39,14 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
 
     @Volatile
     var user = ""
+
+    /** Turns every change down with 403. */
+    @Volatile
+    var readOnly = false
+
+    /** Answers COPY with 501, as a server without it. */
+    @Volatile
+    var noCopy = false
 
     @Volatile
     var password = ""
@@ -81,12 +91,13 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         }
         val raw = request.requestUrl!!.encodedPath
         if (!raw.startsWith(prefix)) return MockResponse().setResponseCode(404)
-        val rel = raw.removePrefix(prefix).split('/').filter { it.isNotEmpty() }.joinToString("/") { URLDecoder.decode(it.replace("+", "%2B"), "UTF-8") }
+        val rel = relOf(raw)
         errors[rel]?.let { return MockResponse().setResponseCode(it) }
         val file = if (rel.isEmpty()) dir else File(dir, rel)
         return when (request.method) {
             "PROPFIND" -> propfind(request, file, raw)
             "GET" -> get(request, file)
+            "MKCOL", "PUT", "MOVE", "COPY", "DELETE" -> if (readOnly) MockResponse().setResponseCode(403) else change(request, file)
             else -> MockResponse().setResponseCode(405)
         }
     }
@@ -138,6 +149,49 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
                 .setBody(slice(file, from, to - from + 1))
         )
     }
+
+    private fun change(request: RecordedRequest, file: File): MockResponse {
+        val code = when (request.method) {
+            "MKCOL" -> when {
+                file.exists() -> 405
+                !file.parentFile!!.isDirectory -> 409
+                else -> if (file.mkdir()) 201 else 500
+            }
+            "PUT" -> when {
+                request.getHeader("If-None-Match") == "*" && file.exists() -> 412
+                file.isDirectory -> 405
+                else -> {
+                    file.writeBytes(request.body.readByteArray())
+                    201
+                }
+            }
+            "DELETE" -> if (!file.exists()) 404 else if (file.deleteRecursively()) 204 else 500
+            else -> {
+                if (request.method == "COPY" && noCopy) return MockResponse().setResponseCode(501)
+                val destination = request.getHeader("Destination") ?: return MockResponse().setResponseCode(400)
+                val raw = destination.toHttpUrl().encodedPath
+                if (!raw.startsWith(prefix)) return MockResponse().setResponseCode(502)
+                val target = File(dir, relOf(raw))
+                when {
+                    !file.exists() -> 404
+                    target.exists() && request.getHeader("Overwrite") == "F" -> 412
+                    !target.parentFile!!.isDirectory -> 409
+                    request.method == "MOVE" -> {
+                        if (target.exists()) target.deleteRecursively()
+                        if (file.renameTo(target)) 201 else 500
+                    }
+                    else -> {
+                        file.copyRecursively(target, overwrite = true)
+                        201
+                    }
+                }
+            }
+        }
+        return MockResponse().setResponseCode(code)
+    }
+
+    private fun relOf(raw: String): String =
+        raw.removePrefix(prefix).split('/').filter { it.isNotEmpty() }.joinToString("/") { URLDecoder.decode(it.replace("+", "%2B"), "UTF-8") }
 
     private fun paced(response: MockResponse): MockResponse =
         if (slow) response.throttleBody(SLOW_BYTES_PER_SECOND, 1, TimeUnit.SECONDS) else response

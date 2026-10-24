@@ -2,6 +2,7 @@ package com.infinity.comicreader.net
 
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 
 /**
  * One network share's files. Paths are relative to the share's folder, `/`-separated,
@@ -28,7 +29,32 @@ interface RemoteFs : Closeable {
 
     /** Forgets a failure it remembered, so the next call tries the network again. */
     fun retry() {}
+
+    /** Makes folder [path]; fails when anything is there. */
+    fun mkdir(path: String): Unit = throw readOnly()
+
+    /**
+     * Writes [length] bytes from [input] as the new file [path]; fails when anything is
+     * there. A failure may leave part of the file behind, for the caller to delete.
+     * Failures of [input] itself, and cancellation, pass through as they are.
+     */
+    fun create(path: String, input: InputStream, length: Long): Unit = throw readOnly()
+
+    /** Renames or moves [from] to [to] on this share; fails when anything is at [to]. */
+    fun rename(from: String, to: String): Unit = throw readOnly()
+
+    /** Deletes the file or folder [path], with everything inside. */
+    fun delete(path: String): Unit = throw readOnly()
+
+    /**
+     * Copies file [from] to the new file [to] on the server itself, telling [progress] the
+     * bytes copied so far; [progress] may throw to stop. False when the server cannot, so
+     * the caller copies through the device instead.
+     */
+    fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = false
 }
+
+private fun readOnly() = IOException("Read-only share")
 
 /**
  * A file or folder on a share: sizes in bytes (-1 for a file the server lists without

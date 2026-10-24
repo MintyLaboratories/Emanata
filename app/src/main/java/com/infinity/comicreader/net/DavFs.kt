@@ -7,11 +7,14 @@ import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.BufferedSink
 import okio.BufferedSource
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 
@@ -42,6 +45,9 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     /** Requests whose answers are not read through yet, and files open: canceled and closed with the share. */
     private val calls = HashSet<Call>()
     private val inputs = HashSet<DavInput>()
+
+    /** [client] without redirects, for changes. */
+    private val direct: OkHttpClient by lazy { client.newBuilder().followRedirects(false).build() }
 
     /** Whether the server honors Range requests; null until a file larger than [HEAD_BYTES] was opened. */
     @Volatile
@@ -86,6 +92,86 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         val total = e.quotaAvailable + e.quotaUsed
         return if (total <= 0) null else e.quotaAvailable to total
     }
+
+    override fun mkdir(path: String) {
+        change(request(urlOf(path, folder = true)).method("MKCOL", null), path, 201)
+    }
+
+    /** PUT, only where nothing is (If-None-Match); the body streams from [input], sent once. */
+    override fun create(path: String, input: InputStream, length: Long) {
+        val body = object : RequestBody() {
+            override fun contentType() = OCTETS
+
+            override fun contentLength() = length
+
+            override fun isOneShot() = true
+
+            override fun writeTo(sink: BufferedSink) {
+                val buffer = ByteArray(WRITE_BYTES)
+                while (true) {
+                    val n = try {
+                        input.read(buffer)
+                    } catch (e: IOException) {
+                        throw SourceFailure(e)
+                    }
+                    if (n < 0) break
+                    sink.write(buffer, 0, n)
+                }
+            }
+        }
+        try {
+            change(request(urlOf(path, folder = false)).put(body).header("If-None-Match", "*"), path, 200, 201, 204)
+        } catch (e: SourceFailure) {
+            throw e.cause
+        }
+    }
+
+    override fun rename(from: String, to: String) {
+        val folder = isFolder(from)
+        change(
+            request(urlOf(from, folder)).method("MOVE", null)
+                .header("Destination", urlOf(to, folder).toString()).header("Overwrite", "F"),
+            from, 201, 204
+        )
+    }
+
+    override fun delete(path: String) {
+        require(path.isNotEmpty()) { "Not deleting the share" }
+        change(request(urlOf(path, isFolder(path))).delete(), path, 200, 204)
+    }
+
+    /** COPY of one file; false when the server has no COPY. */
+    override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
+        val r = request(urlOf(from, folder = false)).method("COPY", null)
+            .header("Destination", urlOf(to, folder = false).toString()).header("Overwrite", "F").header("Depth", "0")
+        execute(r.build(), via = direct).use { answer ->
+            when (answer.response.code) {
+                201, 204 -> return true
+                405, 501 -> return false
+                else -> throw failure(answer.response)
+            }
+        }
+    }
+
+    /** True when [path] is a folder: its URL then ends with `/`, as servers expect of changes to folders. */
+    private fun isFolder(path: String): Boolean =
+        stat(path)?.isDirectory ?: throw RemoteException(RemoteException.Reason.MISSING, path)
+
+    /**
+     * Sends a change, never following a redirect (one could turn it into a GET); fails
+     * unless answered with one of [ok]. 412 means something is in the way.
+     */
+    private fun change(request: Request.Builder, path: String, vararg ok: Int) {
+        execute(request.build(), via = direct).use { answer ->
+            val code = answer.response.code
+            if (code in ok) return
+            if (code == 412 || code == 405 && request.build().method == "MKCOL") throw IOException("Already there: $path")
+            throw failure(answer.response)
+        }
+    }
+
+    /** A failure of the stream a file is written from, carried through the HTTP client unchanged. */
+    private class SourceFailure(override val cause: IOException) : RuntimeException(cause)
 
     /** Cancels requests under way, then closes open files; later calls fail. */
     override fun close() {
@@ -135,8 +221,8 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
      * Runs [request], canceled when the share closes, its body included; [started]
      * hears the call first. A transport failure reads as unreachable.
      */
-    private fun execute(request: Request, started: (Call) -> Unit = {}): Answer {
-        val call = client.newCall(request)
+    private fun execute(request: Request, via: OkHttpClient = client, started: (Call) -> Unit = {}): Answer {
+        val call = via.newCall(request)
         synchronized(calls) {
             if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
             calls += call
@@ -419,6 +505,10 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         const val IDLE_MS = 60_000L
 
         private val XML = "application/xml; charset=utf-8".toMediaType()
+        private val OCTETS = "application/octet-stream".toMediaType()
+
+        /** How much a write reads from its source at a time. */
+        private const val WRITE_BYTES = 256 * 1024
 
         /** First, last and total bytes of a `Content-Range: bytes a-b/total` (total -1 when `*`), or of `bytes *\/total` (first and last -1). */
         internal fun contentRange(response: Response): Triple<Long, Long, Long>? = parseContentRange(response.header("Content-Range"))

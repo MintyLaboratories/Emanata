@@ -856,7 +856,7 @@
         <item>Hermite (fastest)</item>
         <item>Bicubic (Catmull-Rom)</item>
         <item>Lanczos3</item>
-        <item>Lanczos6 (sharpest, rings more)</item>
+        <item>Lanczos6 (sharpest, rings more, slower)</item>
     </string-array>
     <string-array name="scale_values">
         <item>hermite</item>

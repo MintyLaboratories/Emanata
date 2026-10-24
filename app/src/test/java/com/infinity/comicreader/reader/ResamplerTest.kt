@@ -249,6 +249,27 @@ class ResamplerTest {
                 // One axis shrinks, the other enlarges: each takes its own strength.
                 checkAgainstReference(40, 12, Resampler.Window.of(40, 12), 15, 31, opaque = false, linear = true, scaling = scaling)
                 checkAgainstReference(300, 160, Resampler.Window.of(300, 160), 23, 23, opaque = true, linear = false, scaling = scaling)
+                // Shrunk mildly, one source pixel or two lie under each output pixel.
+                checkAgainstReference(61, 47, Resampler.Window.of(61, 47), 47, 37, opaque = true, linear = false, scaling = scaling)
+                checkAgainstReference(61, 47, Resampler.Window.of(61, 47), 47, 37, opaque = false, linear = false, scaling = scaling)
+            }
+        }
+    }
+
+    @Test
+    fun antiRingingMatchesReferenceWherePartOfTheRowsAreOpaque() {
+        // Rows of noise, every third one translucent in places: opaque rows skip their alpha.
+        val r = Random(5)
+        val src = IntArray(61 * 47) { i ->
+            val alpha = if ((i / 61) % 3 == 0 && r.nextInt(4) == 0) r.nextInt(256) else 255
+            (alpha shl 24) or r.nextInt(1 shl 24)
+        }
+        for (filter in ScaleFilter.entries) {
+            for ((w, h) in listOf(17 to 13, 47 to 37, 90 to 70)) {
+                val scaling = Scaling(filter, 60, 60)
+                val ours = Resampler.resample(src, 61, 47, Resampler.Window.of(61, 47), w, h, false, scaling)
+                val diff = maxChannelDiff(ours, reference(src, 61, 47, Resampler.Window.of(61, 47), w, h, false, scaling))
+                assertTrue("max channel difference $diff for $w x $h, $scaling", diff <= 1)
             }
         }
     }

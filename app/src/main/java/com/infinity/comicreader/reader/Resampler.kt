@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -257,6 +258,9 @@ object Resampler {
             buffers.ringRow = it
             it.fill(-1, 0, ay.stride)
         }
+
+        /** True when the row [convert] last read is opaque. */
+        private var opaque = true
         private val sum = buffers.sum.atLeast(rowLen).also { buffers.sum = it }
         private val out = buffers.out.atLeast(dstW).also { buffers.out = it }
 
@@ -295,23 +299,38 @@ object Resampler {
 
         /**
          * Blends [sum] toward itself clamped to the range of the filtered rows
-         * `ay.ringLo[y]..ay.ringHi[y]`, which [vertical] just read into the ring.
+         * `ay.ringLo[y]..ay.ringHi[y]`, which [vertical] just read into the ring: one or two
+         * rows, the usual cases, without an inner loop.
          */
         private fun antiRingVertical(y: Int) {
             val s = ay.ring
             val rows = ay.ringHi[y] - ay.ringLo[y] + 1
             for (t in 0 until rows) ringRows[t] = row(ay.ringLo[y] + t)
-            val lo = ringRows[0]
+            val a = ringRows[0]
+            if (rows == 1) {
+                for (j in 0 until rowLen) sum[j] += s * (ring[a + j] - sum[j])
+                return
+            }
+            if (rows == 2) {
+                val b = ringRows[1]
+                for (j in 0 until rowLen) {
+                    val p = ring[a + j]
+                    val q = ring[b + j]
+                    val v = sum[j]
+                    sum[j] = v + s * (min(max(v, min(p, q)), max(p, q)) - v)
+                }
+                return
+            }
             for (j in 0 until rowLen) {
-                var mn = ring[lo + j]
+                var mn = ring[a + j]
                 var mx = mn
                 for (t in 1 until rows) {
                     val v = ring[ringRows[t] + j]
-                    if (v < mn) mn = v else if (v > mx) mx = v
+                    mn = min(mn, v)
+                    mx = max(mx, v)
                 }
                 val v = sum[j]
-                val c = if (v < mn) mn else if (v > mx) mx else v
-                sum[j] = v + s * (c - v)
+                sum[j] = v + s * (min(max(v, mn), mx) - v)
             }
         }
 
@@ -325,51 +344,103 @@ object Resampler {
             if (ringRow[slot] == sy) return base
             reader.read(sy, raw)
             convert()
-            val antiRing = ax.ring > 0f
+            filter(base)
+            ringRow[slot] = sy
+            return base
+        }
+
+        /**
+         * Filters the row [convert] made into [ring] at [base]. An opaque row's alpha is 1
+         * throughout, its weights summing to 1: only color is filtered.
+         */
+        private fun filter(base: Int) {
+            val ringed = ax.ring > 0f
+            when {
+                opaque && ringed -> taps(base, alpha = false, ringed = true)
+                opaque -> taps(base, alpha = false, ringed = false)
+                ringed -> taps(base, alpha = true, ringed = true)
+                else -> taps(base, alpha = true, ringed = false)
+            }
+        }
+
+        /**
+         * [filter] for a row with [alpha] or without, made once for each, so no test runs per
+         * tap. When [ringed], each output pixel is blended toward itself clamped to the range
+         * of its nearest source pixels (`ax.ringLo..ax.ringHi`, within its taps), which the
+         * tap loop gathers as it reads them.
+         */
+        @Suppress("NOTHING_TO_INLINE")
+        private inline fun taps(base: Int, alpha: Boolean, ringed: Boolean) {
+            val s = ax.ring
             for (x in 0 until dstW) {
                 val n = ax.count[x]
-                var o = (ax.start[x] - x0) * 4
+                val start = ax.start[x]
+                // Taps ra..rb are the nearest pixels; without anti-ringing, none are.
+                val ra = if (ringed) (ax.ringLo[x] - start).coerceIn(0, n - 1) else n
+                val rb = if (ringed) (ax.ringHi[x] - start).coerceIn(ra, n - 1) else n - 1
+                var o = (start - x0) * 4
                 var wi = x * ax.stride
                 var r = 0f
                 var g = 0f
                 var b = 0f
                 var a = 0f
-                for (t in 0 until n) {
+                for (t in 0 until ra) {
                     val w = ax.weights[wi++]
                     r += w * converted[o]
                     g += w * converted[o + 1]
                     b += w * converted[o + 2]
-                    a += w * converted[o + 3]
+                    if (alpha) a += w * converted[o + 3]
                     o += 4
                 }
                 val d = base + x * 4
+                if (ringed) {
+                    var rLo = converted[o]
+                    var gLo = converted[o + 1]
+                    var bLo = converted[o + 2]
+                    var aLo = converted[o + 3]
+                    var rHi = rLo
+                    var gHi = gLo
+                    var bHi = bLo
+                    var aHi = aLo
+                    for (t in ra..rb) {
+                        val w = ax.weights[wi++]
+                        val cr = converted[o]
+                        val cg = converted[o + 1]
+                        val cb = converted[o + 2]
+                        r += w * cr
+                        g += w * cg
+                        b += w * cb
+                        rLo = min(rLo, cr)
+                        rHi = max(rHi, cr)
+                        gLo = min(gLo, cg)
+                        gHi = max(gHi, cg)
+                        bLo = min(bLo, cb)
+                        bHi = max(bHi, cb)
+                        if (alpha) {
+                            val ca = converted[o + 3]
+                            a += w * ca
+                            aLo = min(aLo, ca)
+                            aHi = max(aHi, ca)
+                        }
+                        o += 4
+                    }
+                    for (t in rb + 1 until n) {
+                        val w = ax.weights[wi++]
+                        r += w * converted[o]
+                        g += w * converted[o + 1]
+                        b += w * converted[o + 2]
+                        if (alpha) a += w * converted[o + 3]
+                        o += 4
+                    }
+                    r += s * (min(max(r, rLo), rHi) - r)
+                    g += s * (min(max(g, gLo), gHi) - g)
+                    b += s * (min(max(b, bLo), bHi) - b)
+                    if (alpha) a += s * (min(max(a, aLo), aHi) - a)
+                }
                 ring[d] = r
                 ring[d + 1] = g
                 ring[d + 2] = b
-                ring[d + 3] = a
-                if (antiRing) antiRingHorizontal(x, d)
-            }
-            ringRow[slot] = sy
-            return base
-        }
-
-        /** Blends the filtered pixel at [d] in [ring] toward itself clamped to the range of output [x]'s nearest source pixels. */
-        private fun antiRingHorizontal(x: Int, d: Int) {
-            val s = ax.ring
-            val from = (ax.ringLo[x] - x0) * 4
-            val to = (ax.ringHi[x] - x0) * 4
-            for (c in 0 until 4) {
-                var mn = converted[from + c]
-                var mx = mn
-                var o = from + 4 + c
-                while (o <= to + c) {
-                    val v = converted[o]
-                    if (v < mn) mn = v else if (v > mx) mx = v
-                    o += 4
-                }
-                val v = ring[d + c]
-                val clamped = if (v < mn) mn else if (v > mx) mx else v
-                ring[d + c] = v + s * (clamped - v)
+                ring[d + 3] = if (alpha) a else 1f
             }
         }
 
@@ -377,9 +448,11 @@ object Resampler {
         private fun convert() {
             val decode = if (linear) TO_LINEAR else TO_UNIT
             var o = 0
+            var all = 255
             for (x in x0 until ax.end) {
                 val p = raw[x]
                 val a = p ushr 24
+                all = all and a
                 if (a == 255) {
                     converted[o] = decode[(p shr 16) and 0xFF]
                     converted[o + 1] = decode[(p shr 8) and 0xFF]
@@ -394,6 +467,7 @@ object Resampler {
                 }
                 o += 4
             }
+            opaque = all == 255
         }
     }
 

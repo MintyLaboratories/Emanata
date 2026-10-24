@@ -24,6 +24,7 @@ import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.util.EnumSet
 import java.util.UUID
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -273,10 +274,11 @@ class SmbFs(private val share: Share) : RemoteFs {
      * Every [KEEPALIVE_MS] while connected ([idleAction]): closes the connection once it
      * has been unused for [IDLE_MS] with no file open ([OPEN_IDLE_MS] with one), else
      * echoes it when unused since the last check, so the host and the network between
-     * keep it. Stops with the connection.
+     * keep it. Runs on [checks], so one share's slow echo never holds back another's.
+     * Stops with the connection.
      */
     private fun idleCheck() {
-        timer.schedule(::idleStep, KEEPALIVE_MS, TimeUnit.MILLISECONDS)
+        timer.schedule({ checks.execute(::idleStep) }, KEEPALIVE_MS, TimeUnit.MILLISECONDS)
     }
 
     private fun idleStep() {
@@ -466,6 +468,11 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         private val timer: ScheduledExecutorService by lazy {
             Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "smb-idle").apply { isDaemon = true } }
+        }
+
+        /** Runs idle checks, each share's on its own thread while it waits on the network; threads go once unused. */
+        private val checks: ExecutorService by lazy {
+            Executors.newCachedThreadPool { r -> Thread(r, "smb-idle-check").apply { isDaemon = true } }
         }
 
         /** How to sign in to [share], in order: as its user, or without one anonymously, then as a guest. */

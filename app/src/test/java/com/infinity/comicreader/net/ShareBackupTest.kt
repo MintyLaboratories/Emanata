@@ -50,6 +50,27 @@ class ShareBackupTest {
     }
 
     @Test
+    fun aPasswordOpensOnlyForTheServerAndUserItWasSealedFor() {
+        val edits = listOf<(org.json.JSONObject) -> Unit>(
+            { it.put("host", "nas2.local") }, { it.put("port", 4445) }, { it.put("share", "other") },
+            { it.put("user", "someone") }, { it.put("id", "a1b2c4") }
+        )
+        for ((i, edit) in edits.withIndex()) {
+            val json = ShareBackup.export(listOf(smb), "device-1", withPasswords = true)
+            edit(json.getJSONArray("list").getJSONObject(0))
+            val restored = ShareBackup.import(json, "device-1").single()
+            assertEquals("edit $i", "", restored.password)
+            assertTrue("edit $i", restored.passwordLost)
+        }
+        val json = ShareBackup.export(listOf(dav.copy(path = DavUrl(true, "nas.local", 443, "dav"))), "device-1", withPasswords = true)
+        json.getJSONArray("list").getJSONObject(0).put("secure", false).put("host", "192.168.200.7")
+        assertTrue("to plain http", ShareBackup.import(json, "device-1").single().passwordLost)
+        val kind = ShareBackup.export(listOf(smb), "device-1", withPasswords = true)
+        kind.getJSONArray("list").getJSONObject(0).put("kind", "webdav").put("secure", true)
+        assertTrue("to WebDAV", ShareBackup.import(kind, "device-1").single().passwordLost)
+    }
+
+    @Test
     fun aBackupAskingForEndlessIterationsIsCapped() {
         val json = ShareBackup.export(listOf(smb), "device-1", withPasswords = true).put("iterations", Int.MAX_VALUE)
         val started = System.nanoTime()

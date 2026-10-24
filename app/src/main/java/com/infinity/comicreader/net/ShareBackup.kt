@@ -51,7 +51,7 @@ object ShareBackup {
             val had = s.password.isNotEmpty() || s.passwordLost
             o.put("hasPassword", had)
             if (box != null && s.password.isNotEmpty()) {
-                o.put("password", Base64.getEncoder().encodeToString(box.seal(s.password.toByteArray(Charsets.UTF_8))))
+                o.put("password", Base64.getEncoder().encodeToString(box.seal(s.password.toByteArray(Charsets.UTF_8), boundTo(s))))
             }
             list.put(o)
         }
@@ -67,7 +67,7 @@ object ShareBackup {
         val salt = runCatching { Base64.getDecoder().decode(data.optString("salt")) }.getOrNull()
         val iterations = data.optInt("iterations", ITERATIONS).coerceIn(1, MAX_ITERATIONS)
         // Derived only when a password is there to open: it takes a moment.
-        val box: SecretBox? by lazy {
+        val box: AesGcmBox? by lazy {
             if (deviceId == null || salt == null || salt.isEmpty()) null else keyOf(deviceId, salt, iterations).let { k -> AesGcmBox { k } }
         }
         val out = ArrayList<Share>()
@@ -88,17 +88,26 @@ object ShareBackup {
                 }
                 else -> continue
             }
+            val share = Share(id, o.optString("name").ifBlank { host }, path, o.optString("user"), "", thumbnails = o.optBoolean("thumbnails", true))
             val sealed = o.optString("password").takeIf { it.isNotEmpty() }
+            // Opens only for the server and user it was sealed for: one edited in the file gets none.
             val password = sealed?.let { s ->
-                runCatching { box?.open(Base64.getDecoder().decode(s))?.let { String(it, Charsets.UTF_8) } }.getOrNull()
+                runCatching { box?.open(Base64.getDecoder().decode(s), boundTo(share))?.let { String(it, Charsets.UTF_8) } }.getOrNull()
             }
             val had = o.optBoolean("hasPassword", sealed != null)
-            out += Share(
-                id, o.optString("name").ifBlank { host }, path, o.optString("user"), password.orEmpty(),
-                passwordLost = had && password == null, thumbnails = o.optBoolean("thumbnails", true)
-            )
+            out += share.copy(password = password.orEmpty(), passwordLost = had && password == null)
         }
         return out
+    }
+
+    /** What a sealed password is bound to: the share and the server and user it signs in to. */
+    private fun boundTo(share: Share): ByteArray {
+        val p = share.path
+        val fields = listOf(
+            share.id, if (p is DavUrl) "webdav" else "smb", p.host, p.port.toString(),
+            (p as? SharePath)?.share.orEmpty(), share.user, ((p as? DavUrl)?.secure ?: false).toString()
+        )
+        return fields.joinToString("\u0000").toByteArray(Charsets.UTF_8)
     }
 
     private fun keyOf(deviceId: String, salt: ByteArray, iterations: Int): SecretKey {

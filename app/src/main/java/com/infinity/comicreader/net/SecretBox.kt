@@ -18,18 +18,26 @@ interface SecretBox {
 
 /** AES-GCM under [key]: a fresh 12-byte nonce, then the ciphertext with its tag. */
 class AesGcmBox(private val key: () -> SecretKey) : SecretBox {
-    override fun seal(plain: ByteArray): ByteArray {
+    override fun seal(plain: ByteArray): ByteArray = seal(plain, null)
+
+    override fun open(sealed: ByteArray): ByteArray = open(sealed, null)
+
+    /** Seals [plain] bound to [bound], which must be the same to open it. */
+    fun seal(plain: ByteArray, bound: ByteArray?): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val iv = cipher.iv
         require(iv.size == IV_BYTES) { "Unexpected nonce size ${iv.size}" }
+        bound?.let(cipher::updateAAD)
         return iv + cipher.doFinal(plain)
     }
 
-    override fun open(sealed: ByteArray): ByteArray {
+    /** The secret [sealed] holds; throws when it was sealed by another key, bound to other than [bound], or altered. */
+    fun open(sealed: ByteArray, bound: ByteArray?): ByteArray {
         require(sealed.size > IV_BYTES) { "Too short" }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, sealed, 0, IV_BYTES))
+        bound?.let(cipher::updateAAD)
         return cipher.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES)
     }
 

@@ -89,6 +89,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -594,67 +595,87 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         showProgress(true)
         launchListing {
             val dir = withContext(AppDispatchers.io) { startDirectory() }
-            if (dir is RemoteFile && !answersSoon(dir)) {
-                startOnDevice(dir)
+            if (dir !is RemoteFile) {
+                loadDirectory(dir)
                 return@launchListing
             }
-            loadDirectory(dir)
-        }
-    }
-
-    /**
-     * True when the share of [dir] answers listing it within [SHARE_WAIT_MS]: lists it, or
-     * says why not (a refused sign-in, a folder gone), which browsing it then shows. Otherwise,
-     * also when it cannot be reached at all, it is asked again in the background ([keepTrying]).
-     */
-    private suspend fun answersSoon(dir: RemoteFile): Boolean {
-        val attempt = lifecycleScope.async(AppDispatchers.io) { listingAnswer(dir) }
-        val answer = withTimeoutOrNull(SHARE_WAIT_MS) { attempt.await() }
-        if (answer != null && answer != RemoteException.Reason.UNREACHABLE) return true
-        keepTrying(dir, attempt)
-        return false
-    }
-
-    /** Lists [dir]: null when that works, else why not. Blocking. */
-    private fun listingAnswer(dir: RemoteFile): RemoteException.Reason? = try {
-        dir.entries()
-        null
-    } catch (e: RemoteException) {
-        e.reason
-    } catch (e: Exception) {
-        RemoteException.Reason.UNREACHABLE
-    }
-
-    /** Opens the device's start folder instead of [dir], on a share slow to answer, saying so. */
-    private fun startOnDevice(dir: File) {
-        val share = StorageRoot.of(dir.absolutePath, roots)?.name ?: Remotes.idOf(dir.absolutePath)?.let { Remotes.share(it)?.name }.orEmpty()
-        toast(getString(R.string.share_slow_start, share))
-        loadDirectory(deviceStart())
-    }
-
-    /**
-     * Waits for [attempt] at listing [dir], then asks again a few times further apart while
-     * it fails. Once the share answers, offers to open [dir], unless another folder or tab
-     * was opened meanwhile.
-     */
-    private fun keepTrying(dir: RemoteFile, attempt: Deferred<RemoteException.Reason?>) {
-        val fallback = deviceStart().absolutePath
-        lifecycleScope.launch {
-            var answered = attempt.await() == null
-            var wait = SHARE_RETRY_MS
-            repeat(SHARE_RETRIES) {
-                if (answered) return@repeat
-                delay(wait)
-                wait *= 2
-                Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
-                answered = withContext(AppDispatchers.io) { listingAnswer(dir) } == null
+            // A share answers within [SHARE_WAIT_MS], with its listing or why not (shown by browsing it).
+            val attempt = lifecycleScope.async(AppDispatchers.io) { listShare(dir) }
+            val answer = withTimeoutOrNull(SHARE_WAIT_MS) { attempt.await() }
+            if (answer == null || reasonOf(answer) == RemoteException.Reason.UNREACHABLE) {
+                startOnDevice(dir, attempt)
+                return@launchListing
             }
-            if (!answered || mode != TAB_BROWSE || currentDir?.absolutePath != fallback) return@launch
-            val share = StorageRoot.of(dir.absolutePath, roots)?.name.orEmpty()
-            Snackbar.make(recycler, getString(R.string.share_answering, share), Snackbar.LENGTH_LONG)
-                .setAction(R.string.share_open) { loadDirectory(dir) }
-                .show()
+            loadDirectory(dir, prelisted = answer.getOrNull())
         }
+    }
+
+    /** Lists share folder [dir]. Blocking. */
+    private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
+
+    /** Why listing a share failed ([listShare]); null when it worked. */
+    private fun reasonOf(answer: Result<*>): RemoteException.Reason? =
+        answer.exceptionOrNull()?.let { (it as? RemoteException)?.reason ?: RemoteException.Reason.UNREACHABLE }
+
+    /** The name of the location [path] is on: a root's, else its share's; Device's for a device path under no root. */
+    private fun locationName(path: String): String =
+        StorageRoot.of(path, roots)?.name
+            ?: Remotes.idOf(path)?.let { Remotes.share(it)?.name.orEmpty() }
+            ?: getString(R.string.root_device)
+
+    /**
+     * Opens the device's start folder instead of [dir], whose share has not answered, saying
+     * so, and goes on asking the share ([keepTrying]).
+     */
+    private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>) {
+        val device = deviceStart()
+        toast(getString(R.string.share_slow_start, locationName(dir.absolutePath), locationName(device.absolutePath)))
+        loadDirectory(device)
+        val fallback = currentDir?.absolutePath ?: return
+        keepTrying(dir, attempt, fallback)
+    }
+
+    /**
+     * Waits for [attempt] at listing [dir], then asks again while the share cannot be reached,
+     * twice as late each time up to [SHARE_RETRY_MAX_MS], only while the screen is shown and
+     * [fallback] is the folder browsed. Then offers to open [dir], or says why it cannot be. A
+     * refused sign-in is never tried again unasked: repeated ones can lock an account.
+     */
+    private fun keepTrying(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, fallback: String) {
+        lifecycleScope.launch {
+            var answer = attempt.await()
+            var wait = SHARE_RETRY_MS
+            fun waiting() = currentDir?.absolutePath == fallback
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (waiting() && reasonOf(answer) == RemoteException.Reason.UNREACHABLE) {
+                    delay(wait)
+                    wait = (wait * 2).coerceAtMost(SHARE_RETRY_MAX_MS)
+                    Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
+                    answer = withContext(AppDispatchers.io) { listShare(dir) }
+                }
+                if (waiting() && mode == TAB_BROWSE) shareAnswered(dir, answer)
+                this@launch.cancel()
+            }
+        }
+    }
+
+    /** Offers to open [dir] once its share answered ([answer]), or says why it cannot be: a refused sign-in, no such share. */
+    private fun shareAnswered(dir: RemoteFile, answer: Result<List<RemoteFile>>) {
+        val name = locationName(dir.absolutePath)
+        val refused = when (reasonOf(answer)) {
+            RemoteException.Reason.DENIED -> R.string.share_denied_named
+            RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+            RemoteException.Reason.UNKNOWN_SHARE -> return
+            else -> null
+        }
+        if (refused != null) {
+            Snackbar.make(recycler, getString(refused, name), Snackbar.LENGTH_LONG).show()
+            return
+        }
+        // A start folder gone is said by browsing it.
+        Snackbar.make(recycler, getString(R.string.share_answering, name), Snackbar.LENGTH_LONG)
+            .setAction(R.string.share_open) { loadDirectory(dir, prelisted = answer.getOrNull()) }
+            .show()
     }
 
     // ------------------------------------------------------------------ tabs
@@ -712,9 +733,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /**
      * Browses [dir], or when it no longer exists its nearest existing parent (the device's
      * storage when none is left), saying so (unless [noted] already) and dropping the
-     * forward crumbs through it. A folder on a share is found gone only by listing it.
+     * forward crumbs through it. A folder on a share is found gone only by listing it; one
+     * listed just before ([prelisted]) is not listed again.
      */
-    private fun loadDirectory(dir: File, highlight: String? = null, noted: Boolean = false) {
+    private fun loadDirectory(dir: File, highlight: String? = null, noted: Boolean = false, prelisted: List<File>? = null) {
         if (!dir.isDirectory) {
             val missing = dir.absolutePath
             if (!noted) toast(R.string.folder_gone)
@@ -743,7 +765,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         launchListing {
             val listed = withContext(AppDispatchers.io) {
                 runCatching {
-                    val entries = buildDirectoryEntries(dir)
+                    val entries = buildDirectoryEntries(dir, prelisted)
                     val prefix = sharedPrefixOf(entries)
                     Triple(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
                 }
@@ -840,8 +862,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
 
     /** The entries of [dir]; throws [RemoteException] when its share cannot be reached. */
-    private fun buildDirectoryEntries(dir: File): List<BookEntry> {
-        val files = (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
+    /** The rows of [dir], from its listing made just before ([prelisted]), else from listing it now. */
+    private fun buildDirectoryEntries(dir: File, prelisted: List<File>? = null): List<BookEntry> {
+        val files = prelisted?.toTypedArray() ?: (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
         val showHidden = prefs.showHidden
         val snap = snapshot()
         val out = ArrayList<BookEntry>(files.size)
@@ -1222,7 +1245,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** What stopped the share browsed from listing, by its name. */
     private fun unreachableText(error: RemoteException): String {
-        val name = currentDir?.let { StorageRoot.of(it.absolutePath, roots)?.name }.orEmpty()
+        val name = currentDir?.let { locationName(it.absolutePath) }.orEmpty()
         return getString(
             when (error.reason) {
                 RemoteException.Reason.DENIED -> R.string.share_denied_named
@@ -2024,9 +2047,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         /** How long the startup folder's share has to answer before the device's start folder opens instead. */
         const val SHARE_WAIT_MS = 3_000L
 
-        /** Then the share is asked again this much later, twice as late each time, this many times. */
-        private const val SHARE_RETRY_MS = 10_000L
-        private const val SHARE_RETRIES = 3
+        /** Then the share is asked again this much later, twice as late each time up to the most. */
+        const val SHARE_RETRY_MS = 10_000L
+        const val SHARE_RETRY_MAX_MS = 300_000L
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
         private const val DEEP_SEARCH_DEPTH = 8

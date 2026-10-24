@@ -21,6 +21,7 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareStore
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -29,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
@@ -85,7 +87,26 @@ class ListActivityStartFolderTest {
         Thread.sleep(20)
     }
 
-    private fun launch(): ListActivity = Robolectric.buildActivity(ListActivity::class.java).setup().get().also { idle() }
+    private fun launch(): ListActivity = start().get()
+
+    private fun start(): ActivityController<ListActivity> = Robolectric.buildActivity(ListActivity::class.java).setup().also { idle() }
+
+    /** The note shown at the bottom, if any. */
+    private fun ListActivity.note(): String? =
+        findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.text?.toString()
+
+    /** Moves the clock on by up to [seconds], a few at a time, until a note shows; returns it. */
+    private fun ListActivity.noteWithin(seconds: Long): String? {
+        repeat((seconds / 5).toInt()) {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+            repeat(3) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(5)
+            }
+            note()?.let { return it }
+        }
+        return null
+    }
 
     private fun ListActivity.crumbs() = findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label }
 
@@ -150,10 +171,47 @@ class ListActivityStartFolderTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ListActivity.SHARE_WAIT_MS + 100))
         idle()
         assertEquals(listOf("Device", "Comics"), activity.crumbs())
-        assertEquals(activity.getString(R.string.share_slow_start, "Share A"), ShadowToast.getTextOfLatestToast())
-        // Still asked in the background: once it answers, browsing it needs no new wait.
+        assertEquals(activity.getString(R.string.share_slow_start, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
+        // Still asked in the background: once it answers, it is offered, and opens without listing it again.
         fake.slow!!.countDown()
         idle()
+        assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
+        activity.findViewById<View>(com.google.android.material.R.id.snackbar_action).performClick()
+        idle()
+        assertEquals(listOf("Share A", "Series"), activity.crumbs())
+        assertEquals(listOf("001.cbz"), activity.titles())
+        assertEquals(1, fake.lists)
+    }
+
+    @Test
+    fun aStartupShareRefusingLateSaysWhyWithoutSigningInAgain() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        fake.refuse = RemoteException.Reason.DENIED
+        val activity = launch()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ListActivity.SHARE_WAIT_MS + 100))
+        idle()
+        fake.slow!!.countDown()
+        idle()
+        assertEquals(activity.getString(R.string.share_denied_named, "Share A"), activity.note())
+        assertNull(activity.noteWithin(ListActivity.SHARE_RETRY_MAX_MS / 1000 * 2))
+        assertEquals("signed in once", 1, fake.attempts)
+    }
+
+    @Test
+    fun anUnreachableStartupShareIsAskedWhileShownUntilItAnswers() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.offline = true
+        val controller = start()
+        val activity = controller.get()
+        // Past the first few tries, still asking.
+        assertNull(activity.noteWithin(600))
+        controller.pause().stop()
+        fake.offline = false
+        assertNull(activity.noteWithin(600))
+        assertEquals("not asked while hidden", 0, fake.lists)
+        controller.start().resume()
+        assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.noteWithin(ListActivity.SHARE_RETRY_MAX_MS / 1000 + 10))
         assertEquals(1, fake.lists)
     }
 
@@ -163,7 +221,7 @@ class ListActivityStartFolderTest {
         fake.offline = true
         val activity = launch()
         assertEquals(listOf("Device"), activity.crumbs())
-        assertEquals(activity.getString(R.string.share_slow_start, "Share A"), ShadowToast.getTextOfLatestToast())
+        assertEquals(activity.getString(R.string.share_slow_start, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
     }
 
     @Test

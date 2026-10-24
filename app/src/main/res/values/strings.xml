@@ -91,7 +91,7 @@
     <string name="location_start_folder">Start folder…</string>
     <string name="location_start_folder_set">Start folder: %1$s</string>
     <string name="location_start_set">Opens at %1$s</string>
-    <string name="share_slow_start">%1$s is not answering yet, so Device opened instead</string>
+    <string name="share_slow_start">%1$s is not answering yet, so %2$s opened instead</string>
     <string name="share_answering">%1$s is answering now</string>
     <string name="share_open">Open</string>
     <string name="share_remove_title">Remove network share?</string>

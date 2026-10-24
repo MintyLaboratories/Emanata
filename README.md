@@ -167,8 +167,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Locations sheet to pick the folder it opens at (its top by default); picking
   that location opens there. When the startup folder is on a share that has
   not answered within 3 s, or cannot be reached, the device's start folder
-  opens instead with a note; the share is asked again in the background, and a
-  bar offers to open it once it answers.
+  opens instead with a note. While the app is shown and that folder browsed,
+  an unreachable share is asked again, less often each time (at most every
+  5 min); a bar offers to open it once it answers, or says why it refused. A
+  refused sign-in is never retried unasked.
 - **Network shares (SMB 2/3 and WebDAV):** "Add network share…" in the
   Locations sheet asks SMB or WebDAV, then takes a name, a path, a user and a
   password; everything else is defaulted. SMB: the path is `host/share/folder`

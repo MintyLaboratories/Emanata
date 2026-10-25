@@ -33,4 +33,6 @@
     <dimen name="seek_frame_pad">2dp</dimen>
     <!-- Brightness indicator: below the toolbar, or the screen's top while it is hidden. -->
     <dimen name="brightness_pill_gap">24dp</dimen>
+    <!-- The cover a book's share sends, as its dialog shows it. -->
+    <dimen name="share_cover_height">128dp</dimen>
 </resources>

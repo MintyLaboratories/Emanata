@@ -192,9 +192,59 @@ class ListActivityFileOpsTest {
         val activity = launch()
         val ops = activity.longPress(book.absolutePath).findViewById<LinearLayout>(R.id.file_ops)!!
         assertEquals(
-            listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy),
+            listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy, R.id.file_op_share),
             (0 until ops.childCount).map { ops.getChildAt(it).id }
         )
+        // A folder is not shared.
+        assertNull(activity.longPress(other.absolutePath).op(R.id.file_op_share))
+    }
+
+    /** Opens the Share dialog of [path] from the long-press menu. */
+    private fun ListActivity.shareDialog(path: String): AlertDialog {
+        longPress(path).op(R.id.file_op_share)!!.performClick()
+        idle()
+        return latest()
+    }
+
+    private fun AlertDialog.check(id: Int) = findViewById<android.widget.CompoundButton>(id)!!
+
+    @Test
+    fun shareSendsTheChoiceAndRemembersIt() {
+        val activity = launch()
+        val dialog = activity.shareDialog(book.absolutePath)
+        assertEquals("one", dialog.findViewById<android.widget.TextView>(R.id.share_title_text)!!.text.toString())
+        assertTrue(dialog.check(R.id.share_title_check).isChecked)
+        assertFalse(dialog.check(R.id.share_file_check).isChecked)
+        // Not a real book: no cover, so it cannot be picked.
+        settle { !dialog.check(R.id.share_cover_check).isEnabled }
+        assertFalse(dialog.check(R.id.share_cover_check).isChecked)
+        assertEquals(View.VISIBLE, dialog.findViewById<View>(R.id.share_cover_none)!!.visibility)
+
+        dialog.check(R.id.share_title_check).isChecked = false
+        assertFalse(dialog.getButton(DialogInterface.BUTTON_POSITIVE).isEnabled)
+        dialog.findViewById<View>(R.id.share_file_row)!!.performClick()
+        assertTrue(dialog.check(R.id.share_file_check).isChecked)
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { !dialog.isShowing }
+
+        val chooser = shadowOf(context).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_CHOOSER, chooser.action)
+        @Suppress("DEPRECATION")
+        val send = chooser.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+        assertEquals(android.content.Intent.ACTION_SEND, send.action)
+        assertEquals("application/vnd.comicbook+zip", send.type)
+        assertNull(send.getStringExtra(android.content.Intent.EXTRA_TEXT))
+        @Suppress("DEPRECATION")
+        val uri = send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)!!
+        assertEquals(book.absolutePath, com.infinity.comicreader.files.BookUris.pathOf(uri))
+        assertTrue(send.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+
+        // The choice is remembered; the cover stays as it was, unseen here.
+        assertEquals(com.infinity.comicreader.data.ShareChoice(title = false, cover = true, file = true), Prefs(context).shareChoice)
+        val again = activity.shareDialog(book.absolutePath)
+        assertFalse(again.check(R.id.share_title_check).isChecked)
+        assertTrue(again.check(R.id.share_file_check).isChecked)
+        again.dismiss()
     }
 
     @Test

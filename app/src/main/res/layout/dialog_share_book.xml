@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What sharing a book sends: each choice a check box followed by what it sends. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="?attr/dialogPreferredPadding"
+    android:paddingTop="@dimen/space_2">
+
+    <LinearLayout
+        android:id="@+id/share_title_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:minHeight="48dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/share_title_check"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-6dp"
+            android:contentDescription="@string/share_include_title" />
+
+        <TextView
+            android:id="@+id/share_title_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_2"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textAppearance="?attr/textAppearanceBodyLarge" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/share_cover_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_1"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:minHeight="48dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/share_cover_check"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-6dp"
+            android:contentDescription="@string/share_include_cover" />
+
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_2"
+            android:minWidth="96dp"
+            android:minHeight="@dimen/share_cover_height">
+
+            <ImageView
+                android:id="@+id/share_cover_image"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/share_cover_height"
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/share_include_cover"
+                android:scaleType="fitStart" />
+
+            <ProgressBar
+                android:id="@+id/share_cover_progress"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center" />
+
+            <TextView
+                android:id="@+id/share_cover_none"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:text="@string/share_no_cover"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/share_file_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_1"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:minHeight="48dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/share_file_check"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-6dp"
+            android:contentDescription="@string/share_include_file" />
+
+        <ImageView
+            android:id="@+id/share_file_icon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="@dimen/space_2"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/share_file_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_3"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:maxLines="3"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+    </LinearLayout>
+</LinearLayout>

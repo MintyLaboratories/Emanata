@@ -15,6 +15,7 @@
     <item name="file_op_delete" type="id" />
     <item name="file_op_move" type="id" />
     <item name="file_op_copy" type="id" />
+    <item name="file_op_share" type="id" />
     <item name="file_op_more" type="id" />
     <!-- The hint beside the Paste button. -->
     <item name="paste_bubble" type="id" />

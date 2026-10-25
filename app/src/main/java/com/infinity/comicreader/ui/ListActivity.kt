@@ -130,6 +130,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Pastes the item Move or Copy picked up ([FileClipboard]) into the folder browsed; a long press drops it. */
     private lateinit var pasteFab: FloatingActionButton
     private lateinit var fileActions: FileActions
+    private lateinit var bookShare: BookShare
 
     /** The hint shown beside [pasteFab] as an item is picked up. */
     private var pasteBubble: PopupWindow? = null
@@ -322,6 +323,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         fab.setOnClickListener { toggleGrid() }
         fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, ::updatePasteButton)
+        bookShare = BookShare(this, prefs)
         pasteFab.setOnClickListener {
             hidePasteBubble()
             currentDir?.let { fileActions.paste(it) }
@@ -1458,8 +1460,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * The long-press menu: the item's file operations as a row of icons (Delete, Rename,
-     * Move, Copy, and More when it holds anything; Delete farthest from the thumb) above
-     * its comic operations as a list.
+     * Move, Copy, Share for a file, and More when it holds anything; Delete farthest from
+     * the thumb) above its comic operations as a list.
      */
     private fun onEntryLongClick(entry: BookEntry) {
         val path = entry.path
@@ -1546,6 +1548,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
             op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
             op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
+            if (!entry.isDir) op(R.id.file_op_share, R.drawable.ic_share, R.string.file_op_share) { bookShare.show(entry) }
             if (more.isNotEmpty()) op(R.id.file_op_more, R.drawable.ic_more_horiz, R.string.file_op_more) { showMore(entry, more) }
         } else {
             ops.visibility = View.GONE

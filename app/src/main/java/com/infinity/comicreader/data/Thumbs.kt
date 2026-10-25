@@ -189,6 +189,19 @@ object Thumbs {
         return Cover(bitmap, full = true)
     }
 
+    /**
+     * The cover page of book [entry] whole, made to [target] as a page is, for sharing:
+     * never cropped, framed or cached. Blocking; null when it has none or cannot be read.
+     */
+    fun shareCover(context: Context, entry: BookEntry, charset: String, target: Target): Bitmap? = try {
+        if (entry.isDir) null else {
+            val page = coverPage(Library(context).hiddenPages(entry.path))
+            coverOf(entry.file, charset, context.cacheDir, target.width, target.height, page, full = target, inner = false)?.bitmap
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
     /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
     fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? =
         either(context, entry, width, height, style) { memory.get(it) }
@@ -334,7 +347,11 @@ object Thumbs {
         return Made(Decoders.decode(file, Target(capPixels = THUMB_CAP_PIXELS)), null)
     }
 
-    /** The cover of book [file]: its page [page] (book index), or its first page when it has fewer. */
+    /**
+     * The cover of book [file]: its page [page] (book index), or its first page when it has
+     * fewer, made to [full]; with [inner], the book's inner page shape when it could be a
+     * wraparound.
+     */
     private fun coverOf(
         file: File,
         charset: String,
@@ -343,11 +360,12 @@ object Thumbs {
         height: Int,
         page: Int = 0,
         canceled: () -> Boolean = { false },
-        quickFirst: Boolean = false
+        quickFirst: Boolean = false,
+        full: Target = Target(capPixels = THUMB_CAP_PIXELS),
+        inner: Boolean = true
     ): Made? {
         if (!file.isFile || !Formats.isOpenable(file.name)) return null
-        val full = Target(capPixels = THUMB_CAP_PIXELS)
-        if (Formats.typeOf(file.name) == EntryType.IMAGE) return imageCover(file, quickFirst)
+        if (Formats.typeOf(file.name) == EntryType.IMAGE) return if (full.width > 0) Made(Decoders.decode(file, full), null) else imageCover(file, quickFirst)
         val source = runCatching { PageSources.openCover(file, charset, cacheDir, page) }.getOrNull() ?: return null
         var layered = false
         val cover = try {
@@ -368,8 +386,8 @@ object Thumbs {
             cover.recycle()
             return null
         }
-        val inner = if (Wraparound.isCandidate(cover.width, cover.height)) innerRatioOf(file, charset, cacheDir) else null
-        return Made(cover, inner, full = !layered)
+        val ratio = if (inner && Wraparound.isCandidate(cover.width, cover.height)) innerRatioOf(file, charset, cacheDir) else null
+        return Made(cover, ratio, full = !layered)
     }
 
     /**

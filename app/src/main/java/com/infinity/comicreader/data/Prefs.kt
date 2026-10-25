@@ -503,6 +503,11 @@ class Prefs(context: Context) {
         get() = ui.getBoolean("deep_search", false)
         set(v) = ui.edit().putBoolean("deep_search", v).apply()
 
+    /** What sharing a book sent last time, for the next to start from: title and cover at first. */
+    var shareChoice: ShareChoice
+        get() = ShareChoice(ui.getBoolean("share_title", true), ui.getBoolean("share_cover", true), ui.getBoolean("share_file", false))
+        set(v) = ui.edit().putBoolean("share_title", v.title).putBoolean("share_cover", v.cover).putBoolean("share_file", v.file).apply()
+
     /** True once the first file operation asked to show notifications (Android 13+). */
     var askedNotifications: Boolean
         get() = ui.getBoolean("asked_notifications", false)

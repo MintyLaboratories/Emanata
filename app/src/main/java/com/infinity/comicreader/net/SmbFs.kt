@@ -605,6 +605,8 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** Lets a check that runs a little early still echo. */
         private const val ECHO_SLACK_MS = 5_000L
+
+        /** How long an echo of an unused connection gets: the host answers it without its disk, so a spin-up never delays it. */
         private const val ECHO_TIMEOUT_S = 10L
 
         /** How long a connection unheard for a while (the device slept) gets to answer before it is made anew. */
@@ -616,10 +618,12 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** How much one server-side copy request copies, so progress shows and canceling is heard. */
         private const val COPY_BYTES = 16L shl 20
-        private const val READ_TIMEOUT_S = 30L
 
-        /** A connection's settings: its own client id, so the host never takes two connections for one client. */
-        private fun config(): SmbConfig =
+        /**
+         * A connection's settings: its own client id, so the host never takes two connections
+         * for one client; each request answered within [Remotes.ANSWER_MS].
+         */
+        internal fun config(): SmbConfig =
             SmbConfig.builder()
                 .withClientGuid(UUID.randomUUID())
                 // Android's JCE lacks MD4 and AES-CMAC, which NTLM and SMB 3 signing need.
@@ -627,7 +631,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                 // SPNEGO/Kerberos needs javax.security.auth.kerberos and org.ietf.jgss, absent on Android.
                 .withAuthenticators(NtlmAuthenticator.Factory())
                 .withSocketFactory(ProxySocketFactory(CONNECT_TIMEOUT_MS))
-                .withTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
+                .withTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
                 // No socket timeout: SMBJ's reader would take a quiet connection for a dead one
                 // and drop it; answers are timed per request, and echoes find a dead link.
                 .withSoTimeout(0, TimeUnit.SECONDS)

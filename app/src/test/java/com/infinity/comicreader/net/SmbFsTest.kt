@@ -47,6 +47,17 @@ class SmbFsTest {
     }
 
     @Test
+    fun everyRequestOutlastsADiskSpinningUp() {
+        val config = SmbFs.config()
+        // Negotiating, signing in, listing, reading and writing each wait for their answer.
+        for (wait in listOf(config.transactTimeout, config.readTimeout, config.writeTimeout)) {
+            assertTrue("$wait ms", wait >= 2 * Remotes.SPIN_UP_MS)
+        }
+        // No socket timeout: a quiet connection is not taken for a dead one.
+        assertEquals(0, config.soTimeout)
+    }
+
+    @Test
     fun aBlankUserSignsInAnonymouslyThenAsAGuest() {
         val ways = SmbFs.authentications(share(1, user = ""))
         assertEquals(listOf(true, false), ways.map { it.isAnonymous })

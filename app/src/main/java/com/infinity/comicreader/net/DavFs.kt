@@ -573,8 +573,9 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
         internal val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
                 .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                // A sleeping disk spinning up answers late, never too late.
+                .readTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
+                .writeTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
                 // Never from HTTPS to plain HTTP.
                 .followSslRedirects(false)
                 // Plain HTTP only within the local network, redirects included.

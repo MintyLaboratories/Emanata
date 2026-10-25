@@ -23,6 +23,16 @@ object Remotes {
     /** How long a share that could not be reached is not tried again unasked. */
     const val QUIET_MS = 10_000L
 
+    /** How long a share's sleeping disk may take to spin up before its first answer. */
+    const val SPIN_UP_MS = 20_000L
+
+    /**
+     * How long a request to a share waits for an answer, or for more of one, before the
+     * share counts as gone: three spin-ups ([SPIN_UP_MS]), so waking a disk never fails a read,
+     * listing or sign-in. Connecting is timed apart: a host answers that while its disk sleeps.
+     */
+    const val ANSWER_MS = 3 * SPIN_UP_MS
+
     private const val MAX_STATS = 4096
 
     /** The shares to serve; [init] reads them from the [ShareStore]. */

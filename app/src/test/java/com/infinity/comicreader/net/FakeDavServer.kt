@@ -37,6 +37,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     @Volatile
     var slow = false
 
+    /** Holds the next answer this long before it starts, as a server waking its disk would; once. */
+    @Volatile
+    var spinUpMs = 0L
+
     @Volatile
     var user = ""
 
@@ -76,7 +80,9 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 requests += request
-                return answer(request)
+                val wait = spinUpMs
+                spinUpMs = 0
+                return answer(request).let { if (wait > 0) it.setHeadersDelay(wait, TimeUnit.MILLISECONDS) else it }
             }
         }
         server.start()

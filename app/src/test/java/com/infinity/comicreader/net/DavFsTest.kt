@@ -372,4 +372,22 @@ class DavFsTest {
         assertNull(DavFs.parseContentRange("items 0-1/2"))
         assertNull(DavFs.parseContentRange(null))
     }
+
+    @Test(timeout = 60_000)
+    fun aDiskSpinningUpIsWaitedFor() {
+        val bytes = Random(11).nextBytes(100_000)
+        File(dir, "book.cbz").writeBytes(bytes)
+        val fs = fs()
+        // The first answer after the disk slept comes only once it spun up.
+        server.spinUpMs = Remotes.SPIN_UP_MS + 500
+        assertEquals(listOf("book.cbz"), fs.list("").map { it.name })
+        fs.open("book.cbz").use { input ->
+            val got = ByteArray(bytes.size)
+            var at = 0
+            while (at < got.size) at += input.read(at.toLong(), got, at, got.size - at)
+            assertArrayEquals(bytes, got)
+        }
+        assertTrue(DavFs.sharedClient.readTimeoutMillis >= 2 * Remotes.SPIN_UP_MS)
+        assertTrue(DavFs.sharedClient.writeTimeoutMillis >= 2 * Remotes.SPIN_UP_MS)
+    }
 }

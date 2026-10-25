@@ -1,10 +1,12 @@
 package com.infinity.comicreader.reader
 
+import java.util.BitSet
+
 /**
- * The page sizes ([PageSizes]) and seams ([PageSeams]) stored for book [bookId], as
- * [source] shows its pages. Sizes, and seams between pages next to each other in the
- * book, are kept for the whole book, so hiding pages or showing them again reads none of
- * them anew; seams across a hidden page are kept for the pages shown
+ * The page sizes ([PageSizes]), seams ([PageSeams]) and pages seen stored for book
+ * [bookId], as [source] shows its pages. Sizes, pages seen, and seams between pages next
+ * to each other in the book, are kept for the whole book, so hiding pages or showing them
+ * again reads none of them anew; seams across a hidden page are kept for the pages shown
  * ([HiddenPages.pagesId]). Blocking.
  */
 class StoredPages(
@@ -73,6 +75,25 @@ class StoredPages(
         }
         seams.write(bookId, bookNames, all)
         if (across) seams.write(shownId, names, found)
+    }
+
+    /** The pages shown that the reader has had on screen, kept for the whole book ([PageSeams.readSeen]). */
+    fun readSeen(): BitSet {
+        val all = seams.readSeen(bookId, bookNames)
+        if (hiding == null) return all
+        return BitSet(names.size).also { out -> for (i in names.indices) if (all.get(book(i))) out.set(i) }
+    }
+
+    /** Adds [seen], pages shown, to those kept for the whole book; writes only when any is new. */
+    fun writeSeen(seen: BitSet) {
+        val all = seams.readSeen(bookId, bookNames)
+        val before = all.cardinality()
+        var i = seen.nextSetBit(0)
+        while (i in names.indices) {
+            all.set(book(i))
+            i = seen.nextSetBit(i + 1)
+        }
+        if (all.cardinality() != before) seams.writeSeen(bookId, bookNames, all)
     }
 
     private companion object {

@@ -106,7 +106,10 @@ import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -114,6 +117,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.BitSet
+import java.util.concurrent.Executors
 import java.util.stream.Collectors
 import kotlin.math.abs
 
@@ -261,8 +265,15 @@ class ViewerActivity : AppCompatActivity() {
     /** True until the reader turns a page of the book just opened: until then seams may re-pair the page on screen. */
     private var seamsSettling = true
 
-    /** Pages of the open book the reader has had on screen: a lone seam match near one may settle its run. */
+    /**
+     * Pages of the open book the reader has had on screen, in this and earlier sessions
+     * ([StoredPages.readSeen]): a lone seam match near one may settle its run.
+     */
     private val visitedPages = BitSet()
+
+    /** [visitedPages] counted when last stored, and the job storing them a while after the last new one ([visit]). */
+    private var storedVisits = 0
+    private var visitsJob: Job? = null
 
     /** [visitedPages] counted when the layout was last made from them. */
     private var shownVisits = 0
@@ -648,6 +659,7 @@ class ViewerActivity : AppCompatActivity() {
         stopAutoScroll()
         saveHistory()
         flushStats()
+        storeVisits()
     }
 
     /**
@@ -1230,6 +1242,7 @@ class ViewerActivity : AppCompatActivity() {
         learnRound++
         seamsJob?.cancel()
         seamsJob = null
+        storeVisits()
         pageSeams = PageSeams.Found(0)
         pageStore = null
         shownSeams = pageSeams
@@ -1349,13 +1362,15 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * A book's pages as [store]d, their [names], the [sizes] known of them (null where unknown),
-     * what the spread engine finds in both, and the [seams] between its pages checked before.
+     * what the spread engine finds in both, the [seams] between its pages checked before, and
+     * the pages [seen] before.
      */
     private class KnownPages(
         val store: StoredPages,
         val sizes: Array<IntArray?>,
         val analysis: Spreads.Analysis,
-        val seams: PageSeams.Found
+        val seams: PageSeams.Found,
+        val seen: BitSet
     ) {
         val names: List<String?> get() = store.names
     }
@@ -1363,11 +1378,11 @@ class ViewerActivity : AppCompatActivity() {
     /** [src], the book [book] opened, without the pages hidden in it. */
     private fun hiding(book: File, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(book.absolutePath))
 
-    /** The page names of [src], the sizes and seams stored for them and their [Spreads.classify]. Blocking. */
-    private fun knownSizes(book: File, src: PageSource): KnownPages {
+    /** The page names of [src], the sizes, seams and pages seen stored for them and their [Spreads.classify]. Blocking. */
+    private suspend fun knownSizes(book: File, src: PageSource): KnownPages {
         val store = StoredPages(PageSizes(PageSizes.dirIn(cacheDir)), PageSeams(PageSeams.dirIn(cacheDir)), PreviewStore.bookId(book), src)
         val sizes = store.readSizes()
-        return KnownPages(store, sizes, classify(store.names, sizes), store.readSeams())
+        return KnownPages(store, sizes, classify(store.names, sizes), store.readSeams(), withContext(seenIo) { store.readSeen() })
     }
 
     /** What the spread engine finds in page [names] of [sizes]. Blocking on long books. */
@@ -1390,6 +1405,8 @@ class ViewerActivity : AppCompatActivity() {
         seamsSettling = true
         openedPage = -1
         visitedPages.clear()
+        visitedPages.or(known.seen)
+        storedVisits = visitedPages.cardinality()
         shownVisits = 0
     }
 
@@ -1470,7 +1487,7 @@ class ViewerActivity : AppCompatActivity() {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
-        if (currentIndex >= 0) visitedPages.set(currentIndex)
+        visit(currentIndex)
         shownVisits = visitedPages.cardinality()
         val visited = visitedPages.stream().boxed().collect(Collectors.toSet())
         val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames, visited)
@@ -1590,6 +1607,32 @@ class ViewerActivity : AppCompatActivity() {
         shiftedByNames = false
         favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
         if (spread) attach()
+    }
+
+    /**
+     * Adds [page] to [visitedPages]; true when it is new there. New pages are stored
+     * [VISITS_DELAY_MS] after the last of them ([storeVisits]).
+     */
+    private fun visit(page: Int): Boolean {
+        if (page < 0 || visitedPages.get(page)) return false
+        visitedPages.set(page)
+        visitsJob?.cancel()
+        visitsJob = lifecycleScope.launch {
+            delay(VISITS_DELAY_MS)
+            storeVisits()
+        }
+        return true
+    }
+
+    /** Stores [visitedPages] for the open book now, in the background, when any is new since last stored. */
+    private fun storeVisits() {
+        visitsJob?.cancel()
+        visitsJob = null
+        val store = pageStore ?: return
+        if (visitedPages.cardinality() == storedVisits) return
+        storedVisits = visitedPages.cardinality()
+        val seen = visitedPages.clone() as BitSet
+        visitWrites.launch { store.writeSeen(seen) }
     }
 
     /** Ignores the open book's seams, or reads them again, and keeps the choice. */
@@ -1785,6 +1828,7 @@ class ViewerActivity : AppCompatActivity() {
         // Its spreads are read on the next paged layout.
         sizesJob?.cancel()
         analysis = null
+        storeVisits()
         pageStore = null
         lifecycleScope.launch {
             val known = withContext(AppDispatchers.io) { knownSizes(nextFile, next) }
@@ -2013,10 +2057,7 @@ class ViewerActivity : AppCompatActivity() {
         updateSpreadRotation()
         if (openedPage < 0) openedPage = currentIndex else if (currentIndex != openedPage) seamsSettling = false
         // A page reached anew may bring a lone seam match near enough to settle what follows.
-        if (currentIndex >= 0 && !visitedPages.get(currentIndex)) {
-            visitedPages.set(currentIndex)
-            if (seamsUsed()) pager.post { relayout() }
-        }
+        if (visit(currentIndex) && seamsUsed()) pager.post { relayout() }
         checkSeams()
         if (seekPanel.visibility == View.VISIBLE) {
             seekPreviews?.highlight(shownItem())
@@ -3584,6 +3625,15 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L
+
+        /** How long after the last page newly on screen the pages seen are stored. */
+        private const val VISITS_DELAY_MS = 5_000L
+
+        /** Reads and writes pages seen one at a time, in order, so a book opened again reads what was just stored. */
+        private val seenIo = Executors.newSingleThreadExecutor { r -> Thread(r, "pages-seen").apply { isDaemon = true } }.asCoroutineDispatcher()
+
+        /** Stores pages seen, outliving the reader that saw them. */
+        private val visitWrites = CoroutineScope(SupervisorJob() + seenIo)
 
         /** Pages either way of the one on screen whose seams are checked where pages are costly to read. */
         private const val SEAM_WINDOW = 6

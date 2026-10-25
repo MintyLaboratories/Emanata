@@ -300,10 +300,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   are checked in the background at low priority, nearest the page on screen
   first; beyond nearby pages only JPEG, PNG and WebP pages, whose strips decode
   alone. They are kept per book. Once you turn a page, a seam found later never
-  re-pairs the pages you are on. **Join spreads by their edges** (on by
-  default, also in the reader sheet) turns this off; **Ignore seams in this
-  book** (reader sheet, two-page or Merge) does so for one book: no seam
-  checks, pairing or joining.
+  re-pairs the pages you are on. A single strong match re-pairs its run only
+  within a few pages of one you have had on screen, in this or an earlier
+  session (pages seen are kept beside the seams). **Join spreads by their
+  edges** (on by default, also in the reader sheet) turns this off; **Ignore
+  seams in this book** (reader sheet, two-page or Merge) does so for one book:
+  no seam checks, pairing or joining.
 - **Spreads:** *Merge* (default) shows a wide page whole, and a spread in two
   files as one; *Split* shows a wide page as two pages, each numbered and fitted
   on its own (one page at a time only).

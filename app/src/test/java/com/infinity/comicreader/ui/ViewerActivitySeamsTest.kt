@@ -218,8 +218,28 @@ class ViewerActivitySeamsTest {
         assertEquals("20 / 31", viewer.indicator())
         viewer.next()
         assertEquals("21 / 31", viewer.indicator())
+        // The pages seen are stored a while after the last new one.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+        await { seams.listFiles()?.any { it.name.endsWith(".seen") } == true }
         viewer.finish()
-        // Opened again at the start, the lone match is far again.
+        // Opened again at the start, the pages seen keep the run settled.
+        val again = launch(book)
+        repeat(50) { Thread.sleep(10); idle() }
+        assertEquals(17, again.items())
+        assertEquals("1 / 31", again.indicator())
+    }
+
+    @Test
+    fun aLoneMatchFarFromPagesSeenStaysUnsettledWhenOpenedAgain() {
+        prefs.twoPage = TwoPage.ON
+        val book = book(count = 31, first = 20)
+        val viewer = launch(book)
+        viewer.next()
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+        await { seams.listFiles()?.any { it.name.endsWith(".seen") } == true }
+        viewer.finish()
         val again = launch(book)
         repeat(50) { Thread.sleep(10); idle() }
         assertEquals(16, again.items())

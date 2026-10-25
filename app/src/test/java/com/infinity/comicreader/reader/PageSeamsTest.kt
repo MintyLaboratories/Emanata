@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.BitSet
 
 class PageSeamsTest {
 
@@ -36,6 +37,25 @@ class PageSeamsTest {
         assertTrue(read.anyMatch)
         assertNull(store.read("book|1|3", names))
         assertNull(store.read("book|1|2", names.dropLast(1)))
+    }
+
+    @Test
+    fun pagesSeenComeBackBesideTheSeams() {
+        val dir = tmp.newFolder("seams")
+        val store = PageSeams(dir)
+        assertTrue(store.readSeen("book|1|2", names).isEmpty)
+        val found = PageSeams.Found(names.size)
+        found.set(1, Verdict(Seam.MATCH, 1.0), Verdict(Seam.NO_MATCH, 1.0))
+        store.write("book|1|2", names, found)
+        store.writeSeen("book|1|2", names, BitSet().apply { set(0); set(3); set(9) })
+        // Pages past the book are left out; the seams stay as they were, in a file of their own.
+        assertEquals(BitSet().apply { set(0); set(3) }, store.readSeen("book|1|2", names))
+        assertEquals(Seam.MATCH, store.read("book|1|2", names)!!.of(rightToLeft = false)[1]!!.seam)
+        assertEquals(setOf("bin", "seen"), dir.list()!!.map { it.substringAfterLast('.') }.toSet())
+        assertEquals(1, dir.list()!!.map { it.substringBeforeLast('.') }.distinct().size)
+        // Another book, or the same one with other pages, has none.
+        assertTrue(store.readSeen("book|1|3", names).isEmpty)
+        assertTrue(store.readSeen("book|1|2", names.dropLast(1)).isEmpty)
     }
 
     private fun analysis(count: Int, wide: Set<Int> = emptySet()): Spreads.Analysis =

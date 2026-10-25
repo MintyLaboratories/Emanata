@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.BitSet
 
 class StoredPagesTest {
 
@@ -78,5 +79,21 @@ class StoredPagesTest {
         assertEquals(listOf(none, match, none, none), whole.of(rightToLeft = false))
         assertTrue(whole.checked(2))
         assertFalse(stored(setOf(1, 2)).readSeams().checked(0))
+    }
+
+    @Test
+    fun pagesSeenAreKeptForTheBookByItsOwnPages() {
+        // Pages 1 and 3 hidden: shown 0 1 2 are the book's 0 2 4.
+        stored(setOf(1, 3)).writeSeen(BitSet().apply { set(1); set(2) })
+        assertEquals(BitSet().apply { set(2); set(4) }, stored(emptySet()).readSeen())
+        // Page 2 hidden instead: the book's 4 is shown 3.
+        assertEquals(BitSet().apply { set(3) }, stored(setOf(2)).readSeen())
+        // Added to, never replaced; nothing new writes nothing.
+        stored(emptySet()).writeSeen(BitSet().apply { set(0) })
+        assertEquals(BitSet().apply { set(0); set(2); set(4) }, stored(emptySet()).readSeen())
+        val file = seams.dir.listFiles()!!.single { it.name.endsWith(".seen") }
+        file.setLastModified(1_000)
+        stored(setOf(1, 3)).writeSeen(BitSet().apply { set(0) })
+        assertEquals(1_000, file.lastModified())
     }
 }

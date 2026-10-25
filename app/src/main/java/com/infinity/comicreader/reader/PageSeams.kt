@@ -5,12 +5,16 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.BitSet
 import kotlin.math.roundToInt
 
 /**
  * The seams between a book's pages ([SpreadSeams]), read left to right and right to
  * left, checked in the background ([check]) and kept on disk under [dir]: one small file
- * per book, named like [PageSizes] by the book's identity and its page names.
+ * per book, named like [PageSizes] by the book's identity and its page names, and beside
+ * it one of the pages the reader has had on screen ([readSeen]).
  */
 class PageSeams(val dir: File) {
 
@@ -84,6 +88,42 @@ class PageSeams(val dir: File) {
         }
     }
 
+    /**
+     * The pages of book [bookId] with pages [names] the reader has had on screen, by index,
+     * kept beside its seams in a file of their own: a lone seam match near one of them
+     * settles its run ([Spreads.Options.visited]). Empty when none are kept.
+     */
+    fun readSeen(bookId: String, names: List<String?>): BitSet {
+        val file = seenFileOf(bookId, names)
+        if (!file.isFile) return BitSet()
+        return runCatching {
+            DataInputStream(file.inputStream().buffered()).use { input ->
+                if (input.readInt() != SEEN_VERSION || input.readInt() != names.size) return BitSet()
+                val words = LongArray(input.readInt().coerceIn(0, (names.size + 63) / 64)) { input.readLong() }
+                BitSet.valueOf(words).also { it.clear(names.size, maxOf(names.size, it.length())) }
+            }
+        }.getOrDefault(BitSet())
+    }
+
+    /** Stores [seen], pages of book [bookId] with pages [names], as [readSeen] reads them; a file appears whole or not at all. */
+    fun writeSeen(bookId: String, names: List<String?>, seen: BitSet) {
+        val file = seenFileOf(bookId, names)
+        val part = File(file.path + ".part")
+        try {
+            dir.mkdirs()
+            val words = seen.get(0, names.size).toLongArray()
+            DataOutputStream(part.outputStream().buffered()).use { out ->
+                out.writeInt(SEEN_VERSION)
+                out.writeInt(names.size)
+                out.writeInt(words.size)
+                for (w in words) out.writeLong(w)
+            }
+            Files.move(part.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (e: IOException) {
+            part.delete()
+        }
+    }
+
     private fun write(out: DataOutputStream, v: SpreadSeams.Verdict?) {
         out.writeByte(v?.seam?.let { it.ordinal + 1 } ?: 0)
         out.writeByte(((v?.confidence ?: 0.0) * 255).roundToInt().coerceIn(0, 255))
@@ -94,12 +134,19 @@ class PageSeams(val dir: File) {
         return SpreadSeams.Verdict(kind, (confidence.toInt() and 0xFF) / 255.0)
     }
 
-    private fun fileOf(bookId: String, names: List<String?>) =
-        File(dir, Hashes.sha256Hex(bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() }) + ".bin")
+    private fun fileOf(bookId: String, names: List<String?>) = File(dir, keyOf(bookId, names) + ".bin")
+
+    private fun seenFileOf(bookId: String, names: List<String?>) = File(dir, keyOf(bookId, names) + ".seen")
+
+    private fun keyOf(bookId: String, names: List<String?>) =
+        Hashes.sha256Hex(bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() })
 
     companion object {
         /** Of the file format and of [SpreadSeams.compare]: seams kept under another are checked again. */
         private const val VERSION = 2
+
+        /** Of the pages-seen file format. */
+        private const val SEEN_VERSION = 1
 
         /** Where seams are kept under [cacheDir]. */
         fun dirIn(cacheDir: File) = File(cacheDir, "page-seams")

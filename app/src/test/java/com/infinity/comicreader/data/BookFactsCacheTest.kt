@@ -40,6 +40,18 @@ class BookFactsCacheTest {
     }
 
     @Test
+    fun removedFactsAreGoneForGood() {
+        BookFactsCache(context).put("/b/a.cbz", 100L, BookFacts(24, 2014))
+        BookFactsCache(context).put("/b/b.cbz", 100L, BookFacts(12, 2014))
+        BookFactsCache(context).remove("/b/a.cbz")
+        assertNull(BookFactsCache(context).get("/b/a.cbz", 100))
+        BookFactsCache.reset()
+        val read = BookFactsCache(context).apply { load() }
+        assertNull(read.get("/b/a.cbz", 100))
+        assertEquals(BookFacts(12, 2014), read.get("/b/b.cbz", 100))
+    }
+
+    @Test
     fun detectedDirectionIsKept() {
         val detected = DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER)
         BookFactsCache(context).put("/b/m.cbz", 5L, BookFacts(20, 0, detected))

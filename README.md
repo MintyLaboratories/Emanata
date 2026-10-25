@@ -239,10 +239,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (Settings, 2 GB by default, which also holds the kept pages; least recently
   read first out) before the reader opens them; a PDF gets its cover once read.
   A server waking a sleeping disk is waited for (each request up to a minute);
-  a book or page that shows nothing for 2 seconds meanwhile says "Waiting for
-  the share…" until data arrives. A share that cannot be reached says so ("Not reachable") with a Retry, also
-  over a folder shown as last listed; a
-  refused sign-in is not tried again until you retry or edit the share, so a
+  a book or page that shows nothing for 2 seconds while the share answers
+  nothing says "Waiting for the share…" until data arrives. A share that
+  cannot be reached says so ("Not reachable") with a Retry, also over a folder
+  shown as last listed; a refused sign-in is not tried again until you retry
+  or edit the share, so a
   wrong password cannot lock the account; favorites and history show shares
   without waiting for the network, and a favorite folder there is sorted into
   its section once looked into (a spinner meanwhile). Items on shares can be

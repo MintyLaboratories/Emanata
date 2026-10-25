@@ -16,6 +16,13 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var slow: java.util.concurrent.CountDownLatch? = null
 
+    /** When set, [slow] holds only reads of bytes in it, as a disk spun down under part of a file would. */
+    @Volatile
+    var slowReads: LongRange? = null
+
+    /** Calls [slow] holds now. */
+    val held = java.util.concurrent.atomic.AtomicInteger()
+
     @Volatile
     var refuse: RemoteException.Reason? = null
 
@@ -49,8 +56,18 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
 
     private fun at(path: String) = if (path.isEmpty()) dir else File(dir, path)
 
-    private fun check() {
-        slow?.await(10, java.util.concurrent.TimeUnit.SECONDS)
+    /** Holds the call while [slow] does, unless it reads [count] bytes at [position] outside [slowReads]; then fails as set. */
+    private fun check(position: Long = -1, count: Int = 0) {
+        val reads = slowReads
+        val holds = reads == null || position >= 0 && position <= reads.last && position + count > reads.first
+        slow?.takeIf { holds }?.let {
+            held.incrementAndGet()
+            try {
+                it.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            } finally {
+                held.decrementAndGet()
+            }
+        }
         if (offline) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         attempts++
         refuse?.let { throw RemoteException(it, lasting = true) }
@@ -77,7 +94,7 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
             override val length: Long = raf.length()
 
             override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
-                check()
+                check(position, count)
                 synchronized(raf) {
                     raf.seek(position)
                     val n = raf.read(buffer, offset, count)

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -11,6 +12,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.Fixtures
@@ -52,18 +54,21 @@ class ViewerActivityShareWaitTest {
         Prefs(context).resumeMode = ResumeMode.NO
         val share = tmp.newFolder("share")
         // Pages of noise, so each is read from the share apart from the others.
-        val pages = (0 until 10).map { i -> Fixtures.entry("Tale 001-%03d.png".format(i), noise(300, 450, i)) }
+        val pages = (0 until PAGES).map { i -> Fixtures.entry("Tale 001-%03d.png".format(i), noise(300, 450, i)) }
         Fixtures.zip(File(share, "Tale 001.cbz"), *pages.toTypedArray())
         fake = FakeRemoteFs(share)
         Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
         // As on a device: the main thread never waits on the share.
         Remotes.onMainThread = { Looper.getMainLooper().thread === Thread.currentThread() }
+        // Silence on the share is timed by the clock the looper idles.
+        Remotes.clock = { SystemClock.uptimeMillis() }
     }
 
     @After
     fun tearDown() {
         fake.slow?.countDown()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        Remotes.clock = { System.nanoTime() / 1_000_000 }
     }
 
     private fun noise(w: Int, h: Int, seed: Int): ByteArray {
@@ -90,6 +95,16 @@ class ViewerActivityShareWaitTest {
         return Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
     }
 
+    /** Makes the share slow to read the book's later pages, past what opening it and its first pages read. */
+    private fun holdLaterPages(): CountDownLatch {
+        val size = File(tmp.root, "share/Tale 001.cbz").length()
+        fake.slowReads = size * 3 / 5 until size - 256 * 1024
+        return CountDownLatch(1).also { fake.slow = it }
+    }
+
+    /** Waits until the share holds a request, as one waking its disk. */
+    private fun awaitHeld() = await { fake.held.get() > 0 }
+
     private fun ViewerActivity.note() = findViewById<View>(R.id.viewer_share_wait)
 
     private fun ViewerActivity.progress() = findViewById<View>(R.id.viewer_progress)
@@ -101,6 +116,7 @@ class ViewerActivityShareWaitTest {
         val held = CountDownLatch(1)
         fake.slow = held
         val viewer = launch()
+        awaitHeld()
         idleFor(1_500)
         assertEquals(View.VISIBLE, viewer.progress().visibility)
         assertEquals(View.GONE, viewer.note().visibility)
@@ -114,19 +130,17 @@ class ViewerActivityShareWaitTest {
         await { viewer.progress().visibility != View.VISIBLE }
         assertEquals(View.GONE, viewer.note().visibility)
         assertFalse(viewer.isFinishing)
-        assertEquals(10, viewer.pages().adapter!!.itemCount)
+        assertEquals(PAGES, viewer.pages().adapter!!.itemCount)
     }
 
     @Test
     fun aPageLoadingSlowlySaysSoUntilItShows() {
+        val held = holdLaterPages()
         val viewer = launch()
         await { viewer.progress().visibility != View.VISIBLE }
         repeat(30) { Thread.sleep(10); idle() }
-        val held = CountDownLatch(1)
-        fake.slow = held
-        // Far from the pages read so far, so this one is read from the share.
-        viewer.pages().setCurrentItem(8, false)
-        idle()
+        viewer.pages().setCurrentItem(PAGES - 2, false)
+        awaitHeld()
         idleFor(1_500)
         assertEquals(View.GONE, viewer.note().visibility)
         idleFor(600)
@@ -145,5 +159,31 @@ class ViewerActivityShareWaitTest {
         repeat(30) { Thread.sleep(10); idle() }
         idleFor(3_000)
         assertEquals(View.GONE, viewer.note().visibility)
+    }
+
+    @Test
+    fun twoPagesCroppedTogetherSayWhileMeasuredSlowly() {
+        val prefs = Prefs(ApplicationProvider.getApplicationContext())
+        prefs.twoPage = TwoPage.ON
+        prefs.autoCrop = true
+        val held = holdLaterPages()
+        val viewer = launch()
+        await { viewer.progress().visibility != View.VISIBLE }
+        repeat(30) { Thread.sleep(10); idle() }
+        // A pair far ahead: its shared crop measures both pages from the share first.
+        val pages = viewer.pages()
+        pages.setCurrentItem(pages.adapter!!.itemCount - 2, false)
+        awaitHeld()
+        idleFor(2_100)
+        assertEquals(View.VISIBLE, viewer.note().visibility)
+        fake.slow = null
+        held.countDown()
+        await { viewer.note().visibility != View.VISIBLE }
+        assertEquals(View.GONE, viewer.note().visibility)
+        assertFalse(viewer.isFinishing)
+    }
+
+    private companion object {
+        const val PAGES = 16
     }
 }

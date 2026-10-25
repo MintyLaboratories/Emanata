@@ -1110,7 +1110,6 @@ class ViewerActivity : AppCompatActivity() {
             }
             progress.visibility = View.GONE
             fetched.visibility = View.GONE
-            shareAnswered()
             chapters = siblings
             val src = opened.getOrNull()
             if (src == null) {
@@ -1131,6 +1130,7 @@ class ViewerActivity : AppCompatActivity() {
             source = src
             known?.let { showPages(it) }
             setup(src)
+            updateShareWait()
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
             if (slice && !sliceSettled) detectSlicesLater(target, src, sliceSizes)
@@ -1294,36 +1294,35 @@ class ViewerActivity : AppCompatActivity() {
 
     private val checkShareWait = Runnable { updateShareWait() }
 
-    /**
-     * True while the reader waits on a share: a book on a share opening with nothing
-     * fetched yet, or a page on screen showing nothing while it loads.
-     */
-    private fun waitingForShare(): Boolean {
+    /** True while a book on a share opens with nothing fetched yet, or the item on screen shows nothing of a page it holds. */
+    private fun blank(): Boolean {
         if (file !is RemoteFile || isFinishing) return false
         if (progress.visibility == View.VISIBLE) return fetched.visibility != View.VISIBLE
-        return source != null && adapter?.waitingAt(shownItem()) == true
+        return source != null && adapter?.blankAt(shownItem()) == true
     }
 
     /**
      * Times a wait on the share from now, as a book on one starts to open ([item] is
-     * [OPENING]) or another [item] comes on screen. [shareWait] shows once the wait lasts
-     * [SHARE_WAIT_NOTE_MS].
+     * [OPENING]) or another [item] comes on screen; the book's first item waits on from
+     * when it began to open. [shareWait] shows once the wait lasts [SHARE_WAIT_NOTE_MS].
      */
     private fun timeShareWait(item: Int) {
         if (item == shareWaitItem && item != OPENING) return
+        if (item == OPENING || shareWaitItem != OPENING) shareWaitFrom = SystemClock.uptimeMillis()
         shareWaitItem = item
-        shareWaitFrom = SystemClock.uptimeMillis()
         updateShareWait()
     }
 
     /**
-     * Shows [shareWait] once [SHARE_WAIT_NOTE_MS] have passed since the wait began
-     * ([timeShareWait]) while [waitingForShare] holds, checking again every
-     * [SHARE_WAIT_CHECK_MS] while it shows, so it goes as soon as data arrives.
+     * Shows [shareWait] while the screen has been [blank] for [SHARE_WAIT_NOTE_MS] since
+     * the wait began ([timeShareWait]) and the share has answered nothing for
+     * [SHARE_SILENT_MS] of a request; checks again every [SHARE_WAIT_CHECK_MS] while blank,
+     * so it comes when the share stalls and goes as soon as data arrives.
      */
     private fun updateShareWait() {
         handler.removeCallbacks(checkShareWait)
-        if (file !is RemoteFile) {
+        val book = file as? RemoteFile
+        if (book == null) {
             shareWait.visibility = View.GONE
             return
         }
@@ -1332,9 +1331,10 @@ class ViewerActivity : AppCompatActivity() {
             handler.postDelayed(checkShareWait, left)
             return
         }
-        val waiting = waitingForShare()
+        val blank = blank()
+        val waiting = blank && Remotes.silentFor(book.path) >= SHARE_SILENT_MS
         shareWait.visibility = if (waiting) View.VISIBLE else View.GONE
-        if (waiting) handler.postDelayed(checkShareWait, SHARE_WAIT_CHECK_MS)
+        if (blank) handler.postDelayed(checkShareWait, SHARE_WAIT_CHECK_MS)
     }
 
     /** Hides [shareWait] at once when what it waited for arrived. */
@@ -3702,7 +3702,10 @@ class ViewerActivity : AppCompatActivity() {
         /** How long the reader waits on a share before saying so ([updateShareWait]). */
         private const val SHARE_WAIT_NOTE_MS = 2_000L
 
-        /** How often a shown wait note checks whether data arrived. */
+        /** How long a share keeps a request unanswered before the reader counts it as waiting on it ([updateShareWait]). */
+        private const val SHARE_SILENT_MS = 1_000L
+
+        /** How often a blank screen on a share checks whether the share stalled or answered. */
         private const val SHARE_WAIT_CHECK_MS = 500L
 
         /** How long after the last page newly on screen the pages seen are stored. */

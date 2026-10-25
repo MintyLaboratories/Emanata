@@ -229,10 +229,13 @@ class PageAdapter(
     /** True when a page on screen is zoomed in. */
     fun zoomed(): Boolean = images.any { it.isAttachedToWindow && it.isZoomed }
 
-    /** True while item [position] shows nothing in a slot whose page is still loading, or is not bound yet. */
-    fun waitingAt(position: Int): Boolean {
+    /**
+     * True while item [position] shows nothing of a page it holds, not even why it failed:
+     * the page is being measured, decoded or bound again, or the item is not bound yet.
+     */
+    fun blankAt(position: Int): Boolean {
         val holder = recycler?.findViewHolderForAdapterPosition(position) as? PageHolder ?: return true
-        return holder.images.indices.any { holder.shown[it] == NO_PAGE && holder.waiters[it]?.isActive == true }
+        return holder.images.any { (pageOf[it] ?: NO_PAGE) in 0 until end && it.drawable == null }
     }
 
     /**

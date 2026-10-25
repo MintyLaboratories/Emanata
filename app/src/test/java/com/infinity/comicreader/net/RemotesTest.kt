@@ -11,6 +11,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 /** Shares as files: paths, listings and their stats, the main-thread guess, and failing fast while unreachable. */
 class RemotesTest {
@@ -19,6 +21,7 @@ class RemotesTest {
     val tmp = TemporaryFolder()
 
     private lateinit var fake: FakeRemoteFs
+    @Volatile
     private var now = 1_000_000L
 
     @Before
@@ -280,5 +283,39 @@ class RemotesTest {
     @Test
     fun spaceComesFromTheShare() {
         assertEquals(3_000_000_000L to 8_000_000_000L, Remotes.space("s1"))
+    }
+
+    @Test
+    fun aShareSilentOnARequestSaysForHowLong() {
+        val book = "/net/s1/Series/001.cbz"
+        val input = Remotes.open(book)
+        assertEquals(0L, Remotes.silentFor(book))
+        val held = CountDownLatch(1)
+        fake.slow = held
+        val read = thread { input.read(0, ByteArray(10), 0, 10) }
+        while (fake.held.get() == 0) Thread.sleep(5)
+        now += 1_500
+        // Any request to the share counts for all of its files.
+        assertEquals(1_500L, Remotes.silentFor("/net/s1/notes.txt"))
+        assertEquals(0L, Remotes.silentFor("/net/s2/notes.txt"))
+        fake.slow = null
+        held.countDown()
+        read.join()
+        assertEquals(0L, Remotes.silentFor(book))
+        input.close()
+    }
+
+    @Test
+    fun aListingWaitedOnCountsAsSilence() {
+        val held = CountDownLatch(1)
+        fake.slow = held
+        val list = thread { Remotes.list("/net/s1/Series") }
+        while (fake.held.get() == 0) Thread.sleep(5)
+        now += 700
+        assertEquals(700L, Remotes.silentFor("/net/s1"))
+        fake.slow = null
+        held.countDown()
+        list.join()
+        assertEquals(0L, Remotes.silentFor("/net/s1"))
     }
 }

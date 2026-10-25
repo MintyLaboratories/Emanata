@@ -59,6 +59,11 @@ object Remotes {
     private val open = HashMap<String, RemoteFs>()
     private val failedAt = HashMap<String, Long>()
     private val refused = HashMap<String, RemoteException>()
+
+    /** Per share: reads, listings and stats waiting for an answer, and since when the share said nothing ([silentFor]). */
+    private class Asking(var count: Int = 0, var since: Long = 0)
+
+    private val asking = HashMap<String, Asking>()
     private val stats = object : LinkedHashMap<String, RemoteStat>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
@@ -202,7 +207,7 @@ object Remotes {
      */
     fun list(path: String): List<RemoteFile> {
         val base = path.trimEnd('/')
-        val found = Timing.span("share list") { call(path) { it.list(relOf(path)) } }.filter { isName(it.name) }
+        val found = Timing.span("share list") { call(path) { asked(path) { it.list(relOf(path)) } } }.filter { isName(it.name) }
         listings.put(base, found)
         return filesOf(base, found, fresh = true)
     }
@@ -237,11 +242,45 @@ object Remotes {
     /** What is at [path] now; null when nothing is. Throws when the share fails. */
     fun stat(path: String): RemoteStat? {
         if (isRoot(path)) return ROOT
-        return Timing.span("share stat") { call(path) { it.stat(relOf(path)) } }.also { remember(path, it) }
+        return Timing.span("share stat") { call(path) { asked(path) { it.stat(relOf(path)) } } }.also { remember(path, it) }
     }
 
     /** Opens the file at [path]. */
-    fun open(path: String): RemoteInput = Timing.span("share open") { call(path) { it.open(relOf(path)) } }
+    fun open(path: String): RemoteInput = Timing.span("share open") { call(path) { Asked(path, asked(path) { it.open(relOf(path)) }) } }
+
+    /** [input], its reads timed by [silentFor]. */
+    private class Asked(private val path: String, private val input: RemoteInput) : RemoteInput by input {
+        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
+            asked(path) { input.read(position, buffer, offset, count) }
+    }
+
+    /** Runs [block], a request to [path]'s share, counting it as waiting for an answer until it returns or fails. */
+    private inline fun <T> asked(path: String, block: () -> T): T {
+        val id = idOf(path) ?: return block()
+        synchronized(asking) {
+            val a = asking.getOrPut(id) { Asking() }
+            if (a.count++ == 0) a.since = clock()
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(asking) {
+                val a = asking.getValue(id)
+                a.since = clock()
+                a.count--
+            }
+        }
+    }
+
+    /**
+     * How long, in [clock] milliseconds, [path]'s share has kept a read, listing or stat
+     * waiting with nothing answered since; 0 while nothing is asked of it.
+     */
+    fun silentFor(path: String): Long {
+        val id = idOf(path) ?: return 0
+        val a = synchronized(asking) { asking[id]?.takeIf { it.count > 0 }?.since } ?: return 0
+        return (clock() - a).coerceAtLeast(0)
+    }
 
     /** False when the file at [path] can be read only front to back ([RemoteFs.seekable]). */
     fun seekable(path: String): Boolean = call(path) { it.seekable(relOf(path)) }

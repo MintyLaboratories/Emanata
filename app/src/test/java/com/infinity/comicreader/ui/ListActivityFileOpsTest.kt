@@ -236,7 +236,7 @@ class ListActivityFileOpsTest {
         assertNull(send.getStringExtra(android.content.Intent.EXTRA_TEXT))
         @Suppress("DEPRECATION")
         val uri = send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)!!
-        assertEquals(book.absolutePath, com.infinity.comicreader.files.BookUris.pathOf(uri))
+        assertEquals(book.absolutePath, com.infinity.comicreader.files.BookUris.pathOf(context, uri))
         assertTrue(send.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
 
         // The choice is remembered; the cover stays as it was, unseen here.

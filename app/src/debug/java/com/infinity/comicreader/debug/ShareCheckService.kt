@@ -79,7 +79,7 @@ class ShareCheckService : Service() {
     }
 
     private fun check(context: Context, path: String, limit: Long) {
-        val uri = BookUris.of(context.packageName, path)
+        val uri = BookUris.of(context, path)
         val resolver = context.contentResolver
         val before = cacheFiles(context.cacheDir)
         val type = resolver.getType(uri)

@@ -19,7 +19,7 @@ import java.io.FileNotFoundException
 
 /**
  * Serves the books the user shares to the apps they share them with, in place, at the
- * URIs [BookUris] makes. Not exported: an app reads only the URIs it was granted, read-only.
+ * URIs [BookUris] issues. Not exported: an app reads only the URIs it was granted, read-only.
  * A file on the device opens as itself. A file on a share opens as a proxy descriptor
  * ([StorageManager.openProxyFileDescriptor]) that reads it on demand as the app reads
  * ([ShareReads]), on a thread of its own, so it is never downloaded or copied first and
@@ -29,10 +29,12 @@ import java.io.FileNotFoundException
 class BookProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
-    override fun getType(uri: Uri): String? = BookUris.pathOf(uri)?.let { BookUris.mimeOf(it) }
+    private fun pathOf(uri: Uri): String? = context?.let { BookUris.pathOf(it, uri) }
+
+    override fun getType(uri: Uri): String? = pathOf(uri)?.let { BookUris.mimeOf(it) }
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
-        val path = BookUris.pathOf(uri) ?: return null
+        val path = pathOf(uri) ?: return null
         val columns = projection?.filter { it == OpenableColumns.DISPLAY_NAME || it == OpenableColumns.SIZE }?.toTypedArray() ?: COLUMNS
         val size = runCatching { sizeOf(path) }.getOrNull()
         val row = columns.map { if (it == OpenableColumns.DISPLAY_NAME) File(path).name else size }
@@ -41,7 +43,7 @@ class BookProvider : ContentProvider() {
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r") throw SecurityException("Read only")
-        val path = BookUris.pathOf(uri) ?: throw FileNotFoundException("Not a book")
+        val path = pathOf(uri) ?: throw FileNotFoundException("Not a book")
         if (!Remotes.isRemote(path)) return ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
         val size = sizeOf(path) ?: throw FileNotFoundException("Gone")
         val storage = context?.getSystemService(StorageManager::class.java) ?: throw FileNotFoundException("No storage service")

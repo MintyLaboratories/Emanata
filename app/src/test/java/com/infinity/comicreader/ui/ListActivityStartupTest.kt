@@ -160,7 +160,7 @@ class ListActivityStartupTest {
     fun aBookThisAppSharedOpensWhereItIsAndOnlyFromStorage() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val book = File(root, "b.cbz").apply { writeBytes(ByteArray(10)) }
-        val own = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context.packageName, book.absolutePath))
+        val own = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context, book.absolutePath))
         val activity = Robolectric.buildActivity(ListActivity::class.java, own).setup().get()
         idle()
         assertEquals(ViewerActivity::class.java.name, shadowOf(activity).nextStartedActivity?.component?.className)
@@ -168,10 +168,17 @@ class ListActivityStartupTest {
         assertFalse(File(context.cacheDir, "incoming").exists())
 
         val private = File(context.filesDir, "c.cbz").apply { writeBytes(ByteArray(10)) }
-        val crafted = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context.packageName, private.absolutePath))
-        val other = Robolectric.buildActivity(ListActivity::class.java, crafted).setup().get()
+        val issued = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context, private.absolutePath))
+        val other = Robolectric.buildActivity(ListActivity::class.java, issued).setup().get()
         idle()
         assertNull(shadowOf(other).nextStartedActivity)
+
+        // A URI of ours this app never issued opens nothing, even for a book in storage.
+        val made = android.net.Uri.parse("content://${com.infinity.comicreader.files.BookUris.authority(context.packageName)}/AAAAAAAAAAAAAAAAAAAAAA/b.cbz")
+        val third = Robolectric.buildActivity(ListActivity::class.java, Intent(Intent.ACTION_VIEW, made)).setup().get()
+        idle()
+        assertNull(shadowOf(third).nextStartedActivity)
+        assertFalse(File(context.cacheDir, "incoming").exists())
     }
 
     @Test

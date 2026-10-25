@@ -1862,8 +1862,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         when (uri.scheme) {
             "file" -> return uri.path?.let { handleIncomingFile(File(it)) }
             "content" -> {
-                // A book this app shared, handed back: opened where it is, as a path would be.
-                if (uri.authority == BookUris.authority(packageName)) return BookUris.pathOf(uri)?.let(::handleOwnBook)
+                // A book this app shared, handed back: opened where it is, as a path would be;
+                // a URI of ours it never issued opens nothing.
+                if (uri.authority == BookUris.authority(packageName)) {
+                    BookUris.pathOf(this, uri)?.let { return handleOwnBook(it) }
+                    toast(R.string.error_open)
+                    return null
+                }
                 openSharedContent(uri)
             }
         }
@@ -1871,7 +1876,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /**
-     * Opens the book at [path], from one of this app's own book URIs: never read through its
+     * Opens the book at [path], from a book URI this app issued: never read through its
      * own provider, whose descriptors this process serves. Paths on the device follow the
      * rules of a file:// path; a share's book opens if it can be read.
      */

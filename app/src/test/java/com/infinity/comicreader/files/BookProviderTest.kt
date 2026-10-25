@@ -10,6 +10,7 @@ import com.infinity.comicreader.net.Remotes
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -47,19 +48,49 @@ class BookProviderTest {
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
-    private fun uri(path: String) = BookUris.of(context.packageName, path)
+    private fun uri(path: String) = BookUris.of(context, path)
 
     @Test
-    fun urisCarryThePathAndEndInTheName() {
-        for (path in listOf("/storage/books/Ünïcode set/Vol 1 #2 (draft).cbz", "/net/s1/a/b.cbr", "/x/a%20b?.pdf")) {
+    fun urisStandForThePathIssuedAndEndInTheName() {
+        for (path in listOf("/storage/books/Ünïcode set/Vol 1 #2 (draft).cbz", "/net/s1/a/b.cbr", "/x/a%20b?.pdf", "/x/tab\tand\nline.cbz")) {
             val uri = uri(path)
             assertEquals("content", uri.scheme)
             assertEquals(BookUris.authority(context.packageName), uri.authority)
-            assertEquals(path.substringAfterLast('/'), uri.lastPathSegment)
-            assertEquals(path, BookUris.pathOf(Uri.parse(uri.toString())))
+            assertEquals(listOf(path.substringAfterLast('/')), uri.pathSegments.drop(1))
+            assertEquals(path, BookUris.pathOf(context, Uri.parse(uri.toString())))
+            // The same book keeps its URI.
+            assertEquals(uri, uri(path))
         }
-        assertNull(BookUris.pathOf(Uri.parse("content://${BookUris.authority(context.packageName)}/not*base64/x.cbz")))
-        assertNull(BookUris.pathOf(Uri.parse("content://${BookUris.authority(context.packageName)}")))
+        val authority = BookUris.authority(context.packageName)
+        assertNull(BookUris.pathOf(context, Uri.parse("content://$authority/not*a*key/x.cbz")))
+        assertNull(BookUris.pathOf(context, Uri.parse("content://$authority/AAAAAAAAAAAAAAAAAAAAAA/x.cbz")))
+        assertNull(BookUris.pathOf(context, Uri.parse("content://$authority")))
+        assertNull(BookUris.pathOf(context, Uri.parse("content://other.books/${uri("/x/a.cbz").pathSegments[0]}/a.cbz")))
+    }
+
+    @Test
+    fun aUriTellsNothingOfTheFolders() {
+        val path = "/storage/books/Private folder/Sub/a.cbz"
+        val text = uri(path).path!!
+        for (part in listOf("storage", "books", "Private", "Sub")) assertFalse(part, text.contains(part))
+        val key = uri(path).pathSegments[0]
+        assertFalse(text.contains(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(path.toByteArray()).take(8)))
+        assertEquals(22, key.length)
+        assertFalse(key == uri("/storage/books/Private folder/Sub/b.cbz").pathSegments[0])
+    }
+
+    @Test
+    fun theLatestKeysAreKeptAndStillOpenFromANewProcess() {
+        val first = uri("/b/0.cbz")
+        repeat(SharedKeys.MAX) { uri("/b/${it + 1}.cbz") }
+        assertNull(BookUris.pathOf(context, first))
+        val latest = uri("/b/${SharedKeys.MAX}.cbz")
+        // Read back from disk, as another process or a restarted app would.
+        assertEquals("/b/${SharedKeys.MAX}.cbz", SharedKeys(File(context.filesDir, SharedKeys.FILE)).pathOf(latest.pathSegments[0]))
+        // Sharing an old book again keeps it as the latest.
+        val again = uri("/b/1.cbz")
+        repeat(SharedKeys.MAX - 1) { uri("/c/$it.cbz") }
+        assertEquals("/b/1.cbz", BookUris.pathOf(context, again))
     }
 
     @Test

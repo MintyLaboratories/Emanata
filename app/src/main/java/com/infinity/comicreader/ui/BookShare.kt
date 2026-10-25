@@ -119,7 +119,11 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
                     Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                val fileUri = if (choice.file) BookUris.of(activity.packageName, entry.path) else null
+                val fileUri = if (choice.file) withContext(AppDispatchers.io) { runCatching { BookUris.of(app, entry.path) }.getOrNull() } else null
+                if (choice.file && fileUri == null) {
+                    Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
                 val intent = ShareIntents.of(title.takeIf { choice.title }, coverUri, fileUri, BookUris.mimeOf(entry.name)) ?: return@launch
                 runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
             }

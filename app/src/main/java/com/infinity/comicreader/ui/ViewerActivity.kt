@@ -237,6 +237,9 @@ class ViewerActivity : AppCompatActivity() {
     /** Reads the open book's missing page sizes in the background ([scanSizes]). */
     private var sizesJob: Job? = null
 
+    /** The sizes the last [scanSizes] read, and of which source: kept when it stops early. */
+    private var sizesFound: Pair<PageSource, Array<IntArray?>>? = null
+
     /** Lays the book out again with the sizes pages left as they loaded ([learnSize]); [learnRound] numbers its rounds. */
     private var learnJob: Job? = null
     private var learnRound = 0
@@ -1198,6 +1201,7 @@ class ViewerActivity : AppCompatActivity() {
         slicesJob = null
         sizesJob?.cancel()
         sizesJob = null
+        sizesFound = null
         learnJob?.cancel()
         learnJob = null
         learnRound++
@@ -1373,16 +1377,25 @@ class ViewerActivity : AppCompatActivity() {
      * ([PageSource.cheapSizes]), and while battery saver pauses scans ([Thrift.pausedScans]).
      */
     private fun scanSizes(book: File, src: PageSource) {
-        sizesJob?.cancel()
+        val previous = sizesJob
+        previous?.cancel()
         if (!src.cheapSizes || pageSizes.none { it == null } || applied.thrift.pausedScans) return
         val names = pageNames
         val store = pageStore ?: return
         val sizes = pageSizes.copyOf()
         val from = currentIndex
         sizesJob = lifecycleScope.launch {
+            // A scan stopped before keeps what it found ([sizesFound]): none of it is read again.
+            previous?.join()
+            sizesFound?.takeIf { it.first === src }?.second?.forEachIndexed { i, s -> if (s != null && i < sizes.size && sizes[i] == null) sizes[i] = s }
+            sizesFound = src to sizes
+            val known = sizes.count { it != null }
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext.job
-                if (!PageSizes.scan(src, sizes, from) { !job.isActive }) return@withContext null
+                if (!PageSizes.scan(src, sizes, from) { !job.isActive }) {
+                    if (sizes.count { it != null } > known) store.writeSizes(sizes)
+                    return@withContext null
+                }
                 store.writeSizes(sizes)
                 classify(names, sizes)
             }

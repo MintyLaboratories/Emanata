@@ -323,7 +323,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         fab.setOnClickListener { toggleGrid() }
         fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, ::updatePasteButton)
-        bookShare = BookShare(this, prefs)
+        bookShare = BookShare(this, prefs) { adapter.shownCover(recycler, it.path) }
         pasteFab.setOnClickListener {
             hidePasteBubble()
             currentDir?.let { fileActions.paste(it) }

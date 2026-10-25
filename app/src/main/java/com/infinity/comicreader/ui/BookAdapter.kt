@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -323,6 +324,16 @@ class BookAdapter(
     fun positionOf(path: String): Int {
         val i = items.indexOfFirst { it is BookEntry && it.path == path }
         return if (i < 0) -1 else i + itemOffset
+    }
+
+    /** The cover drawn in [recycler]'s row of the book at [path], when that row is on screen with one; null otherwise. */
+    fun shownCover(recycler: RecyclerView, path: String): Bitmap? {
+        for (i in 0 until recycler.childCount) {
+            val holder = recycler.getChildViewHolder(recycler.getChildAt(i)) as? BookHolder ?: continue
+            if (holder.entry?.path != path || (holder.drawn == null && holder.quick == null)) continue
+            return (holder.thumb.drawable as? BitmapDrawable)?.bitmap
+        }
+        return null
     }
 
     class BookHolder(view: View) : RecyclerView.ViewHolder(view) {

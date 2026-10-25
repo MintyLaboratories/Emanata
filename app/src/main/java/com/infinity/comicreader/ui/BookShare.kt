@@ -33,10 +33,16 @@ import java.io.File
 /**
  * Shares a book: a dialog of check boxes, each followed by what it sends (the title, the
  * cover, the file), starting from the last choice ([Prefs.shareChoice]), then the system's
- * share sheet. The cover goes as a PNG through the app's FileProvider; the file in place,
- * through [com.infinity.comicreader.files.BookProvider], never copied first.
+ * share sheet. The cover shows as its row in the list has it ([shownCover]); the whole cover
+ * sent is made only once its box is ticked, then goes as a PNG through the app's
+ * FileProvider; the file goes in place, through [com.infinity.comicreader.files.BookProvider],
+ * never copied first.
  */
-internal class BookShare(private val activity: AppCompatActivity, private val prefs: Prefs) {
+internal class BookShare(
+    private val activity: AppCompatActivity,
+    private val prefs: Prefs,
+    private val shownCover: (BookEntry) -> Bitmap? = { null }
+) {
 
     fun show(entry: BookEntry) {
         val view = activity.layoutInflater.inflate(R.layout.dialog_share_book, null)
@@ -47,7 +53,7 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
         val fileCheck = view.findViewById<CompoundButton>(R.id.share_file_check)
         val coverImage = view.findViewById<ImageView>(R.id.share_cover_image)
         val coverProgress = view.findViewById<View>(R.id.share_cover_progress)
-        val coverNone = view.findViewById<View>(R.id.share_cover_none)
+        val coverNote = view.findViewById<TextView>(R.id.share_cover_none)
         view.findViewById<TextView>(R.id.share_title_text).text = title
         view.findViewById<ImageView>(R.id.share_file_icon).apply {
             setImageResource(EntryIcons.iconFor(entry))
@@ -62,13 +68,21 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
             view.findViewById<View>(row).setOnClickListener { if (check.isEnabled) check.toggle() }
         }
 
+        // The row's cover stands in until the one sent is made; without one, a note says what the box sends.
+        val preview = runCatching { shownCover(entry) }.getOrNull()
+        coverProgress.visibility = View.GONE
+        if (preview != null) {
+            coverImage.setImageBitmap(preview)
+        } else {
+            coverNote.setText(R.string.share_cover)
+            coverNote.visibility = View.VISIBLE
+        }
+
         val app = activity.applicationContext
         val charset = prefs.charset
         val style = prefs.coverStyle
         val target = Target(COVER_WIDTH, COVER_HEIGHT, Fit.SHRINK, linear = style.linear, scaling = style.scaling)
-        val cover: Deferred<Bitmap?> = activity.lifecycleScope.async(AppDispatchers.io) {
-            runCatching { Thumbs.shareCover(app, entry, charset, target) }.getOrNull()
-        }
+        var making: Deferred<Bitmap?>? = null
         var coverFound = true
         var sent = false
 
@@ -83,23 +97,45 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
         fun update() {
             send.isEnabled = picked().any
         }
-        for (check in listOf(titleCheck, coverCheck, fileCheck)) check.setOnCheckedChangeListener { _, _ -> update() }
-        update()
-        dialog.setOnDismissListener { if (!sent) cover.cancel() }
 
-        activity.lifecycleScope.launch {
-            val bitmap = runCatching { cover.await() }.getOrNull()
-            coverProgress.visibility = View.GONE
-            if (bitmap != null) {
-                coverImage.setImageBitmap(bitmap)
-            } else {
-                coverFound = false
-                coverNone.visibility = View.VISIBLE
-                coverCheck.isEnabled = false
-                coverCheck.isChecked = false
+        // The cover sent: made once, from the first time it is wanted, and shown when made.
+        fun cover(): Deferred<Bitmap?> = making ?: activity.lifecycleScope.async(AppDispatchers.io) {
+            runCatching { Thumbs.shareCover(app, entry, charset, target) }.getOrNull()
+        }.also { made ->
+            making = made
+            coversMade++
+            if (preview == null) {
+                coverNote.visibility = View.GONE
+                coverProgress.visibility = View.VISIBLE
             }
-            update()
+            activity.lifecycleScope.launch {
+                val bitmap = runCatching { made.await() }.getOrNull()
+                if (made.isCancelled) return@launch
+                coverProgress.visibility = View.GONE
+                if (bitmap != null) {
+                    coverImage.setImageBitmap(bitmap)
+                    coverNote.visibility = View.GONE
+                } else {
+                    coverFound = false
+                    coverImage.setImageDrawable(null)
+                    coverNote.setText(R.string.share_no_cover)
+                    coverNote.visibility = View.VISIBLE
+                    coverCheck.isEnabled = false
+                    coverCheck.isChecked = false
+                }
+                update()
+            }
         }
+
+        for (check in listOf(titleCheck, coverCheck, fileCheck)) {
+            check.setOnCheckedChangeListener { _, checked ->
+                if (check === coverCheck && checked) cover()
+                update()
+            }
+        }
+        if (coverCheck.isChecked) cover()
+        update()
+        dialog.setOnDismissListener { if (!sent) making?.cancel() }
 
         send.setOnClickListener {
             val choice = picked()
@@ -108,19 +144,18 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
             prefs.shareChoice = choice.copy(cover = if (coverFound) choice.cover else last.cover)
             sent = true
             send.isEnabled = false
+            val coverMade = if (choice.cover) cover() else null
             activity.lifecycleScope.launch {
-                val coverUri = if (choice.cover) {
-                    withContext(AppDispatchers.io) { runCatching { cover.await()?.let { writeCover(it, title) } }.getOrNull() }
-                } else {
-                    null
+                val coverUri = coverMade?.let { made ->
+                    withContext(AppDispatchers.io) { runCatching { made.await()?.let { writeCover(it, title) } }.getOrNull() }
                 }
                 dialog.dismiss()
-                if (choice.cover && coverUri == null && !choice.title && !choice.file) {
+                val fileUri = if (choice.file) withContext(AppDispatchers.io) { runCatching { BookUris.of(app, entry.path) }.getOrNull() } else null
+                if (choice.file && fileUri == null) {
                     Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                val fileUri = if (choice.file) withContext(AppDispatchers.io) { runCatching { BookUris.of(app, entry.path) }.getOrNull() } else null
-                if (choice.file && fileUri == null) {
+                if (choice.cover && coverUri == null && !choice.title && !choice.file) {
                     Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
@@ -147,6 +182,10 @@ internal class BookShare(private val activity: AppCompatActivity, private val pr
 
         private const val COVER_DIR = "shared/cover"
         private const val MAX_NAME = 200
+
+        /** Covers begun for sending, ever; for tests. */
+        @Volatile
+        internal var coversMade = 0
 
         /** What a book is shared as: its file name without the extension. */
         fun titleOf(entry: BookEntry): String = if (entry.isDir) entry.name else entry.name.substringBeforeLast('.').ifEmpty { entry.name }

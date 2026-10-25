@@ -248,6 +248,26 @@ class ListActivityFileOpsTest {
     }
 
     @Test
+    fun anUntickedCoverIsMadeOnlyOnceTicked() {
+        Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = true, cover = false, file = false)
+        val activity = launch()
+        val before = BookShare.coversMade
+        val dialog = activity.shareDialog(book.absolutePath)
+        assertEquals(before, BookShare.coversMade)
+        val note = dialog.findViewById<android.widget.TextView>(R.id.share_cover_none)!!
+        assertEquals(context.getString(R.string.share_cover), note.text.toString())
+        assertTrue(dialog.check(R.id.share_cover_check).isEnabled)
+
+        dialog.findViewById<View>(R.id.share_cover_row)!!.performClick()
+        assertEquals(before + 1, BookShare.coversMade)
+        settle { !dialog.check(R.id.share_cover_check).isEnabled }
+        assertEquals(context.getString(R.string.share_no_cover), note.text.toString())
+        // Ticking again makes nothing more.
+        assertEquals(before + 1, BookShare.coversMade)
+        dialog.dismiss()
+    }
+
+    @Test
     fun favoritesAndHistoryHaveFileOperations() {
         val activity = launch()
         for (tab in listOf(1, 2)) {

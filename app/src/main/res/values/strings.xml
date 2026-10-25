@@ -233,6 +233,7 @@
     <string name="share_include_cover">Send the cover</string>
     <string name="share_include_file">Send the file</string>
     <string name="share_no_cover">No cover</string>
+    <string name="share_cover">Cover</string>
     <string name="paste">Paste</string>
     <string name="paste_named">Paste %1$s</string>
     <string name="paste_hint">Tap to paste here, hold to cancel</string>

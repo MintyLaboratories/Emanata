@@ -1,5 +1,8 @@
 package com.infinity.comicreader.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -8,8 +11,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -61,6 +66,9 @@ internal class FileActions(
     private var watching: Long? = null
 
     private val showLater = Runnable { FileWork.status.value?.takeIf { it.outcome == null }?.let { showProgress(it) } }
+
+    /** Asks to show notifications; the answer changes nothing here. */
+    private val notificationAsk = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     init {
         activity.lifecycleScope.launch {
@@ -240,7 +248,19 @@ internal class FileActions(
     }
 
     private fun start(kind: FileWork.Kind, name: String, work: (FileWork.Progress) -> FileWork.Outcome.Done) {
-        if (!FileWork.start(kind, name, work)) toast(activity.getString(R.string.file_busy))
+        if (!FileWork.start(kind, name, work)) return toast(activity.getString(R.string.file_busy))
+        askForNotifications()
+    }
+
+    /**
+     * Asks once, as the first operation starts, to show notifications (Android 13+), where
+     * operations show their progress while the app is away; they run either way.
+     */
+    private fun askForNotifications() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || prefs.askedNotifications) return
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        prefs.askedNotifications = true
+        notificationAsk.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // ------------------------------------------------------------------ progress

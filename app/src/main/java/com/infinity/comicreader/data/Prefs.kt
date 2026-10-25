@@ -503,6 +503,11 @@ class Prefs(context: Context) {
         get() = ui.getBoolean("deep_search", false)
         set(v) = ui.edit().putBoolean("deep_search", v).apply()
 
+    /** True once the first file operation asked to show notifications (Android 13+). */
+    var askedNotifications: Boolean
+        get() = ui.getBoolean("asked_notifications", false)
+        set(v) = ui.edit().putBoolean("asked_notifications", v).apply()
+
     val nightMode: Int
         get() = when (theme) {
             "light" -> AppCompatDelegate.MODE_NIGHT_NO

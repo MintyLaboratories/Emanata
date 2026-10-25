@@ -461,8 +461,8 @@ class ListActivitySharesTest {
         idle()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
-        // Counted from a listing of its own, made after the folder shows.
-        assertEquals(activity.getString(R.string.books_count, 1), subtitleOf(recycler, "Series"))
+        // Counted from a listing of its own, made after the folder shows; one is singular.
+        assertEquals("1 item", subtitleOf(recycler, "Series"))
         val lists = fake.lists
 
         // Back on the device, then the share again: shown as kept, the unchanged subfolder not listed again.
@@ -484,7 +484,7 @@ class ListActivitySharesTest {
         row("Share A").performClick()
         idle()
         assertEquals(listOf("Loose.cbz", "Series"), rows(recycler).sorted())
-        assertEquals(activity.getString(R.string.books_count, 1), subtitleOf(recycler, "Series"))
+        assertEquals(activity.resources.getQuantityString(R.plurals.books_count, 1, 1), subtitleOf(recycler, "Series"))
         // Saying so, with Retry.
         val note = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
         assertEquals(activity.getString(R.string.share_unreachable_named, "Share A"), note?.text?.toString())

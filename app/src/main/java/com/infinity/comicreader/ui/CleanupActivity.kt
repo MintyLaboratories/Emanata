@@ -226,7 +226,7 @@ class CleanupActivity : AppCompatActivity() {
         val paths = selected.toList()
         AlertDialog.Builder(this)
             .setTitle(R.string.delete_confirm_title)
-            .setMessage(getString(R.string.delete_selected_msg, paths.size))
+            .setMessage(resources.getQuantityString(R.plurals.delete_selected_msg, paths.size, paths.size))
             .setPositiveButton(R.string.delete) { _, _ -> deletePaths(paths) }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -313,7 +313,7 @@ class CleanupActivity : AppCompatActivity() {
         private fun bindGroup(v: View, row: Row.Group) {
             v.findViewById<TextView>(R.id.title).text = row.entry.name
             v.findViewById<TextView>(R.id.subtitle).text =
-                getString(R.string.dupe_group, row.files.size, Formatter.formatShortFileSize(this@CleanupActivity, row.size))
+                resources.getQuantityString(R.plurals.dupe_group, row.files.size, row.files.size, Formatter.formatShortFileSize(this@CleanupActivity, row.size))
             val places = v.findViewById<LinearLayout>(R.id.locations)
             places.removeAllViews()
             for (f in row.files) {

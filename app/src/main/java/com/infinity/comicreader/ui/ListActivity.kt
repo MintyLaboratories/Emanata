@@ -1972,12 +1972,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val st = library.stats()
         AlertDialog.Builder(this)
             .setTitle(R.string.menu_stats)
-            .setMessage(
-                getString(
-                    R.string.stats_body, st.chapters, st.pages, st.seconds / 3600,
-                    (st.seconds % 3600) / 60, st.daysRead, st.streak, st.bestStreak
-                )
-            )
+            .setMessage(statsText(st))
             .setPositiveButton(R.string.ok, null)
             .setNeutralButton(R.string.reset_stats) { _, _ ->
                 confirm(this, R.string.confirm_reset_stats_title, R.string.confirm_reset_stats_msg, R.string.reset) {

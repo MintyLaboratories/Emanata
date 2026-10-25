@@ -728,13 +728,13 @@ class BookAdapter(
         if (item.isDir) {
             return when {
                 item.childCount < 0 -> ""
-                item.readCount > 0 -> context.getString(R.string.folder_read_summary, item.childCount, item.readCount)
-                else -> context.getString(R.string.books_count, item.childCount)
+                item.readCount > 0 -> context.resources.getQuantityString(R.plurals.folder_read_summary, item.childCount, item.childCount, item.readCount)
+                else -> context.resources.getQuantityString(R.plurals.books_count, item.childCount, item.childCount)
             }
         }
         val size = FileUtils.formatSize(context, item.size)
         return if (item.pages > 0) {
-            "$size · ${context.getString(R.string.pages_count, item.pages)}"
+            "$size · ${context.resources.getQuantityString(R.plurals.pages_count, item.pages, item.pages)}"
         } else {
             size
         }

@@ -162,14 +162,24 @@
     <string name="menu_search_deep">Search subfolders</string>
     <string name="menu_stats">Reading statistics</string>
     <string name="reset_stats">Reset</string>
-    <string name="stats_body">Chapters read: %1$d\nPages read: %2$d\nTime reading: %3$d h %4$d min\nDays read: %5$d\nCurrent streak: %6$d days\nBest streak: %7$d days</string>
+    <string name="stats_body">Chapters read: %1$d\nPages read: %2$d\nTime reading: %3$d h %4$d min\nDays read: %5$d\nCurrent streak: %6$s\nBest streak: %7$s</string>
+    <plurals name="days_count">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
     <string name="menu_dupes">Find duplicate files</string>
     <string name="menu_large">Largest files</string>
     <string name="select_extras">Keep one of each</string>
     <string name="delete_selected">Delete selected</string>
     <string name="delete_selected_n">Delete %1$d (%2$s)</string>
-    <string name="delete_selected_msg">Permanently delete %1$d files?</string>
-    <string name="dupe_group">%1$d identical copies · %2$s each</string>
+    <plurals name="delete_selected_msg">
+        <item quantity="one">Permanently delete %1$d file?</item>
+        <item quantity="other">Permanently delete %1$d files?</item>
+    </plurals>
+    <plurals name="dupe_group">
+        <item quantity="one">%1$d identical copy · %2$s</item>
+        <item quantity="other">%1$d identical copies · %2$s each</item>
+    </plurals>
     <string name="dupes_identical">Bit-identical copies (SHA-256 verified)</string>
     <string name="cleanup_nothing">Nothing found</string>
     <string name="invalid_name">That name is not allowed</string>
@@ -192,12 +202,24 @@
     <string name="read_progress">%1$d / %2$d</string>
     <string name="read_percent">%1$d%%</string>
     <string name="read_badge">Read</string>
-    <string name="books_count">%1$d items</string>
-    <string name="folder_read_summary">%1$d items · %2$d read</string>
-    <string name="pages_count">%1$d pages</string>
+    <plurals name="books_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <plurals name="folder_read_summary">
+        <item quantity="one">%1$d item · %2$d read</item>
+        <item quantity="other">%1$d items · %2$d read</item>
+    </plurals>
+    <plurals name="pages_count">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
     <string name="page_number">Page %1$d</string>
     <string name="missing_file">Missing from storage</string>
-    <string name="deleted_format">Deleted %1$d item(s)</string>
+    <plurals name="deleted_format">
+        <item quantity="one">Deleted %1$d item</item>
+        <item quantity="other">Deleted %1$d items</item>
+    </plurals>
     <string name="delete_confirm_title">Delete files?</string>
     <string name="delete_confirm_msg">This permanently deletes the selected files from storage.</string>
     <string name="renamed">Renamed</string>

@@ -243,12 +243,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val st = library.stats()
             AlertDialog.Builder(requireContext())
                 .setTitle(R.string.menu_stats)
-                .setMessage(
-                    getString(
-                        R.string.stats_body, st.chapters, st.pages, st.seconds / 3600,
-                        (st.seconds % 3600) / 60, st.daysRead, st.streak, st.bestStreak
-                    )
-                )
+                .setMessage(requireContext().statsText(st))
                 .setPositiveButton(R.string.ok, null)
                 .show()
             true

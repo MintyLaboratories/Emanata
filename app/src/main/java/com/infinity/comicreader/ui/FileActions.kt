@@ -347,7 +347,7 @@ internal class FileActions(
             is FileWork.Outcome.Done -> when (status.kind) {
                 FileWork.Kind.COPY -> activity.getString(R.string.file_copied)
                 FileWork.Kind.MOVE -> activity.getString(if (outcome.sourceLeft) R.string.file_source_left else R.string.file_moved)
-                FileWork.Kind.DELETE -> activity.getString(R.string.deleted_format, 1)
+                FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, 1, 1)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
             }
             FileWork.Outcome.Canceled -> activity.getString(R.string.file_canceled)

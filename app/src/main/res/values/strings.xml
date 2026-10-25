@@ -114,6 +114,7 @@
     <string name="pref_network_cache">Network cache</string>
     <string name="pref_network_cache_desc">Space for PDFs and images fetched from network shares, and pages unpacked from solid archives there; the least recently read go first</string>
     <string name="share_fetching">Fetching from the share… %1$d%%</string>
+    <string name="share_waiting">Waiting for the share…</string>
     <string name="error_open_too_large">Too large for the network cache; raise it in Settings</string>
     <string name="book_storage_removed">%1$s was removed, so the book was closed</string>
     <string name="folder_gone">That folder no longer exists</string>

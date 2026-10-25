@@ -1,0 +1,149 @@
+package com.infinity.comicreader.ui
+
+import android.app.Application
+import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Looper
+import android.view.View
+import androidx.preference.PreferenceManager
+import androidx.test.core.app.ApplicationProvider
+import androidx.viewpager2.widget.ViewPager2
+import com.infinity.comicreader.R
+import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.Fixtures
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import kotlin.random.Random
+
+/** A share slow to answer, as one waking its disk: the reader says so after a while, and no longer once data arrives. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class ViewerActivityShareWaitTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private lateinit var fake: FakeRemoteFs
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        context.getSharedPreferences("library", android.content.Context.MODE_PRIVATE).edit().clear().commit()
+        Prefs(context).resumeMode = ResumeMode.NO
+        val share = tmp.newFolder("share")
+        // Pages of noise, so each is read from the share apart from the others.
+        val pages = (0 until 10).map { i -> Fixtures.entry("Tale 001-%03d.png".format(i), noise(300, 450, i)) }
+        Fixtures.zip(File(share, "Tale 001.cbz"), *pages.toTypedArray())
+        fake = FakeRemoteFs(share)
+        Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
+        // As on a device: the main thread never waits on the share.
+        Remotes.onMainThread = { Looper.getMainLooper().thread === Thread.currentThread() }
+    }
+
+    @After
+    fun tearDown() {
+        fake.slow?.countDown()
+        Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+    }
+
+    private fun noise(w: Int, h: Int, seed: Int): ByteArray {
+        val random = Random(seed)
+        val bitmap = Bitmap.createBitmap(IntArray(w * h) { (0xFF shl 24) or random.nextInt(0x1000000) }, w, h, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+
+    private fun await(ms: Long = 10_000, done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + ms
+        while (!done() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            idle()
+        }
+    }
+
+    private fun launch(): ViewerActivity {
+        val intent = Intent(ApplicationProvider.getApplicationContext(), ViewerActivity::class.java)
+            .putExtra(ViewerActivity.EXTRA_PATH, "/net/s1/Tale 001.cbz")
+        return Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
+    }
+
+    private fun ViewerActivity.note() = findViewById<View>(R.id.viewer_share_wait)
+
+    private fun ViewerActivity.progress() = findViewById<View>(R.id.viewer_progress)
+
+    private fun ViewerActivity.pages() = findViewById<ViewPager2>(R.id.viewer_pager)
+
+    @Test
+    fun aBookOpeningSlowlySaysSoAfterTwoSecondsUntilItOpens() {
+        val held = CountDownLatch(1)
+        fake.slow = held
+        val viewer = launch()
+        idleFor(1_500)
+        assertEquals(View.VISIBLE, viewer.progress().visibility)
+        assertEquals(View.GONE, viewer.note().visibility)
+        idleFor(600)
+        assertEquals(View.VISIBLE, viewer.note().visibility)
+        // Waking the disk takes long, but fails nothing.
+        idleFor(15_000)
+        assertEquals(View.VISIBLE, viewer.note().visibility)
+        fake.slow = null
+        held.countDown()
+        await { viewer.progress().visibility != View.VISIBLE }
+        assertEquals(View.GONE, viewer.note().visibility)
+        assertFalse(viewer.isFinishing)
+        assertEquals(10, viewer.pages().adapter!!.itemCount)
+    }
+
+    @Test
+    fun aPageLoadingSlowlySaysSoUntilItShows() {
+        val viewer = launch()
+        await { viewer.progress().visibility != View.VISIBLE }
+        repeat(30) { Thread.sleep(10); idle() }
+        val held = CountDownLatch(1)
+        fake.slow = held
+        // Far from the pages read so far, so this one is read from the share.
+        viewer.pages().setCurrentItem(8, false)
+        idle()
+        idleFor(1_500)
+        assertEquals(View.GONE, viewer.note().visibility)
+        idleFor(600)
+        assertEquals(View.VISIBLE, viewer.note().visibility)
+        fake.slow = null
+        held.countDown()
+        await { viewer.note().visibility != View.VISIBLE }
+        assertEquals(View.GONE, viewer.note().visibility)
+        assertFalse(viewer.isFinishing)
+    }
+
+    @Test
+    fun aPageThatShowsAtOnceSaysNothing() {
+        val viewer = launch()
+        await { viewer.progress().visibility != View.VISIBLE }
+        repeat(30) { Thread.sleep(10); idle() }
+        idleFor(3_000)
+        assertEquals(View.GONE, viewer.note().visibility)
+    }
+}

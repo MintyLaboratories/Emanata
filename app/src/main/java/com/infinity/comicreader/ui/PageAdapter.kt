@@ -229,6 +229,12 @@ class PageAdapter(
     /** True when a page on screen is zoomed in. */
     fun zoomed(): Boolean = images.any { it.isAttachedToWindow && it.isZoomed }
 
+    /** True while item [position] shows nothing in a slot whose page is still loading, or is not bound yet. */
+    fun waitingAt(position: Int): Boolean {
+        val holder = recycler?.findViewHolderForAdapterPosition(position) as? PageHolder ?: return true
+        return holder.images.indices.any { holder.shown[it] == NO_PAGE && holder.waiters[it]?.isActive == true }
+    }
+
     /**
      * Why a page could not be shown at [target]; [name] is null when its source has no
      * page names. Only a [permanent] failure is shown again without another decode, and

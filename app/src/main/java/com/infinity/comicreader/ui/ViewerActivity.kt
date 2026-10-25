@@ -71,6 +71,7 @@ import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteException
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.data.Thumbs
@@ -154,6 +155,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** How much of a book on a share is fetched, below [progress]. */
     private lateinit var fetched: TextView
+
+    /** "Waiting for the share…", while a book on a share or its page on screen shows nothing ([updateShareWait]). */
+    private lateinit var shareWait: TextView
     private lateinit var endCard: View
     private lateinit var endSubtitle: TextView
     private lateinit var endNext: View
@@ -638,6 +642,7 @@ class ViewerActivity : AppCompatActivity() {
         sessionStart = SystemClock.elapsedRealtime()
         // The drive may have gone while the reader was away.
         checkStorage()
+        updateShareWait()
     }
 
     /** Closes the book, saying why, once the drive it is read from is gone from [now]. */
@@ -660,6 +665,7 @@ class ViewerActivity : AppCompatActivity() {
         saveHistory()
         flushStats()
         storeVisits()
+        handler.removeCallbacks(checkShareWait)
     }
 
     /**
@@ -681,6 +687,7 @@ class ViewerActivity : AppCompatActivity() {
         handler.removeCallbacks(hideBrightness)
         brightnessPill.animate().cancel()
         handler.removeCallbacks(seekHoldUp)
+        handler.removeCallbacks(checkShareWait)
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -715,6 +722,7 @@ class ViewerActivity : AppCompatActivity() {
         autoProgress = findViewById(R.id.auto_progress)
         progress = findViewById(R.id.viewer_progress)
         fetched = findViewById(R.id.viewer_fetched)
+        shareWait = findViewById(R.id.viewer_share_wait)
         endCard = findViewById(R.id.viewer_end)
         endSubtitle = findViewById(R.id.end_subtitle)
         endNext = findViewById(R.id.end_next)
@@ -1052,6 +1060,7 @@ class ViewerActivity : AppCompatActivity() {
         progress.visibility = View.VISIBLE
         markedRead = false
         fetchedPercent = -1
+        timeShareWait(OPENING)
         landedAtEnd = false
         bookChapters = emptyList()
         repeatedBack.reset()
@@ -1101,6 +1110,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             progress.visibility = View.GONE
             fetched.visibility = View.GONE
+            shareAnswered()
             chapters = siblings
             val src = opened.getOrNull()
             if (src == null) {
@@ -1271,11 +1281,66 @@ class ViewerActivity : AppCompatActivity() {
         runOnUiThread {
             fetched.text = getString(R.string.share_fetching, percent)
             fetched.visibility = if (percent < 100) View.VISIBLE else View.GONE
+            shareAnswered()
         }
     }
 
     @Volatile
     private var fetchedPercent = -1
+
+    /** When the wait on the share now timed began ([timeShareWait]), and for which item ([OPENING] while the book opens). */
+    private var shareWaitFrom = 0L
+    private var shareWaitItem = OPENING
+
+    private val checkShareWait = Runnable { updateShareWait() }
+
+    /**
+     * True while the reader waits on a share: a book on a share opening with nothing
+     * fetched yet, or a page on screen showing nothing while it loads.
+     */
+    private fun waitingForShare(): Boolean {
+        if (file !is RemoteFile || isFinishing) return false
+        if (progress.visibility == View.VISIBLE) return fetched.visibility != View.VISIBLE
+        return source != null && adapter?.waitingAt(shownItem()) == true
+    }
+
+    /**
+     * Times a wait on the share from now, as a book on one starts to open ([item] is
+     * [OPENING]) or another [item] comes on screen. [shareWait] shows once the wait lasts
+     * [SHARE_WAIT_NOTE_MS].
+     */
+    private fun timeShareWait(item: Int) {
+        if (item == shareWaitItem && item != OPENING) return
+        shareWaitItem = item
+        shareWaitFrom = SystemClock.uptimeMillis()
+        updateShareWait()
+    }
+
+    /**
+     * Shows [shareWait] once [SHARE_WAIT_NOTE_MS] have passed since the wait began
+     * ([timeShareWait]) while [waitingForShare] holds, checking again every
+     * [SHARE_WAIT_CHECK_MS] while it shows, so it goes as soon as data arrives.
+     */
+    private fun updateShareWait() {
+        handler.removeCallbacks(checkShareWait)
+        if (file !is RemoteFile) {
+            shareWait.visibility = View.GONE
+            return
+        }
+        val left = shareWaitFrom + SHARE_WAIT_NOTE_MS - SystemClock.uptimeMillis()
+        if (left > 0 && shareWait.visibility != View.VISIBLE) {
+            handler.postDelayed(checkShareWait, left)
+            return
+        }
+        val waiting = waitingForShare()
+        shareWait.visibility = if (waiting) View.VISIBLE else View.GONE
+        if (waiting) handler.postDelayed(checkShareWait, SHARE_WAIT_CHECK_MS)
+    }
+
+    /** Hides [shareWait] at once when what it waited for arrived. */
+    private fun shareAnswered() {
+        if (shareWait.visibility == View.VISIBLE) updateShareWait()
+    }
 
     /** Why [book] could not be opened, as the user can act on it. */
     private fun openFailure(error: Throwable?, book: File): String = when (error) {
@@ -1703,7 +1768,11 @@ class ViewerActivity : AppCompatActivity() {
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
             bounds = pageBounds,
-            onLoaded = { learnSize(it) }
+            onLoaded = {
+                learnSize(it)
+                // After the slot waiting for the page shows it.
+                handler.post { shareAnswered() }
+            }
         )
         a.fitMode = effectiveFit()
         a.filter = filter
@@ -2044,6 +2113,7 @@ class ViewerActivity : AppCompatActivity() {
             hideHintNow()
             backPage = currentIndex
         }
+        timeShareWait(shownItem())
         val count = source?.pageCount ?: 0
         pageText.text = if (itemNumbers()) getString(R.string.page_indicator, shownItem() + 1, layout.itemCount(count))
         else getString(R.string.page_indicator, currentIndex + 1, count)
@@ -3625,6 +3695,15 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L
+
+        /** [timeShareWait]'s item while a book opens. */
+        private const val OPENING = -2
+
+        /** How long the reader waits on a share before saying so ([updateShareWait]). */
+        private const val SHARE_WAIT_NOTE_MS = 2_000L
+
+        /** How often a shown wait note checks whether data arrived. */
+        private const val SHARE_WAIT_CHECK_MS = 500L
 
         /** How long after the last page newly on screen the pages seen are stored. */
         private const val VISITS_DELAY_MS = 5_000L

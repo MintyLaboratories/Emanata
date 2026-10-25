@@ -21,6 +21,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -373,13 +374,20 @@ class DavFsTest {
         assertNull(DavFs.parseContentRange(null))
     }
 
-    @Test(timeout = 60_000)
+    @Test(timeout = 20_000)
     fun aDiskSpinningUpIsWaitedFor() {
         val bytes = Random(11).nextBytes(100_000)
         File(dir, "book.cbz").writeBytes(bytes)
-        val fs = fs()
-        // The first answer after the disk slept comes only once it spun up.
-        server.spinUpMs = Remotes.SPIN_UP_MS + 500
+        // Time scaled down: a 1 s spin-up, waited for as the shared client waits for a real one.
+        val spinUp = 1_000L
+        val wait = Remotes.ANSWER_MS * spinUp / Remotes.SPIN_UP_MS
+        val client = DavFs.sharedClient.newBuilder()
+            .readTimeout(wait, TimeUnit.MILLISECONDS)
+            .writeTimeout(wait, TimeUnit.MILLISECONDS)
+            .build()
+        val fs = DavFs(server.share(), client).also { opened += it }
+        // The first answer after the disk slept comes only once it spun up, a little late.
+        server.spinUpMs = spinUp * 3 / 2
         assertEquals(listOf("book.cbz"), fs.list("").map { it.name })
         fs.open("book.cbz").use { input ->
             val got = ByteArray(bytes.size)
@@ -387,7 +395,12 @@ class DavFsTest {
             while (at < got.size) at += input.read(at.toLong(), got, at, got.size - at)
             assertArrayEquals(bytes, got)
         }
-        assertTrue(DavFs.sharedClient.readTimeoutMillis >= 2 * Remotes.SPIN_UP_MS)
-        assertTrue(DavFs.sharedClient.writeTimeoutMillis >= 2 * Remotes.SPIN_UP_MS)
+    }
+
+    @Test
+    fun theSharedClientWaitsOutSpinUps() {
+        assertTrue(Remotes.ANSWER_MS >= 2 * Remotes.SPIN_UP_MS)
+        assertEquals(Remotes.ANSWER_MS.toInt(), DavFs.sharedClient.readTimeoutMillis)
+        assertEquals(Remotes.ANSWER_MS.toInt(), DavFs.sharedClient.writeTimeoutMillis)
     }
 }

@@ -101,6 +101,13 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Books the user shares, read in place by the app they pick; only the URIs granted to it. -->
+        <provider
+            android:name=".files.BookProvider"
+            android:authorities="${applicationId}.books"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <activity
             android:name=".ui.PagesActivity"
             android:label="@string/pages_title" />

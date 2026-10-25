@@ -16,6 +16,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -153,6 +154,24 @@ class ListActivityStartupTest {
         val second = Robolectric.buildActivity(ListActivity::class.java, viewIntent(book.absolutePath)).setup(state)
         idle()
         assertNull(shadowOf(second.get()).nextStartedActivity)
+    }
+
+    @Test
+    fun aBookThisAppSharedOpensWhereItIsAndOnlyFromStorage() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val book = File(root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        val own = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context.packageName, book.absolutePath))
+        val activity = Robolectric.buildActivity(ListActivity::class.java, own).setup().get()
+        idle()
+        assertEquals(ViewerActivity::class.java.name, shadowOf(activity).nextStartedActivity?.component?.className)
+        // Never copied in, as other apps' content is.
+        assertFalse(File(context.cacheDir, "incoming").exists())
+
+        val private = File(context.filesDir, "c.cbz").apply { writeBytes(ByteArray(10)) }
+        val crafted = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context.packageName, private.absolutePath))
+        val other = Robolectric.buildActivity(ListActivity::class.java, crafted).setup().get()
+        idle()
+        assertNull(shadowOf(other).nextStartedActivity)
     }
 
     @Test

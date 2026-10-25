@@ -81,6 +81,7 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
+import com.infinity.comicreader.files.BookUris
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
@@ -1857,8 +1858,23 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val uri = intent.data ?: return null
         when (uri.scheme) {
             "file" -> return uri.path?.let { handleIncomingFile(File(it)) }
-            "content" -> openSharedContent(uri)
+            "content" -> {
+                // A book this app shared, handed back: opened where it is, as a path would be.
+                if (uri.authority == BookUris.authority(packageName)) return BookUris.pathOf(uri)?.let(::handleOwnBook)
+                openSharedContent(uri)
+            }
         }
+        return null
+    }
+
+    /**
+     * Opens the book at [path], from one of this app's own book URIs: never read through its
+     * own provider, whose descriptors this process serves. Paths on the device follow the
+     * rules of a file:// path; a share's book opens if it can be read.
+     */
+    private fun handleOwnBook(path: String): File? {
+        if (!Remotes.isRemote(path)) return handleIncomingFile(File(path))
+        if (!Remotes.isOrphan(path) && Formats.isOpenable(path)) openViewer(Remotes.file(path), -1) else toast(R.string.error_open)
         return null
     }
 

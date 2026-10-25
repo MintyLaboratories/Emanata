@@ -102,6 +102,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -291,6 +292,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         )
         adapter.onSectionClick = { toggleSection(it.kind) }
         adapter.hiddenPages = library::hiddenAll
+        adapter.firstLayerOnly = settings.list.value.thrift.firstLayerCovers
         // Folder peeks from list rows reuse the grid's covers at this size.
         adapter.onGridCover = { w, h -> prefs.setGridCover(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE, w, h) }
         recycler.adapter = adapter
@@ -447,6 +449,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (old == s) return
         applied = s
         if (s.views[tabName()] != old.views[tabName()]) applyView()
+        adapter.firstLayerOnly = s.thrift.firstLayerCovers
         if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay || s.coverSpacing != old.coverSpacing) {
             adapter.options = rowOptions()
         }
@@ -1298,7 +1301,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
      * reorder the list once all are in. Work already running for the same listing
      * goes on undisturbed. It waits while the library is out of sight, as while a book
-     * is read, so it never competes with the reader for the share or the battery.
+     * is read, so it never competes with the reader for the share or the battery, and
+     * while battery saver pauses background scans.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
@@ -1322,6 +1326,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             var shownAt = SystemClock.uptimeMillis()
             for ((i, e) in books.withIndex()) {
                 withStarted {}
+                awaitScans()
                 val read = withContext(AppDispatchers.io) {
                     runCatching { factsCache.put(e.path, e.size, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) }) }.isSuccess
                 }
@@ -1334,10 +1339,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             if (folders.isEmpty()) return@launch
             for (f in folders) {
                 withStarted {}
+                awaitScans()
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
             applyFilterAndSort()
         }
+    }
+
+    /** Waits while battery saver pauses background scans ([com.infinity.comicreader.data.Thrift.pausedScans]). */
+    private suspend fun awaitScans() {
+        settings.list.first { !it.thrift.pausedScans }
     }
 
     /**

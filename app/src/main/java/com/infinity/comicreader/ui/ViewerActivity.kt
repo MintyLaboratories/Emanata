@@ -65,6 +65,7 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
@@ -789,9 +790,22 @@ class ViewerActivity : AppCompatActivity() {
         // Built into the page adapter.
         if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
             s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
-            s.preload != old.preload
+            s.thrift.readAhead(s.preload) != old.thrift.readAhead(old.preload)
         ) {
             rebuild = true
+        }
+        if (s.thrift.pausedScans != old.thrift.pausedScans) {
+            // Paused, the scans under way stop; resumed, they go on from the page on screen.
+            if (s.thrift.pausedScans) {
+                sizesJob?.cancel()
+                seamsJob?.cancel()
+                seamsJob = null
+            } else {
+                val src = source
+                val book = file
+                if (src != null && book != null) scanSizes(book, src)
+            }
+            checkSeams()
         }
         if (s.pageMode != old.pageMode || s.readingDir != old.readingDir || s.fit != old.fit ||
             s.twoPage != old.twoPage || s.autoCrop != old.autoCrop || s.pageSpacing != old.pageSpacing ||
@@ -1356,11 +1370,11 @@ class ViewerActivity : AppCompatActivity() {
      * Reads the sizes [book]'s pages lack from their headers, in the background and from
      * the page on screen outward, stores them, and lays the book out again when they
      * change its spreads. Skipped where that would unpack the whole book
-     * ([PageSource.cheapSizes]).
+     * ([PageSource.cheapSizes]), and while battery saver pauses scans ([Thrift.pausedScans]).
      */
     private fun scanSizes(book: File, src: PageSource) {
         sizesJob?.cancel()
-        if (!src.cheapSizes || pageSizes.none { it == null }) return
+        if (!src.cheapSizes || pageSizes.none { it == null } || applied.thrift.pausedScans) return
         val names = pageNames
         val store = pageStore ?: return
         val sizes = pageSizes.copyOf()
@@ -1459,7 +1473,8 @@ class ViewerActivity : AppCompatActivity() {
      * first: those within [SEAM_WINDOW] pages, again as the reader moves on, and beyond
      * them those of pages read alone ([PageSource.cheapSizes]) in a format that decodes
      * only strips ([Decoders.regionNamed]). They are kept for the book ([PageSeams]), and the book is laid out
-     * again whenever they change it.
+     * again whenever they change it. While battery saver pauses scans ([Thrift.pausedScans]), only those
+     * within [SEAM_WINDOW] pages are checked: the screens being read need them.
      */
     private fun checkSeams() {
         val src = source ?: return
@@ -1468,7 +1483,8 @@ class ViewerActivity : AppCompatActivity() {
         val store = pageStore ?: return
         if (seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
-        val cheap = { i: Int -> src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
+        val far = !applied.thrift.pausedScans
+        val cheap = { i: Int -> far && src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
         val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap)
         if (pages.isEmpty()) return
         val found = pageSeams.copy()
@@ -1603,7 +1619,7 @@ class ViewerActivity : AppCompatActivity() {
             linear = prefs.linearLight,
             pageScaling = prefs.pageScaling,
             zoomScaling = prefs.zoomScaling,
-            preload = prefs.preload,
+            preload = applied.thrift.readAhead(prefs.preload),
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,

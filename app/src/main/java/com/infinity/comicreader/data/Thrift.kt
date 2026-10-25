@@ -1,0 +1,34 @@
+package com.infinity.comicreader.data
+
+import android.content.Context
+import android.os.PowerManager
+
+/**
+ * What the app holds back while Android's battery saver is on, as the Battery settings let it:
+ * covers of layered images stay at their first layer ([firstLayerCovers]), fewer pages are
+ * decoded ahead ([readAhead]), and background scans of page sizes, seams and folder facts
+ * wait ([pausedScans]).
+ */
+data class Thrift(
+    val firstLayerCovers: Boolean = false,
+    val lessReadAhead: Boolean = false,
+    val pausedScans: Boolean = false
+) {
+    /** How many pages to decode ahead where [pages] are asked for. */
+    fun readAhead(pages: Int): Int = if (lessReadAhead) minOf(pages, SAVER_READ_AHEAD) else pages
+
+    companion object {
+        val NONE = Thrift()
+
+        /** Pages decoded ahead at most while [lessReadAhead]. */
+        const val SAVER_READ_AHEAD = 1
+
+        /** What [p] holds back while battery saver is [saving]. */
+        fun of(saving: Boolean, p: Prefs): Thrift =
+            if (!saving) NONE else Thrift(p.saverCovers, p.saverReadAhead, p.saverScans)
+
+        /** True while Android's battery saver is on. */
+        fun saving(context: Context): Boolean =
+            runCatching { context.getSystemService(PowerManager::class.java)?.isPowerSaveMode }.getOrNull() == true
+    }
+}

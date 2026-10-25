@@ -399,6 +399,16 @@
     <!-- ===================== Settings ===================== -->
     <string name="pref_cat_general">General</string>
     <string name="pref_keep_simple">Keep it simple</string>
+    <string name="pref_cat_battery">Battery</string>
+    <string name="battery_saver">Battery saver</string>
+    <string name="battery_saver_on">On: what is switched on below is held back</string>
+    <string name="battery_saver_off">Off: nothing is held back</string>
+    <string name="pref_saver_covers">Covers from the first layer only</string>
+    <string name="pref_saver_covers_desc">While battery saver is on, covers of layered images stay at their quick first layer</string>
+    <string name="pref_saver_read_ahead">Read fewer pages ahead</string>
+    <string name="pref_saver_read_ahead_desc">While battery saver is on, at most one page is prepared ahead</string>
+    <string name="pref_saver_scans">Pause background scans</string>
+    <string name="pref_saver_scans_desc">While battery saver is on, page sizes, seams beyond nearby pages and folder facts wait</string>
     <string name="pref_keep_simple_desc">Hides advanced options</string>
     <string name="advanced_tag">Advanced</string>
     <string name="section_collapsed">Collapsed</string>

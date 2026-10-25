@@ -415,6 +415,23 @@ class Prefs(context: Context) {
         get() = bool(KEY_GROUP_FAVORITES, true)
         set(v) = put(KEY_GROUP_FAVORITES, v)
 
+    // ---------------------------------------------------------------- battery
+
+    /** While battery saver is on, covers of layered images stay at their first layer ([Thrift]). */
+    var saverCovers: Boolean
+        get() = bool(KEY_SAVER_COVERS, true)
+        set(v) = put(KEY_SAVER_COVERS, v)
+
+    /** While battery saver is on, fewer pages are decoded ahead ([Thrift]). */
+    var saverReadAhead: Boolean
+        get() = bool(KEY_SAVER_READ_AHEAD, true)
+        set(v) = put(KEY_SAVER_READ_AHEAD, v)
+
+    /** While battery saver is on, background scans wait ([Thrift]). */
+    var saverScans: Boolean
+        get() = bool(KEY_SAVER_SCANS, true)
+        set(v) = put(KEY_SAVER_SCANS, v)
+
     // ---------------------------------------------------------------- ui state
 
     var lastPath: String?
@@ -626,6 +643,9 @@ class Prefs(context: Context) {
         private const val KEY_COVER_ALONE = "pref_cover_alone"
         private const val KEY_ROTATE_SPREADS = "pref_rotate_spreads"
         private const val KEY_JOIN_SPREADS = "pref_join_spreads"
+        private const val KEY_SAVER_COVERS = "pref_saver_covers"
+        private const val KEY_SAVER_READ_AHEAD = "pref_saver_read_ahead"
+        private const val KEY_SAVER_SCANS = "pref_saver_scans"
 
         private val KNOWN_KEYS = setOf(
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -637,7 +657,8 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS
+            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

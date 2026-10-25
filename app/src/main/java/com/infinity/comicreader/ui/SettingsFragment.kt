@@ -7,7 +7,9 @@ import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import android.text.TextUtils
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -16,6 +18,8 @@ import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.RemoteCache
@@ -152,6 +156,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         val prefs = Prefs(requireContext())
         val library = Library(requireContext())
         setUpSections(prefs)
+        setUpBattery()
 
         findPreference<Preference>("pref_theme")?.setOnPreferenceChangeListener { _, value ->
             val mode = when (value as String) {
@@ -319,6 +324,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("pref_keep_simple")?.setOnPreferenceChangeListener { _, value ->
             AdvancedSettings.apply(screen, value as Boolean)
             true
+        }
+    }
+
+    /** Says whether battery saver is on, as it changes. */
+    private fun setUpBattery() {
+        val state = findPreference<Preference>("battery_saver_state") ?: return
+        val settings = SettingsRepository.get(requireContext())
+        fun show() {
+            state.setSummary(if (Thrift.saving(requireContext())) R.string.battery_saver_on else R.string.battery_saver_off)
+        }
+        show()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { settings.reader.collect { show() } }
         }
     }
 

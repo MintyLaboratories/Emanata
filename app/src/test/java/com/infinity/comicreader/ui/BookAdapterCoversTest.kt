@@ -160,6 +160,25 @@ class BookAdapterCoversTest {
     private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder?)?.thumb?.drawable
 
     @Test
+    fun batterySaverKeepsFirstLayersUntilItEnds() {
+        val layered = Layered()
+        adapter.covers = layered
+        adapter.firstLayerOnly = true
+        adapter.submit((1..3).map { book("$it.cbz") })
+        layout()
+        until { layered.steps.size == 3 }
+        val shown = 0 until recycler.childCount
+        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.RED } }
+        // Waiting longer makes no full cover.
+        repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+        assertEquals((1..3).map { "first $it.cbz" }.toSet(), layered.steps.toSet())
+        adapter.firstLayerOnly = false
+        layout()
+        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
+        assertEquals((1..3).map { "full $it.cbz" }.toSet(), layered.steps.filter { it.startsWith("full") }.toSet())
+    }
+
+    @Test
     fun layeredCoversShowTheirFirstLayersFirstThenTheFullCovers() {
         val layered = Layered()
         adapter.covers = layered

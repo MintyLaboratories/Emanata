@@ -195,6 +195,18 @@ class BookAdapter(
         redrawAll = true
     }
 
+    /**
+     * Covers of layered images stay at their first layer ([CoverSource.loadFirst]), as battery
+     * saver may ask ([com.infinity.comicreader.data.Thrift]). A change asks every row again:
+     * turned off, quick covers are replaced by full ones.
+     */
+    var firstLayerOnly: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
+
     /** Left out of the titles that start with it: the series name inside a Set. A change redraws every row. */
     var titlePrefix: String? = null
         set(value) {
@@ -284,7 +296,7 @@ class BookAdapter(
     private fun coverId(item: BookEntry): String =
         "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
             "${item.direction == ReadingDirection.RTL && covers.directionMatters(item)}|" +
-            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.path, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}"
+            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.path, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
 
     init {
         setHasStableIds(true)
@@ -538,14 +550,19 @@ class BookAdapter(
     /** First passes ([requestCover]) not done yet; full covers wait for none to be left. */
     private val firstPasses = MutableStateFlow(0)
 
-    /** Replaces the quick cover of [item] in [holder] by its full [w] x [h] one, once no first pass is left. */
+    /**
+     * Replaces the quick cover of [item] in [holder] by its full [w] x [h] one, once no first pass
+     * is left; never while [firstLayerOnly].
+     */
     private fun finishCover(holder: BookHolder, item: BookEntry, id: String, w: Int, h: Int) {
+        if (firstLayerOnly) return
         val appContext = holder.itemView.context.applicationContext
         val charset = prefs.charset
         val style = prefs.coverStyle
         val source = covers
         val job = scope.launch {
             firstPasses.first { it == 0 }
+            if (firstLayerOnly) return@launch
             val bitmap = gated { canceled -> Timing.span("cover full") { runCatching { source.load(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
             if (bitmap != null && holder.wanted == id) draw(holder, bitmap, id)
         }

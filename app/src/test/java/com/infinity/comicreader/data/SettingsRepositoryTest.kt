@@ -2,6 +2,9 @@ package com.infinity.comicreader.data
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.os.Looper
+import android.os.PowerManager
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Adjustments
@@ -13,6 +16,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -120,5 +124,34 @@ class SettingsRepositoryTest {
     @Test
     fun getReturnsOneInstance() {
         assertSame(SettingsRepository.get(context), SettingsRepository.get(context))
+    }
+
+    private fun setSaver(on: Boolean) {
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(on)
+        context.sendBroadcast(Intent(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED))
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test
+    fun batterySaverHoldsBackWhatTheBatterySettingsLet() {
+        assertEquals(Thrift.NONE, repo.reader.value.thrift)
+        setSaver(true)
+        assertEquals(Thrift(firstLayerCovers = true, lessReadAhead = true, pausedScans = true), repo.reader.value.thrift)
+        assertEquals(repo.reader.value.thrift, repo.list.value.thrift)
+        assertEquals(1, repo.reader.value.thrift.readAhead(repo.reader.value.preload))
+        prefs.saverCovers = false
+        prefs.saverScans = false
+        assertEquals(Thrift(lessReadAhead = true), repo.list.value.thrift)
+        setSaver(false)
+        assertEquals(Thrift.NONE, repo.list.value.thrift)
+        assertEquals(2, repo.reader.value.thrift.readAhead(repo.reader.value.preload))
+    }
+
+    @Test
+    fun lessReadAheadNeverAddsPages() {
+        val less = Thrift(lessReadAhead = true)
+        assertEquals(0, less.readAhead(0))
+        assertEquals(1, less.readAhead(4))
+        assertEquals(4, Thrift.NONE.readAhead(4))
     }
 }

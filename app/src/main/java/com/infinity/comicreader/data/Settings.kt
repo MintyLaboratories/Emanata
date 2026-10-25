@@ -1,7 +1,12 @@
 package com.infinity.comicreader.data
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,10 +37,11 @@ data class ListSettings(
     val linearLight: Boolean,
     val detectDirection: Boolean,
     val charset: String,
-    val thumbScaling: Scaling = Scaling.DEFAULT
+    val thumbScaling: Scaling = Scaling.DEFAULT,
+    val thrift: Thrift = Thrift.NONE
 ) {
     companion object {
-        fun from(p: Prefs) = ListSettings(
+        fun from(p: Prefs, saving: Boolean = false) = ListSettings(
             showHidden = p.showHidden,
             thumbnails = p.thumbnails,
             views = Prefs.TABS.associateWith { p.view(it) },
@@ -56,7 +62,8 @@ data class ListSettings(
             linearLight = p.linearLight,
             detectDirection = p.detectDirection,
             charset = p.charset,
-            thumbScaling = p.thumbScaling
+            thumbScaling = p.thumbScaling,
+            thrift = Thrift.of(saving, p)
         )
     }
 }
@@ -94,10 +101,11 @@ data class ReaderSettings(
     val joinSpreads: Boolean = true,
     val pageScaling: Scaling = Scaling.DEFAULT,
     val zoomScaling: Scaling = Scaling.DEFAULT,
-    val thumbScaling: Scaling = Scaling.DEFAULT
+    val thumbScaling: Scaling = Scaling.DEFAULT,
+    val thrift: Thrift = Thrift.NONE
 ) {
     companion object {
-        fun from(p: Prefs) = ReaderSettings(
+        fun from(p: Prefs, saving: Boolean = false) = ReaderSettings(
             fullscreen = p.fullscreen,
             keepScreenOn = p.keepScreenOn,
             readingDir = p.readingDir,
@@ -129,7 +137,8 @@ data class ReaderSettings(
             joinSpreads = p.joinSpreads,
             pageScaling = p.pageScaling,
             zoomScaling = p.zoomScaling,
-            thumbScaling = p.thumbScaling
+            thumbScaling = p.thumbScaling,
+            thrift = Thrift.of(saving, p)
         )
     }
 }
@@ -138,25 +147,48 @@ data class ReaderSettings(
  * App-wide change feed for [Prefs]. Reads and writes still go through [Prefs];
  * this republishes a fresh snapshot whenever any setting changes, from whichever
  * screen wrote it, so consumers re-apply what changed live or when they start
- * again. Theme and language are not here: they apply by recreating activities.
+ * again; likewise when Android's battery saver turns on or off ([Thrift]). Theme and
+ * language are not here: they apply by recreating activities.
  */
 class SettingsRepository internal constructor(private val app: Context) {
     private val prefs = Prefs(app)
 
-    private val _list = MutableStateFlow(ListSettings.from(prefs))
+    /** Whether battery saver is on, as last heard. */
+    @Volatile
+    private var saving = Thrift.saving(app)
+
+    private val _list = MutableStateFlow(ListSettings.from(prefs, saving))
     val list: StateFlow<ListSettings> = _list.asStateFlow()
 
-    private val _reader = MutableStateFlow(ReaderSettings.from(prefs))
+    private val _reader = MutableStateFlow(ReaderSettings.from(prefs, saving))
     val reader: StateFlow<ReaderSettings> = _reader.asStateFlow()
 
+    /** What battery saver holds back now. */
+    val thrift: Thrift get() = _reader.value.thrift
+
+    private fun publish() {
+        _list.value = ListSettings.from(prefs, saving)
+        _reader.value = ReaderSettings.from(prefs, saving)
+    }
+
     // Held in a field: SharedPreferences references its listeners only weakly.
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _list.value = ListSettings.from(prefs)
-        _reader.value = ReaderSettings.from(prefs)
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> publish() }
+
+    private val saverReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val now = Thrift.saving(app)
+            if (now == saving) return
+            saving = now
+            publish()
+        }
     }
 
     init {
         prefs.registerListener(listener)
+        // A protected broadcast: only the system sends it.
+        ContextCompat.registerReceiver(
+            app, saverReceiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     companion object {

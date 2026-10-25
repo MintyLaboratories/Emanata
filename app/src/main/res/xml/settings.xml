@@ -417,6 +417,31 @@
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory
+        app:key="section_battery"
+        app:title="@string/pref_cat_battery">
+        <Preference
+            app:key="battery_saver_state"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/battery_saver" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_saver_covers"
+            app:summary="@string/pref_saver_covers_desc"
+            app:title="@string/pref_saver_covers" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_saver_read_ahead"
+            app:summary="@string/pref_saver_read_ahead_desc"
+            app:title="@string/pref_saver_read_ahead" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_saver_scans"
+            app:summary="@string/pref_saver_scans_desc"
+            app:title="@string/pref_saver_scans" />
+    </com.infinity.comicreader.ui.CollapsibleCategory>
+
+    <com.infinity.comicreader.ui.CollapsibleCategory
         app:key="section_data"
         app:title="@string/pref_cat_data">
         <Preference

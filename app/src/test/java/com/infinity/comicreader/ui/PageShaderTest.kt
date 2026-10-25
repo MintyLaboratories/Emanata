@@ -100,6 +100,21 @@ class PageShaderTest {
     }
 
     @Test
+    fun clampRangeIsTheTwoNearestPixelsDownToHalfSize() {
+        // The shader clamps to taps r - 1 and r: floor(p - 0.5) and the next, at any scale; the CPU
+        // takes the same range from 0.5x up. Only the range is compared: the GPU never draws a shrink.
+        val source = PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, antiRing = true)
+        assertTrue(source.contains("i == 2") && source.contains("i == 3") && source.contains("base - 2.0 + 0.5"))
+        for (scale in listOf(0.5, 0.6, 0.75, 0.99, 1.0, 1.75, 4.0)) {
+            for (step in 0 until 40) {
+                val center = 3.0 + step / 7.0
+                val base = kotlin.math.floor(center - 0.5).toInt()
+                assertEquals("$scale at $center", base to base + 1, Resampler.ringRange(center, scale))
+            }
+        }
+    }
+
+    @Test
     fun withoutAntiRingingTheShaderHasNoClamp() {
         assertTrue(!PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, antiRing = false).contains("ring"))
         assertTrue(PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, antiRing = true).contains("ring * (clamp("))

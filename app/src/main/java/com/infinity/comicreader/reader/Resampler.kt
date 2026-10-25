@@ -86,14 +86,13 @@ object Resampler {
             count[i] = n
             for (t in 0 until n) weights[i * stride + t] = (acc[t] / sum).toFloat()
         }
-        val enlarged = scale >= 1.0
-        val ring = scaling.ring(enlarged)
+        val ring = scaling.ring(enlarged = scale >= 1.0)
         if (ring <= 0f) return Axis(start, count, weights, stride)
         val ringLo = IntArray(dstLen)
         val ringHi = IntArray(dstLen)
         for (i in 0 until dstLen) {
             val center = from + (i + 0.5) / scale
-            val (lo, hi) = ringRange(center, scale, enlarged)
+            val (lo, hi) = ringRange(center, scale)
             ringLo[i] = lo.coerceIn(0, srcLen - 1)
             ringHi[i] = hi.coerceIn(0, srcLen - 1)
         }
@@ -102,20 +101,16 @@ object Resampler {
 
     /**
      * The source pixels anti-ringing clamps to around [center] at [scale]: the two either
-     * side when [enlarged], else those whose centers lie under the output pixel (the one
-     * nearest when none does).
+     * side (as the GPU's [com.infinity.comicreader.ui.PageShader] does), widened to those
+     * whose centers lie under the output pixel where they reach further, which happens
+     * only when shrinking below 0.5×.
      */
-    fun ringRange(center: Double, scale: Double, enlarged: Boolean): Pair<Int, Int> {
-        if (enlarged) {
-            val base = floor(center - 0.5).toInt()
-            return base to base + 1
-        }
+    fun ringRange(center: Double, scale: Double): Pair<Int, Int> {
+        val base = floor(center - 0.5).toInt()
         val half = 0.5 / scale
         val lo = ceil(center - half - 0.5).toInt()
         val hi = floor(center + half - 0.5).toInt()
-        if (hi >= lo) return lo to hi
-        val nearest = floor(center).toInt()
-        return nearest to nearest
+        return min(lo, base) to max(hi, base + 1)
     }
 
     /** Reads source row [y] in full as non-premultiplied ARGB into [out]. Called from several threads. */

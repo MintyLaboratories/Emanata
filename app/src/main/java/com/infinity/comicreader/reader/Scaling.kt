@@ -43,8 +43,9 @@ enum class ScaleFilter(val key: String, val radius: Int) {
  * How an image is resampled: through [filter], with anti-ringing at [upRing] percent where
  * an axis is enlarged and [downRing] percent where it is shrunk. Anti-ringing, as in
  * libplacebo, blends each filtered value toward itself clamped to the range of the
- * source pixels nearest it: the two either side when enlarging, those under the output
- * pixel when shrinking; per axis, after each pass. At 0 % there is no clamp step at all.
+ * source pixels nearest it: the two either side, or those under the output pixel where
+ * they are more (shrinking below 0.5×); per axis, after each pass. At 0 % there is no
+ * clamp step at all.
  */
 data class Scaling(val filter: ScaleFilter = ScaleFilter.DEFAULT, val upRing: Int = 0, val downRing: Int = DEFAULT_DOWN_RING) {
     init {

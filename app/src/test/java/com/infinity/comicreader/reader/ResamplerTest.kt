@@ -55,21 +55,17 @@ class ResamplerTest {
     }
 
     /**
-     * The source pixels output [i] clamps to: the two either side of its center enlarging,
-     * those whose centers its footprint covers shrinking (the nearest when none).
+     * The source pixels output [i] clamps to: the two either side of its center, together
+     * with those whose centers its footprint covers.
      */
     private fun nearest(srcLen: Int, from: Double, span: Double, dstLen: Int, i: Int): List<Int> {
         val scale = dstLen / span
         val center = from + (i + 0.5) / scale
-        val found = if (scale >= 1) {
-            val below = floor(center - 0.5).toInt()
-            listOf(below, below + 1)
-        } else {
-            (floor(center - 1 / scale).toInt()..ceil(center + 1 / scale).toInt()).filter { j ->
-                j + 0.5 >= center - 0.5 / scale && j + 0.5 <= center + 0.5 / scale
-            }.ifEmpty { listOf(floor(center).toInt()) }
+        val below = floor(center - 0.5).toInt()
+        val under = (floor(center - 1 / scale).toInt()..ceil(center + 1 / scale).toInt()).filter { j ->
+            j + 0.5 >= center - 0.5 / scale && j + 0.5 <= center + 0.5 / scale
         }
-        return found.map { it.coerceIn(0, srcLen - 1) }
+        return (under + listOf(below, below + 1)).map { it.coerceIn(0, srcLen - 1) }
     }
 
     private fun toLinear(c: Int) = Resampler.srgbToLinear(c / 255.0)
@@ -321,6 +317,23 @@ class ResamplerTest {
         val up = Resampler.axis(100, 0.0, 100.0, 300, Scaling(upRing = 100))
         assertEquals(49, up.ringLo[150])
         assertEquals(50, up.ringHi[150])
+    }
+
+    @Test
+    fun mildShrinkClampsToTheTwoNearestPixels() {
+        // From 0.5x to 1x the footprint covers one source pixel or two: the two either side count.
+        for (dst in listOf(50, 61, 75, 99)) {
+            val axis = Resampler.axis(100, 0.0, 100.0, dst, Scaling(downRing = 100))
+            for (i in 1 until dst - 1) {
+                val below = floor((i + 0.5) * 100 / dst - 0.5).toInt()
+                assertEquals("$dst: $i", below, axis.ringLo[i])
+                assertEquals("$dst: $i", below + 1, axis.ringHi[i])
+            }
+        }
+        // Below 0.5x the footprint covers more, and is the range.
+        val third = Resampler.axis(300, 0.0, 300.0, 100, Scaling(downRing = 100))
+        assertEquals(150, third.ringLo[50])
+        assertEquals(152, third.ringHi[50])
     }
 
     @Test

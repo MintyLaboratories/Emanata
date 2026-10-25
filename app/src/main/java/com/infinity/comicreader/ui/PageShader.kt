@@ -24,8 +24,8 @@ import com.infinity.comicreader.reader.ScaleFilter
  *   normalized per axis.
  * - With [antiRing], each row's horizontal sum is blended toward itself clamped to the
  *   two source pixels either side, by the `ring` strength ([paint]), then the vertical
- *   sum toward itself clamped to the two rows either side: the CPU's steps, per axis.
- *   Without it there is no clamp code at all.
+ *   sum toward itself clamped to the two rows either side: the CPU's steps and ranges
+ *   ([Resampler.ringRange]) per axis, down to 0.5×. Without it there is no clamp code at all.
  * - Past the bitmap's edges its edge pixels repeat; the result is clamped into range,
  *   as the CPU's is.
  * - Made for enlarging: shrinking keeps the kernel at source size, so it aliases as

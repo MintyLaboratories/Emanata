@@ -246,6 +246,24 @@ class ViewerActivitySeamsTest {
     }
 
     @Test
+    fun pagesSeenAreNotStoredWhereSeamsPlayNoPart() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        val viewer = launch(book(count = 7, first = 3))
+        repeat(3) { viewer.next() }
+        assertEquals("4 / 7", viewer.indicator())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+        repeat(50) { Thread.sleep(10); idle() }
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        assertTrue(seams.listFiles().orEmpty().none { it.name.endsWith(".seen") })
+        // Merged again, the pages seen count: they are stored.
+        ReaderSheet(viewer).tap(R.id.btn_spreads_merge)
+        viewer.next()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+        await { seams.listFiles()?.any { it.name.endsWith(".seen") } == true }
+        assertTrue(seams.listFiles().orEmpty().any { it.name.endsWith(".seen") })
+    }
+
+    @Test
     fun pageSizesLearnedLaterKeepTheScreensAlreadyRead() {
         prefs.twoPage = TwoPage.ON
         // As above, in a book whose page sizes are learned as its pages load.

@@ -279,6 +279,9 @@ class ViewerActivity : AppCompatActivity() {
     private var storedVisits = 0
     private var visitsJob: Job? = null
 
+    /** True once the open book's seams count ([seamsUsed]), or it has seams or pages seen stored: only then are pages seen stored. */
+    private var keepVisits = false
+
     /** [visitedPages] counted when the layout was last made from them. */
     private var shownVisits = 0
 
@@ -1472,6 +1475,7 @@ class ViewerActivity : AppCompatActivity() {
         visitedPages.clear()
         visitedPages.or(known.seen)
         storedVisits = visitedPages.cardinality()
+        keepVisits = !known.seen.isEmpty || known.seams.anyChecked
         shownVisits = 0
     }
 
@@ -1689,12 +1693,14 @@ class ViewerActivity : AppCompatActivity() {
         return true
     }
 
-    /** Stores [visitedPages] for the open book now, in the background, when any is new since last stored. */
+    /** Stores [visitedPages] for the open book now, in the background, when any is new since last stored and they count ([keepVisits]). */
     private fun storeVisits() {
         visitsJob?.cancel()
         visitsJob = null
         val store = pageStore ?: return
         if (visitedPages.cardinality() == storedVisits) return
+        if (!keepVisits && !seamsUsed()) return
+        keepVisits = true
         storedVisits = visitedPages.cardinality()
         val seen = visitedPages.clone() as BitSet
         visitWrites.launch { store.writeSeen(seen) }

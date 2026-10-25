@@ -35,6 +35,9 @@ class PageSeams(val dir: File) {
             rtl[i] = rightToLeft
         }
 
+        /** True when any seam was checked. */
+        val anyChecked: Boolean get() = ltr.any { it != null }
+
         /** True when any seam runs on, either way. */
         val anyMatch: Boolean get() = ltr.any { it?.match == true } || rtl.any { it?.match == true }
 

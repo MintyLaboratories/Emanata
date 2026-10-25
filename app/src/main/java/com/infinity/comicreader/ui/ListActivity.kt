@@ -1456,8 +1456,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /**
-     * The long-press menu: the item's file operations as a row of icons (Rename, Delete,
-     * Move, Copy, and More when it holds anything) above its comic operations as a list.
+     * The long-press menu: the item's file operations as a row of icons (Delete, Rename,
+     * Move, Copy, and More when it holds anything; Delete farthest from the thumb) above
+     * its comic operations as a list.
      */
     private fun onEntryLongClick(entry: BookEntry) {
         val path = entry.path
@@ -1540,8 +1541,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
         if (canChangeFiles(entry)) {
             val more = moreActions(entry)
-            op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
             op(R.id.file_op_delete, R.drawable.ic_delete, R.string.delete) { fileActions.delete(entry.file, entry.isDir) }
+            op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
             op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
             op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
             if (more.isNotEmpty()) op(R.id.file_op_more, R.drawable.ic_more_horiz, R.string.file_op_more) { showMore(entry, more) }
@@ -1557,10 +1558,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * True when [entry] can be renamed, deleted, moved and copied: a file or folder on the
-     * device or a share, listed in Browse, never a location itself.
+     * device or a share, listed in Browse, Favorites or History, never a location itself.
      */
     private fun canChangeFiles(entry: BookEntry): Boolean {
-        if (mode != TAB_BROWSE) return false
+        if (mode == TAB_BOOKMARKS) return false
         val path = entry.path
         if (roots.any { it.path == path }) return false
         if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)

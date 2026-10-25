@@ -188,15 +188,75 @@ class ListActivityFileOpsTest {
     }
 
     @Test
-    fun favoritesAndHistoryHaveNoFileOperations() {
+    fun deleteIsFarthestFromTheThumb() {
+        val activity = launch()
+        val ops = activity.longPress(book.absolutePath).findViewById<LinearLayout>(R.id.file_ops)!!
+        assertEquals(
+            listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy),
+            (0 until ops.childCount).map { ops.getChildAt(it).id }
+        )
+    }
+
+    @Test
+    fun favoritesAndHistoryHaveFileOperations() {
         val activity = launch()
         for (tab in listOf(1, 2)) {
             activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
             idle()
             val menu = activity.longPress(book.absolutePath)
-            assertEquals(View.GONE, menu.findViewById<LinearLayout>(R.id.file_ops)!!.visibility)
+            assertEquals(View.VISIBLE, menu.findViewById<LinearLayout>(R.id.file_ops)!!.visibility)
+            for (id in listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy)) assertNotNull(menu.op(id))
             menu.dismiss()
         }
+    }
+
+    @Test
+    fun renamingInFavoritesListsItRenamed() {
+        val activity = launch()
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
+        idle()
+        activity.longPress(book.absolutePath).op(R.id.file_op_rename)!!.performClick()
+        idle()
+        val ask = latest()
+        ask.edit().setText("two.cbz")
+        ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        val renamed = File(shelf, "two.cbz")
+        settle { renamed.exists() }
+        assertTrue(library.isFavorite(renamed.absolutePath))
+        activity.row(renamed.absolutePath)
+    }
+
+    @Test
+    fun movePickedUpInHistorySaysToPasteInBrowse() {
+        val activity = launch()
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(2)!!.select()
+        idle()
+        activity.longPress(book.absolutePath).op(R.id.file_op_move)!!.performClick()
+        idle()
+        assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
+        assertEquals(View.GONE, activity.paste().visibility)
+        assertEquals(book.absolutePath, FileClipboard.clip?.path)
+
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
+        idle()
+        activity.open(other)
+        activity.paste().performClick()
+        settle { !book.exists() }
+        assertTrue(File(other, "one.cbz").isFile)
+        assertEquals(3, library.historyFor(File(other, "one.cbz").absolutePath)?.page)
+    }
+
+    @Test
+    fun deletingFromHistoryForgetsIt() {
+        val activity = launch()
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(2)!!.select()
+        idle()
+        activity.longPress(book.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { !book.exists() }
+        assertNull(library.historyFor(book.absolutePath))
+        assertEquals(-1, (activity.recycler().adapter as BookAdapter).positionOf(book.absolutePath))
     }
 
     @Test

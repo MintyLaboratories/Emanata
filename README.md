@@ -146,16 +146,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Resume reading at startup:** Ask (default), Yes or No. As the app starts,
   Ask offers to reopen the book read last at its page; ticking *Don't ask
   again* turns the answer into Yes or No. A finished book is not offered.
-- Long-press a file or folder in Browse for its file operations, a row of icons
-  on top: **Rename**, **Delete** (asks first), **Move**, **Copy**, and **More**
-  once it holds anything (file tools to come). Below them, the comic
-  operations: peek, favorite, mark read/unread, show it in its folder (except
-  from that folder itself), set a folder as the startup folder. Favorites and
-  History list the comic operations only. File operations work on the device and on shares
-  (SMB through smbj, WebDAV through MKCOL/PUT/MOVE/COPY/DELETE).
+- Long-press a file or folder in Browse, Favorites or History for its file
+  operations, a row of icons on top: **Delete** (asks first, farthest from the
+  thumb), **Rename**, **Move**, **Copy**, **Share** (files), and **More** once it
+  holds anything (file tools to come). Below them, the comic operations: peek,
+  favorite, mark read/unread, show it in its folder (except from that folder
+  itself), set a folder as the startup folder. Bookmarks list the comic
+  operations only. File operations work on the device and on shares (SMB
+  through smbj, WebDAV through MKCOL/PUT/MOVE/COPY/DELETE).
+- **Share** asks what to send, each a check box followed by what it sends: the
+  title, the cover, the file (with its type icon, name and size); title and
+  cover at first, then the last choice. The share sheet gets one intent: the
+  title as text, the cover as a PNG, the file in place through the app's own
+  content provider, which other apps read only when granted. A share's book is
+  never downloaded or copied first: the app picked reads it on demand through a
+  proxy file descriptor, any size.
 - **Move** and **Copy** pick the item up: a **Paste** button shows at the
   bottom left (the List/Grid button's mirror), with a short hint. Tap it to
-  paste into the folder browsed, long-press it to drop the item. A name already
+  paste into the folder browsed, long-press it to cancel. Picked up in Favorites
+  or History, the item waits for a folder opened in Browse. A name already
   there asks **Replace / Keep both / Skip** (Keep both names it `Book (2).cbz`).
   A folder is replaced whole, never merged, and the dialog says so. A move
   within one place is a rename; between places (device and share, two shares,
@@ -169,7 +178,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   copy, WebDAV COPY) where it can. Progress shows once an operation takes a
   moment, with Cancel while canceling can stop it (not during a rename or a
   WebDAV COPY, which the server makes in one request); it goes on when the
-  device turns, and in the background (a notification shows it). Favorites,
+  device turns, and in the background (a notification shows it; Android 13+
+  asks once to allow notifications, as the first operation starts). Favorites,
   read marks, history, bookmarks, hidden pages, color settings, folder layouts
   and start folders follow an item moved or renamed, and go with one deleted.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots

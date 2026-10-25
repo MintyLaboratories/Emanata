@@ -29,6 +29,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 /**
  * Shares a book: a dialog of check boxes, each followed by what it sends (the title, the
@@ -155,9 +156,10 @@ internal class BookShare(
                     Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                if (choice.cover && coverUri == null && !choice.title && !choice.file) {
-                    Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
-                    return@launch
+                if (choice.cover && coverUri == null) {
+                    val alone = !choice.title && !choice.file
+                    Toast.makeText(activity, if (alone) R.string.share_cover_failed else R.string.share_cover_left_out, Toast.LENGTH_SHORT).show()
+                    if (alone) return@launch
                 }
                 val intent = ShareIntents.of(title.takeIf { choice.title }, coverUri, fileUri, BookUris.mimeOf(entry.name)) ?: return@launch
                 runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
@@ -165,14 +167,25 @@ internal class BookShare(
         }
     }
 
-    /** Writes [bitmap] as the one shared cover under cache/shared, which the FileProvider serves, named after [title]. */
+    /**
+     * Writes [bitmap] as the one shared cover under cache/shared, which the FileProvider serves,
+     * named after [title] ([coverName]), else `cover.png` where that name cannot be written.
+     */
     private fun writeCover(bitmap: Bitmap, title: String): Uri {
         val dir = File(activity.cacheDir, COVER_DIR).apply { mkdirs() }
         dir.listFiles()?.forEach { runCatching { it.delete() } }
-        val name = title.takeIf { FileUtils.isSafeName(it) && it.length <= MAX_NAME } ?: "cover"
-        val out = File(dir, "$name.png")
-        out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val out = runCatching { File(dir, "${coverName(title)}.png").also { write(bitmap, it) } }.getOrNull()
+            ?: File(dir, "$FALLBACK_NAME.png").also { write(bitmap, it) }
         return FileProvider.getUriForFile(activity, "${activity.packageName}.files", out)
+    }
+
+    private fun write(bitmap: Bitmap, file: File) {
+        try {
+            file.outputStream().use { if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Not compressed") }
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
     }
 
     companion object {
@@ -181,11 +194,36 @@ internal class BookShare(
         const val COVER_HEIGHT = 1800
 
         private const val COVER_DIR = "shared/cover"
-        private const val MAX_NAME = 200
+        private const val FALLBACK_NAME = "cover"
+
+        /** The most a shared cover's name takes before `.png`, in UTF-8 bytes: file systems allow 255 with it. */
+        const val MAX_NAME_BYTES = 246
 
         /** Covers begun for sending, ever; for tests. */
         @Volatile
         internal var coversMade = 0
+
+        /**
+         * The name a cover of a book titled [title] is sent under, without `.png`: the title cut to
+         * [MAX_NAME_BYTES] UTF-8 bytes, between characters; `cover` when it cannot name a file.
+         */
+        fun coverName(title: String): String {
+            var bytes = 0
+            var end = 0
+            while (end < title.length) {
+                val cp = title.codePointAt(end)
+                val n = when {
+                    cp < 0x80 -> 1
+                    cp < 0x800 -> 2
+                    cp < 0x10000 -> 3
+                    else -> 4
+                }
+                if (bytes + n > MAX_NAME_BYTES) break
+                bytes += n
+                end += Character.charCount(cp)
+            }
+            return title.substring(0, end).trimEnd().takeIf { FileUtils.isSafeName(it) } ?: FALLBACK_NAME
+        }
 
         /** What a book is shared as: its file name without the extension. */
         fun titleOf(entry: BookEntry): String = if (entry.isDir) entry.name else entry.name.substringBeforeLast('.').ifEmpty { entry.name }

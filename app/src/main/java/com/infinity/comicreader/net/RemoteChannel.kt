@@ -13,7 +13,8 @@ import java.nio.channels.SeekableByteChannel
  * run after a seek is [seekBlock] long, so walking an archive's headers fetches little
  * around each; each run that follows on from the last fetched doubles, up to
  * [maxBlock], so a page streamed in small pieces costs few round trips. The most
- * recently used runs are kept, up to [maxCached] bytes. Calls are serialized.
+ * recently used runs are kept, up to [maxCached] bytes; the array of a run let go is reused
+ * for the next of its length, so a long streamed read allocates little. Calls are serialized.
  */
 class RemoteChannel(
     private val input: RemoteInput,
@@ -48,8 +49,15 @@ class RemoteChannel(
     private var lastEnd = -1L
     private var window = minBlock
 
+    /** The array of the run last let go, for the next run of its length. */
+    private var spare: ByteArray? = null
+
     /** Round trips made so far; for tests. */
     var fetches = 0
+        private set
+
+    /** Arrays made for runs so far; for tests. */
+    var allocations = 0
         private set
 
     @Synchronized
@@ -89,7 +97,7 @@ class RemoteChannel(
         window = if (follows || start == lastEnd) minOf(window.toLong() * 2, maxBlock.toLong()).toInt() else minBlock
         val reach = (at - start + wanted).coerceAtMost(maxBlock.toLong()).toInt()
         val length = minOf(maxOf(window, reach).toLong(), size - start).toInt()
-        val bytes = ByteArray(length)
+        val bytes = spare?.takeIf { it.size == length }?.also { spare = null } ?: ByteArray(length).also { allocations++ }
         var n = 0
         Timing.span("share read ${length / 1024} KB") {
             while (n < length) {
@@ -103,7 +111,11 @@ class RemoteChannel(
         lastEnd = run.end
         runs.add(run)
         cachedBytes += run.bytes.size
-        while (cachedBytes > maxCached && runs.size > 1) cachedBytes -= runs.removeAt(0).bytes.size
+        while (cachedBytes > maxCached && runs.size > 1) {
+            val old = runs.removeAt(0)
+            cachedBytes -= old.bytes.size
+            spare = old.bytes
+        }
         return run
     }
 
@@ -139,6 +151,7 @@ class RemoteChannel(
         open = false
         runs.clear()
         cachedBytes = 0
+        spare = null
         input.close()
     }
 

@@ -91,6 +91,32 @@ class RemoteChannelTest {
     }
 
     @Test
+    fun aLongStreamedReadReusesTheArraysOfRunsLetGo() {
+        val big = ByteArray(200_000) { (it * 31 + it / 977).toByte() }
+        val input = Bytes(big)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096, maxCached = 8192)
+        val out = ByteArrayOutputStream()
+        val piece = ByteArray(700)
+        while (true) {
+            val n = channel.read(piece, 0, piece.size)
+            if (n < 0) break
+            out.write(piece, 0, n)
+        }
+        assertArrayEquals(big, out.toByteArray())
+        // About 50 runs of 4 KB; arrays only for the growing ones, the first few full ones and the last.
+        assertTrue("${channel.fetches} runs", channel.fetches > 45)
+        assertTrue("${channel.allocations} arrays", channel.allocations <= 8)
+
+        // Reads back anywhere still get the file's bytes, never a reused array's old ones.
+        val buffer = ByteArray(3000)
+        for (at in listOf(150_000L, 3L, 199_000L, 150_500L, 77_777L, 150_000L)) {
+            channel.position(at)
+            val n = channel.read(buffer, 0, buffer.size)
+            assertArrayEquals("at $at", big.copyOfRange(at.toInt(), at.toInt() + n), buffer.copyOf(n))
+        }
+    }
+
+    @Test
     fun aZipReadsInPlaceFetchingOnlyWhatItNeeds() {
         val big = ByteArray(3 shl 20) { (it % 251).toByte() }
         val zip = Fixtures.zipBytes(Fixtures.entry("a.png", big), Fixtures.entry("b.png"), Fixtures.entry("ComicInfo.xml"))

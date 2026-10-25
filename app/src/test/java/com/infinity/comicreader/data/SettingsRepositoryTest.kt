@@ -153,5 +153,9 @@ class SettingsRepositoryTest {
         assertEquals(0, less.readAhead(0))
         assertEquals(1, less.readAhead(4))
         assertEquals(4, Thrift.NONE.readAhead(4))
+        // Two pages a screen: the whole next spread.
+        assertEquals(2, less.readAhead(4, perScreen = 2))
+        assertEquals(1, less.readAhead(1, perScreen = 2))
+        assertEquals(4, Thrift.NONE.readAhead(4, perScreen = 2))
     }
 }

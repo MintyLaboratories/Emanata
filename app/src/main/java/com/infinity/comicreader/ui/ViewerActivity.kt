@@ -790,7 +790,7 @@ class ViewerActivity : AppCompatActivity() {
         // Built into the page adapter.
         if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
             s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
-            s.thrift.readAhead(s.preload) != old.thrift.readAhead(old.preload)
+            s.thrift.readAhead(s.preload, pagesPerScreen()) != old.thrift.readAhead(old.preload, pagesPerScreen())
         ) {
             rebuild = true
         }
@@ -1619,7 +1619,7 @@ class ViewerActivity : AppCompatActivity() {
             linear = prefs.linearLight,
             pageScaling = prefs.pageScaling,
             zoomScaling = prefs.zoomScaling,
-            preload = applied.thrift.readAhead(prefs.preload),
+            preload = applied.thrift.readAhead(prefs.preload, pagesPerScreen()),
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
@@ -1800,6 +1800,9 @@ class ViewerActivity : AppCompatActivity() {
      * for: while turned for a wide page, the one that comes back.
      */
     private fun useSpread() = mode == MODE_PAGED && !topToBottom() && twoPage.spread(spreadRotation.layoutLandscape(landscape()))
+
+    /** Pages a screen shows at most in the layout built last: two in spreads. */
+    private fun pagesPerScreen() = if (spread) 2 else 1
 
     private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 

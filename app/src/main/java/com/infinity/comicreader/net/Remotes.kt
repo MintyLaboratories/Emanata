@@ -169,6 +169,9 @@ object Remotes {
     @Synchronized
     fun cachedStat(path: String): RemoteStat? = if (isRoot(path)) ROOT else stats[path]
 
+    /** Drops the stat kept for [path], so the next [stat] asks the share. */
+    fun forgetStat(path: String) = remember(path, null)
+
     @Synchronized
     private fun remember(path: String, stat: RemoteStat?) {
         if (stat == null) stats.remove(path) else stats[path] = stat

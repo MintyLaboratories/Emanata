@@ -46,7 +46,8 @@ class BookProvider : ContentProvider() {
         val size = sizeOf(path) ?: throw FileNotFoundException("Gone")
         val storage = context?.getSystemService(StorageManager::class.java) ?: throw FileNotFoundException("No storage service")
         val thread = HandlerThread("share-read").apply { start() }
-        val reads = ShareReads(size) { Remotes.open(path) }
+        // A size taken from an old listing that no longer holds is dropped, so opening it again asks the share.
+        val reads = ShareReads(size, onChanged = { Remotes.forgetStat(path) }) { Remotes.open(path) }
         return try {
             storage.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, Proxy(reads, thread), Handler(thread.looper))
         } catch (e: Exception) {

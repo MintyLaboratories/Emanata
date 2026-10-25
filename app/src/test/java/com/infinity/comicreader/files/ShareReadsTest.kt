@@ -101,4 +101,34 @@ class ShareReadsTest {
             assertEquals("unreachable", e.message)
         }
     }
+
+    @Test
+    fun aFileThatChangedSizeFailsEveryReadAndSaysSo() {
+        for (now in listOf(data.copyOf(9_000_000), data + ByteArray(5))) {
+            var changed = 0
+            var opened = 0
+            val input = Bytes(now)
+            val reads = ShareReads(data.size.toLong(), onChanged = { changed++ }) { opened++; input }
+            repeat(2) {
+                try {
+                    reads.read(0, 10, ByteArray(10))
+                    throw AssertionError("read of a changed file")
+                } catch (e: IOException) {
+                    // Expected.
+                }
+            }
+            assertEquals(1, changed)
+            assertEquals(1, opened)
+            assertTrue(input.closed)
+            assertEquals(0, input.reads)
+        }
+    }
+
+    @Test
+    fun aFileOfTheSizeExpectedIsNotChanged() {
+        var changed = 0
+        val reads = ShareReads(data.size.toLong(), onChanged = { changed++ }) { Bytes(data) }
+        assertEquals(10, reads.read(0, 10, ByteArray(10)))
+        assertEquals(0, changed)
+    }
 }

@@ -121,4 +121,19 @@ class BookProviderTest {
         // Known from the listing: the share is not asked again.
         assertEquals(asked, fake.attempts)
     }
+
+    @Test
+    fun aForgottenStatIsAskedOfTheShareAgain() {
+        val dir = tmp.newFolder("share")
+        val file = File(dir, "far.cbz").apply { writeBytes(ByteArray(1234)) }
+        val fake = FakeRemoteFs(dir)
+        Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
+        Remotes.list("/net/s1")
+        file.writeBytes(ByteArray(2000))
+        Remotes.forgetStat("/net/s1/far.cbz")
+        provider.query(uri("/net/s1/far.cbz"), arrayOf(OpenableColumns.SIZE), null, null, null)!!.use {
+            it.moveToFirst()
+            assertEquals(2000L, it.getLong(0))
+        }
+    }
 }

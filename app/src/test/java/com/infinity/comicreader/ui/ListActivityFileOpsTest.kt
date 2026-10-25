@@ -349,6 +349,7 @@ class ListActivityFileOpsTest {
         activity.paste().performLongClick()
         idle()
         assertNull(FileClipboard.clip)
+        assertEquals(context.getString(R.string.paste_canceled), ShadowToast.getTextOfLatestToast())
         assertEquals(View.GONE, activity.paste().visibility)
     }
 

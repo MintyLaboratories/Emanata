@@ -328,7 +328,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         pasteFab.setOnLongClickListener {
             hidePasteBubble()
             fileActions.drop()
-            toast(R.string.paste_dropped)
+            toast(R.string.paste_canceled)
             true
         }
         updateFabIcon()

@@ -210,6 +210,7 @@
     <string name="paste_named">Paste %1$s</string>
     <string name="paste_hint">Tap to paste here, hold to cancel</string>
     <string name="paste_dropped">Nothing to paste</string>
+    <string name="paste_canceled">Operation canceled</string>
     <string name="paste_into_itself">A folder cannot go inside itself</string>
     <string name="paste_already_here">It is already in this folder</string>
     <string name="paste_gone">%1$s is no longer there</string>

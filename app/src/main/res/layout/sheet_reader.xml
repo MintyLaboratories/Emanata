@@ -211,11 +211,11 @@
             android:text="@string/pref_join_spreads" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_no_merge"
+            android:id="@+id/sheet_ignore_seams"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:text="@string/menu_no_merge" />
+            android:text="@string/menu_ignore_seams" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/sheet_auto_crop"

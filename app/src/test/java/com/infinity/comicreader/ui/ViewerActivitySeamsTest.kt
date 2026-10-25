@@ -247,32 +247,51 @@ class ViewerActivitySeamsTest {
     }
 
     @Test
-    fun dontMergeInThisBookKeepsItsPagesApart() {
+    fun ignoringSeamsInThisBookKeepsItsPagesApart() {
         val book = book(count = 7, first = 3)
         val viewer = launch(book)
         await { viewer.items() == 6 }
         val sheet = ReaderSheet(viewer)
-        sheet.tap(R.id.sheet_no_merge)
+        sheet.tap(R.id.sheet_ignore_seams)
         assertEquals(7, viewer.items())
-        assertTrue(com.infinity.comicreader.data.Library(viewer).isNoMerge(book.absolutePath))
+        assertTrue(com.infinity.comicreader.data.Library(viewer).ignoresSeams(book.absolutePath))
         viewer.finish()
         // Kept for the book: opened again, its pages stay apart.
         val again = launch(book)
         repeat(50) { Thread.sleep(10); idle() }
         assertEquals(7, again.items())
-        ReaderSheet(again).tap(R.id.sheet_no_merge)
+        ReaderSheet(again).tap(R.id.sheet_ignore_seams)
         await { again.items() == 6 }
         assertEquals(6, again.items())
     }
 
     @Test
-    fun dontMergeWaitsWhereNothingJoins() {
+    fun ignoringSeamsWaitsWhereSeamsPlayNoPart() {
         prefs.spreads = SpreadDisplay.SPLIT
         val viewer = launch(book(count = 7, first = 3))
         val sheet = ReaderSheet(viewer)
-        assertFalse(sheet.view<View>(R.id.sheet_no_merge).isEnabled)
+        val ignore = sheet.view<View>(R.id.sheet_ignore_seams)
+        assertFalse(ignore.isEnabled)
+        assertEquals(View.VISIBLE, ignore.visibility)
         sheet.tap(R.id.btn_spreads_merge)
-        assertTrue(sheet.view<View>(R.id.sheet_no_merge).isEnabled)
+        assertTrue(ignore.isEnabled)
+    }
+
+    @Test
+    fun ignoringSeamsPairsTwoPagesByNumberAndChecksNoSeams() {
+        prefs.twoPage = TwoPage.ON
+        val book = book(count = 9, first = 4)
+        com.infinity.comicreader.data.Library(ApplicationProvider.getApplicationContext()).setIgnoreSeams(book.absolutePath, true)
+        val viewer = launch(book)
+        repeat(50) { Thread.sleep(10); idle() }
+        // By number: [000] [001|002] [003|004] [005|006] [007|008], though 004 runs on into 005.
+        assertEquals(5, viewer.items())
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        assertTrue(seams.listFiles().orEmpty().none { it.name.endsWith(".bin") })
+        // Read again, the seams pair the halves.
+        ReaderSheet(viewer).tap(R.id.sheet_ignore_seams)
+        await { viewer.items() == 6 }
+        assertEquals(6, viewer.items())
     }
 
     @Test

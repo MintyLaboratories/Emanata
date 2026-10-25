@@ -495,7 +495,7 @@
     <string name="two_page_on">On</string>
     <string name="two_page_landscape">Landscape only</string>
     <string name="menu_shift_pairs">Shift pairs by one page (this book)</string>
-    <string name="menu_no_merge">Don\'t merge in this book</string>
+    <string name="menu_ignore_seams">Ignore seams in this book</string>
     <string name="menu_spreads">Spreads</string>
     <string name="spreads_split">Split</string>
     <string name="spreads_merge">Merge</string>

@@ -79,14 +79,14 @@ class Library(context: Context) {
         }
     }
 
-    /** True when [path]'s pages are never merged or joined into one picture by their seams. */
-    fun isNoMerge(path: String): Boolean = readStringList(KEY_NO_MERGE).contains(path)
+    /** True when [path]'s seams are never checked, nor pair, merge or join its pages. */
+    fun ignoresSeams(path: String): Boolean = readStringList(KEY_IGNORE_SEAMS).contains(path)
 
-    fun setNoMerge(path: String, noMerge: Boolean) {
+    fun setIgnoreSeams(path: String, ignoreSeams: Boolean) {
         synchronized(LOCK) {
-            val set = readStringList(KEY_NO_MERGE).toHashSet()
-            val changed = if (noMerge) set.add(path) else set.remove(path)
-            if (changed) writeStringList(KEY_NO_MERGE, set.toList())
+            val set = readStringList(KEY_IGNORE_SEAMS).toHashSet()
+            val changed = if (ignoreSeams) set.add(path) else set.remove(path)
+            if (changed) writeStringList(KEY_IGNORE_SEAMS, set.toList())
         }
     }
 
@@ -554,7 +554,7 @@ class Library(context: Context) {
         val out = JSONArray()
         for (i in 0 until arr.length()) {
             when (key) {
-                KEY_FAVORITES, KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
+                KEY_FAVORITES, KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS -> arr.optString(i, "").takeIf { it.isNotEmpty() }?.let { out.put(it) }
                 else -> arr.optJSONObject(i)?.takeIf { it.optString("path").isNotEmpty() }?.let { out.put(it) }
             }
         }
@@ -628,16 +628,16 @@ class Library(context: Context) {
         /** Books shifted since. */
         const val KEY_SHIFTED_SEAMS = "shifted_seams"
 
-        /** Books whose pages seams never merge ([isNoMerge]). */
-        const val KEY_NO_MERGE = "no_merge"
+        /** Books whose seams are ignored ([ignoresSeams]); stored under its first name. */
+        const val KEY_IGNORE_SEAMS = "no_merge"
 
         /** Books' own file name charsets ([nameCharset]). */
         const val KEY_CHARSETS = "name_charsets"
         const val MAX_HISTORY = 200
         const val MAX_DAYS = 3650
-        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
+        val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
         /** Lists of book paths, one per per-book choice. */
-        val BOOK_FLAG_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_NO_MERGE)
+        val BOOK_FLAG_KEYS = listOf(KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
         val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS)
 
         /** Documents keyed by file or folder path. */

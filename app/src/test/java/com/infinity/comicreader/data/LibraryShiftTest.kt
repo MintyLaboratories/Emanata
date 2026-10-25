@@ -57,17 +57,17 @@ class LibraryShiftTest {
     }
 
     @Test
-    fun noMergeFollowsRenamesDeletesAndBackups() {
-        library.setNoMerge("/books/old/a.cbz", true)
-        assertTrue(library.isNoMerge("/books/old/a.cbz"))
+    fun ignoreSeamsFollowsRenamesDeletesAndBackups() {
+        library.setIgnoreSeams("/books/old/a.cbz", true)
+        assertTrue(library.ignoresSeams("/books/old/a.cbz"))
         library.replacePath("/books/old", "/books/new")
-        assertTrue(library.isNoMerge("/books/new/a.cbz"))
+        assertTrue(library.ignoresSeams("/books/new/a.cbz"))
         val backup = library.exportAll()
         library.removePathsUnder("/books/new")
-        assertFalse(library.isNoMerge("/books/new/a.cbz"))
+        assertFalse(library.ignoresSeams("/books/new/a.cbz"))
         library.importAll(backup)
-        assertTrue(library.isNoMerge("/books/new/a.cbz"))
-        library.setNoMerge("/books/new/a.cbz", false)
-        assertFalse(library.isNoMerge("/books/new/a.cbz"))
+        assertTrue(library.ignoresSeams("/books/new/a.cbz"))
+        library.setIgnoreSeams("/books/new/a.cbz", false)
+        assertFalse(library.ignoresSeams("/books/new/a.cbz"))
     }
 }

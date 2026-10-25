@@ -2,6 +2,9 @@ package com.infinity.comicreader.reader
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.zip.Zip64Mode
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.utils.SeekableInMemoryByteChannel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -156,6 +159,92 @@ class NameCharsetTest {
         val marked = ZipNames.read(SeekableInMemoryByteChannel(zipBytes(listOf("表紙.jpg"), Charsets.UTF_8)))
         assertTrue(marked.single().utf8)
         assertEquals("表紙.jpg", String(marked.single().bytes, Charsets.UTF_8))
+    }
+
+    /**
+     * A zip of [names] stored in [encoding], each also in a Unicode Path extra field, as
+     * Info-ZIP writes them, unless [unicodeFields] is false; [zip64] adds ZIP64 end records.
+     */
+    private fun unicodeZipBytes(names: List<String>, encoding: String, unicodeFields: Boolean = true, zip64: Boolean = false): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipArchiveOutputStream(out).use { zip ->
+            zip.setEncoding(encoding)
+            zip.setUseLanguageEncodingFlag(false)
+            zip.setFallbackToUTF8(false)
+            zip.setCreateUnicodeExtraFields(
+                if (unicodeFields) ZipArchiveOutputStream.UnicodeExtraFieldPolicy.ALWAYS else ZipArchiveOutputStream.UnicodeExtraFieldPolicy.NEVER
+            )
+            if (zip64) zip.setUseZip64(Zip64Mode.Always)
+            for (n in names) {
+                zip.putArchiveEntry(ZipArchiveEntry(n))
+                zip.write(n.length)
+                zip.closeArchiveEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    @Test
+    fun zipNamesTakeUnicodePathFields() {
+        val names = ZipNames.read(SeekableInMemoryByteChannel(unicodeZipBytes(japanese, "Shift_JIS")))
+        assertEquals(japanese, names.map { it.unicode })
+        assertTrue(names.all { it.utf8 })
+        // Stored as is beside them.
+        assertEquals(japanese, names.map { String(it.bytes, sjis) })
+        val plain = ZipNames.read(SeekableInMemoryByteChannel(unicodeZipBytes(japanese, "Shift_JIS", unicodeFields = false)))
+        assertTrue(plain.none { it.utf8 || it.unicode != null })
+    }
+
+    @Test
+    fun zipNamesSkipUnicodeFieldsMadeForOtherBytes() {
+        val bytes = unicodeZipBytes(listOf("表紙.jpg"), "Shift_JIS")
+        // The field's CRC-32 of the name it was made for, in the central directory: changed, the name was too.
+        val dir = (bytes.size - 22 downTo 0).first { at -> bytes[at] == 0x50.toByte() && bytes[at + 1] == 0x4b.toByte() && bytes[at + 2] == 1.toByte() && bytes[at + 3] == 2.toByte() }
+        val nameLength = (bytes[dir + 28].toInt() and 0xFF) or ((bytes[dir + 29].toInt() and 0xFF) shl 8)
+        val crcAt = dir + 46 + nameLength + 4 + 1
+        bytes[crcAt] = (bytes[crcAt] + 1).toByte()
+        val name = ZipNames.read(SeekableInMemoryByteChannel(bytes)).single()
+        assertNull(name.unicode)
+        assertFalse(name.utf8)
+    }
+
+    @Test
+    fun zipNamesReadZip64EndRecords() {
+        val bytes = unicodeZipBytes(listOf("a.jpg", "b.jpg"), "UTF-8", unicodeFields = false, zip64 = true)
+        // The plain end record defers to the ZIP64 one, as in a zip too large for it.
+        val end = bytes.size - 22
+        for (i in 8 until 20) bytes[end + i] = 0xFF.toByte()
+        assertEquals(listOf("a.jpg", "b.jpg"), ZipNames.read(SeekableInMemoryByteChannel(bytes)).map { String(it.bytes) })
+    }
+
+    @Test
+    fun localAndInPlaceZipsReadUnicodePathFieldsAlike() {
+        // Names Info-ZIP could not store in IBM437 are stored as "?" beside their Unicode ones.
+        for (encoding in listOf("Shift_JIS", "IBM437")) {
+            val bytes = unicodeZipBytes(japanese, encoding)
+            val file = File(tmp.root, "book-$encoding.cbz").apply { writeBytes(bytes) }
+            for (setting in listOf(NameCharset.AUTO, "windows-1251")) {
+                ZipReader(file, setting).use { reader ->
+                    assertEquals(japanese, reader.entries.map { it.path })
+                    assertEquals(japanese[3].length, reader.read(reader.entries[3]) { it.read() })
+                }
+                ChannelZipReader(SeekableInMemoryByteChannel(bytes), setting).use { reader ->
+                    assertEquals(japanese, reader.entries.map { it.path })
+                }
+            }
+        }
+    }
+
+    @Test
+    fun zipsOpenInACharsetThatMapsNotEveryByte() {
+        // Windows-1251 leaves byte 0x98 unmapped; the names read wrongly, but the book opens.
+        val bytes = zipBytes(listOf("表紙.jpg", "第一話.jpg"), sjis)
+        val file = File(tmp.root, "book.cbz").apply { writeBytes(bytes) }
+        ZipReader(file, "windows-1251").use { reader ->
+            assertEquals(2, reader.entries.size)
+            assertEquals("表紙.jpg".length, reader.read(reader.entries[0]) { it.read() })
+        }
+        ChannelZipReader(SeekableInMemoryByteChannel(bytes), "windows-1251").use { assertEquals(2, it.entries.size) }
     }
 
     @Test

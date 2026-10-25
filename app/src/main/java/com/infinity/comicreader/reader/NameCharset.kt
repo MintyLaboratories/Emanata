@@ -16,8 +16,11 @@ import java.util.Locale
 object NameCharset {
     const val AUTO = "auto"
 
-    /** A file name as stored: its [bytes], and whether the archive gives it as UTF-8. */
-    class Raw(val bytes: ByteArray, val utf8: Boolean)
+    /**
+     * A file name as stored: its [bytes], and whether the archive gives it as Unicode
+     * ([utf8]): marked UTF-8, or also given as [unicode] (an Info-ZIP Unicode Path extra field).
+     */
+    class Raw(val bytes: ByteArray, val utf8: Boolean, val unicode: String? = null)
 
     /** Names the charset of [text] (file names, one a line), or null when it finds none. */
     fun interface Detector {

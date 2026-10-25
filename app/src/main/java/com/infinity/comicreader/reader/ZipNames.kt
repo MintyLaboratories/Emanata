@@ -3,11 +3,13 @@ package com.infinity.comicreader.reader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.SeekableByteChannel
+import java.util.zip.CRC32
 
 /**
- * The file names a zip's central directory lists, as stored ([NameCharset.Raw]): read
- * from its end record (ZIP64 too), without touching any entry. Empty when the directory
- * is not where the end record says, as in a zip with data before it.
+ * The file names a zip's central directory lists, as stored ([NameCharset.Raw]), with the
+ * names their Unicode Path extra fields give: read from its end record (ZIP64 too),
+ * without touching any entry. Empty when the directory is not where the end record
+ * says, as in a zip with data before it.
  */
 object ZipNames {
     fun read(channel: SeekableByteChannel): List<NameCharset.Raw> {
@@ -41,10 +43,38 @@ object ZipNames {
             val name = ByteArray(nameLength)
             dir.position(at + ENTRY_BYTES)
             dir.get(name)
-            out += NameCharset.Raw(name, utf8 = flags and UTF8_FLAG != 0)
+            val marked = flags and UTF8_FLAG != 0
+            val extraAt = at + ENTRY_BYTES + nameLength
+            val unicode = if (marked) null else unicodePath(dir, extraAt, minOf(extraAt + extraLength, dir.limit()), name)
+            out += NameCharset.Raw(name, utf8 = marked || unicode != null, unicode = unicode)
             at += ENTRY_BYTES + nameLength + extraLength + commentLength
         }
         return out
+    }
+
+    /**
+     * The name an Info-ZIP Unicode Path extra field among [dir]'s bytes [from] to [until]
+     * gives for [name], as Commons Compress takes it: version 1, made from these very bytes
+     * (their CRC-32); null when there is none.
+     */
+    private fun unicodePath(dir: ByteBuffer, from: Int, until: Int, name: ByteArray): String? {
+        var at = from
+        while (at + 4 <= until) {
+            val id = dir.getShort(at).toInt() and 0xFFFF
+            val size = dir.getShort(at + 2).toInt() and 0xFFFF
+            val data = at + 4
+            if (data + size > until) return null
+            if (id == UNICODE_PATH_ID && size >= 5 && dir.get(data).toInt() == 1) {
+                val crc = CRC32().apply { update(name) }.value
+                if ((dir.getInt(data + 1).toLong() and 0xFFFFFFFFL) != crc) return null
+                val text = ByteArray(size - 5)
+                dir.position(data + 5)
+                dir.get(text)
+                return String(text, Charsets.UTF_8)
+            }
+            at = data + size
+        }
+        return null
     }
 
     /** [length] bytes of [channel] from [position], little-endian; null when it ends before. */
@@ -66,6 +96,9 @@ object ZipNames {
     private const val ZIP64_END_BYTES = 56
     private const val ENTRY_SIG = 0x02014b50
     private const val ENTRY_BYTES = 46
+
+    /** Header ID of the Info-ZIP Unicode Path extra field. */
+    private const val UNICODE_PATH_ID = 0x7075
 
     /** General purpose flag bit 11: the name is UTF-8. */
     private const val UTF8_FLAG = 0x0800

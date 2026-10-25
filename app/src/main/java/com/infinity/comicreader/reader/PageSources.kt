@@ -65,6 +65,21 @@ object PageSources {
         )
     }
 
+    /**
+     * The [ArchiveSource.pageKeys] of archive [file] with its names read in [charsetName]
+     * (page order follows names); null for a book of another kind, or one on a share that
+     * is neither cached nor read in place. Lists entries only. Blocking.
+     */
+    fun pageKeys(file: File, charsetName: String, cacheDir: File): List<String>? {
+        val local = if (file is RemoteFile) RemoteCache.cached(file, cacheDir) ?: file.takeIf { Remotes.seekable(it.path) } else file
+        local ?: return null
+        val kind = ArchiveKind.detect(local)
+        if (kind == null || kind == ArchiveKind.PDF) return null
+        val reader = ArchiveReader.open(local, charsetName, kind) ?: return null
+        val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName)
+        return ArchiveSource(reader, NestedArchives.keyOf(file), nested).use { it.pageKeys }
+    }
+
     /** [source] leaving page previews under [cacheDir] ([PreviewingSource]). */
     private fun previewing(file: File, cacheDir: File, source: PageSource): PageSource =
         PreviewingSource(source, PreviewStore(PreviewStore.dirIn(cacheDir)), PreviewStore.bookId(file))

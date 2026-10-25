@@ -55,6 +55,13 @@ class BookFactsCache(context: Context) {
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    /** Forgets the facts of [path], as when what they were read from changes. Blocking. */
+    fun remove(path: String) {
+        load()
+        store.loaded?.remove(path)
+        store.helper.writableDatabase.delete(TABLE, "$PATH = ?", arrayOf(path))
+    }
+
     /** One database file, opened once, and its rows once loaded. */
     private class Store(val file: String, val helper: Helper) {
         @Volatile

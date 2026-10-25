@@ -220,31 +220,62 @@ class Library(context: Context) {
             if (new.isEmpty()) all.remove(path) else all.put(path, JSONArray(new.toList()))
             sp.edit().putString(KEY_HIDDEN, all.toString()).apply()
             val last = (pageCount - new.size - 1).coerceAtLeast(0)
-            fun remap(page: Int) = HiddenPages.remap(page, old, new).coerceIn(0, last)
-            val history = history()
-            if (history.any { it.path == path }) {
-                writeHistory(history.map { h -> if (h.path != path) h else h.copy(page = remap(h.page), total = last + 1) })
-            }
-            val marks = bookmarks()
-            if (marks.any { it.path == path }) {
-                // Bookmarks landing on one page become the one already there, their notes joined.
-                val merged = marks.filter { it.path == path }
-                    .groupBy { remap(it.page) }
-                    .mapValues { (page, group) ->
-                        val keep = group.firstOrNull { HiddenPages.toBook(it.page, old) !in new } ?: group.first()
-                        val notes = (listOf(keep) + (group - keep)).map { it.note }.filter { it.isNotBlank() }.distinct()
-                        keep.copy(page = page, note = notes.joinToString("\n"))
-                    }
-                val written = HashSet<Int>()
-                writeBookmarks(
-                    marks.mapNotNull { b ->
-                        if (b.path != path) return@mapNotNull b
-                        val page = remap(b.page)
-                        if (written.add(page)) merged.getValue(page) else null
-                    }
-                )
-            }
+            // A bookmark on a page still shown is the one kept where others join it.
+            renumber(path, last, { HiddenPages.remap(it, old, new) }) { HiddenPages.toBook(it.page, old) !in new }
         }
+    }
+
+    /**
+     * Moves the hidden pages, history and bookmarks of the book at [path] with its pages,
+     * as when their order changes: book page `i` went to [moves]`[i]`, or is gone where that
+     * is -1 (or missing), of [pageCount] pages now. History and bookmarks on a page gone
+     * stay at the same number.
+     */
+    fun movePages(path: String, moves: IntArray, pageCount: Int) {
+        synchronized(LOCK) {
+            val old = hiddenPages(path)
+            val new = old.mapNotNull { h -> moves.getOrNull(h)?.takeIf { it in 0 until pageCount } }.toSortedSet()
+            if (old != new) {
+                val all = readObject(KEY_HIDDEN)
+                if (new.isEmpty()) all.remove(path) else all.put(path, JSONArray(new.toList()))
+                sp.edit().putString(KEY_HIDDEN, all.toString()).apply()
+            }
+            val last = (pageCount - new.size - 1).coerceAtLeast(0)
+            renumber(path, last, { shown ->
+                val to = moves.getOrNull(HiddenPages.toBook(shown, old)) ?: -1
+                if (to in 0 until pageCount) HiddenPages.toShown(to, new) else shown
+            }) { true }
+        }
+    }
+
+    /**
+     * Moves the history and bookmarks of the book at [path], counted in pages shown, to the
+     * page [remap] gives, at most [last]. Bookmarks landing on one page become one: the
+     * first that [keeps], else the first, its note joined by the others'. Called under [LOCK].
+     */
+    private fun renumber(path: String, last: Int, remap: (Int) -> Int, keeps: (Bookmark) -> Boolean) {
+        fun moved(page: Int) = remap(page).coerceIn(0, last)
+        val history = history()
+        if (history.any { it.path == path }) {
+            writeHistory(history.map { h -> if (h.path != path) h else h.copy(page = moved(h.page), total = last + 1) })
+        }
+        val marks = bookmarks()
+        if (marks.none { it.path == path }) return
+        val merged = marks.filter { it.path == path }
+            .groupBy { moved(it.page) }
+            .mapValues { (page, group) ->
+                val keep = group.firstOrNull(keeps) ?: group.first()
+                val notes = (listOf(keep) + (group - keep)).map { it.note }.filter { it.isNotBlank() }.distinct()
+                keep.copy(page = page, note = notes.joinToString("\n"))
+            }
+        val written = HashSet<Int>()
+        writeBookmarks(
+            marks.mapNotNull { b ->
+                if (b.path != path) return@mapNotNull b
+                val page = moved(b.page)
+                if (written.add(page)) merged.getValue(page) else null
+            }
+        )
     }
 
     /** Shows every hidden page again, moving history and bookmarks back to book pages. */

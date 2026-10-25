@@ -1498,7 +1498,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             // An advanced setting: shown once Keep it simple is off.
             if (!entry.isDir && !prefs.keepSimple && NameCharsetDialog.applies(entry.name)) {
                 add(getString(R.string.menu_name_charset)) {
-                    NameCharsetDialog.builder(this, library, path, prefs.charset) { adapter.notifyDataSetChanged() }.show()
+                    NameCharsetDialog.builder(this, library, path, prefs.charset) { picked ->
+                        lifecycleScope.launch {
+                            withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, entry.file, prefs.charset, picked, cacheDir) }
+                            adapter.notifyDataSetChanged()
+                        }
+                    }.show()
                 }
             }
             if (entry.isDir) {

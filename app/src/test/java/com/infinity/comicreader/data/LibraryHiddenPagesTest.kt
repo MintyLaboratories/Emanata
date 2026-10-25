@@ -141,4 +141,36 @@ class LibraryHiddenPagesTest {
         library.importAll(backup)
         assertEquals(setOf(2), library.hiddenPages("/books/a.cbz"))
     }
+
+    @Test
+    fun hiddenPagesHistoryAndBookmarksMoveWithTheirPages() {
+        val path = "/books/a.cbz"
+        // Book pages 0..4 go to 4, 3, 2, 1, 0: the order turned around.
+        val moves = intArrayOf(4, 3, 2, 1, 0)
+        library.setHiddenPages(path, setOf(1), 5)
+        // Shown page 2 is book page 3, which goes to book page 1: shown 1 once page 3 is hidden.
+        library.addHistory(HistoryItem(path, "a.cbz", 2, 4, 1))
+        library.addBookmark(Bookmark(path, "a.cbz", 0, "first", 1))
+        library.addBookmark(Bookmark(path, "a.cbz", 3, "last", 2))
+        library.addBookmark(Bookmark("/books/b.cbz", "b.cbz", 0, "", 3))
+        library.movePages(path, moves, 5)
+        assertEquals(setOf(3), library.hiddenPages(path))
+        assertEquals(1, library.pageFor(path))
+        assertEquals(4, library.historyFor(path)!!.total)
+        // Book page 0 goes to 4 (shown 3); book page 4 (shown 3 before) goes to 0.
+        assertEquals(mapOf(3 to "first", 0 to "last"), library.bookmarksFor(path).associate { it.page to it.note })
+        assertEquals(listOf(0), library.bookmarksFor("/books/b.cbz").map { it.page })
+    }
+
+    @Test
+    fun pagesGoneLeaveWhatWasOnThem() {
+        val path = "/books/a.cbz"
+        library.setHiddenPages(path, setOf(2), 4)
+        library.addHistory(HistoryItem(path, "a.cbz", 1, 3, 1))
+        // Book page 1 is gone, page 2 (hidden) too; page 3 becomes page 1.
+        library.movePages(path, intArrayOf(0, -1, -1, 1), 2)
+        assertTrue(library.hiddenPages(path).isEmpty())
+        assertEquals(1, library.pageFor(path))
+        assertEquals(2, library.historyFor(path)!!.total)
+    }
 }

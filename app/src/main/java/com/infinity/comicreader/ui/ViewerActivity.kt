@@ -566,6 +566,29 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     /**
+     * Reads the open book's file names in [picked] (null: the setting) from now on, and
+     * opens it again at the page on screen, wherever the new names put it ([NameCharsetDialog.switch]).
+     */
+    private fun switchCharset(picked: String?) {
+        val book = favoriteFile() ?: return
+        val opened = source != null
+        stopAutoScroll()
+        flushStats()
+        saveHistory()
+        openJob?.cancel()
+        closeSource()
+        endDismissed = false
+        hideEndCard()
+        progress.visibility = View.VISIBLE
+        openJob = lifecycleScope.launch {
+            withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, book, prefs.charset, picked, cacheDir) }
+            // The history holds the page that was on screen, moved with the pages.
+            if (opened) intent.putExtra(EXTRA_PAGE, library.pageFor(book.absolutePath))
+            open()
+        }
+    }
+
+    /**
      * Leaves the book pages [hidden] out of the open book and opens it again at the page
      * on screen, or the next one shown when that one is hidden. Its history and
      * bookmarks follow the new numbering ([Library.setHiddenPages]).
@@ -3270,7 +3293,7 @@ class ViewerActivity : AppCompatActivity() {
             // An advanced setting: offered once Keep it simple is off.
             if (read != null && book != null && !prefs.keepSimple) {
                 dialog.setNeutralButton(R.string.menu_name_charset) { _, _ ->
-                    NameCharsetDialog.builder(this@ViewerActivity, library, book, prefs.charset) { reopen() }.showKeepingFullscreen()
+                    NameCharsetDialog.builder(this@ViewerActivity, library, book, prefs.charset) { switchCharset(it) }.showKeepingFullscreen()
                 }
             }
             dialog.showKeepingFullscreen()

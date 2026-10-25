@@ -39,7 +39,8 @@ class ArchiveSource(
         var randomAccess: Boolean? = null
     }
 
-    private class Page(val path: String, val slot: Slot, val entry: ArchiveEntry)
+    /** A page: its [path] shown, and its [key], the places of its entry and the inner archives holding it. */
+    private class Page(val path: String, val key: String, val slot: Slot, val entry: ArchiveEntry)
 
     /** Guards every [Slot]. */
     private val lock = Any()
@@ -48,14 +49,14 @@ class ArchiveSource(
     private var closed = false
 
     private val pages: List<Page> = try {
-        ArrayList<Page>().also { collect(slots[0], rootKey, "", 0, it) }
+        ArrayList<Page>().also { collect(slots[0], rootKey, "", "", 0, it) }
     } catch (t: Throwable) {
         closeAll()
         throw t
     }
 
     /** Adds the pages of [slot] to [out] in order; true once [pageLimit] pages are in. */
-    private fun collect(slot: Slot, key: String, prefix: String, depth: Int, out: MutableList<Page>): Boolean {
+    private fun collect(slot: Slot, key: String, prefix: String, places: String, depth: Int, out: MutableList<Page>): Boolean {
         val reader = acquire(slot)
         try {
             val canNest = nested != null && depth < NestedArchives.MAX_DEPTH
@@ -66,14 +67,14 @@ class ArchiveSource(
                 .sortedWith(compareBy(NaturalOrder) { it.path })
             for (entry in items) {
                 if (Formats.isImageName(entry.path)) {
-                    out += Page(prefix + entry.path, slot, entry)
+                    out += Page(prefix + entry.path, places + entry.index, slot, entry)
                     if (out.size >= pageLimit) return true
                     continue
                 }
                 val inner = nested?.open(reader, key, entry) ?: continue
                 val child = Slot(inner.file, inner.reader)
                 synchronized(lock) { slots += child }
-                if (collect(child, inner.key, prefix + entry.path + "/", depth + 1, out)) return true
+                if (collect(child, inner.key, prefix + entry.path + "/", places + entry.index + "/", depth + 1, out)) return true
             }
             return false
         } finally {
@@ -130,6 +131,12 @@ class ArchiveSource(
 
     /** Path of each page, inner archives included as folders, in page order. */
     val pagePaths: List<String> get() = pages.map { it.path }
+
+    /**
+     * What tells each page apart whatever its name reads as, in page order: the places of its
+     * entry and of the inner archives holding it in their archives ("3/17").
+     */
+    val pageKeys: List<String> get() = pages.map { it.key }
 
     /** Inner archives currently open; for tests. */
     internal val openInnerCount: Int get() = synchronized(lock) { slots.count { it.copy != null && it.reader != null } }

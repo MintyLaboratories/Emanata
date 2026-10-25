@@ -3,10 +3,14 @@ package com.infinity.comicreader.ui
 import android.content.Context
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.reader.ArchiveKind
 import com.infinity.comicreader.reader.NameCharset
+import com.infinity.comicreader.reader.PageMoves
+import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.util.Formats
+import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
 
@@ -40,9 +44,9 @@ object NameCharsetDialog {
 
     /**
      * Asks which charset the book at [path] reads its file names in: the [setting], or one of
-     * its own; [onChanged] hears a new choice once kept.
+     * its own; [onPicked] hears a new choice (null: the setting), to keep with [switch].
      */
-    fun builder(context: Context, library: Library, path: String, setting: String, onChanged: () -> Unit): AlertDialog.Builder {
+    fun builder(context: Context, library: Library, path: String, setting: String, onPicked: (String?) -> Unit): AlertDialog.Builder {
         val values = listOf<String?>(null) + context.resources.getStringArray(R.array.charset_values)
         val labels = arrayOf<CharSequence>(context.getString(R.string.charset_follow_setting, label(context, setting))) +
             context.resources.getTextArray(R.array.charset_entries)
@@ -53,10 +57,34 @@ object NameCharsetDialog {
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 dialog.dismiss()
                 val picked = values[which]
-                if (picked == current) return@setSingleChoiceItems
-                library.setNameCharset(path, picked)
-                onChanged()
+                if (picked != current) onPicked(picked)
             }
             .setNegativeButton(R.string.cancel, null)
+    }
+
+    /**
+     * Makes [picked] the charset the book [file] reads its file names in (null: the
+     * [setting]). Pages follow their names in order, so its hidden pages, history and
+     * bookmarks move with them ([Library.movePages]), and facts read from the old names
+     * are forgotten. Lists the book's entries twice where it has any of these. Blocking.
+     */
+    fun switch(library: Library, facts: BookFactsCache?, file: File, setting: String, picked: String?, cacheDir: File) {
+        val path = file.absolutePath
+        val before = NameCharset.forBook(path, setting)
+        val after = picked ?: setting
+        val placed = library.hiddenPages(path).isNotEmpty() || library.historyFor(path) != null || library.bookmarksFor(path).isNotEmpty()
+        val keys = if (placed && before != after) {
+            runCatching { PageSources.pageKeys(file, before, cacheDir) to PageSources.pageKeys(file, after, cacheDir) }.getOrNull()
+        } else {
+            null
+        }
+        library.setNameCharset(path, picked)
+        val old = keys?.first
+        val new = keys?.second
+        if (old != null && new != null) {
+            val moves = PageMoves.of(old, new)
+            if (!PageMoves.none(moves, new.size)) library.movePages(path, moves, new.size)
+        }
+        facts?.remove(path)
     }
 }

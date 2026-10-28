@@ -945,7 +945,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private suspend fun findIds() {
         val listed = listing
-        val unknown = allEntries.filter { !it.isDir && it.id == null && Formats.isOpenable(it.name) && findsIdsAt(it.path) }
+        // Loose images get theirs as they are opened or marked.
+        val unknown = allEntries.filter { !it.isDir && it.type != EntryType.IMAGE && it.id == null && Formats.isOpenable(it.name) && findsIdsAt(it.path) }
         if (unknown.isEmpty()) return
         val gate = Semaphore(ID_READS)
         val found = coroutineScope {

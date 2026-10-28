@@ -155,7 +155,9 @@ object Thumbs {
         BookIds.init(context)
         cached(context, listed, width, height, style)?.let { return Cover(it, full = true) }
         // A book not seen before is known by its ID from here on: one made under it at another path is found.
-        val found = if (listed.isDir || listed.id != null || canceled()) null else BookIds.find(listed.file)?.let { listed.copy(id = it) }
+        // A loose image is not read for one: its cover is the image itself.
+        val found = if (listed.isDir || listed.type == EntryType.IMAGE || listed.id != null || canceled()) null
+        else BookIds.find(listed.file)?.let { listed.copy(id = it) }
         if (found != null) cached(context, found, width, height, style)?.let { return Cover(it, full = true) }
         val entry = found ?: listed
         val page = entry.bookmarkPage

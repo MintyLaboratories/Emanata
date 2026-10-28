@@ -65,6 +65,13 @@ class ThumbsTest {
     }
 
     @Test
+    fun aLooseImageIsNotReadForABookId() {
+        val image = cover()
+        assertNotNull(Thumbs.load(context, image, "UTF-8", 200, 300))
+        assertNull(BookIds.known(image.file))
+    }
+
+    @Test
     fun fillFromTheTopKeepsTheTop() {
         val thumb = Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.TOP))!!
         assertEquals(Color.RED, thumb.getPixel(60, 2))

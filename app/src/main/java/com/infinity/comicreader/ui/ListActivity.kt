@@ -940,11 +940,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /**
      * Finds the Book IDs of the books listed that the index does not know, [ID_READS] at a
      * time, and shows what is kept for any of them: books moved, renamed or copied outside
-     * the app. Notes where those are seen now ([Library.seenAll]).
+     * the app. Notes where those are seen now ([Library.seenAll]). Like covers, never on a
+     * share set not to make them, nor on any share while covers are off: reading wakes a drive.
      */
     private suspend fun findIds() {
         val listed = listing
-        val unknown = allEntries.filter { !it.isDir && it.id == null && Formats.isOpenable(it.name) }
+        val unknown = allEntries.filter { !it.isDir && it.id == null && Formats.isOpenable(it.name) && findsIdsAt(it.path) }
         if (unknown.isEmpty()) return
         val gate = Semaphore(ID_READS)
         val found = coroutineScope {
@@ -962,6 +963,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (seen.isNotEmpty()) withContext(AppDispatchers.io) { library.seenAll(seen) }
         if (kept) applyFilterAndSort(resort = false)
     }
+
+    /** False for [path] on a share whose covers are not made; books there get their IDs as they are opened or marked. */
+    private fun findsIdsAt(path: String) = !Remotes.isRemote(path) || (prefs.thumbnails && Remotes.thumbnails(path))
 
     /** Reads the free space of share [id], just opened, for the location picker ([LocationSpace]). */
     private fun checkSpace(id: String) {

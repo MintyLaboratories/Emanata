@@ -143,6 +143,20 @@ class ListActivitySharesTest {
     }
 
     @Test
+    fun aShareWithoutThumbnailsIsNotReadForBookIds() {
+        ShareStore(context).put(FakeRemoteFs.share().copy(thumbnails = false))
+        Remotes.init(context)
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertEquals(listOf("Loose.cbz", "Series"), rows(activity.findViewById(R.id.recycler)).sorted())
+        idle()
+        assertEquals(0L, fake.bytesRead)
+    }
+
+    @Test
     fun anUnreachableShareSaysSoAndRetries() {
         fake.offline = true
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

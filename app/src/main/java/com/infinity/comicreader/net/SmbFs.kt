@@ -698,8 +698,9 @@ class SmbFs(private val share: Share) : RemoteFs {
         }
 
         /**
-         * Reads in pieces of up to [PIECE_BYTES], [DEPTH] in flight within the credits the
-         * server granted ([Pipelined]); a read of one piece or less goes as one request.
+         * Reads in pieces of up to [PIECE_BYTES], or what the server takes ([pieceFor]),
+         * [DEPTH] in flight within the credits it granted ([Pipelined]); a read of one piece
+         * or less goes as SMBJ sends it.
          */
         override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
             busy { readMany(position, buffer, offset, count, heard) }
@@ -741,13 +742,15 @@ class SmbFs(private val share: Share) : RemoteFs {
                 val f = fileNow()
                 try {
                     synchronized(lock) { lastUsed = System.currentTimeMillis() }
+                    val first = Reads(f) { closed }
                     val second = if (wanted >= STRIPE_FROM_BYTES) laneReads() else null
                     if (second == null) {
                         if (wanted >= STRIPE_FROM_BYTES) wantLane()
-                        return Pipelined.fill(Reads(f) { closed }, position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                        return Pipelined.fill(first, position, buffer, offset, wanted, first.piece, DEPTH, Remotes.answerMs, heard)
                     }
-                    val striped = Pipelined.Striped(listOf(Reads(f) { closed }, second.second))
-                    val n = Pipelined.fill(striped, position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                    val striped = Pipelined.Striped(listOf(first, second.second))
+                    val piece = minOf(first.piece, second.second.piece)
+                    val n = Pipelined.fill(striped, position, buffer, offset, wanted, piece, DEPTH, Remotes.answerMs, heard)
                     if (striped.broken == 1 && !closed) dropLane(second.first, failed = true)
                     return n
                 } catch (e: Exception) {
@@ -789,6 +792,9 @@ class SmbFs(private val share: Share) : RemoteFs {
         private val tree = file.diskShare.treeConnect
         private val session = tree.session
         private val dialect = tree.negotiatedProtocol.dialect
+
+        /** The longest read this connection takes. */
+        val piece = session.connection.let { pieceFor(it.negotiatedProtocol.maxReadSize, it.connectionContext.supportsMultiCredit()) }
 
         override fun start(position: Long, length: Int): Pipelined.Pending {
             if (closed()) throw IOException("Closed")
@@ -875,6 +881,19 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** How much one read asks for, at most: larger pieces measured slower than several of these in flight. */
         const val PIECE_BYTES = 1 shl 20
+
+        /** What one read without multi-credit asks for at most, as SMB 2.0.2 allows. */
+        private const val SINGLE_CREDIT_BYTES = 64 * 1024
+
+        /**
+         * How much one pipelined read asks for: [PIECE_BYTES], or less when the server's
+         * [maxReadSize] is less; [SINGLE_CREDIT_BYTES] at most without [multiCredit]. A read
+         * longer than the server takes fails.
+         */
+        internal fun pieceFor(maxReadSize: Int, multiCredit: Boolean): Int {
+            val most = if (multiCredit) PIECE_BYTES else SINGLE_CREDIT_BYTES
+            return if (maxReadSize <= 0) SINGLE_CREDIT_BYTES else minOf(most, maxReadSize)
+        }
 
         /** How many reads of one file may be in flight at once, over both connections. */
         const val DEPTH = 8

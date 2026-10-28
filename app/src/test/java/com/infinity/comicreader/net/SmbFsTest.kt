@@ -225,4 +225,14 @@ class SmbFsTest {
         assertTrue(SmbFs.interrupted(java.io.InterruptedIOException()))
         assertFalse(SmbFs.interrupted(IOException("Connection reset", java.net.SocketException())))
     }
+
+    @Test
+    fun pipelinedReadsAskForNoMoreThanTheServerTakes() {
+        assertEquals(SmbFs.PIECE_BYTES, SmbFs.pieceFor(8 shl 20, multiCredit = true))
+        assertEquals(256 * 1024, SmbFs.pieceFor(256 * 1024, multiCredit = true))
+        // SMB 2.0.2, or a server granting one credit per request: 64 KB a read.
+        assertEquals(64 * 1024, SmbFs.pieceFor(8 shl 20, multiCredit = false))
+        assertEquals(32 * 1024, SmbFs.pieceFor(32 * 1024, multiCredit = false))
+        assertEquals(64 * 1024, SmbFs.pieceFor(0, multiCredit = true))
+    }
 }

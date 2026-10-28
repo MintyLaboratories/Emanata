@@ -9,5 +9,12 @@
             android:foregroundServiceType="dataSync"
             android:process=":sharecheck"
             android:permission="android.permission.DUMP" />
+        <!-- Measures read speed from a share, from a process of its own kept in the foreground; only the shell may start it. -->
+        <service
+            android:name="com.infinity.comicreader.debug.ShareSpeedService"
+            android:exported="true"
+            android:foregroundServiceType="dataSync"
+            android:process=":sharespeed"
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

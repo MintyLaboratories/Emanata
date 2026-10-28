@@ -18,7 +18,6 @@ import com.infinity.comicreader.files.BookUris
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NestedArchives
-import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -53,8 +52,7 @@ class ShareCheckService : Service() {
         val largest = intent?.getBooleanExtra("largest", false) ?: false
         thread(name = "share-check") {
             try {
-                val id = if (share == FIRST) Remotes.shares().firstOrNull()?.id else share
-                val target = path ?: id?.let { firstBook(Remotes.rootOf(it), 3, largest) }
+                val target = path ?: DebugBooks.shareId(share)?.let { DebugBooks.firstBook(Remotes.rootOf(it), 3, largest) }
                 if (target == null) log("no book found") else check(this, target, limit)
             } catch (t: Throwable) {
                 log("failed: ${t.javaClass.simpleName}: ${t.message}")
@@ -165,25 +163,6 @@ class ShareCheckService : Service() {
         return md.digest()
     }
 
-    /**
-     * The first book found in [dir], breadth first, at most [depth] folders down (with
-     * [largest], the largest in the first folder holding any); null when none.
-     */
-    private fun firstBook(dir: String, depth: Int, largest: Boolean): String? {
-        var level = listOf(dir)
-        repeat(depth + 1) {
-            val next = ArrayList<String>()
-            for (d in level) {
-                val entries = runCatching { Remotes.list(d) }.getOrNull() ?: continue
-                val books = entries.filter { !it.isDirectory && Formats.isArchiveName(it.name) }
-                (if (largest) books.maxByOrNull { it.length() } else books.firstOrNull())?.let { return it.absolutePath }
-                entries.filter { it.isDirectory && !it.name.startsWith(".") }.take(4).mapTo(next) { it.absolutePath }
-            }
-            level = next
-        }
-        return null
-    }
-
     /** The files of the network and nested-archive caches in [cacheDir], with their lengths. */
     private fun cacheFiles(cacheDir: File): Map<File, Long> =
         listOf(RemoteCache.dirIn(cacheDir), RemoteCache.pagesIn(cacheDir), NestedArchives.dirIn(cacheDir))
@@ -198,9 +177,6 @@ class ShareCheckService : Service() {
 
     private companion object {
         const val TAG = "ShareCheck"
-
-        /** The share id that stands for the first share kept. */
-        const val FIRST = "first"
 
         const val CHANNEL = "share-check"
         const val NOTIFICATION_ID = 0x5c

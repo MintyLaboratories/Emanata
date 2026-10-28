@@ -188,7 +188,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   asks once to allow notifications, as the first operation starts). Favorite
   folders, folder layouts and start folders follow a folder moved or renamed.
   A deleted item's favorites, history and bookmarks go with it, its facts and
-  network copy too.
+  network copy too, unless an identical copy elsewhere keeps them.
 - **Book ID:** everything kept for a book (favorite, read mark, history,
   bookmarks, hidden pages, its own settings and color adjustments, cover, page
   previews, sizes and seams, facts, network copy) is kept by an ID made from its
@@ -198,8 +198,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   by another at the same path does not inherit it. An index of path, size and
   modification time keeps each file's ID, so a file seen before is never read
   again for it; on a share both ends of a book are asked for at once, and
-  opening it next starts from them. Lists show each book where it was last
-  seen, and backups carry the IDs with those paths.
+  opening it next starts from them. Listings find the IDs of unseen books in
+  the background, except loose images and on shares whose covers are not made;
+  a share that sends files only whole is never read for them: a book there
+  gets its ID from its local copy once fetched. Lists show each book where it
+  was last seen, and backups carry the IDs with those paths.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward

@@ -77,11 +77,15 @@ class SmbFs(private val share: Share) : RemoteFs {
     private var underWay = 0
     private val inputs = HashSet<SmbInput>()
 
-    /** The second connection for long reads ([Lane]); null until one is wanted, and once it idled or failed. */
-    private var lane: Lane? = null
-    private var laneMaking = false
-    private var laneFailedAt = 0L
-    private var laneUsed = 0L
+    /** The second connection for long reads ([Lane]), made when one is wanted; none while battery saver holds back read-ahead. */
+    private val lanes = Lanes(
+        make = ::makeLane,
+        shut = { l: Lane -> shut(l.parts) },
+        answerMsOf = { it.answerMs },
+        run = checks,
+        schedule = { delayMs, check -> timer.schedule({ checks.execute(check) }, delayMs, TimeUnit.MILLISECONDS) },
+        thrifty = { RemoteChannel.thrifty }
+    )
 
     /** True while [idleCheck] is scheduled. */
     private var checking = false
@@ -481,13 +485,13 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     /** Takes the connection's parts, and the lane beside it, away for [shut]; null when there is none. Under [lock]. */
     private fun take(): Parts? {
+        val lane = lanes.take()
         if (connection == null && session == null && disk == null && client == null && lane == null) return null
         return Parts(disk, session, connection, client, lane).also {
             disk = null
             session = null
             connection = null
             client = null
-            lane = null
         }
     }
 
@@ -503,69 +507,25 @@ class SmbFs(private val share: Share) : RemoteFs {
      * A second connection to the share for long reads of files open on the first,
      * striped over both ([Pipelined.Striped]): on a link with a long round trip, one
      * connection's window caps what it carries, and two carry nearly all the link can.
-     * Made in the background as a long read first wants it ([wantLane]), with the
-     * [answerMs] of its time; closed with the connection, at the idle check once unused
-     * for [LANE_IDLE_MS], and when a read on it fails, then not made again for [LANE_RETRY_MS].
+     * Kept by [lanes]: made in the background as a long read first wants it ([wantLane]),
+     * with the [answerMs] of its time; closed with the connection, once unused for
+     * [Lanes.IDLE_MS], and when a read on it fails, then not made again for [Lanes.RETRY_MS].
      */
     private class Lane(val parts: Parts, val disk: DiskShare, val answerMs: Long)
 
-    /** The lane for a long read now, marked as used; null without one, or with one made for another [Remotes.answerMs] (then dropped). */
-    private fun laneNow(): Lane? {
-        val stale = synchronized(lock) {
-            val l = lane ?: return null
-            if (l.answerMs == Remotes.answerMs && !closed) {
-                laneUsed = System.currentTimeMillis()
-                return l
-            }
-            lane = null
-            l
-        }
-        shut(stale.parts)
-        return null
-    }
+    /** The lane for a long read now, marked as used; null without one. */
+    private fun laneNow(): Lane? = if (closed) null else lanes.now(Remotes.answerMs)
 
-    /** Lets go of [l]; one that [failed] is not made again for [LANE_RETRY_MS]. */
+    /** Lets go of [l]; one that [failed] is not made again for a while. */
     private fun dropLane(l: Lane, failed: Boolean) {
-        synchronized(lock) {
-            if (lane === l) lane = null
-            if (failed) laneFailedAt = System.currentTimeMillis()
-        }
         Timing.mark(if (failed) "smb lane dropped after a failure" else "smb lane closed")
-        shut(l.parts)
+        lanes.drop(l, failed)
     }
 
-    /** Makes the lane in the background, unless one is there, being made or failed lately, or there is no connection. */
+    /** Makes the lane in the background ([Lanes.want]) while connected. */
     private fun wantLane() {
-        synchronized(lock) {
-            if (closed || lane != null || laneMaking || connection == null) return
-            if (laneFailedAt != 0L && System.currentTimeMillis() - laneFailedAt < LANE_RETRY_MS) return
-            laneMaking = true
-        }
-        try {
-            checks.execute(::addLane)
-        } catch (e: RuntimeException) {
-            synchronized(lock) { laneMaking = false }
-        }
-    }
-
-    private fun addLane() {
-        val made = runCatching { makeLane() }.getOrNull()
-        val extra = synchronized(lock) {
-            laneMaking = false
-            when {
-                made == null -> {
-                    laneFailedAt = System.currentTimeMillis()
-                    null
-                }
-                closed || connection == null || lane != null -> made
-                else -> {
-                    lane = made
-                    laneUsed = System.currentTimeMillis()
-                    null
-                }
-            }
-        }
-        extra?.let { shut(it.parts) }
+        synchronized(lock) { if (closed || connection == null) return }
+        lanes.want()
     }
 
     /** Connects and signs in once more, as [connected] does, for a [Lane]. */
@@ -622,7 +582,6 @@ class SmbFs(private val share: Share) : RemoteFs {
             open.forEach { it.forget() }
             shut(dropped)
         }
-        synchronized(lock) { lane?.takeIf { now - laneUsed >= LANE_IDLE_MS } }?.let { dropLane(it, failed = false) }
         echoing?.let { echo(it, ECHO_TIMEOUT_S) }
         val again = synchronized(lock) {
             checking = !closed && connection != null
@@ -903,12 +862,6 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** How long a read must be to go over the [Lane] too. */
         const val STRIPE_FROM_BYTES = 2 shl 20
-
-        /** How long the lane stays unused; checked every [KEEPALIVE_MS]. */
-        const val LANE_IDLE_MS = 60_000L
-
-        /** How long a lane that failed is not made again. */
-        const val LANE_RETRY_MS = 10 * 60_000L
 
         /** Credits left for other requests (listings, echoes) while reads are in flight. */
         private const val SPARE_CREDITS = 16

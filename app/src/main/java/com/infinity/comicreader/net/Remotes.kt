@@ -352,13 +352,13 @@ object Remotes {
      */
     fun wholeStream(path: String): InputStream = Channels.newInputStream(RemoteChannel(open(path), minBlock = STREAM_START_BYTES))
 
-    /** The whole file at [path]; for small files such as loose images. */
+    /** The whole file at [path], asked for at once ([RemoteInput.readFully]); for small files such as loose images. */
     fun readBytes(path: String): ByteArray = open(path).use { input ->
         require(input.length <= Int.MAX_VALUE - 8) { "Too large: $path" }
         val bytes = ByteArray(input.length.toInt())
         var n = 0
         while (n < bytes.size) {
-            val r = input.read(n.toLong(), bytes, n, bytes.size - n)
+            val r = input.readFully(n.toLong(), bytes, n, bytes.size - n)
             if (r < 0) break
             n += r
         }

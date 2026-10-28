@@ -150,6 +150,10 @@ object Notices {
             "dav1d", BSD_2, "https://code.videolan.org/videolan/dav1d", listOf("dav1d.txt"),
             note = "Built from source; decodes the AV1 data of AVIF pages."
         ),
+        Notice(
+            "xxHash", BSD_2, "https://github.com/Cyan4973/xxHash", listOf("xxhash.txt"),
+            note = "Built from source; its XXH3-64 hash makes Book IDs."
+        ),
         Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
         Notice(
             "SMBJ and ASN-One", APACHE_2, "https://github.com/hierynomus/smbj", APACHE, listOf("com.hierynomus:*")

@@ -63,7 +63,7 @@ android {
         }
     }
 
-    // AVIF decoding: libavif and dav1d, fetched and built by CMake (src/main/cpp).
+    // AVIF decoding (libavif, dav1d) and Book IDs (xxHash), fetched and built by CMake (src/main/cpp).
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

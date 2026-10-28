@@ -544,7 +544,7 @@ screenshots/                 README screenshots
 
 Requirements: JDK 17+ (JDK 21 verified) and the Android SDK (platform 34, build-tools 34),
 with NDK 30.0.16248370 and CMake 4.1.2. The first build downloads the pinned
-libavif and dav1d sources (checked against their SHA-256).
+libavif, dav1d and xxHash sources (checked against their SHA-256).
 
 ```bash
 ./gradlew assembleDebug
@@ -647,6 +647,7 @@ license and NOTICE text under Settings → About (files in
 | Android NDK cpufeatures (in jxl-coder) | BSD-2-Clause |
 | [libavif](https://github.com/AOMediaCodec/libavif), with parts of libyuv | BSD-2-Clause (libyuv: BSD-3-Clause) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | BSD-2-Clause |
+| [xxHash](https://github.com/Cyan4973/xxHash) | BSD-2-Clause |
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
 | Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
 | LLVM libc++abi, libunwind (in jxl-coder) | Apache-2.0 with LLVM Exceptions |

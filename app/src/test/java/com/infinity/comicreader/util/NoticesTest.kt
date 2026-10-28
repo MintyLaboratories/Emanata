@@ -89,6 +89,14 @@ class NoticesTest {
     }
 
     @Test
+    fun codeBuiltFromSourceIsInTheReadmesLicenseTable() {
+        val readme = File("../README.md").readText()
+        val built = Notices.all.filter { it.note?.startsWith("Built from source") == true }
+        assertEquals(setOf("libavif", "dav1d", "xxHash"), built.map { it.name }.toSet())
+        for (n in built) assertTrue("${n.name} not in README", readme.contains("| [${n.name}]("))
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

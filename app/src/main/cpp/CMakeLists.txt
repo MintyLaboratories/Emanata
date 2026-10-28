@@ -1,5 +1,6 @@
 # AVIF decoding: libavif with the dav1d AV1 decoder, both built from pinned
-# sources, behind a small JNI binding (avif_jni.c).
+# sources, behind a small JNI binding (avif_jni.c); Book IDs: xxHash's XXH3-64,
+# header-only from its pinned release (book_id_jni.c).
 cmake_minimum_required(VERSION 3.22)
 
 # Optimized native code in every app build type: an unoptimized AV1 decoder takes
@@ -33,7 +34,18 @@ set(AVIF_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(libavif)
 
-add_library(avifjni SHARED avif_jni.c)
+# Only xxhash.h is used; SOURCE_SUBDIR names no build of its own, so nothing else is built.
+FetchContent_Declare(
+    xxhash
+    URL "https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.3.tar.gz"
+    URL_HASH SHA256=aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR header-only
+)
+FetchContent_MakeAvailable(xxhash)
+
+add_library(avifjni SHARED avif_jni.c book_id_jni.c)
+target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}")
 target_link_libraries(avifjni PRIVATE avif jnigraphics log)
 target_compile_options(avifjni PRIVATE -Wall -Wextra)
 # Only the JNI entry points are exported; unused code is dropped.

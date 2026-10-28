@@ -8,8 +8,8 @@ import java.io.IOException
 /**
  * Reads a file on a share, [size] bytes long, at any offset, for another app reading it
  * through [BookProvider]: opened by [open] at the first read, through a [RemoteChannel],
- * so reads that follow on from each other fetch growing runs of up to [MAX_RUN_BYTES]
- * and a read back into the last few runs costs no round trip. Nothing goes to storage.
+ * so reads that follow on from each other fetch growing runs of up to [MAX_RUN_BYTES],
+ * the next ahead while one is read, and a read back into the last few runs costs no round trip. Nothing goes to storage.
  * When the file opened is not [size] bytes long (it changed since its size was taken),
  * every read fails and [onChanged] is called once: serving it at [size] would cut it short
  * or end it early without an error.
@@ -65,8 +65,8 @@ class ShareReads(
     }
 
     companion object {
-        /** The longest run one round trip fetches: a few MB keeps a streaming read near the link's speed. */
-        const val MAX_RUN_BYTES = 4 shl 20
+        /** The longest run fetched at once, several reads in flight; the next comes ahead while one is read. */
+        const val MAX_RUN_BYTES = RemoteChannel.MAX_BLOCK_BYTES
 
         /** What is kept of the runs fetched, for reads that go back a little. */
         const val MAX_KEPT_BYTES = 16L shl 20

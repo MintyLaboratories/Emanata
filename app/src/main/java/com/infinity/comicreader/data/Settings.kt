@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -169,6 +170,12 @@ class SettingsRepository internal constructor(private val app: Context) {
     private fun publish() {
         _list.value = ListSettings.from(prefs, saving)
         _reader.value = ReaderSettings.from(prefs, saving)
+        holdBackShares()
+    }
+
+    /** Share reads fetch nothing ahead while battery saver holds back read-ahead. */
+    private fun holdBackShares() {
+        RemoteChannel.thrifty = thrift.lessReadAhead
     }
 
     // Held in a field: SharedPreferences references its listeners only weakly.
@@ -184,6 +191,7 @@ class SettingsRepository internal constructor(private val app: Context) {
     }
 
     init {
+        holdBackShares()
         prefs.registerListener(listener)
         // A protected broadcast: only the system sends it.
         ContextCompat.registerReceiver(

@@ -5,9 +5,11 @@ import org.apache.commons.compress.archivers.zip.ZipFile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.Executor
 
 class RemoteChannelTest {
 
@@ -27,6 +29,9 @@ class RemoteChannelTest {
 
         override fun close() {}
     }
+
+    /** Runs background work at once, on the caller's thread. */
+    private val now = Executor { it.run() }
 
     private val data = ByteArray(10_000) { (it * 7).toByte() }
 
@@ -129,5 +134,134 @@ class RemoteChannelTest {
         }
         // The large page was never read: listing and one small page take a few blocks.
         assertTrue("read ${input.reads} times", input.reads <= 4)
+    }
+
+    @After
+    fun spendThrift() {
+        RemoteChannel.thrifty = false
+    }
+
+    /** Reads [channel] to its end in pieces of [piece] bytes. */
+    private fun drain(channel: RemoteChannel, piece: Int): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(piece)
+        while (true) {
+            val n = channel.read(buffer, 0, buffer.size)
+            if (n < 0) break
+            out.write(buffer, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    @Test
+    fun aStreamFetchesTheNextRunAheadOnceItsRunsHaveGrown() {
+        val big = ByteArray(40_000) { (it * 13).toByte() }
+        val input = Bytes(big)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
+        assertArrayEquals(big, drain(channel, 500))
+        // 1, 2, 4 KB grow as before; from the 4 KB run on, each next run comes ahead.
+        assertEquals(listOf(0L to 1024, 1024L to 2048, 3072L to 4096, 7168L to 8192, 15360L to 8192, 23552L to 8192, 31744L to 8192, 39936L to 64), input.asked)
+        assertEquals(5, channel.aheads)
+        channel.close()
+        assertEquals(0L, RemoteChannel.aheadBytes)
+    }
+
+    @Test
+    fun nothingComesAheadInBatterySaver() {
+        RemoteChannel.thrifty = true
+        val big = ByteArray(40_000) { (it * 13).toByte() }
+        val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
+        assertArrayEquals(big, drain(channel, 500))
+        assertEquals(0, channel.aheads)
+    }
+
+    @Test
+    fun headerWalksNeverFetchAhead() {
+        val input = Bytes(data)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096, background = now)
+        for (at in listOf(0L, 3000L, 6000L, 9000L)) {
+            channel.position(at)
+            channel.read(ByteBuffer.allocate(100))
+        }
+        assertEquals(0, channel.aheads)
+    }
+
+    @Test
+    fun anExpectedSpanIsFetchedFromItsFirstReadAndTheRestAhead() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val input = Bytes(big)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(10_000, 30_000)
+        channel.position(10_000)
+        val out = ByteArray(30_000)
+        var n = 0
+        while (n < out.size) n += channel.read(out, n, minOf(700, out.size - n))
+        assertArrayEquals(big.copyOfRange(10_000, 40_000), out)
+        assertEquals(listOf(10_000L to 16_384, 26_384L to 13_616), input.asked)
+        assertEquals(1, channel.aheads)
+    }
+
+    @Test
+    fun aRunFetchedAheadButNotReadIsLetGo() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val input = Bytes(big)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(0, 50_000)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(1, channel.aheads)
+        // A seek elsewhere: the run ahead goes, and the bytes there are still right.
+        channel.position(80_000)
+        val far = ByteBuffer.allocate(100)
+        channel.read(far)
+        assertArrayEquals(big.copyOfRange(80_000, 80_100), far.array())
+        assertEquals(0L, RemoteChannel.aheadBytes)
+        channel.close()
+    }
+
+    @Test
+    fun aRunAheadThatFailedIsFetchedAgain() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        var failing = true
+        val input = object : RemoteInput {
+            val asked = ArrayList<Long>()
+            override val length = big.size.toLong()
+            override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
+                asked += position
+                if (position > 0 && failing) throw java.io.IOException("Dropped")
+                val n = minOf(count.toLong(), big.size - position).toInt()
+                System.arraycopy(big, position.toInt(), buffer, offset, n)
+                return n
+            }
+
+            override fun close() {}
+        }
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(0, 30_000)
+        channel.read(ByteBuffer.allocate(16_384))
+        failing = false
+        val next = ByteBuffer.allocate(1000)
+        channel.read(next)
+        assertArrayEquals(big.copyOfRange(16_384, 17_384), next.array())
+        assertEquals(listOf(0L, 16_384L, 16_384L), input.asked)
+    }
+
+    @Test
+    fun runsAreAskedForWhole() {
+        val calls = ArrayList<Int>()
+        val input = object : RemoteInput {
+            override val length = data.size.toLong()
+            override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int = throw AssertionError("Read in pieces")
+            override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int {
+                calls += count
+                System.arraycopy(data, position.toInt(), buffer, offset, count)
+                return count
+            }
+
+            override fun close() {}
+        }
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 4096)
+        channel.position(2000)
+        channel.read(ByteBuffer.allocate(3000))
+        assertEquals(listOf(3976), calls)
     }
 }

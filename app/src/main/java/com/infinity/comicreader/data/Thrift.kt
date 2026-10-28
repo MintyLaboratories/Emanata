@@ -6,8 +6,8 @@ import android.os.PowerManager
 /**
  * What the app holds back while Android's battery saver is on, as the Battery settings let it:
  * covers of layered images stay at their first layer ([firstLayerCovers]), one screen at most is
- * decoded ahead ([readAhead]), and background scans of page sizes, seams and folder facts
- * wait ([pausedScans]).
+ * decoded ahead ([readAhead]) and nothing is fetched ahead from shares, and background scans of
+ * page sizes, seams and folder facts wait ([pausedScans]).
  */
 data class Thrift(
     val firstLayerCovers: Boolean = false,

@@ -441,7 +441,7 @@
     <string name="pref_saver_covers">Covers from the first layer only</string>
     <string name="pref_saver_covers_desc">While battery saver is on, covers of layered images stay at their quick first layer</string>
     <string name="pref_saver_read_ahead">Read fewer pages ahead</string>
-    <string name="pref_saver_read_ahead_desc">While battery saver is on, at most one screen is prepared ahead</string>
+    <string name="pref_saver_read_ahead_desc">While battery saver is on, at most one screen is prepared ahead and nothing is fetched ahead from network locations</string>
     <string name="pref_saver_scans">Pause background scans</string>
     <string name="pref_saver_scans_desc">While battery saver is on, page sizes, seams beyond nearby pages and folder facts wait</string>
     <string name="pref_keep_simple_desc">Hides advanced options</string>

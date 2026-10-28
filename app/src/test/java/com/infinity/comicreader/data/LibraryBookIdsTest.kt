@@ -49,6 +49,10 @@ class LibraryBookIdsTest {
         // Seen elsewhere, a book's lists follow it there.
         library.seen(BookRef(b.id, "/storage/1234-ABCD/b.cbz"))
         assertEquals("/storage/1234-ABCD/b.cbz", library.history().single().path)
+        library.addBookmark(Bookmark(b.path, "b.cbz", 1, "", 1, b.id))
+        library.seen(BookRef(b.id, "/storage/1234-ABCD/renamed.cbz"))
+        assertEquals("renamed.cbz", library.history().single().name)
+        assertEquals("renamed.cbz", library.bookmarks().single().name)
         assertEquals("volume:1234-ABCD", library.seenAt()[b.id]!!.location)
         // A book with nothing kept is not noted.
         library.seen(BookRef(BookId(0xc), "/elsewhere/c.cbz"))

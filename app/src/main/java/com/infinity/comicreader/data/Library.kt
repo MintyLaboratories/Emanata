@@ -200,7 +200,7 @@ class Library(context: Context) {
             out.add(
                 HistoryItem(
                     path = path,
-                    name = o.optString("name").ifEmpty { path.substringAfterLast('/') },
+                    name = path.substringAfterLast('/').ifEmpty { o.optString("name") },
                     page = o.optInt("page"),
                     total = o.optInt("total"),
                     time = o.optLong("time"),
@@ -254,7 +254,7 @@ class Library(context: Context) {
             out.add(
                 Bookmark(
                     path = path,
-                    name = o.optString("name").ifEmpty { path.substringAfterLast('/') },
+                    name = path.substringAfterLast('/').ifEmpty { o.optString("name") },
                     page = o.optInt("page"),
                     note = o.optString("note"),
                     time = o.optLong("time"),

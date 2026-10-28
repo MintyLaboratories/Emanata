@@ -213,6 +213,13 @@ object BookIds {
     /** The IDs last found for [root], a file or folder, and everything below it. Blocking. */
     fun knownUnder(root: String): Set<BookId> = index()?.under(root).orEmpty()
 
+    /**
+     * For each of [ids], the path of a copy outside [root] the index knows of: a file on a
+     * share, or one on the device still there. IDs without one are left out. Blocking.
+     */
+    fun elsewhere(ids: Set<BookId>, root: String): Map<BookId, String> =
+        index()?.elsewhere(ids, root) { Remotes.isRemote(it) || File(it).isFile }.orEmpty()
+
     /** Forgets the IDs known for [root], deleted or replaced, and everything below it. Blocking. */
     fun removed(root: String) {
         index()?.remove(root)

@@ -118,6 +118,28 @@ class LibraryBookIdsTest {
     }
 
     @Test
+    fun deletingOneOfTwoCopiesKeepsTheListsAtTheOther() {
+        val one = tmp.newFolder("one")
+        val two = tmp.newFolder("two")
+        val first = File(one, "a.cbz").apply { writeBytes(ByteArray(300) { it.toByte() }) }
+        val copy = File(two, "copy.cbz").apply { writeBytes(first.readBytes()) }
+        val gone = File(one, "gone.cbz").apply { writeBytes(ByteArray(200) { 7 }) }
+        val book = BookRef(bookId(first), first.absolutePath)
+        assertEquals(book.id, bookId(copy))
+        val lone = BookRef(bookId(gone), gone.absolutePath)
+        library.toggleFavorite(book)
+        library.addHistory(HistoryItem(book.path, "a.cbz", 1, 5, 1, book.id))
+        library.addBookmark(Bookmark(book.path, "a.cbz", 2, "", 1, book.id))
+        library.addBookmark(Bookmark(lone.path, "gone.cbz", 2, "", 1, lone.id))
+        one.deleteRecursively()
+        library.removePathsUnder(one.absolutePath)
+        assertEquals(copy.absolutePath, library.pathOf(book.id))
+        assertTrue(library.isFavorite(book.id))
+        assertEquals(listOf(copy.absolutePath), library.history().map { it.path })
+        assertEquals(listOf(book.id), library.bookmarks().map { it.id })
+    }
+
+    @Test
     fun removingAShareDropsItsBooksFromTheLists() {
         library.toggleFavorite(b)
         library.addHistory(HistoryItem(b.path, "b.cbz", 1, 5, 1, b.id))

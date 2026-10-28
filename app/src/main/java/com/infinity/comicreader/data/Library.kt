@@ -433,10 +433,20 @@ class Library(context: Context) {
         BookIds.moved(old, new)
     }
 
-    /** Forgets the favorites, history and bookmarks under [root]: folders there, and books last seen there. */
+    /**
+     * Forgets the favorites, history and bookmarks under [root]: folders there, and books last
+     * seen there. A book with a copy elsewhere ([BookIds.elsewhere]) keeps them, seen at the copy.
+     */
     fun removeListsUnder(root: String) {
+        val there = seenAt().filterValues { under(it.path, root) }.keys
+        val copies = BookIds.elsewhere(there, root)
         synchronized(LOCK) {
-            val gone = seenAt().filterValues { under(it.path, root) }.keys
+            if (copies.isNotEmpty()) {
+                val books = readObject(KEY_BOOKS)
+                for ((id, path) in copies) if (books.has(id.hex)) books.put(id.hex, seenJson(path))
+                sp.edit().putString(KEY_BOOKS, books.toString()).apply()
+            }
+            val gone = there - copies.keys
             writeStringList(KEY_FAVORITES, readStringList(KEY_FAVORITES).filterNot { t ->
                 bookToken(t)?.let { it in gone } ?: under(t, root)
             })

@@ -240,10 +240,11 @@ internal class FileActions(
 
     /**
      * Forgets everything kept for the deleted [path] and inside it, the clipboard's item too;
-     * the facts and network copies of the books there go with them.
+     * the facts and network copies of the books there go with them, unless a copy elsewhere keeps them.
      */
     private fun forget(path: String) {
-        val books = BookIds.knownUnder(path)
+        val known = BookIds.knownUnder(path)
+        val books = known - BookIds.elsewhere(known, path).keys
         library.removePathsUnder(path)
         val facts = BookFactsCache(activity)
         for (id in books) {

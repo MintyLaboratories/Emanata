@@ -30,6 +30,22 @@ class BookIndex(context: Context) {
     /** The IDs last found for [root], a file or folder, and everything below it. */
     fun under(root: String): Set<BookId> = loaded().entries.filter { under(it.key, root) }.mapTo(HashSet()) { BookId(it.value.id) }
 
+    /**
+     * For each of [ids], a path outside [root] it was last found at and where [exists]:
+     * a copy of it there. IDs without one are left out.
+     */
+    fun elsewhere(ids: Set<BookId>, root: String, exists: (String) -> Boolean): Map<BookId, String> {
+        if (ids.isEmpty()) return emptyMap()
+        val wanted = ids.mapTo(HashSet()) { it.value }
+        val out = HashMap<BookId, String>()
+        for ((path, row) in loaded()) {
+            if (row.id !in wanted || under(path, root)) continue
+            val id = BookId(row.id)
+            if (id !in out && exists(path)) out[id] = path
+        }
+        return out
+    }
+
     /** Remembers [id] for [path] at [size] and [modified]. Blocking. */
     fun put(path: String, size: Long, modified: Long, id: BookId) {
         val map = loaded()

@@ -12,6 +12,8 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.HistoryItem
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.net.AesGcmBox
@@ -280,6 +282,23 @@ class ListActivityStartFolderTest {
         idleFor(ListActivity.SHARE_DIALOG_MS + 1_000)
         assertNull(waitDialog(activity))
         controller.resume()
+        idleFor(500)
+        waitDialog(activity)!!
+    }
+
+    @Test
+    fun theWaitDialogWaitsForTheResumeOfferToBeAnswered() {
+        prefs.lastPath = "/net/s1/Series"
+        prefs.startupResume = ResumeMode.ASK
+        val book = File(comics, "Tale 001.cbz").apply { writeBytes(ByteArray(10)) }
+        Library(context).addHistory(HistoryItem(book.absolutePath, book.name, 3, 20, 1L))
+        fake.slow = CountDownLatch(1)
+        val activity = launch()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 1_000)
+        val offer = ShadowDialog.getLatestDialog() as AlertDialog
+        assertEquals(activity.getString(R.string.startup_resume_title), offer.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.text)
+        assertNull(waitDialog(activity))
+        offer.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         idleFor(500)
         waitDialog(activity)!!
     }

@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.net.Remotes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,5 +47,19 @@ class PrefsDefaultsTest {
         assertEquals(SpreadDisplay.MERGE, Prefs(context).spreads)
         assertTrue(Prefs(context).rotateSpreads)
         assertTrue(Prefs(context).joinSpreads)
+    }
+
+    @Test
+    fun networkRequestsWaitThirtySecondsWithinBounds() {
+        val prefs = Prefs(context)
+        assertEquals(30_000L, prefs.networkTimeoutMs)
+        assertEquals(Remotes.DEFAULT_ANSWER_MS, prefs.networkTimeoutMs)
+        PreferenceManager.setDefaultValues(context, R.xml.settings, true)
+        assertEquals(30_000L, Prefs(context).networkTimeoutMs)
+        prefs.networkTimeoutMs = 60_000
+        assertEquals(60_000L, prefs.networkTimeoutMs)
+        assertEquals(5_000L, Prefs.timeoutMsOf("1"))
+        assertEquals(600_000L, Prefs.timeoutMsOf("99999"))
+        assertEquals(30_000L, Prefs.timeoutMsOf("soon"))
     }
 }

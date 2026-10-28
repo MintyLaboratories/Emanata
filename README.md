@@ -238,7 +238,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   downloaded whole. PDFs and loose images are fetched to a **Network cache**
   (Settings, 2 GB by default, which also holds the kept pages; least recently
   read first out) before the reader opens them; a PDF gets its cover once read.
-  A server waking a sleeping disk is waited for (each request up to a minute);
+  A server waking a sleeping disk is waited for: connecting, signing in,
+  listing and each read wait up to the **Network timeout** (advanced setting,
+  30 s by default);
   a book or page that shows nothing for 2 seconds while the share answers
   nothing says "Waiting for the share…" until data arrives. A share that
   cannot be reached says so ("Not reachable") with a Retry, also over a folder

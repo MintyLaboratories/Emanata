@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.NameCharset
@@ -270,6 +271,11 @@ class Prefs(context: Context) {
     /** How much the local copies of books on network shares may take, in bytes. */
     val networkCacheBytes: Long
         get() = (str(KEY_NETWORK_CACHE, DEFAULT_NETWORK_CACHE_MB).toLongOrNull() ?: DEFAULT_NETWORK_CACHE_MB.toLong()).coerceAtLeast(1) shl 20
+
+    /** How long a request to a network share waits for an answer ([Remotes.answerMs]), in milliseconds. */
+    var networkTimeoutMs: Long
+        get() = timeoutMsOf(str(KEY_NETWORK_TIMEOUT, ""))
+        set(v) = put(KEY_NETWORK_TIMEOUT, (v / 1000).toString())
 
     /** How [tab] (one of the `TAB_*` names) shows its entries. */
     fun view(tab: String): TabView {
@@ -621,6 +627,14 @@ class Prefs(context: Context) {
         private const val KEY_THUMBS = "pref_thumbs"
         const val KEY_NETWORK_CACHE = "pref_network_cache"
         private const val DEFAULT_NETWORK_CACHE_MB = "2048"
+        const val KEY_NETWORK_TIMEOUT = "pref_network_timeout"
+        private const val MIN_NETWORK_TIMEOUT_S = 5L
+        private const val MAX_NETWORK_TIMEOUT_S = 600L
+
+        /** A stored network timeout in seconds as milliseconds; the default for none or no number. */
+        fun timeoutMsOf(seconds: String): Long =
+            seconds.toLongOrNull()?.coerceIn(MIN_NETWORK_TIMEOUT_S, MAX_NETWORK_TIMEOUT_S)?.times(1000)
+                ?: Remotes.DEFAULT_ANSWER_MS
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_COVER_SPACING = "pref_cover_spacing"
         private const val KEY_TOOLBAR_BUTTONS = "pref_toolbar_buttons"

@@ -13,6 +13,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -21,7 +22,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -378,16 +378,12 @@ class DavFsTest {
     fun aDiskSpinningUpIsWaitedFor() {
         val bytes = Random(11).nextBytes(100_000)
         File(dir, "book.cbz").writeBytes(bytes)
-        // Time scaled down: a 1 s spin-up, waited for as the shared client waits for a real one.
+        // Time scaled down: a 1 s spin-up, waited for as long as the default timeout waits for a real one.
         val spinUp = 1_000L
-        val wait = Remotes.ANSWER_MS * spinUp / Remotes.SPIN_UP_MS
-        val client = DavFs.sharedClient.newBuilder()
-            .readTimeout(wait, TimeUnit.MILLISECONDS)
-            .writeTimeout(wait, TimeUnit.MILLISECONDS)
-            .build()
-        val fs = DavFs(server.share(), client).also { opened += it }
+        val wait = Remotes.DEFAULT_ANSWER_MS * spinUp / Remotes.SPIN_UP_MS
+        val fs = DavFs(server.share(), answerMs = { wait }).also { opened += it }
         // The first answer after the disk slept comes only once it spun up, a little late.
-        server.spinUpMs = spinUp * 3 / 2
+        server.spinUpMs = spinUp * 6 / 5
         assertEquals(listOf("book.cbz"), fs.list("").map { it.name })
         fs.open("book.cbz").use { input ->
             val got = ByteArray(bytes.size)
@@ -397,10 +393,25 @@ class DavFsTest {
         }
     }
 
+    @Test(timeout = 20_000)
+    fun aShortTimeoutGivesUpOnASpinUp() {
+        val fs = DavFs(server.share(), answerMs = { 300 }).also { opened += it }
+        server.spinUpMs = 1_500
+        val e = assertThrows(RemoteException::class.java) { fs.list("") }
+        assertEquals(RemoteException.Reason.UNREACHABLE, e.reason)
+    }
+
     @Test
-    fun theSharedClientWaitsOutSpinUps() {
-        assertTrue(Remotes.ANSWER_MS >= 2 * Remotes.SPIN_UP_MS)
-        assertEquals(Remotes.ANSWER_MS.toInt(), DavFs.sharedClient.readTimeoutMillis)
-        assertEquals(Remotes.ANSWER_MS.toInt(), DavFs.sharedClient.writeTimeoutMillis)
+    fun requestsWaitAsLongAsTheSettingSaysNow() {
+        var setting = Remotes.DEFAULT_ANSWER_MS
+        val fs = DavFs(server.share(), answerMs = { setting }).also { opened += it }
+        assertTrue(Remotes.DEFAULT_ANSWER_MS > Remotes.SPIN_UP_MS)
+        for (ms in listOf(Remotes.DEFAULT_ANSWER_MS, 60_000L)) {
+            setting = ms
+            val client = fs.client
+            assertEquals(ms.toInt(), client.connectTimeoutMillis)
+            assertEquals(ms.toInt(), client.readTimeoutMillis)
+            assertEquals(ms.toInt(), client.writeTimeoutMillis)
+        }
     }
 }

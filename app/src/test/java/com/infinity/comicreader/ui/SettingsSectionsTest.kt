@@ -32,7 +32,10 @@ class SettingsSectionsTest {
 
     private lateinit var context: Context
 
-    private val advanced = listOf("pref_name_charset", "pref_scale_pages", "pref_scale_zoom", "pref_scale_thumbs", "pref_ring_up", "pref_ring_down")
+    private val advanced = listOf(
+        "pref_name_charset", "pref_scale_pages", "pref_scale_zoom", "pref_scale_thumbs", "pref_ring_up", "pref_ring_down",
+        "pref_network_timeout"
+    )
 
     @Before
     fun setUp() {

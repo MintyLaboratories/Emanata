@@ -356,6 +356,17 @@
             app:summary="@string/pref_network_cache_desc"
             app:title="@string/pref_network_cache" />
         <ListPreference
+            app:defaultValue="30"
+            app:entries="@array/network_timeout_entries"
+            app:entryValues="@array/network_timeout_values"
+            app:key="pref_network_timeout"
+            app:title="@string/pref_network_timeout"
+            app:useSimpleSummaryProvider="true">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <ListPreference
             app:defaultValue="2:3"
             app:entries="@array/cover_shape_entries"
             app:entryValues="@array/cover_shape_values"

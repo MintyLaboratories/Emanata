@@ -62,6 +62,9 @@ class SmbFs(private val share: Share) : RemoteFs {
     private var disk: DiskShare? = null
     private var lastUsed = 0L
     private var lastEcho = 0L
+
+    /** The [Remotes.answerMs] the connection was made with. */
+    private var answerMs = 0L
     private val inputs = HashSet<SmbInput>()
 
     /** True while [idleCheck] is scheduled. */
@@ -317,11 +320,27 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     /**
-     * The open connection's share, marked as used; null when there is none, or when it
-     * went unheard for longer than echoes keep it (the device slept) and fails an echo now.
+     * The open connection's share, marked as used; null when there is none, when it was
+     * made with another [Remotes.answerMs] (then dropped, its files opening again on the
+     * next), or when it went unheard for longer than echoes keep it (the device slept) and
+     * fails an echo now.
      */
     private fun current(): DiskShare? {
         val now = System.currentTimeMillis()
+        var open: List<SmbInput> = emptyList()
+        val outdated = synchronized(lock) {
+            if (connection == null || answerMs == Remotes.answerMs) {
+                null
+            } else {
+                open = inputs.toList()
+                take()
+            }
+        }
+        if (outdated != null) {
+            open.forEach { it.forget() }
+            shut(outdated)
+            return null
+        }
         val (d, c, quiet) = synchronized(lock) {
             if (closed) throw RemoteException(RemoteException.Reason.UNKNOWN_SHARE)
             val quiet = now - maxOf(lastUsed, lastEcho) > KEEPALIVE_MS + ECHO_SLACK_MS
@@ -342,7 +361,8 @@ class SmbFs(private val share: Share) : RemoteFs {
             val p = where
             // Its own client: SMBJ's shares one connection per host among its callers, and
             // after one closes it may hand out a connection that never answers again.
-            val own = SMBClient(config())
+            val wait = Remotes.answerMs
+            val own = SMBClient(config(wait))
             var c: Connection? = null
             var s: Session? = null
             try {
@@ -355,6 +375,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                     connection = c
                     session = s
                     disk = d
+                    answerMs = wait
                     lastEcho = System.currentTimeMillis()
                     if (!checking) {
                         checking = true
@@ -611,7 +632,6 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** How long a connection unheard for a while (the device slept) gets to answer before it is made anew. */
         private const val WAKE_ECHO_TIMEOUT_S = 2L
-        private const val CONNECT_TIMEOUT_MS = 5_000
 
         /** How much a write sends at a time. */
         private const val WRITE_BYTES = 1 shl 20
@@ -621,17 +641,17 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /**
          * A connection's settings: its own client id, so the host never takes two connections
-         * for one client; each request answered within [Remotes.ANSWER_MS].
+         * for one client; connecting and each request waited on for up to [answerMs].
          */
-        internal fun config(): SmbConfig =
+        internal fun config(answerMs: Long): SmbConfig =
             SmbConfig.builder()
                 .withClientGuid(UUID.randomUUID())
                 // Android's JCE lacks MD4 and AES-CMAC, which NTLM and SMB 3 signing need.
                 .withSecurityProvider(BCSecurityProvider())
                 // SPNEGO/Kerberos needs javax.security.auth.kerberos and org.ietf.jgss, absent on Android.
                 .withAuthenticators(NtlmAuthenticator.Factory())
-                .withSocketFactory(ProxySocketFactory(CONNECT_TIMEOUT_MS))
-                .withTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
+                .withSocketFactory(ProxySocketFactory(answerMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
+                .withTimeout(answerMs, TimeUnit.MILLISECONDS)
                 // No socket timeout: SMBJ's reader would take a quiet connection for a dead one
                 // and drop it; answers are timed per request, and echoes find a dead link.
                 .withSoTimeout(0, TimeUnit.SECONDS)

@@ -23,6 +23,7 @@ import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareBackup
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.reader.AutoScroll
@@ -184,6 +185,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<Preference>(Prefs.KEY_NETWORK_TIMEOUT)?.setOnPreferenceChangeListener { _, value ->
+            Remotes.answerMs = Prefs.timeoutMsOf(value as String)
+            true
+        }
+
         findPreference<ListPreference>("pref_auto_scroll_speed")?.apply {
             entries = AutoScroll.SPEEDS.map { AutoScrollText.of(resources, it) }.toTypedArray()
             entryValues = AutoScroll.SPEEDS.map { AutoScroll.format(it) }.toTypedArray()
@@ -282,6 +288,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("pref_reset")?.setOnPreferenceClickListener {
             confirm(requireContext(), R.string.confirm_reset_title, R.string.confirm_reset_msg, R.string.reset) {
                 prefs.reset()
+                RemoteCache.limitBytes = prefs.networkCacheBytes
+                Remotes.answerMs = prefs.networkTimeoutMs
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
                 Locales.apply("system")
                 toast(R.string.pref_reset_done)

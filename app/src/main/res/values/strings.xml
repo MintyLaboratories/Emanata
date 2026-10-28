@@ -112,6 +112,7 @@
     <string name="share_missing_named">%1$s is not on its host</string>
     <string name="retry">Retry</string>
     <string name="pref_network_cache">Network cache</string>
+    <string name="pref_network_timeout">Network timeout</string>
     <string name="pref_network_cache_desc">Space for PDFs and images fetched from network shares, and pages unpacked from solid archives there; the least recently read go first</string>
     <string name="share_fetching">Fetching from the share… %1$d%%</string>
     <string name="share_waiting">Waiting for the share…</string>
@@ -678,6 +679,24 @@
         <item>2048</item>
         <item>4096</item>
         <item>8192</item>
+    </string-array>
+    <string-array name="network_timeout_entries">
+        <item>10 s</item>
+        <item>20 s</item>
+        <item>30 s</item>
+        <item>45 s</item>
+        <item>60 s</item>
+        <item>90 s</item>
+        <item>2 min</item>
+    </string-array>
+    <string-array name="network_timeout_values" translatable="false">
+        <item>10</item>
+        <item>20</item>
+        <item>30</item>
+        <item>45</item>
+        <item>60</item>
+        <item>90</item>
+        <item>120</item>
     </string-array>
     <string-array name="startup_tab_entries">
         <item>@string/tab_browse</item>

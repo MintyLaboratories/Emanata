@@ -34,6 +34,7 @@ class App : Application() {
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         Remotes.init(this)
+        Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
         cleanCaches()

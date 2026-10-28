@@ -48,13 +48,19 @@ class SmbFsTest {
 
     @Test
     fun everyRequestOutlastsADiskSpinningUp() {
-        val config = SmbFs.config()
+        val config = SmbFs.config(Remotes.DEFAULT_ANSWER_MS)
         // Negotiating, signing in, listing, reading and writing each wait for their answer.
         for (wait in listOf(config.transactTimeout, config.readTimeout, config.writeTimeout)) {
-            assertTrue("$wait ms", wait >= 2 * Remotes.SPIN_UP_MS)
+            assertTrue("$wait ms", wait > Remotes.SPIN_UP_MS)
         }
         // No socket timeout: a quiet connection is not taken for a dead one.
         assertEquals(0, config.soTimeout)
+    }
+
+    @Test
+    fun everyRequestWaitsAsLongAsTheSettingSays() {
+        val config = SmbFs.config(60_000)
+        for (wait in listOf(config.transactTimeout, config.readTimeout, config.writeTimeout)) assertEquals(60_000L, wait)
     }
 
     @Test

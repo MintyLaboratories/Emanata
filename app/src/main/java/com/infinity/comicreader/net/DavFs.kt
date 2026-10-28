@@ -32,7 +32,11 @@ import java.util.concurrent.locks.ReentrantLock
  * a file cancels its requests, bodies still coming included, and never waits. Ranges
  * ask for the version first read (If-Range): a file changed meanwhile fails to read.
  */
-class DavFs(private val share: Share, private val client: OkHttpClient = sharedClient) : RemoteFs {
+class DavFs(
+    private val share: Share,
+    private val base: OkHttpClient = sharedClient,
+    private val answerMs: () -> Long = { Remotes.answerMs }
+) : RemoteFs {
     private val where = share.path as? DavUrl ?: throw IllegalArgumentException("Not a WebDAV share: $share")
 
     private val auth: String? =
@@ -46,14 +50,29 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
     private val calls = HashSet<Call>()
     private val inputs = HashSet<DavInput>()
 
+    @Volatile
+    private var timed: OkHttpClient? = null
+
+    /** [base] connecting and waiting for each answer, or more of one, up to [answerMs]; made anew when that changes. */
+    internal val client: OkHttpClient
+        get() {
+            val ms = answerMs()
+            timed?.takeIf { it.readTimeoutMillis.toLong() == ms }?.let { return it }
+            return base.newBuilder()
+                .connectTimeout(ms, TimeUnit.MILLISECONDS)
+                .readTimeout(ms, TimeUnit.MILLISECONDS)
+                .writeTimeout(ms, TimeUnit.MILLISECONDS)
+                .build()
+                .also { timed = it }
+        }
+
     /**
      * [client] without redirects, for changes, waiting up to [CHANGE_WAIT_MS] for an answer:
      * a server answers a change only once it is done, which on a sleeping disk or a large
      * folder takes a while.
      */
-    private val direct: OkHttpClient by lazy {
-        client.newBuilder().followRedirects(false).readTimeout(CHANGE_WAIT_MS, TimeUnit.MILLISECONDS).build()
-    }
+    private val direct: OkHttpClient
+        get() = client.newBuilder().followRedirects(false).readTimeout(CHANGE_WAIT_MS, TimeUnit.MILLISECONDS).build()
 
     /** Whether the server honors Range requests; null until a file larger than [HEAD_BYTES] was opened. */
     @Volatile
@@ -569,13 +588,9 @@ class DavFs(private val share: Share, private val client: OkHttpClient = sharedC
             return Triple(first, last, total)
         }
 
-        /** The client every share uses; tests derive theirs from it, keeping its redirect rules. */
+        /** The client every share derives its own from ([client]); tests too, keeping its redirect rules. */
         internal val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                // A sleeping disk spinning up answers late, never too late.
-                .readTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
-                .writeTimeout(Remotes.ANSWER_MS, TimeUnit.MILLISECONDS)
                 // Never from HTTPS to plain HTTP.
                 .followSslRedirects(false)
                 // Plain HTTP only within the local network, redirects included.

@@ -26,12 +26,16 @@ object Remotes {
     /** How long a share's sleeping disk may take to spin up before its first answer. */
     const val SPIN_UP_MS = 20_000L
 
+    /** [answerMs] unless the settings say otherwise: outlasts a [SPIN_UP_MS] with room to spare. */
+    const val DEFAULT_ANSWER_MS = 30_000L
+
     /**
      * How long a request to a share waits for an answer, or for more of one, before the
-     * share counts as gone: three spin-ups ([SPIN_UP_MS]), so waking a disk never fails a read,
-     * listing or sign-in. Connecting is timed apart: a host answers that while its disk sleeps.
+     * share counts as gone: connecting, signing in, listing, stating and reading alike.
+     * Set from the settings; a connection made with another value is made anew.
      */
-    const val ANSWER_MS = 3 * SPIN_UP_MS
+    @Volatile
+    var answerMs: Long = DEFAULT_ANSWER_MS
 
     private const val MAX_STATS = 4096
 
@@ -95,6 +99,7 @@ object Remotes {
         online = { true }
         onMainThread = { false }
         clock = { System.nanoTime() / 1_000_000 }
+        answerMs = DEFAULT_ANSWER_MS
         changed(null)
     }
 

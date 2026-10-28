@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.net.RemoteChannel
 import org.apache.commons.compress.archivers.zip.UnicodePathExtraField
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipFile
@@ -15,8 +16,12 @@ import java.util.zip.CRC32
  * reads, so entries stream concurrently. Names are read as UTF-8, which never fails, or
  * as their Unicode Path extra fields give them, and those not given as Unicode again in
  * the charset [charsetName] gives ([NameCharset.resolve]), as [ZipReader] reads them.
+ * A [RemoteChannel] hears of each entry's data as it is about to be read whole.
  */
 class ChannelZipReader(channel: SeekableByteChannel, charsetName: String) : ArchiveReader {
+    /** The share's file, told of each entry about to be read whole. */
+    private val remote = channel as? RemoteChannel
+
     private val zip: ZipFile = try {
         ZipFile.builder().setSeekableByteChannel(channel).setCharset(Charsets.UTF_8).setIgnoreLocalFileHeader(true).get()
     } catch (t: Throwable) {
@@ -61,8 +66,14 @@ class ChannelZipReader(channel: SeekableByteChannel, charsetName: String) : Arch
         return if (field.nameCRC32 == crc) field.unicodeName?.let { String(it, Charsets.UTF_8) } else null
     }
 
-    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T =
-        zip.getInputStream(native[entry.index]).use(block)
+    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T {
+        val e = native[entry.index]
+        return zip.getInputStream(e).use { stream ->
+            // Its data starts after its local header, found as the stream opens.
+            remote?.expect(e.dataOffset, e.compressedSize)
+            block(stream)
+        }
+    }
 
     override fun close() {
         runCatching { zip.close() }

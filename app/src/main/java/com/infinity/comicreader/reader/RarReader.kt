@@ -43,7 +43,10 @@ class RarReader private constructor(private val archive: Archive, private val ow
      * next read may begin.
      */
     override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T = lock.withLock {
-        archive.getInputStream(native[entry.index]).use { input ->
+        val header = native[entry.index]
+        // On a share: its header and packed data, about to be read whole.
+        (owned as? RemoteChannel)?.expect(header.positionInFile, header.fullPackSize + HEADER_SLACK_BYTES)
+        archive.getInputStream(header).use { input ->
             try {
                 block(input)
             } finally {
@@ -62,6 +65,9 @@ class RarReader private constructor(private val archive: Archive, private val ow
 
     companion object {
         private const val DRAIN_BYTES = 64 * 1024
+
+        /** Room for an entry's header before its packed data: names and extra fields rarely take more. */
+        private const val HEADER_SLACK_BYTES = 4096L
 
         /** Reads the rar on a share through [channel], in place; the reader closes it. */
         fun inPlace(channel: RemoteChannel): RarReader {

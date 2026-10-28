@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicLong
  * reader is about to read whole ([expect]) is fetched in runs of up to [maxBlock] from
  * its first read on. Each run is asked for at once ([RemoteInput.readFully]). While a
  * stream reads a run of at least [aheadFrom] bytes that followed on from the last, or one
- * inside an expected span, the next is fetched in the background ([readAhead]), within a
- * budget all channels share and never while [thrifty]. The most recently used runs are
+ * inside an expected span, the next two are fetched in the background ([readAhead]),
+ * within a budget all channels share and never while [thrifty]. The most recently used runs are
  * kept, up to [maxCached] bytes; the array of a run let go is reused for the next of its
  * length, so a long streamed read allocates little. Calls are serialized.
  */
@@ -69,7 +69,8 @@ class RemoteChannel(
     /** Spans about to be read whole ([expect]), as start and end, the latest last. */
     private val spans = ArrayDeque<LongArray>()
 
-    private var ahead: Ahead? = null
+    /** Runs being fetched ahead, in file order, each from where the one before ends. */
+    private val coming = ArrayDeque<Ahead>()
 
     /** The array of the run last let go, for the next run of its length. */
     private var spare: ByteArray? = null
@@ -145,13 +146,18 @@ class RemoteChannel(
         return run
     }
 
-    /** The run fetched ahead, waited for, when it holds [at]; one that does not is let go once done. Null without one. */
+    /**
+     * The run fetched ahead that holds [at], waited for, those before it let go; null
+     * without one. When none holds [at] the stream went elsewhere: those done are let go.
+     */
     private fun adopt(at: Long): Run? {
-        val a = ahead ?: return null
-        if (!a.holds(at)) {
-            if (a.task.isDone) drop(a)
+        val i = coming.indexOfFirst { it.holds(at) }
+        if (i < 0) {
+            coming.filter { it.task.isDone }.forEach(::drop)
             return null
         }
+        repeat(i) { drop(coming.first()) }
+        val a = coming.first()
         drop(a)
         val bytes = runCatching { Timing.span("share read ahead wait") { a.task.get() } }.getOrNull()
         if (bytes == null || bytes.isEmpty()) return null
@@ -160,8 +166,7 @@ class RemoteChannel(
     }
 
     private fun drop(a: Ahead) {
-        if (ahead === a) ahead = null
-        BUDGET.addAndGet(-a.length.toLong())
+        if (coming.remove(a)) BUDGET.addAndGet(-a.length.toLong())
     }
 
     private fun fetch(at: Long, wanted: Int): Run {
@@ -214,38 +219,46 @@ class RemoteChannel(
     }
 
     /**
-     * Starts fetching the run after [run] in the background when a stream reads [run]:
-     * one inside an expected span with more of it after, or one at least [aheadFrom] long
-     * that followed on from the run before. One at a time, within [MAX_AHEAD_BYTES] for
+     * Keeps up to [MAX_COMING] runs after [run] being fetched in the background when a
+     * stream reads [run]: inside an expected span with more of it after, or once [run],
+     * at least [aheadFrom] long, followed on from the run before; two, so the next fetch
+     * is under way while the last one's final pieces come. Within [MAX_AHEAD_BYTES] for
      * all channels, never while [thrifty].
      */
     private fun fetchAhead(run: Run) {
-        if (!readAhead || thrifty || ahead != null || run.end >= size || run.end != lastEnd) return
+        if (!readAhead || thrifty || run.end >= size || run.end != lastEnd) return
+        // Runs coming from elsewhere are let be until done; none are added after them.
+        if (coming.isNotEmpty() && coming.first().start != run.end) return
         val spanEnd = spanEnd(run.start)
-        val length = when {
-            spanEnd > run.end -> minOf(spanEnd - run.end, maxBlock.toLong()).toInt()
-            run.bytes.size >= aheadFrom && window >= aheadFrom -> minOf(minOf(window.toLong() * 2, maxBlock.toLong()), size - run.end).toInt()
-            else -> return
-        }
-        if (BUDGET.addAndGet(length.toLong()) > MAX_AHEAD_BYTES) {
-            BUDGET.addAndGet(-length.toLong())
-            return
-        }
-        val start = run.end
-        val bytes = arrayOf(length)
-        val task = FutureTask {
-            val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length) }
-            if (n == length) bytes else bytes.copyOf(n)
-        }
-        val a = Ahead(start, length, task)
-        ahead = a
-        fetches++
-        aheads++
-        window = maxOf(window, length)
-        try {
-            background.execute(task)
-        } catch (e: RuntimeException) {
-            drop(a)
+        val inSpan = spanEnd > run.end
+        if (!inSpan && (run.bytes.size < aheadFrom || window < aheadFrom)) return
+        val limit = if (inSpan) spanEnd else size
+        var next = coming.lastOrNull()?.let { it.start + it.length } ?: run.end
+        while (coming.size < MAX_COMING && next < limit) {
+            val grown = if (inSpan) maxBlock.toLong() else minOf(window.toLong() * 2, maxBlock.toLong())
+            val length = minOf(grown, limit - next).toInt()
+            if (BUDGET.addAndGet(length.toLong()) > MAX_AHEAD_BYTES) {
+                BUDGET.addAndGet(-length.toLong())
+                return
+            }
+            val start = next
+            val bytes = arrayOf(length)
+            val task = FutureTask {
+                val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length) }
+                if (n == length) bytes else bytes.copyOf(n)
+            }
+            val a = Ahead(start, length, task)
+            coming.addLast(a)
+            fetches++
+            aheads++
+            window = maxOf(window, length)
+            next += length
+            try {
+                background.execute(task)
+            } catch (e: RuntimeException) {
+                drop(a)
+                return
+            }
         }
     }
 
@@ -280,7 +293,7 @@ class RemoteChannel(
     override fun close() {
         if (!open) return
         open = false
-        ahead?.let(::drop)
+        coming.toList().forEach(::drop)
         runs.clear()
         spans.clear()
         cachedBytes = 0
@@ -309,6 +322,9 @@ class RemoteChannel(
 
         /** What all channels together may have fetched ahead and not read yet. */
         const val MAX_AHEAD_BYTES = 64L shl 20
+
+        /** How many runs a stream has coming ahead at most. */
+        private const val MAX_COMING = 2
 
         /** Spans [expect] keeps. */
         private const val MAX_SPANS = 4

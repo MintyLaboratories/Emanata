@@ -162,7 +162,7 @@ class RemoteChannelTest {
         val input = Bytes(big)
         val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
         assertArrayEquals(big, drain(channel, 500))
-        // 1, 2, 4 KB grow as before; from the 4 KB run on, each next run comes ahead.
+        // 1, 2, 4 KB grow as before; from the 4 KB run on, the next two runs are always coming.
         assertEquals(listOf(0L to 1024, 1024L to 2048, 3072L to 4096, 7168L to 8192, 15360L to 8192, 23552L to 8192, 31744L to 8192, 39936L to 64), input.asked)
         assertEquals(5, channel.aheads)
         channel.close()
@@ -211,8 +211,8 @@ class RemoteChannelTest {
         val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = now)
         channel.expect(0, 50_000)
         channel.read(ByteBuffer.allocate(10))
-        assertEquals(1, channel.aheads)
-        // A seek elsewhere: the run ahead goes, and the bytes there are still right.
+        assertEquals(2, channel.aheads)
+        // A seek elsewhere: the runs ahead go, and the bytes there are still right.
         channel.position(80_000)
         val far = ByteBuffer.allocate(100)
         channel.read(far)

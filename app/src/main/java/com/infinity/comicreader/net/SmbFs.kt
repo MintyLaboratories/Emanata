@@ -709,7 +709,10 @@ class SmbFs(private val share: Share) : RemoteFs {
         private var laneFile: SmbFile? = null
         private var laneOf: Lane? = null
 
-        /** Reads of the file on the lane, opened there first; null without a lane that works. */
+        /**
+         * Reads of the file on the lane, opened there first; null without a lane, or when
+         * opening fails: the lane is dropped as failed only when its connection did.
+         */
         private fun laneReads(): Pair<Lane, Reads>? {
             val l = laneNow() ?: return null
             return try {
@@ -727,7 +730,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                 }
                 l to Reads(f) { closed }
             } catch (e: Exception) {
-                dropLane(l, failed = true)
+                if (!closed && translate(e) is Dropped) dropLane(l, failed = true)
                 null
             }
         }

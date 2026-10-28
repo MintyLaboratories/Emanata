@@ -136,7 +136,7 @@ class ShareSpace(val id: String) : FileSpace {
 
     override fun mkdir(path: String) = Remotes.mkdir(path)
 
-    override fun open(path: String): InputStream = Remotes.inputStream(path)
+    override fun open(path: String): InputStream = Remotes.wholeStream(path)
 
     /** Shares set their own modification times. */
     override fun create(path: String, input: InputStream, length: Long, modified: Long) = Remotes.create(path, input, length)

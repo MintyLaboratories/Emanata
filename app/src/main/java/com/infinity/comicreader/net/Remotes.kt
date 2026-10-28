@@ -7,6 +7,7 @@ import com.infinity.comicreader.util.Timing
 import kotlinx.coroutines.asContextElement
 import java.io.File
 import java.io.InputStream
+import java.nio.channels.Channels
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -24,6 +25,9 @@ object Remotes {
 
     /** How long a share that could not be reached is not tried again unasked. */
     const val QUIET_MS = 10_000L
+
+    /** The first run a stream read to its end fetches ([wholeStream]). */
+    const val STREAM_START_BYTES = 1 shl 20
 
     /** How long a share's sleeping disk may take to spin up before its first answer. */
     const val SPIN_UP_MS = 20_000L
@@ -339,8 +343,14 @@ object Remotes {
     /** False when the file at [path] can be read only front to back ([RemoteFs.seekable]). */
     fun seekable(path: String): Boolean = call(path) { it.seekable(relOf(path)) }
 
-    /** Opens the file at [path] as a stream from its start. */
+    /** Opens the file at [path] as a stream from its start, each read asking for what it asks; for a few bytes. */
     fun inputStream(path: String): InputStream = RemoteInputStream(open(path))
+
+    /**
+     * Opens the file at [path] as a stream read to its end, as a copy reads it: in growing
+     * runs from [STREAM_START_BYTES], the next fetched while one is read ([RemoteChannel]).
+     */
+    fun wholeStream(path: String): InputStream = Channels.newInputStream(RemoteChannel(open(path), minBlock = STREAM_START_BYTES))
 
     /** The whole file at [path]; for small files such as loose images. */
     fun readBytes(path: String): ByteArray = open(path).use { input ->

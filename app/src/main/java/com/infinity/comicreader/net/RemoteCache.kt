@@ -92,9 +92,10 @@ object RemoteCache {
         val part = File.createTempFile(target.name, PART_SUFFIX, dir)
         hold(part.path)
         try {
-            Remotes.open(file.path).use { input ->
+            // Read front to back in growing runs, the next fetched while one is written.
+            RemoteChannel(Remotes.open(file.path), minBlock = CHUNK_BYTES).use { input ->
                 // A size the listing left out comes with the file.
-                val size = if (stat.size >= 0) stat.size else input.length
+                val size = if (stat.size >= 0) stat.size else input.size()
                 if (size > limitBytes) throw TooLargeException(size, limitBytes)
                 trim(dir, limitBytes - size)
                 part.outputStream().use { out ->
@@ -102,7 +103,7 @@ object RemoteCache {
                     var done = 0L
                     while (done < size) {
                         if (canceled()) throw InterruptedIOException("Canceled")
-                        val n = input.read(done, buf, 0, minOf(buf.size.toLong(), size - done).toInt())
+                        val n = input.read(buf, 0, minOf(buf.size.toLong(), size - done).toInt())
                         if (n < 0) break
                         out.write(buf, 0, n)
                         done += n

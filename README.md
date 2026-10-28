@@ -187,8 +187,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   device turns, and in the background (a notification shows it; Android 13+
   asks once to allow notifications, as the first operation starts). Favorite
   folders, folder layouts and start folders follow a folder moved or renamed.
-  A deleted item's favorites, history and bookmarks go with it, its facts and
-  network copy too, unless an identical copy elsewhere keeps them.
+  A deleted item's favorites, history and bookmarks go with it, and what is
+  cached for its books (facts, network copy, page sizes, seams, previews,
+  nested archives), unless an identical copy elsewhere keeps them.
 - **Book ID:** everything kept for a book (favorite, read mark, history,
   bookmarks, hidden pages, its own settings and color adjustments, cover, page
   previews, sizes and seams, facts, network copy) is kept by an ID made from its
@@ -203,6 +204,22 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   a share that sends files only whole is never read for them: a book there
   gets its ID from its local copy once fetched. Lists show each book where it
   was last seen, and backups carry the IDs with those paths.
+- **Re-encoded copies:** each book opened keeps a likeness: its ComicInfo.xml
+  without `<Pages>` and its page count when ComicInfo names the book (series
+  and number, or a title), else its page names without extensions, page count
+  and file name without extension. A book opened for the first time that is
+  like a book with data kept asks once, naming that book, whether to carry its
+  favorite, read mark, history, bookmarks, hidden pages and settings over;
+  what is kept by page follows the page of the same name, else of the same
+  place. Never automatic.
+- **Forget missing books** (Settings → Your data) scans every location for the
+  books your library keeps data for, with progress and Cancel; known files cost
+  no reads, and an unseen file is read only when its size is a missing book's.
+  A book found elsewhere notes where. Books found nowhere are listed for review
+  before anything is forgotten. Books last seen in a location not reachable now
+  (a share offline, storage not mounted) are kept and the location named; then
+  the others are listed unticked, as they may have moved there. Books opened
+  from outside every location are looked for where they were.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward
@@ -490,9 +507,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   drag, double-tap zoom, and **momentum scrolling**, on by default: zoomed
   pages keep gliding after a flick and stop at their edges).
 - File-list options (title display, status bar, breadcrumb, quick button).
-- Clear history, clear bookmarks, clear thumbnails, reset all settings; every
-  Clear or Reset asks first. Resetting settings keeps per-book adjustments and
-  reading progress.
+- **Clear cache** (showing the space it takes): covers, page previews, page
+  sizes, seams and pages seen, book facts, the Book ID index, network copies,
+  share listings and nested archives, all made again as needed. **Clear library
+  data**: favorites, read marks, history, bookmarks, hidden pages, books' own
+  settings and shared-book links; it offers Export first and clears only once
+  "Delete them for good" is ticked. Also clear history, clear bookmarks, reset
+  all settings; every Clear or Reset asks first. Resetting settings keeps
+  per-book adjustments and reading progress.
 - About: version, source, upstream credit, the license and third-party licenses.
 
 ## Format support mapping
@@ -520,9 +542,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   memory.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
-- Page previews (`PreviewStore`) live in `cacheDir/previews` as JPEGs keyed by
-  the book's path, size and time, the page and the preview size; least recently
-  used evicted past 128 MiB. Every page source leaves one per loaded page
+- Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named
+  after the book's ID, keyed by it, the page and the preview size; least
+  recently used evicted past 128 MiB. Page sizes (`PageSizes`) and seams with
+  pages seen (`PageSeams`) are kept one small file per book, named after its ID,
+  each marked used when read; the least recently read go past 32 MiB each.
+  Every page source leaves one per loaded page
   (`PreviewingSource`), made on a background writer: JPEG and WebP from the
   page's bytes, other formats from the full-size decode halved once before any
   crop. Detail (zoom) loads leave none.

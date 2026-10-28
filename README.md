@@ -185,9 +185,21 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   moment, with Cancel while canceling can stop it (not during a rename or a
   WebDAV COPY, which the server makes in one request); it goes on when the
   device turns, and in the background (a notification shows it; Android 13+
-  asks once to allow notifications, as the first operation starts). Favorites,
-  read marks, history, bookmarks, hidden pages, color settings, folder layouts
-  and start folders follow an item moved or renamed, and go with one deleted.
+  asks once to allow notifications, as the first operation starts). Favorite
+  folders, folder layouts and start folders follow a folder moved or renamed.
+  A deleted item's favorites, history and bookmarks go with it, its facts and
+  network copy too.
+- **Book ID:** everything kept for a book (favorite, read mark, history,
+  bookmarks, hidden pages, its own settings and color adjustments, cover, page
+  previews, sizes and seams, facts, network copy) is kept by an ID made from its
+  contents: XXH3-64 of its size, first 32 KB and last 32 KB (all of it under
+  64 KB). It follows the book moved, renamed or copied anywhere, inside the app
+  or not, even to another device, and identical files share it; a file replaced
+  by another at the same path does not inherit it. An index of path, size and
+  modification time keeps each file's ID, so a file seen before is never read
+  again for it; on a share both ends of a book are asked for at once, and
+  opening it next starts from them. Lists show each book where it was last
+  seen, and backups carry the IDs with those paths.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward

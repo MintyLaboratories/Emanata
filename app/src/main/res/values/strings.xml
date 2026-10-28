@@ -355,6 +355,11 @@
     <string name="resume_page">Resume page</string>
     <string name="first_page">First page</string>
     <string name="dont_ask_again">Don\'t ask again</string>
+    <!-- A book opened for the first time that looks like a copy of a book with data kept. -->
+    <string name="carry_over_title">A copy of a book you read?</string>
+    <string name="carry_over_msg">This book matches “%1$s” in %2$s. Carry its favorite, read mark, history, bookmarks, hidden pages and settings over to this one? The other book keeps none of them.</string>
+    <string name="carry_over">Carry over</string>
+    <string name="carry_over_no">No</string>
     <plurals name="auto_speed_screens">
         <item quantity="one">%1$s screen/min</item>
         <item quantity="other">%1$s screens/min</item>

@@ -60,9 +60,13 @@ import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Bookmark
+import com.infinity.comicreader.data.CopyMatch
+import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.Likeness
+import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
@@ -216,6 +220,9 @@ class ViewerActivity : AppCompatActivity() {
 
     /** The open book's [BookId], as known when it began to open, then as found; null while unknown or unreadable. */
     private var bookId: BookId? = null
+
+    /** Takes the open book's likeness and offers a book it may be a copy of ([noteLikeness]). */
+    private var likenessJob: Job? = null
 
     /** The open book as the library keeps it; null while its ID is unknown. */
     private fun book(): BookRef? = bookId?.let { id -> file?.let { BookRef(id, it.absolutePath) } }
@@ -1116,6 +1123,7 @@ class ViewerActivity : AppCompatActivity() {
             var sliced: DirectionDetection.Detected? = null
             var sliceSettled = false
             var found: BookId? = null
+            var fresh = false
             val (opened, siblings, contents) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 val job = coroutineContext.job
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
@@ -1126,6 +1134,8 @@ class ViewerActivity : AppCompatActivity() {
                     val raw = PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)
                     hiding((found ?: BookIds.known(target)).also { found = it }, raw)
                 }
+                // Before opening keeps anything for it.
+                fresh = found?.let { !library.hasData(it) } == true
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -1180,7 +1190,63 @@ class ViewerActivity : AppCompatActivity() {
             noteDetection()
             if (contents != null) detectLater(target, src, contents)
             if (slice && !sliceSettled) detectSlicesLater(target, src, sliceSizes)
+            noteLikeness(target, src, found, fresh)
         }
+    }
+
+    /**
+     * Keeps the likeness of [book], opened as [src], of ID [id] ([CopyMatch.note]); when
+     * nothing was kept for it before it opened ([fresh]) and it is like a book with data
+     * kept, asks once whether to carry that data over. A ComicInfo that only unpacking
+     * pages would reach leaves the book unnoted.
+     */
+    private fun noteLikeness(book: File, src: PageSource, id: BookId?, fresh: Boolean) {
+        likenessJob?.cancel()
+        if (id == null) return
+        val app = applicationContext
+        likenessJob = lifecycleScope.launch {
+            val found = withContext(AppDispatchers.io) {
+                val store = LikenessStore(app)
+                if (!CopyMatch.needed(store, id, book.name, fresh)) return@withContext null
+                val raw = (src as? HidingSource)?.inner ?: src
+                if (raw.comicInfoCostly()) return@withContext null
+                val likeness = runCatching {
+                    Likeness.of(raw.comicInfo(cheapOnly = true), (0 until raw.pageCount).map { raw.pageName(it) }, book.name)
+                }.getOrNull() ?: return@withContext null
+                ensureActive()
+                CopyMatch.note(store, library, id, likeness, book.name, fresh)?.let { Triple(store, it, likeness to raw.pageCount) }
+            } ?: return@launch
+            if (source !== src || file != book || bookId != id) return@launch
+            val (store, match, mine) = found
+            askCarryOver(store, match, BookRef(id, book.absolutePath), mine.first, mine.second)
+        }
+    }
+
+    /** Asks whether book [to] takes over what is kept for [match], the book it is like; carries it over and opens [to] again with it. */
+    private fun askCarryOver(store: LikenessStore, match: LikenessStore.Row, to: BookRef, likeness: Likeness, pageCount: Int) {
+        val from = library.pathOf(match.id) ?: return
+        val where = Crumbs.of(File(from).parent.orEmpty(), bookRoots).joinToString(" / ") { it.label }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.carry_over_title)
+            .setMessage(getString(R.string.carry_over_msg, File(from).name, where))
+            .setPositiveButton(R.string.carry_over) { _, _ ->
+                if (book() != to) return@setPositiveButton
+                stopAutoScroll()
+                flushStats()
+                saveHistory()
+                lifecycleScope.launch {
+                    withContext(AppDispatchers.io) { CopyMatch.carryOver(store, library, match, to, likeness, pageCount) }
+                    if (book() != to) return@launch
+                    // Opened again at the page its history now holds.
+                    openJob?.cancel()
+                    closeSource()
+                    endDismissed = false
+                    hideEndCard()
+                    open()
+                }
+            }
+            .setNegativeButton(R.string.carry_over_no, null)
+            .showKeepingFullscreen()
     }
 
     /**
@@ -1296,6 +1362,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun closeSource() {
         lateDetectionJob?.cancel()
         lateDetectionJob = null
+        likenessJob?.cancel()
+        likenessJob = null
         slicesJob?.cancel()
         slicesJob = null
         sizesJob?.cancel()
@@ -1954,6 +2022,8 @@ class ViewerActivity : AppCompatActivity() {
         persistAdjustments()
         file = nextFile
         bookId = stripAheadId
+        val fresh = bookId?.let { !library.hasData(it) } == true
+        noteLikeness(nextFile, next, bookId, fresh)
         book()?.let { library.seen(it) }
         refreshFavorites()
         loadAdjustments()

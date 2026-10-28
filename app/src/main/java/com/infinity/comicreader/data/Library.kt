@@ -687,6 +687,61 @@ class Library(context: Context) {
     fun hasData(id: BookId): Boolean = id in kept()
 
     /**
+     * Hands everything kept for book [from] to [to], a copy of it made anew (another ID):
+     * its favorite in its place, read mark, history, bookmarks, hidden pages and own
+     * settings, replacing what [to] kept of them; [from] keeps nothing after. Book page `i`
+     * of [from] is page [moves]`[i]` of [to] (gone where -1), of [pageCount] pages; hidden
+     * pages, history and bookmarks follow their pages ([movePages]).
+     */
+    fun carryOver(from: BookId, to: BookRef, moves: IntArray, pageCount: Int) {
+        if (from == to.id) return
+        synchronized(LOCK) {
+            val fromHex = from.hex
+            val toHex = to.id.hex
+            val e = sp.edit()
+            val favorites = readStringList(KEY_FAVORITES)
+            if (tokenOf(from) in favorites) {
+                favorites.remove(tokenOf(to.id))
+                favorites[favorites.indexOf(tokenOf(from))] = tokenOf(to.id)
+                e.putString(KEY_FAVORITES, JSONArray(favorites).toString())
+            }
+            for (k in ID_LIST_KEYS) {
+                val ids = readIds(k)
+                if (ids.remove(from)) ids.add(to.id) else ids.remove(to.id)
+                e.putString(k, JSONArray(ids.map { it.hex }).toString())
+            }
+            for (k in listOf(KEY_HISTORY, KEY_BOOKMARKS)) {
+                val arr = readArray(k)
+                val out = JSONArray()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    when (o.optString("id")) {
+                        toHex -> continue
+                        fromHex -> out.put(o.put("id", toHex).put("name", File(to.path).name))
+                        else -> out.put(o)
+                    }
+                }
+                e.putString(k, out.toString())
+            }
+            for (k in BOOK_OBJECT_KEYS - KEY_BOOKS) {
+                val o = readObject(k)
+                o.remove(toHex)
+                o.opt(fromHex)?.let { o.put(toHex, it) }
+                o.remove(fromHex)
+                e.putString(k, o.toString())
+            }
+            val books = readObject(KEY_BOOKS)
+            books.remove(fromHex)
+            books.remove(toHex)
+            putSeen(books, to.id, to.path)
+            e.putString(KEY_BOOKS, books.toString())
+            e.apply()
+            if (moves.indices.any { moves[it] != it } || moves.size != pageCount) movePages(to.id, moves, pageCount)
+            publishNameCharsets()
+        }
+    }
+
+    /**
      * Forgets everything kept for books [ids]: favorites, read marks, history, bookmarks,
      * hidden pages, their own settings and where they were seen.
      */

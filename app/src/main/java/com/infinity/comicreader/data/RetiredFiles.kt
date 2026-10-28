@@ -8,8 +8,11 @@ object RetiredFiles {
     /** Preferences files replaced by other storage: `book_facts` moved to [BookFactsCache]'s database. */
     internal val PREFS = listOf("book_facts")
 
-    /** Cache folders of covers and page previews made before AVIF decoded through libavif, some with wrong colors. */
-    internal val CACHE_DIRS = listOf("thumbnails", "previews")
+    /**
+     * Cache folders of covers and page previews made before AVIF decoded through libavif,
+     * some with wrong colors; and of page sizes and seams kept by path before Book IDs.
+     */
+    internal val CACHE_DIRS = listOf("thumbnails", "previews", "page-sizes", "page-seams")
 
     /** Deletes every retired file still present; does nothing once they are gone. Blocking. */
     fun drop(context: Context) {

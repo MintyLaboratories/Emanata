@@ -148,7 +148,7 @@ class ViewerActivitySeamsTest {
         val viewer = launch(book(count = 7, first = 3))
         repeat(50) { Thread.sleep(10); idle() }
         assertEquals(7, viewer.items())
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         assertTrue(seams.listFiles().isNullOrEmpty())
     }
 
@@ -184,7 +184,7 @@ class ViewerActivitySeamsTest {
         ApplicationProvider.getApplicationContext<Application>().getSharedPreferences("library", android.content.Context.MODE_PRIVATE)
             .edit().putString("shifted", JSONArray().put(bookId(book).hex).toString()).commit()
         val viewer = launch(book)
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
         repeat(20) { Thread.sleep(10); idle() }
         assertEquals(6, viewer.items())
@@ -204,7 +204,7 @@ class ViewerActivitySeamsTest {
         val viewer = launch(book)
         viewer.next()
         assertEquals("2 / 31", viewer.indicator())
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
         repeat(100) { Thread.sleep(10); idle() }
         // One match far from the reader settles nothing.
@@ -237,7 +237,7 @@ class ViewerActivitySeamsTest {
         val book = book(count = 31, first = 20)
         val viewer = launch(book)
         viewer.next()
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
         await { seams.listFiles()?.any { it.name.endsWith(".seen") } == true }
@@ -255,7 +255,7 @@ class ViewerActivitySeamsTest {
         assertEquals("4 / 7", viewer.indicator())
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
         repeat(50) { Thread.sleep(10); idle() }
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         assertTrue(seams.listFiles().orEmpty().none { it.name.endsWith(".seen") })
         // Merged again, the pages seen count: they are stored.
         ReaderSheet(viewer).tap(R.id.btn_spreads_merge)
@@ -326,7 +326,7 @@ class ViewerActivitySeamsTest {
         repeat(50) { Thread.sleep(10); idle() }
         // By number: [000] [001|002] [003|004] [005|006] [007|008], though 004 runs on into 005.
         assertEquals(5, viewer.items())
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         assertTrue(seams.listFiles().orEmpty().none { it.name.endsWith(".bin") })
         // Read again, the seams pair the halves.
         ReaderSheet(viewer).tap(R.id.sheet_ignore_seams)
@@ -349,7 +349,7 @@ class ViewerActivitySeamsTest {
         val first = launch(book)
         await { first.items() == 6 }
         first.finish()
-        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
         assertTrue(seams.listFiles()?.any { it.name.endsWith(".bin") } == true)
         // Opened again, the merged screen is there from the start.
         val again = launch(book)

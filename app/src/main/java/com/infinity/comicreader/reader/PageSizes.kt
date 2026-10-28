@@ -58,8 +58,8 @@ class PageSizes(val dir: File) {
     companion object {
         private const val VERSION = 1
 
-        /** Where sizes are kept under [cacheDir]. */
-        fun dirIn(cacheDir: File) = File(cacheDir, "page-sizes")
+        /** Where sizes are kept under [cacheDir], by book ID. */
+        fun dirIn(cacheDir: File) = File(cacheDir, "page-sizes-by-id")
 
         /**
          * Fills the unknown entries of [sizes] from [source]'s page headers, nearest page

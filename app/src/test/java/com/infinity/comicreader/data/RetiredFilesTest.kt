@@ -3,6 +3,7 @@ package com.infinity.comicreader.data
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.reader.PageSizes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -37,13 +38,19 @@ class RetiredFilesTest {
         val old = File(context.cacheDir, "thumbnails").apply { mkdirs() }
         File(old, "a.webp").writeText("x")
         File(context.cacheDir, "previews").mkdirs()
+        File(context.cacheDir, "page-sizes").mkdirs()
+        File(context.cacheDir, "page-seams").mkdirs()
         val kept = File(context.cacheDir, "covers").apply { mkdirs() }
+        val sizes = PageSizes.dirIn(context.cacheDir).apply { mkdirs() }
 
         RetiredFiles.drop(context)
 
         assertFalse(old.exists())
         assertFalse(File(context.cacheDir, "previews").exists())
+        assertFalse(File(context.cacheDir, "page-sizes").exists())
+        assertFalse(File(context.cacheDir, "page-seams").exists())
         assertTrue(kept.isDirectory)
+        assertTrue(sizes.isDirectory)
     }
 
     @Test

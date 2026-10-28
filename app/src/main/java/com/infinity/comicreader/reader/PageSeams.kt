@@ -151,8 +151,8 @@ class PageSeams(val dir: File) {
         /** Of the pages-seen file format. */
         private const val SEEN_VERSION = 1
 
-        /** Where seams are kept under [cacheDir]. */
-        fun dirIn(cacheDir: File) = File(cacheDir, "page-seams")
+        /** Where seams are kept under [cacheDir], by book ID. */
+        fun dirIn(cacheDir: File) = File(cacheDir, "page-seams-by-id")
 
         /**
          * The pages whose seam with the next page [found] lacks, where [analysis] lets the two

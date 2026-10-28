@@ -90,7 +90,7 @@ class ViewerActivitySpreadsTest {
 
     /** Waits for the reader to have read and stored the open book's page sizes. */
     private fun sizesRead() {
-        waitUntil { File(context.cacheDir, "page-sizes").listFiles()?.any { it.name.endsWith(".bin") } == true }
+        waitUntil { File(context.cacheDir, "page-sizes-by-id").listFiles()?.any { it.name.endsWith(".bin") } == true }
         repeat(5) { Thread.sleep(10); idle() }
     }
 

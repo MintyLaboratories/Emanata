@@ -285,6 +285,19 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun theGaveUpNoteIsNotShownOverTheReader() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val controller = start()
+        val activity = controller.get()
+        // The reader, say, opened over the list.
+        controller.pause()
+        idleFor(Remotes.answerMs + 100)
+        assertEquals(listOf("Device"), activity.crumbs())
+        assertNull(ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
     fun aStartupShareAnsweringAtOnceAsksNothing() {
         prefs.lastPath = "/net/s1/Series"
         val activity = launch()

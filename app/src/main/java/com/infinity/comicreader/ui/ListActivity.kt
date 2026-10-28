@@ -717,7 +717,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, say: Boolean) {
         val device = deviceStart()
-        if (say) toast(getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath)))
+        // Never over the reader the startup offer opened, which may be reading from that share.
+        if (say && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            toast(getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath)))
+        }
         loadDirectory(device)
         val fallback = currentDir?.absolutePath ?: return
         keepTrying(dir, attempt, fallback)

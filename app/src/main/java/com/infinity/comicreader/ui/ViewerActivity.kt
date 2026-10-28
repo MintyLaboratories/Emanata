@@ -156,8 +156,14 @@ class ViewerActivity : AppCompatActivity() {
     /** How much of a book on a share is fetched, below [progress]. */
     private lateinit var fetched: TextView
 
-    /** "Waiting for the share…", while a book on a share or its page on screen shows nothing ([updateShareWait]). */
-    private lateinit var shareWait: TextView
+    /** "Waiting for network location…", while a book on a share or its page on screen shows nothing ([updateShareWait]). */
+    private lateinit var shareWait: View
+
+    /** [shareWait]'s spinner, hidden while [progress] spins. */
+    private lateinit var shareWaitSpinner: View
+
+    /** The reader's own requests to shares, opening books and reading their pages; [shareWait] heeds only these. */
+    private val asker = Remotes.Asker()
     private lateinit var endCard: View
     private lateinit var endSubtitle: TextView
     private lateinit var endNext: View
@@ -726,6 +732,7 @@ class ViewerActivity : AppCompatActivity() {
         progress = findViewById(R.id.viewer_progress)
         fetched = findViewById(R.id.viewer_fetched)
         shareWait = findViewById(R.id.viewer_share_wait)
+        shareWaitSpinner = findViewById(R.id.viewer_share_wait_spinner)
         endCard = findViewById(R.id.viewer_end)
         endSubtitle = findViewById(R.id.end_subtitle)
         endNext = findViewById(R.id.end_next)
@@ -1085,7 +1092,7 @@ class ViewerActivity : AppCompatActivity() {
             var sliceSizes: List<IntArray?> = emptyList()
             var sliced: DirectionDetection.Detected? = null
             var sliceSettled = false
-            val (opened, siblings, contents) = withContext(AppDispatchers.io) {
+            val (opened, siblings, contents) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 val job = coroutineContext.job
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
                 val s = runCatching { hiding(target, PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)) }
@@ -1318,14 +1325,13 @@ class ViewerActivity : AppCompatActivity() {
 
     /**
      * Shows [shareWait] while the screen has been [blank] for [SHARE_WAIT_NOTE_MS] since
-     * the wait began ([timeShareWait]) and the share has answered nothing for
-     * [SHARE_SILENT_MS] of a request; checks again every [SHARE_WAIT_CHECK_MS] while blank,
+     * the wait began ([timeShareWait]) and a request of the reader's own ([asker]) has had
+     * no answer for [SHARE_SILENT_MS]; checks again every [SHARE_WAIT_CHECK_MS] while blank,
      * so it comes when the share stalls and goes as soon as data arrives.
      */
     private fun updateShareWait() {
         handler.removeCallbacks(checkShareWait)
-        val book = file as? RemoteFile
-        if (book == null) {
+        if (file !is RemoteFile) {
             shareWait.visibility = View.GONE
             return
         }
@@ -1335,7 +1341,8 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
         val blank = blank()
-        val waiting = blank && Remotes.silentFor(book.path) >= SHARE_SILENT_MS
+        val waiting = blank && Remotes.silentFor(asker) >= SHARE_SILENT_MS
+        shareWaitSpinner.visibility = if (progress.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         shareWait.visibility = if (waiting) View.VISIBLE else View.GONE
         if (blank) handler.postDelayed(checkShareWait, SHARE_WAIT_CHECK_MS)
     }
@@ -1837,7 +1844,8 @@ class ViewerActivity : AppCompatActivity() {
         if (stripAhead != null || stripAheadJob?.isActive == true) return
         val next = nextChapter() ?: return
         stripAheadJob = lifecycleScope.launch {
-            val (src, ok) = withContext(AppDispatchers.io) {
+            // The reader's own: once reached, its pages show from what this opens.
+            val (src, ok) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
                 val s = runCatching {

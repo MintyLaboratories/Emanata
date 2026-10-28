@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Looper
 import com.infinity.comicreader.util.Timing
+import kotlinx.coroutines.asContextElement
 import java.io.File
 import java.io.InputStream
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Network shares as the app's paths see them: share `id` is the folder `/net/id`,
@@ -64,10 +66,33 @@ object Remotes {
     private val failedAt = HashMap<String, Long>()
     private val refused = HashMap<String, RemoteException>()
 
-    /** Per share: reads, listings and stats waiting for an answer, and since when the share said nothing ([silentFor]). */
-    private class Asking(var count: Int = 0, var since: Long = 0)
+    /**
+     * One party asking shares, such as the reader, its requests timed apart from everyone
+     * else's ([silentFor]): its reads, listings and stats waiting for an answer, and since
+     * when they had none.
+     */
+    class Asker {
+        private var count = 0
+        private var since = 0L
 
-    private val asking = HashMap<String, Asking>()
+        @Synchronized
+        internal fun start(now: Long) {
+            if (count++ == 0) since = now
+        }
+
+        @Synchronized
+        internal fun end(now: Long) {
+            since = now
+            count--
+        }
+
+        @Synchronized
+        internal fun silentAt(now: Long): Long = if (count > 0) (now - since).coerceAtLeast(0) else 0
+    }
+
+    /** Whose requests the current thread makes ([askingAs]). */
+    private val asker = ThreadLocal<Asker?>()
+
     private val stats = object : LinkedHashMap<String, RemoteStat>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
@@ -212,7 +237,7 @@ object Remotes {
      */
     fun list(path: String): List<RemoteFile> {
         val base = path.trimEnd('/')
-        val found = Timing.span("share list") { call(path) { asked(path) { it.list(relOf(path)) } } }.filter { isName(it.name) }
+        val found = Timing.span("share list") { call(path) { fs -> asked { fs.list(relOf(path)) } } }.filter { isName(it.name) }
         listings.put(base, found)
         return filesOf(base, found, fresh = true)
     }
@@ -247,45 +272,56 @@ object Remotes {
     /** What is at [path] now; null when nothing is. Throws when the share fails. */
     fun stat(path: String): RemoteStat? {
         if (isRoot(path)) return ROOT
-        return Timing.span("share stat") { call(path) { asked(path) { it.stat(relOf(path)) } } }.also { remember(path, it) }
+        return Timing.span("share stat") { call(path) { fs -> asked { fs.stat(relOf(path)) } } }.also { remember(path, it) }
     }
 
     /** Opens the file at [path]. */
-    fun open(path: String): RemoteInput = Timing.span("share open") { call(path) { Asked(path, asked(path) { it.open(relOf(path)) }) } }
-
-    /** [input], its reads timed by [silentFor]. */
-    private class Asked(private val path: String, private val input: RemoteInput) : RemoteInput by input {
-        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
-            asked(path) { input.read(position, buffer, offset, count) }
+    /** Opens the file at [path]; opened for an [Asker] ([askingAs]), its reads are that asker's from any thread. */
+    fun open(path: String): RemoteInput = Timing.span("share open") {
+        call(path) { fs ->
+            val by = asker.get()
+            val input = asked(by) { fs.open(relOf(path)) }
+            if (by == null) input else Asked(by, input)
+        }
     }
 
-    /** Runs [block], a request to [path]'s share, counting it as waiting for an answer until it returns or fails. */
-    private inline fun <T> asked(path: String, block: () -> T): T {
-        val id = idOf(path) ?: return block()
-        synchronized(asking) {
-            val a = asking.getOrPut(id) { Asking() }
-            if (a.count++ == 0) a.since = clock()
-        }
+    /** [input], its reads timed for [by] ([silentFor]). */
+    private class Asked(private val by: Asker, private val input: RemoteInput) : RemoteInput by input {
+        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
+            asked(by) { input.read(position, buffer, offset, count) }
+    }
+
+    /** Runs [block], a request to a share, counting it as [by]'s waiting for an answer until it returns or fails. */
+    private inline fun <T> asked(by: Asker? = asker.get(), block: () -> T): T {
+        by ?: return block()
+        by.start(clock())
         try {
             return block()
         } finally {
-            synchronized(asking) {
-                val a = asking.getValue(id)
-                a.since = clock()
-                a.count--
-            }
+            by.end(clock())
+        }
+    }
+
+    /** Makes the coroutine it is added to ask shares as [by]: its requests, and those of the files it opens. */
+    fun askingAs(by: Asker): CoroutineContext.Element = asker.asContextElement(by)
+
+    /** Runs [block] asking shares as [by] ([askingAs]); for blocking code. */
+    fun <T> askingAs(by: Asker, block: () -> T): T {
+        val before = asker.get()
+        asker.set(by)
+        try {
+            return block()
+        } finally {
+            asker.set(before)
         }
     }
 
     /**
-     * How long, in [clock] milliseconds, [path]'s share has kept a read, listing or stat
-     * waiting with nothing answered since; 0 while nothing is asked of it.
+     * How long, in [clock] milliseconds, a read, listing or stat [by] made has waited with
+     * nothing answered since; 0 while it asks nothing. Requests of others, to the same
+     * share too, never count.
      */
-    fun silentFor(path: String): Long {
-        val id = idOf(path) ?: return 0
-        val a = synchronized(asking) { asking[id]?.takeIf { it.count > 0 }?.since } ?: return 0
-        return (clock() - a).coerceAtLeast(0)
-    }
+    fun silentFor(by: Asker): Long = by.silentAt(clock())
 
     /** False when the file at [path] can be read only front to back ([RemoteFs.seekable]). */
     fun seekable(path: String): Boolean = call(path) { it.seekable(relOf(path)) }

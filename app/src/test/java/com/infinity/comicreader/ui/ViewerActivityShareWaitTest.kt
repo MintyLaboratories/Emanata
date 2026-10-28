@@ -33,6 +33,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /** A share slow to answer, as one waking its disk: the reader says so after a while, and no longer once data arrives. */
@@ -149,6 +150,27 @@ class ViewerActivityShareWaitTest {
         held.countDown()
         await { viewer.note().visibility != View.VISIBLE }
         assertEquals(View.GONE, viewer.note().visibility)
+        assertFalse(viewer.isFinishing)
+    }
+
+    @Test
+    fun otherWorkOnTheShareAnsweringNeverHidesTheWait() {
+        File(tmp.root, "share/notes.txt").writeText("cover scan")
+        val held = holdLaterPages()
+        val viewer = launch()
+        await { viewer.progress().visibility != View.VISIBLE }
+        repeat(30) { Thread.sleep(10); idle() }
+        viewer.pages().setCurrentItem(PAGES - 2, false)
+        awaitHeld()
+        idleFor(1_500)
+        // A cover scan reading another file of the same share, answered at once.
+        thread { Remotes.open("/net/s1/notes.txt").use { it.read(0, ByteArray(4), 0, 4) } }.join()
+        idleFor(600)
+        assertEquals(View.VISIBLE, viewer.note().visibility)
+        assertEquals(View.VISIBLE, viewer.findViewById<View>(R.id.viewer_share_wait_spinner).visibility)
+        fake.slow = null
+        held.countDown()
+        await { viewer.note().visibility != View.VISIBLE }
         assertFalse(viewer.isFinishing)
     }
 

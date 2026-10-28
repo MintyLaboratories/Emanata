@@ -241,8 +241,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   A server waking a sleeping disk is waited for: connecting, signing in,
   listing and each read wait up to the **Network timeout** (advanced setting,
   30 s by default);
-  a book or page that shows nothing for 2 seconds while the share answers
-  nothing says "Waiting for the share…" until data arrives. A share that
+  a book or page that shows nothing for 2 seconds while the reader's own
+  requests go unanswered (covers and scans on the same share do not count)
+  shows a spinner and "Waiting for network location…" until data arrives. A share that
   cannot be reached says so ("Not reachable") with a Retry, also over a folder
   shown as last listed; a refused sign-in is not tried again until you retry
   or edit the share, so a

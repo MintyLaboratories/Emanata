@@ -286,36 +286,57 @@ class RemotesTest {
     }
 
     @Test
-    fun aShareSilentOnARequestSaysForHowLong() {
+    fun aFileOpenedForAnAskerTimesItsReadsFromAnyThread() {
         val book = "/net/s1/Series/001.cbz"
-        val input = Remotes.open(book)
-        assertEquals(0L, Remotes.silentFor(book))
+        val reader = Remotes.Asker()
+        val input = Remotes.askingAs(reader) { Remotes.open(book) }
+        assertEquals(0L, Remotes.silentFor(reader))
         val held = CountDownLatch(1)
         fake.slow = held
         val read = thread { input.read(0, ByteArray(10), 0, 10) }
         while (fake.held.get() == 0) Thread.sleep(5)
         now += 1_500
-        // Any request to the share counts for all of its files.
-        assertEquals(1_500L, Remotes.silentFor("/net/s1/notes.txt"))
-        assertEquals(0L, Remotes.silentFor("/net/s2/notes.txt"))
+        assertEquals(1_500L, Remotes.silentFor(reader))
         fake.slow = null
         held.countDown()
         read.join()
-        assertEquals(0L, Remotes.silentFor(book))
+        assertEquals(0L, Remotes.silentFor(reader))
         input.close()
     }
 
     @Test
-    fun aListingWaitedOnCountsAsSilence() {
+    fun aListingWaitedOnCountsAsItsAskersSilence() {
+        val reader = Remotes.Asker()
         val held = CountDownLatch(1)
         fake.slow = held
-        val list = thread { Remotes.list("/net/s1/Series") }
+        val list = thread { Remotes.askingAs(reader) { Remotes.list("/net/s1/Series") } }
         while (fake.held.get() == 0) Thread.sleep(5)
         now += 700
-        assertEquals(700L, Remotes.silentFor("/net/s1"))
+        assertEquals(700L, Remotes.silentFor(reader))
         fake.slow = null
         held.countDown()
         list.join()
-        assertEquals(0L, Remotes.silentFor("/net/s1"))
+        assertEquals(0L, Remotes.silentFor(reader))
+    }
+
+    @Test
+    fun othersWaitingOnTheSameShareNeverCount() {
+        val reader = Remotes.Asker()
+        val covers = Remotes.Asker()
+        val mine = Remotes.askingAs(reader) { Remotes.open("/net/s1/Series/001.cbz") }
+        val theirs = Remotes.askingAs(covers) { Remotes.open("/net/s1/Series/002.cbz") }
+        val anyone = Remotes.open("/net/s1/notes.txt")
+        val held = CountDownLatch(1)
+        fake.slow = held
+        val reads = listOf(theirs, anyone).map { input -> thread { input.read(0, ByteArray(1), 0, 1) } }
+        val listing = thread { Remotes.list("/net/s1/Series") }
+        while (fake.held.get() < 3) Thread.sleep(5)
+        now += 5_000
+        assertEquals(0L, Remotes.silentFor(reader))
+        assertEquals(5_000L, Remotes.silentFor(covers))
+        fake.slow = null
+        held.countDown()
+        (reads + listing).forEach { it.join() }
+        listOf(mine, theirs, anyone).forEach { it.close() }
     }
 }

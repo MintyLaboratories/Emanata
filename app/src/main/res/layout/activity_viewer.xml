@@ -319,19 +319,34 @@
         android:textColor="@android:color/white"
         android:visibility="gone" />
 
-    <!-- Said while a book or page on a network share has shown nothing for a while. -->
-    <TextView
+    <!-- Said while a book or page on a network share has shown nothing for a while; its spinner hides beside viewer_progress. -->
+    <LinearLayout
         android:id="@+id/viewer_share_wait"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginTop="64dp"
         android:background="@drawable/bg_reader_bottom"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingHorizontal="@dimen/space_4"
         android:paddingVertical="@dimen/space_2"
-        android:text="@string/share_waiting"
-        android:textColor="@color/reader_on_surface_dim"
-        android:textSize="13sp"
-        android:visibility="gone" />
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/viewer_share_wait_spinner"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="@dimen/space_2"
+            android:indeterminateTint="@color/reader_on_surface_dim" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/network_waiting"
+            android:textColor="@color/reader_on_surface_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
 
 </FrameLayout>

@@ -12,7 +12,10 @@ import org.junit.After
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class RemoteChannelTest {
 
@@ -258,6 +261,79 @@ class RemoteChannelTest {
         channel.read(next)
         assertArrayEquals(big.copyOfRange(16_384, 17_384), next.array())
         assertEquals(listOf(0L, 16_384L, 16_384L), input.asked)
+    }
+
+    /** [big] as a file whose reads past the first run wait for [go], each giving half of what it asks; [asked] lists them. */
+    private class Gated(private val big: ByteArray, private val first: Int) : RemoteInput {
+        val go = CountDownLatch(1)
+        val started = CountDownLatch(1)
+        val asked = java.util.Collections.synchronizedList(ArrayList<Long>())
+        override val length = big.size.toLong()
+
+        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
+            asked += position
+            if (position >= first) {
+                started.countDown()
+                go.await(5, TimeUnit.SECONDS)
+            }
+            val n = minOf(if (position >= first) maxOf(1, count / 2) else count, big.size - position.toInt())
+            System.arraycopy(big, position.toInt(), buffer, offset, n)
+            return n
+        }
+
+        override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
+            read(position, buffer, offset, count)
+
+        override fun close() {}
+    }
+
+    @Test
+    fun closingStopsTheRunsComingAhead() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val input = Gated(big, first = 16_384)
+        val background = Executors.newSingleThreadExecutor()
+        try {
+            val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = background)
+            channel.expect(0, 60_000)
+            channel.read(ByteBuffer.allocate(10))
+            assertEquals(2, channel.aheads)
+            assertTrue(input.started.await(5, TimeUnit.SECONDS))
+            channel.close()
+            assertEquals(0L, RemoteChannel.aheadBytes)
+            input.go.countDown()
+            background.shutdown()
+            assertTrue(background.awaitTermination(5, TimeUnit.SECONDS))
+            // The read under way was let finish; neither its rest nor the next run was asked for.
+            assertEquals(listOf(0L, 16_384L), input.asked.toList())
+        } finally {
+            background.shutdownNow()
+        }
+    }
+
+    @Test
+    fun runsComingAheadThatAStreamSkipsAreCanceled() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val input = Gated(big, first = 16_384)
+        val background = Executors.newSingleThreadExecutor()
+        try {
+            val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = background)
+            channel.expect(0, 60_000)
+            channel.read(ByteBuffer.allocate(10))
+            assertTrue(input.started.await(5, TimeUnit.SECONDS))
+            // Reading on inside the second run coming lets the first go unread.
+            channel.position(40_000)
+            // Let go once the read below has let the first run go and waits for the second.
+            Thread { Thread.sleep(300); input.go.countDown() }.start()
+            val far = ByteBuffer.allocate(100)
+            channel.read(far)
+            assertArrayEquals(big.copyOfRange(40_000, 40_100), far.array())
+            channel.close()
+            background.shutdown()
+            assertTrue(background.awaitTermination(5, TimeUnit.SECONDS))
+            assertTrue(input.asked.toList().toString(), input.asked.none { it in 16_385L until 32_768L })
+        } finally {
+            background.shutdownNow()
+        }
     }
 
     @Test

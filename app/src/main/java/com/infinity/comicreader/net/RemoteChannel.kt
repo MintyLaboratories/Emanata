@@ -35,6 +35,8 @@ class RemoteChannel(
     private val background: Executor = AHEAD
 ) : SeekableByteChannel {
     private var position = 0L
+
+    @Volatile
     private var open = true
     private val size = input.length
     private var minBlock = minBlock
@@ -53,8 +55,16 @@ class RemoteChannel(
         val end: Long get() = start + bytes.size
     }
 
-    /** A run being fetched in the background, [length] bytes from [start], counted in [BUDGET] until let go. */
-    private class Ahead(val start: Long, val length: Int, val task: FutureTask<ByteArray>) {
+    /**
+     * A run being fetched in the background, [length] bytes from [start], counted in [BUDGET]
+     * until let go; one let go unread is [dropped], and its fetch stops asking for more.
+     */
+    private class Ahead(val start: Long, val length: Int) {
+        lateinit var task: FutureTask<ByteArray>
+
+        @Volatile
+        var dropped = false
+
         fun holds(at: Long) = at >= start && at < start + length
     }
 
@@ -156,7 +166,7 @@ class RemoteChannel(
             coming.filter { it.task.isDone }.forEach(::drop)
             return null
         }
-        repeat(i) { drop(coming.first()) }
+        repeat(i) { drop(coming.first(), unread = true) }
         val a = coming.first()
         drop(a)
         val bytes = runCatching { Timing.span("share read ahead wait") { a.task.get() } }.getOrNull()
@@ -165,8 +175,14 @@ class RemoteChannel(
         return Run(a.start, bytes)
     }
 
-    private fun drop(a: Ahead) {
-        if (coming.remove(a)) BUDGET.addAndGet(-a.length.toLong())
+    /** Lets go of [a]; one [unread] is canceled, its fetch asking for nothing more. */
+    private fun drop(a: Ahead, unread: Boolean = false) {
+        if (!coming.remove(a)) return
+        BUDGET.addAndGet(-a.length.toLong())
+        if (unread && !a.task.isDone) {
+            a.dropped = true
+            a.task.cancel(false)
+        }
     }
 
     private fun fetch(at: Long, wanted: Int): Run {
@@ -193,10 +209,10 @@ class RemoteChannel(
         return Run(start, if (n == length) bytes else bytes.copyOf(n))
     }
 
-    /** Fills [bytes] with up to [length] bytes at [start]; the count read. */
-    private fun fill(start: Long, bytes: ByteArray, length: Int): Int {
+    /** Fills [bytes] with up to [length] bytes at [start] while [wanted]; the count read. */
+    private fun fill(start: Long, bytes: ByteArray, length: Int, wanted: () -> Boolean = { true }): Int {
         var n = 0
-        while (n < length) {
+        while (n < length && wanted()) {
             val r = input.readFully(start + n, bytes, n, length - n)
             if (r < 0) break
             n += r
@@ -244,11 +260,12 @@ class RemoteChannel(
             }
             val start = next
             val bytes = arrayOf(length)
+            val a = Ahead(start, length)
             val task = FutureTask {
-                val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length) }
+                val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length) { open && !a.dropped } }
                 if (n == length) bytes else bytes.copyOf(n)
             }
-            val a = Ahead(start, length, task)
+            a.task = task
             coming.addLast(a)
             fetches++
             aheads++
@@ -289,12 +306,12 @@ class RemoteChannel(
     @Synchronized
     override fun isOpen(): Boolean = open
 
-    /** Closes the file; a run being fetched ahead fails with it, never waited for. */
+    /** Closes the file; runs being fetched ahead are canceled, never waited for, and ask for nothing more. */
     @Synchronized
     override fun close() {
         if (!open) return
         open = false
-        coming.toList().forEach(::drop)
+        coming.toList().forEach { drop(it, unread = true) }
         runs.clear()
         spans.clear()
         cachedBytes = 0

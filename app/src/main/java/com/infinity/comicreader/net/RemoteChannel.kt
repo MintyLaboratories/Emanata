@@ -220,8 +220,8 @@ class RemoteChannel(
 
     /**
      * Keeps up to [MAX_COMING] runs after [run] being fetched in the background when a
-     * stream reads [run]: inside an expected span with more of it after, or once [run],
-     * at least [aheadFrom] long, followed on from the run before; two, so the next fetch
+     * stream reads [run]: inside an expected span with more of it after, or, outside any
+     * span, once [run], at least [aheadFrom] long, followed on from the run before; two, so the next fetch
      * is under way while the last one's final pieces come. Within [MAX_AHEAD_BYTES] for
      * all channels, never while [thrifty].
      */
@@ -231,7 +231,8 @@ class RemoteChannel(
         if (coming.isNotEmpty() && coming.first().start != run.end) return
         val spanEnd = spanEnd(run.start)
         val inSpan = spanEnd > run.end
-        if (!inSpan && (run.bytes.size < aheadFrom || window < aheadFrom)) return
+        // Past the end of an expected span nothing comes ahead: one page read whole (a cover) wants no more.
+        if (!inSpan && (spanEnd >= 0 || run.bytes.size < aheadFrom || window < aheadFrom)) return
         val limit = if (inSpan) spanEnd else size
         var next = coming.lastOrNull()?.let { it.start + it.length } ?: run.end
         while (coming.size < MAX_COMING && next < limit) {

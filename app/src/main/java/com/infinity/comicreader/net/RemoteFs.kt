@@ -121,6 +121,16 @@ interface RemoteInput : Closeable {
         }
         return if (n == 0 && count > 0) -1 else n
     }
+
+    /**
+     * This file for background work, as reads fetched ahead: its requests never count as
+     * a reader's own ([Remotes.silentFor]), though its answers coming in count as heard
+     * while the reader waits on them ([awaiting]).
+     */
+    val background: RemoteInput get() = this
+
+    /** Runs [block], the caller waiting on [background] work it now needs, counted as its own request. */
+    fun <T> awaiting(block: () -> T): T = block()
 }
 
 /**

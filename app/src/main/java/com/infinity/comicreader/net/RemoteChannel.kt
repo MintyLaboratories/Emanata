@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicLong
  * reader is about to read whole ([expect]) is fetched in runs of up to [maxBlock] from
  * its first read on. Each run is asked for at once ([RemoteInput.readFully]). While a
  * stream reads a run of at least [aheadFrom] bytes that followed on from the last, or one
- * inside an expected span, the next two are fetched in the background ([readAhead]),
+ * inside an expected span, the next two are fetched in the background ([readAhead]; as
+ * [RemoteInput.background] work, waited on as the reader's own request),
  * within a budget all channels share and never while [thrifty]. The most recently used runs are
  * kept, up to [maxCached] bytes; the array of a run let go is reused for the next of its
  * length, so a long streamed read allocates little. Calls are serialized.
@@ -169,7 +170,7 @@ class RemoteChannel(
         repeat(i) { drop(coming.first(), unread = true) }
         val a = coming.first()
         drop(a)
-        val bytes = runCatching { Timing.span("share read ahead wait") { a.task.get() } }.getOrNull()
+        val bytes = runCatching { Timing.span("share read ahead wait") { input.awaiting { a.task.get() } } }.getOrNull()
         if (bytes == null || bytes.isEmpty()) return null
         lastEnd = a.start + bytes.size
         return Run(a.start, bytes)
@@ -209,11 +210,11 @@ class RemoteChannel(
         return Run(start, if (n == length) bytes else bytes.copyOf(n))
     }
 
-    /** Fills [bytes] with up to [length] bytes at [start] while [wanted]; the count read. */
-    private fun fill(start: Long, bytes: ByteArray, length: Int, wanted: () -> Boolean = { true }): Int {
+    /** Fills [bytes] with up to [length] bytes at [start] from [from] while [wanted]; the count read. */
+    private fun fill(start: Long, bytes: ByteArray, length: Int, from: RemoteInput = input, wanted: () -> Boolean = { true }): Int {
         var n = 0
         while (n < length && wanted()) {
-            val r = input.readFully(start + n, bytes, n, length - n)
+            val r = from.readFully(start + n, bytes, n, length - n)
             if (r < 0) break
             n += r
         }
@@ -262,7 +263,7 @@ class RemoteChannel(
             val bytes = arrayOf(length)
             val a = Ahead(start, length)
             val task = FutureTask {
-                val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length) { open && !a.dropped } }
+                val n = Timing.span("share read ahead ${length / 1024} KB") { fill(start, bytes, length, input.background) { open && !a.dropped } }
                 if (n == length) bytes else bytes.copyOf(n)
             }
             a.task = task

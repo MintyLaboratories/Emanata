@@ -294,8 +294,12 @@ object Remotes {
         }
     }
 
-    /** [input], its reads timed for [by] ([silentFor]). */
+    /** [input], its reads timed for [by] ([silentFor]); its [background] reads only heard by [by]. */
     private class Asked(private val by: Asker, private val input: RemoteInput) : RemoteInput by input {
+        override val background: RemoteInput = Heard(by, input)
+
+        override fun <T> awaiting(block: () -> T): T = asked(by) { block() }
+
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
             asked(by) { input.read(position, buffer, offset, count) }
 
@@ -306,6 +310,17 @@ object Remotes {
                     heard()
                 }
             }
+    }
+
+    /** [input] for background work: its answers are heard by [by] while [by] waits on something, never counted as its requests. */
+    private class Heard(private val by: Asker, private val input: RemoteInput) : RemoteInput by input {
+        override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
+            input.readFully(position, buffer, offset, count) {
+                by.heard(clock())
+                heard()
+            }
+
+        override val background: RemoteInput get() = this
     }
 
     /** Runs [block], a request to a share, counting it as [by]'s waiting for an answer until it returns or fails. */

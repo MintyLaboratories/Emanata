@@ -339,4 +339,44 @@ class RemotesTest {
         (reads + listing).forEach { it.join() }
         listOf(mine, theirs, anyone).forEach { it.close() }
     }
+
+    @Test
+    fun readsFetchedAheadCountOnlyWhileTheReaderWaitsOnThem() {
+        File(tmp.root, "share/Series/big.cbz").writeBytes(ByteArray(100_000) { it.toByte() })
+        val reader = Remotes.Asker()
+        val input = Remotes.askingAs(reader) { Remotes.open("/net/s1/Series/big.cbz") }
+        val background = java.util.concurrent.Executors.newCachedThreadPool()
+        val held = CountDownLatch(1)
+        try {
+            val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = background)
+            channel.expect(0, 60_000)
+            fake.slowReads = 16_384L..99_999L
+            fake.slow = held
+            channel.read(java.nio.ByteBuffer.allocate(10))
+            while (fake.held.get() == 0) Thread.sleep(5)
+            now += 5_000
+            // Only the runs coming ahead are held: background work, not the reader's.
+            assertEquals(0L, Remotes.silentFor(reader))
+            val read = thread {
+                channel.position(20_000)
+                channel.read(java.nio.ByteBuffer.allocate(10))
+            }
+            while (Remotes.silentFor(reader) == 0L) {
+                now += 1
+                Thread.sleep(5)
+            }
+            val since = now - Remotes.silentFor(reader)
+            now += 3_000
+            // Now the reader waits on one of them.
+            assertEquals(now - since, Remotes.silentFor(reader))
+            fake.slow = null
+            held.countDown()
+            read.join()
+            assertEquals(0L, Remotes.silentFor(reader))
+            channel.close()
+        } finally {
+            held.countDown()
+            background.shutdownNow()
+        }
+    }
 }

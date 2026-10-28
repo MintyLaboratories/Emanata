@@ -285,6 +285,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<Preference>("pref_forget_missing")?.setOnPreferenceClickListener {
+            startActivity(android.content.Intent(requireContext(), MissingBooksActivity::class.java))
+            true
+        }
+
         findPreference<Preference>("pref_reset")?.setOnPreferenceClickListener {
             confirm(requireContext(), R.string.confirm_reset_title, R.string.confirm_reset_msg, R.string.reset) {
                 prefs.reset()

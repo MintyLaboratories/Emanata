@@ -97,6 +97,11 @@
             android:name=".ui.CleanupActivity"
             android:label="@string/menu_dupes" />
 
+        <activity
+            android:name=".ui.MissingBooksActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:label="@string/pref_forget_missing" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

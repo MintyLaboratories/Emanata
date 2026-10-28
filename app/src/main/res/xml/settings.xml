@@ -466,6 +466,11 @@
             app:key="pref_restore"
             app:summary="@string/pref_restore_desc"
             app:title="@string/pref_restore" />
+        <Preference
+            app:key="pref_forget_missing"
+            app:persistent="false"
+            app:summary="@string/pref_forget_missing_desc"
+            app:title="@string/pref_forget_missing" />
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory

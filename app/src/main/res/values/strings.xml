@@ -176,6 +176,42 @@
     <string name="select_extras">Keep one of each</string>
     <string name="delete_selected">Delete selected</string>
     <string name="delete_selected_n">Delete %1$d (%2$s)</string>
+    <!-- Forget missing books: books the library keeps data for that no location holds. -->
+    <string name="missing_scanning">%1$s · %2$d folders · %3$d books</string>
+    <string name="missing_checking">Checking books not found yet…</string>
+    <string name="missing_none">Every book your library keeps is still there.</string>
+    <plurals name="missing_found">
+        <item quantity="one">%1$d book was found nowhere.</item>
+        <item quantity="other">%1$d books were found nowhere.</item>
+    </plurals>
+    <string name="missing_skipped">Not reached: %1$s. Books last seen there are kept.</string>
+    <string name="missing_maybe_moved">Not ticked: it may have moved to a location not reached</string>
+    <string name="missing_forget">Forget selected</string>
+    <string name="missing_forget_n">Forget %1$d</string>
+    <string name="missing_select_all">Select all</string>
+    <string name="missing_select_none">Select none</string>
+    <plurals name="missing_confirm_title">
+        <item quantity="one">Forget %1$d book?</item>
+        <item quantity="other">Forget %1$d books?</item>
+    </plurals>
+    <string name="missing_confirm_msg">Their favorites, read marks, history, bookmarks, hidden pages and settings are deleted. This cannot be undone.</string>
+    <string name="missing_forget_action">Forget</string>
+    <plurals name="missing_forgotten">
+        <item quantity="one">Forgot %1$d book</item>
+        <item quantity="other">Forgot %1$d books</item>
+    </plurals>
+    <string name="kept_favorite">Favorite</string>
+    <string name="kept_read">Read</string>
+    <string name="kept_history">In history</string>
+    <plurals name="kept_bookmarks">
+        <item quantity="one">%1$d bookmark</item>
+        <item quantity="other">%1$d bookmarks</item>
+    </plurals>
+    <plurals name="kept_hidden">
+        <item quantity="one">%1$d hidden page</item>
+        <item quantity="other">%1$d hidden pages</item>
+    </plurals>
+    <string name="kept_settings">Own settings</string>
     <plurals name="delete_selected_msg">
         <item quantity="one">Permanently delete %1$d file?</item>
         <item quantity="other">Permanently delete %1$d files?</item>
@@ -607,6 +643,8 @@
     <string name="pref_cache_used">%1$s, all made again as needed</string>
     <string name="pref_clear_library">Clear library data</string>
     <string name="pref_clear_library_desc">Favorites, read marks, history, bookmarks, hidden pages and books\' own settings</string>
+    <string name="pref_forget_missing">Forget missing books</string>
+    <string name="pref_forget_missing_desc">Find books kept in your library that no location holds any more, and choose which to forget</string>
     <string name="pref_reset">Reset all settings</string>
     <string name="pref_reset_done">Settings were reset.</string>
     <string name="pref_cleared">Done.</string>

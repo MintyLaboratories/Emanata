@@ -79,6 +79,29 @@ class BookFactsCacheTest {
     }
 
     @Test
+    fun factsReadAgainKeepTheSlicesFoundBefore() {
+        val seams = Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SEAMS))
+        val cache = BookFactsCache(context)
+        cache.put(a, BookFacts(5, 0, slices = seams))
+        cache.put(a, BookFacts(6, 2020))
+        assertEquals(BookFacts(6, 2020, slices = seams), cache.get(a))
+        cache.put(a, BookFacts(6, 2020, slices = Slices.Checked(null)))
+        assertEquals(Slices.Checked(null), cache.get(a)?.slices)
+    }
+
+    @Test
+    fun slicesAreKeptOnlyWithFacts() {
+        val seams = Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SEAMS))
+        val cache = BookFactsCache(context)
+        cache.keepSlices(a, seams)
+        assertNull(cache.get(a))
+        cache.put(a, BookFacts(5, 0))
+        cache.keepSlices(a, seams)
+        BookFactsCache.reset()
+        assertEquals(BookFacts(5, 0, slices = seams), BookFactsCache(context).apply { load() }.get(a))
+    }
+
+    @Test
     fun olderDatabaseIsReadAgain() {
         // The first version had no direction column.
         val file = context.getDatabasePath("book_facts.db").apply { parentFile?.mkdirs() }

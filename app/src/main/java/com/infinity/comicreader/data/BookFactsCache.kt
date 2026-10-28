@@ -37,9 +37,29 @@ class BookFactsCache(context: Context) {
         }
     }
 
-    /** Stores [facts] of book [id]. Blocking. */
+    /**
+     * Stores [facts] of book [id], keeping what its pages were found to be ([Slices])
+     * when [facts] do not say. Blocking.
+     */
     fun put(id: BookId, facts: BookFacts) {
         load()
+        synchronized(store) {
+            val slices = facts.slices ?: store.loaded?.get(id.value)?.slices
+            write(id, if (slices == facts.slices) facts else facts.copy(slices = slices))
+        }
+    }
+
+    /** Sets what book [id]'s pages were found to be on its stored facts; nothing without any. Blocking. */
+    fun keepSlices(id: BookId, checked: Slices.Checked) {
+        load()
+        synchronized(store) {
+            val known = store.loaded?.get(id.value) ?: return
+            if (known.slices != checked) write(id, known.copy(slices = checked))
+        }
+    }
+
+    /** Stores [facts] of book [id] as they are, in memory and on disk. */
+    private fun write(id: BookId, facts: BookFacts) {
         store.loaded?.put(id.value, facts)
         val row = ContentValues(5).apply {
             put(ID, id.value)
@@ -54,8 +74,10 @@ class BookFactsCache(context: Context) {
     /** Forgets the facts of book [id], as when what they were read from changes. Blocking. */
     fun remove(id: BookId) {
         load()
-        store.loaded?.remove(id.value)
-        store.helper.writableDatabase.delete(TABLE, "$ID = ?", arrayOf(id.value.toString()))
+        synchronized(store) {
+            store.loaded?.remove(id.value)
+            store.helper.writableDatabase.delete(TABLE, "$ID = ?", arrayOf(id.value.toString()))
+        }
     }
 
     /** One database file, opened once, and its rows once loaded. */

@@ -1200,17 +1200,20 @@ class ViewerActivity : AppCompatActivity() {
 
     /** What [book]'s pages were found to be when checked for slices before, here or by the library; null when never. Blocking. */
     private fun keptSlices(book: File): Slices.Checked? {
-        BookDirection.checkedSlices(book)?.let { return it }
         factsCache.load()
-        return factsCache.get(BookIds.known(book))?.slices
+        val id = BookIds.known(book)
+        // Found this session: the library's facts, read since, learn it too.
+        BookDirection.checkedSlices(book)?.let { checked ->
+            id?.let { factsCache.keepSlices(it, checked) }
+            return checked
+        }
+        return factsCache.get(id)?.slices
     }
 
     /** Keeps what [book]'s pages were found to be, also with the library's facts of it, so the next open needs no check. Blocking. */
     private fun keepSlices(book: File, checked: Slices.Checked) {
         BookDirection.rememberSlices(book, checked)
-        val id = BookIds.known(book) ?: return
-        val facts = factsCache.get(id) ?: return
-        if (facts.slices != checked) factsCache.put(id, facts.copy(slices = checked))
+        BookIds.known(book)?.let { factsCache.keepSlices(it, checked) }
     }
 
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
@@ -1251,7 +1254,11 @@ class ViewerActivity : AppCompatActivity() {
                     ensureActive()
                     if (facts != null) {
                         // Seams checked this session settle what headers alone left open.
-                        BookIds.find(book)?.let { factsCache.put(it, facts.copy(slices = facts.slices ?: BookDirection.checkedSlices(book))) }
+                        BookIds.find(book)?.let { id ->
+                            factsCache.put(id, facts)
+                            // Checked after the put: a check kept meanwhile ([keepSlices]) found these facts.
+                            if (facts.slices == null) BookDirection.checkedSlices(book)?.let { factsCache.keepSlices(id, it) }
+                        }
                         contents = facts.detected
                     }
                 }

@@ -6,6 +6,7 @@ import com.infinity.comicreader.net.FileEnds
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.RemoteInput
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.util.Timing
 import java.io.EOFException
 import java.io.File
@@ -55,13 +56,15 @@ object BookIds {
         if (index == null) index = BookIndex(context.applicationContext)
     }
 
-    /** Forgets the context and hasher; tests start each case anew. */
+    /** Forgets the context, the hasher and what was kept by ID this session; tests start each case anew. */
     @VisibleForTesting
     fun reset() {
         index = null
         hasher = null
         hashing.clear()
         synchronized(unindexed) { unindexed.clear() }
+        FileEnds.clear()
+        BookDirection.forgetChecks()
     }
 
     private fun index(): BookIndex? = index

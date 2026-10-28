@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import androidx.annotation.VisibleForTesting
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
@@ -83,6 +84,10 @@ object BookDirection {
     fun rememberSlices(file: File, found: Slices.Checked) {
         synchronized(checked) { checked[checkKey(file)] = found }
     }
+
+    /** Forgets the books checked this session; tests start each case anew. */
+    @VisibleForTesting
+    fun forgetChecks() = synchronized(checked) { checked.clear() }
 
     /** The book's ID when known ([BookIds.known]), else its path, size and time. */
     private fun checkKey(file: File) = BookIds.known(file)?.let { "id:${it.hex}" } ?: "${file.absolutePath}|${file.length()}|${file.lastModified()}"

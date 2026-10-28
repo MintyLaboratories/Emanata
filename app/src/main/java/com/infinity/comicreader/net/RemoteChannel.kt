@@ -147,6 +147,16 @@ class RemoteChannel(
         return if (total == 0) -1 else total
     }
 
+    /**
+     * Keeps [bytes], already read at [start] (both ends read for a Book ID, [FileEnds]), as a
+     * run: reads within them ask the share for nothing. The channel owns them from then on.
+     */
+    @Synchronized
+    fun seed(start: Long, bytes: ByteArray) {
+        if (bytes.isEmpty() || start < 0 || start + bytes.size > size) return
+        keep(Run(start, bytes))
+    }
+
     /** Fills [buffer] from [offset] with up to [count] bytes at the current position; -1 at the end. */
     @Synchronized
     fun read(buffer: ByteArray, offset: Int, count: Int): Int = read(ByteBuffer.wrap(buffer, offset, count))
@@ -428,8 +438,10 @@ class RemoteChannel(
         /** What runs fetched ahead hold now, in all channels; for tests. */
         internal val aheadBytes: Long get() = BUDGET.get()
 
-        /** Opens the file at [path] on its share as a channel. */
+        /** Opens the file at [path] on its share as a channel, starting from its ends when just read for its Book ID ([FileEnds]). */
         @Throws(IOException::class)
-        fun open(path: String): RemoteChannel = RemoteChannel(Remotes.open(path))
+        fun open(path: String): RemoteChannel = RemoteChannel(Remotes.open(path)).also { channel ->
+            for ((start, bytes) in FileEnds.of(path, channel.size, Remotes.cachedStat(path)?.modified ?: 0)) channel.seed(start, bytes)
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.net.FileEnds
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
@@ -78,9 +79,12 @@ enum class ArchiveKind {
 
         /** Kind from the leading bytes of [file], on a share too (read once per version); null when unreadable or unrecognized. */
         fun sniff(file: File): ArchiveKind? {
-            val key = (file as? RemoteFile)?.stat()?.let { "${file.path}\n${it.size}\n${it.modified}" }
+            val stat = (file as? RemoteFile)?.stat()
+            val key = stat?.let { "${file.path}\n${it.size}\n${it.modified}" }
             if (key != null) synchronized(remembered) { remembered[key] }?.let { return it }
-            val kind = try {
+            // Its first bytes just read for its Book ID tell without asking the share again.
+            val kept = stat?.let { FileEnds.head(file.path, it.size, it.modified, HEADER_BYTES) }
+            val kind = if (kept != null) sniff(kept) else try {
                 open(file).use { input ->
                     val header = ByteArray(HEADER_BYTES)
                     var n = 0

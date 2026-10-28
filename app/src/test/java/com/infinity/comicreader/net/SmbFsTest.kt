@@ -217,4 +217,12 @@ class SmbFsTest {
         assertEquals(refused, assertThrows(IOException::class.java) { run(landed = false, failFirst = refused) })
         assertEquals(1 to 1, connects to made)
     }
+
+    @Test
+    fun aReadInterruptedWhileWaitingIsNotADroppedConnection() {
+        val wrapped = com.hierynomus.protocol.transport.TransportException(java.util.concurrent.ExecutionException(InterruptedException()))
+        assertTrue(SmbFs.interrupted(wrapped))
+        assertTrue(SmbFs.interrupted(java.io.InterruptedIOException()))
+        assertFalse(SmbFs.interrupted(IOException("Connection reset", java.net.SocketException())))
+    }
 }

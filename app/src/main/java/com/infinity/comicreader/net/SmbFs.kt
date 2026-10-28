@@ -28,6 +28,7 @@ import android.util.Log
 import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.lang.reflect.Field
 import java.util.EnumSet
 import java.util.UUID
@@ -653,8 +654,24 @@ class SmbFs(private val share: Share) : RemoteFs {
         return ok
     }
 
-    /** A file open for reading; it opens again on a new connection when the old one dropped. */
+    /**
+     * A file open for reading; it opens again on a new connection when the old one dropped.
+     * Once closed it never opens again: reads still under way fail as closed, never as a
+     * dropped connection, so they leave no handle behind and never drop the connection.
+     */
     private inner class SmbInput(private val path: String, private var file: SmbFile?, override val length: Long) : RemoteInput {
+        @Volatile
+        private var closed = false
+
+        /** The file open now, opened again when it was let go; throws once closed. Under this input's monitor. */
+        private fun fileNow(): SmbFile = synchronized(this) {
+            if (closed) throw IOException("Closed")
+            file ?: openFile(path).first.also { file = it }
+        }
+
+        /** Why a read failed: [e] sorted ([translate]), or closed when this input was closed meanwhile. */
+        private fun failureOf(e: Exception): Failure = if (closed) Known(IOException("Closed", e)) else translate(e)
+
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
             busy { readNow(position, buffer, offset, count) }
 
@@ -662,13 +679,13 @@ class SmbFs(private val share: Share) : RemoteFs {
             if (position >= length) return -1
             var retried = false
             while (true) {
-                val f = synchronized(this) { file ?: openFile(path).first.also { file = it } }
+                val f = fileNow()
                 try {
                     synchronized(lock) { lastUsed = System.currentTimeMillis() }
                     val n = f.read(buffer, position, offset, count)
                     return if (n <= 0) -1 else n
                 } catch (e: Exception) {
-                    val failure = translate(e)
+                    val failure = failureOf(e)
                     if (failure !is Dropped || retried) throw failure.toRemote()
                     retried = true
                     synchronized(this) {
@@ -696,6 +713,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             val l = laneNow() ?: return null
             return try {
                 val f = synchronized(this) {
+                    if (closed) throw IOException("Closed")
                     if (laneOf !== l) {
                         runCatching { laneFile?.close() }
                         laneFile = null
@@ -706,7 +724,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                         SMB2CreateDisposition.FILE_OPEN, null
                     ).also { laneFile = it }
                 }
-                l to Reads(f)
+                l to Reads(f) { closed }
             } catch (e: Exception) {
                 dropLane(l, failed = true)
                 null
@@ -720,20 +738,20 @@ class SmbFs(private val share: Share) : RemoteFs {
             if (wanted <= PIECE_BYTES) return super.readFully(position, buffer, offset, wanted, heard)
             var retried = false
             while (true) {
-                val f = synchronized(this) { file ?: openFile(path).first.also { file = it } }
+                val f = fileNow()
                 try {
                     synchronized(lock) { lastUsed = System.currentTimeMillis() }
                     val second = if (wanted >= STRIPE_FROM_BYTES) laneReads() else null
                     if (second == null) {
                         if (wanted >= STRIPE_FROM_BYTES) wantLane()
-                        return Pipelined.fill(Reads(f), position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                        return Pipelined.fill(Reads(f) { closed }, position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
                     }
-                    val striped = Pipelined.Striped(listOf(Reads(f), second.second))
+                    val striped = Pipelined.Striped(listOf(Reads(f) { closed }, second.second))
                     val n = Pipelined.fill(striped, position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
-                    if (striped.broken == 1) dropLane(second.first, failed = true)
+                    if (striped.broken == 1 && !closed) dropLane(second.first, failed = true)
                     return n
                 } catch (e: Exception) {
-                    val failure = translate(e)
+                    val failure = failureOf(e)
                     if (failure !is Dropped || retried) throw failure.toRemote()
                     retried = true
                     synchronized(this) {
@@ -757,6 +775,7 @@ class SmbFs(private val share: Share) : RemoteFs {
         }
 
         override fun close() {
+            synchronized(this) { closed = true }
             forget()
             synchronized(lock) {
                 inputs -= this
@@ -765,13 +784,14 @@ class SmbFs(private val share: Share) : RemoteFs {
         }
     }
 
-    /** Reads of [file] sent as they are asked for, their answers awaited later. */
-    private class Reads(private val file: SmbFile) : Pipelined.Source {
+    /** Reads of [file] sent as they are asked for, their answers awaited later; none once [closed] says so. */
+    private class Reads(private val file: SmbFile, private val closed: () -> Boolean) : Pipelined.Source {
         private val tree = file.diskShare.treeConnect
         private val session = tree.session
         private val dialect = tree.negotiatedProtocol.dialect
 
         override fun start(position: Long, length: Int): Pipelined.Pending {
+            if (closed()) throw IOException("Closed")
             val sent = session.send<SMB2ReadResponse>(SMB2ReadRequest(dialect, file.fileId, session.sessionId, tree.treeId, position, length))
             return Pipelined.Pending { timeoutMs ->
                 val answer = try {
@@ -805,6 +825,8 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     private fun translate(e: Exception): Failure {
         if (e is RemoteException) return Known(e)
+        // A thread interrupted while waiting for an answer: the connection is fine.
+        if (interrupted(e)) return Known(InterruptedIOException(e.message).apply { initCause(e) })
         if (e is SMBApiException) {
             return when (e.status) {
                 in MISSING_STATUSES -> Known(RemoteException(RemoteException.Reason.MISSING, e.message, e))
@@ -1002,6 +1024,10 @@ class SmbFs(private val share: Share) : RemoteFs {
             }
             remove(top)
         }
+
+        /** True when [e] comes of a thread interrupted while waiting. */
+        internal fun interrupted(e: Throwable): Boolean =
+            generateSequence(e) { it.cause.takeIf { c -> c !== it } }.take(8).any { it is InterruptedException || it is InterruptedIOException }
 
         private fun millis(time: FileTime?): Long = time?.toEpochMillis()?.takeIf { it > 0 } ?: 0L
     }

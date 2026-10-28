@@ -39,17 +39,26 @@ object Duplicates {
         return groups
     }
 
-    /** SHA-256 of [f]'s first and last [QUICK_BYTES]. */
+    /** SHA-256 of [f]'s first and last [QUICK_BYTES]; of all of it when that is no more than both. */
     fun quickHash(f: File): String {
         val md = MessageDigest.getInstance(HASH)
         val buf = ByteArray(QUICK_BYTES)
         RandomAccessFile(f, "r").use { raf ->
-            var n = raf.read(buf)
-            if (n > 0) md.update(buf, 0, n)
-            if (raf.length() > buf.size * 2L) {
-                raf.seek(raf.length() - buf.size)
-                n = raf.read(buf)
-                if (n > 0) md.update(buf, 0, n)
+            val length = raf.length()
+            if (length <= buf.size * 2L) {
+                var left = length
+                while (left > 0) {
+                    val n = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                    left -= n
+                }
+            } else {
+                raf.readFully(buf)
+                md.update(buf)
+                raf.seek(length - buf.size)
+                raf.readFully(buf)
+                md.update(buf)
             }
         }
         return hex(md.digest())

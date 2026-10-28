@@ -49,6 +49,20 @@ class DuplicatesTest {
     }
 
     @Test
+    fun quickHashTakesFilesUpToBothEndsWhole() {
+        // 64-128 KiB: the bytes after the first 64 KiB count too.
+        for (size in listOf(65_537, 100_000, 131_072)) {
+            val content = Random(size).nextBytes(size)
+            val tail = content.copyOf().also { it[size - 1] = (it[size - 1] + 1).toByte() }
+            assertNotEquals("size $size", Duplicates.quickHash(file("a$size.cbz", content)), Duplicates.quickHash(file("b$size.cbz", tail)))
+        }
+        // Past that only the ends count: the middle is left to the full hash.
+        val content = Random(6).nextBytes(131_073)
+        val middle = content.copyOf().also { it[65_536] = (it[65_536] + 1).toByte() }
+        assertEquals(Duplicates.quickHash(file("m1.cbz", content)), Duplicates.quickHash(file("m2.cbz", middle)))
+    }
+
+    @Test
     fun stopsWhenNoLongerWanted() {
         val content = Random(5).nextBytes(100)
         val groups = Duplicates.find(sequenceOf(file("x.cbz", content), file("y.cbz", content))) { false }

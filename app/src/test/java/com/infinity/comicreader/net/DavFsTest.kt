@@ -171,6 +171,20 @@ class DavFsTest {
     }
 
     @Test
+    fun aLongReadAskedForWholeIsOneRangedRequest() {
+        val bytes = Random(5).nextBytes(12 shl 20)
+        File(dir, "big.cbz").writeBytes(bytes)
+        fs().open("big.cbz").use { input ->
+            val before = server.requests.size
+            val run = ByteArray(8 shl 20)
+            assertEquals(run.size, input.readFully(100_000, run, 0, run.size))
+            assertArrayEquals(bytes.copyOfRange(100_000, 100_000 + run.size), run)
+            assertEquals(before + 1, server.requests.size)
+            assertEquals("bytes=100000-${100_000 + run.size - 1}", server.requests.last().getHeader("Range"))
+        }
+    }
+
+    @Test
     fun aFileChangedBetweenReadsFailsInsteadOfMixing() {
         val file = File(dir, "big.cbz")
         file.writeBytes(Random(4).nextBytes(1 shl 20))

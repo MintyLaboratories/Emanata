@@ -115,6 +115,15 @@ class Library(context: Context) {
         toggle(tokenOf(book.id)).also { if (it) keep(book) }
     }
 
+    /** Makes [book] a favorite, or not, whatever it was. */
+    fun setFavorite(book: BookRef, favorite: Boolean) = synchronized(LOCK) {
+        val token = tokenOf(book.id)
+        val list = readStringList(KEY_FAVORITES)
+        val changed = if (favorite) (token !in list).also { if (it) list.add(0, token) } else list.remove(token)
+        if (changed) writeStringList(KEY_FAVORITES, list)
+        if (favorite) keep(book)
+    }
+
     private fun toggle(token: String): Boolean {
         val list = readStringList(KEY_FAVORITES)
         val added = if (list.remove(token)) false else {

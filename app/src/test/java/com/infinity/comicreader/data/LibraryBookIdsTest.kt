@@ -76,6 +76,17 @@ class LibraryBookIdsTest {
     }
 
     @Test
+    fun aFavoriteIsSetAsAskedWhateverItWas() {
+        library.setFavorite(a, true)
+        library.setFavorite(BookRef(a.id, "/elsewhere/copy.cbz"), true)
+        assertEquals(setOf(a.id), library.favoriteBooks())
+        assertEquals("/elsewhere/copy.cbz", library.pathOf(a.id))
+        library.setFavorite(a, false)
+        library.setFavorite(a, false)
+        assertTrue(library.favoriteBooks().isEmpty())
+    }
+
+    @Test
     fun readMarksBookmarksAndHistoryAreKeptById() {
         library.setReadMany(listOf(a, b), true)
         assertEquals(setOf(a.id, b.id), library.readSet())

@@ -1883,12 +1883,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         refreshCurrent()
     }
 
-    /** Adds [entry], a folder or book, to the favorites, or removes it, and says which. */
+    /** Adds [entry], a folder or book, to the favorites, or removes it, as its star showed, and says which. */
     private fun toggleFavorite(entry: BookEntry) {
         if (entry.isDir) return toggleFavoriteFolder(entry.path)
+        val add = !entry.favorite
         withBook(entry) { book ->
-            val added = library.toggleFavorite(book)
-            toast(if (added) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+            library.setFavorite(book, add)
+            toast(if (add) R.string.menu_add_favorite else R.string.menu_remove_favorite)
             refreshCurrent()
         }
     }

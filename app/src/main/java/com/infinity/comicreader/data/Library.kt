@@ -643,12 +643,15 @@ class Library(context: Context) {
             if (sp.getInt(KEY_KEYED, 0) >= KEYED_BY_ID) return@synchronized
             val e = sp.edit()
             for (k in PATH_KEYED_BOOK_DOCS) e.remove(k)
-            val folders = readStringList(KEY_FAVORITES).filter { isFolderToken(it) && !Formats.isOpenable(it.substringAfterLast('/')) }
+            val folders = readStringList(KEY_FAVORITES).filter { isFolderPath(it) }
             e.putString(KEY_FAVORITES, JSONArray(folders).toString())
             e.putInt(KEY_KEYED, KEYED_BY_ID)
             e.apply()
         }
     }
+
+    /** True for a favorite token naming a folder, not a book kept by path before Book IDs. */
+    private fun isFolderPath(token: String) = isFolderToken(token) && !Formats.isOpenable(token.substringAfterLast('/'))
 
     // ---------------- backup ----------------
     /** The stored documents, keyed by name, as parsed JSON (for backup). */
@@ -685,7 +688,7 @@ class Library(context: Context) {
         val out = JSONArray()
         for (i in 0 until arr.length()) {
             when (key) {
-                KEY_FAVORITES -> arr.optString(i, "").takeIf { bookToken(it) != null || isFolderToken(it) }?.let { out.put(it) }
+                KEY_FAVORITES -> arr.optString(i, "").takeIf { bookToken(it) != null || isFolderPath(it) }?.let { out.put(it) }
                 KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS -> BookId.parse(arr.optString(i, ""))?.let { out.put(it.hex) }
                 else -> arr.optJSONObject(i)?.takeIf { BookId.parse(it.optString("id")) != null }?.let { out.put(it) }
             }

@@ -173,8 +173,8 @@ class LibraryBookIdsTest {
         assertTrue(library.readSet().isEmpty())
         assertTrue(library.history().isEmpty())
         assertTrue(library.hiddenAll().isEmpty())
-        // A path left in favorites reads as a folder, as one that is not there shows.
-        assertTrue(library.isFavoriteFolder("/storage/emulated/0/Comics"))
+        // A path left in favorites reads as a folder, as one that is not there shows; a book's is dropped.
+        assertEquals(listOf("/storage/emulated/0/Comics"), library.favorites())
     }
 
     @Test

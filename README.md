@@ -198,9 +198,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   is open closes the book and says why.
 - **Start folder per location:** long-press the device or a share in the
   Locations sheet to pick the folder it opens at (its top by default); picking
-  that location opens there. When the startup folder is on a share that has
-  not answered within 3 s, or cannot be reached, the device's start folder
-  opens instead with a note. While the app is shown and that folder browsed,
+  that location opens there. A startup folder on a share is waited for up to
+  the **Network timeout**; after 2 s without an answer a dialog "Waiting for
+  network location…" offers **Wait** (the list keeps spinning) or **Open
+  device** (the device's start folder at once). When the timeout passes, or the
+  share cannot be reached, the dialog closes and the device's start folder
+  opens with a note. While the app is shown and that folder browsed,
   an unreachable share is asked again, less often each time (at most every
   5 min); a bar offers to open it once it answers, or says why it refused. A
   refused sign-in is never retried unasked.

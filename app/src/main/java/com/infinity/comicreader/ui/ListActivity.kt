@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
@@ -96,6 +97,7 @@ import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import com.infinity.comicreader.util.Timing
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -106,6 +108,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -642,22 +645,56 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Browses the startup location, unless another listing starts while it is worked out. */
     private fun openStartDirectory() {
         showProgress(true)
+        // Debug builds can start elsewhere and stand in a share slow to answer, to try the wait on a device.
+        val debug = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val startPath = intent.getStringExtra(EXTRA_START_PATH)?.takeIf { debug }
+        val slowMs = if (debug) intent.getLongExtra(EXTRA_SLOW_SHARE_MS, 0) else 0
         launchListing {
-            val dir = withContext(AppDispatchers.io) { startDirectory() }
+            val dir = startPath?.let { Remotes.file(it) } ?: withContext(AppDispatchers.io) { startDirectory() }
             if (dir !is RemoteFile) {
                 loadDirectory(dir)
                 return@launchListing
             }
-            // A share answers within [SHARE_WAIT_MS], with its listing or why not (shown by browsing it).
-            val attempt = lifecycleScope.async(AppDispatchers.io) { listShare(dir) }
-            val answer = withTimeoutOrNull(SHARE_WAIT_MS) { attempt.await() }
-            if (answer == null || reasonOf(answer) == RemoteException.Reason.UNREACHABLE) {
-                startOnDevice(dir, attempt)
-                return@launchListing
+            val attempt = lifecycleScope.async(AppDispatchers.io) {
+                delay(slowMs)
+                listShare(dir)
             }
-            loadDirectory(dir, prelisted = answer.getOrNull())
+            // The share has the whole network timeout to answer, with its listing or why not (shown by browsing it).
+            val device = CompletableDeferred<Unit>()
+            var asked: AlertDialog? = null
+            val ask = launch {
+                delay(SHARE_DIALOG_MS)
+                asked = askToWait { device.complete(Unit) }
+            }
+            val answer = try {
+                withTimeoutOrNull(Remotes.answerMs) {
+                    select<Result<List<RemoteFile>>?> {
+                        attempt.onAwait { it }
+                        device.onAwait { null }
+                    }
+                }
+            } finally {
+                ask.cancel()
+                asked?.dismiss()
+            }
+            when {
+                device.isCompleted -> startOnDevice(dir, attempt, say = false)
+                answer == null || reasonOf(answer) == RemoteException.Reason.UNREACHABLE -> startOnDevice(dir, attempt, say = true)
+                else -> loadDirectory(dir, prelisted = answer.getOrNull())
+            }
         }
     }
+
+    /**
+     * Says the startup folder's share is being waited for, offering to wait on ("Wait" only
+     * closes it, the list spinning on) or to open the device now ([device]).
+     */
+    private fun askToWait(device: () -> Unit): AlertDialog =
+        AlertDialog.Builder(this)
+            .setTitle(R.string.network_waiting)
+            .setPositiveButton(R.string.network_wait) { _, _ -> }
+            .setNegativeButton(R.string.network_open_device) { _, _ -> device() }
+            .show()
 
     /** Lists share folder [dir]. Blocking. */
     private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
@@ -674,11 +711,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * Opens the device's start folder instead of [dir], whose share has not answered, saying
-     * so, and goes on asking the share ([keepTrying]).
+     * so when [say], and goes on asking the share ([keepTrying]).
      */
-    private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>) {
+    private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, say: Boolean) {
         val device = deviceStart()
-        toast(getString(R.string.share_slow_start, locationName(dir.absolutePath), locationName(device.absolutePath)))
+        if (say) toast(getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath)))
         loadDirectory(device)
         val fallback = currentDir?.absolutePath ?: return
         keepTrying(dir, attempt, fallback)
@@ -2301,8 +2338,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         /** How long the hint beside Paste stays. */
         private const val PASTE_BUBBLE_MS = 3_500L
 
-        /** How long the startup folder's share has to answer before the device's start folder opens instead. */
-        const val SHARE_WAIT_MS = 3_000L
+        /** How long the startup folder's share goes unanswered before the user is asked to wait on or open the device. */
+        const val SHARE_DIALOG_MS = 2_000L
+
+        /**
+         * Debug builds: a folder to start in instead of the startup location ([EXTRA_START_PATH],
+         * a string extra), and how long its share takes before it is asked ([EXTRA_SLOW_SHARE_MS],
+         * a long extra, in milliseconds); for trying the wait from adb without touching settings:
+         * `adb shell am start -n <package>/com.infinity.comicreader.ui.ListActivity --es start_path /net/<id> --el slow_share_ms 8000`
+         */
+        const val EXTRA_START_PATH = "start_path"
+        const val EXTRA_SLOW_SHARE_MS = "slow_share_ms"
 
         /** Then the share is asked again this much later, twice as late each time up to the most. */
         const val SHARE_RETRY_MS = 10_000L

@@ -21,6 +21,8 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareStore
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -39,7 +41,7 @@ import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import javax.crypto.spec.SecretKeySpec
 
-/** Each location opens at its own start folder; a startup folder on a share slow to answer gives way to the device's. */
+/** Each location opens at its own start folder; a startup folder on a share slow to answer is waited for, or gives way to the device's. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class ListActivityStartFolderTest {
@@ -177,16 +179,37 @@ class ListActivityStartFolderTest {
         assertEquals("/net/s1/Series", prefs.locationStart("/net/s1"))
     }
 
+    /** The dialog asking to wait for the startup share, if it shows. */
+    private fun waitDialog(activity: ListActivity): AlertDialog? =
+        (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf {
+            it.isShowing && it.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.text == activity.getString(R.string.network_waiting)
+        }
+
+    private fun idleFor(ms: Long) {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+        idle()
+    }
+
     @Test
-    fun aStartupShareSlowToAnswerGivesWayToTheDevice() {
+    fun aStartupShareSlowToAnswerAsksToWaitThenWaitsTheWholeTimeout() {
         prefs.setLocationStart(device.absolutePath, comics.absolutePath)
         prefs.lastPath = "/net/s1/Series"
         fake.slow = CountDownLatch(1)
         val activity = launch()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ListActivity.SHARE_WAIT_MS + 100))
+        idleFor(ListActivity.SHARE_DIALOG_MS - 500)
+        assertNull(waitDialog(activity))
+        idleFor(600)
+        val dialog = waitDialog(activity)!!
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.progress).visibility)
+        // No giving up before the timeout, however slow.
+        idleFor(Remotes.answerMs - ListActivity.SHARE_DIALOG_MS - 1_000)
+        assertNotEquals(listOf("Device", "Comics"), activity.crumbs())
+        idleFor(1_200)
         assertEquals(listOf("Device", "Comics"), activity.crumbs())
-        assertEquals(activity.getString(R.string.share_slow_start, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
+        assertEquals(activity.getString(R.string.network_wait_gave_up, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
         // Still asked in the background: once it answers, it is offered, and opens without listing it again.
         fake.slow!!.countDown()
         idle()
@@ -199,13 +222,69 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun aStartupShareSpinningUpOpensOnceItAnswers() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val activity = launch()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        val dialog = waitDialog(activity)!!
+        // A disk spinning up for 20 s, within the default timeout.
+        idleFor(Remotes.SPIN_UP_MS - ListActivity.SHARE_DIALOG_MS)
+        fake.slow!!.countDown()
+        idle()
+        assertFalse("closed by itself", dialog.isShowing)
+        assertEquals(listOf("Share A", "Series"), activity.crumbs())
+        assertEquals(listOf("001.cbz"), activity.titles())
+        assertNull(ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun openDeviceGivesUpWaitingAtOnceAndOffersTheShareLater() {
+        prefs.setLocationStart(device.absolutePath, comics.absolutePath)
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val activity = launch()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        val dialog = waitDialog(activity)!!
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(listOf("Device", "Comics"), activity.crumbs())
+        assertNull("asked for, so not said", ShadowToast.getTextOfLatestToast())
+        fake.slow!!.countDown()
+        idle()
+        assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
+    }
+
+    @Test
+    fun theWaitDialogClosesByItselfOnTimeout() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val activity = launch()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        val dialog = waitDialog(activity)!!
+        idleFor(Remotes.answerMs)
+        assertFalse(dialog.isShowing)
+        assertEquals(listOf("Device"), activity.crumbs())
+        assertEquals(activity.getString(R.string.network_wait_gave_up, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun aStartupShareAnsweringAtOnceAsksNothing() {
+        prefs.lastPath = "/net/s1/Series"
+        val activity = launch()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        assertNull(waitDialog(activity))
+        assertEquals(listOf("Share A", "Series"), activity.crumbs())
+    }
+
+    @Test
     fun aStartupShareRefusingLateSaysWhyWithoutSigningInAgain() {
         prefs.lastPath = "/net/s1/Series"
         fake.slow = CountDownLatch(1)
         fake.refuse = RemoteException.Reason.DENIED
         val activity = launch()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ListActivity.SHARE_WAIT_MS + 100))
-        idle()
+        idleFor(Remotes.answerMs + 100)
         fake.slow!!.countDown()
         idle()
         assertEquals(activity.getString(R.string.share_denied_named, "Share A"), activity.note())
@@ -236,7 +315,7 @@ class ListActivityStartFolderTest {
         fake.offline = true
         val activity = launch()
         assertEquals(listOf("Device"), activity.crumbs())
-        assertEquals(activity.getString(R.string.share_slow_start, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
+        assertEquals(activity.getString(R.string.network_wait_gave_up, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
     }
 
     @Test

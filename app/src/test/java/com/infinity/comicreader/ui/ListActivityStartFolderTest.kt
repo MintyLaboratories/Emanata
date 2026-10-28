@@ -270,6 +270,21 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun theWaitDialogWaitsForTheListToBeOnTop() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val controller = start()
+        val activity = controller.get()
+        // The reader, say, opened over the list.
+        controller.pause()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 1_000)
+        assertNull(waitDialog(activity))
+        controller.resume()
+        idleFor(500)
+        waitDialog(activity)!!
+    }
+
+    @Test
     fun aStartupShareAnsweringAtOnceAsksNothing() {
         prefs.lastPath = "/net/s1/Series"
         val activity = launch()

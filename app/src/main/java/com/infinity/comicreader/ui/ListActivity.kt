@@ -664,6 +664,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             var asked: AlertDialog? = null
             val ask = launch {
                 delay(SHARE_DIALOG_MS)
+                // Never over the offer to resume reading, nor while the reader it opened is on top.
+                while (resumeOffer?.isShowing == true || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) delay(SHARE_DIALOG_CHECK_MS)
                 asked = askToWait { device.complete(Unit) }
             }
             val answer = try {
@@ -2340,6 +2342,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         /** How long the startup folder's share goes unanswered before the user is asked to wait on or open the device. */
         const val SHARE_DIALOG_MS = 2_000L
+
+        /** How often that dialog, held back, checks whether it may show. */
+        private const val SHARE_DIALOG_CHECK_MS = 250L
 
         /**
          * Debug builds: a folder to start in instead of the startup location ([EXTRA_START_PATH],

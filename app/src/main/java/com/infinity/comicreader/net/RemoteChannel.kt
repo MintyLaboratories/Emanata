@@ -19,14 +19,16 @@ import java.util.concurrent.atomic.AtomicLong
  * fetches little around each; each run that follows on from the last fetched doubles, up
  * to [maxBlock], so a page streamed in small pieces costs few round trips. A span the
  * reader is about to read whole ([expect]) is fetched in runs of up to [maxBlock] from
- * its first read on. Each run is asked for at once ([RemoteInput.readFully]). While a
- * stream reads a run of at least [aheadFrom] bytes that followed on from the last, or one
- * inside an expected span, the next two are fetched in the background ([readAhead]; as
- * [RemoteInput.background] work, waited on as the reader's own request),
+ * its first read on, or of [sharedBlock] while another span is read at the same time, so
+ * one page never waits long behind another: calls are serialized. Each run is asked for
+ * at once ([RemoteInput.readFully]). While a stream reads a run of at least [aheadFrom]
+ * bytes that followed on from the last, or one inside an expected span, or one ending a
+ * span read right after another span was read up to it, the next two are fetched in the background
+ * ([readAhead]; as [RemoteInput.background] work, waited on as the reader's own request),
  * within a budget all channels share, only while a quarter of the heap stays free after
  * them, and never while [thrifty]. The most recently used runs are kept, up to
- * [maxCached] bytes, and only the latest once memory runs low ([trim]); the array of a run let go is reused for the next of its
- * length, so a long streamed read allocates little. Calls are serialized.
+ * [maxCached] bytes, and only the latest once memory runs low ([trim]); the array of a
+ * run let go is reused for the next of its length, so a long streamed read allocates little.
  */
 class RemoteChannel(
     private val input: RemoteInput,
@@ -35,7 +37,9 @@ class RemoteChannel(
     private val maxCached: Long = MAX_CACHED_BYTES,
     private val readAhead: Boolean = true,
     private val aheadFrom: Int = AHEAD_FROM_BYTES,
-    private val background: Executor = AHEAD
+    private val background: Executor = AHEAD,
+    private val sharedBlock: Int = SHARED_BLOCK_BYTES,
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 }
 ) : SeekableByteChannel {
     private var position = 0L
 
@@ -52,6 +56,17 @@ class RemoteChannel(
             minBlock = value
             window = value
         }
+
+    /** A span about to be read whole ([expect]), with how far reads got into it, and when. */
+    private class Span(val start: Long, val end: Long) {
+        var readTo = start
+        var readAt = Long.MIN_VALUE
+
+        fun holds(at: Long) = at >= start && at < end
+
+        /** True while a stream is part way through it, read from within [SHARED_HOLD_MS] before [now]. */
+        fun underWay(now: Long) = readTo > start && readTo < end && now - readAt < SHARED_HOLD_MS
+    }
 
     /** A fetched run of the file, from [start]. */
     private class Run(val start: Long, val bytes: ByteArray) {
@@ -79,8 +94,11 @@ class RemoteChannel(
     private var lastEnd = -1L
     private var window = minBlock
 
-    /** Spans about to be read whole ([expect]), as start and end, the latest last. */
-    private val spans = ArrayDeque<LongArray>()
+    /** Spans about to be read whole ([expect]), the latest last. */
+    private val spans = ArrayDeque<Span>()
+
+    /** True during a read while a span other than its own is under way: another stream shares the channel. */
+    private var shared = false
 
     /** Runs being fetched ahead, in file order, each from where the one before ends. */
     private val coming = ArrayDeque<Ahead>()
@@ -109,6 +127,9 @@ class RemoteChannel(
         shedOnTrim()
         if (!dst.hasRemaining()) return 0
         if (position >= size) return -1
+        val now = clock()
+        val span = spanAt(position)
+        shared = spans.any { it !== span && it.underWay(now) }
         var total = 0
         while (dst.hasRemaining() && position < size) {
             val run = runAt(position, dst.remaining())
@@ -118,6 +139,10 @@ class RemoteChannel(
             dst.put(run.bytes, at, n)
             position += n
             total += n
+        }
+        if (span != null && position <= span.end) {
+            span.readTo = maxOf(span.readTo, position)
+            span.readAt = now
         }
         return if (total == 0) -1 else total
     }
@@ -134,18 +159,20 @@ class RemoteChannel(
     @Synchronized
     fun expect(start: Long, length: Long) {
         if (length <= 0 || start < 0 || start >= size) return
-        spans.removeAll { it[0] == start }
-        spans.addLast(longArrayOf(start, minOf(size, start + length)))
+        spans.removeAll { it.start == start }
+        spans.addLast(Span(start, minOf(size, start + length)))
         while (spans.size > MAX_SPANS) spans.removeFirst()
     }
 
-    /** The end of the latest expected span holding [at]; -1 when none does. */
-    private fun spanEnd(at: Long): Long {
-        for (i in spans.indices.reversed()) {
-            val s = spans[i]
-            if (at >= s[0] && at < s[1]) return s[1]
-        }
-        return -1
+    /** The latest expected span holding [at]; null when none does. */
+    private fun spanAt(at: Long): Span? = spans.lastOrNull { it.holds(at) }
+
+    /** The longest run inside a span now: [sharedBlock] while another stream shares the channel. */
+    private val spanBlock: Int get() = if (shared) minOf(sharedBlock, maxBlock) else maxBlock
+
+    /** True when an earlier span was read up to just before [span], at most an entry's header between: entries read in a row. */
+    private fun followsRead(span: Span): Boolean = spans.any {
+        it !== span && it.readTo > it.start && it.readTo <= span.start && span.start - it.readTo <= ENTRY_GAP_BYTES
     }
 
     /** The kept run holding [at], else the one fetched ahead there, else one fetched now, long enough for [wanted] bytes up to [maxBlock]. */
@@ -193,13 +220,13 @@ class RemoteChannel(
     }
 
     private fun fetch(at: Long, wanted: Int): Run {
-        val spanEnd = spanEnd(at)
+        val spanEnd = spanAt(at)?.end ?: -1
         val start: Long
         val length: Int
         if (spanEnd > at) {
             // Inside a span about to be read whole: as much of it as a run takes.
             start = at
-            length = minOf(spanEnd - at, maxOf(maxBlock, wanted).toLong()).toInt()
+            length = minOf(spanEnd - at, maxOf(spanBlock, wanted).toLong()).toInt()
             window = minOf(length, maxBlock)
         } else {
             // A read going on from the last run fetched continues it; any other starts at an aligned offset.
@@ -252,23 +279,26 @@ class RemoteChannel(
 
     /**
      * Keeps up to [MAX_COMING] runs after [run] being fetched in the background when a
-     * stream reads [run]: inside an expected span with more of it after, or, outside any
-     * span, once [run], at least [aheadFrom] long, followed on from the run before; two, so the next fetch
-     * is under way while the last one's final pieces come. Within [MAX_AHEAD_BYTES] for
-     * all channels, never while [thrifty].
+     * stream reads [run]: inside an expected span with more of it after; at a span's end
+     * when an earlier span was read up to just before it, as entries read in a row are;
+     * or, outside any span, once [run], at least [aheadFrom] long, followed on from the run
+     * before. Two, so the next fetch is under way while the last one's final pieces come.
+     * Within [MAX_AHEAD_BYTES] for all channels, never while [thrifty].
      */
     private fun fetchAhead(run: Run) {
         if (!readAhead || thrifty || run.end >= size || run.end != lastEnd) return
         // Runs coming from elsewhere are let be until done; none are added after them.
         if (coming.isNotEmpty() && coming.first().start != run.end) return
-        val spanEnd = spanEnd(run.start)
+        val span = spanAt(run.start)
+        val spanEnd = span?.end ?: -1
         val inSpan = spanEnd > run.end
-        // Past the end of an expected span nothing comes ahead: one page read whole (a cover) wants no more.
-        if (!inSpan && (spanEnd >= 0 || run.bytes.size < aheadFrom || window < aheadFrom)) return
+        // Past a span's end more comes only for entries read in a row: one page read whole (a cover) wants no more.
+        val inRow = span != null && !inSpan && !shared && followsRead(span)
+        if (!inSpan && !inRow && (span != null || run.bytes.size < aheadFrom || window < aheadFrom)) return
         val limit = if (inSpan) spanEnd else size
         var next = coming.lastOrNull()?.let { it.start + it.length } ?: run.end
         while (coming.size < MAX_COMING && next < limit) {
-            val grown = if (inSpan) maxBlock.toLong() else minOf(window.toLong() * 2, maxBlock.toLong())
+            val grown = if (inSpan) spanBlock.toLong() else minOf(window.toLong() * 2, maxBlock.toLong())
             val length = minOf(grown, limit - next).toInt()
             if (heapRoom() - length < heapMax() / 4) return
             if (BUDGET.addAndGet(length.toLong()) > MAX_AHEAD_BYTES) {
@@ -351,6 +381,15 @@ class RemoteChannel(
 
         /** Room for two pages streaming at once in the longest runs, and some of what came before. */
         const val MAX_CACHED_BYTES = 24L shl 20
+
+        /** The longest run inside a span while another stream shares the channel: a page waits behind no more of another's. */
+        const val SHARED_BLOCK_BYTES = 1 shl 20
+
+        /** How recently another span must have been read for its stream to count as sharing the channel. */
+        private const val SHARED_HOLD_MS = 2_000L
+
+        /** What may lie between entries read in a row: a local header with its name and extra fields. */
+        private const val ENTRY_GAP_BYTES = 64 * 1024
 
         /** How long a stream's runs must have grown before the next is fetched ahead: header walks never get there. */
         const val AHEAD_FROM_BYTES = 1 shl 20

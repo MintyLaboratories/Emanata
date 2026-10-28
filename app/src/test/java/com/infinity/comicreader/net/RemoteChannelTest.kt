@@ -258,6 +258,58 @@ class RemoteChannelTest {
     }
 
     @Test
+    fun spansReadAtTheSameTimeFetchSmallerRuns() {
+        val big = ByteArray(200_000) { (it * 3).toByte() }
+        val input = Bytes(big)
+        var clock = 0L
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, readAhead = false, sharedBlock = 4096, clock = { clock })
+        channel.expect(0, 60_000)
+        channel.expect(100_000, 60_000)
+        // Alone, a span comes in the longest runs.
+        assertEquals(10, channel.read(ByteBuffer.allocate(10)))
+        // Another stream reads its span while the first is part way: both get the shorter runs.
+        channel.position(100_000)
+        channel.read(ByteBuffer.allocate(10))
+        channel.position(16_384)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(listOf(0L to 16_384, 100_000L to 4096, 16_384L to 4096), input.asked)
+        // Once the other has not been read for a while, the first is alone again.
+        clock += 3_000
+        channel.position(20_480)
+        val got = ByteBuffer.allocate(10)
+        channel.read(got)
+        assertArrayEquals(big.copyOfRange(20_480, 20_490), got.array())
+        assertEquals(20_480L to 16_384, input.asked.last())
+    }
+
+    @Test
+    fun entriesReadInARowFetchAheadPastTheirEnds() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val input = Bytes(big)
+        val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = now)
+        // A first entry read whole: nothing comes ahead past it.
+        channel.expect(1_000, 10_000)
+        channel.position(1_000)
+        assertEquals(10_000, channel.read(ByteBuffer.allocate(10_000)))
+        assertEquals(0, channel.aheads)
+        // The next, a header's length after it, read whole too: the next two runs come ahead.
+        channel.expect(11_100, 10_000)
+        channel.position(11_100)
+        assertEquals(10_000, channel.read(ByteBuffer.allocate(10_000)))
+        assertEquals(2, channel.aheads)
+        val before = input.reads
+        channel.expect(21_200, 10_000)
+        channel.position(21_200)
+        val third = ByteBuffer.allocate(10_000)
+        assertEquals(10_000, channel.read(third))
+        assertArrayEquals(big.copyOfRange(21_200, 31_200), third.array())
+        assertEquals(listOf(21_100L to 16_384, 37_484L to 16_384), input.asked.subList(before - 2, before))
+        // The third came from the runs ahead; only those after it were asked for since.
+        assertTrue(input.asked.drop(before).all { it.first >= 37_484L + 16_384 })
+        channel.close()
+    }
+
+    @Test
     fun aRunFetchedAheadButNotReadIsLetGo() {
         val big = ByteArray(100_000) { (it * 5).toByte() }
         val input = Bytes(big)

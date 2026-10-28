@@ -71,6 +71,11 @@ object BookIds {
 
     private fun index(): BookIndex? = index
 
+    /** Reads the index into memory, so [known] and [last] answer from it. Blocking; started at app start. */
+    fun load() {
+        index()?.load()
+    }
+
     private fun hash(): Xxh3 = hasher ?: LibXxh3
 
     /** The size and modification time of [file] as known now; null for a file on a share whose stat is not known. */
@@ -78,13 +83,14 @@ object BookIds {
         if (file is RemoteFile) file.stat()?.takeIf { !it.isDirectory }?.let { it.size to it.modified }
         else FileStat.of(file).takeIf { !it.isDirectory }?.let { it.size to it.lastModified }
 
-    /** The ID of [file] when the index knows it at its size and time now: no read. */
+    /** The ID of [file] when the index knows it at its size and time now: no read. Blocking: a stat, and the index's first [load]. */
     fun known(file: File): BookId? {
         val (size, modified) = statOf(file) ?: return null
+        load()
         return known(file.absolutePath, size, modified)
     }
 
-    /** The ID known for the file at [path] of [size] bytes modified at [modified]; null when unseen or changed since. */
+    /** The ID known for the file at [path] of [size] bytes modified at [modified]; null when unseen, changed since, or the index is not [load]ed yet. Never blocks. */
     fun known(path: String, size: Long, modified: Long): BookId? =
         index()?.get(path, size, modified) ?: synchronized(unindexed) { unindexed["$path|$size|$modified"] }
 
@@ -109,6 +115,7 @@ object BookIds {
     fun of(file: File): BookId {
         val path = file.absolutePath
         val (size, modified) = statOf(file) ?: throw FileNotFoundException(path)
+        load()
         known(path, size, modified)?.let { return it }
         // Reading even its ends from such a share would stream the whole file, maybe twice.
         if (file is RemoteFile && !Remotes.seekable(file.path)) throw NotInPlaceException(path)

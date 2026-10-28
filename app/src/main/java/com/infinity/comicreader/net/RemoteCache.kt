@@ -154,6 +154,7 @@ object RemoteCache {
      * ends when unknown and [read] says so; else of its path, size and time.
      */
     private fun nameOf(file: RemoteFile, stat: RemoteStat, read: Boolean): String {
+        BookIds.load()
         val id = BookIds.known(file.path, stat.size, stat.modified) ?: if (read) BookIds.find(file) else null
         return id?.let { nameOf(it) } ?: Hashes.sha256Hex("${file.path}|${stat.size}|${stat.modified}")
     }

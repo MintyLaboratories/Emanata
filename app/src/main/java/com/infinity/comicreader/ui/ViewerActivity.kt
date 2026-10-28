@@ -1078,8 +1078,8 @@ class ViewerActivity : AppCompatActivity() {
         val target = Remotes.file(path)
         persistAdjustments()
         file = target
-        // Known at once when seen before; else found as the book opens.
-        bookId = BookIds.known(target)
+        // Found as the book opens, off the main thread.
+        bookId = null
         bookRoots = StorageRoots.list(this)
         refreshFavorites()
         loadAdjustments()
@@ -3388,7 +3388,8 @@ class ViewerActivity : AppCompatActivity() {
      */
     private fun showChapterDrawer() {
         val read = library.readSet()
-        val readChapters = if (read.isEmpty()) emptySet() else chapters.filter { f -> BookIds.known(f)?.let { it in read } == true }.mapTo(HashSet()) { it.absolutePath }
+        // By path alone: no stat per chapter on the main thread.
+        val readChapters = if (read.isEmpty()) emptySet() else chapters.filter { f -> BookIds.last(f.absolutePath)?.let { it in read } == true }.mapTo(HashSet()) { it.absolutePath }
         val rows = ChapterDrawer.rows(bookChapters, currentIndex, chapters, file?.absolutePath, readChapters)
         if (rows.isEmpty()) return
         val view = layoutInflater.inflate(R.layout.sheet_chapters, null)

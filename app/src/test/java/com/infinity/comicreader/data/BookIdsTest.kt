@@ -121,7 +121,12 @@ class BookIdsTest {
         val f = book("a.cbz", 70_000)
         val id = BookIds.of(f)
         BookIndex.reset()
-        assertEquals(id, BookIndex(context).get(f.absolutePath, f.length(), f.lastModified()))
+        val index = BookIndex(context)
+        // Lookups never wait on the database: unknown until loaded.
+        assertNull(index.get(f.absolutePath, f.length(), f.lastModified()))
+        index.load()
+        assertEquals(id, index.get(f.absolutePath, f.length(), f.lastModified()))
+        assertEquals(id, index.last(f.absolutePath))
     }
 
     @Test

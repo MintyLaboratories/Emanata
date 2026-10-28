@@ -251,6 +251,8 @@ class LibrarySnapshot(
             if (FavoriteClassifier.isLooseComic(names)) names.count { Formats.isImageName(it) } else -1
 
         fun load(library: Library, prefs: Prefs): LibrarySnapshot {
+            // Listings know the books seen before, even right after the app starts.
+            BookIds.load()
             val history = library.history()
             val bookmarks = library.bookmarks()
             val favorites = library.favoriteItems()

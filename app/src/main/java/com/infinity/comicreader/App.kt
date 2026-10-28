@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.appcompat.app.AppCompatDelegate
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
@@ -40,6 +41,8 @@ class App : Application() {
         Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
+        // Off the main thread: lookups by ID never wait on the database.
+        thread(name = "book-index", isDaemon = true) { runCatching { BookIds.load() } }
         cleanCaches()
     }
 

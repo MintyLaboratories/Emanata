@@ -10,7 +10,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Remembers the [BookId] found for each file by its path, size and modification time,
  * so a file seen before costs no read: a different size or time means it changed (or
  * another file took its place) and is hashed again. Stored one row per path in a small
- * database and held in memory once [load]ed; every instance shares one store.
+ * database and held in memory once [load]ed; every instance shares one store. Lookups
+ * ([get], [last]) never block: until loaded they know nothing.
  */
 class BookIndex(context: Context) {
     private val store = storeFor(context.applicationContext)
@@ -18,14 +19,14 @@ class BookIndex(context: Context) {
     /** One file's row: its size and modification time when hashed, and the ID found. */
     private class Row(val size: Long, val modified: Long, val id: Long)
 
-    /** The ID found for [path] at [size] and [modified]; null when unknown or stale. Loads first when needed. */
+    /** The ID found for [path] at [size] and [modified]; null when unknown, stale or not [load]ed yet. Never blocks. */
     fun get(path: String, size: Long, modified: Long): BookId? {
-        val row = loaded()[path] ?: return null
+        val row = store.loaded?.get(path) ?: return null
         return if (row.size == size && row.modified == modified) BookId(row.id) else null
     }
 
-    /** The ID last found for [path], whatever its size and time then; null when never hashed. */
-    fun last(path: String): BookId? = loaded()[path]?.let { BookId(it.id) }
+    /** The ID last found for [path], whatever its size and time then; null when never hashed or not [load]ed yet. Never blocks. */
+    fun last(path: String): BookId? = store.loaded?.get(path)?.let { BookId(it.id) }
 
     /** The IDs last found for [root], a file or folder, and everything below it. */
     fun under(root: String): Set<BookId> = loaded().entries.filter { under(it.key, root) }.mapTo(HashSet()) { BookId(it.value.id) }

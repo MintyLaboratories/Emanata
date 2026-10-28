@@ -174,9 +174,6 @@ class LibrarySnapshot(
     /** True when anything is kept for book [id]. */
     fun keeps(id: BookId): Boolean = id in seen
 
-    /** The ID of book [file] as the index knows it now; null when unseen or changed. */
-    private fun idOf(file: File): BookId? = BookIds.known(file)
-
     /**
      * The entry for [file], a folder holding [children] (the items a user would see)
      * or a book; [name] is what it is listed as. A folder of loose page images has
@@ -188,7 +185,8 @@ class LibrarySnapshot(
         val isDir = stat.isDirectory
         val books = children?.filter { Formats.isOpenable(it.name) }
         val names = books?.map { it.name }.orEmpty()
-        val childIds = if (read.isEmpty() && history.isEmpty()) emptyMap() else children.orEmpty().filter { !it.isDirectory }.associateWith { idOf(it) }
+        // By path alone: a stat per child would slow every listing of folders.
+        val childIds = if (read.isEmpty() && history.isEmpty()) emptyMap() else children.orEmpty().associateWith { BookIds.last(it.absolutePath) }
         val entry = BookEntry(
             file = file,
             name = name,

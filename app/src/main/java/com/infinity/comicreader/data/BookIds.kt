@@ -88,6 +88,12 @@ object BookIds {
     fun known(path: String, size: Long, modified: Long): BookId? =
         index()?.get(path, size, modified) ?: synchronized(unindexed) { unindexed["$path|$size|$modified"] }
 
+    /**
+     * The ID last found for the file at [path], whatever its size and time then: no stat, no
+     * read, so possibly of a file since replaced there. For counts, not for what is kept.
+     */
+    fun last(path: String): BookId? = index()?.last(path)
+
     /** The ID of [file]; null when it cannot be read. Blocking. */
     fun find(file: File): BookId? = try {
         of(file)

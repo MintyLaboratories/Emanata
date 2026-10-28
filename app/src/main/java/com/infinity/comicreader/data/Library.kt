@@ -9,6 +9,7 @@ import com.infinity.comicreader.util.Formats
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.File
 import java.time.LocalDate
 
 /**
@@ -209,7 +210,7 @@ class Library(context: Context) {
             out.add(
                 HistoryItem(
                     path = path,
-                    name = path.substringAfterLast('/').ifEmpty { o.optString("name") },
+                    name = File(path).name.ifEmpty { o.optString("name") },
                     page = o.optInt("page"),
                     total = o.optInt("total"),
                     time = o.optLong("time"),
@@ -263,7 +264,7 @@ class Library(context: Context) {
             out.add(
                 Bookmark(
                     path = path,
-                    name = path.substringAfterLast('/').ifEmpty { o.optString("name") },
+                    name = File(path).name.ifEmpty { o.optString("name") },
                     page = o.optInt("page"),
                     note = o.optString("note"),
                     time = o.optLong("time"),

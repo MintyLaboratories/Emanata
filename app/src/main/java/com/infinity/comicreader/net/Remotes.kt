@@ -264,6 +264,9 @@ object Remotes {
         return listings.get(base)?.let { filesOf(base, it, fresh = false) }
     }
 
+    /** Forgets every folder listing kept ([cachedList]), on disk too. */
+    fun clearListings() = listings.clear()
+
     /** True when the folder at [path] was listed before ([cachedList]). Never asks the network. */
     fun isListed(path: String): Boolean {
         val base = path.trimEnd('/')

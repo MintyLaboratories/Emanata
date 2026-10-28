@@ -51,6 +51,12 @@ class Listings(private val dir: File?, private val maxFolders: Int = MAX_IN_MEMO
         synchronized(memory) { memory.clear() }
     }
 
+    /** Forgets every listing, on disk too. */
+    fun clear() {
+        clearMemory()
+        dir?.deleteRecursively()
+    }
+
     private fun fileOf(path: String): File? {
         val id = Remotes.idOf(path) ?: return null
         val base = dir ?: return null

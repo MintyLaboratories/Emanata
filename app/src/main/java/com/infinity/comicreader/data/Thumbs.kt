@@ -322,6 +322,9 @@ object Thumbs {
         }
     }
 
+    /** Where covers are kept under [cacheDir]. */
+    fun dirIn(cacheDir: File) = File(cacheDir, DISK_DIR)
+
     fun clear(context: Context) {
         memory.evictAll()
         quicks.evictAll()

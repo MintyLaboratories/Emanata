@@ -4,8 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
-import com.infinity.comicreader.util.Hashes
+import com.infinity.comicreader.util.CacheFiles
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -14,7 +15,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Page previews ([Previews]) on disk under [dir], one JPEG per page, named by a hash of
+ * Page previews ([Previews]) on disk under [dir], one JPEG per page, named after the book
+ * ([CacheFiles.nameOf]), so [forget] finds all of one book's, and a hash of
  * the book's identity ([bookId]), the page's index and entry name, and the preview size,
  * so a changed book or size never reads a stale one, and a book moved or copied keeps its.
  * Writes run on [writer], off the decoding thread; a file appears whole or not at all.
@@ -98,7 +100,7 @@ class PreviewStore(
         if (opaque !== preview) opaque.recycle()
     }
 
-    private fun fileOf(key: String) = File(dir, Hashes.sha256Hex(key) + ".jpg")
+    private fun fileOf(key: String) = File(dir, CacheFiles.nameOf(key, key, ends = '|') + ".jpg")
 
     companion object {
         private const val DIR = "page-previews"
@@ -152,6 +154,9 @@ class PreviewStore(
                 if (f.delete()) total -= size
             }
         }
+
+        /** Deletes the previews of book [id] in [dir]. */
+        fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex)
 
         fun clear(dir: File) {
             runCatching { dir.deleteRecursively() }

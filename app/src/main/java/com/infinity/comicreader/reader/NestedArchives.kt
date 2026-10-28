@@ -1,7 +1,9 @@
 package com.infinity.comicreader.reader
 
 import android.util.Log
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.util.CacheFiles
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.Hashes
 import java.io.File
@@ -82,7 +84,8 @@ class NestedArchives(
     private fun extract(outer: ArchiveReader, entry: ArchiveEntry, key: String): File? {
         val limit = if (entry.size >= 0) entry.size else maxEntryBytes
         if (limit > maxEntryBytes || usedBytes + limit > maxBytes) return null
-        val target = File(dir, hash(key) + "." + Formats.ext(entry.path))
+        // Named after the book, so deleting it finds its copies ([forget]).
+        val target = File(dir, CacheFiles.prefixOf(key, ends = '\n') + "-" + hash(key) + "." + Formats.ext(entry.path))
         // Held before it is checked or written, so no trim can delete it from here on.
         val lock = retain(target)
         try {
@@ -163,6 +166,9 @@ class NestedArchives(
         }
 
         fun dirIn(cacheDir: File) = File(cacheDir, DIR)
+
+        /** Deletes the copies of archives inside book [id] in [dir], except those an open book holds. */
+        fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex) { synchronized(HELD) { it.absolutePath in HELD } }
 
         /** Identity of a book file: its Book ID ([BookIds.keyOf]), so a moved or copied book keeps its copies. Blocking. */
         fun keyOf(file: File) = BookIds.keyOf(file)

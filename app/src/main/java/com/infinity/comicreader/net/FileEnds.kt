@@ -42,6 +42,6 @@ object FileEnds {
         return ends.layout.copyOfRange(BookIdBytes.SIZE_BYTES, BookIdBytes.SIZE_BYTES + n)
     }
 
-    /** Forgets everything kept; for tests. */
-    internal fun clear() = synchronized(kept) { kept.clear() }
+    /** Forgets everything kept. */
+    fun clear() = synchronized(kept) { kept.clear() }
 }

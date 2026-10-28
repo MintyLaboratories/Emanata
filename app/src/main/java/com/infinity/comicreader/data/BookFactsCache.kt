@@ -80,6 +80,14 @@ class BookFactsCache(context: Context) {
         }
     }
 
+    /** Forgets the facts of every book; each is read again when next needed. Blocking. */
+    fun clear() {
+        synchronized(store) {
+            store.helper.writableDatabase.delete(TABLE, null, null)
+            store.loaded = ConcurrentHashMap()
+        }
+    }
+
     /** One database file, opened once, and its rows once loaded. */
     private class Store(val file: String, val helper: Helper) {
         @Volatile

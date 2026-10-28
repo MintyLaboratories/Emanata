@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.EntryType
@@ -234,8 +235,10 @@ class CleanupActivity : AppCompatActivity() {
 
     private fun deletePaths(paths: List<String>) {
         lifecycleScope.launch {
-            val deleted = withContext(AppDispatchers.io) { paths.filter { File(it).delete() }.toSet() }
-            deleted.forEach { library.removePathsUnder(it) }
+            val app = applicationContext
+            val deleted = withContext(AppDispatchers.io) {
+                paths.filter { File(it).delete() }.toSet().onEach { BookCaches.deleted(app, library, it) }
+            }
             if (deleted.size < paths.size) {
                 Toast.makeText(this@CleanupActivity, R.string.op_failed, Toast.LENGTH_SHORT).show()
             }

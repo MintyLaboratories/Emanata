@@ -948,10 +948,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         // Loose images get theirs as they are opened or marked.
         val unknown = allEntries.filter { !it.isDir && it.type != EntryType.IMAGE && it.id == null && Formats.isOpenable(it.name) && findsIdsAt(it.path) }
         if (unknown.isEmpty()) return
-        val gate = Semaphore(ID_READS)
-        val found = coroutineScope {
-            unknown.map { e -> async(AppDispatchers.io) { gate.withPermit { BookIds.find(e.file)?.let { e.path to it } } } }.awaitAll()
-        }.filterNotNull().toMap()
+        val ids = idsOf(unknown.map { it.file })
+        val found = unknown.mapNotNull { e -> ids[e.file]?.let { e.path to it } }.toMap()
         if (listing != listed || found.isEmpty()) return
         val snap = withContext(AppDispatchers.io) { snapshot() }
         var kept = false
@@ -963,6 +961,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val seen = snap.sightings()
         if (seen.isNotEmpty()) withContext(AppDispatchers.io) { library.seenAll(seen) }
         if (kept) applyFilterAndSort(resort = false)
+    }
+
+    /** The Book IDs of [files], [ID_READS] read at a time; ones that cannot be read are left out. */
+    private suspend fun idsOf(files: List<File>): Map<File, BookId> {
+        val gate = Semaphore(ID_READS)
+        return coroutineScope {
+            files.map { f -> async(AppDispatchers.io) { gate.withPermit { BookIds.find(f)?.let { f to it } } } }.awaitAll()
+        }.filterNotNull().toMap()
     }
 
     /** False for [path] on a share whose covers are not made; books there get their IDs as they are opened or marked. */
@@ -2109,14 +2115,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     private fun markFolderNow(dir: File, read: Boolean) {
         lifecycleScope.launch {
-            withContext(AppDispatchers.io) {
-                // Books never seen are read for their IDs.
-                val books = dir.listFiles()
-                    ?.filter { it.isFile && Formats.isOpenable(it.name) }
-                    ?.mapNotNull { f -> BookIds.find(f)?.let { BookRef(it, f.absolutePath) } }
-                    .orEmpty()
-                library.setReadMany(books, read)
-            }
+            val files = withContext(AppDispatchers.io) { dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() }
+            // Books never seen are read for their IDs, several at once.
+            val books = idsOf(files).map { (f, id) -> BookRef(id, f.absolutePath) }
+            withContext(AppDispatchers.io) { library.setReadMany(books, read) }
             toast(if (read) R.string.marked_read else R.string.marked_unread)
             refreshCurrent()
         }

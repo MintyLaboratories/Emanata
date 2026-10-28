@@ -190,13 +190,19 @@ object Thumbs {
     }
 
     /**
-     * The cover page of book [entry] whole, made to [target] as a page is, for sharing:
+     * The cover page of book [entry] whole (of a folder, its row's cover), made to [target] as a page is, for sharing:
      * never cropped, framed or cached. Blocking; null when it has none or cannot be read.
      */
     fun shareCover(context: Context, entry: BookEntry, charset: String, target: Target): Bitmap? = try {
-        if (entry.isDir) null else {
-            val page = coverPage(Library(context).hiddenPages(entry.path))
-            coverOf(entry.file, charset, context.cacheDir, target.width, target.height, page, full = target, inner = false)?.bitmap
+        // A folder's is the one its row shows: its first image, else its first book's.
+        val book = if (entry.isDir) findCover(entry.file, 2) else entry.file
+        when {
+            book == null -> null
+            entry.isDir && Formats.typeOf(book.name) == EntryType.IMAGE -> Decoders.decode(book, target)
+            else -> {
+                val page = coverPage(Library(context).hiddenPages(book.absolutePath))
+                coverOf(book, charset, context.cacheDir, target.width, target.height, page, full = target, inner = false)?.bitmap
+            }
         }
     } catch (t: Throwable) {
         null

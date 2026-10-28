@@ -32,12 +32,12 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Shares a book: a dialog of check boxes, each followed by what it sends (the title, the
- * cover, the file), starting from the last choice ([Prefs.shareChoice]), then the system's
- * share sheet. The cover shows as its row in the list has it ([shownCover]); the whole cover
- * sent is made only once its box is ticked, then goes as a PNG through the app's
- * FileProvider; the file goes in place, through [com.infinity.comicreader.files.BookProvider],
- * never copied first.
+ * Shares a book or folder: a dialog of check boxes, each followed by what it sends (the
+ * title, the cover, and for a book the file), starting from the last choice
+ * ([Prefs.shareChoice]), then the system's share sheet. The cover shows as its row in the
+ * list has it ([shownCover]); the whole cover sent is made only once its box is ticked, then
+ * goes as a PNG through the app's FileProvider; the file goes in place, through
+ * [com.infinity.comicreader.files.BookProvider], never copied first.
  */
 internal class BookShare(
     private val activity: AppCompatActivity,
@@ -55,6 +55,9 @@ internal class BookShare(
         val coverImage = view.findViewById<ImageView>(R.id.share_cover_image)
         val coverProgress = view.findViewById<View>(R.id.share_cover_progress)
         val coverNote = view.findViewById<TextView>(R.id.share_cover_none)
+        // A folder has no file to send: its title and cover only.
+        val folder = entry.isDir
+        if (folder) view.findViewById<View>(R.id.share_file_row).visibility = View.GONE
         view.findViewById<TextView>(R.id.share_title_text).text = title
         view.findViewById<ImageView>(R.id.share_file_icon).apply {
             setImageResource(EntryIcons.iconFor(entry))
@@ -64,7 +67,7 @@ internal class BookShare(
             if (entry.size > 0) "${entry.name}\n${FileUtils.formatSize(activity, entry.size)}" else entry.name
         titleCheck.isChecked = last.title
         coverCheck.isChecked = last.cover
-        fileCheck.isChecked = last.file
+        fileCheck.isChecked = last.file && !folder
         for ((row, check) in listOf(R.id.share_title_row to titleCheck, R.id.share_cover_row to coverCheck, R.id.share_file_row to fileCheck)) {
             view.findViewById<View>(row).setOnClickListener { if (check.isEnabled) check.toggle() }
         }
@@ -141,8 +144,8 @@ internal class BookShare(
         send.setOnClickListener {
             val choice = picked()
             if (!choice.any) return@setOnClickListener
-            // A missing cover leaves the choice as it was for books that have one.
-            prefs.shareChoice = choice.copy(cover = if (coverFound) choice.cover else last.cover)
+            // A missing cover leaves the choice as it was for books that have one; a folder, the file's.
+            prefs.shareChoice = choice.copy(cover = if (coverFound) choice.cover else last.cover, file = if (folder) last.file else choice.file)
             sent = true
             send.isEnabled = false
             val coverMade = if (choice.cover) cover() else null

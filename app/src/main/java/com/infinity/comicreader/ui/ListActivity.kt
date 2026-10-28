@@ -1597,7 +1597,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
             op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
             op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
-            if (!entry.isDir) op(R.id.file_op_share, R.drawable.ic_share, R.string.file_op_share) { bookShare.show(entry) }
+            op(R.id.file_op_share, R.drawable.ic_share, R.string.file_op_share) { bookShare.show(entry) }
             if (more.isNotEmpty()) op(R.id.file_op_more, R.drawable.ic_more_horiz, R.string.file_op_more) { showMore(entry, more) }
         } else {
             ops.visibility = View.GONE

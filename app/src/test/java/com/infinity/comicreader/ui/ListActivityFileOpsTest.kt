@@ -195,8 +195,8 @@ class ListActivityFileOpsTest {
             listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy, R.id.file_op_share),
             (0 until ops.childCount).map { ops.getChildAt(it).id }
         )
-        // A folder is not shared.
-        assertNull(activity.longPress(other.absolutePath).op(R.id.file_op_share))
+        // A folder is shared too.
+        assertNotNull(activity.longPress(other.absolutePath).op(R.id.file_op_share))
     }
 
     /** Opens the Share dialog of [path] from the long-press menu. */
@@ -245,6 +245,26 @@ class ListActivityFileOpsTest {
         assertFalse(again.check(R.id.share_title_check).isChecked)
         assertTrue(again.check(R.id.share_file_check).isChecked)
         again.dismiss()
+    }
+
+    @Test
+    fun aFolderIsSharedByTitleAndCoverOnly() {
+        Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = true, cover = false, file = true)
+        val activity = launch()
+        val dialog = activity.shareDialog(other.absolutePath)
+        assertEquals(View.GONE, dialog.findViewById<View>(R.id.share_file_row)!!.visibility)
+        assertFalse(dialog.check(R.id.share_file_check).isChecked)
+        assertEquals("Other", dialog.findViewById<android.widget.TextView>(R.id.share_title_text)!!.text.toString())
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { !dialog.isShowing && shadowOf(context).peekNextStartedActivity() != null }
+
+        @Suppress("DEPRECATION")
+        val send = shadowOf(context).nextStartedActivity.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+        assertEquals("Other", send.getStringExtra(android.content.Intent.EXTRA_TEXT))
+        @Suppress("DEPRECATION")
+        assertNull(send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM))
+        // Books keep their file choice.
+        assertTrue(Prefs(context).shareChoice.file)
     }
 
     @Test

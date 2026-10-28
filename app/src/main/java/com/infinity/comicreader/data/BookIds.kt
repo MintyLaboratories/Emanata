@@ -233,6 +233,18 @@ object BookIds {
     fun elsewhere(ids: Set<BookId>, root: String): Map<BookId, String> =
         index()?.elsewhere(ids, root) { Remotes.isRemote(it) || File(it).isFile }.orEmpty()
 
+    /** The size the file at [path] had when found to be book [id]; null when not known now. Never blocks. */
+    fun sizeAt(path: String, id: BookId): Long? = index()?.sizeAt(path, id)
+
+    /** The size each of [ids] was last found at, where the index has it. Blocking. */
+    fun sizesOf(ids: Set<BookId>): Map<BookId, Long> = index()?.sizesOf(ids).orEmpty()
+
+    /** Forgets every ID found; each file is hashed again when next asked for. Blocking. */
+    fun clear() {
+        index()?.clear()
+        synchronized(unindexed) { unindexed.clear() }
+    }
+
     /** Forgets the IDs known for [root], deleted or replaced, and everything below it. Blocking. */
     fun removed(root: String) {
         index()?.remove(root)

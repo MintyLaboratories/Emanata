@@ -47,6 +47,24 @@ class BookIndex(context: Context) {
         return out
     }
 
+    /** The size [path] had when [id] was found for it; null when the index holds another ID there, or is not loaded yet. Never blocks. */
+    fun sizeAt(path: String, id: BookId): Long? = store.loaded?.get(path)?.takeIf { it.id == id.value }?.size
+
+    /** The size each of [ids] was last found at, where any path had it. */
+    fun sizesOf(ids: Set<BookId>): Map<BookId, Long> {
+        val out = HashMap<BookId, Long>()
+        for (row in loaded().values) BookId(row.id).takeIf { it in ids }?.let { out[it] = row.size }
+        return out
+    }
+
+    /** Forgets every row. Blocking. */
+    fun clear() {
+        synchronized(store) {
+            store.helper.writableDatabase.delete(TABLE, null, null)
+            store.loaded = ConcurrentHashMap()
+        }
+    }
+
     /** Remembers [id] for [path] at [size] and [modified]. Blocking. */
     fun put(path: String, size: Long, modified: Long, id: BookId) {
         val map = loaded()

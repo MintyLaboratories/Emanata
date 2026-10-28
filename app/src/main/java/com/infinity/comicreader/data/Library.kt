@@ -65,7 +65,7 @@ class Library(context: Context) {
         if (moved.isEmpty()) return
         synchronized(LOCK) {
             val all = readObject(KEY_BOOKS)
-            for (b in moved) if (all.has(b.id.hex)) all.put(b.id.hex, seenJson(b.path))
+            for (b in moved) if (all.has(b.id.hex)) putSeen(all, b.id, b.path)
             sp.edit().putString(KEY_BOOKS, all.toString()).apply()
         }
     }
@@ -73,13 +73,34 @@ class Library(context: Context) {
     /** Remembers where [book] is seen as something is kept for it. Called under [LOCK]. */
     private fun keep(book: BookRef) {
         val all = readObject(KEY_BOOKS)
-        val now = all.optJSONObject(book.id.hex)
-        if (now != null && now.optString("path") == book.path) return
-        all.put(book.id.hex, seenJson(book.path))
-        sp.edit().putString(KEY_BOOKS, all.toString()).apply()
+        if (putSeen(all, book.id, book.path)) sp.edit().putString(KEY_BOOKS, all.toString()).apply()
     }
 
-    private fun seenJson(path: String) = JSONObject().put("path", path).put("loc", BookLocation.of(path))
+    /**
+     * Notes in [all] that book [id] was seen at [path], and its size where the index knows
+     * it; what else its entry holds stays. False when nothing changed.
+     */
+    private fun putSeen(all: JSONObject, id: BookId, path: String): Boolean {
+        val entry = all.optJSONObject(id.hex) ?: JSONObject()
+        val moved = entry.optString("path") != path
+        val size = if (entry.has(SIZE)) null else BookIds.sizeAt(path, id)
+        if (!moved && size == null) return false
+        if (moved) entry.put("path", path).put("loc", BookLocation.of(path))
+        size?.let { entry.put(SIZE, it) }
+        all.put(id.hex, entry)
+        return true
+    }
+
+    /** The size in bytes of each book whose size is noted (every copy of a book has the size its ID was made with). */
+    fun sizes(): Map<BookId, Long> {
+        val all = readObject(KEY_BOOKS)
+        val out = HashMap<BookId, Long>()
+        all.keys().forEach { k ->
+            val id = BookId.parse(k) ?: return@forEach
+            all.optJSONObject(k)?.optLong(SIZE, -1)?.takeIf { it >= 0 }?.let { out[id] = it }
+        }
+        return out
+    }
 
     // ---------------- favorites ----------------
     /** Every favorite in the order added, newest first: a folder by its path, a book by where it was last seen. */
@@ -155,11 +176,7 @@ class Library(context: Context) {
     private fun keepAll(books: Collection<BookRef>) {
         val all = readObject(KEY_BOOKS)
         var changed = false
-        for (b in books) {
-            if (all.optJSONObject(b.id.hex)?.optString("path") == b.path) continue
-            all.put(b.id.hex, seenJson(b.path))
-            changed = true
-        }
+        for (b in books) if (putSeen(all, b.id, b.path)) changed = true
         if (changed) sp.edit().putString(KEY_BOOKS, all.toString()).apply()
     }
 
@@ -436,7 +453,7 @@ class Library(context: Context) {
             val books = readObject(KEY_BOOKS)
             for (k in books.keys().asSequence().toList()) {
                 val path = books.optJSONObject(k)?.optString("path") ?: continue
-                if (under(path, old)) books.put(k, seenJson(remap(path)))
+                if (under(path, old)) books.optJSONObject(k)?.put("path", remap(path))?.put("loc", BookLocation.of(remap(path)))
             }
             sp.edit().putString(KEY_BOOKS, books.toString()).apply()
         }
@@ -453,7 +470,7 @@ class Library(context: Context) {
         synchronized(LOCK) {
             if (copies.isNotEmpty()) {
                 val books = readObject(KEY_BOOKS)
-                for ((id, path) in copies) if (books.has(id.hex)) books.put(id.hex, seenJson(path))
+                for ((id, path) in copies) if (books.has(id.hex)) putSeen(books, id, path)
                 sp.edit().putString(KEY_BOOKS, books.toString()).apply()
             }
             val gone = there - copies.keys
@@ -643,6 +660,88 @@ class Library(context: Context) {
 
     fun clearStats() = sp.edit().putString(KEY_STATS, "{}").apply()
 
+    // ---------------- what books keep ----------------
+    /** What is kept for each book with anything kept, by ID. */
+    fun kept(): Map<BookId, Kept> {
+        val favorites = favoriteBooks()
+        val read = readSet()
+        val history = readArray(KEY_HISTORY).ids()
+        val marks = readArray(KEY_BOOKMARKS).ids()
+        val hidden = hiddenCounts()
+        val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) +
+            readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids()
+        val all = favorites + read + history + marks + hidden.keys + settings
+        return all.associateWith { id ->
+            Kept(
+                favorite = id in favorites,
+                read = id in read,
+                history = id in history,
+                bookmarks = marks.count { it == id },
+                hidden = hidden[id] ?: 0,
+                settings = id in settings
+            )
+        }
+    }
+
+    /** True when anything is kept for book [id]: where it was seen alone does not count. */
+    fun hasData(id: BookId): Boolean = id in kept()
+
+    /**
+     * Forgets everything kept for books [ids]: favorites, read marks, history, bookmarks,
+     * hidden pages, their own settings and where they were seen.
+     */
+    fun forgetBooks(ids: Set<BookId>) {
+        if (ids.isEmpty()) return
+        synchronized(LOCK) {
+            val hexes = ids.mapTo(HashSet()) { it.hex }
+            val e = sp.edit()
+            e.putString(KEY_FAVORITES, JSONArray(readStringList(KEY_FAVORITES).filterNot { bookToken(it) in ids }).toString())
+            for (k in ID_LIST_KEYS) e.putString(k, JSONArray(readIds(k).filterNot { it in ids }.map { it.hex }).toString())
+            for (k in listOf(KEY_HISTORY, KEY_BOOKMARKS)) {
+                val arr = readArray(k)
+                val left = JSONArray()
+                for (i in 0 until arr.length()) arr.optJSONObject(i)?.takeIf { it.optString("id") !in hexes }?.let { left.put(it) }
+                e.putString(k, left.toString())
+            }
+            for (k in BOOK_OBJECT_KEYS) {
+                val o = readObject(k)
+                for (h in hexes) o.remove(h)
+                e.putString(k, o.toString())
+            }
+            e.apply()
+            publishNameCharsets()
+        }
+    }
+
+    /**
+     * Clears what cannot be made again: favorites, read marks, history, bookmarks, hidden
+     * pages, books' own settings and where books were seen. Folder layouts and reading
+     * statistics stay.
+     */
+    fun clearLibraryData() {
+        synchronized(LOCK) {
+            val e = sp.edit()
+            for (k in listOf(KEY_FAVORITES, KEY_HISTORY, KEY_BOOKMARKS) + ID_LIST_KEYS) e.putString(k, "[]")
+            for (k in BOOK_OBJECT_KEYS) e.putString(k, "{}")
+            e.apply()
+            publishNameCharsets()
+        }
+    }
+
+    /** What is kept for one book; see [kept]. */
+    data class Kept(
+        val favorite: Boolean = false,
+        val read: Boolean = false,
+        val history: Boolean = false,
+        val bookmarks: Int = 0,
+        val hidden: Int = 0,
+        val settings: Boolean = false
+    )
+
+    private fun JSONArray.ids(): List<BookId> = (0 until length()).mapNotNull { BookId.parse(optJSONObject(it)?.optString("id").orEmpty()) }
+
+    private fun JSONObject.ids(): Set<BookId> = keys().asSequence().mapNotNullTo(HashSet()) { BookId.parse(it) }
+
     // ---------------- upgrade ----------------
     /**
      * Drops what versions before Book IDs kept by book path: books start afresh under
@@ -814,6 +913,9 @@ class Library(context: Context) {
         /** Where each book with anything kept was last seen ([seenAt]). */
         private const val KEY_BOOKS = "books"
 
+        /** A book's size in bytes, in its [KEY_BOOKS] entry. */
+        private const val SIZE = "size"
+
         /** What books are kept by: [KEYED_BY_ID] once [forgetPathKeyedBooks] ran. */
         private const val KEY_KEYED = "keyed_by"
         private const val KEYED_BY_ID = 1
@@ -825,6 +927,9 @@ class Library(context: Context) {
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
         private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS)
+
+        /** Lists of book IDs. */
+        private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
 
         /** Documents kept by book ID. */
         private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS)

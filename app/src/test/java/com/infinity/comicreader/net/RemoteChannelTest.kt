@@ -142,9 +142,47 @@ class RemoteChannelTest {
         assertTrue("read ${input.reads} times", input.reads <= 4)
     }
 
+    private val heapRoom = RemoteChannel.heapRoom
+    private val heapMax = RemoteChannel.heapMax
+
     @After
     fun spendThrift() {
         RemoteChannel.thrifty = false
+        RemoteChannel.heapRoom = heapRoom
+        RemoteChannel.heapMax = heapMax
+    }
+
+    @Test
+    fun nothingComesAheadWhenTheHeapIsShort() {
+        RemoteChannel.heapMax = { 400_000 }
+        RemoteChannel.heapRoom = { 100_000 + 16_384 - 1 }
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(0, 50_000)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(0, channel.aheads)
+        RemoteChannel.heapRoom = { 100_000 + 16_384 }
+        channel.position(16_384)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(2, channel.aheads)
+        channel.close()
+    }
+
+    @Test
+    fun aTrimLetsGoOfAllButTheLatestRun() {
+        val input = Bytes(data)
+        val channel = RemoteChannel(input, minBlock = 1000, maxBlock = 1000)
+        for (at in listOf(0L, 3000L, 6000L)) {
+            channel.position(at)
+            channel.read(ByteBuffer.allocate(10))
+        }
+        RemoteChannel.trim()
+        channel.position(6000)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(3, channel.fetches)
+        channel.position(0)
+        channel.read(ByteBuffer.allocate(10))
+        assertEquals(4, channel.fetches)
     }
 
     /** Reads [channel] to its end in pieces of [piece] bytes. */

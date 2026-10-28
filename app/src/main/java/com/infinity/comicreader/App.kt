@@ -1,6 +1,7 @@
 package com.infinity.comicreader
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.appcompat.app.AppCompatDelegate
 import com.infinity.comicreader.data.Library
@@ -12,6 +13,7 @@ import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.net.Listings
 import com.infinity.comicreader.net.RemoteCache
+import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PreviewStore
@@ -38,6 +40,13 @@ class App : Application() {
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
         cleanCaches()
+    }
+
+    /** Share reads keep only their latest run once memory runs low, or the app is in the background list. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        @Suppress("DEPRECATION")
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && level != ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) RemoteChannel.trim()
     }
 
     /**

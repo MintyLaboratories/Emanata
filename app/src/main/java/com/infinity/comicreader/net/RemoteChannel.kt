@@ -9,6 +9,7 @@ import java.nio.channels.SeekableByteChannel
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -22,8 +23,9 @@ import java.util.concurrent.atomic.AtomicLong
  * stream reads a run of at least [aheadFrom] bytes that followed on from the last, or one
  * inside an expected span, the next two are fetched in the background ([readAhead]; as
  * [RemoteInput.background] work, waited on as the reader's own request),
- * within a budget all channels share and never while [thrifty]. The most recently used runs are
- * kept, up to [maxCached] bytes; the array of a run let go is reused for the next of its
+ * within a budget all channels share, only while a quarter of the heap stays free after
+ * them, and never while [thrifty]. The most recently used runs are kept, up to
+ * [maxCached] bytes, and only the latest once memory runs low ([trim]); the array of a run let go is reused for the next of its
  * length, so a long streamed read allocates little. Calls are serialized.
  */
 class RemoteChannel(
@@ -86,6 +88,9 @@ class RemoteChannel(
     /** The array of the run last let go, for the next run of its length. */
     private var spare: ByteArray? = null
 
+    /** The [TRIMS] this channel has heard of. */
+    private var trims = TRIMS.get()
+
     /** Round trips made so far, those ahead included; for tests. */
     var fetches = 0
         private set
@@ -101,6 +106,7 @@ class RemoteChannel(
     @Synchronized
     override fun read(dst: ByteBuffer): Int {
         ensureOpen()
+        shedOnTrim()
         if (!dst.hasRemaining()) return 0
         if (position >= size) return -1
         var total = 0
@@ -225,6 +231,15 @@ class RemoteChannel(
     private fun arrayOf(length: Int): ByteArray =
         spare?.takeIf { it.size == length }?.also { spare = null } ?: ByteArray(length).also { allocations++ }
 
+    /** Lets go of the kept runs but the latest, and of the spare array, once [trim] was called since the last read. */
+    private fun shedOnTrim() {
+        val now = TRIMS.get()
+        if (now == trims) return
+        trims = now
+        while (runs.size > 1) cachedBytes -= runs.removeAt(0).bytes.size
+        spare = null
+    }
+
     private fun keep(run: Run) {
         runs.add(run)
         cachedBytes += run.bytes.size
@@ -255,6 +270,7 @@ class RemoteChannel(
         while (coming.size < MAX_COMING && next < limit) {
             val grown = if (inSpan) maxBlock.toLong() else minOf(window.toLong() * 2, maxBlock.toLong())
             val length = minOf(grown, limit - next).toInt()
+            if (heapRoom() - length < heapMax() / 4) return
             if (BUDGET.addAndGet(length.toLong()) > MAX_AHEAD_BYTES) {
                 BUDGET.addAndGet(-length.toLong())
                 return
@@ -349,6 +365,18 @@ class RemoteChannel(
         private const val MAX_SPANS = 4
 
         private val BUDGET = AtomicLong()
+
+        /** Counts [trim] calls; each channel sheds its kept runs at its next read after one. */
+        private val TRIMS = AtomicInteger()
+
+        /** Memory runs low: every channel keeps only its latest run from its next read on. */
+        fun trim() {
+            TRIMS.incrementAndGet()
+        }
+
+        /** The heap free now, and its most; runs come ahead only while a quarter of it stays free. Replaced in tests. */
+        internal var heapRoom: () -> Long = { Runtime.getRuntime().let { it.maxMemory() - (it.totalMemory() - it.freeMemory()) } }
+        internal var heapMax: () -> Long = { Runtime.getRuntime().maxMemory() }
 
         /** True while battery saver holds back read-ahead (the Battery settings): no run is fetched ahead. */
         @Volatile

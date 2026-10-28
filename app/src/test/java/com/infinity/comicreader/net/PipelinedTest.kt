@@ -13,23 +13,31 @@ class PipelinedTest {
      * A server behind a link of [bytesPerMs], [oneWayMs] each way, taking [serverMs] to
      * start each answer, on a clock of its own: requests reach it after [oneWayMs], answers
      * go out one after another as the link frees, and arrive [oneWayMs] after the last byte
-     * left. Serves [size] bytes of `i & 0xFF`. Awaiting an answer moves the clock to its arrival.
+     * left. Serves [size] bytes of `i & 0xFF`. Awaiting an answer moves the [time] to its arrival;
+     * links sharing one [Time] stand for connections side by side, each with its own window.
      */
     private class Link(
         private val size: Long,
         private val bytesPerMs: Double,
         private val oneWayMs: Double,
         private val serverMs: Double = 0.0,
-        private val credits: Int = Int.MAX_VALUE
+        private val credits: Int = Int.MAX_VALUE,
+        private val time: Time = Time()
     ) : Pipelined.Source {
-        var clock = 0.0
+        var clock: Double
+            get() = time.now
+            set(value) {
+                time.now = value
+            }
         private var linkFree = 0.0
         var underWay = 0
         var mostUnderWay = 0
         val asked = ArrayList<Pair<Long, Int>>()
         var failAt: Long = -1
+        var refuseAt: Long = -1
 
         override fun start(position: Long, length: Int): Pipelined.Pending {
+            if (position == refuseAt) throw IOException("Refused")
             asked += position to length
             underWay++
             mostUnderWay = maxOf(mostUnderWay, underWay)
@@ -47,6 +55,11 @@ class PipelinedTest {
         }
 
         override fun room(length: Int): Int = credits - underWay
+    }
+
+    /** The clock links side by side share, in milliseconds. */
+    private class Time {
+        var now = 0.0
     }
 
     private fun expected(at: Long, count: Int) = ByteArray(count) { ((at + it) and 0xFF).toByte() }
@@ -141,6 +154,56 @@ class PipelinedTest {
         val four = efficiency(Link(Long.MAX_VALUE, rate, 5.0), rate, 32 * MB, MB, 4)
         assertTrue("One at a time: $one", one < 0.9)
         assertTrue("Four at a time: $four", four > 0.98)
+    }
+
+    @Test
+    fun stripesTakeTurnsAndEachCountsItsOwnRoom() {
+        val time = Time()
+        val a = Link(100_000, 1000.0, 1.0, credits = 2, time = time)
+        val b = Link(100_000, 1000.0, 1.0, credits = 1, time = time)
+        val buffer = ByteArray(6000)
+        assertEquals(6000, Pipelined.fill(Pipelined.Striped(listOf(a, b)), 0, buffer, 0, 6000, piece = 1000, depth = 8, timeoutMs = 1000))
+        assertArrayEquals(expected(0, 6000), buffer)
+        assertEquals(listOf(0L, 2000L, 4000L), a.asked.map { it.first })
+        assertEquals(listOf(1000L, 3000L, 5000L), b.asked.map { it.first })
+        assertTrue(a.mostUnderWay <= 2 && b.mostUnderWay <= 1)
+    }
+
+    @Test
+    fun aFailingStripeIsNamedAndWhatCameBeforeKept() {
+        val time = Time()
+        val a = Link(100_000, 1000.0, 1.0, time = time)
+        val b = Link(100_000, 1000.0, 1.0, time = time).apply { failAt = 3000 }
+        val striped = Pipelined.Striped(listOf(a, b))
+        val buffer = ByteArray(6000)
+        assertEquals(3000, Pipelined.fill(striped, 0, buffer, 0, 6000, piece = 1000, depth = 8, timeoutMs = 1000))
+        assertArrayEquals(expected(0, 3000), buffer.copyOf(3000))
+        assertEquals(1, striped.broken)
+    }
+
+    @Test
+    fun aStripeThatCannotSendStopsTheFillAfterWhatWasSent() {
+        val time = Time()
+        val a = Link(100_000, 1000.0, 1.0, time = time)
+        val b = Link(100_000, 1000.0, 1.0, time = time).apply { refuseAt = 3000 }
+        val striped = Pipelined.Striped(listOf(a, b))
+        val buffer = ByteArray(6000)
+        assertEquals(3000, Pipelined.fill(striped, 0, buffer, 0, 6000, piece = 1000, depth = 8, timeoutMs = 1000))
+        assertArrayEquals(expected(0, 3000), buffer.copyOf(3000))
+        assertEquals(1, striped.broken)
+    }
+
+    @Test
+    fun twoConnectionsDoubleWhatAWindowBoundLinkGives() {
+        // Each connection held to 6 MB/s by its window, 10 ms round trip, with room for twice that on the link.
+        val rate = 6.0 * MB / 1000
+        val one = efficiency(Link(Long.MAX_VALUE, rate, 5.0), rate, 32 * MB, MB, 8)
+        val time = Time()
+        val striped = Pipelined.Striped(listOf(Link(Long.MAX_VALUE, rate, 5.0, time = time), Link(Long.MAX_VALUE, rate, 5.0, time = time)))
+        val buffer = ByteArray(32 * MB)
+        assertEquals(32 * MB, Pipelined.fill(striped, 0, buffer, 0, buffer.size, MB, 8, timeoutMs = 1000))
+        val two = 32 * MB / rate / time.now
+        assertTrue("One: $one, two: $two", two > 1.9 * one)
     }
 
     private companion object {

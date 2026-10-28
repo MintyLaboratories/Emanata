@@ -1,6 +1,7 @@
 package com.infinity.comicreader.net
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,6 +62,25 @@ class SmbFsTest {
     fun everyRequestWaitsAsLongAsTheSettingSays() {
         val config = SmbFs.config(60_000)
         for (wait in listOf(config.transactTimeout, config.readTimeout, config.writeTimeout)) assertEquals(60_000L, wait)
+    }
+
+    @Test
+    fun theConnectTimeoutFollowsTheSetting() {
+        // The socket factory keeps its connect timeout to itself.
+        val factory = SmbFs.config(45_000).socketFactory
+        val field = factory.javaClass.getDeclaredField("connectTimeout").apply { isAccessible = true }
+        assertEquals(45_000, field.getInt(factory))
+    }
+
+    @Test
+    fun aChangedTimeoutRemakesTheConnectionOnlyWhenNothingElseIsUnderWay() {
+        // A call alone, the caller counting itself: made anew with the new value.
+        assertTrue(SmbFs.remake(connected = true, madeMs = 30_000, wantedMs = 60_000, underWay = 1))
+        // A write's next piece, inside the write: its open file keeps the old connection.
+        assertFalse(SmbFs.remake(connected = true, madeMs = 30_000, wantedMs = 60_000, underWay = 2))
+        // The same value, or no connection: nothing to remake.
+        assertFalse(SmbFs.remake(connected = true, madeMs = 60_000, wantedMs = 60_000, underWay = 1))
+        assertFalse(SmbFs.remake(connected = false, madeMs = 30_000, wantedMs = 60_000, underWay = 1))
     }
 
     @Test

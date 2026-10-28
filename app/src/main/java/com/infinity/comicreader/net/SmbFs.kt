@@ -65,6 +65,9 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     /** The [Remotes.answerMs] the connection was made with. */
     private var answerMs = 0L
+
+    /** Calls and reads under way ([busy]); a connection is made anew for another [Remotes.answerMs] only with one alone. */
+    private var underWay = 0
     private val inputs = HashSet<SmbInput>()
 
     /** True while [idleCheck] is scheduled. */
@@ -125,7 +128,7 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     /** Written in [WRITE_BYTES] pieces, each marking the connection as used; never repeated, as [input] is consumed. */
-    override fun create(path: String, input: InputStream, length: Long) {
+    override fun create(path: String, input: InputStream, length: Long) = busy {
         val file = once { d ->
             d.openFile(
                 smbPath(path), EnumSet.of(AccessMask.GENERIC_WRITE), EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
@@ -208,7 +211,7 @@ class SmbFs(private val share: Share) : RemoteFs {
      * [progress] hears each and may stop it; false, leaving nothing at [to], when the
      * server turns the first piece down, as one without copychunk or denying it does.
      */
-    override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean {
+    override fun copy(from: String, to: String, progress: (Long) -> Unit): Boolean = busy {
         val source = once { d ->
             d.openFile(
                 smbPath(from), EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
@@ -236,7 +239,7 @@ class SmbFs(private val share: Share) : RemoteFs {
                         if (at > 0 || dropped || e.cause !is SMBApiException) throw e
                         runCatching { target.close() }
                         runCatching { once { d -> d.rm(smbPath(to)) } }
-                        return false
+                        return@busy false
                     }
                     at += n
                     progress(at)
@@ -244,7 +247,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             } finally {
                 runCatching { target.close() }
             }
-            return true
+            true
         } finally {
             runCatching { source.close() }
         }
@@ -269,8 +272,9 @@ class SmbFs(private val share: Share) : RemoteFs {
         listOf(where.dir, path).filter { it.isNotEmpty() }.joinToString("/").replace('/', '\\')
 
     /** Makes a change on the share ([changeOnce]), connecting first. */
-    private fun change(landed: (DiskShare) -> Boolean, block: (DiskShare) -> Unit) =
+    private fun change(landed: (DiskShare) -> Boolean, block: (DiskShare) -> Unit) = busy {
         changeOnce(::connected, ::failed, landed, block)
+    }
 
     /** What failure [e] of a call means, and whether the connection dropped; a dropped one is let go. */
     private fun failed(e: Exception): Pair<IOException, Boolean> {
@@ -292,26 +296,28 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     /** Runs [block] on the share, connecting first; once more on a new connection when the old one dropped. */
-    private fun <T> call(block: (DiskShare) -> T): T {
-        var retried = false
-        while (true) {
-            val d = connected()
+    private fun <T> call(block: (DiskShare) -> T): T = busy {
+        val d = connected()
+        try {
+            block(d)
+        } catch (e: Exception) {
+            val failure = translate(e)
+            if (failure !is Dropped) throw failure.toRemote()
+            disconnect()
+            val again = connected()
             try {
-                return block(d)
+                block(again)
             } catch (e: Exception) {
-                val failure = translate(e)
-                if (failure !is Dropped || retried) throw failure.toRemote()
-                retried = true
-                disconnect()
+                throw translate(e).toRemote()
             }
         }
     }
 
     /** Runs [block] on the share once, connecting first: for writes, which a new connection must not repeat. */
-    private fun <T> once(block: (DiskShare) -> T): T {
+    private fun <T> once(block: (DiskShare) -> T): T = busy {
         val d = connected()
         try {
-            return block(d)
+            block(d)
         } catch (e: Exception) {
             val failure = translate(e)
             if (failure is Dropped) disconnect()
@@ -320,16 +326,29 @@ class SmbFs(private val share: Share) : RemoteFs {
     }
 
     /**
+     * Runs [block], counted in [underWay] throughout: every way to the connection goes through
+     * here, so a write's open file and a read under way never lose it to a new [Remotes.answerMs].
+     */
+    private inline fun <T> busy(block: () -> T): T {
+        synchronized(lock) { underWay++ }
+        try {
+            return block()
+        } finally {
+            synchronized(lock) { underWay-- }
+        }
+    }
+
+    /**
      * The open connection's share, marked as used; null when there is none, when it was
-     * made with another [Remotes.answerMs] (then dropped, its files opening again on the
-     * next), or when it went unheard for longer than echoes keep it (the device slept) and
-     * fails an echo now.
+     * made with another [Remotes.answerMs] and nothing else is under way ([remake]; then
+     * dropped, its files opening again on the next), or when it went unheard for longer
+     * than echoes keep it (the device slept) and fails an echo now.
      */
     private fun current(): DiskShare? {
         val now = System.currentTimeMillis()
         var open: List<SmbInput> = emptyList()
         val outdated = synchronized(lock) {
-            if (connection == null || answerMs == Remotes.answerMs) {
+            if (!remake(connection != null, answerMs, Remotes.answerMs, underWay)) {
                 null
             } else {
                 open = inputs.toList()
@@ -533,7 +552,10 @@ class SmbFs(private val share: Share) : RemoteFs {
 
     /** A file open for reading; it opens again on a new connection when the old one dropped. */
     private inner class SmbInput(private val path: String, private var file: SmbFile?, override val length: Long) : RemoteInput {
-        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
+        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
+            busy { readNow(position, buffer, offset, count) }
+
+        private fun readNow(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
             if (position >= length) return -1
             var retried = false
             while (true) {
@@ -660,6 +682,14 @@ class SmbFs(private val share: Share) : RemoteFs {
                 .withMultiProtocolNegotiate(false)
                 .withDfsEnabled(false)
                 .build()
+
+        /**
+         * True when a connection made with [madeMs] is made anew for [wantedMs]: only while
+         * [underWay] counts the caller alone, as a write's later pieces or another thread's
+         * read would fail on files of the closed one; until then it keeps [madeMs].
+         */
+        internal fun remake(connected: Boolean, madeMs: Long, wantedMs: Long, underWay: Int): Boolean =
+            connected && madeMs != wantedMs && underWay <= 1
 
         /**
          * What a connection last used at [lastUsed] and last echoed at [lastEcho] needs at

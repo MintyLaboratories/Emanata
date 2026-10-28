@@ -7,6 +7,7 @@ import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import android.text.TextUtils
+import android.text.format.Formatter
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -16,18 +17,18 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LibraryData
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.StartupLocation
-import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareBackup
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.reader.AutoScroll
-import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
@@ -271,17 +272,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
-        findPreference<Preference>("pref_clear_thumbs")?.setOnPreferenceClickListener {
-            confirm(requireContext(), R.string.confirm_clear_thumbs_title, R.string.confirm_clear_thumbs_msg, R.string.clear) {
-                val app = requireContext().applicationContext
-                lifecycleScope.launch {
-                    withContext(AppDispatchers.io) {
-                        Thumbs.clear(app)
-                        PreviewStore.clear(PreviewStore.dirIn(app.cacheDir))
-                    }
-                    toast(R.string.pref_cleared_thumbs)
-                }
+        findPreference<Preference>("pref_clear_cache")?.let { pref ->
+            showCacheUsed(pref)
+            pref.setOnPreferenceClickListener {
+                askClearCache(pref)
+                true
             }
+        }
+
+        findPreference<Preference>("pref_clear_library")?.setOnPreferenceClickListener {
+            askClearLibrary(library)
             true
         }
 
@@ -328,6 +328,64 @@ class SettingsFragment : PreferenceFragmentCompat() {
             AdvancedSettings.apply(screen, value as Boolean)
             true
         }
+    }
+
+    /** The space the cache takes now, measured off the main thread. */
+    private suspend fun cacheUsed(): String {
+        val app = requireContext().applicationContext
+        val bytes = withContext(AppDispatchers.io) { BookCaches.bytes(app) }
+        return Formatter.formatShortFileSize(app, bytes)
+    }
+
+    /** Shows on [pref] the space the cache takes. */
+    private fun showCacheUsed(pref: Preference) {
+        lifecycleScope.launch {
+            val used = cacheUsed()
+            if (isAdded) pref.summary = getString(R.string.pref_cache_used, used)
+        }
+    }
+
+    /** Clears what the app can make again ([BookCaches]), once confirmed with the space it frees. */
+    private fun askClearCache(pref: Preference) {
+        lifecycleScope.launch {
+            val used = cacheUsed()
+            val context = context ?: return@launch
+            confirm(context, R.string.confirm_clear_cache_title, getString(R.string.confirm_clear_cache_msg, used), R.string.clear) {
+                val app = context.applicationContext
+                lifecycleScope.launch {
+                    withContext(AppDispatchers.io) { BookCaches.clear(app) }
+                    toast(R.string.pref_cleared_cache)
+                    if (isAdded) showCacheUsed(pref)
+                }
+            }
+        }
+    }
+
+    /**
+     * Clears what cannot be made again ([LibraryData.clear]) once "Delete them for good" is
+     * ticked; "Export first" exports a backup instead.
+     */
+    private fun askClearLibrary(library: Library) {
+        val context = requireContext()
+        val extra = layoutInflater.inflate(R.layout.dialog_check, null)
+        val sure = extra.findViewById<CheckBox>(R.id.dialog_check).apply { setText(R.string.confirm_clear_library_check) }
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(R.string.confirm_clear_library_title)
+            .setMessage(R.string.confirm_clear_library_msg)
+            .setView(extra)
+            .setPositiveButton(R.string.clear) { _, _ ->
+                val app = context.applicationContext
+                lifecycleScope.launch {
+                    withContext(AppDispatchers.io) { LibraryData.clear(app, library) }
+                    toast(R.string.pref_cleared_library)
+                }
+            }
+            .setNeutralButton(R.string.confirm_clear_library_export) { _, _ -> askBackup() }
+            .setNegativeButton(R.string.cancel, null)
+            .showKeepingFullscreen()
+        val clear = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        clear.isEnabled = false
+        sure.setOnCheckedChangeListener { _, checked -> clear.isEnabled = checked }
     }
 
     /** Says whether battery saver is on, as it changes. */

@@ -472,8 +472,14 @@
         app:key="section_cache"
         app:title="@string/pref_cat_cache">
         <Preference
-            app:key="pref_clear_thumbs"
-            app:title="@string/pref_clear_thumbs" />
+            app:key="pref_clear_cache"
+            app:persistent="false"
+            app:title="@string/pref_clear_cache" />
+        <Preference
+            app:key="pref_clear_library"
+            app:persistent="false"
+            app:summary="@string/pref_clear_library_desc"
+            app:title="@string/pref_clear_library" />
         <Preference
             app:key="pref_clear_history"
             app:title="@string/pref_clear_history" />

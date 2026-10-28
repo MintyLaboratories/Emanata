@@ -50,6 +50,9 @@ object BookUris {
 
     internal fun keysIn(context: Context) = SharedKeys(File(context.filesDir, SharedKeys.FILE))
 
+    /** Forgets every key issued, so their URIs open nothing, except those of files open now. Blocking (disk). */
+    fun forgetKeys(context: Context) = keysIn(context).clear(BookProvider.openKeys())
+
     /** The MIME type a file named [name] is sent as: registered types where there are, else common ones. */
     fun mimeOf(name: String): String = MIME[Formats.ext(name)] ?: "application/octet-stream"
 
@@ -108,6 +111,11 @@ internal class SharedKeys(private val file: File) {
 
     /** The key for [path], shared alone ([issue]). */
     fun issue(path: String, open: Set<String> = emptySet()): String = issue(listOf(path), open).single()
+
+    /** Forgets every key but those in [open]. */
+    fun clear(open: Set<String> = emptySet()) = synchronized(LOCK) {
+        write(read().filter { it.key in open })
+    }
 
     /** The path issued [key]; null when none was or it is no longer kept. */
     fun pathOf(key: String): String? {

@@ -97,15 +97,63 @@ class SettingsConfirmTest {
         assertTrue(library.bookmarks().isEmpty())
     }
 
+    /** Taps [key] and waits for the dialog it opens after work off the main thread. */
+    private fun tapLater(key: String): AlertDialog {
+        val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        idle()
+        val fragment = activity.supportFragmentManager
+            .findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
+        val pref = fragment.findPreference<Preference>(key)!!
+        val before = ShadowDialog.getLatestDialog()
+        pref.onPreferenceClickListener!!.onPreferenceClick(pref)
+        awaitUntil { ShadowDialog.getLatestDialog() !== before }
+        return ShadowDialog.getLatestDialog() as AlertDialog
+    }
+
     @Test
-    fun clearThumbnailsWaitsForConfirmation() {
+    fun clearCacheSaysWhatItFreesAndWaitsForConfirmation() {
         val thumb = File(context.cacheDir, "covers/a.png").apply { parentFile!!.mkdirs(); writeText("x") }
-        tap("pref_clear_thumbs").press(DialogInterface.BUTTON_NEGATIVE)
+        val sizes = File(context.cacheDir, "page-sizes-by-id/0000000000000001-a.bin").apply { parentFile!!.mkdirs(); writeText("x") }
+        library.setRead(one, true)
+        val asked = tapLater("pref_clear_cache")
+        assertTrue(asked.message().contains("kB"))
+        asked.press(DialogInterface.BUTTON_NEGATIVE)
         assertTrue(thumb.exists())
-        tap("pref_clear_thumbs").press(DialogInterface.BUTTON_POSITIVE)
+        tapLater("pref_clear_cache").press(DialogInterface.BUTTON_POSITIVE)
         awaitUntil { !thumb.exists() && ShadowToast.getTextOfLatestToast() != null }
         assertFalse(thumb.exists())
-        assertEquals(context.getString(R.string.pref_cleared_thumbs), ShadowToast.getTextOfLatestToast())
+        assertFalse(sizes.exists())
+        assertEquals(context.getString(R.string.pref_cleared_cache), ShadowToast.getTextOfLatestToast())
+        // Library data is not cache.
+        assertTrue(library.isRead(one.id))
+    }
+
+    @Test
+    fun clearLibraryDataNeedsItsBoxTickedAndKeepsLayoutsAndSettings() {
+        prefs.filter = "sepia"
+        library.setRead(one, true)
+        library.addBookmark(Bookmark(one.path, "one.cbz", 3, "", 1L, one.id))
+        library.setFolderLayout("/books/attic", com.infinity.comicreader.data.FolderLayout.Direction("rtl"))
+        val asked = tap("pref_clear_library")
+        val clear = asked.getButton(DialogInterface.BUTTON_POSITIVE)
+        assertFalse(clear.isEnabled)
+        asked.findViewById<android.widget.CheckBox>(R.id.dialog_check)!!.performClick()
+        assertTrue(clear.isEnabled)
+        asked.press(DialogInterface.BUTTON_POSITIVE)
+        awaitUntil { ShadowToast.getTextOfLatestToast() != null }
+        assertFalse(library.isRead(one.id))
+        assertTrue(library.bookmarks().isEmpty())
+        assertTrue(library.folderLayout("/books/attic") != null)
+        assertEquals("sepia", prefs.filter)
+    }
+
+    @Test
+    fun clearLibraryDataCanExportFirst() {
+        library.setRead(one, true)
+        val asked = tap("pref_clear_library")
+        assertEquals(context.getString(R.string.confirm_clear_library_export), asked.getButton(DialogInterface.BUTTON_NEUTRAL).text.toString())
+        asked.press(DialogInterface.BUTTON_NEGATIVE)
+        assertTrue(library.isRead(one.id))
     }
 
     /** Runs the main looper until [done] holds, for work that hops to a background thread. */

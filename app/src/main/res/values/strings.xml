@@ -254,6 +254,10 @@
     <string name="clash_skip">Skip</string>
     <string name="clash_folder">Replace deletes the folder here with everything in it; the two are not merged.</string>
     <string name="file_work_channel">File operations</string>
+    <string name="sharing_channel">Sharing</string>
+    <string name="sharing_title">Sharing…</string>
+    <string name="sharing_text">Other apps can read the books you shared</string>
+    <string name="sharing_stop">Stop</string>
     <string name="file_busy">Wait until the current file operation ends</string>
     <string name="file_copying">Copying</string>
     <string name="file_moving">Moving</string>

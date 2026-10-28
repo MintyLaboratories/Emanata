@@ -122,6 +122,12 @@
             android:name=".files.FileWorkService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Keeps the app running while another app may still read the books shared with it. -->
+        <service
+            android:name=".files.SharingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

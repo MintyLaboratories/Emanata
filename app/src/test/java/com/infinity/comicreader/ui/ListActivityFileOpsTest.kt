@@ -239,6 +239,9 @@ class ListActivityFileOpsTest {
         assertEquals(book.absolutePath, com.infinity.comicreader.files.BookUris.pathOf(context, uri))
         assertTrue(send.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
 
+        // The app stays running while the file may be read.
+        assertEquals(com.infinity.comicreader.files.SharingService::class.java.name, shadowOf(context).nextStartedService.component!!.className)
+
         // The choice is remembered; the cover stays as it was, unseen here.
         assertEquals(com.infinity.comicreader.data.ShareChoice(title = false, cover = true, file = true), Prefs(context).shareChoice)
         val again = activity.shareDialog(book.absolutePath)
@@ -263,7 +266,8 @@ class ListActivityFileOpsTest {
         assertEquals("Other", send.getStringExtra(android.content.Intent.EXTRA_TEXT))
         @Suppress("DEPRECATION")
         assertNull(send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM))
-        // Books keep their file choice.
+        // Nothing to read: the app is not kept running, and books keep their file choice.
+        assertNull(shadowOf(context).nextStartedService)
         assertTrue(Prefs(context).shareChoice.file)
     }
 

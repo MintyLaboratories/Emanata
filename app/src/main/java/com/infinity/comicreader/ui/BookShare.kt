@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ShareChoice
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.files.BookUris
+import com.infinity.comicreader.files.SharingService
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
@@ -37,13 +38,16 @@ import java.io.IOException
  * ([Prefs.shareChoice]), then the system's share sheet. The cover shows as its row in the
  * list has it ([shownCover]); the whole cover sent is made only once its box is ticked, then
  * goes as a PNG through the app's FileProvider; the file goes in place, through
- * [com.infinity.comicreader.files.BookProvider], never copied first.
+ * [com.infinity.comicreader.files.BookProvider], never copied first, and [SharingService]
+ * keeps the app running while the app it went to may read it. The first time the dialog
+ * opens, it asks to show notifications ([NotificationAsk]).
  */
 internal class BookShare(
     private val activity: AppCompatActivity,
     private val prefs: Prefs,
     private val shownCover: (BookEntry) -> Bitmap? = { null }
 ) {
+    private val notifications = NotificationAsk(activity, prefs)
 
     fun show(entry: BookEntry) {
         val view = activity.layoutInflater.inflate(R.layout.dialog_share_book, null)
@@ -90,6 +94,7 @@ internal class BookShare(
         var coverFound = true
         var sent = false
 
+        notifications.once()
         val dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.file_op_share)
             .setView(view)
@@ -165,6 +170,8 @@ internal class BookShare(
                     if (alone) return@launch
                 }
                 val intent = ShareIntents.of(title.takeIf { choice.title }, coverUri, fileUri, BookUris.mimeOf(entry.name)) ?: return@launch
+                // Started now, while the app is on screen: Android lets a foreground service start only then.
+                if (fileUri != null) SharingService.start(activity)
                 runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
             }
         }

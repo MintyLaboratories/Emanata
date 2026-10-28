@@ -80,17 +80,51 @@ class BookProviderTest {
     }
 
     @Test
-    fun theLatestKeysAreKeptAndStillOpenFromANewProcess() {
+    fun theKeysOfTheLatestActionsAreKeptAndStillOpenFromANewProcess() {
         val first = uri("/b/0.cbz")
-        repeat(SharedKeys.MAX) { uri("/b/${it + 1}.cbz") }
+        repeat(SharedKeys.MAX_ACTIONS) { uri("/b/${it + 1}.cbz") }
         assertNull(BookUris.pathOf(context, first))
-        val latest = uri("/b/${SharedKeys.MAX}.cbz")
+        val latest = uri("/b/${SharedKeys.MAX_ACTIONS}.cbz")
         // Read back from disk, as another process or a restarted app would.
-        assertEquals("/b/${SharedKeys.MAX}.cbz", SharedKeys(File(context.filesDir, SharedKeys.FILE)).pathOf(latest.pathSegments[0]))
+        assertEquals("/b/${SharedKeys.MAX_ACTIONS}.cbz", SharedKeys(File(context.filesDir, SharedKeys.FILE)).pathOf(latest.pathSegments[0]))
         // Sharing an old book again keeps it as the latest.
         val again = uri("/b/1.cbz")
-        repeat(SharedKeys.MAX - 1) { uri("/c/$it.cbz") }
+        repeat(SharedKeys.MAX_ACTIONS - 1) { uri("/c/$it.cbz") }
         assertEquals("/b/1.cbz", BookUris.pathOf(context, again))
+    }
+
+    @Test
+    fun allBooksSharedAtOnceStayTogether() {
+        val many = (0 until 30).map { "/many/$it.cbz" }
+        val uris = BookUris.all(context, many)
+        assertEquals(many.map { it.substringAfterLast('/') }, uris.map { it.lastPathSegment })
+        repeat(SharedKeys.MAX_ACTIONS - 1) { uri("/one/$it.cbz") }
+        assertEquals(many, uris.map { BookUris.pathOf(context, it) })
+        // One action more and the 30 go together.
+        uri("/one/last.cbz")
+        assertEquals(List<String?>(30) { null }, uris.map { BookUris.pathOf(context, it) })
+    }
+
+    @Test
+    fun anOpenKeyIsNeverDropped() {
+        val keys = SharedKeys(File(context.filesDir, "keys-test"))
+        val open = keys.issue("/b/open.cbz")
+        repeat(SharedKeys.MAX_ACTIONS + 5) { keys.issue("/b/$it.cbz", open = setOf(open)) }
+        assertEquals("/b/open.cbz", keys.pathOf(open))
+        // Let go, it goes with the next share.
+        keys.issue("/b/next.cbz")
+        assertNull(keys.pathOf(open))
+    }
+
+    @Test
+    fun keysWrittenWithoutActionsStillOpen() {
+        val file = File(context.filesDir, "keys-old")
+        val key = "AAAAAAAAAAAAAAAAAAAAAA"
+        file.writeText("$key\t${java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("/old/a.cbz".toByteArray())}\n")
+        val keys = SharedKeys(file)
+        assertEquals("/old/a.cbz", keys.pathOf(key))
+        keys.issue("/new/b.cbz")
+        assertEquals("/old/a.cbz", keys.pathOf(key))
     }
 
     @Test

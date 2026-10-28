@@ -17,6 +17,8 @@ import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NestedArchives
+import com.infinity.comicreader.reader.PageSeams
+import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Locales
@@ -55,7 +57,7 @@ class App : Application() {
 
     /**
      * Drops temporary files left by earlier runs and files of earlier versions, and keeps
-     * the cover, page-preview, nested-archive and network caches bounded.
+     * the cover, page-preview, page-size, seam, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
@@ -71,6 +73,8 @@ class App : Application() {
                 File(cacheDir, "crop_src.png").takeIf { it.lastModified() < cutoff }?.delete()
                 Thumbs.trim(this)
                 PreviewStore.trim(PreviewStore.dirIn(cacheDir))
+                PageSizes.trim(PageSizes.dirIn(cacheDir))
+                PageSeams.trim(PageSeams.dirIn(cacheDir))
                 NestedArchives.trim(NestedArchives.dirIn(cacheDir))
                 RemoteCache.trim(RemoteCache.dirIn(cacheDir))
                 Listings.trim(Listings.dirIn(cacheDir))

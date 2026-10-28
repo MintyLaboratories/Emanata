@@ -58,6 +58,24 @@ class PageSeamsTest {
         assertTrue(store.readSeen("book|1|2", names.dropLast(1)).isEmpty)
     }
 
+    @Test
+    fun aBooksSeamsAndPagesSeenAreForgottenByItsIdAndTrimmedOldestFirst() {
+        val dir = tmp.newFolder("seams")
+        val store = PageSeams(dir)
+        val found = PageSeams.Found(names.size).apply { set(0, Verdict(Seam.MATCH, 1.0), Verdict(Seam.NO_MATCH, 1.0)) }
+        store.write("id:00000000000000aa", names, found)
+        store.writeSeen("id:00000000000000aa", names, BitSet().apply { set(1) })
+        store.write("id:00000000000000aa\u0000shown:0,2", names.take(2), PageSeams.Found(2))
+        store.write("id:00000000000000bb", names, found)
+        // A book's own files, those of its pages shown too, start with its ID.
+        assertEquals(3, dir.list()!!.count { it.startsWith("00000000000000aa-") })
+        dir.listFiles()!!.forEach { it.setLastModified(if (it.name.startsWith("00000000000000bb-")) 1_000_000 else 2_000_000) }
+        PageSeams.trim(dir, maxBytes = 3 * 4096)
+        assertNull(store.read("id:00000000000000bb", names))
+        PageSeams.forget(dir, com.infinity.comicreader.data.BookId(0xaa))
+        assertTrue(dir.list()!!.isEmpty())
+    }
+
     private fun analysis(count: Int, wide: Set<Int> = emptySet()): Spreads.Analysis =
         Spreads.classify(List(count) { "page%02d.jpg".format(it + 1) }, List(count) { if (it in wide) intArrayOf(2600, 2000) else intArrayOf(1300, 2000) })
 

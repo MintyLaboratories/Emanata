@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.data.BookId
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +34,38 @@ class PageSizesTest {
         store.write("book|1|2", names, arrayOf(intArrayOf(1, 1), intArrayOf(1, 1), intArrayOf(1, 1)))
         assertNull(store.read("book|1|3", names))
         assertNull(store.read("book|1|2", listOf("01.jpg", "03.jpg", null)))
+    }
+
+    @Test
+    fun readingMarksABookUsedSoTrimmingDropsOthersFirst() {
+        val dir = tmp.newFolder("sizes")
+        val store = PageSizes(dir)
+        val sizes = arrayOf<IntArray?>(intArrayOf(1, 1), intArrayOf(1, 1), intArrayOf(1, 1))
+        store.write("id:00000000000000aa", names, sizes)
+        store.write("id:00000000000000bb", names, sizes)
+        val (a, b) = listOf("00000000000000aa", "00000000000000bb").map { p -> dir.listFiles()!!.single { it.name.startsWith("$p-") } }
+        a.setLastModified(1_000_000)
+        b.setLastModified(2_000_000)
+        // Read, the older one becomes the newer.
+        store.read("id:00000000000000aa", names)
+        assertTrue(a.lastModified() > b.lastModified())
+        PageSizes.trim(dir, maxBytes = 4096)
+        assertTrue(a.isFile)
+        assertFalse(b.isFile)
+    }
+
+    @Test
+    fun aBooksSizesAreForgottenByItsId() {
+        val dir = tmp.newFolder("sizes")
+        val store = PageSizes(dir)
+        val sizes = arrayOf<IntArray?>(intArrayOf(1, 1), intArrayOf(1, 1), intArrayOf(1, 1))
+        store.write("id:00000000000000aa", names, sizes)
+        store.write("id:00000000000000aa", listOf("x.jpg", "y.jpg", null), sizes)
+        store.write("id:00000000000000bb", names, sizes)
+        PageSizes.forget(dir, BookId(0xaa))
+        assertNull(store.read("id:00000000000000aa", names))
+        assertEquals(1, dir.listFiles()!!.size)
+        assertTrue(store.read("id:00000000000000bb", names) != null)
     }
 
     /** Pages whose size is their index, and a count of the sizes asked for. */

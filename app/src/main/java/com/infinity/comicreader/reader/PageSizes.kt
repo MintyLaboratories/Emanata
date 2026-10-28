@@ -1,16 +1,20 @@
 package com.infinity.comicreader.reader
 
-import com.infinity.comicreader.util.Hashes
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.util.CacheFiles
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Every page's `[width, height]` of a book, read from page headers once ([scan]) and
- * kept on disk under [dir]: one small file per book, named by a hash of the book's
- * identity ([PreviewStore.bookId]) and its page names, so a changed book never reads
- * stale sizes. A size not known is kept as 0 x 0 and read back as null.
+ * kept on disk under [dir]: one small file per book, named after the book's identity
+ * ([PreviewStore.bookId], [CacheFiles.nameOf]) and a hash of it and its page names, so
+ * a changed book never reads stale sizes. A size not known is kept as 0 x 0 and read
+ * back as null. Each read marks the file used; the least recently used go first once
+ * the store passes [MAX_BYTES] ([trim]).
  */
 class PageSizes(val dir: File) {
 
@@ -29,7 +33,7 @@ class PageSizes(val dir: File) {
                     if (w > 0 && h > 0) intArrayOf(w, h) else null
                 }
             }
-        }.getOrNull()
+        }.getOrNull()?.also { CacheFiles.touch(file) }
     }
 
     /** Stores [sizes] of book [bookId] with pages [names]; a file appears whole or not at all. */
@@ -50,16 +54,32 @@ class PageSizes(val dir: File) {
         } catch (e: IOException) {
             part.delete()
         }
+        if (WRITES.incrementAndGet() % TRIM_EVERY == 0) trim(dir)
     }
 
     private fun fileOf(bookId: String, names: List<String?>) =
-        File(dir, Hashes.sha256Hex(bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() }) + ".bin")
+        File(dir, CacheFiles.nameOf(bookId, bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() }) + ".bin")
 
     companion object {
         private const val VERSION = 1
 
+        /** Upper bound of the sizes kept on disk: some eight thousand books. */
+        const val MAX_BYTES = 32L * 1024 * 1024
+
+        /** Writes between trims while the app runs; the store is trimmed at startup too. */
+        private const val TRIM_EVERY = 64
+
+        /** Sizes written since the app started, by every store. */
+        private val WRITES = AtomicInteger()
+
         /** Where sizes are kept under [cacheDir], by book ID. */
         fun dirIn(cacheDir: File) = File(cacheDir, "page-sizes-by-id")
+
+        /** Keeps [dir] under [maxBytes], the books least recently read going first. */
+        fun trim(dir: File, maxBytes: Long = MAX_BYTES) = CacheFiles.trim(dir, maxBytes)
+
+        /** Deletes the sizes kept for book [id] in [dir]. */
+        fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex)
 
         /**
          * Fills the unknown entries of [sizes] from [source]'s page headers, nearest page

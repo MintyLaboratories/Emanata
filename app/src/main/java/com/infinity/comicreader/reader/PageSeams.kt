@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
-import com.infinity.comicreader.util.Hashes
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.util.CacheFiles
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -8,13 +9,15 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.BitSet
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
  * The seams between a book's pages ([SpreadSeams]), read left to right and right to
  * left, checked in the background ([check]) and kept on disk under [dir]: one small file
- * per book, named like [PageSizes] by the book's identity and its page names, and beside
- * it one of the pages the reader has had on screen ([readSeen]).
+ * per book, named like [PageSizes] after the book's identity and its page names, and beside
+ * it one of the pages the reader has had on screen ([readSeen]). Bounded like [PageSizes]:
+ * each read marks its file used, the least recently used going first ([trim]).
  */
 class PageSeams(val dir: File) {
 
@@ -66,7 +69,7 @@ class PageSeams(val dir: File) {
                     }
                 }
             }
-        }.getOrNull()
+        }.getOrNull()?.also { CacheFiles.touch(file) }
     }
 
     /** Stores [found] of book [bookId] with pages [names]; a file appears whole or not at all. */
@@ -89,6 +92,7 @@ class PageSeams(val dir: File) {
         } catch (e: IOException) {
             part.delete()
         }
+        wrote()
     }
 
     /**
@@ -125,6 +129,7 @@ class PageSeams(val dir: File) {
         } catch (e: IOException) {
             part.delete()
         }
+        wrote()
     }
 
     private fun write(out: DataOutputStream, v: SpreadSeams.Verdict?) {
@@ -142,7 +147,12 @@ class PageSeams(val dir: File) {
     private fun seenFileOf(bookId: String, names: List<String?>) = File(dir, keyOf(bookId, names) + ".seen")
 
     private fun keyOf(bookId: String, names: List<String?>) =
-        Hashes.sha256Hex(bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() })
+        CacheFiles.nameOf(bookId, bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() })
+
+    /** Counts a write, trimming the store every [TRIM_EVERY] of them. */
+    private fun wrote() {
+        if (WRITES.incrementAndGet() % TRIM_EVERY == 0) trim(dir)
+    }
 
     companion object {
         /** Of the file format and of [SpreadSeams.compare]: seams kept under another are checked again. */
@@ -151,8 +161,23 @@ class PageSeams(val dir: File) {
         /** Of the pages-seen file format. */
         private const val SEEN_VERSION = 1
 
+        /** Upper bound of the seams and pages seen kept on disk: some four thousand books. */
+        const val MAX_BYTES = 32L * 1024 * 1024
+
+        /** Writes between trims while the app runs; the store is trimmed at startup too. */
+        private const val TRIM_EVERY = 64
+
+        /** Seams and pages seen written since the app started, by every store. */
+        private val WRITES = AtomicInteger()
+
         /** Where seams are kept under [cacheDir], by book ID. */
         fun dirIn(cacheDir: File) = File(cacheDir, "page-seams-by-id")
+
+        /** Keeps [dir] under [maxBytes], the books least recently read going first. */
+        fun trim(dir: File, maxBytes: Long = MAX_BYTES) = CacheFiles.trim(dir, maxBytes)
+
+        /** Deletes the seams and pages seen kept for book [id] in [dir]. */
+        fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex)
 
         /**
          * The pages whose seam with the next page [found] lacks, where [analysis] lets the two

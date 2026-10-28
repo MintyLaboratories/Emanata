@@ -228,6 +228,9 @@ class ViewerActivity : AppCompatActivity() {
      */
     private var stripAhead: PageSource? = null
     private var stripAheadFile: File? = null
+
+    /** [stripAheadFile]'s [BookId], found as it opened; null when unreadable. */
+    private var stripAheadId: BookId? = null
     private var stripAheadJob: Job? = null
 
     /** True between spotting a chapter boundary and running the posted roll-on. */
@@ -1309,6 +1312,7 @@ class ViewerActivity : AppCompatActivity() {
         runCatching { stripAhead?.close() }
         stripAhead = null
         stripAheadFile = null
+        stripAheadId = null
         runCatching { source?.close() }
         source = null
         pager.adapter = null
@@ -1877,11 +1881,13 @@ class ViewerActivity : AppCompatActivity() {
         val next = nextChapter() ?: return
         stripAheadJob = lifecycleScope.launch {
             // The reader's own: once reached, its pages show from what this opens.
+            var id: BookId? = null
             val (src, ok) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
+                id = BookIds.find(next)
                 val s = runCatching {
-                    hiding(BookIds.find(next), PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
+                    hiding(id, PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
                 }.getOrNull()
                 try {
                     ensureActive()
@@ -1899,6 +1905,7 @@ class ViewerActivity : AppCompatActivity() {
             }
             stripAhead = src
             stripAheadFile = next
+            stripAheadId = id
             // The mode or the setting may have changed while the archive was opening.
             if (mode != MODE_PAGED && prefs.autoNext) adapter?.append(src)
         }
@@ -1936,6 +1943,8 @@ class ViewerActivity : AppCompatActivity() {
         bookChapters = chaptersOf(next)
         persistAdjustments()
         file = nextFile
+        bookId = stripAheadId
+        book()?.let { library.seen(it) }
         refreshFavorites()
         loadAdjustments()
         // Reopening or recreating the reader must load the chapter now shown.
@@ -1954,6 +1963,7 @@ class ViewerActivity : AppCompatActivity() {
         currentIndex = (first - boundary).coerceAtLeast(0)
         stripAhead = null
         stripAheadFile = null
+        stripAheadId = null
         seenPages.clear()
         markedRead = false
         landedAtEnd = false
@@ -1979,6 +1989,7 @@ class ViewerActivity : AppCompatActivity() {
         val ahead = stripAhead ?: return
         stripAhead = null
         stripAheadFile = null
+        stripAheadId = null
         // The adapter owns its segments: trimming the chapter out of the strip
         // lets it close the source once nothing is decoding from it anymore.
         val a = adapter

@@ -50,7 +50,8 @@ import com.hierynomus.smbj.share.File as SmbFile
  * read. A sign-in or share the
  * host turned down is not tried again until [retry]; a host that could not be
  * reached, not for [Remotes.QUIET_MS]; so callers waiting to connect meanwhile fail
- * at once.
+ * at once. Long reads keep several requests in flight ([Pipelined]), over a second
+ * connection too while they go on ([Lane]).
  */
 class SmbFs(private val share: Share) : RemoteFs {
     private val where = share.path as? SharePath ?: throw IllegalArgumentException("Not an SMB share: $share")
@@ -74,6 +75,12 @@ class SmbFs(private val share: Share) : RemoteFs {
     /** Calls and reads under way ([busy]); a connection is made anew for another [Remotes.answerMs] only with one alone. */
     private var underWay = 0
     private val inputs = HashSet<SmbInput>()
+
+    /** The second connection for long reads ([Lane]); null until one is wanted, and once it idled or failed. */
+    private var lane: Lane? = null
+    private var laneMaking = false
+    private var laneFailedAt = 0L
+    private var laneUsed = 0L
 
     /** True while [idleCheck] is scheduled. */
     private var checking = false
@@ -468,17 +475,18 @@ class SmbFs(private val share: Share) : RemoteFs {
         synchronized(lock) { take() }?.let(::shut)
     }
 
-    /** A connection's parts, closed together. */
-    private class Parts(val disk: DiskShare?, val session: Session?, val connection: Connection?, val client: SMBClient?)
+    /** A connection's parts, closed together, with the [lane] beside it. */
+    private class Parts(val disk: DiskShare?, val session: Session?, val connection: Connection?, val client: SMBClient?, val lane: Lane? = null)
 
-    /** Takes the connection's parts away for [shut]; null when there is none. Under [lock]. */
+    /** Takes the connection's parts, and the lane beside it, away for [shut]; null when there is none. Under [lock]. */
     private fun take(): Parts? {
-        if (connection == null && session == null && disk == null && client == null) return null
-        return Parts(disk, session, connection, client).also {
+        if (connection == null && session == null && disk == null && client == null && lane == null) return null
+        return Parts(disk, session, connection, client, lane).also {
             disk = null
             session = null
             connection = null
             client = null
+            lane = null
         }
     }
 
@@ -487,6 +495,95 @@ class SmbFs(private val share: Share) : RemoteFs {
         runCatching { parts.session?.close() }
         runCatching { parts.connection?.close(true) }
         runCatching { parts.client?.close() }
+        parts.lane?.let { shut(it.parts) }
+    }
+
+    /**
+     * A second connection to the share for long reads of files open on the first,
+     * striped over both ([Pipelined.Striped]): on a link with a long round trip, one
+     * connection's window caps what it carries, and two carry nearly all the link can.
+     * Made in the background as a long read first wants it ([wantLane]), with the
+     * [answerMs] of its time; closed with the connection, at the idle check once unused
+     * for [LANE_IDLE_MS], and when a read on it fails, then not made again for [LANE_RETRY_MS].
+     */
+    private class Lane(val parts: Parts, val disk: DiskShare, val answerMs: Long)
+
+    /** The lane for a long read now, marked as used; null without one, or with one made for another [Remotes.answerMs] (then dropped). */
+    private fun laneNow(): Lane? {
+        val stale = synchronized(lock) {
+            val l = lane ?: return null
+            if (l.answerMs == Remotes.answerMs && !closed) {
+                laneUsed = System.currentTimeMillis()
+                return l
+            }
+            lane = null
+            l
+        }
+        shut(stale.parts)
+        return null
+    }
+
+    /** Lets go of [l]; one that [failed] is not made again for [LANE_RETRY_MS]. */
+    private fun dropLane(l: Lane, failed: Boolean) {
+        synchronized(lock) {
+            if (lane === l) lane = null
+            if (failed) laneFailedAt = System.currentTimeMillis()
+        }
+        Timing.mark(if (failed) "smb lane dropped after a failure" else "smb lane closed")
+        shut(l.parts)
+    }
+
+    /** Makes the lane in the background, unless one is there, being made or failed lately, or there is no connection. */
+    private fun wantLane() {
+        synchronized(lock) {
+            if (closed || lane != null || laneMaking || connection == null) return
+            if (laneFailedAt != 0L && System.currentTimeMillis() - laneFailedAt < LANE_RETRY_MS) return
+            laneMaking = true
+        }
+        try {
+            checks.execute(::addLane)
+        } catch (e: RuntimeException) {
+            synchronized(lock) { laneMaking = false }
+        }
+    }
+
+    private fun addLane() {
+        val made = runCatching { makeLane() }.getOrNull()
+        val extra = synchronized(lock) {
+            laneMaking = false
+            when {
+                made == null -> {
+                    laneFailedAt = System.currentTimeMillis()
+                    null
+                }
+                closed || connection == null || lane != null -> made
+                else -> {
+                    lane = made
+                    laneUsed = System.currentTimeMillis()
+                    null
+                }
+            }
+        }
+        extra?.let { shut(it.parts) }
+    }
+
+    /** Connects and signs in once more, as [connected] does, for a [Lane]. */
+    private fun makeLane(): Lane {
+        val wait = Remotes.answerMs
+        val own = SMBClient(config(wait))
+        var c: Connection? = null
+        var s: Session? = null
+        try {
+            c = Timing.span("smb lane connect") { own.connect(where.host, where.port) }
+            val (signed, d) = signIn(c)
+            s = signed
+            return Lane(Parts(d, signed, c, own), d, wait)
+        } catch (e: Throwable) {
+            runCatching { s?.close() }
+            runCatching { c?.close(true) }
+            runCatching { own.close() }
+            throw e
+        }
     }
 
     /**
@@ -524,6 +621,7 @@ class SmbFs(private val share: Share) : RemoteFs {
             open.forEach { it.forget() }
             shut(dropped)
         }
+        synchronized(lock) { lane?.takeIf { now - laneUsed >= LANE_IDLE_MS } }?.let { dropLane(it, failed = false) }
         echoing?.let { echo(it, ECHO_TIMEOUT_S) }
         val again = synchronized(lock) {
             checking = !closed && connection != null
@@ -589,6 +687,33 @@ class SmbFs(private val share: Share) : RemoteFs {
         override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
             busy { readMany(position, buffer, offset, count, heard) }
 
+        /** The file open on [laneOf] too, for long reads striped over both connections. */
+        private var laneFile: SmbFile? = null
+        private var laneOf: Lane? = null
+
+        /** Reads of the file on the lane, opened there first; null without a lane that works. */
+        private fun laneReads(): Pair<Lane, Reads>? {
+            val l = laneNow() ?: return null
+            return try {
+                val f = synchronized(this) {
+                    if (laneOf !== l) {
+                        runCatching { laneFile?.close() }
+                        laneFile = null
+                        laneOf = l
+                    }
+                    laneFile ?: l.disk.openFile(
+                        smbPath(path), EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OPEN, null
+                    ).also { laneFile = it }
+                }
+                l to Reads(f)
+            } catch (e: Exception) {
+                dropLane(l, failed = true)
+                null
+            }
+        }
+
+        /** Over the lane too when [STRIPE_FROM_BYTES] or longer; the lane is asked for when there is none. */
         private fun readMany(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int {
             if (position >= length) return -1
             val wanted = minOf(count.toLong(), length - position).toInt()
@@ -598,7 +723,15 @@ class SmbFs(private val share: Share) : RemoteFs {
                 val f = synchronized(this) { file ?: openFile(path).first.also { file = it } }
                 try {
                     synchronized(lock) { lastUsed = System.currentTimeMillis() }
-                    return Pipelined.fill(Reads(f), position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                    val second = if (wanted >= STRIPE_FROM_BYTES) laneReads() else null
+                    if (second == null) {
+                        if (wanted >= STRIPE_FROM_BYTES) wantLane()
+                        return Pipelined.fill(Reads(f), position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                    }
+                    val striped = Pipelined.Striped(listOf(Reads(f), second.second))
+                    val n = Pipelined.fill(striped, position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                    if (striped.broken == 1) dropLane(second.first, failed = true)
+                    return n
                 } catch (e: Exception) {
                     val failure = translate(e)
                     if (failure !is Dropped || retried) throw failure.toRemote()
@@ -612,11 +745,14 @@ class SmbFs(private val share: Share) : RemoteFs {
             }
         }
 
-        /** Lets go of the file on a connection closing for idleness; the next read opens it again. */
+        /** Lets go of the file, on the lane too, on a connection closing for idleness; the next read opens it again. */
         fun forget() {
             synchronized(this) {
                 runCatching { file?.close() }
                 file = null
+                runCatching { laneFile?.close() }
+                laneFile = null
+                laneOf = null
             }
         }
 
@@ -718,8 +854,17 @@ class SmbFs(private val share: Share) : RemoteFs {
         /** How much one read asks for, at most: larger pieces measured slower than several of these in flight. */
         const val PIECE_BYTES = 1 shl 20
 
-        /** How many reads of one file may be in flight at once. */
+        /** How many reads of one file may be in flight at once, over both connections. */
         const val DEPTH = 8
+
+        /** How long a read must be to go over the [Lane] too. */
+        const val STRIPE_FROM_BYTES = 2 shl 20
+
+        /** How long the lane stays unused; checked every [KEEPALIVE_MS]. */
+        const val LANE_IDLE_MS = 60_000L
+
+        /** How long a lane that failed is not made again. */
+        const val LANE_RETRY_MS = 10 * 60_000L
 
         /** Credits left for other requests (listings, echoes) while reads are in flight. */
         private const val SPARE_CREDITS = 16

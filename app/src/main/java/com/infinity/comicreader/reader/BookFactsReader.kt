@@ -38,7 +38,7 @@ object BookFactsReader {
                 if (source is RemoteFile) throw IOException("Not fetched")
                 PdfSource(source).use { BookFacts(it.pageCount, 0, DirectionDetection.detect(null, file.name, emptyList())) }
             } else {
-                val charsetName = NameCharset.forBook(file.absolutePath, setting)
+                val charsetName = NameCharset.forBook(file, setting)
                 val reader = ArchiveReader.open(source, charsetName, kind) ?: throw IOException("Not an archive")
                 reader.use { readArchive(it, file, charsetName, cacheDir) }
             }

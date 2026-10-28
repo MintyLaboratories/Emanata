@@ -1,5 +1,8 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.content.DialogInterface
@@ -76,9 +79,9 @@ class ListActivityFileOpsTest {
         bytes = ByteArray(5000) { (it * 7).toByte() }
         book = File(shelf, "one.cbz").apply { writeBytes(bytes) }
         library = Library(context)
-        library.toggleFavorite(book.absolutePath)
-        library.addHistory(HistoryItem(book.absolutePath, book.name, 3, 10, 1L))
-        library.setRead(book.absolutePath, true)
+        library.toggleFavorite(book)
+        library.addHistory(HistoryItem(book.absolutePath, book.name, 3, 10, 1L, bookId(book)))
+        library.setRead(ref(book), true)
         Prefs(context).lastPath = shelf.absolutePath
         // No covers: one being read would hold its file open, which some test hosts refuse to rename.
         Prefs(context).thumbnails = false
@@ -342,7 +345,7 @@ class ListActivityFileOpsTest {
         ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         val renamed = File(shelf, "two.cbz")
         settle { renamed.exists() }
-        assertTrue(library.isFavorite(renamed.absolutePath))
+        assertTrue(library.isFavorite(bookId(renamed)))
         activity.row(renamed.absolutePath)
     }
 
@@ -363,11 +366,12 @@ class ListActivityFileOpsTest {
         activity.paste().performClick()
         settle { !book.exists() }
         assertTrue(File(other, "one.cbz").isFile)
-        assertEquals(3, library.historyFor(File(other, "one.cbz").absolutePath)?.page)
+        assertEquals(3, library.historyFor(bookId(File(other, "one.cbz")))?.page)
     }
 
     @Test
     fun deletingFromHistoryForgetsIt() {
+        val id = bookId(book)
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(2)!!.select()
         idle()
@@ -375,7 +379,7 @@ class ListActivityFileOpsTest {
         idle()
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { !book.exists() }
-        assertNull(library.historyFor(book.absolutePath))
+        assertNull(library.historyFor(id))
         assertEquals(-1, (activity.recycler().adapter as BookAdapter).positionOf(book.absolutePath))
     }
 
@@ -389,7 +393,7 @@ class ListActivityFileOpsTest {
 
     @Test
     fun bookmarksHaveNoFileOperations() {
-        library.addBookmark(Bookmark(book.absolutePath, book.name, 1, "", 1L))
+        library.addBookmark(Bookmark(book.absolutePath, book.name, 1, "", 1L, bookId(book)))
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(3)!!.select()
         idle()
@@ -413,9 +417,9 @@ class ListActivityFileOpsTest {
         settle { renamed.exists() }
         assertTrue(renamed.isFile)
         assertFalse(book.exists())
-        assertTrue(library.isFavorite(renamed.absolutePath))
-        assertTrue(library.isRead(renamed.absolutePath))
-        assertEquals(3, library.historyFor(renamed.absolutePath)?.page)
+        assertTrue(library.isFavorite(bookId(renamed)))
+        assertTrue(library.isRead(bookId(renamed)))
+        assertEquals(3, library.historyFor(bookId(renamed))?.page)
         assertEquals(context.getString(R.string.renamed), ShadowToast.getTextOfLatestToast())
     }
 
@@ -429,7 +433,7 @@ class ListActivityFileOpsTest {
         ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { "One.cbz" in shelf.list()!! }
         assertEquals(listOf("One.cbz", "Other"), shelf.list()!!.sorted())
-        assertTrue(library.isFavorite(File(shelf, "One.cbz").absolutePath))
+        assertTrue(library.isFavorite(bookId(File(shelf, "One.cbz"))))
         assertEquals(context.getString(R.string.renamed), ShadowToast.getTextOfLatestToast())
     }
 
@@ -445,6 +449,9 @@ class ListActivityFileOpsTest {
 
     @Test
     fun deletingAsksFirstAndForgetsTheItem() {
+        val id = bookId(book)
+        val facts = com.infinity.comicreader.data.BookFactsCache(context)
+        facts.put(id, com.infinity.comicreader.data.BookFacts(3, 0))
         val activity = launch()
         activity.longPress(book.absolutePath).op(R.id.file_op_delete)!!.performClick()
         idle()
@@ -459,8 +466,11 @@ class ListActivityFileOpsTest {
         ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { !book.exists() }
         assertFalse(book.exists())
-        assertFalse(library.isFavorite(book.absolutePath))
-        assertNull(library.historyFor(book.absolutePath))
+        assertFalse(library.isFavorite(id))
+        assertNull(library.historyFor(id))
+        // Its facts go with it; its read mark stays for copies elsewhere.
+        assertNull(facts.get(id))
+        assertTrue(library.isRead(id))
     }
 
     @Test
@@ -492,8 +502,8 @@ class ListActivityFileOpsTest {
         settle { !book.exists() }
         assertArrayEquals(bytes, moved.readBytes())
         assertFalse(book.exists())
-        assertTrue(library.isFavorite(moved.absolutePath))
-        assertEquals(3, library.historyFor(moved.absolutePath)?.page)
+        assertTrue(library.isFavorite(bookId(moved)))
+        assertEquals(3, library.historyFor(bookId(moved))?.page)
         // A move is pasted once.
         assertNull(FileClipboard.clip)
         assertEquals(View.GONE, activity.paste().visibility)

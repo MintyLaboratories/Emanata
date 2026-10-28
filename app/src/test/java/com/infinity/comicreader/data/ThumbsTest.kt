@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -254,12 +255,12 @@ class ThumbsTest {
         val book = rgbBook("hiding.cbz")
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
         // Hiding the first page makes a new cover, though the old one is cached.
-        Library(context).setHiddenPages(book.path, setOf(0), 3)
+        Library(context).setHiddenPages(ref(book), setOf(0), 3)
         assertEquals(Color.GREEN, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
-        Library(context).setHiddenPages(book.path, setOf(0, 1), 3)
+        Library(context).setHiddenPages(ref(book), setOf(0, 1), 3)
         assertEquals(Color.BLUE, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
         // With every page hidden every page shows, so the first is the cover again.
-        Library(context).setHiddenPages(book.path, setOf(0, 1, 2), 3)
+        Library(context).setHiddenPages(ref(book), setOf(0, 1, 2), 3)
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
     }
 
@@ -269,12 +270,12 @@ class ThumbsTest {
         val book = rgbBook("charset.cbz")
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
         try {
-            Library(context).setNameCharset(book.path, "windows-1251")
+            Library(context).setNameCharset(ref(book), "windows-1251")
             assertEquals(null, Thumbs.cached(context, book, 100, 150))
             assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
             assertTrue(Thumbs.cached(context, book, 100, 150) != null)
         } finally {
-            Library(context).setNameCharset(book.path, null)
+            Library(context).setNameCharset(ref(book), null)
         }
         assertTrue(Thumbs.cached(context, book, 100, 150) != null)
     }
@@ -285,25 +286,32 @@ class ThumbsTest {
         val book = rgbBook("01.cbz", dir)
         val folder = BookEntry(dir, dir.name, true, EntryType.OTHER, 0, dir.lastModified())
         assertEquals(Color.RED, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
-        Library(context).setHiddenPages(book.path, setOf(0), 3)
+        Library(context).setHiddenPages(ref(book), setOf(0), 3)
         assertEquals(Color.GREEN, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
     }
+
+    /** [book] as the library keeps it, its ID found now. */
+    private fun ref(book: BookEntry) = BookRef(bookId(book.file), book.path)
 
     @Test
     fun onlyHiddenPagesThatMoveACoverChangeItsKey() {
         val dir = File(context.cacheDir, "Shelf")
-        val book = BookEntry(File(dir, "a.cbz"), "a.cbz", false, EntryType.ARCHIVE, 1, 1)
+        val id = BookId(1)
+        val book = BookEntry(File(dir, "a.cbz"), "a.cbz", false, EntryType.ARCHIVE, 1, 1, id = id)
         val folder = BookEntry(dir, "Shelf", true, EntryType.OTHER, 0, 1)
         val inside = File(dir, "a.cbz").path
-        assertEquals("", Thumbs.hiddenTag(book, emptyMap()))
-        assertEquals("", Thumbs.hiddenTag(book, mapOf(inside to setOf(3))))
-        assertEquals("|c2", Thumbs.hiddenTag(book, mapOf(inside to setOf(0, 1, 4))))
-        assertEquals("", Thumbs.hiddenTag(folder, mapOf(inside to setOf(3))))
-        val moved = Thumbs.hiddenTag(folder, mapOf(inside to setOf(0)))
+        fun hidden(pages: Set<Int>, at: String = inside) = Library.Hidden(mapOf(id to pages), mapOf(at to pages), emptyMap())
+        assertEquals("", Thumbs.hiddenTag(book, Library.Hidden(emptyMap(), emptyMap(), emptyMap())))
+        assertEquals("", Thumbs.hiddenTag(book, hidden(setOf(3))))
+        assertEquals("|c2", Thumbs.hiddenTag(book, hidden(setOf(0, 1, 4))))
+        // A book is known by its ID, wherever its pages were hidden.
+        assertEquals("", Thumbs.hiddenTag(book.copy(id = BookId(2)), hidden(setOf(0, 1, 4))))
+        assertEquals("", Thumbs.hiddenTag(folder, hidden(setOf(3))))
+        val moved = Thumbs.hiddenTag(folder, hidden(setOf(0)))
         assertTrue(moved.startsWith("|h"))
-        assertTrue(moved != Thumbs.hiddenTag(folder, mapOf(inside to setOf(0, 1))))
+        assertTrue(moved != Thumbs.hiddenTag(folder, hidden(setOf(0, 1))))
         // A folder whose name only starts the same is not inside.
-        assertEquals("", Thumbs.hiddenTag(folder, mapOf(File(context.cacheDir, "Shelf 2/a.cbz").path to setOf(0))))
+        assertEquals("", Thumbs.hiddenTag(folder, hidden(setOf(0), File(context.cacheDir, "Shelf 2/a.cbz").path)))
     }
 
     /** A book whose cover page is a layered AVIF: a red first layer and a blue full image ([FakeAvifCodec]). */

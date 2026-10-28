@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Context
 import android.content.DialogInterface
@@ -67,7 +69,7 @@ class ViewerActivityResumeTest {
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     private fun savePosition(page: Int) =
-        library.addHistory(HistoryItem(book.absolutePath, book.name, page, 8, 1L))
+        library.addHistory(HistoryItem(book.absolutePath, book.name, page, 8, 1L, bookId(book)))
 
     /** Opens the book without a start page and waits until it is shown. */
     private fun launch(): ViewerActivity {
@@ -96,7 +98,7 @@ class ViewerActivityResumeTest {
     @Test
     fun finishedBookOpensAtTheFirstPage() {
         savePosition(5)
-        library.setRead(book.absolutePath, true)
+        library.setRead(ref(book), true)
         val viewer = launch()
         assertNull(askDialog())
         assertEquals(0, viewer.page())

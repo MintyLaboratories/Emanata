@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -118,7 +119,7 @@ class ListActivitySortFilterTest {
         Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
-        assertNull(cache.get(junk.absolutePath, junk.length()))
+        assertNull(cache.get(bookId(junk)))
     }
 
     @Test
@@ -132,7 +133,7 @@ class ListActivitySortFilterTest {
         idle()
         fun counted(): Int {
             val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
-            return books.count { cache.get(it.absolutePath, it.length())?.pages == 2 }
+            return books.count { cache.get(bookId(it))?.pages == 2 }
         }
         assertTrue("read ${counted()} while out of sight", counted() < books.size)
         controller.start().resume()
@@ -147,7 +148,7 @@ class ListActivitySortFilterTest {
         File(dir, "c.pdf").writeBytes(ByteArray(20))
         val library = Library(ApplicationProvider.getApplicationContext())
         for ((i, name) in listOf("a (2001).cbz", "b (2010).cbz", "c.pdf").withIndex()) {
-            library.addBookmark(Bookmark(File(dir, name).absolutePath, name, 0, "", 1000L + i))
+            library.addBookmark(Bookmark(File(dir, name).absolutePath, name, 0, "", 1000L + i, bookId(File(dir, name))))
         }
         prefs.startupTab = Prefs.TAB_BOOKMARKS
         prefs.setSort(Prefs.TAB_BOOKMARKS, TabSort(SortLevel(SortKey.SIZE)))

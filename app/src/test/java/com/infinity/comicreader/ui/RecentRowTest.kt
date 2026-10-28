@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.StorageRoot
 import org.junit.Assert.assertEquals
@@ -11,7 +12,7 @@ class RecentRowTest {
     private val device = StorageRoot("/storage/emulated/0", "Device", StorageRoot.Kind.DEVICE)
     private val share = StorageRoot("/net/s1", "Share A", StorageRoot.Kind.SHARE)
 
-    private fun item(path: String) = HistoryItem(path, path.substringAfterLast('/'), 0, 10, 1L)
+    private fun item(path: String) = HistoryItem(path, path.substringAfterLast('/'), 0, 10, 1L, BookId(path.hashCode().toLong()))
 
     @Test
     fun pointsAtTheFolderOfTheNewestBook() {

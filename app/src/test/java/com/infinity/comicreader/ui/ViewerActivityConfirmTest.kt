@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.app.Dialog
 import android.content.Context
@@ -102,16 +104,16 @@ class ViewerActivityConfirmTest {
     @Test
     fun resetAdjustmentsWaitsForConfirmation() {
         val own = Adjustments(10, -5, 20)
-        library.setAdjustments(book.absolutePath, own)
+        library.setAdjustments(ref(book), own)
         val viewer = launch()
 
         val canceled = viewer.tapResetAdjustments().second as AlertDialog
         assertEquals(context.getString(R.string.confirm_reset_adjust_msg), canceled.message())
         canceled.press(DialogInterface.BUTTON_NEGATIVE)
-        assertEquals(own, library.adjustmentsFor(book.absolutePath))
+        assertEquals(own, library.adjustmentsFor(bookId(book)))
 
         (viewer.tapResetAdjustments().second as AlertDialog).press(DialogInterface.BUTTON_POSITIVE)
-        assertNull(library.adjustmentsFor(book.absolutePath))
+        assertNull(library.adjustmentsFor(bookId(book)))
     }
 
     @Test
@@ -119,22 +121,22 @@ class ViewerActivityConfirmTest {
         val viewer = launch()
         val (panel, after) = viewer.tapResetAdjustments()
         assertSame(panel, after)
-        assertNull(library.adjustmentsFor(book.absolutePath))
+        assertNull(library.adjustmentsFor(bookId(book)))
     }
 
     @Test
     fun clearBookBookmarksWaitsForConfirmation() {
-        for (page in listOf(1, 3)) library.addBookmark(Bookmark(book.absolutePath, book.name, page, "", 1L))
+        for (page in listOf(1, 3)) library.addBookmark(Bookmark(book.absolutePath, book.name, page, "", 1L, bookId(book)))
         val viewer = launch()
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)
         val canceled = latestDialog()
         assertEquals(context.getString(R.string.confirm_clear_book_bookmarks_msg, book.name), canceled.message())
         canceled.press(DialogInterface.BUTTON_NEGATIVE)
-        assertEquals(2, library.bookmarksFor(book.absolutePath).size)
+        assertEquals(2, library.bookmarksFor(bookId(book)).size)
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)
         latestDialog().press(DialogInterface.BUTTON_POSITIVE)
-        assertEquals(0, library.bookmarksFor(book.absolutePath).size)
+        assertEquals(0, library.bookmarksFor(bookId(book)).size)
     }
 }

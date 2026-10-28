@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.data.BookRef
+import com.infinity.comicreader.data.BookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -323,11 +325,14 @@ class ListActivitySharesTest {
         idle()
     }
 
+    /** A book on the share, as the library keeps it. */
+    private val loose = BookRef(BookId(0x100), "/net/s1/Loose.cbz")
+
     private fun fillLibrary(): Library = Library(context).apply {
-        toggleFavorite("/net/s1/Series")
-        addHistory(com.infinity.comicreader.data.HistoryItem("/net/s1/Loose.cbz", "Loose.cbz", 2, 10, 1000))
-        addBookmark(com.infinity.comicreader.data.Bookmark("/net/s1/Loose.cbz", "Loose.cbz", 3, "", 1000))
-        toggleFavorite("/books/attic")
+        toggleFavoriteFolder("/net/s1/Series")
+        addHistory(com.infinity.comicreader.data.HistoryItem(loose.path, "Loose.cbz", 2, 10, 1000, loose.id))
+        addBookmark(com.infinity.comicreader.data.Bookmark(loose.path, "Loose.cbz", 3, "", 1000, loose.id))
+        toggleFavoriteFolder("/books/attic")
     }
 
     @Test
@@ -349,14 +354,14 @@ class ListActivitySharesTest {
     @Test
     fun removingAShareCanForgetItsFavoritesHistoryAndBookmarks() {
         val library = fillLibrary()
-        library.setRead("/net/s1/Loose.cbz", true)
+        library.setRead(loose, true)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         removeShare(activity, forget = true)
         assertEquals(listOf("/books/attic"), library.favorites())
         assertEquals(0, library.history().size)
         assertEquals(0, library.bookmarks().size)
-        assertTrue("read marks are not named, so they stay", library.isRead("/net/s1/Loose.cbz"))
+        assertTrue("read marks are not named, so they stay", library.isRead(loose.id))
     }
 
     @Test
@@ -407,8 +412,8 @@ class ListActivitySharesTest {
     @Test
     fun favoritesAndHistoryOnAShareShowWithoutTheNetwork() {
         val library = Library(context)
-        library.toggleFavorite("/net/s1/Series")
-        library.addHistory(com.infinity.comicreader.data.HistoryItem("/net/s1/Loose.cbz", "Loose.cbz", 2, 10, 1000))
+        library.toggleFavoriteFolder("/net/s1/Series")
+        library.addHistory(com.infinity.comicreader.data.HistoryItem(loose.path, "Loose.cbz", 2, 10, 1000, loose.id))
         fake.offline = true
         Prefs(context).startupTab = Prefs.TAB_HISTORY
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

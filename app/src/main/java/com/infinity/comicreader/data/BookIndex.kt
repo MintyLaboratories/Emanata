@@ -27,6 +27,9 @@ class BookIndex(context: Context) {
     /** The ID last found for [path], whatever its size and time then; null when never hashed. */
     fun last(path: String): BookId? = loaded()[path]?.let { BookId(it.id) }
 
+    /** The IDs last found for [root], a file or folder, and everything below it. */
+    fun under(root: String): Set<BookId> = loaded().entries.filter { under(it.key, root) }.mapTo(HashSet()) { BookId(it.value.id) }
+
     /** Remembers [id] for [path] at [size] and [modified]. Blocking. */
     fun put(path: String, size: Long, modified: Long, id: BookId) {
         val map = loaded()

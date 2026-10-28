@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -82,7 +83,7 @@ class ListActivityToolbarTest {
         assertEquals(context.getString(R.string.menu_add_favorite), star.title)
         activity.onOptionsItemSelected(star)
         idle()
-        assertTrue(Library(context).isFavorite(dir.absolutePath))
+        assertTrue(Library(context).isFavoriteFolder(dir.absolutePath))
         assertEquals(context.getString(R.string.menu_remove_favorite), activity.menu().findItem(R.id.menu_bar_favorite).title)
     }
 

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -50,7 +51,7 @@ class ListActivityRecentTest {
     private fun book(folder: String, name: String): File =
         File(root, folder).apply { mkdirs() }.let { File(it, name).apply { createNewFile() } }
 
-    private fun read(book: File) = library.addHistory(HistoryItem(book.absolutePath, book.name, 1, 10, System.currentTimeMillis()))
+    private fun read(book: File) = library.addHistory(HistoryItem(book.absolutePath, book.name, 1, 10, System.currentTimeMillis(), bookId(book)))
 
     private fun launch(): ListActivity {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

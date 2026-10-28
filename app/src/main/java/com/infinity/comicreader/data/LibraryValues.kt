@@ -104,13 +104,13 @@ data class BookFacts(
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found
  * so far by path, and [facts] read from the books themselves, less the pages each book
- * hides ([hidden] counts by path). With [detect], a book whose folder has no direction
+ * hides ([hidden] counts them). With [detect], a book whose folder has no direction
  * set reads in the direction its facts suggest.
  */
 class EntryValues(
     private val folderSizes: Map<String, Long> = emptyMap(),
     private val detect: Boolean = false,
-    private val hidden: Map<String, Int> = emptyMap(),
+    private val hidden: (BookEntry) -> Int = { 0 },
     private val facts: (BookEntry) -> BookFacts? = { null }
 ) : SortValues {
     override fun of(entry: BookEntry, key: SortKey): Long? = when (key) {
@@ -118,7 +118,7 @@ class EntryValues(
         SortKey.ADDED -> entry.added.takeIf { it > 0 }
         SortKey.ACCESSED -> entry.accessed.takeIf { it > 0 }
         SortKey.SIZE -> if (entry.isDir) folderSizes[entry.path] else entry.size.takeIf { it > 0 }
-        SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.shownPages(hidden[entry.path] ?: 0)?.takeIf { it > 0 })?.toLong()
+        SortKey.LENGTH -> (entry.pages.takeIf { it > 0 } ?: facts(entry)?.shownPages(hidden(entry))?.takeIf { it > 0 })?.toLong()
         SortKey.DIRECTION -> direction(entry)?.rank?.toLong()
         SortKey.TYPE -> LibrarySort.typeRank(entry)
         SortKey.NAME -> null
@@ -140,14 +140,21 @@ class EntryValues(
 
 /**
  * Favorites, read marks, history, access times and the directions set for folders,
- * loaded once per listing instead of once per row.
+ * loaded once per listing instead of once per row. Books are known by their [BookId]
+ * as the index knows it ([BookIds.known]): a file not hashed yet shows nothing kept for
+ * it until its ID is found ([withId]).
  */
 class LibrarySnapshot(
-    val favorites: Set<String> = emptySet(),
-    val read: Set<String> = emptySet(),
-    val history: Map<String, HistoryItem> = emptyMap(),
-    /** Latest access by path, folders included ([AccessTimes]). */
+    val favoriteFolders: Set<String> = emptySet(),
+    val favoriteBooks: Set<BookId> = emptySet(),
+    val read: Set<BookId> = emptySet(),
+    val history: Map<BookId, HistoryItem> = emptyMap(),
+    /** Latest access by path where books were last seen, folders included ([AccessTimes]). */
     val access: Map<String, Long> = emptyMap(),
+    /** Latest access of each book in the history or bookmarks. */
+    val accessById: Map<BookId, Long> = emptyMap(),
+    /** Where each book with anything kept was last seen. */
+    val seen: Map<BookId, Library.Seen> = emptyMap(),
     /** Directions set for folders, by folder path. */
     private val directions: Map<String, ReadingDirection> = emptyMap(),
     private val defaultDirection: ReadingDirection = ReadingDirection.LTR
@@ -161,6 +168,15 @@ class LibrarySnapshot(
     private fun folderOf(path: String, isDir: Boolean) =
         if (isDir) path else path.substring(0, path.indexOfLast { isSeparator(it) }.coerceAtLeast(0))
 
+    /** Books listed at another path than they were last seen at, as found by [entry] and [withId]; the caller tells the library ([Library.seenAll]). */
+    val sighted: MutableMap<BookId, String> = java.util.concurrent.ConcurrentHashMap()
+
+    /** True when anything is kept for book [id]. */
+    fun keeps(id: BookId): Boolean = id in seen
+
+    /** The ID of book [file] as the index knows it now; null when unseen or changed. */
+    private fun idOf(file: File): BookId? = BookIds.known(file)
+
     /**
      * The entry for [file], a folder holding [children] (the items a user would see)
      * or a book; [name] is what it is listed as. A folder of loose page images has
@@ -170,10 +186,10 @@ class LibrarySnapshot(
         val stat = FileStat.of(file)
         val path = file.absolutePath
         val isDir = stat.isDirectory
-        val history = if (isDir) null else history[path]
         val books = children?.filter { Formats.isOpenable(it.name) }
         val names = books?.map { it.name }.orEmpty()
-        return BookEntry(
+        val childIds = if (read.isEmpty() && history.isEmpty()) emptyMap() else children.orEmpty().filter { !it.isDirectory }.associateWith { idOf(it) }
+        val entry = BookEntry(
             file = file,
             name = name,
             isDir = isDir,
@@ -181,21 +197,39 @@ class LibrarySnapshot(
             size = stat.size,
             lastModified = stat.lastModified,
             childCount = children?.size ?: -1,
-            readCount = children?.count { it.absolutePath in read } ?: -1,
-            pages = if (isDir) looseImages(names) else history?.total ?: -1,
-            progressPage = history?.page ?: -1,
-            favorite = path in favorites,
-            read = path in read,
-            begun = history != null,
+            readCount = children?.count { childIds[it] in read } ?: -1,
+            pages = if (isDir) looseImages(names) else -1,
+            favorite = isDir && path in favoriteFolders,
             added = stat.created,
             accessed = access[path] ?: 0,
             year = if (isDir) Years.ofFolder(file.name, children.orEmpty().map { it.name }) else Years.fromName(file.name),
             direction = directionOf(path, isDir),
             directionSet = isDirectionSet(path, isDir),
             bookCount = books?.size ?: -1,
-            begunCount = books?.count { it.absolutePath in this.history || it.absolutePath in read } ?: -1
+            begunCount = books?.count { childIds[it]?.let { id -> id in history || id in read } == true } ?: -1
+        )
+        if (isDir) return entry
+        val id = BookIds.known(path, stat.size, stat.lastModified) ?: return entry
+        return withId(entry, id)
+    }
+
+    /** Book [entry] as book [id]: its favorite, read mark, history and access, noting where it is seen now. */
+    fun withId(entry: BookEntry, id: BookId): BookEntry {
+        val h = history[id]
+        seen[id]?.let { if (it.path != entry.path) sighted[id] = entry.path }
+        return entry.copy(
+            id = id,
+            favorite = id in favoriteBooks,
+            read = id in read,
+            begun = h != null,
+            pages = if (h != null && h.total > 0) h.total else entry.pages,
+            progressPage = h?.page ?: entry.progressPage,
+            accessed = accessById[id] ?: entry.accessed
         )
     }
+
+    /** [sighted] as references, for [Library.seenAll]. */
+    fun sightings(): List<BookRef> = sighted.map { (id, path) -> BookRef(id, path) }
 
     /**
      * The entry for [file] as listed: a folder with the items a user would see in it, or
@@ -221,13 +255,21 @@ class LibrarySnapshot(
         fun load(library: Library, prefs: Prefs): LibrarySnapshot {
             val history = library.history()
             val bookmarks = library.bookmarks()
+            val favorites = library.favoriteItems()
+            val byId = HashMap<BookId, Long>()
+            for ((id, time) in history.map { it.id to it.time } + bookmarks.map { it.id to it.time }) {
+                if (time > (byId[id] ?: 0)) byId[id] = time
+            }
             return LibrarySnapshot(
-                favorites = library.favoriteSet(),
+                favoriteFolders = favorites.filter { it.id == null }.mapTo(HashSet()) { it.path },
+                favoriteBooks = favorites.mapNotNullTo(HashSet()) { it.id },
                 read = library.readSet(),
-                history = history.associateBy { it.path },
+                history = history.associateBy { it.id },
                 access = AccessTimes.of(
                     history.asSequence().map { it.path to it.time } + bookmarks.asSequence().map { it.path to it.time }
                 ),
+                accessById = byId,
+                seen = library.seenAt(),
                 directions = if (prefs.perSeries) library.folderDirections() else emptyMap(),
                 defaultDirection = ReadingDirection.of(prefs.readingDir) ?: ReadingDirection.LTR
             )

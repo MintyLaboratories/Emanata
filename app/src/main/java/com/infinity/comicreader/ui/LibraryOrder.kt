@@ -26,14 +26,16 @@ object LibraryOrder {
      */
     fun favorites(context: Context, prefs: Prefs, roots: List<StorageRoot>): List<BookEntry> {
         val library = Library(context)
-        val paths = library.favorites()
-        val labels = FavoriteLabels.of(paths, roots)
+        val items = library.favoriteItems()
+        val labels = FavoriteLabels.of(items.map { it.path }, roots)
         val cache = FavoriteKindCache(context)
         val snap = LibrarySnapshot.load(library, prefs)
-        val entries = paths.map { path ->
+        val entries = items.map { (path, id) ->
             val label = labels[path]
             // Favorites on shares as known, without the network.
-            snap.entry(Remotes.file(path, askNetwork = false), prefs.showHidden).let { it.copy(name = label?.name ?: it.name, label = label) }
+            snap.entry(Remotes.file(path, askNetwork = false), prefs.showHidden)
+                .let { if (id != null) snap.withId(it, id) else it }
+                .let { it.copy(name = label?.name ?: it.name, label = label) }
         }
         val sorted = entries.sortedWith(LibrarySort.comparator(prefs.sort(Prefs.TAB_FAVORITES), EntryValues()))
         if (!prefs.groupFavorites) return sorted

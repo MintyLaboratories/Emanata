@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -291,7 +292,7 @@ class ListActivityStartFolderTest {
         prefs.lastPath = "/net/s1/Series"
         prefs.startupResume = ResumeMode.ASK
         val book = File(comics, "Tale 001.cbz").apply { writeBytes(ByteArray(10)) }
-        Library(context).addHistory(HistoryItem(book.absolutePath, book.name, 3, 20, 1L))
+        Library(context).addHistory(HistoryItem(book.absolutePath, book.name, 3, 20, 1L, bookId(book)))
         fake.slow = CountDownLatch(1)
         val activity = launch()
         idleFor(ListActivity.SHARE_DIALOG_MS + 1_000)

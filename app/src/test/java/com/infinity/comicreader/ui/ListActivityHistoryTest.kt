@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -39,7 +40,7 @@ class ListActivityHistoryTest {
         for (name in listOf("ui", "library")) context.getSharedPreferences(name, 0).edit().clear().commit()
         val dir = File(Environment.getExternalStorageDirectory(), "shelf").apply { mkdirs() }
         book = File(dir, "one.cbz").apply { createNewFile() }
-        Library(context).addHistory(HistoryItem(book.absolutePath, book.name, 4, 10, 1L))
+        Library(context).addHistory(HistoryItem(book.absolutePath, book.name, 4, 10, 1L, bookId(book)))
         Prefs(context).startupTab = Prefs.TAB_HISTORY
     }
 

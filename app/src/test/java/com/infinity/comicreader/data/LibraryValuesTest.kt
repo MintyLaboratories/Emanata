@@ -72,7 +72,7 @@ class LibraryValuesTest {
     @Test
     fun lengthLeavesHiddenPagesOut() {
         val book = entry("a.cbz")
-        val values = EntryValues(hidden = mapOf(book.path to 4)) { BookFacts(pages = 24, year = 0) }
+        val values = EntryValues(hidden = { if (it.path == book.path) 4 else 0 }) { BookFacts(pages = 24, year = 0) }
         assertEquals(20L, values.of(book, SortKey.LENGTH))
         assertEquals(24L, values.of(entry("b.cbz"), SortKey.LENGTH))
         // A count from history is already shown pages.
@@ -100,26 +100,6 @@ class LibraryValuesTest {
         assertEquals(50L, live.of(book, SortKey.LENGTH))
         // Entries not frozen have no value yet, so they sort last.
         assertNull(frozen.of(entry("new.cbz"), SortKey.LENGTH))
-    }
-
-    @Test
-    fun folderEntriesCountTheirBooks() {
-        val dir = Files.createTempDirectory("values").toFile()
-        try {
-            val books = listOf("1.cbz", "2.cbz", "3.cbz").map { File(dir, it).apply { writeBytes(ByteArray(1)) } }
-            val sub = File(dir, "Extras").apply { mkdirs() }
-            val snap = LibrarySnapshot(
-                read = setOf(books[0].absolutePath),
-                history = mapOf(books[1].absolutePath to HistoryItem(books[1].absolutePath, "2.cbz", 3, 20, 1))
-            )
-            val entry = snap.entry(dir, books + sub)
-            assertEquals(4, entry.childCount)
-            assertEquals(3, entry.bookCount)
-            assertEquals(2, entry.begunCount)
-            assertEquals(ReadStatus.IN_PROGRESS, ReadStatus.of(entry))
-        } finally {
-            dir.deleteRecursively()
-        }
     }
 
     @Test

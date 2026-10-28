@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -180,7 +182,7 @@ class ViewerActivitySeamsTest {
         val book = book(count = 9, first = 4)
         // Shifted by names alone: [000] [001] [002|003] [004|005] [006|007] [008], as the seams pair it too.
         ApplicationProvider.getApplicationContext<Application>().getSharedPreferences("library", android.content.Context.MODE_PRIVATE)
-            .edit().putString("shifted", JSONArray().put(book.absolutePath).toString()).commit()
+            .edit().putString("shifted", JSONArray().put(bookId(book).hex).toString()).commit()
         val viewer = launch(book)
         val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams")
         await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
@@ -292,7 +294,7 @@ class ViewerActivitySeamsTest {
         val sheet = ReaderSheet(viewer)
         sheet.tap(R.id.sheet_ignore_seams)
         assertEquals(7, viewer.items())
-        assertTrue(com.infinity.comicreader.data.Library(viewer).ignoresSeams(book.absolutePath))
+        assertTrue(com.infinity.comicreader.data.Library(viewer).ignoresSeams(bookId(book)))
         viewer.finish()
         // Kept for the book: opened again, its pages stay apart.
         val again = launch(book)
@@ -319,7 +321,7 @@ class ViewerActivitySeamsTest {
     fun ignoringSeamsPairsTwoPagesByNumberAndChecksNoSeams() {
         prefs.twoPage = TwoPage.ON
         val book = book(count = 9, first = 4)
-        com.infinity.comicreader.data.Library(ApplicationProvider.getApplicationContext()).setIgnoreSeams(book.absolutePath, true)
+        com.infinity.comicreader.data.Library(ApplicationProvider.getApplicationContext()).setIgnoreSeams(ref(book), true)
         val viewer = launch(book)
         repeat(50) { Thread.sleep(10); idle() }
         // By number: [000] [001|002] [003|004] [005|006] [007|008], though 004 runs on into 005.

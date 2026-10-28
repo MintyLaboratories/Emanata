@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
@@ -141,10 +142,10 @@ class ViewerActivitySlicesTest {
     fun seamsFoundAreKeptWithTheLibrarysFacts() {
         val book = seamedBook()
         val facts = BookFactsCache(ApplicationProvider.getApplicationContext())
-        facts.put(book.absolutePath, book.length(), BookFacts(7, 0))
+        facts.put(bookId(book), BookFacts(7, 0))
         val viewer = launch(book)
         await { viewer.continuous() }
-        assertEquals(DirectionDetection.Source.SEAMS, facts.get(book.absolutePath, book.length())?.slices?.found?.source)
+        assertEquals(DirectionDetection.Source.SEAMS, facts.get(bookId(book))?.slices?.found?.source)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -79,7 +80,7 @@ class ListActivityFavoritesTest {
         val shelf = folder("Shelf")
         folder("Shelf/A", "a1.cbz")
         folder("Shelf/B", "b1.cbz")
-        listOf(series, pages, shelf).forEach { library.toggleFavorite(it.absolutePath) }
+        listOf(series, pages, shelf).forEach { library.toggleFavorite(it) }
         Prefs(context).lastPath = root.absolutePath
 
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
@@ -96,7 +97,7 @@ class ListActivityFavoritesTest {
     @Test
     fun ungroupedFavoritesAreOneList() {
         val library = Library(context)
-        library.toggleFavorite(folder("Solo", "x.cbz").absolutePath)
+        library.toggleFavorite(folder("Solo", "x.cbz"))
         Prefs(context).groupFavorites = false
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
@@ -109,8 +110,8 @@ class ListActivityFavoritesTest {
     @Config(qualifiers = "w800dp-h1280dp")
     fun gridRowsFitBetweenSectionHeaders() {
         val library = Library(context)
-        library.toggleFavorite(folder("Solo", "x.cbz").absolutePath)
-        library.toggleFavorite(File(root, "a.cbz").apply { createNewFile() }.absolutePath)
+        library.toggleFavorite(folder("Solo", "x.cbz"))
+        library.toggleFavorite(File(root, "a.cbz").apply { createNewFile() })
         val prefs = Prefs(context)
         prefs.setGridSize(Prefs.TAB_FAVORITES, 2, 2)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
@@ -129,7 +130,7 @@ class ListActivityFavoritesTest {
     fun ungroupedFavoritesAreClassifiedOnceGrouped() {
         val library = Library(context)
         val solo = folder("Solo", "x.cbz")
-        library.toggleFavorite(solo.absolutePath)
+        library.toggleFavorite(solo)
         val prefs = Prefs(context)
         prefs.groupFavorites = false
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

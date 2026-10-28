@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -26,48 +27,49 @@ class LibraryShiftTest {
         library = Library(context)
     }
 
+    private val a = BookRef(BookId(0xa), "/books/old/a.cbz")
+    private val b = BookRef(BookId(0xb), "/books/old/b.cbz")
+
     @Test
     fun aShiftKeptBeforeSeamsFlipsPairingByNames() {
-        library.importAll(JSONObject().put("shifted", JSONArray().put("/books/a.cbz")))
-        assertTrue(library.isShifted("/books/a.cbz"))
-        assertTrue(library.isShiftedByNames("/books/a.cbz"))
+        library.importAll(JSONObject().put("shifted", JSONArray().put(a.id.hex)))
+        assertTrue(library.isShifted(a.id))
+        assertTrue(library.isShiftedByNames(a.id))
         // Turned off and on again, it flips the pairing shown, seams included.
-        library.setShifted("/books/a.cbz", false)
-        assertFalse(library.isShifted("/books/a.cbz"))
-        library.setShifted("/books/a.cbz", true)
-        assertTrue(library.isShifted("/books/a.cbz"))
-        assertFalse(library.isShiftedByNames("/books/a.cbz"))
+        library.setShifted(a, false)
+        assertFalse(library.isShifted(a.id))
+        library.setShifted(a, true)
+        assertTrue(library.isShifted(a.id))
+        assertFalse(library.isShiftedByNames(a.id))
     }
 
     @Test
-    fun shiftsFollowRenamesDeletesAndBackups() {
-        library.importAll(JSONObject().put("shifted", JSONArray().put("/books/old/a.cbz")))
-        library.setShifted("/books/old/b.cbz", true)
+    fun shiftsFollowTheBookThroughMovesDeletesAndBackups() {
+        library.importAll(JSONObject().put("shifted", JSONArray().put(a.id.hex).put("/books/old/legacy.cbz")))
+        library.setShifted(b, true)
         library.replacePath("/books/old", "/books/new")
-        assertTrue(library.isShiftedByNames("/books/new/a.cbz"))
-        assertTrue(library.isShifted("/books/new/b.cbz"))
+        assertTrue(library.isShiftedByNames(a.id))
+        assertTrue(library.isShifted(b.id))
+        assertEquals("/books/new/b.cbz", library.pathOf(b.id))
         val backup = library.exportAll()
-        library.removePathsUnder("/books/new")
-        assertFalse(library.isShifted("/books/new/a.cbz"))
-        assertFalse(library.isShifted("/books/new/b.cbz"))
+        assertEquals(JSONArray().put(a.id.hex).toString(), backup.getJSONArray("shifted").toString())
+        library.setShifted(a, false)
+        library.setShifted(b, false)
         library.importAll(backup)
-        assertTrue(library.isShiftedByNames("/books/new/a.cbz"))
-        assertTrue(library.isShifted("/books/new/b.cbz"))
-        assertFalse(library.isShiftedByNames("/books/new/b.cbz"))
+        assertTrue(library.isShiftedByNames(a.id))
+        assertTrue(library.isShifted(b.id))
+        assertFalse(library.isShiftedByNames(b.id))
     }
 
     @Test
-    fun ignoreSeamsFollowsRenamesDeletesAndBackups() {
-        library.setIgnoreSeams("/books/old/a.cbz", true)
-        assertTrue(library.ignoresSeams("/books/old/a.cbz"))
-        library.replacePath("/books/old", "/books/new")
-        assertTrue(library.ignoresSeams("/books/new/a.cbz"))
+    fun ignoreSeamsFollowsTheBookAndBackups() {
+        library.setIgnoreSeams(a, true)
+        assertTrue(library.ignoresSeams(a.id))
+        assertFalse(library.ignoresSeams(b.id))
         val backup = library.exportAll()
-        library.removePathsUnder("/books/new")
-        assertFalse(library.ignoresSeams("/books/new/a.cbz"))
+        library.setIgnoreSeams(a, false)
+        assertFalse(library.ignoresSeams(a.id))
         library.importAll(backup)
-        assertTrue(library.ignoresSeams("/books/new/a.cbz"))
-        library.setIgnoreSeams("/books/new/a.cbz", false)
-        assertFalse(library.ignoresSeams("/books/new/a.cbz"))
+        assertTrue(library.ignoresSeams(a.id))
     }
 }

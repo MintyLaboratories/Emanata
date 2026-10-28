@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.content.DialogInterface
@@ -49,7 +51,7 @@ class ListActivityStartupResumeTest {
         library = Library(context)
         val dir = File(Environment.getExternalStorageDirectory(), "shelf").apply { mkdirs() }
         book = File(dir, "two.cbz").apply { createNewFile() }
-        library.addHistory(HistoryItem(book.absolutePath, book.name, 4, 10, 1L))
+        library.addHistory(HistoryItem(book.absolutePath, book.name, 4, 10, 1L, bookId(book)))
         ShadowDialog.reset()
     }
 
@@ -108,7 +110,7 @@ class ListActivityStartupResumeTest {
 
     @Test
     fun aFinishedBookIsNotOffered() {
-        library.setRead(book.absolutePath, true)
+        library.setRead(ref(book), true)
         start()
         assertNull(offered())
     }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
 import android.content.Intent
@@ -110,7 +111,7 @@ class ListActivityStartupTest {
         val book = File(root, "a.cbz").apply { createNewFile() }
         val beta = File(root, "Beta").apply { mkdirs() }
         val alpha = File(root, "Alpha").apply { mkdirs() }
-        listOf(book, beta, alpha).forEach { library.toggleFavorite(it.absolutePath) }
+        listOf(book, beta, alpha).forEach { library.toggleFavorite(it) }
         prefs.groupFavorites = false
         prefs.startupLocation = StartupLocation.FIRST_FAVORITE
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

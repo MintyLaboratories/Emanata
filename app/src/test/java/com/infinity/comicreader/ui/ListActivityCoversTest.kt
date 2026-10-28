@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -131,7 +132,7 @@ class ListActivityCoversTest {
     /** The first row's badge in a Browse list at [density], Issue 1 being on page 100 of 400. */
     private fun badgeAt(density: ListDensity): TextView {
         val issue = File(dir, "Issue 1.cbz")
-        Library(ApplicationProvider.getApplicationContext()).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L))
+        Library(ApplicationProvider.getApplicationContext()).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L, bookId(issue)))
         prefs.setGrid(Prefs.TAB_BROWSE, false)
         prefs.setDensity(Prefs.TAB_BROWSE, density)
         return rows().mapNotNull { it.findViewById<TextView>(R.id.badge) }.first()
@@ -152,8 +153,8 @@ class ListActivityCoversTest {
     fun bookmarksShowNoBadgeOverTheirPage() {
         val issue = File(dir, "Issue 1.cbz")
         val context = ApplicationProvider.getApplicationContext<Application>()
-        Library(context).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L))
-        Library(context).addBookmark(Bookmark(issue.absolutePath, issue.name, 40, "", 1L))
+        Library(context).addHistory(HistoryItem(issue.absolutePath, issue.name, 99, 400, 1L, bookId(issue)))
+        Library(context).addBookmark(Bookmark(issue.absolutePath, issue.name, 40, "", 1L, bookId(issue)))
         val badges = rows(tab = 3).mapNotNull { it.findViewById<TextView>(R.id.badge) }
         assertEquals(1, badges.size)
         assertEquals(View.GONE, badges[0].visibility)

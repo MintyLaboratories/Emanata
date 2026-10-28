@@ -19,6 +19,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.DetailDisplay
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
@@ -287,8 +288,8 @@ class BookAdapter(
         }
     }
 
-    /** Pages hidden in each book, by path, as covers skip them ([Thumbs.hiddenTag]). */
-    var hiddenPages: () -> Map<String, Set<Int>> = { emptyMap() }
+    /** Pages hidden in each book, as covers skip them ([Thumbs.hiddenTag]). */
+    var hiddenPages: () -> Library.Hidden = { Library.Hidden(emptyMap(), emptyMap(), emptyMap()) }
 
     /**
      * Everything the cover of [item] is made from: two entries with the same id show the same
@@ -297,7 +298,7 @@ class BookAdapter(
     private fun coverId(item: BookEntry): String =
         "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
             "${item.direction == ReadingDirection.RTL && covers.directionMatters(item)}|" +
-            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.path, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
+            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
 
     init {
         setHasStableIds(true)

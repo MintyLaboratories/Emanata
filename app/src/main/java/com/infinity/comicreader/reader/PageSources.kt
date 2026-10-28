@@ -42,7 +42,7 @@ object PageSources {
         copyNested: Boolean = true,
         fetch: Fetch? = null
     ): PageSource {
-        val charsetName = NameCharset.forBook(file.absolutePath, setting)
+        val charsetName = NameCharset.forBook(file, setting)
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
         val raw = openRaw(file, charsetName, cacheDir, nested, pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchWhole = true)
         return previewing(file, cacheDir, GuardedSource(raw))
@@ -53,7 +53,7 @@ object PageSources {
      * page unless that is hidden): enough for a cover, and cheaper.
      */
     fun openCover(file: File, setting: String, cacheDir: File, page: Int = 0): PageSource {
-        val charsetName = NameCharset.forBook(file.absolutePath, setting)
+        val charsetName = NameCharset.forBook(file, setting)
         return previewing(
             file, cacheDir,
             GuardedSource(

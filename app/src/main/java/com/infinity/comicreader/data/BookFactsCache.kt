@@ -9,18 +9,15 @@ import com.infinity.comicreader.reader.Slices
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Remembers each book's [BookFacts] with the file size they were read at; a
- * different size means the book changed and its facts are stale. Stored one row
- * per book in a small database, and held in memory once [load]ed.
+ * Remembers each book's [BookFacts] by its [BookId], so they follow the book moved,
+ * renamed or copied, and a changed book (another ID) never reads stale ones. Stored
+ * one row per book in a small database, and held in memory once [load]ed.
  */
 class BookFactsCache(context: Context) {
     private val store = storeFor(context.applicationContext)
 
-    /** The facts stored for [path] at [size]; null when unknown, stale, or not [load]ed yet. Never blocks. */
-    fun get(path: String, size: Long): BookFacts? {
-        val (known, facts) = store.loaded?.get(path) ?: return null
-        return facts.takeIf { known == size }
-    }
+    /** The facts stored for book [id]; null when unknown, not [load]ed yet, or [id] is. Never blocks. */
+    fun get(id: BookId?): BookFacts? = id?.let { store.loaded?.get(it.value) }
 
     /** True once [load] has run, so [get] answers from everything stored. */
     val isLoaded: Boolean get() = store.loaded != null
@@ -30,23 +27,22 @@ class BookFactsCache(context: Context) {
         if (store.loaded != null) return
         synchronized(store) {
             if (store.loaded != null) return
-            val map = ConcurrentHashMap<String, Pair<Long, BookFacts>>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, PAGES, YEAR, DIRECTION, SLICES), null, null, null, null, null).use { c ->
+            val map = ConcurrentHashMap<Long, BookFacts>()
+            store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) {
-                    map[c.getString(0)] = c.getLong(1) to BookFacts(c.getInt(2), c.getInt(3), DirectionDetection.Detected.decode(c.getInt(4)), decodeSlices(c.getInt(5)))
+                    map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)))
                 }
             }
             store.loaded = map
         }
     }
 
-    /** Stores [facts] of [path], read at [size]. Blocking. */
-    fun put(path: String, size: Long, facts: BookFacts) {
+    /** Stores [facts] of book [id]. Blocking. */
+    fun put(id: BookId, facts: BookFacts) {
         load()
-        store.loaded?.put(path, size to facts)
-        val row = ContentValues(6).apply {
-            put(PATH, path)
-            put(SIZE, size)
+        store.loaded?.put(id.value, facts)
+        val row = ContentValues(5).apply {
+            put(ID, id.value)
             put(PAGES, facts.pages)
             put(YEAR, facts.year)
             put(DIRECTION, facts.detected?.encode() ?: 0)
@@ -55,23 +51,23 @@ class BookFactsCache(context: Context) {
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    /** Forgets the facts of [path], as when what they were read from changes. Blocking. */
-    fun remove(path: String) {
+    /** Forgets the facts of book [id], as when what they were read from changes. Blocking. */
+    fun remove(id: BookId) {
         load()
-        store.loaded?.remove(path)
-        store.helper.writableDatabase.delete(TABLE, "$PATH = ?", arrayOf(path))
+        store.loaded?.remove(id.value)
+        store.helper.writableDatabase.delete(TABLE, "$ID = ?", arrayOf(id.value.toString()))
     }
 
     /** One database file, opened once, and its rows once loaded. */
     private class Store(val file: String, val helper: Helper) {
         @Volatile
-        var loaded: MutableMap<String, Pair<Long, BookFacts>>? = null
+        var loaded: MutableMap<Long, BookFacts>? = null
     }
 
     private class Helper(context: Context) : SQLiteOpenHelper(context, FILE, null, VERSION) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
-                "CREATE TABLE $TABLE ($PATH TEXT PRIMARY KEY, $SIZE INTEGER NOT NULL, $PAGES INTEGER NOT NULL, " +
+                "CREATE TABLE $TABLE ($ID INTEGER PRIMARY KEY, $PAGES INTEGER NOT NULL, " +
                     "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0, $SLICES INTEGER NOT NULL DEFAULT $UNCHECKED)"
             )
         }
@@ -86,8 +82,7 @@ class BookFactsCache(context: Context) {
     companion object {
         private const val FILE = "book_facts.db"
         private const val TABLE = "facts"
-        private const val PATH = "path"
-        private const val SIZE = "size"
+        private const val ID = "id"
         private const val PAGES = "pages"
         private const val YEAR = "year"
         private const val DIRECTION = "direction"
@@ -98,9 +93,9 @@ class BookFactsCache(context: Context) {
 
         /**
          * 2 added the detected direction; 3 drops directions from page names alone or
-         * since-dropped publishers; 4 added slices.
+         * since-dropped publishers; 4 added slices; 5 keys books by [BookId].
          */
-        private const val VERSION = 4
+        private const val VERSION = 5
 
         private fun encodeSlices(checked: Slices.Checked?): Int = checked?.let { it.found?.encode() ?: 0 } ?: UNCHECKED
 

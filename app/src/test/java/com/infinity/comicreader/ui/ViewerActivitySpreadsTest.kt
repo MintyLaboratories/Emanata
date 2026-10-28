@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -172,10 +173,10 @@ class ViewerActivitySpreadsTest {
         assertTrue(sheet.view<MaterialSwitch>(R.id.sheet_shift).isEnabled)
         sheet.tap(R.id.sheet_shift)
         assertEquals(5, viewer.items())
-        assertTrue(Library(context).isShifted(book.absolutePath))
+        assertTrue(Library(context).isShifted(bookId(book)))
         sheet.tap(R.id.sheet_shift)
         assertEquals(4, viewer.items())
-        assertFalse(Library(context).isShifted(book.absolutePath))
+        assertFalse(Library(context).isShifted(bookId(book)))
     }
 
     @Test

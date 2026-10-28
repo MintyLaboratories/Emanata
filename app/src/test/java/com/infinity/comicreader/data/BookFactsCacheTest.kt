@@ -28,50 +28,54 @@ class BookFactsCacheTest {
         BookFactsCache.reset()
     }
 
+    private val a = BookId(0x0a)
+    private val b = BookId(0x0b)
+    private val c = BookId(0x0c)
+
     @Test
-    fun factsAreKeptPerSizeAndAcrossInstances() {
-        BookFactsCache(context).put("/b/a.cbz", 100L, BookFacts(24, 2014))
-        assertEquals(BookFacts(24, 2014), BookFactsCache(context).get("/b/a.cbz", 100))
-        // A different size means the book changed.
-        assertNull(BookFactsCache(context).get("/b/a.cbz", 101))
-        assertNull(BookFactsCache(context).get("/b/other.cbz", 100))
-        BookFactsCache(context).put("/b/a.cbz", 101L, BookFacts(25, 2014))
-        assertEquals(BookFacts(25, 2014), BookFactsCache(context).get("/b/a.cbz", 101))
+    fun factsAreKeptPerBookAndAcrossInstances() {
+        BookFactsCache(context).put(a, BookFacts(24, 2014))
+        assertEquals(BookFacts(24, 2014), BookFactsCache(context).get(a))
+        // A changed book has another ID.
+        assertNull(BookFactsCache(context).get(b))
+        assertNull(BookFactsCache(context).get(null))
+        BookFactsCache(context).put(a, BookFacts(25, 2014))
+        assertEquals(BookFacts(25, 2014), BookFactsCache(context).get(a))
     }
 
     @Test
     fun removedFactsAreGoneForGood() {
-        BookFactsCache(context).put("/b/a.cbz", 100L, BookFacts(24, 2014))
-        BookFactsCache(context).put("/b/b.cbz", 100L, BookFacts(12, 2014))
-        BookFactsCache(context).remove("/b/a.cbz")
-        assertNull(BookFactsCache(context).get("/b/a.cbz", 100))
+        BookFactsCache(context).put(a, BookFacts(24, 2014))
+        BookFactsCache(context).put(b, BookFacts(12, 2014))
+        BookFactsCache(context).remove(a)
+        assertNull(BookFactsCache(context).get(a))
         BookFactsCache.reset()
         val read = BookFactsCache(context).apply { load() }
-        assertNull(read.get("/b/a.cbz", 100))
-        assertEquals(BookFacts(12, 2014), read.get("/b/b.cbz", 100))
+        assertNull(read.get(a))
+        assertEquals(BookFacts(12, 2014), read.get(b))
     }
 
     @Test
     fun detectedDirectionIsKept() {
         val detected = DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER)
-        BookFactsCache(context).put("/b/m.cbz", 5L, BookFacts(20, 0, detected))
+        BookFactsCache(context).put(BookId(-5), BookFacts(20, 0, detected))
         BookFactsCache.reset()
         val cache = BookFactsCache(context).apply { load() }
-        assertEquals(BookFacts(20, 0, detected), cache.get("/b/m.cbz", 5))
+        assertEquals(BookFacts(20, 0, detected), cache.get(BookId(-5)))
     }
 
     @Test
     fun slicesAreKeptUncheckedNoneOrFound() {
         val seams = Slices.Checked(DirectionDetection.Detected(ReadingDirection.TTB, DirectionDetection.Source.SEAMS))
         val cache = BookFactsCache(context)
-        cache.put("/b/unchecked.cbz", 1L, BookFacts(5, 0))
-        cache.put("/b/none.cbz", 1L, BookFacts(5, 0, slices = Slices.Checked(null)))
-        cache.put("/b/strip.cbz", 1L, BookFacts(5, 0, slices = seams))
+        cache.put(a, BookFacts(5, 0))
+        cache.put(b, BookFacts(5, 0, slices = Slices.Checked(null)))
+        cache.put(c, BookFacts(5, 0, slices = seams))
         BookFactsCache.reset()
         val read = BookFactsCache(context).apply { load() }
-        assertNull(read.get("/b/unchecked.cbz", 1)?.slices)
-        assertEquals(Slices.Checked(null), read.get("/b/none.cbz", 1)?.slices)
-        assertEquals(seams, read.get("/b/strip.cbz", 1)?.slices)
+        assertNull(read.get(a)?.slices)
+        assertEquals(Slices.Checked(null), read.get(b)?.slices)
+        assertEquals(seams, read.get(c)?.slices)
     }
 
     @Test
@@ -84,21 +88,21 @@ class BookFactsCacheTest {
             db.version = 1
         }
         val cache = BookFactsCache(context).apply { load() }
-        assertNull(cache.get("/b/a.cbz", 1))
-        cache.put("/b/a.cbz", 1L, BookFacts(12, 2001))
-        assertEquals(BookFacts(12, 2001), cache.get("/b/a.cbz", 1))
+        assertNull(cache.get(a))
+        cache.put(a, BookFacts(12, 2001))
+        assertEquals(BookFacts(12, 2001), cache.get(a))
     }
 
     @Test
     fun factsSurviveARestartOnceLoaded() {
-        BookFactsCache(context).put("/b/a.cbz", 7L, BookFacts(-1, 0))
+        BookFactsCache(context).put(a, BookFacts(-1, 0))
         BookFactsCache.reset()
         val cache = BookFactsCache(context)
         // Looking up never reads the disk.
         assertFalse(cache.isLoaded)
-        assertNull(cache.get("/b/a.cbz", 7))
+        assertNull(cache.get(a))
         cache.load()
         assertTrue(cache.isLoaded)
-        assertEquals(BookFacts(-1, 0), cache.get("/b/a.cbz", 7))
+        assertEquals(BookFacts(-1, 0), cache.get(a))
     }
 }

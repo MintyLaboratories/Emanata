@@ -56,6 +56,9 @@ import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookFactsCache
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.HistoryItem
@@ -210,6 +213,12 @@ class ViewerActivity : AppCompatActivity() {
     private var source: PageSource? = null
     private var adapter: PageAdapter? = null
     private var file: File? = null
+
+    /** The open book's [BookId], as known when it began to open, then as found; null while unknown or unreadable. */
+    private var bookId: BookId? = null
+
+    /** The open book as the library keeps it; null while its ID is unknown. */
+    private fun book(): BookRef? = bookId?.let { id -> file?.let { BookRef(id, it.absolutePath) } }
 
     /**
      * The next chapter, opened ahead so a continuous reader rolls
@@ -611,7 +620,7 @@ class ViewerActivity : AppCompatActivity() {
         openJob = lifecycleScope.launch {
             withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, book, prefs.charset, picked, cacheDir) }
             // The history holds the page that was on screen, moved with the pages.
-            if (opened) intent.putExtra(EXTRA_PAGE, library.pageFor(book.absolutePath))
+            if (opened) intent.putExtra(EXTRA_PAGE, bookId?.let { library.pageFor(it) } ?: 0)
             open()
         }
     }
@@ -622,16 +631,15 @@ class ViewerActivity : AppCompatActivity() {
      * bookmarks follow the new numbering ([Library.setHiddenPages]).
      */
     private fun applyHidden(hidden: Set<Int>) {
-        val f = file ?: return
+        val ref = book() ?: return
         val src = source ?: return
-        val path = f.absolutePath
         val count = HiddenPages.bookCount(src)
         val page = HiddenPages.bookIndex(src, currentIndex.coerceIn(0, src.pageCount - 1))
         stopAutoScroll()
         flushStats()
         saveHistory()
-        library.setHiddenPages(path, hidden, count)
-        val now = library.hiddenPages(path)
+        library.setHiddenPages(ref, hidden, count)
+        val now = library.hiddenPages(ref.id)
         val shown = HiddenPages.shown(count, now).size
         intent.putExtra(EXTRA_PAGE, HiddenPages.toShown(page, now).coerceIn(0, shown - 1))
         openJob?.cancel()
@@ -1067,6 +1075,8 @@ class ViewerActivity : AppCompatActivity() {
         val target = Remotes.file(path)
         persistAdjustments()
         file = target
+        // Known at once when seen before; else found as the book opens.
+        bookId = BookIds.known(target)
         bookRoots = StorageRoots.list(this)
         refreshFavorites()
         loadAdjustments()
@@ -1096,10 +1106,14 @@ class ViewerActivity : AppCompatActivity() {
             var sliceSizes: List<IntArray?> = emptyList()
             var sliced: DirectionDetection.Detected? = null
             var sliceSettled = false
+            var found: BookId? = null
             val (opened, siblings, contents) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 val job = coroutineContext.job
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
-                val s = runCatching { hiding(target, PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)) }
+                // The ID first: on a share, the reads of the book's ends start opening it too.
+                val id = BookIds.find(target)
+                found = id
+                val s = runCatching { hiding(id, PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)) }
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -1124,6 +1138,12 @@ class ViewerActivity : AppCompatActivity() {
             }
             progress.visibility = View.GONE
             fetched.visibility = View.GONE
+            if (found != bookId) {
+                bookId = found
+                refreshFavorites()
+                loadAdjustments()
+            }
+            book()?.let { library.seen(it) }
             chapters = siblings
             val src = opened.getOrNull()
             if (src == null) {
@@ -1182,14 +1202,15 @@ class ViewerActivity : AppCompatActivity() {
     private fun keptSlices(book: File): Slices.Checked? {
         BookDirection.checkedSlices(book)?.let { return it }
         factsCache.load()
-        return factsCache.get(book.absolutePath, book.length())?.slices
+        return factsCache.get(BookIds.known(book))?.slices
     }
 
     /** Keeps what [book]'s pages were found to be, also with the library's facts of it, so the next open needs no check. Blocking. */
     private fun keepSlices(book: File, checked: Slices.Checked) {
         BookDirection.rememberSlices(book, checked)
-        val facts = factsCache.get(book.absolutePath, book.length()) ?: return
-        if (facts.slices != checked) factsCache.put(book.absolutePath, book.length(), facts.copy(slices = checked))
+        val id = BookIds.known(book) ?: return
+        val facts = factsCache.get(id) ?: return
+        if (facts.slices != checked) factsCache.put(id, facts.copy(slices = checked))
     }
 
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
@@ -1207,7 +1228,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun detectBeforeOpen(target: File, src: PageSource, siblings: List<File>): BookDirection.Contents {
         if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
         factsCache.load()
-        val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(target.absolutePath, target.length()))
+        val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(BookIds.known(target)))
         return contents.copy(detected = DirectionDetection.withCover(contents.detected, Thumbs.knownFront(target)))
     }
 
@@ -1230,7 +1251,7 @@ class ViewerActivity : AppCompatActivity() {
                     ensureActive()
                     if (facts != null) {
                         // Seams checked this session settle what headers alone left open.
-                        factsCache.put(book.absolutePath, book.length(), facts.copy(slices = facts.slices ?: BookDirection.checkedSlices(book)))
+                        BookIds.find(book)?.let { factsCache.put(it, facts.copy(slices = facts.slices ?: BookDirection.checkedSlices(book))) }
                         contents = facts.detected
                     }
                 }
@@ -1389,9 +1410,9 @@ class ViewerActivity : AppCompatActivity() {
         val requested = intent.getIntExtra(EXTRA_PAGE, -1)
         // Used once: a later reopen sets it again, and anything else starts from history.
         intent.removeExtra(EXTRA_PAGE)
-        val path = file!!.absolutePath
-        val saved = library.pageFor(path)
-        val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = library.isRead(path))
+        val id = bookId
+        val saved = id?.let { library.pageFor(it) } ?: 0
+        val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = id != null && library.isRead(id))
         currentIndex = start.page.coerceIn(0, src.pageCount - 1)
         // Come back to from the next chapter: the end card waits for a move past the end,
         // and the chapter counts as read only once its last page is reached again.
@@ -1454,8 +1475,8 @@ class ViewerActivity : AppCompatActivity() {
         val names: List<String?> get() = store.names
     }
 
-    /** [src], the book [book] opened, without the pages hidden in it. */
-    private fun hiding(book: File, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(book.absolutePath))
+    /** [src], book [id] opened, without the pages hidden in it. */
+    private fun hiding(id: BookId?, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(id))
 
     /** The page names of [src], the sizes, seams and pages seen stored for them and their [Spreads.classify]. Blocking. */
     private suspend fun knownSizes(book: File, src: PageSource): KnownPages {
@@ -1474,10 +1495,10 @@ class ViewerActivity : AppCompatActivity() {
         pageNames = known.names
         pageStore = known.store
         pageSizes = known.sizes
-        val path = favoriteFile()?.absolutePath
-        shifted = path != null && library.isShifted(path)
-        shiftedByNames = path != null && library.isShiftedByNames(path)
-        ignoreSeams = path != null && library.ignoresSeams(path)
+        val id = favoriteFile()?.let { bookId }
+        shifted = id != null && library.isShifted(id)
+        shiftedByNames = id != null && library.isShiftedByNames(id)
+        ignoreSeams = id != null && library.ignoresSeams(id)
         analysis = known.analysis
         pageSeams = known.seams
         shownSeams = pageSeams
@@ -1685,7 +1706,7 @@ class ViewerActivity : AppCompatActivity() {
         if (shifted == value) return
         shifted = value
         shiftedByNames = false
-        favoriteFile()?.let { library.setShifted(it.absolutePath, value) }
+        if (favoriteFile() != null) book()?.let { library.setShifted(it, value) }
         if (spread) attach()
     }
 
@@ -1721,7 +1742,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun setIgnoreSeams(value: Boolean) {
         if (ignoreSeams == value) return
         ignoreSeams = value
-        favoriteFile()?.let { library.setIgnoreSeams(it.absolutePath, value) }
+        if (favoriteFile() != null) book()?.let { library.setIgnoreSeams(it, value) }
         applyJoinSpreads()
     }
 
@@ -1853,7 +1874,7 @@ class ViewerActivity : AppCompatActivity() {
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
                 val s = runCatching {
-                    hiding(next, PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
+                    hiding(BookIds.find(next), PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
                 }.getOrNull()
                 try {
                     ensureActive()
@@ -2155,7 +2176,7 @@ class ViewerActivity : AppCompatActivity() {
         if (!onLast) landedAtEnd = false
         if (!markedRead && onLast && !landedAtEnd) {
             markedRead = true
-            file?.absolutePath?.let { library.setRead(it, true) }
+            book()?.let { library.setRead(it, true) }
         }
         invalidateOptionsMenu()
     }
@@ -2207,9 +2228,10 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun saveHistory() {
         val f = file ?: return
+        val id = bookId ?: return
         val count = source?.pageCount ?: return
         library.addHistory(
-            HistoryItem(f.absolutePath, f.name, currentIndex, count, System.currentTimeMillis())
+            HistoryItem(f.absolutePath, f.name, currentIndex, count, System.currentTimeMillis(), id)
         )
     }
 
@@ -2483,7 +2505,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Takes the open book's adjustments: its own, or the defaults. */
     private fun loadAdjustments() {
-        val own = file?.let { library.adjustmentsFor(it.absolutePath) }
+        val own = bookId?.let { library.adjustmentsFor(it) }
         ownAdjustments = own != null
         adjustmentsDirty = false
         showAdjustments(own ?: prefs.defaultAdjustments)
@@ -2509,8 +2531,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun persistAdjustments() {
         if (!adjustmentsDirty) return
         adjustmentsDirty = false
-        val f = file ?: return
-        library.setAdjustments(f.absolutePath, if (ownAdjustments) adjustments else null)
+        val ref = book() ?: return
+        library.setAdjustments(ref, if (ownAdjustments) adjustments else null)
     }
 
     /** Returns the book to the default adjustments. */
@@ -2661,7 +2683,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        val marked = file?.let { library.isBookmarked(it.absolutePath, currentIndex) } == true
+        val marked = bookId?.let { library.isBookmarked(it, currentIndex) } == true
         menu.findItem(R.id.menu_bookmark)?.apply {
             setIcon(if (marked) R.drawable.ic_bookmark else R.drawable.ic_bookmark_border)
             setTitle(if (marked) R.string.menu_bookmark_remove else R.string.menu_bookmark_add)
@@ -2699,15 +2721,22 @@ class ViewerActivity : AppCompatActivity() {
     /** Reads whether the open comic and its folder are favorites. */
     private fun refreshFavorites() {
         val f = favoriteFile()
-        val favorites = if (f != null) library.favoriteSet() else emptySet()
-        favoriteBook = f != null && f.absolutePath in favorites
-        favoriteFolder = f?.parent?.let { it in favorites } == true
+        favoriteBook = f != null && bookId?.let { library.isFavorite(it) } == true
+        favoriteFolder = f?.parent?.let { library.isFavoriteFolder(it) } == true
     }
 
-    /** Adds [path] to the favorites, or removes it, and says which. */
-    private fun toggleFavorite(path: String?, added: Int, removed: Int) {
-        if (path == null) return
-        toast(if (library.toggleFavorite(path)) added else removed)
+    /** Adds the open book to the favorites, or removes it, and says which. */
+    private fun toggleFavoriteBook() {
+        val ref = book() ?: return
+        toast(if (library.toggleFavorite(ref)) R.string.favorite_added else R.string.favorite_removed)
+        refreshFavorites()
+        invalidateOptionsMenu()
+    }
+
+    /** Adds the open book's folder to the favorites, or removes it, and says which. */
+    private fun toggleFavoriteFolder() {
+        val folder = file?.parent ?: return
+        toast(if (library.toggleFavoriteFolder(folder)) R.string.folder_favorite_added else R.string.folder_favorite_removed)
         refreshFavorites()
         invalidateOptionsMenu()
     }
@@ -2726,11 +2755,11 @@ class ViewerActivity : AppCompatActivity() {
             R.id.menu_bookmark -> { toggleBookmark(); true }
             R.id.menu_bookmark_list -> { showBookmarks(); true }
             R.id.menu_favorite -> {
-                toggleFavorite(file?.absolutePath, R.string.favorite_added, R.string.favorite_removed)
+                toggleFavoriteBook()
                 true
             }
             R.id.menu_favorite_folder -> {
-                toggleFavorite(file?.parent, R.string.folder_favorite_added, R.string.folder_favorite_removed)
+                toggleFavoriteFolder()
                 true
             }
             R.id.menu_crop -> { startCrop(); true }
@@ -3336,7 +3365,9 @@ class ViewerActivity : AppCompatActivity() {
      * system back gesture.
      */
     private fun showChapterDrawer() {
-        val rows = ChapterDrawer.rows(bookChapters, currentIndex, chapters, file?.absolutePath, library.readSet())
+        val read = library.readSet()
+        val readChapters = if (read.isEmpty()) emptySet() else chapters.filter { f -> BookIds.known(f)?.let { it in read } == true }.mapTo(HashSet()) { it.absolutePath }
+        val rows = ChapterDrawer.rows(bookChapters, currentIndex, chapters, file?.absolutePath, readChapters)
         if (rows.isEmpty()) return
         val view = layoutInflater.inflate(R.layout.sheet_chapters, null)
         val dialog = SideSheetDialog(this)
@@ -3412,7 +3443,7 @@ class ViewerActivity : AppCompatActivity() {
             row(R.string.menu_reading_dir, direction)
             val read = src.nameCharset
             val book = favoriteFile()?.absolutePath
-            if (read != null && book != null) row(R.string.info_name_charset, NameCharsetDialog.describe(this@ViewerActivity, library, book, prefs.charset, read))
+            if (read != null && book != null) row(R.string.info_name_charset, NameCharsetDialog.describe(this@ViewerActivity, library, bookId, prefs.charset, read))
             val fields = info?.fields.orEmpty()
             if (fields.isNotEmpty()) row(R.string.info_comic_info, fields.joinToString("\n") { (k, v) -> "$k: $v" })
             val dialog = AlertDialog.Builder(this@ViewerActivity)
@@ -3422,7 +3453,7 @@ class ViewerActivity : AppCompatActivity() {
             // An advanced setting: offered once Keep it simple is off.
             if (read != null && book != null && !prefs.keepSimple) {
                 dialog.setNeutralButton(R.string.menu_name_charset) { _, _ ->
-                    NameCharsetDialog.builder(this@ViewerActivity, library, book, prefs.charset) { switchCharset(it) }.showKeepingFullscreen()
+                    NameCharsetDialog.builder(this@ViewerActivity, library, bookId, prefs.charset) { switchCharset(it) }.showKeepingFullscreen()
                 }
             }
             dialog.showKeepingFullscreen()
@@ -3478,7 +3509,7 @@ class ViewerActivity : AppCompatActivity() {
             toast(R.string.hide_last_page)
             return
         }
-        applyHidden(library.hiddenPages(f.absolutePath) + HiddenPages.bookIndex(src, page))
+        applyHidden(library.hiddenPages(bookId) + HiddenPages.bookIndex(src, page))
         toast(R.string.page_hidden)
     }
 
@@ -3489,7 +3520,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun showHiddenPages() {
         val f = file ?: return
         val src = source as? HidingSource ?: return
-        val hidden = library.hiddenPages(f.absolutePath).filter { it < src.inner.pageCount }.sorted()
+        val hidden = library.hiddenPages(bookId).filter { it < src.inner.pageCount }.sorted()
         if (hidden.isEmpty()) return
         val picked = HashSet<Int>()
         val grid = RecyclerView(this)
@@ -3597,12 +3628,12 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun toggleBookmark() {
         val f = file ?: return
-        val path = f.absolutePath
-        if (library.isBookmarked(path, currentIndex)) {
-            library.removeBookmark(path, currentIndex)
+        val id = bookId ?: return
+        if (library.isBookmarked(id, currentIndex)) {
+            library.removeBookmark(id, currentIndex)
             toast(R.string.bookmark_removed)
         } else {
-            library.addBookmark(Bookmark(path, f.name, currentIndex, "", System.currentTimeMillis()))
+            library.addBookmark(Bookmark(f.absolutePath, f.name, currentIndex, "", System.currentTimeMillis(), id))
             toast(R.string.bookmark_saved)
         }
         invalidateOptionsMenu()
@@ -3610,7 +3641,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun showBookmarks() {
         val f = file ?: return
-        val marks = library.bookmarksFor(f.absolutePath)
+        val marks = bookId?.let { library.bookmarksFor(it) }.orEmpty()
         if (marks.isEmpty()) {
             toast(R.string.no_bookmarks_in_book)
             return
@@ -3623,7 +3654,7 @@ class ViewerActivity : AppCompatActivity() {
             .setNeutralButton(R.string.clear) { _, _ ->
                 val message = getString(R.string.confirm_clear_book_bookmarks_msg, f.name)
                 confirm(this, R.string.confirm_clear_book_bookmarks_title, message, R.string.clear) {
-                    marks.forEach { library.removeBookmark(f.absolutePath, it.page) }
+                    marks.forEach { library.removeBookmark(it.id, it.page) }
                     invalidateOptionsMenu()
                 }
             }

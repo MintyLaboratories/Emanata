@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -133,8 +134,9 @@ class ViewerActivityChaptersTest {
     fun filesInTheFolderShowAndOpen() {
         val shelf = tmp.newFolder("shelf")
         val first = book("Book 01.cbz", listOf("01.png", "02.png"), shelf)
-        val second = book("Book 02.cbz", listOf("01.png", "02.png"), shelf)
-        Library(context).setRead(second.absolutePath, true)
+        // Another book, not a copy of the first: one page more.
+        val second = book("Book 02.cbz", listOf("01.png", "02.png", "03.png"), shelf)
+        Library(context).setRead(ref(second), true)
         val viewer = launch(first, 0)
         assertTrue(viewer.drawerButtonShown())
         val (dialog, list) = viewer.openDrawer()

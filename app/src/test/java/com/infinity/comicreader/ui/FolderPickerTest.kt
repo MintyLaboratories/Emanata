@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
 import android.content.DialogInterface
@@ -57,7 +58,7 @@ class FolderPickerTest {
         val alpha = File(root, "Alpha").apply { mkdirs() }
         val beta = File(root, "Beta").apply { mkdirs() }
         val book = File(root, "a.cbz").apply { createNewFile() }
-        listOf(beta, book, alpha).forEach { library.toggleFavorite(it.absolutePath) }
+        listOf(beta, book, alpha).forEach { library.toggleFavorite(it) }
         val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         var picked: String? = null
         FolderPicker(activity, activity.lifecycleScope) { picked = it }.show()
@@ -79,8 +80,8 @@ class FolderPickerTest {
     fun describeUsesTheFavoriteLabelElseTheCrumbs() {
         val library = Library(context)
         val stacks = File(root, "stacks/Comics").apply { mkdirs() }
-        File(root, "books/Comics").apply { mkdirs() }.let { library.toggleFavorite(it.absolutePath) }
-        library.toggleFavorite(stacks.absolutePath)
+        File(root, "books/Comics").apply { mkdirs() }.let { library.toggleFavorite(it) }
+        library.toggleFavorite(stacks)
         assertEquals("stacks/Comics", FolderPicker.describe(context, stacks.absolutePath).toString())
         assertEquals("Device / Other", FolderPicker.describe(context, File(root, "Other").absolutePath).toString())
     }

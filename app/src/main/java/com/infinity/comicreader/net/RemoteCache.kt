@@ -1,5 +1,7 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.Hashes
 import java.io.File
@@ -9,7 +11,8 @@ import java.io.InterruptedIOException
 /**
  * Local copies of files on shares, for what cannot be read in place: PDFs, loose images,
  * and books on servers that send files only whole. Kept under `cacheDir/network` by
- * path, size and modification time, so a changed file is fetched again. Pages unpacked
+ * the file's Book ID ([nameOf]), so a changed file is fetched again and a moved or copied
+ * one is not. Pages unpacked
  * from solid archives read in place are kept beside them, a folder per book under
  * `cacheDir/network-pages` ([pagesOf]). The least recently used copies and folders go
  * once together they pass [limitBytes] (the "Network cache" setting).
@@ -40,13 +43,13 @@ object RemoteCache {
     fun pagesIn(cacheDir: File) = File(cacheDir, PAGES_DIR)
 
     /**
-     * The folder pages unpacked from [file] are kept in, by its path, size and
-     * modification time, marked as just used and held from trimming until [release]d as
-     * often as asked for.
+     * The folder pages unpacked from [file] are kept in, by its Book ID ([nameOf]), marked
+     * as just used and held from trimming until [release]d as often as asked for. Blocking:
+     * an unseen file's ends are read.
      */
     fun pagesOf(file: RemoteFile, cacheDir: File): File {
         val stat = file.stat()
-        val dir = File(pagesIn(cacheDir), Hashes.sha256Hex("${file.path}\n${stat?.size}\n${stat?.modified}"))
+        val dir = File(pagesIn(cacheDir), stat?.let { nameOf(file, it, read = true) } ?: Hashes.sha256Hex(file.path))
         hold(dir.path)
         if (dir.isDirectory) touch(dir)
         return dir
@@ -59,12 +62,13 @@ object RemoteCache {
     }
 
     /**
-     * The local copy of [file] when one is complete; null otherwise. Touches no network.
-     * Copies are stored only once whole, so one of a file whose size is not listed counts.
+     * The local copy of [file] when one is complete; null otherwise. Touches no network,
+     * so only a file whose Book ID is known finds its copy. Copies are stored only once
+     * whole, so one of a file whose size is not listed counts.
      */
     fun cached(file: RemoteFile, cacheDir: File): File? {
         val stat = file.stat() ?: return null
-        return copyOf(file, stat, dirIn(cacheDir)).takeIf { whole(it, stat) }?.also { touch(it) }
+        return copyOf(file, stat, dirIn(cacheDir), read = false).takeIf { whole(it, stat) }?.also { touch(it) }
     }
 
     private fun whole(copy: File, stat: RemoteStat): Boolean = copy.isFile && (stat.size < 0 || copy.length() == stat.size)
@@ -82,7 +86,7 @@ object RemoteCache {
     ): File {
         val stat = file.fresh() ?: throw IOException("Not found: ${file.name}")
         val dir = dirIn(cacheDir)
-        val target = copyOf(file, stat, dir)
+        val target = copyOf(file, stat, dir, read = true)
         if (whole(target, stat)) {
             touch(target)
             return target
@@ -139,9 +143,29 @@ object RemoteCache {
         }
     }
 
-    private fun copyOf(file: RemoteFile, stat: RemoteStat, dir: File): File {
+    /**
+     * The name [file]'s copy or kept pages go by: a hash of its Book ID, found by reading its
+     * ends when unknown and [read] says so; else of its path, size and time.
+     */
+    private fun nameOf(file: RemoteFile, stat: RemoteStat, read: Boolean): String {
+        val id = BookIds.known(file.path, stat.size, stat.modified) ?: if (read) BookIds.find(file) else null
+        return id?.let { nameOf(it) } ?: Hashes.sha256Hex("${file.path}|${stat.size}|${stat.modified}")
+    }
+
+    /** The name the copy and kept pages of book [id] go by. */
+    private fun nameOf(id: BookId): String = Hashes.sha256Hex("id:${id.hex}")
+
+    /** Deletes the copy and kept pages of book [id] in [cacheDir], as when it is deleted; ones in use are left be. */
+    fun forget(id: BookId, cacheDir: File) {
+        val name = nameOf(id)
+        val busy = synchronized(writing) { writing.keys.toSet() }
+        dirIn(cacheDir).listFiles()?.filter { it.name.substringBefore('.') == name && it.path !in busy }?.forEach { it.delete() }
+        File(pagesIn(cacheDir), name).takeIf { it.path !in busy }?.deleteRecursively()
+    }
+
+    private fun copyOf(file: RemoteFile, stat: RemoteStat, dir: File, read: Boolean): File {
         val ext = Formats.ext(file.name).ifEmpty { "bin" }
-        return File(dir, Hashes.sha256Hex("${file.path}\n${stat.size}\n${stat.modified}") + "." + ext)
+        return File(dir, nameOf(file, stat, read) + "." + ext)
     }
 
     /** Marks [copy] as just used, for trimming. */

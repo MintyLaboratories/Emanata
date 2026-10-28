@@ -1,5 +1,7 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.data.BookId
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.Zip64Mode
@@ -311,15 +313,16 @@ class NameCharsetTest {
 
     @Test
     fun aBooksOwnChoiceWins() {
-        NameCharset.overrides = mapOf("/books/a.cbz" to "Shift_JIS")
-        assertEquals("Shift_JIS", NameCharset.forBook("/books/a.cbz", NameCharset.AUTO))
-        assertEquals(NameCharset.AUTO, NameCharset.forBook("/books/b.cbz", NameCharset.AUTO))
+        NameCharset.overrides = mapOf(BookId(1) to "Shift_JIS")
+        assertEquals("Shift_JIS", NameCharset.forBook(BookId(1), NameCharset.AUTO))
+        assertEquals(NameCharset.AUTO, NameCharset.forBook(BookId(2), NameCharset.AUTO))
+        assertEquals(NameCharset.AUTO, NameCharset.forBook(null as BookId?, NameCharset.AUTO))
     }
 
     @Test
     fun pageSourcesReadABookWithItsOwnChoice() {
         val file = File(tmp.root, "book.cbz").apply { writeBytes(zipBytes(listOf("b.jpg", "a.jpg"), sjis)) }
-        NameCharset.overrides = mapOf(file.absolutePath to "windows-1251")
+        NameCharset.overrides = mapOf(bookId(file) to "windows-1251")
         PageSources.open(file, NameCharset.AUTO, tmp.newFolder("cache")).use {
             assertEquals(Charset.forName("windows-1251"), it.nameCharset)
         }

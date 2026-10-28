@@ -91,9 +91,15 @@ object Thumbs {
     /** Each book's typical inner page shape ([Wraparound.innerRatio]) by [key]; NaN when it has none. */
     private val inners = LruCache<String, Double>(1024)
 
-    private fun key(entry: BookEntry): String = key(entry.path, entry.size, entry.lastModified, entry.isDir)
+    /** What a cover is known by: a book's [BookId] when known (no read), so a moved or copied book keeps it; a folder's path, size and time. */
+    private fun key(entry: BookEntry): String {
+        if (entry.isDir) return key(entry.path, entry.size, entry.lastModified, true)
+        val id = entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
+        return id?.let { "id:${it.hex}" } ?: key(entry.path, entry.size, entry.lastModified, false)
+    }
 
-    private fun key(file: File): String = key(file.absolutePath, file.length(), file.lastModified(), false)
+    private fun key(file: File): String =
+        BookIds.known(file)?.let { "id:${it.hex}" } ?: key(file.absolutePath, file.length(), file.lastModified(), false)
 
     private fun key(path: String, size: Long, lastModified: Long, isDir: Boolean): String = "$path|$size|$lastModified|$isDir"
 
@@ -138,7 +144,7 @@ object Thumbs {
     /** The cover of [entry] ([load]); with [quickFirst], a quick one when its cover page has a first layer ([loadFirst]). */
     private fun make(
         context: Context,
-        entry: BookEntry,
+        listed: BookEntry,
         charset: String,
         width: Int,
         height: Int,
@@ -146,7 +152,12 @@ object Thumbs {
         canceled: () -> Boolean,
         quickFirst: Boolean
     ): Cover? {
-        cached(context, entry, width, height, style)?.let { return Cover(it, full = true) }
+        BookIds.init(context)
+        cached(context, listed, width, height, style)?.let { return Cover(it, full = true) }
+        // A book not seen before is known by its ID from here on: one made under it at another path is found.
+        val found = if (listed.isDir || listed.id != null || canceled()) null else BookIds.find(listed.file)?.let { listed.copy(id = it) }
+        if (found != null) cached(context, found, width, height, style)?.let { return Cover(it, full = true) }
+        val entry = found ?: listed
         val page = entry.bookmarkPage
         val rightToLeft = entry.direction == ReadingDirection.RTL
         val k = coverKey(context, entry, width, height, style)
@@ -200,7 +211,7 @@ object Thumbs {
             book == null -> null
             entry.isDir && Formats.typeOf(book.name) == EntryType.IMAGE -> Decoders.decode(book, target)
             else -> {
-                val page = coverPage(Library(context).hiddenPages(book.absolutePath))
+                val page = coverPage(Library(context).hiddenPages(if (book == entry.file) idOf(entry) else BookIds.known(book)))
                 coverOf(book, charset, context.cacheDir, target.width, target.height, page, full = target, inner = false)?.bitmap
             }
         }
@@ -239,7 +250,11 @@ object Thumbs {
 
     /** The book index of [entry]'s bookmarked page, which counts pages as shown ([Library.hiddenPages]). */
     private fun bookPage(context: Context, entry: BookEntry): Int =
-        HiddenPages.toBook(entry.bookmarkPage, Library(context).hiddenPages(entry.path))
+        HiddenPages.toBook(entry.bookmarkPage, Library(context).hiddenPages(idOf(entry)))
+
+    /** The ID of book [entry] as listed, else as the index knows it now; null for a folder or while unknown. */
+    private fun idOf(entry: BookEntry): BookId? =
+        if (entry.isDir) null else entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
 
     /**
      * What a cover is cached by: its file, box size, style, the direction it starts on, the
@@ -256,7 +271,7 @@ object Thumbs {
     ): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
         val hidden = hiddenTag(entry, Library(context).hiddenAll())
-        val names = NameCharset.overrides[entry.path]?.let { "|n$it" }.orEmpty()
+        val names = idOf(entry)?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
         return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}$hidden$names" + if (page >= 0) "|p$page" else ""
     }
 
@@ -268,15 +283,15 @@ object Thumbs {
     }
 
     /**
-     * What [hidden] (pages hidden by book path) adds to the key of [entry]'s cover: a book's
-     * cover page when it is not the first, and for a folder, which books below it start later.
-     * Empty when no hidden page moves the cover, so such keys stay as they were.
+     * What [hidden] adds to the key of [entry]'s cover: a book's cover page when it is not the
+     * first, and for a folder, which books below it (where last seen) start later. Empty when
+     * no hidden page moves the cover, so such keys stay as they were.
      */
-    internal fun hiddenTag(entry: BookEntry, hidden: Map<String, Set<Int>>): String {
+    internal fun hiddenTag(entry: BookEntry, hidden: Library.Hidden): String {
         if (hidden.isEmpty() || (!entry.isDir && entry.type == EntryType.IMAGE)) return ""
-        if (!entry.isDir) return coverPage(hidden[entry.path].orEmpty()).takeIf { it > 0 }?.let { "|c$it" }.orEmpty()
+        if (!entry.isDir) return coverPage(idOf(entry)?.let { hidden.byId[it] }.orEmpty()).takeIf { it > 0 }?.let { "|c$it" }.orEmpty()
         val dir = entry.path
-        val moved = hidden.entries
+        val moved = hidden.byPath.entries
             .filter { (path, pages) -> path.length > dir.length && path.startsWith(dir) && isSeparator(path[dir.length]) && coverPage(pages) > 0 }
             .sortedBy { it.key }
         if (moved.isEmpty()) return ""
@@ -331,11 +346,13 @@ object Thumbs {
         cacheDir: File,
         width: Int,
         height: Int,
-        hidden: Map<String, Set<Int>>,
+        hidden: Library.Hidden,
         canceled: () -> Boolean = { false },
         quickFirst: Boolean = false
     ): Made? = try {
-        fun pageOf(book: File) = coverPage(hidden[book.absolutePath].orEmpty())
+        fun pageOf(book: File) = coverPage(
+            (if (book == entry.file) idOf(entry) else BookIds.known(book))?.let { hidden.byId[it] } ?: hidden.byPath[book.absolutePath].orEmpty()
+        )
         when {
             entry.isDir -> findCover(entry.file, 2)?.takeIf { !canceled() }?.let {
                 coverOf(it, charset, cacheDir, width, height, pageOf(it), canceled, quickFirst)

@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.HiddenPages
@@ -57,7 +58,7 @@ class PagesActivity : AppCompatActivity() {
             val result = withContext(AppDispatchers.io) {
                 // Backing out stops fetching a book from a share.
                 val fetch = PageSources.Fetch(canceled = { !isActive })
-                val hidden = Library(this@PagesActivity).hiddenPages(path)
+                val hidden = Library(this@PagesActivity).hiddenPages(BookIds.find(Remotes.file(path)))
                 val opened = runCatching { HiddenPages.wrap(PageSources.open(Remotes.file(path), prefs.charset, cacheDir, fetch = fetch), hidden) }
                 try {
                     ensureActive()

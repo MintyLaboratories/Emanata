@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.util.Log
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.Hashes
 import java.io.File
@@ -163,8 +164,8 @@ class NestedArchives(
 
         fun dirIn(cacheDir: File) = File(cacheDir, DIR)
 
-        /** Identity of a book file on disk: changes when the file is replaced. */
-        fun keyOf(file: File) = "${file.absolutePath}\n${file.length()}\n${file.lastModified()}"
+        /** Identity of a book file: its Book ID ([BookIds.keyOf]), so a moved or copied book keeps its copies. Blocking. */
+        fun keyOf(file: File) = BookIds.keyOf(file)
 
         /**
          * Deletes least recently used copies until [dir] holds at most [maxBytes], never

@@ -1,6 +1,9 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
@@ -104,12 +107,15 @@ object NameCharset {
         }
     }
 
-    /** Each book's own choice ([AUTO] or a charset name), by path; set from the library. */
+    /** Each book's own choice ([AUTO] or a charset name), by [BookId]; set from the library. */
     @Volatile
-    var overrides: Map<String, String> = emptyMap()
+    var overrides: Map<BookId, String> = emptyMap()
 
-    /** What the book at [path] reads its names with: its own choice, else [setting]. */
-    fun forBook(path: String, setting: String): String = overrides[path] ?: setting
+    /** What book [id] reads its names with: its own choice, else [setting]. */
+    fun forBook(id: BookId?, setting: String): String = id?.let { overrides[it] } ?: setting
+
+    /** What the book [file] reads its names with: its own choice when its ID is known ([BookIds.known]), else [setting]. */
+    fun forBook(file: File, setting: String): String = if (overrides.isEmpty()) setting else forBook(BookIds.known(file), setting)
 
     /**
      * The charset [setting] gives for an archive of [names] (asked for only for [AUTO]);

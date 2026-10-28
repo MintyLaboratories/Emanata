@@ -34,35 +34,36 @@ class LibraryNameCharsetTest {
         NameCharset.overrides = emptyMap()
     }
 
+    private val a = BookRef(BookId(0xa), "/books/a.cbz")
+
     @Test
     fun aChoiceIsKeptAndPublished() {
-        library.setNameCharset("/books/a.cbz", "Shift_JIS")
-        assertEquals("Shift_JIS", library.nameCharset("/books/a.cbz"))
-        assertEquals("Shift_JIS", NameCharset.forBook("/books/a.cbz", NameCharset.AUTO))
-        library.setNameCharset("/books/a.cbz", null)
-        assertNull(library.nameCharset("/books/a.cbz"))
-        assertEquals(NameCharset.AUTO, NameCharset.forBook("/books/a.cbz", NameCharset.AUTO))
+        library.setNameCharset(a, "Shift_JIS")
+        assertEquals("Shift_JIS", library.nameCharset(a.id))
+        assertEquals("Shift_JIS", NameCharset.forBook(a.id, NameCharset.AUTO))
+        library.setNameCharset(a, null)
+        assertNull(library.nameCharset(a.id))
+        assertEquals(NameCharset.AUTO, NameCharset.forBook(a.id, NameCharset.AUTO))
     }
 
     @Test
-    fun aChoiceFollowsTheBookAndGoesWithIt() {
-        library.setNameCharset("/books/a.cbz", "GBK")
+    fun aChoiceFollowsTheBookWhereverItIs() {
+        library.setNameCharset(a, "GBK")
         library.replacePath("/books", "/comics")
-        assertNull(library.nameCharset("/books/a.cbz"))
-        assertEquals("GBK", library.nameCharset("/comics/a.cbz"))
-        assertEquals("GBK", NameCharset.forBook("/comics/a.cbz", NameCharset.AUTO))
+        assertEquals("GBK", library.nameCharset(a.id))
+        assertEquals("GBK", NameCharset.forBook(a.id, NameCharset.AUTO))
+        assertEquals("/comics/a.cbz", library.pathOf(a.id))
         library.removePathsUnder("/comics")
-        assertEquals(emptyMap<String, String>(), library.nameCharsets())
-        assertEquals(emptyMap<String, String>(), NameCharset.overrides)
+        assertEquals(mapOf(a.id to "GBK"), library.nameCharsets())
     }
 
     @Test
     fun aChoiceComesBackWithABackup() {
-        library.setNameCharset("/books/a.cbz", "Big5")
+        library.setNameCharset(a, "Big5")
         val saved = library.exportAll()
-        library.setNameCharset("/books/a.cbz", null)
+        library.setNameCharset(a, null)
         library.importAll(JSONObject(saved.toString()))
-        assertEquals("Big5", library.nameCharset("/books/a.cbz"))
-        assertEquals("Big5", NameCharset.overrides["/books/a.cbz"])
+        assertEquals("Big5", library.nameCharset(a.id))
+        assertEquals("Big5", NameCharset.overrides[a.id])
     }
 }

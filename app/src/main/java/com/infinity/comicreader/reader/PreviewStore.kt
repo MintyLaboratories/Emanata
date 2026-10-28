@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.util.Hashes
 import java.io.File
 import java.util.Collections
@@ -14,8 +15,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Page previews ([Previews]) on disk under [dir], one JPEG per page, named by a hash of
- * the book's identity (path, size, modification time), the page's index and entry
- * name, and the preview size, so a changed book or size never reads a stale one.
+ * the book's identity ([bookId]), the page's index and entry name, and the preview size,
+ * so a changed book or size never reads a stale one, and a book moved or copied keeps its.
  * Writes run on [writer], off the decoding thread; a file appears whole or not at all.
  */
 class PreviewStore(
@@ -129,8 +130,8 @@ class PreviewStore(
 
         fun dirIn(cacheDir: File) = File(cacheDir, DIR)
 
-        /** What identifies [file]'s contents: a change of path, size or time makes it another book. */
-        fun bookId(file: File): String = "${file.absolutePath}|${file.length()}|${file.lastModified()}"
+        /** What identifies [file]'s contents: its Book ID ([BookIds.keyOf]). Blocking: an unseen file is read. */
+        fun bookId(file: File): String = BookIds.keyOf(file)
 
         /** Key of the preview of page [index], stored as [entry] (null when unnamed), of book [bookId]. */
         fun keyOf(bookId: String, index: Int, entry: String?): String = "$bookId|$index|${entry.orEmpty()}|${Previews.BOX}"

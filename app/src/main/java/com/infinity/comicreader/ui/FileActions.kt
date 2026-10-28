@@ -15,6 +15,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookFactsCache
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
@@ -23,6 +25,7 @@ import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
+import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
@@ -235,9 +238,18 @@ internal class FileActions(
         }
     }
 
-    /** Forgets everything kept for the deleted [path] and inside it, the clipboard's item too. */
+    /**
+     * Forgets everything kept for the deleted [path] and inside it, the clipboard's item too;
+     * the facts and network copies of the books there go with them.
+     */
     private fun forget(path: String) {
+        val books = BookIds.knownUnder(path)
         library.removePathsUnder(path)
+        val facts = BookFactsCache(activity)
+        for (id in books) {
+            facts.remove(id)
+            RemoteCache.forget(id, activity.cacheDir)
+        }
         FileClipboard.clip?.let { if (Transfer.isWithin(it.path, path)) FileClipboard.clip = null }
     }
 

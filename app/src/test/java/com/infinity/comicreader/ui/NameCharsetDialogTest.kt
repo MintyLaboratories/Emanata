@@ -1,5 +1,9 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.data.BookRef
+import com.infinity.comicreader.data.BookId
 import android.content.Context
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
@@ -64,13 +68,17 @@ class NameCharsetDialogTest {
         assertFalse(NameCharsetDialog.applies("a.pdf"))
     }
 
+    private val a = BookRef(BookId(0xa), "/books/a.cbz")
+
     @Test
     fun bookInfoSaysWhatNamesWereReadIn() {
         val sjis = Charset.forName("windows-31j")
-        assertEquals("Auto (windows-31j)", NameCharsetDialog.describe(context, library, "/books/a.cbz", NameCharset.AUTO, sjis))
-        assertEquals("GBK (Simplified Chinese)", NameCharsetDialog.describe(context, library, "/books/a.cbz", "GBK", Charset.forName("GBK")))
-        library.setNameCharset("/books/a.cbz", "Shift_JIS")
-        assertEquals("Shift_JIS (Japanese), this book only", NameCharsetDialog.describe(context, library, "/books/a.cbz", NameCharset.AUTO, sjis))
+        assertEquals("Auto (windows-31j)", NameCharsetDialog.describe(context, library, a.id, NameCharset.AUTO, sjis))
+        assertEquals("GBK (Simplified Chinese)", NameCharsetDialog.describe(context, library, a.id, "GBK", Charset.forName("GBK")))
+        library.setNameCharset(a, "Shift_JIS")
+        assertEquals("Shift_JIS (Japanese), this book only", NameCharsetDialog.describe(context, library, a.id, NameCharset.AUTO, sjis))
+        // A book whose ID is unknown follows the setting.
+        assertEquals("Auto (windows-31j)", NameCharsetDialog.describe(context, library, null, NameCharset.AUTO, sjis))
     }
 
     @Test
@@ -78,7 +86,7 @@ class NameCharsetDialogTest {
         val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         val picks = ArrayList<String?>()
         fun pick(label: String) {
-            val dialog = NameCharsetDialog.builder(activity, library, "/books/a.cbz", NameCharset.AUTO) { picks += it }.show()
+            val dialog = NameCharsetDialog.builder(activity, library, a.id, NameCharset.AUTO) { picks += it }.show()
             val list = dialog.listView
             val at = (0 until list.adapter.count).first { list.adapter.getItem(it).toString() == label }
             list.performItemClick(list.adapter.getView(at, null, list), at, list.adapter.getItemId(at))
@@ -86,7 +94,7 @@ class NameCharsetDialogTest {
         }
         pick("Shift_JIS (Japanese)")
         assertEquals(listOf("Shift_JIS"), picks)
-        library.setNameCharset("/books/a.cbz", "Shift_JIS")
+        library.setNameCharset(a, "Shift_JIS")
         pick("Shift_JIS (Japanese)")
         assertEquals(listOf("Shift_JIS"), picks)
         pick(context.getString(R.string.charset_follow_setting, context.getString(R.string.charset_auto)))
@@ -96,12 +104,12 @@ class NameCharsetDialogTest {
     @Test
     fun switchingKeepsTheBooksOwnAndFollowingTheSettingDropsIt() {
         val file = File(tmp.root, "a.cbz").apply { writeBytes(zipBytes(listOf("b.jpg", "a.jpg"), Charsets.UTF_8)) }
-        val path = file.absolutePath
+        val id = bookId(file)
         NameCharsetDialog.switch(library, null, file, NameCharset.AUTO, "Shift_JIS", tmp.newFolder("cache"))
-        assertEquals("Shift_JIS", library.nameCharset(path))
-        assertEquals("Shift_JIS", NameCharset.forBook(path, NameCharset.AUTO))
+        assertEquals("Shift_JIS", library.nameCharset(id))
+        assertEquals("Shift_JIS", NameCharset.forBook(file, NameCharset.AUTO))
         NameCharsetDialog.switch(library, null, file, NameCharset.AUTO, null, tmp.root)
-        assertNull(library.nameCharset(path))
+        assertNull(library.nameCharset(id))
     }
 
     /** Japanese page names; each page's one byte is its place here. */
@@ -126,7 +134,7 @@ class NameCharsetDialogTest {
     @Test
     fun switchingMovesHiddenPagesHistoryAndBookmarksWithTheirPages() {
         val file = File(tmp.root, "book.cbz").apply { writeBytes(zipBytes(japanese, Charset.forName("Shift_JIS"))) }
-        val path = file.absolutePath
+        val book = ref(file)
         val before = order(file, NameCharset.AUTO)
         val after = order(file, "windows-1251")
         assertTrue(before != after)
@@ -135,18 +143,18 @@ class NameCharsetDialogTest {
         val read = japanese.indexOf("第二話.jpg")
         val marked = japanese.indexOf("奥付.jpg")
         val hiddenSet = setOf(before.indexOf(hidden))
-        library.setHiddenPages(path, hiddenSet, japanese.size)
+        library.setHiddenPages(book, hiddenSet, japanese.size)
         val shownBefore = HiddenPages.shown(japanese.size, hiddenSet).map { before[it] }
-        library.addHistory(HistoryItem(path, file.name, shownBefore.indexOf(read), shownBefore.size, 1))
-        library.addBookmark(Bookmark(path, file.name, shownBefore.indexOf(marked), "note", 1))
+        library.addHistory(HistoryItem(book.path, file.name, shownBefore.indexOf(read), shownBefore.size, 1, book.id))
+        library.addBookmark(Bookmark(book.path, file.name, shownBefore.indexOf(marked), "note", 1, book.id))
 
         NameCharsetDialog.switch(library, null, file, NameCharset.AUTO, "windows-1251", tmp.newFolder("cache"))
 
-        val now = library.hiddenPages(path)
+        val now = library.hiddenPages(book.id)
         assertEquals(setOf(hidden), now.map { after[it] }.toSet())
         val shownAfter = HiddenPages.shown(japanese.size, now).map { after[it] }
-        assertEquals(read, shownAfter[library.pageFor(path)])
-        assertEquals(marked, shownAfter[library.bookmarksFor(path).single().page])
-        assertEquals("note", library.bookmarksFor(path).single().note)
+        assertEquals(read, shownAfter[library.pageFor(book.id)])
+        assertEquals(marked, shownAfter[library.bookmarksFor(book.id).single().page])
+        assertEquals("note", library.bookmarksFor(book.id).single().note)
     }
 }

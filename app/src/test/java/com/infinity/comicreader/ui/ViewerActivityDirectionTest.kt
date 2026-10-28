@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Intent
 import android.os.Looper
@@ -109,7 +110,7 @@ class ViewerActivityDirectionTest {
         // Facts read for the library say right to left; the book itself carries nothing.
         val book = book("Series A 001.cbz")
         val facts = BookFacts(4, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER))
-        BookFactsCache(ApplicationProvider.getApplicationContext()).put(book.absolutePath, book.length(), facts)
+        BookFactsCache(ApplicationProvider.getApplicationContext()).put(bookId(book), facts)
         val viewer = launch(book).get()
         awaitOpen(viewer)
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
@@ -131,7 +132,7 @@ class ViewerActivityDirectionTest {
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
         assertEquals("Right-to-left (from ComicInfo)", viewer.hint().text.toString())
         // Kept with the library's facts, so the next open knows at once.
-        val facts = BookFactsCache(ApplicationProvider.getApplicationContext()).get(book.absolutePath, book.length())
+        val facts = BookFactsCache(ApplicationProvider.getApplicationContext()).get(bookId(book))
         assertEquals(DirectionDetection.Source.COMIC_INFO, facts?.detected?.source)
     }
 

@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -106,8 +108,8 @@ class ViewerActivityHiddenPagesTest {
     @Test
     fun aHiddenPageLeavesTheReaderAndComesBack() {
         val book = book(5)
-        val path = book.absolutePath
-        library.addBookmark(Bookmark(path, book.name, 4, "", 1))
+        val id = bookId(book)
+        library.addBookmark(Bookmark(book.absolutePath, book.name, 4, "", 1, id))
         val viewer = launch(book, 2)
         assertEquals(2, viewer.pager().currentItem)
         // Shown but disabled while nothing is hidden.
@@ -117,11 +119,11 @@ class ViewerActivityHiddenPagesTest {
         shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
         viewer.settle()
         assertEquals(context.getString(R.string.page_hidden), ShadowToast.getTextOfLatestToast())
-        assertEquals(setOf(2), library.hiddenPages(path))
+        assertEquals(setOf(2), library.hiddenPages(id))
         assertEquals(4, viewer.pager().adapter!!.itemCount)
         // The next page shows where the hidden one was; the bookmark keeps its page.
         assertEquals(2, viewer.pager().currentItem)
-        assertEquals(listOf(3), library.bookmarksFor(path).map { it.page })
+        assertEquals(listOf(3), library.bookmarksFor(id).map { it.page })
 
         val info = viewer.bookInfo()
         assertTrue(info.message(), info.message().contains(context.getString(R.string.info_pages_hidden, 4, 1)))
@@ -151,10 +153,10 @@ class ViewerActivityHiddenPagesTest {
         assertTrue(unhide.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
         unhide.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         viewer.settle()
-        assertTrue(library.hiddenPages(path).isEmpty())
+        assertTrue(library.hiddenPages(id).isEmpty())
         assertEquals(5, viewer.pager().adapter!!.itemCount)
         assertEquals(3, viewer.pager().currentItem)
-        assertEquals(listOf(4), library.bookmarksFor(path).map { it.page })
+        assertEquals(listOf(4), library.bookmarksFor(id).map { it.page })
     }
 
     @Test
@@ -173,35 +175,35 @@ class ViewerActivityHiddenPagesTest {
         val ask = ShadowDialog.getLatestDialog() as AlertDialog
         val list = ask.listView
         assertEquals(listOf("Page 2", "Page 3"), (0 until list.adapter.count).map { list.adapter.getItem(it).toString() })
-        assertTrue(library.hiddenPages(book.absolutePath).isEmpty())
+        assertTrue(library.hiddenPages(bookId(book)).isEmpty())
         list.performItemClick(list.adapter.getView(1, null, list), 1, 1)
         viewer.settle()
-        assertEquals(setOf(2), library.hiddenPages(book.absolutePath))
+        assertEquals(setOf(2), library.hiddenPages(bookId(book)))
     }
 
     @Test
     fun theLastPageShownStays() {
         val book = book(2)
-        library.setHiddenPages(book.absolutePath, setOf(0), 2)
+        library.setHiddenPages(ref(book), setOf(0), 2)
         val viewer = launch(book, 0)
         assertEquals(1, viewer.pager().adapter!!.itemCount)
         shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
         idle()
         assertEquals(context.getString(R.string.hide_last_page), ShadowToast.getTextOfLatestToast())
-        assertEquals(setOf(0), library.hiddenPages(book.absolutePath))
+        assertEquals(setOf(0), library.hiddenPages(bookId(book)))
     }
 
     @Test
     fun hiddenPagesStayOutOfHistoryCounts() {
         val book = book(6)
-        library.setHiddenPages(book.absolutePath, setOf(1, 5), 6)
+        library.setHiddenPages(ref(book), setOf(1, 5), 6)
         val intent = Intent(context, ViewerActivity::class.java)
             .putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
             .putExtra(ViewerActivity.EXTRA_PAGE, 3)
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         controller.get().settle()
         controller.pause().stop()
-        val item = library.historyFor(book.absolutePath)!!
+        val item = library.historyFor(bookId(book))!!
         assertEquals(4, item.total)
         assertEquals(3, item.page)
     }

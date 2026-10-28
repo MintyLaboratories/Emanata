@@ -30,6 +30,7 @@ class App : Application() {
         val prefs = Prefs(this)
         prefs.upgrade()
         Library(this).apply {
+            forgetPathKeyedBooks()
             migrateFolderLayouts(ReaderLayout.of(prefs))
             publishNameCharsets()
         }

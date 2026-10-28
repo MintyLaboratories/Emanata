@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.ref
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.content.DialogInterface
@@ -96,16 +98,16 @@ class ListActivityConfirmTest {
 
     @Test
     fun markAllUnreadWaitsForConfirmation() {
-        library.setReadMany(listOf(book.absolutePath), true)
+        library.setReadMany(listOf(ref(book)), true)
         val activity = launch()
 
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_NEGATIVE)
         awaitUntil()
-        assertTrue(library.isRead(book.absolutePath))
+        assertTrue(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { !library.isRead(book.absolutePath) }
-        assertFalse(library.isRead(book.absolutePath))
+        awaitUntil { !library.isRead(bookId(book)) }
+        assertFalse(library.isRead(bookId(book)))
     }
 
     @Test
@@ -114,11 +116,11 @@ class ListActivityConfirmTest {
 
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_NEGATIVE)
         awaitUntil()
-        assertFalse(library.isRead(book.absolutePath))
+        assertFalse(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { library.isRead(book.absolutePath) }
-        assertTrue(library.isRead(book.absolutePath))
+        awaitUntil { library.isRead(bookId(book)) }
+        assertTrue(library.isRead(bookId(book)))
     }
 
     /** Long-presses the first History row and picks Clear history from its menu. */
@@ -139,7 +141,7 @@ class ListActivityConfirmTest {
 
     @Test
     fun clearHistoryFromTheHistoryTabWaitsForConfirmation() {
-        library.addHistory(HistoryItem(book.absolutePath, book.name, 2, 10, 1L))
+        library.addHistory(HistoryItem(book.absolutePath, book.name, 2, 10, 1L, bookId(book)))
         prefs.startupTab = Prefs.TAB_HISTORY
         val activity = launch()
 

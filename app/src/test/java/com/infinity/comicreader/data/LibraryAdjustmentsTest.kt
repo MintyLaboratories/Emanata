@@ -26,34 +26,36 @@ class LibraryAdjustmentsTest {
         library = Library(context)
     }
 
+    private val a = BookRef(BookId(0xa), "/books/old/a.cbz")
+    private val b = BookRef(BookId(0xb), "/books/b.cbz")
+
     @Test
     fun aBookKeepsItsOwnAdjustmentsUntilReset() {
-        assertNull(library.adjustmentsFor("/books/a.cbz"))
-        library.setAdjustments("/books/a.cbz", Adjustments(-20, 35, 5))
-        assertEquals(Adjustments(-20, 35, 5), library.adjustmentsFor("/books/a.cbz"))
-        assertNull(library.adjustmentsFor("/books/b.cbz"))
-        library.setAdjustments("/books/a.cbz", null)
-        assertNull(library.adjustmentsFor("/books/a.cbz"))
+        assertNull(library.adjustmentsFor(a.id))
+        library.setAdjustments(a, Adjustments(-20, 35, 5))
+        assertEquals(Adjustments(-20, 35, 5), library.adjustmentsFor(a.id))
+        assertNull(library.adjustmentsFor(b.id))
+        library.setAdjustments(a, null)
+        assertNull(library.adjustmentsFor(a.id))
     }
 
     @Test
-    fun adjustmentsFollowRenamesAndDeletes() {
-        library.setAdjustments("/books/old/a.cbz", Adjustments(brightness = 10))
-        library.setAdjustments("/books/keep.cbz", Adjustments(contrast = 10))
+    fun adjustmentsFollowTheBookWhereverItIs() {
+        library.setAdjustments(a, Adjustments(brightness = 10))
         library.replacePath("/books/old", "/books/new")
-        assertNull(library.adjustmentsFor("/books/old/a.cbz"))
-        assertEquals(Adjustments(brightness = 10), library.adjustmentsFor("/books/new/a.cbz"))
+        assertEquals(Adjustments(brightness = 10), library.adjustmentsFor(a.id))
+        assertEquals("/books/new/a.cbz", library.pathOf(a.id))
+        // A copy deleted leaves them for the others.
         library.removePathsUnder("/books/new")
-        assertNull(library.adjustmentsFor("/books/new/a.cbz"))
-        assertEquals(Adjustments(contrast = 10), library.adjustmentsFor("/books/keep.cbz"))
+        assertEquals(Adjustments(brightness = 10), library.adjustmentsFor(a.id))
     }
 
     @Test
     fun adjustmentsAreBackedUp() {
-        library.setAdjustments("/books/a.cbz", Adjustments(saturation = -60))
+        library.setAdjustments(a, Adjustments(saturation = -60))
         val backup = library.exportAll()
-        library.setAdjustments("/books/a.cbz", null)
+        library.setAdjustments(a, null)
         library.importAll(backup)
-        assertEquals(Adjustments(saturation = -60), library.adjustmentsFor("/books/a.cbz"))
+        assertEquals(Adjustments(saturation = -60), library.adjustmentsFor(a.id))
     }
 }

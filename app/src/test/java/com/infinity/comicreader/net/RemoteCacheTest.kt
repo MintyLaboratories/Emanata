@@ -1,5 +1,7 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.testing.Xxh3Port
+import com.infinity.comicreader.data.BookIds
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -31,12 +33,15 @@ class RemoteCacheTest {
         fake = FakeRemoteFs(share)
         Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
         RemoteCache.limitBytes = RemoteCache.DEFAULT_LIMIT_BYTES
+        BookIds.reset()
+        BookIds.hasher = Xxh3Port
     }
 
     @After
     fun tearDown() {
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
         RemoteCache.limitBytes = RemoteCache.DEFAULT_LIMIT_BYTES
+        BookIds.reset()
     }
 
     private fun remote(name: String) = Remotes.file("/net/s1/$name") as RemoteFile
@@ -53,6 +58,20 @@ class RemoteCacheTest {
         File(share, "2.cbr").writeBytes(ByteArray(5))
         val again = RemoteCache.fetch(remote("2.cbr"), cacheDir)
         assertEquals(5L, again.length())
+    }
+
+    @Test
+    fun aCopyIsKeptByBookIdAndGoesWithIt() {
+        val copy = RemoteCache.fetch(remote("2.cbr"), cacheDir)
+        // The same book at another path finds the copy without fetching it again.
+        File(share, "2.cbr").copyTo(File(share, "moved.cbr"))
+        File(share, "moved.cbr").setLastModified(File(share, "2.cbr").lastModified())
+        val read = fake.bytesRead
+        assertEquals(copy, RemoteCache.fetch(remote("moved.cbr"), cacheDir))
+        assertEquals("only its ends are read for its ID", read + 2000, fake.bytesRead)
+        RemoteCache.forget(BookIds.of(remote("2.cbr")), cacheDir)
+        assertFalse(copy.exists())
+        assertNull(RemoteCache.cached(remote("2.cbr"), cacheDir))
     }
 
     @Test

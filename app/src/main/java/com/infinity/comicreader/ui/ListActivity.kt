@@ -66,6 +66,9 @@ import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryFilter
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.LibrarySnapshot
 import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
@@ -105,6 +108,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -297,7 +301,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             prefs = prefs,
             onClick = { onEntryClick(it) },
             onLongClick = { onEntryLongClick(it) },
-            onStarClick = { toggleFavorite(it.file.absolutePath) }
+            onStarClick = { toggleFavorite(it) }
         )
         adapter.onSectionClick = { toggleSection(it.kind) }
         adapter.hiddenPages = library::hiddenAll
@@ -591,7 +595,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val mode = prefs.startupResume
         if (mode == ResumeMode.NO) return
         val last = library.history().firstOrNull { it.path.isNotEmpty() } ?: return
-        if (library.isRead(last.path) || Remotes.isOrphan(last.path)) return
+        if (library.isRead(last.id) || Remotes.isOrphan(last.path)) return
         val file = Remotes.file(last.path, askNetwork = false)
         if (!file.exists()) return
         val page = last.page.coerceAtLeast(0)
@@ -929,7 +933,34 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                     applyFilterAndSort()
                 }
             }
+            findIds()
         }
+    }
+
+    /**
+     * Finds the Book IDs of the books listed that the index does not know, [ID_READS] at a
+     * time, and shows what is kept for any of them: books moved, renamed or copied outside
+     * the app. Notes where those are seen now ([Library.seenAll]).
+     */
+    private suspend fun findIds() {
+        val listed = listing
+        val unknown = allEntries.filter { !it.isDir && it.id == null && Formats.isOpenable(it.name) }
+        if (unknown.isEmpty()) return
+        val gate = Semaphore(ID_READS)
+        val found = coroutineScope {
+            unknown.map { e -> async(AppDispatchers.io) { gate.withPermit { BookIds.find(e.file)?.let { e.path to it } } } }.awaitAll()
+        }.filterNotNull().toMap()
+        if (listing != listed || found.isEmpty()) return
+        val snap = withContext(AppDispatchers.io) { snapshot() }
+        var kept = false
+        allEntries.replaceAll { e ->
+            val id = found[e.path] ?: return@replaceAll e
+            if (snap.keeps(id)) kept = true
+            snap.withId(e, id)
+        }
+        val seen = snap.sightings()
+        if (seen.isNotEmpty()) withContext(AppDispatchers.io) { library.seenAll(seen) }
+        if (kept) applyFilterAndSort(resort = false)
     }
 
     /** Reads the free space of share [id], just opened, for the location picker ([LocationSpace]). */
@@ -1068,6 +1099,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             if (!isDir && Formats.typeOf(f.name) == EntryType.OTHER) continue
             out.add(if (f is RemoteFile) shareEntry(f, isDir, snap) else entryFor(f, snap))
         }
+        // Books seen elsewhere before show where they are now in the library's lists.
+        library.seenAll(snap.sightings())
         return out
     }
 
@@ -1101,13 +1134,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The favorites with their labels, and the sections already known for them. */
     private fun favoriteEntries(): Pair<List<BookEntry>, Map<String, FavoriteKind>> {
         val snap = snapshot()
-        val paths = library.favorites()
+        val items = library.favoriteItems()
+        val paths = items.map { it.path }
         val labels = FavoriteLabels.of(paths, roots)
         val kinds = HashMap<String, FavoriteKind>()
-        val list = paths.map { path ->
+        val list = items.map { (path, id) ->
             val label = labels[path]
             // Favorites on shares show from what is known, without waiting for the network.
             val entry = entryFor(Remotes.file(path, askNetwork = false), snap)
+                .let { if (id != null) snap.withId(it, id) else it }
                 .let { if (label != null) it.copy(name = label.name, label = label) else it }
             val kind = when {
                 !entry.isDir -> FavoriteKind.COMIC
@@ -1237,11 +1272,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             lastModified = item.time,
             pages = item.total,
             progressPage = item.page,
-            favorite = item.path in snap.favorites,
-            read = item.path in snap.read,
+            favorite = item.id in snap.favoriteBooks,
+            read = item.id in snap.read,
             begun = true,
             added = stat?.created ?: 0,
-            accessed = snap.access[item.path] ?: item.time,
+            accessed = snap.accessById[item.id] ?: item.time,
+            id = item.id,
             year = Years.fromName(item.name),
             direction = snap.directionOf(item.path, isDir = false),
             directionSet = snap.isDirectionSet(item.path, isDir = false),
@@ -1263,15 +1299,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             type = Formats.typeOf(file.name),
             size = stat?.size ?: 0,
             lastModified = bookmark.time,
-            pages = snap.history[bookmark.path]?.total ?: -1,
+            pages = snap.history[bookmark.id]?.total ?: -1,
             progressPage = bookmark.page,
             bookmarkPage = bookmark.page,
-            favorite = bookmark.path in snap.favorites,
-            read = bookmark.path in snap.read,
-            begun = bookmark.path in snap.history,
+            favorite = bookmark.id in snap.favoriteBooks,
+            read = bookmark.id in snap.read,
+            begun = bookmark.id in snap.history,
             added = stat?.created ?: 0,
             // A bookmark counts as accessed when added, or later when its book was read.
-            accessed = maxOf(bookmark.time, snap.history[bookmark.path]?.time ?: 0),
+            accessed = maxOf(bookmark.time, snap.history[bookmark.id]?.time ?: 0),
+            id = bookmark.id,
             year = Years.fromName(file.name),
             direction = snap.directionOf(bookmark.path, isDir = false),
             directionSet = snap.isDirectionSet(bookmark.path, isDir = false),
@@ -1288,8 +1325,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /** Sort and filter values as found so far: folder totals and what books' contents told. */
-    private fun values(hidden: Map<String, Int>) =
-        EntryValues(folderSizes, prefs.detectDirection, hidden) { e -> if (e.isDir) null else factsCache.get(e.path, e.size) }
+    private fun values(hidden: Map<BookId, Int>) =
+        EntryValues(folderSizes, prefs.detectDirection, { e -> idOf(e)?.let { hidden[it] } ?: 0 }) { e -> if (e.isDir) null else factsCache.get(idOf(e)) }
+
+    /** The Book ID of file [e]: as listed, else as found since ([BookIds.known]); null while unknown. */
+    private fun idOf(e: BookEntry): BookId? = e.id ?: if (e.isDir) null else BookIds.known(e.path, e.size, e.lastModified)
 
     /**
      * Shows the entries matching the search in the tab's order. Unless [resort], the
@@ -1337,11 +1377,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * its folder has none set, so a wraparound cover without a barcode shows the half the
      * book starts on.
      */
-    private fun withFacts(entry: BookEntry, hidden: Map<String, Int>): BookEntry {
+    private fun withFacts(entry: BookEntry, hidden: Map<BookId, Int>): BookEntry {
         if (entry.isDir) return entry
-        val facts = factsCache.get(entry.path, entry.size) ?: return entry
+        val id = idOf(entry) ?: return entry
+        val facts = factsCache.get(id) ?: return entry
         var out = entry
-        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.shownPages(hidden[entry.path] ?: 0))
+        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.shownPages(hidden[id] ?: 0))
         val detected = facts.detected?.direction
         if (detected != null && !entry.directionSet && prefs.detectDirection && detected != entry.direction) out = out.copy(direction = detected)
         return out
@@ -1363,7 +1404,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val work = FactsWork(listing, needFacts, needSizes)
         if (factsJob?.isActive == true && factsWork?.covers(work) == true) return
         val entries = allEntries.toList()
-        fun unknown(e: BookEntry) = factsCache.get(e.path, e.size) == null && factsFailed[e.path] != e.size
+        fun unknown(e: BookEntry) = factsCache.get(idOf(e)) == null && factsFailed[e.path] != e.size
         val candidates = if (!needFacts) emptyList() else entries.filter {
             !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && (!factsCache.isLoaded || unknown(it))
         }
@@ -1380,7 +1421,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 withStarted {}
                 awaitScans()
                 val read = withContext(AppDispatchers.io) {
-                    runCatching { factsCache.put(e.path, e.size, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) }) }.isSuccess
+                    runCatching {
+                        // The ID first: on a share, its reads of the book's ends start the facts' reads too.
+                        val id = BookIds.of(e.file)
+                        factsCache.put(id, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) })
+                    }.isSuccess
                 }
                 if (!read) factsFailed[e.path] = e.size
                 val now = SystemClock.uptimeMillis()
@@ -1522,36 +1567,38 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
 
         if (mode == TAB_HISTORY) {
-            if (entry.file.exists()) add(getString(R.string.menu_continue)) { openViewer(entry.file, library.pageFor(path)) }
+            if (entry.file.exists()) add(getString(R.string.menu_continue)) { openViewer(entry.file, entry.id?.let { library.pageFor(it) } ?: 0) }
             add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
         }
         if (canPeek(entry)) add(getString(R.string.menu_peek)) { peekFromMenu(entry) }
         if (mode == TAB_BOOKMARKS) {
             add(getString(R.string.menu_remove_favorite)) {
-                library.removeBookmark(path, entry.progressPage)
+                entry.id?.let { library.removeBookmark(it, entry.progressPage) }
                 showBookmarks()
             }
         } else {
-            val favorite = library.isFavorite(path)
+            val favorite = entry.favorite
             add(if (favorite) getString(R.string.menu_remove_favorite) else getString(R.string.menu_add_favorite)) {
-                toggleFavorite(path)
+                toggleFavorite(entry)
             }
             if (entry.isDir) {
                 add(getString(R.string.menu_continue)) { continueReading(entry.file) }
                 add(getString(R.string.menu_mark_all_read)) { markFolder(entry.file, true) }
                 add(getString(R.string.menu_mark_all_unread)) { markFolder(entry.file, false) }
             } else {
-                val read = library.isRead(path)
+                val read = entry.read
                 add(if (read) getString(R.string.menu_mark_unread) else getString(R.string.menu_mark_read)) {
-                    library.setRead(path, !read)
-                    refreshCurrent()
+                    withBook(entry) { book ->
+                        library.setRead(book, !read)
+                        refreshCurrent()
+                    }
                 }
             }
             if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
             // An advanced setting: shown once Keep it simple is off.
             if (!entry.isDir && !prefs.keepSimple && NameCharsetDialog.applies(entry.name)) {
                 add(getString(R.string.menu_name_charset)) {
-                    NameCharsetDialog.builder(this, library, path, prefs.charset) { picked ->
+                    NameCharsetDialog.builder(this, library, idOf(entry), prefs.charset) { picked ->
                         lifecycleScope.launch {
                             withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, entry.file, prefs.charset, picked, cacheDir) }
                             adapter.notifyDataSetChanged()
@@ -1828,11 +1875,34 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return view.measuredHeight + (margins?.topMargin ?: 0) + (margins?.bottomMargin ?: 0)
     }
 
-    private fun toggleFavorite(path: String?) {
+    /** Adds folder [path] to the favorites, or removes it, and says which. */
+    private fun toggleFavoriteFolder(path: String?) {
         if (path == null) return
-        val added = library.toggleFavorite(path)
+        val added = library.toggleFavoriteFolder(path)
         toast(if (added) R.string.menu_add_favorite else R.string.menu_remove_favorite)
         refreshCurrent()
+    }
+
+    /** Adds [entry], a folder or book, to the favorites, or removes it, and says which. */
+    private fun toggleFavorite(entry: BookEntry) {
+        if (entry.isDir) return toggleFavoriteFolder(entry.path)
+        withBook(entry) { book ->
+            val added = library.toggleFavorite(book)
+            toast(if (added) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+            refreshCurrent()
+        }
+    }
+
+    /**
+     * Runs [action] on book [entry] as the library keeps it: by its ID as listed or known,
+     * else found first off the main thread; says so when it cannot be read.
+     */
+    private fun withBook(entry: BookEntry, action: (BookRef) -> Unit) {
+        idOf(entry)?.let { return action(BookRef(it, entry.path)) }
+        lifecycleScope.launch {
+            val id = withContext(AppDispatchers.io) { BookIds.find(entry.file) }
+            if (id == null) toast(R.string.error_open) else action(BookRef(id, entry.path))
+        }
     }
 
     /** Browses the folder holding [file], highlighting it; [loadDirectory] climbs out of a folder that is gone. */
@@ -2001,15 +2071,18 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (books.isEmpty()) return null
         val history = library.historyMap()
         val read = library.readSet()
-        val last = books.filter { it.absolutePath in history }
-            .maxByOrNull { history.getValue(it.absolutePath).time }
+        // Books never seen have no history and no read mark.
+        val ids = books.associateWith { BookIds.known(it) }
+        fun isRead(f: File) = ids[f]?.let { it in read } == true
+        val last = books.filter { ids[it] in history }
+            .maxByOrNull { history.getValue(ids.getValue(it)!!).time }
         if (last != null) {
-            val page = history.getValue(last.absolutePath).page
-            if (page > 0 && last.absolutePath !in read) return last to page
-            books.drop(books.indexOf(last) + 1).firstOrNull { it.absolutePath !in read }
+            val page = history.getValue(ids.getValue(last)!!).page
+            if (page > 0 && !isRead(last)) return last to page
+            books.drop(books.indexOf(last) + 1).firstOrNull { !isRead(it) }
                 ?.let { return it to 0 }
         }
-        return books.firstOrNull { it.absolutePath !in read }?.let { it to 0 }
+        return books.firstOrNull { !isRead(it) }?.let { it to 0 }
     }
 
     /** Marks the books directly in [dir] read or unread once confirmed; either replaces their read marks. */
@@ -2031,11 +2104,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun markFolderNow(dir: File, read: Boolean) {
         lifecycleScope.launch {
             withContext(AppDispatchers.io) {
-                val paths = dir.listFiles()
+                // Books never seen are read for their IDs.
+                val books = dir.listFiles()
                     ?.filter { it.isFile && Formats.isOpenable(it.name) }
-                    ?.map { it.absolutePath }
+                    ?.mapNotNull { f -> BookIds.find(f)?.let { BookRef(it, f.absolutePath) } }
                     .orEmpty()
-                library.setReadMany(paths, read)
+                library.setReadMany(books, read)
             }
             toast(if (read) R.string.marked_read else R.string.marked_unread)
             refreshCurrent()
@@ -2130,7 +2204,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         menu.findItem(R.id.menu_bar_filter)?.isVisible = !searching
         menu.findItem(R.id.menu_bar_favorite)?.apply {
             val dir = currentDir
-            val favorite = dir != null && library.isFavorite(dir.absolutePath)
+            val favorite = dir != null && library.isFavoriteFolder(dir.absolutePath)
             isVisible = !searching && mode == TAB_BROWSE && dir != null
             setIcon(if (favorite) R.drawable.ic_star else R.drawable.ic_star_border)
             title = getString(if (favorite) R.string.menu_remove_favorite else R.string.menu_add_favorite)
@@ -2196,7 +2270,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         menu.findItem(R.id.menu_add_favorite)?.isVisible = browsing && ToolbarButton.FAVORITE !in buttons
         menu.findItem(R.id.menu_add_favorite)?.title =
             getString(
-                if (currentDir?.let { library.isFavorite(it.absolutePath) } == true)
+                if (currentDir?.let { library.isFavoriteFolder(it.absolutePath) } == true)
                     R.string.menu_remove_favorite else R.string.menu_add_favorite
             )
         // Shares are too slow to search for duplicates.
@@ -2239,7 +2313,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             R.id.menu_stats -> showStats()
             R.id.menu_dupes -> openCleanup(CleanupActivity.MODE_DUPES)
             R.id.menu_large -> openCleanup(CleanupActivity.MODE_LARGE)
-            R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavorite(currentDir?.absolutePath)
+            R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavoriteFolder(currentDir?.absolutePath)
             R.id.menu_refresh -> refreshCurrent()
             R.id.menu_settings -> startActivity(Intent(this, SettingsActivity::class.java))
             R.id.menu_about -> startActivity(Intent(this, AboutActivity::class.java))
@@ -2376,6 +2450,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         /** Subfolders of a share listed at once, to count their items. */
         private const val SUBFOLDER_LISTS = 4
+
+        /** Books read at once for their IDs ([findIds]): a share answers them in one round trip each. */
+        private const val ID_READS = 4
         private const val DEEP_SEARCH_DEPTH = 8
         private const val DEEP_SEARCH_LIMIT = 500
 

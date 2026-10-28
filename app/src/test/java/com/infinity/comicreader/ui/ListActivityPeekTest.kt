@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
@@ -193,10 +194,10 @@ class ListActivityPeekTest {
 
     private fun extrasWithBooks(): File {
         val extras = File(book.parentFile, "Extras")
-        val page = TestImages.png(4, 6)
-        Fixtures.zip(File(extras, "Part 2.cbz"), "01.png" to page)
-        Fixtures.zip(File(extras, "Part 10.cbz"), "01.png" to page)
-        Fixtures.zip(File(extras, "Part 1.cbz"), "01.png" to page)
+        // Pages of one shape at three scales: three books, not copies of one.
+        Fixtures.zip(File(extras, "Part 2.cbz"), "01.png" to TestImages.png(4, 6))
+        Fixtures.zip(File(extras, "Part 10.cbz"), "01.png" to TestImages.png(6, 9))
+        Fixtures.zip(File(extras, "Part 1.cbz"), "01.png" to TestImages.png(8, 12))
         return extras
     }
 
@@ -246,7 +247,7 @@ class ListActivityPeekTest {
         val manga = File(extras, "Part 2.cbz")
         val context = ApplicationProvider.getApplicationContext<Application>()
         BookFactsCache(context).put(
-            manga.absolutePath, manga.length(),
+            bookId(manga),
             BookFacts(1, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.COMIC_INFO))
         )
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()

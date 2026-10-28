@@ -34,7 +34,13 @@ object BookIds {
     var hasher: Xxh3? = null
 
     @Volatile
-    private var context: Context? = null
+    private var index: BookIndex? = null
+
+    /** IDs found while no index is set (before [init], as in JVM tests), by path, size and time; the latest few. */
+    private val unindexed = object : LinkedHashMap<String, BookId>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BookId>?) = size > UNINDEXED
+    }
+    private const val UNINDEXED = 1024
 
     /** Files being hashed now, by path, size and time, so a second ask waits for the first. */
     private val hashing = ConcurrentHashMap<String, FutureTask<BookId>>()
@@ -46,18 +52,19 @@ object BookIds {
 
     /** Remembers IDs in [context]'s [BookIndex] from now on. Cheap; called by every [Library]. */
     fun init(context: Context) {
-        if (this.context == null) this.context = context.applicationContext
+        if (index == null) index = BookIndex(context.applicationContext)
     }
 
     /** Forgets the context and hasher; tests start each case anew. */
     @VisibleForTesting
     fun reset() {
-        context = null
+        index = null
         hasher = null
         hashing.clear()
+        synchronized(unindexed) { unindexed.clear() }
     }
 
-    private fun index(): BookIndex? = context?.let { BookIndex(it) }
+    private fun index(): BookIndex? = index
 
     private fun hash(): Xxh3 = hasher ?: LibXxh3
 
@@ -73,7 +80,8 @@ object BookIds {
     }
 
     /** The ID known for the file at [path] of [size] bytes modified at [modified]; null when unseen or changed since. */
-    fun known(path: String, size: Long, modified: Long): BookId? = index()?.get(path, size, modified)
+    fun known(path: String, size: Long, modified: Long): BookId? =
+        index()?.get(path, size, modified) ?: synchronized(unindexed) { unindexed["$path|$size|$modified"] }
 
     /** The ID of [file]; null when it cannot be read. Blocking. */
     fun find(file: File): BookId? = try {
@@ -113,13 +121,20 @@ object BookIds {
 
     /** Hashes [file], listed at [size] and [modified], and remembers the ID found. */
     private fun hashNow(file: File, size: Long, modified: Long): BookId {
-        val layout = Timing.span("book id") { if (file is RemoteFile) remoteBytes(file, modified) else localBytes(file) }
+        val layout = Timing.span("book id") { bytesOf(file, modified) }
         val id = BookIdBytes.idOf(layout, hash())
         val read = sizeOf(layout)
         // A file that changed while being read is not remembered under the stat taken before.
-        if (size < 0 || read == size) index()?.put(file.absolutePath, size, modified, id)
+        if (size < 0 || read == size) {
+            val index = index()
+            if (index != null) index.put(file.absolutePath, size, modified, id)
+            else synchronized(unindexed) { unindexed["${file.absolutePath}|$size|$modified"] = id }
+        }
         return id
     }
+
+    /** The bytes [file], listed at [modified], has its ID by ([BookIdBytes]), read now whether known or not. Blocking. */
+    internal fun bytesOf(file: File, modified: Long): ByteArray = if (file is RemoteFile) remoteBytes(file, modified) else localBytes(file)
 
     /** The size a layout says its file had. */
     private fun sizeOf(layout: ByteArray): Long {
@@ -171,6 +186,9 @@ object BookIds {
     fun moved(old: String, new: String) {
         index()?.move(old, new)
     }
+
+    /** The IDs last found for [root], a file or folder, and everything below it. Blocking. */
+    fun knownUnder(root: String): Set<BookId> = index()?.under(root).orEmpty()
 
     /** Forgets the IDs known for [root], deleted or replaced, and everything below it. Blocking. */
     fun removed(root: String) {

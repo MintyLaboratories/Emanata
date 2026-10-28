@@ -44,26 +44,39 @@ data class BookEntry(
     /** For folders: how many direct children are books or images (-1 = unknown). */
     val bookCount: Int = -1,
     /** For folders: how many of those books were opened or read (-1 = unknown). */
-    val begunCount: Int = -1
+    val begunCount: Int = -1,
+    /** For files: the [BookId] as known when listed; null until found. */
+    val id: BookId? = null
 ) {
     val path: String get() = file.absolutePath
 }
 
+/** A book as the library keeps it: its [id], seen at [path]. */
+data class BookRef(val id: BookId, val path: String)
+
+/** Book [id], last seen at [path] (as [name]), read up to [page] of [total] at [time]. */
 data class HistoryItem(
     val path: String,
     val name: String,
     val page: Int,
     val total: Int,
-    val time: Long
-)
+    val time: Long,
+    val id: BookId
+) {
+    val ref: BookRef get() = BookRef(id, path)
+}
 
+/** A bookmark on [page] of book [id], last seen at [path] (as [name]). */
 data class Bookmark(
     val path: String,
     val name: String,
     val page: Int,
     val note: String,
-    val time: Long
-)
+    val time: Long,
+    val id: BookId
+) {
+    val ref: BookRef get() = BookRef(id, path)
+}
 
 /** Aggregated reading statistics. */
 data class ReadingStats(

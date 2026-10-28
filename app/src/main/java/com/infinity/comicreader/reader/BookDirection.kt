@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.data.BookFacts
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.util.Formats
 import java.io.File
@@ -83,7 +84,8 @@ object BookDirection {
         synchronized(checked) { checked[checkKey(file)] = found }
     }
 
-    private fun checkKey(file: File) = "${file.absolutePath}|${file.length()}|${file.lastModified()}"
+    /** The book's ID when known ([BookIds.known]), else its path, size and time. */
+    private fun checkKey(file: File) = BookIds.known(file)?.let { "id:${it.hex}" } ?: "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 
     /** The typical shape of [source]'s first few pages after the cover ([Wraparound.innerRatio]); null without any. */
     fun innerRatio(source: PageSource): Double? = Wraparound.innerRatio(

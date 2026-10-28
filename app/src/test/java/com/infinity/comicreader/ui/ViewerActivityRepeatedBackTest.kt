@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -324,12 +325,12 @@ class ViewerActivityRepeatedBackTest {
     fun landingAtThePreviousChaptersEndDoesNotMarkItRead() {
         val library = Library(context)
         val viewer = launch(first, Int.MAX_VALUE)
-        assertFalse(library.isRead(first.absolutePath))
+        assertFalse(library.isRead(bookId(first)))
         viewer.back()
-        assertFalse(library.isRead(first.absolutePath))
+        assertFalse(library.isRead(bookId(first)))
         viewer.findViewById<View>(R.id.btn_next_page).performClick()
         idle()
-        assertTrue(library.isRead(first.absolutePath))
+        assertTrue(library.isRead(bookId(first)))
     }
 
     @Test

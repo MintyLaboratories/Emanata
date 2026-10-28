@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
+import com.infinity.comicreader.testing.bookId
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -93,11 +95,11 @@ class ViewerActivityFavoritesTest {
         assertEquals(context.getString(R.string.favorite_this_comic), viewer.item(R.id.menu_favorite).title.toString())
         assertFalse(viewer.checked(R.id.menu_favorite))
         viewer.click(R.id.menu_favorite)
-        assertTrue(library.isFavorite(book.absolutePath))
-        assertFalse(library.isFavorite(book.parent!!))
+        assertTrue(library.isFavorite(bookId(book)))
+        assertFalse(library.isFavoriteFolder(book.parent!!))
         assertTrue(viewer.checked(R.id.menu_favorite))
         viewer.click(R.id.menu_favorite)
-        assertFalse(library.isFavorite(book.absolutePath))
+        assertFalse(library.isFavorite(bookId(book)))
     }
 
     @Test
@@ -116,8 +118,8 @@ class ViewerActivityFavoritesTest {
 
     @Test
     fun favoritesAddedElsewhereShowWhenTheComicOpens() {
-        library.toggleFavorite(book.absolutePath)
-        library.toggleFavorite(book.parent!!)
+        library.toggleFavorite(book)
+        library.toggleFavoriteFolder(book.parent!!)
         val viewer = launch()
         assertTrue(viewer.checked(R.id.menu_favorite))
         assertTrue(viewer.checked(R.id.menu_favorite_folder))
@@ -128,10 +130,10 @@ class ViewerActivityFavoritesTest {
         val viewer = launch()
         assertFalse(viewer.checked(R.id.menu_favorite_folder))
         viewer.click(R.id.menu_favorite_folder)
-        assertTrue(library.isFavorite(book.parent!!))
-        assertFalse(library.isFavorite(book.absolutePath))
+        assertTrue(library.isFavoriteFolder(book.parent!!))
+        assertFalse(library.isFavorite(bookId(book)))
         assertTrue(viewer.checked(R.id.menu_favorite_folder))
         viewer.click(R.id.menu_favorite_folder)
-        assertFalse(library.isFavorite(book.parent!!))
+        assertFalse(library.isFavoriteFolder(book.parent!!))
     }
 }

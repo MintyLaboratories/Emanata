@@ -1,5 +1,7 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.data.BookRef
+import com.infinity.comicreader.data.BookId
 import android.app.Application
 import android.content.Context
 import android.content.DialogInterface
@@ -71,8 +73,11 @@ class SettingsConfirmTest {
         idle()
     }
 
+    /** A book as the library keeps it. */
+    private val one = BookRef(BookId(1), "/books/attic/one.cbz")
+
     private fun addHistory() =
-        library.addHistory(HistoryItem("/books/attic/one.cbz", "one.cbz", 7, 20, 1L))
+        library.addHistory(HistoryItem(one.path, "one.cbz", 7, 20, 1L, one.id))
 
     @Test
     fun clearHistoryWaitsForConfirmation() {
@@ -85,7 +90,7 @@ class SettingsConfirmTest {
 
     @Test
     fun clearBookmarksWaitsForConfirmation() {
-        library.addBookmark(Bookmark("/books/attic/one.cbz", "one.cbz", 3, "", 1L))
+        library.addBookmark(Bookmark(one.path, "one.cbz", 3, "", 1L, one.id))
         tap("pref_clear_bookmarks").press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(1, library.bookmarks().size)
         tap("pref_clear_bookmarks").press(DialogInterface.BUTTON_POSITIVE)
@@ -115,7 +120,7 @@ class SettingsConfirmTest {
     @Test
     fun resetAllSettingsKeepsAdjustmentsAndProgress() {
         prefs.filter = "sepia"
-        library.setAdjustments("/books/attic/one.cbz", Adjustments(10, -5, 20))
+        library.setAdjustments(one, Adjustments(10, -5, 20))
         addHistory()
 
         val canceled = tap("pref_reset")
@@ -125,7 +130,7 @@ class SettingsConfirmTest {
 
         tap("pref_reset").press(DialogInterface.BUTTON_POSITIVE)
         assertEquals("none", prefs.filter)
-        assertEquals(Adjustments(10, -5, 20), library.adjustmentsFor("/books/attic/one.cbz"))
-        assertEquals(7, library.pageFor("/books/attic/one.cbz"))
+        assertEquals(Adjustments(10, -5, 20), library.adjustmentsFor(one.id))
+        assertEquals(7, library.pageFor(one.id))
     }
 }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.toggleFavorite
 import android.app.Application
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -33,8 +34,8 @@ class LibraryOrderTest {
         val newer = File(tmp.root, "Series A").apply { mkdirs() }
         File(newer, "A 01 (2015).cbz").createNewFile()
         val library = Library(context)
-        library.toggleFavorite(older.absolutePath)
-        library.toggleFavorite(newer.absolutePath)
+        library.toggleFavorite(older)
+        library.toggleFavorite(newer)
         val prefs = Prefs(context)
         prefs.groupFavorites = false
         prefs.setSort(Prefs.TAB_FAVORITES, TabSort(SortLevel(SortKey.YEAR, flipped = true)))

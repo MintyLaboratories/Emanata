@@ -26,12 +26,11 @@ object FileEnds {
 
     /**
      * The parts of the file at [path] kept, as (file position, bytes) pairs, when it was
-     * read at [size] and [modified] (0, unknown, matches any time); empty otherwise.
-     * The bytes are copies, the caller's to keep.
+     * read at [size] and [modified]; empty otherwise. The bytes are copies, the caller's to keep.
      */
-    fun of(path: String, size: Long, modified: Long = 0): List<Pair<Long, ByteArray>> {
+    fun of(path: String, size: Long, modified: Long): List<Pair<Long, ByteArray>> {
         val ends = synchronized(kept) { kept[path] } ?: return emptyList()
-        if (ends.size != size || (modified != 0L && ends.modified != 0L && ends.modified != modified)) return emptyList()
+        if (ends.size != size || ends.modified != modified) return emptyList()
         return BookIdBytes.ranges(size).map { (position, offset, length) -> position to ends.layout.copyOfRange(offset, offset + length) }
     }
 

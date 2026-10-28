@@ -155,7 +155,9 @@ class BookIdsTest {
         assertEquals(65_536L, fake.bytesRead)
         fake.slow = null
         // Opening the book next starts from both ends, read once.
-        val ends = FileEnds.of(file.path, bytes.size.toLong())
+        val ends = FileEnds.of(file.path, bytes.size.toLong(), file.stat()!!.modified)
+        // Another time: the same size need not be the same file.
+        assertTrue(FileEnds.of(file.path, bytes.size.toLong(), file.stat()!!.modified + 1000).isEmpty())
         assertEquals(listOf(0L, 500_000L - 32_768), ends.map { it.first })
         assertArrayEquals(bytes.copyOfRange(500_000 - 32_768, 500_000), ends[1].second)
         RemoteChannel.open(file.path).use { channel ->

@@ -438,10 +438,14 @@ class RemoteChannel(
         /** What runs fetched ahead hold now, in all channels; for tests. */
         internal val aheadBytes: Long get() = BUDGET.get()
 
-        /** Opens the file at [path] on its share as a channel, starting from its ends when just read for its Book ID ([FileEnds]). */
+        /**
+         * Opens the file at [path] on its share as a channel, starting from its ends when just
+         * read for its Book ID ([FileEnds]) and its time is known to be the same.
+         */
         @Throws(IOException::class)
         fun open(path: String): RemoteChannel = RemoteChannel(Remotes.open(path)).also { channel ->
-            for ((start, bytes) in FileEnds.of(path, channel.size, Remotes.cachedStat(path)?.modified ?: 0)) channel.seed(start, bytes)
+            val modified = Remotes.cachedStat(path)?.modified ?: return@also
+            for ((start, bytes) in FileEnds.of(path, channel.size, modified)) channel.seed(start, bytes)
         }
     }
 }

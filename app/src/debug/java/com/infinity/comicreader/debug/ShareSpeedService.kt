@@ -32,6 +32,9 @@ import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.SharePath
 import com.infinity.comicreader.net.SmbFs
+import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.reader.NameCharset
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -55,6 +58,7 @@ import com.hierynomus.smbj.share.File as SmbFile
  * server's disk and fill its cache, then through every way `rounds` times (2), in turn:
  * - `app`: the app's own reads ([Remotes.open]) through a [RemoteChannel] as the share provider
  *   makes one, in 128 KB reads, and `app-pages` as archive readers make one;
+ * - `open`: the book opened in place as the reader opens it, its entries read in order;
  * - `single`: one read at a time of 1 MB and of the server's largest;
  * - `inflight`: 2, 4, 8 and 16 reads of 1 MB in flight, and 2 and 4 of the largest;
  * - `rcvbuf`: 8 of 1 MB in flight with the device's receive buffer set to 256 KB, 1 MB, 4 MB;
@@ -134,6 +138,7 @@ class ShareSpeedService : Service() {
                     }
                 }
             })
+            add(Way("open", "open in place (archive reader, entries in order)") { n -> openInPlace(path, n) })
             for (piece in listOf(MB.toInt(), maxRead).distinct()) {
                 add(Way("single", "single ${kb(piece)}") { n -> Link.open(where, share, smbPath, 0, MAX_CONFIG_READ).use { link -> link.single(n, piece) } })
             }
@@ -171,6 +176,30 @@ class ShareSpeedService : Service() {
         }
         log("summary (best of $rounds, MB/s):")
         for (way in ways) results[way.name]?.let { log("  ${way.name}: ${"%.2f".format(it.max())} (all ${it.joinToString { r -> "%.2f".format(r) }})") }
+    }
+
+    /** Opens the book as the reader does, in place, and reads its entries in order until [bytes] of them came. */
+    private fun openInPlace(path: String, bytes: Long) {
+        val t = System.nanoTime()
+        val reader = ArchiveReader.open(Remotes.file(path), NameCharset.AUTO) ?: throw IOException("Not an archive")
+        reader.use { r ->
+            log("  open: ${r.javaClass.simpleName}, ${r.entries.size} entries listed in ${ms(t)} ms, random access ${r.randomAccess}")
+            val buffer = ByteArray(256 * 1024)
+            var total = 0L
+            for ((i, e) in r.entries.withIndex()) {
+                if (total >= bytes) break
+                total += r.read(e) { s ->
+                    var n = 0L
+                    while (true) {
+                        val got = s.read(buffer)
+                        if (got < 0) break
+                        n += got
+                    }
+                    n
+                }
+                if (i == 0) log("  first entry, ${total / 1024} KB, read by ${ms(t)} ms")
+            }
+        }
     }
 
     /** Reads [bytes] from the start through [count] connections, each taking every [count]th piece of 1 MB, 4 in flight. */

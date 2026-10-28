@@ -1,6 +1,9 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.reader.ChannelZipReader
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.RarReader
+import com.infinity.comicreader.reader.TarReader
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -263,5 +266,32 @@ class RemoteChannelTest {
         channel.position(2000)
         channel.read(ByteBuffer.allocate(3000))
         assertEquals(listOf(3976), calls)
+    }
+
+    @Test
+    fun archiveReadersFetchAnEntryAboutToBeReadInOneRun() {
+        val page = ByteArray(3 shl 20) { (it % 253).toByte() }
+        val entries = arrayOf(Fixtures.entry("a.png"), Fixtures.entry("big.png", page), Fixtures.entry("z.png"))
+        val archives = linkedMapOf(
+            "zip" to Fixtures.zipBytes(*entries),
+            "tar" to Fixtures.tarBytes(*entries),
+            "rar4" to Fixtures.rar4Bytes(*entries),
+            "rar5" to Fixtures.rar5Bytes(*entries)
+        )
+        for ((kind, bytes) in archives) {
+            val input = Bytes(bytes)
+            val channel = RemoteChannel(input, background = now)
+            val reader = when (kind) {
+                "zip" -> ChannelZipReader(channel, "UTF-8")
+                "tar" -> TarReader(channel, "UTF-8")
+                else -> RarReader.inPlace(channel)
+            }
+            reader.use { r ->
+                val before = input.reads
+                val got = r.read(r.entries.first { it.path == "big.png" }) { it.readBytes() }
+                assertArrayEquals(kind, page, got)
+                assertTrue("$kind: ${input.reads - before} reads", input.reads - before <= 2)
+            }
+        }
     }
 }

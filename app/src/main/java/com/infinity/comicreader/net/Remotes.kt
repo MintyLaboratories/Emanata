@@ -275,7 +275,6 @@ object Remotes {
         return Timing.span("share stat") { call(path) { fs -> asked { fs.stat(relOf(path)) } } }.also { remember(path, it) }
     }
 
-    /** Opens the file at [path]. */
     /** Opens the file at [path]; opened for an [Asker] ([askingAs]), its reads are that asker's from any thread. */
     fun open(path: String): RemoteInput = Timing.span("share open") {
         call(path) { fs ->
@@ -305,8 +304,8 @@ object Remotes {
     /** Makes the coroutine it is added to ask shares as [by]: its requests, and those of the files it opens. */
     fun askingAs(by: Asker): CoroutineContext.Element = asker.asContextElement(by)
 
-    /** Runs [block] asking shares as [by] ([askingAs]); for blocking code. */
-    fun <T> askingAs(by: Asker, block: () -> T): T {
+    /** Runs [block] asking shares as [by] ([askingAs]); for tests, which block. */
+    internal fun <T> askingAs(by: Asker, block: () -> T): T {
         val before = asker.get()
         asker.set(by)
         try {

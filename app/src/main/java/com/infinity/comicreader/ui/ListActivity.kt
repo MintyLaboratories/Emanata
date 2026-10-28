@@ -27,6 +27,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
@@ -188,6 +189,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** True when the app is starting afresh: the first [startUp] offers the book read last ([offerResume]). */
     private var appStart = false
+
+    /** The startup folder's share being waited for ([openStartDirectory]), kept across a recreate. */
+    private val startupWait: StartupWait by viewModels()
 
     /** The startup offer ([offerResume]) while it waits for an answer; asked again after a recreate. */
     private var resumeOffer: AlertDialog? = null
@@ -649,27 +653,31 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val debug = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val startPath = intent.getStringExtra(EXTRA_START_PATH)?.takeIf { debug }
         val slowMs = if (debug) intent.getLongExtra(EXTRA_SLOW_SHARE_MS, 0) else 0
+        val wait = startupWait
         launchListing {
-            val dir = startPath?.let { Remotes.file(it) } ?: withContext(AppDispatchers.io) { startDirectory() }
+            // A wait under way before a recreate, as by a rotation, goes on where it was.
+            val waited = wait.dir
+            val dir = waited ?: startPath?.let { Remotes.file(it) } ?: withContext(AppDispatchers.io) { startDirectory() }
             if (dir !is RemoteFile) {
                 loadDirectory(dir)
                 return@launchListing
             }
-            val attempt = lifecycleScope.async(AppDispatchers.io) {
+            val attempt = wait.attempt.takeIf { waited != null } ?: wait.start(dir, SystemClock.uptimeMillis()) {
                 delay(slowMs)
                 listShare(dir)
             }
+            val waitedMs = SystemClock.uptimeMillis() - wait.since
             // The share has the whole network timeout to answer, with its listing or why not (shown by browsing it).
             val device = CompletableDeferred<Unit>()
             var asked: AlertDialog? = null
             val ask = launch {
-                delay(SHARE_DIALOG_MS)
+                delay(SHARE_DIALOG_MS - waitedMs)
                 // Never over the offer to resume reading, nor while the reader it opened is on top.
                 while (resumeOffer?.isShowing == true || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) delay(SHARE_DIALOG_CHECK_MS)
-                asked = askToWait { device.complete(Unit) }
+                if (!wait.waitChosen) asked = askToWait(wait = { wait.waitChosen = true }) { device.complete(Unit) }
             }
             val answer = try {
-                withTimeoutOrNull(Remotes.answerMs) {
+                withTimeoutOrNull((Remotes.answerMs - waitedMs).coerceAtLeast(1)) {
                     select<Result<List<RemoteFile>>?> {
                         attempt.onAwait { it }
                         device.onAwait { null }
@@ -678,6 +686,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             } finally {
                 ask.cancel()
                 asked?.dismiss()
+                // Kept only for the screen made anew after this one.
+                if (lifecycle.currentState != Lifecycle.State.DESTROYED) wait.end()
             }
             when {
                 device.isCompleted -> startOnDevice(dir, attempt, say = false)
@@ -689,17 +699,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * Says the startup folder's share is being waited for, offering to wait on ("Wait" only
-     * closes it, the list spinning on) or to open the device now ([device]).
+     * closes it, the list spinning on; [wait] hears it) or to open the device now ([device]).
      */
-    private fun askToWait(device: () -> Unit): AlertDialog =
+    private fun askToWait(wait: () -> Unit, device: () -> Unit): AlertDialog =
         AlertDialog.Builder(this)
             .setTitle(R.string.network_waiting)
-            .setPositiveButton(R.string.network_wait) { _, _ -> }
+            .setPositiveButton(R.string.network_wait) { _, _ -> wait() }
             .setNegativeButton(R.string.network_open_device) { _, _ -> device() }
             .show()
-
-    /** Lists share folder [dir]. Blocking. */
-    private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
 
     /** Why listing a share failed ([listShare]); null when it worked. */
     private fun reasonOf(answer: Result<*>): RemoteException.Reason? =
@@ -2328,6 +2335,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     companion object {
+        /** Lists share folder [dir]. Blocking; holds no screen, so a wait kept across a recreate ([StartupWait]) leaks none. */
+        private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
+
         private const val TAB_BROWSE = 0
         private const val TAB_FAVORITES = 1
         private const val TAB_HISTORY = 2

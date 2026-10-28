@@ -298,6 +298,34 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun aRotationKeepsWaitingWhereItWas() {
+        prefs.setLocationStart(device.absolutePath, comics.absolutePath)
+        prefs.lastPath = "/net/s1/Series"
+        fake.slow = CountDownLatch(1)
+        val controller = start()
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        waitDialog(controller.get())!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        controller.recreate()
+        idle()
+        val activity = controller.get()
+        // "Wait" was chosen: not asked again.
+        idleFor(ListActivity.SHARE_DIALOG_MS + 100)
+        assertNull(waitDialog(activity))
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.progress).visibility)
+        // The timeout runs from the first start, not the recreate.
+        idleFor(Remotes.answerMs - 2 * ListActivity.SHARE_DIALOG_MS - 1_000)
+        assertNotEquals(listOf("Device", "Comics"), activity.crumbs())
+        idleFor(1_200)
+        assertEquals(listOf("Device", "Comics"), activity.crumbs())
+        // One listing all along, offered once it answers.
+        fake.slow!!.countDown()
+        idle()
+        assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
+        assertEquals(1, fake.lists)
+    }
+
+    @Test
     fun aStartupShareAnsweringAtOnceAsksNothing() {
         prefs.lastPath = "/net/s1/Series"
         val activity = launch()

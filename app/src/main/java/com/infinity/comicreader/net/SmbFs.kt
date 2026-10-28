@@ -1000,9 +1000,9 @@ class SmbFs(private val share: Share) : RemoteFs {
             remove(top)
         }
 
-        /** True when [e] comes of a thread interrupted while waiting. */
+        /** True when [e] comes of a thread interrupted while waiting; a timeout is not one. */
         internal fun interrupted(e: Throwable): Boolean =
-            generateSequence(e) { it.cause.takeIf { c -> c !== it } }.take(8).any { it is InterruptedException || it is InterruptedIOException }
+            generateSequence(e) { it.cause.takeIf { c -> c !== it } }.take(8).any { it is InterruptedException }
 
         private fun millis(time: FileTime?): Long = time?.toEpochMillis()?.takeIf { it > 0 } ?: 0L
     }

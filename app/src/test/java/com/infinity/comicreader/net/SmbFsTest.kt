@@ -222,7 +222,8 @@ class SmbFsTest {
     fun aReadInterruptedWhileWaitingIsNotADroppedConnection() {
         val wrapped = com.hierynomus.protocol.transport.TransportException(java.util.concurrent.ExecutionException(InterruptedException()))
         assertTrue(SmbFs.interrupted(wrapped))
-        assertTrue(SmbFs.interrupted(java.io.InterruptedIOException()))
+        // A socket timeout is an InterruptedIOException too, but the link failed.
+        assertFalse(SmbFs.interrupted(com.hierynomus.protocol.transport.TransportException(java.net.SocketTimeoutException())))
         assertFalse(SmbFs.interrupted(IOException("Connection reset", java.net.SocketException())))
     }
 

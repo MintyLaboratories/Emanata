@@ -220,6 +220,12 @@ class ViewerActivity : AppCompatActivity() {
     /** The open book as the library keeps it; null while its ID is unknown. */
     private fun book(): BookRef? = bookId?.let { id -> file?.let { BookRef(id, it.absolutePath) } }
 
+    /** [book], or null, saying nothing can be kept for it, while its ID is unknown. */
+    private fun keptBook(): BookRef? = book() ?: run {
+        if (file != null) toast(R.string.book_id_unknown)
+        null
+    }
+
     /**
      * The next chapter, opened ahead so a continuous reader rolls
      * straight into it instead of stopping at the chapter's end. While it is
@@ -2749,7 +2755,7 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Adds the open book to the favorites, or removes it, and says which. */
     private fun toggleFavoriteBook() {
-        val ref = book() ?: return
+        val ref = keptBook() ?: return
         toast(if (library.toggleFavorite(ref)) R.string.favorite_added else R.string.favorite_removed)
         refreshFavorites()
         invalidateOptionsMenu()
@@ -3532,6 +3538,7 @@ class ViewerActivity : AppCompatActivity() {
             toast(R.string.hide_last_page)
             return
         }
+        keptBook() ?: return
         applyHidden(library.hiddenPages(bookId) + HiddenPages.bookIndex(src, page))
         toast(R.string.page_hidden)
     }
@@ -3651,7 +3658,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun toggleBookmark() {
         val f = file ?: return
-        val id = bookId ?: return
+        val id = keptBook()?.id ?: return
         if (library.isBookmarked(id, currentIndex)) {
             library.removeBookmark(id, currentIndex)
             toast(R.string.bookmark_removed)

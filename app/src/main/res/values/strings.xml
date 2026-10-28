@@ -399,6 +399,7 @@
     <string name="orientation_landscape">Landscape</string>
 
     <string name="bookmark_saved">Bookmark saved</string>
+    <string name="book_id_unknown">Not saved: this book could not be read to tell it apart</string>
     <string name="bookmark_removed">Bookmark removed</string>
     <string name="no_bookmarks_in_book">No bookmarks in this book</string>
     <string name="jump_hint">Page number</string>

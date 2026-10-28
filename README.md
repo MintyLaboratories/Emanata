@@ -247,8 +247,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   downloaded whole. Long reads keep several requests in flight, over a second
   SMB connection too (one connection's window caps what a link with a long
   round trip carries), and a book streamed front to back has its next parts
-  fetched ahead (not while battery saver holds back read-ahead); walking an
-  archive's headers stays in small reads. PDFs and loose images are fetched to a **Network cache**
+  fetched ahead (not while battery saver holds back read-ahead, which also
+  keeps to one connection, and only while memory allows); pages read at the
+  same time take turns in shorter runs; walking an archive's headers stays in
+  small reads. PDFs and loose images are fetched to a **Network cache**
   (Settings, 2 GB by default, which also holds the kept pages; least recently
   read first out) before the reader opens them; a PDF gets its cover once read.
   A server waking a sleeping disk is waited for: connecting, signing in,

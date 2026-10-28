@@ -148,7 +148,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   again* turns the answer into Yes or No. A finished book is not offered.
 - Long-press a file or folder in Browse, Favorites or History for its file
   operations, a row of icons on top: **Delete** (asks first, farthest from the
-  thumb), **Rename**, **Move**, **Copy**, **Share** (files), and **More** once it
+  thumb), **Rename**, **Move**, **Copy**, **Share**, and **More** once it
   holds anything (file tools to come). Below them, the comic operations: peek,
   favorite, mark read/unread, show it in its folder (except from that folder
   itself), set a folder as the startup folder. Bookmarks list the comic
@@ -156,11 +156,17 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   through smbj, WebDAV through MKCOL/PUT/MOVE/COPY/DELETE).
 - **Share** asks what to send, each a check box followed by what it sends: the
   title, the cover, the file (with its type icon, name and size); title and
-  cover at first, then the last choice. The share sheet gets one intent: the
+  cover at first, then the last choice. A folder sends its title and cover.
+  The share sheet gets one intent: the
   title as text, the cover as a PNG, the file in place through the app's own
   content provider, which other apps read only when granted. A share's book is
   never downloaded or copied first: the app picked reads it on demand through a
-  proxy file descriptor, any size.
+  proxy file descriptor, any size. While it may still read, a Sharing…
+  notification (with Stop) keeps the app running; it goes once no shared file
+  was read for 2 minutes. Links stay valid for the books of the 20 latest
+  shares (all books of one share together), and while a file is open. The
+  first Share or file operation asks once to show notifications. Books other
+  apps send or open with this app are taken in every type it shares them as.
 - **Move** and **Copy** pick the item up: a **Paste** button shows at the
   bottom left (the List/Grid button's mirror), with a short hint. Tap it to
   paste into the folder browsed, long-press it to cancel. Picked up in Favorites
@@ -238,7 +244,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   traveling: CBZ, CBT, and CBR and CB7 that are not solid, straight from
   their entries; a solid CBR or CB7 is streamed once, front to back, its pages
   kept as they are unpacked, so even a book of several GB opens without being
-  downloaded whole. PDFs and loose images are fetched to a **Network cache**
+  downloaded whole. Long reads keep several requests in flight, over a second
+  SMB connection too (one connection's window caps what a link with a long
+  round trip carries), and a book streamed front to back has its next parts
+  fetched ahead (not while battery saver holds back read-ahead); walking an
+  archive's headers stays in small reads. PDFs and loose images are fetched to a **Network cache**
   (Settings, 2 GB by default, which also holds the kept pages; least recently
   read first out) before the reader opens them; a PDF gets its cover once read.
   A server waking a sleeping disk is waited for: connecting, signing in,

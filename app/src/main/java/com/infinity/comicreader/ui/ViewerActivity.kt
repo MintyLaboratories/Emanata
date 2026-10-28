@@ -162,7 +162,11 @@ class ViewerActivity : AppCompatActivity() {
     /** [shareWait]'s spinner, hidden while [progress] spins. */
     private lateinit var shareWaitSpinner: View
 
-    /** The reader's own requests to shares, opening books and reading their pages; [shareWait] heeds only these. */
+    /**
+     * The reader's own requests to shares, opening books and reading their pages; [shareWait]
+     * heeds only these. Scans of the open book count too: a page shown reads through the same
+     * channel, which waits for a scan's read to finish.
+     */
     private val asker = Remotes.Asker()
     private lateinit var endCard: View
     private lateinit var endSubtitle: TextView

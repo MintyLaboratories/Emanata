@@ -75,6 +75,23 @@ class RemoteCacheTest {
     }
 
     @Test
+    fun onAShareSendingFilesOnlyWholeTheIdComesFromTheCopy() {
+        fake.seekable = false
+        assertNull(BookIds.find(remote("2.cbr")))
+        assertEquals(0L, fake.bytesRead)
+        val copy = RemoteCache.fetch(remote("2.cbr"), cacheDir)
+        assertEquals(2000L, fake.bytesRead)
+        val id = BookIds.known(remote("2.cbr"))
+        assertEquals(BookIds.of(copy), id)
+        assertEquals(copy, RemoteCache.cached(remote("2.cbr"), cacheDir))
+        // The same book elsewhere is fetched for its ID, then shares the one copy.
+        File(share, "2.cbr").copyTo(File(share, "again.cbr"))
+        assertEquals(copy, RemoteCache.fetch(remote("again.cbr"), cacheDir))
+        assertEquals(id, BookIds.known(remote("again.cbr")))
+        assertEquals(1, RemoteCache.dirIn(cacheDir).listFiles()!!.size)
+    }
+
+    @Test
     fun theLeastRecentlyUsedCopiesGoPastTheLimit() {
         RemoteCache.limitBytes = 5000
         val one = RemoteCache.fetch(remote("1.cbr"), cacheDir)

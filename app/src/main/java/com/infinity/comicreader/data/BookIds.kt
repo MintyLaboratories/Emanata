@@ -25,7 +25,9 @@ import java.util.concurrent.FutureTask
  * seen before (no read), else by reading its ends ([BookIdBytes]) and hashing them,
  * which the index then remembers. A file being hashed is hashed once however many ask.
  * On a share both ends are asked for at once, one round trip, and kept a moment
- * ([FileEnds]) so opening the book next starts from them.
+ * ([FileEnds]) so opening the book next starts from them. A share that sends files
+ * only whole ([Remotes.seekable]) is never read for an ID: there it comes from the
+ * book's local copy once fetched ([ofCopy]).
  */
 object BookIds {
     /** The hash IDs are made with; JVM tests set a pure-JVM one. */
@@ -93,12 +95,17 @@ object BookIds {
         null
     }
 
-    /** The ID of [file]: known, else read and hashed now. Blocking; throws when it cannot be read. */
+    /**
+     * The ID of [file]: known, else read and hashed now. Blocking; throws when it cannot be
+     * read, as on a share sending files only whole before the book is fetched.
+     */
     @Throws(IOException::class)
     fun of(file: File): BookId {
         val path = file.absolutePath
         val (size, modified) = statOf(file) ?: throw FileNotFoundException(path)
         known(path, size, modified)?.let { return it }
+        // Reading even its ends from such a share would stream the whole file, maybe twice.
+        if (file is RemoteFile && !Remotes.seekable(file.path)) throw NotInPlaceException(path)
         val key = "$path|$size|$modified"
         val mine = FutureTask { hashNow(file, size, modified) }
         val task = hashing.putIfAbsent(key, mine) ?: mine
@@ -123,18 +130,31 @@ object BookIds {
     fun keyOf(file: File): String = find(file)?.let { "id:${it.hex}" } ?: "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 
     /** Hashes [file], listed at [size] and [modified], and remembers the ID found. */
-    private fun hashNow(file: File, size: Long, modified: Long): BookId {
-        val layout = Timing.span("book id") { bytesOf(file, modified) }
+    private fun hashNow(file: File, size: Long, modified: Long): BookId =
+        remember(file.absolutePath, size, modified, Timing.span("book id") { bytesOf(file, modified) })
+
+    /**
+     * The ID of share file [file], listed at [size] and [modified], hashed from [copy], its
+     * whole local copy just fetched, and remembered for [file]. Blocking.
+     */
+    @Throws(IOException::class)
+    fun ofCopy(file: RemoteFile, size: Long, modified: Long, copy: File): BookId =
+        remember(file.path, size, modified, localBytes(copy))
+
+    /** The ID of [layout], the ID bytes of the file at [path] listed at [size] and [modified], remembered for it. */
+    private fun remember(path: String, size: Long, modified: Long, layout: ByteArray): BookId {
         val id = BookIdBytes.idOf(layout, hash())
-        val read = sizeOf(layout)
         // A file that changed while being read is not remembered under the stat taken before.
-        if (size < 0 || read == size) {
+        if (size < 0 || sizeOf(layout) == size) {
             val index = index()
-            if (index != null) index.put(file.absolutePath, size, modified, id)
-            else synchronized(unindexed) { unindexed["${file.absolutePath}|$size|$modified"] = id }
+            if (index != null) index.put(path, size, modified, id)
+            else synchronized(unindexed) { unindexed["$path|$size|$modified"] = id }
         }
         return id
     }
+
+    /** What [of] throws for a book on a share that sends files only whole, not fetched yet. */
+    class NotInPlaceException(path: String) : IOException("Not readable in place: $path")
 
     /** The bytes [file], listed at [modified], has its ID by ([BookIdBytes]), read now whether known or not. Blocking. */
     internal fun bytesOf(file: File, modified: Long): ByteArray = if (file is RemoteFile) remoteBytes(file, modified) else localBytes(file)

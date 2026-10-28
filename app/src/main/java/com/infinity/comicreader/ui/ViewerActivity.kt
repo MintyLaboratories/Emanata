@@ -1114,9 +1114,12 @@ class ViewerActivity : AppCompatActivity() {
                 val job = coroutineContext.job
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
                 // The ID first: on a share, the reads of the book's ends start opening it too.
-                val id = BookIds.find(target)
-                found = id
-                val s = runCatching { hiding(id, PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)) }
+                // A share sending files only whole has it from the copy fetched to open the book.
+                found = BookIds.find(target)
+                val s = runCatching {
+                    val raw = PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)
+                    hiding((found ?: BookIds.known(target)).also { found = it }, raw)
+                }
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
@@ -1887,7 +1890,8 @@ class ViewerActivity : AppCompatActivity() {
                 val job = coroutineContext.job
                 id = BookIds.find(next)
                 val s = runCatching {
-                    hiding(id, PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false))
+                    val raw = PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false)
+                    hiding((id ?: BookIds.known(next)).also { id = it }, raw)
                 }.getOrNull()
                 try {
                     ensureActive()

@@ -87,6 +87,11 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
         return at(path).takeIf { it.exists() }?.let { statOf(it) }
     }
 
+    /** False to act as a server sending files only whole ([RemoteFs.seekable]). */
+    var seekable = true
+
+    override fun seekable(path: String): Boolean = seekable
+
     override fun open(path: String): RemoteInput {
         check()
         val raf = RandomAccessFile(at(path), "r")

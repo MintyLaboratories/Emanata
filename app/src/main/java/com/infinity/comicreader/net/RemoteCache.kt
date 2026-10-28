@@ -116,11 +116,17 @@ object RemoteCache {
                     if (done != size) throw IOException("Short read: ${file.name}")
                 }
             }
-            if (!part.renameTo(target)) {
-                target.delete()
-                if (!part.renameTo(target)) throw IOException("Could not store ${file.name}")
+            val named = idNamed(file, stat, part, target)
+            if (named != target && whole(named, stat)) {
+                // The same book, copied before from elsewhere.
+                touch(named)
+                return named
             }
-            return target
+            if (!part.renameTo(named)) {
+                named.delete()
+                if (!part.renameTo(named)) throw IOException("Could not store ${file.name}")
+            }
+            return named
         } finally {
             part.delete()
             letGo(part.path)
@@ -150,6 +156,20 @@ object RemoteCache {
     private fun nameOf(file: RemoteFile, stat: RemoteStat, read: Boolean): String {
         val id = BookIds.known(file.path, stat.size, stat.modified) ?: if (read) BookIds.find(file) else null
         return id?.let { nameOf(it) } ?: Hashes.sha256Hex("${file.path}|${stat.size}|${stat.modified}")
+    }
+
+    /**
+     * Where [part], the whole copy of [file] just fetched, is kept: [target], unless that
+     * is named by path because the ID was unknown (a share sending files only whole is
+     * never read for it), in which case it is found from the copy and named by it.
+     */
+    private fun idNamed(file: RemoteFile, stat: RemoteStat, part: File, target: File): File {
+        val id = BookIds.known(file.path, stat.size, stat.modified) ?: try {
+            BookIds.ofCopy(file, stat.size, stat.modified, part)
+        } catch (e: IOException) {
+            return target
+        }
+        return File(target.parentFile, nameOf(id) + "." + target.name.substringAfterLast('.'))
     }
 
     /** The name the copy and kept pages of book [id] go by. */

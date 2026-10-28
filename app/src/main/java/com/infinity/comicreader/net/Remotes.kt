@@ -86,6 +86,12 @@ object Remotes {
             count--
         }
 
+        /** Part of an answer came: silent again from [now]. */
+        @Synchronized
+        internal fun heard(now: Long) {
+            if (count > 0) since = now
+        }
+
         @Synchronized
         internal fun silentAt(now: Long): Long = if (count > 0) (now - since).coerceAtLeast(0) else 0
     }
@@ -288,6 +294,14 @@ object Remotes {
     private class Asked(private val by: Asker, private val input: RemoteInput) : RemoteInput by input {
         override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
             asked(by) { input.read(position, buffer, offset, count) }
+
+        override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
+            asked(by) {
+                input.readFully(position, buffer, offset, count) {
+                    by.heard(clock())
+                    heard()
+                }
+            }
     }
 
     /** Runs [block], a request to a share, counting it as [by]'s waiting for an answer until it returns or fails. */

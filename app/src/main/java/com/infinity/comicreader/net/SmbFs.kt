@@ -12,6 +12,8 @@ import com.hierynomus.mssmb2.SMB2Packet
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
 import com.hierynomus.mssmb2.messages.SMB2Echo
+import com.hierynomus.mssmb2.messages.SMB2ReadRequest
+import com.hierynomus.mssmb2.messages.SMB2ReadResponse
 import com.hierynomus.protocol.commons.socket.ProxySocketFactory
 import com.hierynomus.security.bc.BCSecurityProvider
 import com.hierynomus.smbj.SMBClient
@@ -19,14 +21,17 @@ import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.auth.NtlmAuthenticator
 import com.hierynomus.smbj.connection.Connection
+import com.hierynomus.smbj.connection.SequenceWindow
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
 import android.util.Log
 import com.infinity.comicreader.util.Timing
 import java.io.IOException
 import java.io.InputStream
+import java.lang.reflect.Field
 import java.util.EnumSet
 import java.util.UUID
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -577,6 +582,36 @@ class SmbFs(private val share: Share) : RemoteFs {
             }
         }
 
+        /**
+         * Reads in pieces of up to [PIECE_BYTES], [DEPTH] in flight within the credits the
+         * server granted ([Pipelined]); a read of one piece or less goes as one request.
+         */
+        override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
+            busy { readMany(position, buffer, offset, count, heard) }
+
+        private fun readMany(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int {
+            if (position >= length) return -1
+            val wanted = minOf(count.toLong(), length - position).toInt()
+            if (wanted <= PIECE_BYTES) return super.readFully(position, buffer, offset, wanted, heard)
+            var retried = false
+            while (true) {
+                val f = synchronized(this) { file ?: openFile(path).first.also { file = it } }
+                try {
+                    synchronized(lock) { lastUsed = System.currentTimeMillis() }
+                    return Pipelined.fill(Reads(f), position, buffer, offset, wanted, PIECE_BYTES, DEPTH, Remotes.answerMs, heard)
+                } catch (e: Exception) {
+                    val failure = translate(e)
+                    if (failure !is Dropped || retried) throw failure.toRemote()
+                    retried = true
+                    synchronized(this) {
+                        runCatching { f.close() }
+                        file = null
+                    }
+                    disconnect()
+                }
+            }
+        }
+
         /** Lets go of the file on a connection closing for idleness; the next read opens it again. */
         fun forget() {
             synchronized(this) {
@@ -592,6 +627,31 @@ class SmbFs(private val share: Share) : RemoteFs {
                 lastUsed = System.currentTimeMillis()
             }
         }
+    }
+
+    /** Reads of [file] sent as they are asked for, their answers awaited later. */
+    private class Reads(private val file: SmbFile) : Pipelined.Source {
+        private val tree = file.diskShare.treeConnect
+        private val session = tree.session
+        private val dialect = tree.negotiatedProtocol.dialect
+
+        override fun start(position: Long, length: Int): Pipelined.Pending {
+            val sent = session.send<SMB2ReadResponse>(SMB2ReadRequest(dialect, file.fileId, session.sessionId, tree.treeId, position, length))
+            return Pipelined.Pending { timeoutMs ->
+                val answer = try {
+                    sent.get(timeoutMs, TimeUnit.MILLISECONDS)
+                } catch (e: ExecutionException) {
+                    throw e.cause as? Exception ?: e
+                }
+                when (answer.header.statusCode) {
+                    NtStatus.STATUS_SUCCESS.value -> answer.data
+                    NtStatus.STATUS_END_OF_FILE.value -> ByteArray(0)
+                    else -> throw SMBApiException(answer.header, "Read failed")
+                }
+            }
+        }
+
+        override fun room(length: Int): Int = room(credits(session.connection), length)
     }
 
     /** What went wrong, sorted for [call]: a connection that dropped is worth one more try. */
@@ -654,6 +714,35 @@ class SmbFs(private val share: Share) : RemoteFs {
 
         /** How long a connection unheard for a while (the device slept) gets to answer before it is made anew. */
         private const val WAKE_ECHO_TIMEOUT_S = 2L
+
+        /** How much one read asks for, at most: larger pieces measured slower than several of these in flight. */
+        const val PIECE_BYTES = 1 shl 20
+
+        /** How many reads of one file may be in flight at once. */
+        const val DEPTH = 8
+
+        /** Credits left for other requests (listings, echoes) while reads are in flight. */
+        private const val SPARE_CREDITS = 16
+
+        /** The bytes one credit pays for. */
+        private const val CREDIT_BYTES = 64 * 1024
+
+        /** SMBJ keeps the credits granted in a field of its own; read for [credits]. */
+        private val WINDOW: Field? = runCatching { Connection::class.java.getDeclaredField("sequenceWindow").apply { isAccessible = true } }.getOrNull()
+
+        /** The credits [c] has left now; null when SMBJ does not tell. */
+        internal fun credits(c: Connection): Int? = runCatching { (WINDOW?.get(c) as? SequenceWindow)?.available() }.getOrNull()
+
+        /**
+         * How many more reads of [length] bytes fit in [credits] while keeping [SPARE_CREDITS]
+         * (any number when unknown): one beyond them would wait on SMBJ, which gives up after
+         * a few seconds, failing the read.
+         */
+        internal fun room(credits: Int?, length: Int): Int {
+            credits ?: return Int.MAX_VALUE
+            val charge = ((length.toLong() + CREDIT_BYTES - 1) / CREDIT_BYTES).toInt().coerceAtLeast(1)
+            return ((credits - SPARE_CREDITS) / charge).coerceAtLeast(0)
+        }
 
         /** How much a write sends at a time. */
         private const val WRITE_BYTES = 1 shl 20

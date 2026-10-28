@@ -99,6 +99,28 @@ interface RemoteInput : Closeable {
 
     /** Reads up to [count] bytes at [position] into [buffer] from [offset]; -1 at the end. */
     fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int
+
+    /**
+     * Reads [count] bytes at [position] into [buffer] from [offset], asking for all of them
+     * at once (several requests in flight where the share allows), [heard] told as each
+     * part arrives; fewer only at the end, or when the link failed part way (the next read
+     * tries again); -1 at the end. For long reads that are sure to be used.
+     */
+    fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit = {}): Int {
+        var n = 0
+        while (n < count) {
+            val r = try {
+                read(position + n, buffer, offset + n, count - n)
+            } catch (e: IOException) {
+                if (n > 0) break
+                throw e
+            }
+            if (r < 0) break
+            n += r
+            heard()
+        }
+        return if (n == 0 && count > 0) -1 else n
+    }
 }
 
 /**

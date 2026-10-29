@@ -194,12 +194,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Move** and **Copy** pick the items up: a **Paste** button shows at the
   bottom left (the List/Grid button's mirror), its own high-contrast color
   (inverse surface) so it never passes for the Move button, with a small badge
-  in Move's or Copy's icon and colors, and a short hint. Tap it to paste into the folder browsed, long-press it to
-  cancel. Picked up in Favorites or History, the items wait for a folder opened
-  in Browse. Names already there are asked about once for all: **Replace /
-  Keep both / Skip** (Keep both names it `Book (2).cbz`; Skip pastes the
-  others); two items of one name keep both. A folder is replaced whole, never
-  merged, and the dialog says so. A move
+  in Move's or Copy's icon and colors, and a short hint. Tap it to paste into
+  the folder browsed, long-press it to cancel. Picked up in Favorites or
+  History, the items wait for a folder opened in Browse. Names already there
+  are asked about once for all: **Replace / Keep both / Skip** (Keep both names
+  it `Book (2).cbz`; Skip pastes the others); two items of one name keep both.
+  A folder is replaced whole, never merged, and the dialog says so. A folder
+  picked up takes along what was selected inside it. A copy can be pasted
+  again; a move is pasted once, and only items that failed or that a Cancel
+  never reached stay picked up. An item that fails leaves the others going,
+  and the message says how many were done. A move
   within one place is a rename; between places (device and share, two shares,
   internal storage and SD card) it copies, checks each file's size and reads it
   back to compare its CRC-32, then deletes what it copied from the source.

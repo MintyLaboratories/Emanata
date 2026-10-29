@@ -194,6 +194,8 @@ internal class FileActions(
      * Pastes the items picked up into [dir], one at a time as one operation, asking once for
      * all whose names are taken there: Replace, Keep both, or Skip them (the others are pasted
      * all the same). A copy beside itself, or an item whose name an earlier one takes, keeps both.
+     * A move is pasted once: whatever it moved or passed over (already here, skipped, gone)
+     * leaves the clipboard, and only what failed or was never reached stays for another Paste.
      */
     fun paste(dir: File) {
         val clip = FileClipboard.clip ?: return toast(activity.getString(R.string.paste_dropped))
@@ -224,6 +226,7 @@ internal class FileActions(
                 drop()
                 return@launch
             }
+            val picked = clip.items.map { it.path }.toSet()
             val plans = ArrayList<Plan>()
             val clashes = ArrayList<FileClipboard.Item>()
             val claimed = HashSet<String>()
@@ -240,7 +243,7 @@ internal class FileActions(
             fun keepBoth(item: FileClipboard.Item) =
                 Transfer.keepBothName(item.name, item.isDir) { it.lowercase(Locale.ROOT) in taken }.also { taken += it.lowercase(Locale.ROOT) }
             for (i in plans.indices) if (plans[i].name.isEmpty()) plans[i] = plans[i].copy(name = keepBoth(plans[i].item))
-            if (clashes.isEmpty()) return@launch transfer(clip.move, targetDir, plans)
+            if (clashes.isEmpty()) return@launch transfer(clip.move, targetDir, plans, picked)
             AlertDialog.Builder(activity).apply {
                 setTitle(
                     if (clashes.size == 1) activity.getString(R.string.clash_title, clashes[0].name)
@@ -250,26 +253,40 @@ internal class FileActions(
                 if (clashes.any { there[it]?.isDirectory == true }) setMessage(R.string.clash_folder)
                 // Never replacing what holds an item: it would go with it.
                 if (clashes.none { Transfer.isWithin(it.path, Transfer.child(targetDir, it.name), ignoreCase = true) }) {
-                    setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, it.name, replace = true) }) }
+                    setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, it.name, replace = true) }, picked) }
                 }
-                setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, keepBoth(it)) }) }
-                setNegativeButton(R.string.clash_skip) { _, _ -> if (plans.isNotEmpty()) transfer(clip.move, targetDir, plans) }
+                setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, keepBoth(it)) }, picked) }
+                setNegativeButton(R.string.clash_skip) { _, _ ->
+                    when {
+                        plans.isNotEmpty() -> transfer(clip.move, targetDir, plans, picked)
+                        clip.move -> {
+                            unclip(picked)
+                            onClipChanged()
+                        }
+                    }
+                }
             }.show()
         }
     }
 
-    private fun transfer(move: Boolean, targetDir: String, plans: List<Plan>) {
+    /** Pastes [plans] into [targetDir]; a move then takes off the clipboard what it settled of [picked] ([paste]). */
+    private fun transfer(move: Boolean, targetDir: String, plans: List<Plan>, picked: Set<String>) {
         val kind = if (move) FileWork.Kind.MOVE else FileWork.Kind.COPY
         start(kind, plans.first().item.name) { p ->
             var sourceLeft = false
             val gone = ArrayList<String>()
-            val sources = plans.map { it.item.path }.toSet()
-            val targets = HashSet<String>()
+            // Sources not pasted (yet), and where those moved now are.
+            val unsettled = plans.map { it.item.path }.toHashSet()
+            val moved = HashSet<String>()
             var done = 0
             var failure: Exception? = null
+            fun ended(outcome: FileWork.Outcome): FileWork.Outcome {
+                if (move) unclip(picked - unsettled + moved)
+                return outcome
+            }
             for ((i, plan) in plans.withIndex()) {
                 if (plans.size > 1) {
-                    if (!p.alive) return@start FileWork.Outcome.Canceled(done, plans.size, gone)
+                    if (!p.alive) return@start ended(FileWork.Outcome.Canceled(done, plans.size, gone))
                     p.item(plan.item.name, i, plans.size)
                 }
                 val source = plan.item.path
@@ -278,13 +295,13 @@ internal class FileActions(
                     Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable)
                         .run(source, targetDir, plan.name, move, plan.replace)
                 } catch (e: CancellationException) {
-                    return@start FileWork.Outcome.Canceled(done, plans.size, gone)
+                    return@start ended(FileWork.Outcome.Canceled(done, plans.size, gone))
                 } catch (e: Exception) {
                     if (failure == null) failure = e
                     continue
                 }
                 done++
-                targets += target
+                unsettled -= source
                 // What was kept for a replaced item goes with it.
                 if (plan.replace) library.removePathsUnder(target)
                 if (move) {
@@ -292,14 +309,20 @@ internal class FileActions(
                         sourceLeft = true
                     } else {
                         followMove(source, target)
+                        moved += target
                         gone += source
                     }
                 }
             }
-            failure?.let { return@start FileWork.Outcome.Failed(it, done, plans.size, gone) }
-            // A move is pasted once: its items, wherever they ended, leave the clipboard.
-            if (move) FileClipboard.clip?.let { c -> if (c.items.all { it.path in sources || it.path in targets }) FileClipboard.clip = null }
-            FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, done)
+            ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, done))
+        }
+    }
+
+    /** Takes the items at [paths] off the clipboard. */
+    private fun unclip(paths: Set<String>) {
+        FileClipboard.clip?.let { c ->
+            val left = c.items.filterNot { it.path in paths }
+            if (left.size < c.items.size) FileClipboard.clip = if (left.isEmpty()) null else c.copy(items = left)
         }
     }
 

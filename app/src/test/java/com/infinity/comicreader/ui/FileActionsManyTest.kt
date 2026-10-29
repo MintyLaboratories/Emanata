@@ -17,6 +17,7 @@ import com.infinity.comicreader.net.Remotes
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -264,6 +265,89 @@ class FileActionsManyTest {
         assertEquals(10L, File(dest, "a.cbz").length())
         assertEquals(20L, File(dest, "b.cbz").length())
         assertEquals(context.resources.getQuantityString(R.plurals.copied_count, 2, 2), ShadowToast.getTextOfLatestToast())
+    }
+
+    /** Pastes into [dest], answering [button] when asked about names taken (after [meanwhile]), and waits for the outcome. */
+    private fun pasteInto(dest: File, button: Int? = null, meanwhile: () -> Unit = {}) {
+        actions.paste(dest)
+        if (button != null) {
+            waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+            meanwhile()
+            answer(button)
+        }
+        waitFor { finished.isNotEmpty() }
+        settle()
+    }
+
+    @Test
+    fun aMovePartlyHereLeavesNothingPickedUp() {
+        val x = tmp.newFolder("X")
+        val y = tmp.newFolder("Y")
+        val a = File(x, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(y, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.pickUp(listOf(item(a), item(b)), move = true)
+        pasteInto(x)
+        assertEquals(listOf("a.cbz", "b.cbz"), x.list()!!.sorted())
+        assertNull(FileClipboard.clip)
+    }
+
+    @Test
+    fun skippingInAMoveLeavesNothingPickedUp() {
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        File(dest, "b.cbz").writeBytes(ByteArray(3))
+        actions.pickUp(listOf(item(a), item(b)), move = true)
+        pasteInto(dest, DialogInterface.BUTTON_NEGATIVE)
+        assertTrue(File(dest, "a.cbz").exists())
+        assertTrue(b.exists())
+        assertNull(FileClipboard.clip)
+
+        // Skipping the only one: nothing moves, and the pick is done with.
+        actions.pickUp(listOf(item(b)), move = true)
+        actions.paste(dest)
+        waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+        answer(DialogInterface.BUTTON_NEGATIVE)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(b.exists())
+        assertNull(FileClipboard.clip)
+    }
+
+    @Test
+    fun aCanceledMoveKeepsPickedUpWhatItNeverReached() {
+        val (fake, dir) = share()
+        File(dir, "a.cbz").writeBytes(ByteArray(10))
+        File(dir, "b.cbz").writeBytes(ByteArray(10))
+        val dest = File(dir, "Dest").apply { mkdirs() }
+        File(dest, "b.cbz").writeBytes(ByteArray(3))
+        actions.pickUp(listOf(FileClipboard.Item("/net/s1/a.cbz", false), FileClipboard.Item("/net/s1/b.cbz", false)), move = true)
+        val hold = CountDownLatch(1)
+        actions.paste(Remotes.file("/net/s1/Dest"))
+        waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+        fake.slow = hold
+        answer(DialogInterface.BUTTON_NEUTRAL)
+        waitFor { fake.held.get() > 0 }
+        FileWork.cancel()
+        hold.countDown()
+        waitFor { finished.isNotEmpty() }
+        settle()
+        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/a.cbz")), finished.single())
+        assertTrue(File(dest, "a.cbz").exists())
+        assertEquals(listOf("/net/s1/b.cbz"), FileClipboard.clip!!.items.map { it.path })
+    }
+
+    @Test
+    fun aFailedMoveKeepsPickedUpWhatFailed() {
+        val (fake, dir) = share()
+        File(dir, "s.cbz").writeBytes(ByteArray(20))
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        File(dest, "a.cbz").writeBytes(ByteArray(3))
+        actions.pickUp(listOf(item(a), FileClipboard.Item("/net/s1/s.cbz", false), item(b)), move = true)
+        pasteInto(dest, DialogInterface.BUTTON_NEUTRAL) { fake.offline = true }
+        assertEquals(listOf("a (2).cbz", "a.cbz", "b.cbz"), dest.list()!!.sorted())
+        assertEquals(listOf("/net/s1/s.cbz"), FileClipboard.clip!!.items.map { it.path })
     }
 
     @Test

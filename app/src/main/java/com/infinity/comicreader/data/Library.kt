@@ -687,6 +687,15 @@ class Library(context: Context) {
     fun hasData(id: BookId): Boolean = id in kept()
 
     /**
+     * False when nothing is kept for book [id]; true when something may be ([hasData] is
+     * sure). Looks for its ID in what is kept without parsing it, so fit for the main thread.
+     */
+    fun mayHaveData(id: BookId): Boolean {
+        val hex = id.hex
+        return DATA_KEYS.any { sp.getString(it, null)?.contains(hex) == true }
+    }
+
+    /**
      * Hands everything kept for book [from] to [to], a copy of it made anew (another ID):
      * its favorite in its place, read mark, history, bookmarks, hidden pages and own
      * settings, replacing what [to] kept of them; [from] keeps nothing after. Book page `i`
@@ -988,6 +997,12 @@ class Library(context: Context) {
 
         /** Documents kept by book ID. */
         private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS)
+
+        /** What [kept] reads: every document holding data kept by book, by ID in hex. */
+        private val DATA_KEYS = listOf(
+            KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS
+        )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */
         private val PATH_KEYED_BOOK_DOCS = listOf(

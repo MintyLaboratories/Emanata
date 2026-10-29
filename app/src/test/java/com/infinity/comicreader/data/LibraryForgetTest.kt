@@ -62,6 +62,8 @@ class LibraryForgetTest {
         assertEquals(Library.Kept(hidden = 1, settings = true), kept[c.id])
         assertTrue(library.hasData(a.id))
         assertFalse(library.hasData(BookId(0xd)))
+        assertTrue(listOf(a, b, c).all { library.mayHaveData(it.id) })
+        assertFalse(library.mayHaveData(BookId(0xd)))
     }
 
     @Test
@@ -71,6 +73,7 @@ class LibraryForgetTest {
         // Its entry of where it was seen stays, but counts as nothing kept.
         assertTrue(a.id in library.seenAt())
         assertFalse(library.hasData(a.id))
+        assertFalse(library.mayHaveData(a.id))
     }
 
     @Test

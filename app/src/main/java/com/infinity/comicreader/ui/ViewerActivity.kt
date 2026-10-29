@@ -2022,7 +2022,7 @@ class ViewerActivity : AppCompatActivity() {
         persistAdjustments()
         file = nextFile
         bookId = stripAheadId
-        val fresh = bookId?.let { !library.hasData(it) } == true
+        val fresh = bookId?.let { !library.mayHaveData(it) } == true
         noteLikeness(nextFile, next, bookId, fresh)
         book()?.let { library.seen(it) }
         refreshFavorites()

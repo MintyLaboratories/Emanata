@@ -22,7 +22,10 @@ object CopyMatch {
      * like it with data kept in [library] (the latest seen), whose data it may take over.
      */
     fun note(store: LikenessStore, library: Library, id: BookId, likeness: Likeness, fileName: String, fresh: Boolean): LikenessStore.Row? {
-        val match = if (fresh) store.alike(likeness, id).firstOrNull { library.hasData(it.id) && library.pathOf(it.id) != null } else null
+        val match = if (fresh) {
+            val withData by lazy { library.kept().keys }
+            store.alike(likeness, id).firstOrNull { it.id in withData && library.pathOf(it.id) != null }
+        } else null
         store.put(id, likeness, fileName)
         return match
     }

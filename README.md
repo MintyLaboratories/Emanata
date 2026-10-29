@@ -211,7 +211,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   like a book with data kept asks once, naming that book, whether to carry its
   favorite, read mark, history, bookmarks, hidden pages and settings over;
   what is kept by page follows the page of the same name, else of the same
-  place. Never automatic.
+  place. Never automatic. Backups carry the likeness of each book with data
+  kept, so a copy still matches after a restore.
 - **Forget missing books** (Settings → Your data) scans every location for the
   books your library keeps data for, with progress and Cancel; it walks
   archives and PDFs, known files cost no reads, and an unseen file is read only

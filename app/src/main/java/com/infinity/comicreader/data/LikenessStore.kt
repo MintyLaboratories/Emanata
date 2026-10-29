@@ -38,6 +38,9 @@ class LikenessStore(context: Context) {
     fun alike(likeness: Likeness, except: BookId): List<Row> =
         query("$PRINT = ? AND $ID != ?", arrayOf(likeness.print, except.value.toString()), "$TIME DESC")
 
+    /** What is stored for each of books [ids]. Blocking. */
+    fun rows(ids: Set<BookId>): List<Row> = query(null, null).filter { it.id in ids }
+
     /** Forgets the likeness of books [ids]. Blocking. */
     fun remove(ids: Collection<BookId>) {
         if (ids.isEmpty()) return
@@ -56,7 +59,7 @@ class LikenessStore(context: Context) {
         store.helper.writableDatabase.delete(TABLE, null, null)
     }
 
-    private fun query(where: String, args: Array<String>, order: String? = null): List<Row> {
+    private fun query(where: String?, args: Array<String>?, order: String? = null): List<Row> {
         val out = ArrayList<Row>()
         store.helper.readableDatabase.query(TABLE, arrayOf(ID, PRINT, STRONG, STEMS, NAME, TIME), where, args, null, null, order).use { c ->
             while (c.moveToNext()) {
@@ -85,6 +88,9 @@ class LikenessStore(context: Context) {
     }
 
     companion object {
+        /** Whether [stem] can be stored as a page stem: the separator never is part of one. */
+        fun storable(stem: String): Boolean = SEP !in stem
+
         private const val FILE = "likeness.db"
         private const val TABLE = "likeness"
         private const val ID = "id"

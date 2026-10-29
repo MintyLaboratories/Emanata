@@ -4,8 +4,12 @@ import android.app.Application
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.Likeness
+import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
@@ -16,6 +20,7 @@ import com.infinity.comicreader.net.ShareStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +48,39 @@ class BackupTest {
         .put("library", JSONObject().put("favorites", org.json.JSONArray().put("/books/attic")))
         .put("prefs", JSONObject().put("pref_sort", "date"))
         .toString()
+
+    @Test
+    fun theLikenessOfBooksWithDataRoundTrips() {
+        val store = LikenessStore(context)
+        store.clear()
+        val kept = BookRef(BookId(0x1a), "/books/kept.cbz")
+        Library(context).setRead(kept, true)
+        val like = Likeness.of(null, listOf("p01.jpg", "p02.jpg"), "kept.cbz")
+        store.put(kept.id, like, "kept.cbz", time = 5)
+        // Opened once, nothing kept: no copy of it can take anything over.
+        store.put(BookId(0x2b), Likeness.of(null, listOf("x.jpg"), "other.cbz"), "other.cbz", time = 6)
+        val json = Backup.export(context)
+        assertEquals(1, JSONObject(json).getJSONArray("likeness").length())
+
+        store.clear()
+        context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().clear().commit()
+        assertTrue(Backup.import(context, json))
+        assertEquals(LikenessStore.Row(kept.id, like, "kept.cbz", 5), store.get(kept.id))
+        assertNull(store.get(BookId(0x2b)))
+    }
+
+    @Test
+    fun malformedLikenessRowsAreSkipped() {
+        val store = LikenessStore(context)
+        store.clear()
+        val rows = org.json.JSONArray()
+            .put(JSONObject().put("id", "zz").put("print", "p").put("strong", true).put("stems", org.json.JSONArray()).put("name", "a").put("time", 1))
+            .put(JSONObject().put("id", BookId(0x3c).hex).put("print", "p").put("strong", "yes").put("stems", org.json.JSONArray()).put("name", "a").put("time", 1))
+            .put(JSONObject().put("id", BookId(0x4d).hex).put("print", "p").put("strong", false).put("stems", org.json.JSONArray().put("a\nb")).put("name", "a").put("time", 1))
+        assertTrue(Backup.import(context, JSONObject(backup("Emanata")).put("likeness", rows).toString()))
+        assertNull(store.get(BookId(0x3c)))
+        assertNull(store.get(BookId(0x4d)))
+    }
 
     @Test
     fun exportIsNamedEmanata() {

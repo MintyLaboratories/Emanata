@@ -164,6 +164,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private lateinit var fileActions: FileActions
     private lateinit var bookShare: BookShare
 
+    /** Whether device items checked since the list was made are there, by path ([isThere]). */
+    private val present = HashMap<String, Boolean>()
+
     /** The hint shown beside [pasteFab] as an item is picked up. */
     private var pasteBubble: PopupWindow? = null
     private lateinit var filterChip: Chip
@@ -1362,6 +1365,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     private fun displayEntries(list: List<BookEntry>) {
         listing++
+        present.clear()
         allEntries.clear()
         allEntries.addAll(list)
         applyFilterAndSort()
@@ -1933,8 +1937,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun canShare(entry: BookEntry): Boolean {
         if (mode != TAB_BOOKMARKS) return canChangeFiles(entry)
         if (Remotes.isRemote(entry.path)) return !Remotes.isOrphan(entry.path)
-        return entry.file.exists()
+        return isThere(entry)
     }
+
+    /**
+     * True when device item [entry] is there: listed from its folder in Browse, else as first
+     * checked since it was listed ([present]), so taps while selecting touch no storage;
+     * each action checks again as it runs.
+     */
+    private fun isThere(entry: BookEntry): Boolean = mode == TAB_BROWSE || present.getOrPut(entry.path) { entry.file.exists() }
 
     /**
      * True when [entry] can be renamed, deleted, moved and copied: a file or folder on the
@@ -1945,7 +1956,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val path = entry.path
         if (roots.any { it.path == path }) return false
         if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)
-        return entry.file.exists()
+        return isThere(entry)
     }
 
     /** Puts [entries] on the clipboard together for Paste, saying how Paste works. */

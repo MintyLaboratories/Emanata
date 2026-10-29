@@ -43,6 +43,17 @@ class BookFactsReaderTest {
     }
 
     @Test
+    fun comicInfoIsReadHoweverFarIntoASolidArchive() {
+        val info = entry("ComicInfo.xml", "<ComicInfo><Title>One Shot</Title></ComicInfo>".toByteArray())
+        val after = File(tmp.root, "after.cbr").apply { writeBytes(Fixtures.rar4Bytes(entry("01.jpg"), entry("02.jpg"), info, solid = true)) }
+        assertEquals("One Shot", BookFactsReader.comicInfo(after, "UTF-8", tmp.newFolder())?.fields?.single()?.second)
+        val none = Fixtures.zip(File(tmp.root, "none.cbz"), entry("01.jpg"))
+        assertEquals(null, BookFactsReader.comicInfo(none, "UTF-8", tmp.newFolder()))
+        val page = File(tmp.root, "page.png").apply { writeBytes(TestImages.png(2, 2)) }
+        assertEquals(null, BookFactsReader.comicInfo(page, "UTF-8", tmp.newFolder()))
+    }
+
+    @Test
     fun imagesAreOnePage() {
         val f = File(tmp.root, "page.png").apply { writeBytes(TestImages.png(2, 2)) }
         assertEquals(BookFacts(pages = 1, year = 0), read(f))

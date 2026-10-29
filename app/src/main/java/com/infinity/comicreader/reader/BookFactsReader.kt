@@ -46,6 +46,26 @@ object BookFactsReader {
         else -> throw IOException("Not a book")
     }
 
+    /**
+     * The ComicInfo.xml of archive [file], read through its own handle however far in it is
+     * stored, so a solid archive unpacks the pages before it; null when it has none, cannot
+     * be read, or would stream a solid archive on a share. Blocking.
+     */
+    fun comicInfo(file: File, setting: String, cacheDir: File): ComicInfo? {
+        if (Formats.typeOf(file.name) != EntryType.ARCHIVE) return null
+        val source = if (file is RemoteFile) {
+            RemoteCache.cached(file, cacheDir) ?: file.takeIf { Remotes.seekable(it.path) } ?: return null
+        } else {
+            file
+        }
+        return runCatching {
+            val kind = ArchiveKind.detect(source)
+            if (kind == ArchiveKind.PDF) return null
+            val reader = ArchiveReader.open(source, NameCharset.forBook(file, setting), kind) ?: return null
+            reader.use { if (source is RemoteFile && !it.randomAccess) null else ComicInfo.read(it) }
+        }.getOrNull()
+    }
+
     private fun readArchive(reader: ArchiveReader, file: File, charsetName: String, cacheDir: File): BookFacts {
         val entries = reader.entries.filter { !ArchiveJunk.isJunk(it.path, it.size) }
         val images = entries.filter { Formats.isImageName(it.path) }

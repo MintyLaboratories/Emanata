@@ -1198,20 +1198,30 @@ class ViewerActivity : AppCompatActivity() {
      * Keeps the likeness of [book], opened as [src], of ID [id] ([CopyMatch.note]); when
      * nothing was kept for it before it opened ([fresh]) and it is like a book with data
      * kept, asks once whether to carry that data over. A ComicInfo that only unpacking
-     * pages would reach leaves the book unnoted.
+     * pages would reach is read through its own handle at the lowest priority, unless
+     * battery saver pauses scans ([Thrift.pausedScans]) or the book is solid on a share:
+     * then the book is noted on a later open.
      */
     private fun noteLikeness(book: File, src: PageSource, id: BookId?, fresh: Boolean) {
         likenessJob?.cancel()
         if (id == null) return
         val app = applicationContext
+        val paused = applied.thrift.pausedScans
+        val charset = prefs.charset
         likenessJob = lifecycleScope.launch {
             val found = withContext(AppDispatchers.io) {
                 val store = LikenessStore(app)
                 if (!CopyMatch.needed(store, id, book.name, fresh)) return@withContext null
                 val raw = (src as? HidingSource)?.inner ?: src
-                if (raw.comicInfoCostly()) return@withContext null
+                val info = if (raw.comicInfoCostly()) {
+                    if (paused) return@withContext null
+                    withContext(AppDispatchers.background) { BookFactsReader.comicInfo(book, charset, cacheDir) } ?: return@withContext null
+                } else {
+                    runCatching { raw.comicInfo(cheapOnly = true) }.getOrNull()
+                }
+                ensureActive()
                 val likeness = runCatching {
-                    Likeness.of(raw.comicInfo(cheapOnly = true), (0 until raw.pageCount).map { raw.pageName(it) }, book.name)
+                    Likeness.of(info, (0 until raw.pageCount).map { raw.pageName(it) }, book.name)
                 }.getOrNull() ?: return@withContext null
                 ensureActive()
                 CopyMatch.note(store, library, id, likeness, book.name, fresh)?.let { Triple(store, it, likeness to raw.pageCount) }

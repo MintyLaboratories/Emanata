@@ -205,9 +205,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   gets its ID from its local copy once fetched. Lists show each book where it
   was last seen, and backups carry the IDs with those paths.
 - **Re-encoded copies:** each book opened keeps a likeness: its ComicInfo.xml
-  without `<Pages>` and its page count when ComicInfo names the book (series
-  and number, or a title), else its page names without extensions, page count
-  and file name without extension. A book opened for the first time that is
+  without `<Pages>` and `PageCount`, plus its page count, when ComicInfo names
+  the book (series and number, or a title), else its page names without
+  extensions, page count and file name without extension. A book opened for the first time that is
   like a book with data kept asks once, naming that book, whether to carry its
   favorite, read mark, history, bookmarks, hidden pages and settings over;
   what is kept by page follows the page of the same name, else of the same

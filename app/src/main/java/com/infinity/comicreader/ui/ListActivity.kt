@@ -1819,13 +1819,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return books.mapNotNull { e -> (idOf(e) ?: found[e.file])?.let { BookRef(it, e.path) } }
     }
 
-    /** Adds [entries] (folders and books) to the favorites, or removes them, and says which. */
+    /** Adds [entries] (folders and books) to the favorites, or removes them, and says which, and how many of all when not each could be. */
     private fun setFavorites(entries: List<BookEntry>, add: Boolean) {
         lifecycleScope.launch {
-            for (e in entries) if (e.isDir && library.isFavoriteFolder(e.path) != add) library.toggleFavoriteFolder(e.path)
+            val folders = entries.filter { it.isDir }.map { it.path }
             val books = refsOf(entries)
-            withContext(AppDispatchers.io) { for (book in books) library.setFavorite(book, add) }
-            toast(if (add) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+            withContext(AppDispatchers.io) {
+                for (path in folders) if (library.isFavoriteFolder(path) != add) library.toggleFavoriteFolder(path)
+                for (book in books) library.setFavorite(book, add)
+            }
+            tellDone(if (add) R.string.favorite_added else R.string.favorite_removed, folders.size + books.size, entries.size)
             refreshCurrent()
         }
     }
@@ -1834,11 +1837,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun markBooks(entries: List<BookEntry>, read: Boolean) {
         lifecycleScope.launch {
             val books = refsOf(entries)
-            if (books.isEmpty()) return@launch toast(R.string.error_open)
-            withContext(AppDispatchers.io) { library.setReadMany(books, read) }
-            toast(if (read) R.string.marked_read else R.string.marked_unread)
+            if (books.isNotEmpty()) withContext(AppDispatchers.io) { library.setReadMany(books, read) }
+            tellDone(if (read) R.string.marked_read else R.string.marked_unread, books.size, entries.count { !it.isDir })
             refreshCurrent()
         }
+    }
+
+    /** Says [what] was done to [done] of [count] items: plainly for all, with the count for some, that it failed for none. */
+    private fun tellDone(what: Int, done: Int, count: Int) = when {
+        done == 0 -> toast(R.string.error_open)
+        done < count -> toast(getString(R.string.done_part, getString(what), done, count))
+        else -> toast(what)
     }
 
     /** The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮ button. */

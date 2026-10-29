@@ -170,6 +170,8 @@
     <string name="menu_mark_all_unread">Mark all as unread</string>
     <string name="marked_read">Marked as read</string>
     <string name="marked_unread">Marked as unread</string>
+    <!-- %1$s: what was done, as "Added to favorites"; of several items, some could not be read. -->
+    <string name="done_part">%1$s: %2$d of %3$d</string>
     <string name="menu_search_deep">Search subfolders</string>
     <string name="menu_stats">Reading statistics</string>
     <string name="reset_stats">Reset</string>

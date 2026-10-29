@@ -368,6 +368,7 @@ class ListActivityFileOpsTest {
         favorite.performClick()
         settle { library.isFavorite(bookId(two)) }
         assertTrue(library.isFavorite(bookId(book)))
+        settle { ShadowToast.getTextOfLatestToast() == context.getString(R.string.favorite_added) }
 
         activity.select(book.absolutePath)
         activity.select(two.absolutePath)
@@ -375,6 +376,7 @@ class ListActivityFileOpsTest {
         favorite.performClick()
         settle { !library.isFavorite(bookId(two)) }
         assertFalse(library.isFavorite(bookId(book)))
+        settle { ShadowToast.getTextOfLatestToast() == context.getString(R.string.favorite_removed) }
     }
 
     /** Opens the Share dialog of [path] from the long-press menu. */

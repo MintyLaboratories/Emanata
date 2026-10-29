@@ -31,6 +31,13 @@ class LikenessTest {
     }
 
     @Test
+    fun comicInfoPageCountIsLeftOutAsThePagesThemselvesAreCounted() {
+        val tagged = Likeness.of(info(extra = "<PageCount>3</PageCount>"), jpgs, "a.cbz")
+        assertEquals(tagged.print, Likeness.of(info(extra = "<pagecount>4</pagecount>"), jxls, "b.cbz").print)
+        assertEquals(tagged.print, Likeness.of(info(), jxls, "b.cbz").print)
+    }
+
+    @Test
     fun valuesAreComparedWithSpacesCollapsedAndNamesInAnyCase() {
         val a = ComicInfo.parse("<ComicInfo><Title> One  Shot </Title><Year>2001</Year></ComicInfo>")
         val b = ComicInfo.parse("<ComicInfo><year>2001</year><title>One Shot</title></ComicInfo>")

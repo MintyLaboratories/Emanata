@@ -8,8 +8,8 @@ import java.util.Locale
 /**
  * What tells a re-encoded copy of a book from another book, when its Book ID differs:
  * [strong] when its ComicInfo identifies the book (series and number, or a title), from
- * that ComicInfo without `<Pages>` (whose per-page sizes change on re-encode) and the
- * page count; else weak, from the page names without extensions, the page count and the
+ * that ComicInfo without `<Pages>` (whose per-page sizes change on re-encode) and
+ * `PageCount` (a tagger's, may be stale) plus the page count of the book itself; else weak, from the page names without extensions, the page count and the
  * book's file name without extension. [stems] are the page names as compared, so data
  * kept by page can follow its page into the copy ([moves]).
  */
@@ -25,7 +25,7 @@ data class Likeness(val strong: Boolean, val print: String, val stems: List<Stri
             val identity = info?.takeIf { identifies(it) }
             val text = if (identity != null) {
                 val fields = identity.fields
-                    .filterNot { it.first.equals("Pages", ignoreCase = true) }
+                    .filterNot { it.first.equals("Pages", ignoreCase = true) || it.first.equals("PageCount", ignoreCase = true) }
                     .map { (name, value) -> name.lowercase(Locale.ROOT) to normal(value) }
                     .sortedWith(compareBy({ it.first }, { it.second }))
                 "strong\u0000${pageNames.size}\u0000" + fields.joinToString("\u0000") { "${it.first}=${it.second}" }

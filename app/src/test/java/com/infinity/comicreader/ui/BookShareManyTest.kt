@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.ShareChoice
 import com.infinity.comicreader.files.BookUris
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -30,6 +31,8 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 
 /** Several items shared in one action: one dialog, one intent. */
 @RunWith(RobolectricTestRunner::class)
@@ -98,6 +101,57 @@ class BookShareManyTest {
         val streams = send.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)!!
         assertEquals(listOf(a.path, b.path), streams.map { BookUris.pathOf(context, it) })
         assertEquals(2, send.clipData!!.itemCount)
+    }
+
+    @Test
+    fun cancelWhileCoversAreMadeSendsNothing() {
+        val taps = Semaphore(0)
+        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        try {
+            Prefs(context).shareChoice = ShareChoice(title = true, cover = true, file = false)
+            val before = BookShare.coversMade
+            var sent = 0
+            share.show(listOf(book("first.cbz", 100), book("second.cbz", 50))) { sent++ }
+            idle()
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            idle()
+            // Counted as they are made; still selected, and the dialog stays until they are.
+            assertEquals(context.getString(R.string.share_making_covers, 1, 2), dialog.findViewById<TextView>(R.id.share_cover_none)!!.text.toString())
+            assertTrue(dialog.isShowing)
+            assertEquals(0, sent)
+            dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+            taps.release(2)
+            repeat(20) { idle() }
+            assertNull(shadowOf(context).nextStartedActivity)
+            assertEquals(0, sent)
+            // The second cover was never begun.
+            assertEquals(before + 1, BookShare.coversMade)
+        } finally {
+            BookShare.coverHold = {}
+        }
+    }
+
+    @Test
+    fun cancelAfterShareOfOneSendsNothing() {
+        val taps = Semaphore(0)
+        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        try {
+            Prefs(context).shareChoice = ShareChoice(title = true, cover = true, file = false)
+            var sent = 0
+            share.show(listOf(book("first.cbz", 100))) { sent++ }
+            idle()
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            idle()
+            dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+            taps.release()
+            repeat(20) { idle() }
+            assertNull(shadowOf(context).nextStartedActivity)
+            assertEquals(0, sent)
+        } finally {
+            BookShare.coverHold = {}
+        }
     }
 
     @Test

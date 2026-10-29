@@ -314,6 +314,7 @@
         <item quantity="one">%1$d file</item>
         <item quantity="other">%1$d files</item>
     </plurals>
+    <string name="share_making_covers">Making cover %1$d of %2$d…</string>
     <string name="paste">Paste</string>
     <string name="paste_named">Paste %1$s</string>
     <string name="paste_hint">Tap to paste here, hold to cancel</string>

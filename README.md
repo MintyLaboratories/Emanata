@@ -181,8 +181,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   The share sheet gets one intent: the
   title as text, the cover as a PNG, the file in place through the app's own
   content provider, which other apps read only when granted. Several items
-  share at once: their titles one per line, their covers (made only once Share
-  is tapped; one that cannot be made is left out) and the books' files. A share's book is
+  share at once: their titles one per line, their covers (made one at a time
+  only once Share is tapped, counted as they are, and stopped by Cancel; one
+  that cannot be made is left out) and the books' files. A share's book is
   never downloaded or copied first: the app picked reads it on demand through a
   proxy file descriptor, any size. While it may still read, a Sharing…
   notification (with Stop) keeps the app running; it goes once no shared file

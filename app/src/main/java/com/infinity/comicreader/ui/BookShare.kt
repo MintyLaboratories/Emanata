@@ -109,7 +109,7 @@ internal class BookShare(
 
         // The cover sent: made once, from the first time it is wanted, and shown when made.
         fun cover(): Deferred<Bitmap?> = making ?: activity.lifecycleScope.async(AppDispatchers.io) {
-            runCatching { Thumbs.shareCover(app, entry, charset, target) }.getOrNull()
+            runCatching { coverHold(); Thumbs.shareCover(app, entry, charset, target) }.getOrNull()
         }.also { made ->
             making = made
             coversMade++
@@ -212,6 +212,10 @@ internal class BookShare(
         /** Covers begun for sending, ever; for tests. */
         @Volatile
         internal var coversMade = 0
+
+        /** Runs off the main thread before each cover is made; tests hold covers back with it. */
+        @Volatile
+        internal var coverHold: () -> Unit = {}
 
         /**
          * The name a cover of a book titled [title] is sent under, without `.png`: the title cut to

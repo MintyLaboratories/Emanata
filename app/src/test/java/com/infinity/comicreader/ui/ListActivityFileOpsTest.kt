@@ -48,6 +48,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import javax.crypto.spec.SecretKeySpec
 
 /** The long-press menu's file operations, the Paste button, and the library following what they change. */
@@ -296,28 +298,36 @@ class ListActivityFileOpsTest {
 
     @Test
     fun aCoverThatCannotBeMadeIsLeftOutAndSaid() {
-        Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = true, cover = false, file = false)
-        val activity = launch()
-        val dialog = activity.shareDialog(book.absolutePath)
-        // Sent before the cover is found missing.
-        dialog.check(R.id.share_cover_check).isChecked = true
-        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        settle { !dialog.isShowing && shadowOf(context).peekNextStartedActivity() != null }
-        assertEquals(context.getString(R.string.share_cover_left_out), ShadowToast.getTextOfLatestToast())
-        @Suppress("DEPRECATION")
-        val send = shadowOf(context).nextStartedActivity.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
-        assertEquals("one", send.getStringExtra(android.content.Intent.EXTRA_TEXT))
-        @Suppress("DEPRECATION")
-        assertNull(send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM))
+        // Sent before the cover is found missing: each cover waits for its Share tap.
+        val taps = Semaphore(0)
+        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        try {
+            Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = true, cover = false, file = false)
+            val activity = launch()
+            val dialog = activity.shareDialog(book.absolutePath)
+            dialog.check(R.id.share_cover_check).isChecked = true
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            taps.release()
+            settle { !dialog.isShowing && shadowOf(context).peekNextStartedActivity() != null }
+            assertEquals(context.getString(R.string.share_cover_left_out), ShadowToast.getTextOfLatestToast())
+            @Suppress("DEPRECATION")
+            val send = shadowOf(context).nextStartedActivity.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+            assertEquals("one", send.getStringExtra(android.content.Intent.EXTRA_TEXT))
+            @Suppress("DEPRECATION")
+            assertNull(send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM))
 
-        // The cover alone: nothing is sent.
-        Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = false, cover = false, file = false)
-        val alone = activity.shareDialog(book.absolutePath)
-        alone.check(R.id.share_cover_check).isChecked = true
-        alone.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        settle { !alone.isShowing }
-        assertEquals(context.getString(R.string.share_cover_failed), ShadowToast.getTextOfLatestToast())
-        assertNull(shadowOf(context).nextStartedActivity)
+            // The cover alone: nothing is sent.
+            Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = false, cover = false, file = false)
+            val alone = activity.shareDialog(book.absolutePath)
+            alone.check(R.id.share_cover_check).isChecked = true
+            alone.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            taps.release()
+            settle { !alone.isShowing }
+            assertEquals(context.getString(R.string.share_cover_failed), ShadowToast.getTextOfLatestToast())
+            assertNull(shadowOf(context).nextStartedActivity)
+        } finally {
+            BookShare.coverHold = {}
+        }
     }
 
     @Test

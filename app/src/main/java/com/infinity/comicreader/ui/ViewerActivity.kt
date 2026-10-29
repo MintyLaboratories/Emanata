@@ -1224,21 +1224,27 @@ class ViewerActivity : AppCompatActivity() {
                     Likeness.of(info, (0 until raw.pageCount).map { raw.pageName(it) }, book.name)
                 }.getOrNull() ?: return@withContext null
                 ensureActive()
-                CopyMatch.note(store, library, id, likeness, book.name, fresh)?.let { Triple(store, it, likeness to raw.pageCount) }
+                val match = CopyMatch.note(store, library, id, likeness, book.name, fresh) ?: return@withContext null
+                // A book on this device still where it was may be another of the same name; shares are not asked.
+                val stillThere = library.pathOf(match.id)?.let { !Remotes.isRemote(it) && File(it).isFile } == true
+                Triple(store, match, Triple(likeness, raw.pageCount, stillThere))
             } ?: return@launch
             if (source !== src || file != book || bookId != id) return@launch
             val (store, match, mine) = found
-            askCarryOver(store, match, BookRef(id, book.absolutePath), mine.first, mine.second)
+            askCarryOver(store, match, BookRef(id, book.absolutePath), mine.first, mine.second, mine.third)
         }
     }
 
-    /** Asks whether book [to] takes over what is kept for [match], the book it is like; carries it over and opens [to] again with it. */
-    private fun askCarryOver(store: LikenessStore, match: LikenessStore.Row, to: BookRef, likeness: Likeness, pageCount: Int) {
+    /**
+     * Asks whether book [to] takes over what is kept for [match], the book it is like,
+     * saying so when that book is [stillThere]; carries it over and opens [to] again with it.
+     */
+    private fun askCarryOver(store: LikenessStore, match: LikenessStore.Row, to: BookRef, likeness: Likeness, pageCount: Int, stillThere: Boolean) {
         val from = library.pathOf(match.id) ?: return
         val where = Crumbs.of(File(from).parent.orEmpty(), bookRoots).joinToString(" / ") { it.label }
         AlertDialog.Builder(this)
             .setTitle(R.string.carry_over_title)
-            .setMessage(getString(R.string.carry_over_msg, File(from).name, where))
+            .setMessage(getString(R.string.carry_over_msg, File(from).name, where) + if (stillThere) "\n\n" + getString(R.string.carry_over_still_there) else "")
             .setPositiveButton(R.string.carry_over) { _, _ ->
                 if (book() != to) return@setPositiveButton
                 stopAutoScroll()

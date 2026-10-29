@@ -2007,10 +2007,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Lists again after a file operation, showing the item it ended on where it is listed. */
     private fun fileWorkDone(outcome: FileWork.Outcome) {
-        val done = outcome as? FileWork.Outcome.Done
-        val path = done?.path
-        // Forward crumbs never lead into what is gone.
-        done?.gone?.forEach { trail = MissingFolder.trailAfter(trail, it) }
+        val path = (outcome as? FileWork.Outcome.Done)?.path
+        // Forward crumbs never lead into what is gone, even after a canceled or failed operation.
+        outcome.gone.forEach { trail = MissingFolder.trailAfter(trail, it) }
         val dir = currentDir
         if (mode == TAB_BROWSE && dir != null) {
             loadDirectory(dir, highlight = path?.takeIf { Transfer.parentOf(it) == dir.absolutePath })

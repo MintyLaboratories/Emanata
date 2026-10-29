@@ -23,21 +23,30 @@ object FileWork {
     enum class Kind { COPY, MOVE, DELETE, RENAME }
 
     sealed class Outcome {
+        /** What is no longer where it was: deleted, or moved away. */
+        abstract val gone: List<String>
+
         /**
-         * Finished with [count] items: [path] is the item to show, if any; [gone] what is no
-         * longer where it was (deleted, or moved away); [sourceLeft] when a move could not
-         * delete a source.
+         * Finished with [count] items: [path] is the item to show, if any; [sourceLeft] when a
+         * move could not delete a source.
          */
         data class Done(
             val path: String?,
             val sourceLeft: Boolean = false,
-            val gone: List<String> = emptyList(),
+            override val gone: List<String> = emptyList(),
             val count: Int = 1
         ) : Outcome()
 
-        object Canceled : Outcome()
+        /** Canceled after [done] of [count] items. */
+        data class Canceled(val done: Int = 0, val count: Int = 1, override val gone: List<String> = emptyList()) : Outcome()
 
-        data class Failed(val error: Throwable) : Outcome()
+        /** Failed with [error], the first of its items' failures; [done] of [count] items were done all the same. */
+        data class Failed(
+            val error: Throwable,
+            val done: Int = 0,
+            val count: Int = 1,
+            override val gone: List<String> = emptyList()
+        ) : Outcome()
     }
 
     /**
@@ -94,9 +103,12 @@ object FileWork {
     /** True while an operation runs. */
     val busy: Boolean get() = state.value?.let { it.outcome == null } == true
 
-    /** Starts [work] on [name]; false, starting nothing, while another runs. */
+    /**
+     * Starts [work] on [name]; false, starting nothing, while another runs. Work that throws
+     * ends [Outcome.Canceled] or [Outcome.Failed] with nothing counted.
+     */
     @Synchronized
-    fun start(kind: Kind, name: String, work: (Progress) -> Outcome.Done): Boolean {
+    fun start(kind: Kind, name: String, work: (Progress) -> Outcome): Boolean {
         if (busy) return false
         val flow = state
         flow.value = Status(kind, name, clock())
@@ -125,7 +137,7 @@ object FileWork {
             val outcome = try {
                 work(progress)
             } catch (e: CancellationException) {
-                Outcome.Canceled
+                Outcome.Canceled()
             } catch (e: Exception) {
                 Outcome.Failed(e)
             }

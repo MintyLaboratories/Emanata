@@ -38,8 +38,8 @@ import java.util.concurrent.CancellationException
  * The file operations of the library's selection, on the device and on shares: Rename,
  * Delete, and Move or Copy, which pick the items up ([FileClipboard]) for the Paste button
  * to put into the folder browsed. Each runs as one [FileWork], over its items one at a
- * time; its progress shows in a dialog with Cancel once it takes a moment, and its outcome
- * as a toast.
+ * time, going on past one that fails; its progress shows in a dialog with Cancel once it
+ * takes a moment, and its outcome as a toast, saying how many were done when not all.
  * Favorites, history, bookmarks and all else kept for an item follow it when it moves
  * or is renamed, and go when it is deleted.
  */
@@ -148,24 +148,26 @@ internal class FileActions(
             onConfirmed()
             start(FileWork.Kind.DELETE, first.name) { p ->
                 val gone = ArrayList<String>()
+                var done = 0
+                var failure: Exception? = null
                 for ((i, item) in items.withIndex()) {
                     if (items.size > 1) {
-                        if (!p.alive) throw CancellationException()
+                        if (!p.alive) return@start FileWork.Outcome.Canceled(done, items.size, gone)
                         p.item(item.name, i, items.size)
                     }
                     val path = item.path
                     val space = FileSpaces.of(path)
-                    try {
-                        space.delete(path)
-                    } finally {
-                        // Even a partial failure may have removed it: forget what is gone.
-                        if (runCatching { space.stat(path) == null }.getOrDefault(false)) {
-                            forget(path)
-                            gone += path
-                        }
+                    val error = attempt { space.delete(path) }
+                    // Even a partial failure may have removed it, and what was gone already counts as deleted.
+                    val removed = runCatching { space.stat(path) == null }.getOrDefault(false)
+                    if (removed) {
+                        forget(path)
+                        gone += path
                     }
+                    if (error is CancellationException) return@start FileWork.Outcome.Canceled(done + (if (removed) 1 else 0), items.size, gone)
+                    if (error == null || removed) done++ else if (failure == null) failure = error
                 }
-                FileWork.Outcome.Done(null, gone = gone, count = items.size)
+                failure?.let { FileWork.Outcome.Failed(it, done, items.size, gone) } ?: FileWork.Outcome.Done(null, gone = gone, count = done)
             }
         }
     }
@@ -263,15 +265,25 @@ internal class FileActions(
             val gone = ArrayList<String>()
             val sources = plans.map { it.item.path }.toSet()
             val targets = HashSet<String>()
+            var done = 0
+            var failure: Exception? = null
             for ((i, plan) in plans.withIndex()) {
                 if (plans.size > 1) {
-                    if (!p.alive) throw CancellationException()
+                    if (!p.alive) return@start FileWork.Outcome.Canceled(done, plans.size, gone)
                     p.item(plan.item.name, i, plans.size)
                 }
                 val source = plan.item.path
                 val target = Transfer.child(targetDir, plan.name)
-                val result = Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable)
-                    .run(source, targetDir, plan.name, move, plan.replace)
+                val result = try {
+                    Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable)
+                        .run(source, targetDir, plan.name, move, plan.replace)
+                } catch (e: CancellationException) {
+                    return@start FileWork.Outcome.Canceled(done, plans.size, gone)
+                } catch (e: Exception) {
+                    if (failure == null) failure = e
+                    continue
+                }
+                done++
                 targets += target
                 // What was kept for a replaced item goes with it.
                 if (plan.replace) library.removePathsUnder(target)
@@ -284,9 +296,10 @@ internal class FileActions(
                     }
                 }
             }
+            failure?.let { return@start FileWork.Outcome.Failed(it, done, plans.size, gone) }
             // A move is pasted once: its items, wherever they ended, leave the clipboard.
             if (move) FileClipboard.clip?.let { c -> if (c.items.all { it.path in sources || it.path in targets }) FileClipboard.clip = null }
-            FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, plans.size)
+            FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, done)
         }
     }
 
@@ -314,7 +327,15 @@ internal class FileActions(
         }
     }
 
-    private fun start(kind: FileWork.Kind, name: String, work: (FileWork.Progress) -> FileWork.Outcome.Done) {
+    /** Runs [block]; what it threw, else null. */
+    private inline fun attempt(block: () -> Unit): Exception? = try {
+        block()
+        null
+    } catch (e: Exception) {
+        e
+    }
+
+    private fun start(kind: FileWork.Kind, name: String, work: (FileWork.Progress) -> FileWork.Outcome) {
         if (!FileWork.start(kind, name, work)) return toast(activity.getString(R.string.file_busy))
         // Asked once, as the first operation starts: operations show their progress there while the app is away.
         notificationAsk.once()
@@ -430,11 +451,25 @@ internal class FileActions(
                 FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, outcome.count, outcome.count)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
             }
-            FileWork.Outcome.Canceled -> activity.getString(R.string.file_canceled)
-            is FileWork.Outcome.Failed -> activity.getString(R.string.file_failed, describe(outcome.error))
+            is FileWork.Outcome.Canceled ->
+                if (outcome.done > 0) activity.getString(R.string.file_canceled_part, part(status.kind, outcome.done, outcome.count))
+                else activity.getString(R.string.file_canceled)
+            is FileWork.Outcome.Failed ->
+                if (outcome.done > 0) activity.getString(R.string.file_failed_part, part(status.kind, outcome.done, outcome.count), describe(outcome.error))
+                else activity.getString(R.string.file_failed, describe(outcome.error))
         }
         toast(text)
     }
+
+    /** How many of [count] items an operation of [kind] did: "Deleted 3 of 5 items". */
+    private fun part(kind: FileWork.Kind, done: Int, count: Int): String = activity.resources.getQuantityString(
+        when (kind) {
+            FileWork.Kind.COPY -> R.plurals.copied_part
+            FileWork.Kind.MOVE -> R.plurals.moved_part
+            FileWork.Kind.DELETE, FileWork.Kind.RENAME -> R.plurals.deleted_part
+        },
+        count, done, count
+    )
 
     /** [one] for a single item, else [many] counting [count]. */
     private fun counted(one: Int, many: Int, count: Int): String =

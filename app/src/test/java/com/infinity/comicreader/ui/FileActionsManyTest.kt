@@ -12,6 +12,8 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
+import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Remotes
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,8 +31,12 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
+import java.util.concurrent.CountDownLatch
 
-/** Several items deleted at once: one question, one operation, one count. */
+/**
+ * Several items at once: one question, one operation going on past an item that fails,
+ * and a count of what was done; on the device and a share together.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class FileActionsManyTest {
@@ -57,7 +63,36 @@ class FileActionsManyTest {
     fun tearDown() {
         settle()
         controller.pause().stop().destroy()
+        FileClipboard.clip = null
+        Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
+
+    /** A share served from a folder, as /net/s1. */
+    private fun share(): Pair<FakeRemoteFs, File> {
+        val dir = tmp.newFolder("share")
+        val fake = FakeRemoteFs(dir)
+        Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
+        return fake to dir
+    }
+
+    private fun waitFor(what: () -> Boolean) {
+        repeat(500) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (what()) return
+            Thread.sleep(10)
+        }
+        throw AssertionError("never came")
+    }
+
+    private fun item(file: File) = FileClipboard.Item(file.absolutePath, file.isDirectory)
+
+    /** Confirms the latest question with [button]. */
+    private fun answer(button: Int) {
+        shadowOf(Looper.getMainLooper()).idle()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(button).performClick()
+    }
+
+    private fun deleted(done: Int, count: Int) = context.resources.getQuantityString(R.plurals.deleted_part, count, done, count)
 
     private fun settle() {
         repeat(300) {
@@ -117,6 +152,118 @@ class FileActionsManyTest {
         actions.pickUp(listOf(FileClipboard.Item(inner.absolutePath, false), FileClipboard.Item(folder.absolutePath, true)), move = true)
         assertEquals(listOf(folder.absolutePath), FileClipboard.clip!!.items.map { it.path })
         FileClipboard.clip = null
+    }
+
+    @Test
+    fun oneFailingItemLeavesTheOthersDoneAndCounted() {
+        val (fake, dir) = share()
+        File(dir, "s.cbz").writeBytes(ByteArray(10))
+        fake.readOnly = true
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.delete(listOf(item(a), FileClipboard.Item("/net/s1/s.cbz", false), item(b)))
+        answer(DialogInterface.BUTTON_POSITIVE)
+        settle()
+        assertFalse(a.exists())
+        assertFalse(b.exists())
+        assertTrue(File(dir, "s.cbz").exists())
+        assertEquals(FileWork.Outcome.Failed((finished.single() as FileWork.Outcome.Failed).error, 2, 3, listOf(a.absolutePath, b.absolutePath)), finished.single())
+        assertEquals(
+            context.getString(R.string.file_failed_part, deleted(2, 3), context.getString(R.string.file_denied)),
+            ShadowToast.getTextOfLatestToast()
+        )
+    }
+
+    @Test
+    fun anItemAlreadyGoneCountsAsDeleted() {
+        share()
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.delete(listOf(FileClipboard.Item("/net/s1/gone.cbz", false), item(a)))
+        answer(DialogInterface.BUTTON_POSITIVE)
+        settle()
+        assertFalse(a.exists())
+        assertEquals(FileWork.Outcome.Done(null, gone = listOf("/net/s1/gone.cbz", a.absolutePath), count = 2), finished.single())
+        assertEquals(context.resources.getQuantityString(R.plurals.deleted_format, 2, 2), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun cancelBetweenDeletesSaysHowManyWereDone() {
+        val (fake, dir) = share()
+        File(dir, "s.cbz").writeBytes(ByteArray(10))
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val hold = CountDownLatch(1)
+        fake.slow = hold
+        actions.delete(listOf(FileClipboard.Item("/net/s1/s.cbz", false), item(a)))
+        answer(DialogInterface.BUTTON_POSITIVE)
+        waitFor { fake.held.get() > 0 }
+        FileWork.cancel()
+        hold.countDown()
+        settle()
+        assertTrue(a.exists())
+        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/s.cbz")), finished.single())
+        assertEquals(context.getString(R.string.file_canceled_part, deleted(1, 2)), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun itemsFromTheDeviceAndAShareMoveTogether() {
+        val (_, dir) = share()
+        File(dir, "s.cbz").writeBytes(ByteArray(20) { 2 })
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10) { 1 }) }
+        val dest = tmp.newFolder("Dest")
+        actions.pickUp(listOf(item(a), FileClipboard.Item("/net/s1/s.cbz", false)), move = true)
+        actions.paste(dest)
+        waitFor { finished.isNotEmpty() }
+        settle()
+        assertEquals(listOf("a.cbz", "s.cbz"), dest.list()!!.sorted())
+        assertEquals(20L, File(dest, "s.cbz").length())
+        assertFalse(a.exists())
+        assertFalse(File(dir, "s.cbz").exists())
+        assertEquals(2, (finished.single() as FileWork.Outcome.Done).count)
+    }
+
+    @Test
+    fun aFailingPasteGoesOnWithTheRest() {
+        val (fake, dir) = share()
+        File(dir, "s.cbz").writeBytes(ByteArray(20))
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        File(dest, "a.cbz").writeBytes(ByteArray(3))
+        actions.pickUp(listOf(item(a), FileClipboard.Item("/net/s1/s.cbz", false), item(b)), move = false)
+        actions.paste(dest)
+        // Asked about the name taken; the share goes away meanwhile.
+        waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+        fake.offline = true
+        answer(DialogInterface.BUTTON_NEUTRAL)
+        waitFor { finished.isNotEmpty() }
+        settle()
+        assertEquals(listOf("a (2).cbz", "a.cbz", "b.cbz"), dest.list()!!.sorted())
+        val failed = finished.single() as FileWork.Outcome.Failed
+        assertEquals(2, failed.done)
+        assertEquals(3, failed.count)
+        assertEquals(
+            context.getString(R.string.file_failed_part, context.resources.getQuantityString(R.plurals.copied_part, 3, 2, 3), context.getString(R.string.share_unreachable)),
+            ShadowToast.getTextOfLatestToast()
+        )
+    }
+
+    @Test
+    fun replaceTakesEveryNameTaken() {
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10) { 1 }) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(20) { 2 }) }
+        val dest = tmp.newFolder("Dest")
+        File(dest, "a.cbz").writeBytes(ByteArray(3))
+        File(dest, "b.cbz").writeBytes(ByteArray(3))
+        actions.pickUp(listOf(item(a), item(b)), move = false)
+        actions.paste(dest)
+        waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+        answer(DialogInterface.BUTTON_POSITIVE)
+        waitFor { finished.isNotEmpty() }
+        settle()
+        assertEquals(listOf("a.cbz", "b.cbz"), dest.list()!!.sorted())
+        assertEquals(10L, File(dest, "a.cbz").length())
+        assertEquals(20L, File(dest, "b.cbz").length())
+        assertEquals(context.resources.getQuantityString(R.plurals.copied_count, 2, 2), ShadowToast.getTextOfLatestToast())
     }
 
     @Test

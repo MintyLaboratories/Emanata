@@ -90,7 +90,7 @@ class FileWorkServiceTest {
         val controller = Robolectric.buildService(FileWorkService::class.java, Intent(context, FileWorkService::class.java)).create().startCommand(0, 1)
         controller.withIntent(Intent(context, FileWorkService::class.java).setAction("cancel")).startCommand(0, 2)
         waitFor { FileWork.status.value?.outcome != null }
-        assertEquals(FileWork.Outcome.Canceled, FileWork.status.value?.outcome)
+        assertEquals(FileWork.Outcome.Canceled(), FileWork.status.value?.outcome)
     }
 
     @Test

@@ -344,6 +344,10 @@
     <string name="file_source_left">Copied, but the original could not be deleted</string>
     <string name="file_canceled">Canceled; nothing was left half-written</string>
     <string name="file_failed">Could not finish: %1$s</string>
+    <!-- %1$s: what was done, as "Moved 3 of 5 items". -->
+    <string name="file_canceled_part">%1$s, then canceled; nothing was left half-written</string>
+    <!-- %1$s: what was done, as "Moved 3 of 5 items"; %2$s: why the others failed. -->
+    <string name="file_failed_part">%1$s; the others failed: %2$s</string>
     <string name="file_exists">That name is already taken</string>
     <string name="file_denied">Not allowed there</string>
     <string name="file_missing">Not found</string>
@@ -382,6 +386,18 @@
     <plurals name="moved_count">
         <item quantity="one">Moved %1$d item</item>
         <item quantity="other">Moved %1$d items</item>
+    </plurals>
+    <plurals name="copied_part">
+        <item quantity="one">Copied %1$d of %2$d item</item>
+        <item quantity="other">Copied %1$d of %2$d items</item>
+    </plurals>
+    <plurals name="moved_part">
+        <item quantity="one">Moved %1$d of %2$d item</item>
+        <item quantity="other">Moved %1$d of %2$d items</item>
+    </plurals>
+    <plurals name="deleted_part">
+        <item quantity="one">Deleted %1$d of %2$d item</item>
+        <item quantity="other">Deleted %1$d of %2$d items</item>
     </plurals>
     <plurals name="paste_count">
         <item quantity="one">Paste %1$d item</item>

@@ -363,7 +363,11 @@
         <item quantity="other">Delete %1$d items?</item>
     </plurals>
     <plurals name="delete_items_msg">
-        <item quantity="one">This permanently deletes %1$d item from %2$s, a folder with everything in it.</item>
+        <item quantity="one">This permanently deletes %1$d item from %2$s.</item>
+        <item quantity="other">This permanently deletes %1$d items from %2$s.</item>
+    </plurals>
+    <plurals name="delete_items_folders_msg">
+        <item quantity="one">This permanently deletes %1$d item from %2$s, folders with everything in them.</item>
         <item quantity="other">This permanently deletes %1$d items from %2$s, folders with everything in them.</item>
     </plurals>
     <plurals name="clash_many_title">

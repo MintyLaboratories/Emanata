@@ -81,7 +81,7 @@ class FileActionsManyTest {
         val ask = ShadowDialog.getLatestDialog() as AlertDialog
         val res = context.resources
         assertEquals(res.getQuantityString(R.plurals.delete_items_title, 3, 3), ask.text(androidx.appcompat.R.id.alertTitle))
-        assertEquals(res.getQuantityString(R.plurals.delete_items_msg, 3, 3, "Device"), ask.text(android.R.id.message))
+        assertEquals(res.getQuantityString(R.plurals.delete_items_folders_msg, 3, 3, "Device"), ask.text(android.R.id.message))
         assertEquals(0, confirmed)
         ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle()

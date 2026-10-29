@@ -320,6 +320,11 @@ class ListActivityFileOpsTest {
         idle()
         val ask = latest()
         assertEquals(context.resources.getQuantityString(R.plurals.delete_items_title, 2, 2), ask.title())
+        // Books only: no word of folders.
+        assertEquals(
+            context.resources.getQuantityString(R.plurals.delete_items_msg, 2, 2, "Device"),
+            ask.findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString()
+        )
         // Still selected until it goes ahead.
         assertTrue(activity.selection.active)
         ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()

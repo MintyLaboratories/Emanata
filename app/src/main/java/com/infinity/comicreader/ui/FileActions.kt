@@ -135,7 +135,10 @@ internal class FileActions(
                 activity.getString(if (first.isDir) R.string.delete_folder_msg else R.string.delete_file_msg, place)
         } else {
             res.getQuantityString(R.plurals.delete_items_title, items.size, items.size) to
-                res.getQuantityString(R.plurals.delete_items_msg, items.size, items.size, place)
+                res.getQuantityString(
+                    if (items.any { it.isDir }) R.plurals.delete_items_folders_msg else R.plurals.delete_items_msg,
+                    items.size, items.size, place
+                )
         }
         confirm(activity, title, message, R.string.delete) {
             onConfirmed()

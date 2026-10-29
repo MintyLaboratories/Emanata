@@ -6,9 +6,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -17,16 +17,10 @@ import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Crumbs
-import com.infinity.comicreader.data.Library
-import com.infinity.comicreader.data.LibraryData
 import com.infinity.comicreader.data.MissingBooks
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
-import com.infinity.comicreader.util.AppDispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -38,7 +32,7 @@ import java.io.File
  */
 class MissingBooksActivity : AppCompatActivity() {
 
-    private lateinit var library: Library
+    private lateinit var scan: MissingScan
     private lateinit var list: RecyclerView
     private lateinit var progress: View
     private lateinit var summary: TextView
@@ -47,13 +41,12 @@ class MissingBooksActivity : AppCompatActivity() {
     private lateinit var forgetButton: MaterialButton
     private lateinit var roots: List<StorageRoot>
 
-    private var result: MissingBooks.Result? = null
-    private val selected = LinkedHashSet<BookId>()
-    private var scan: Job? = null
+    private val result: MissingBooks.Result? get() = scan.result.value
+    private val selected: MutableSet<BookId> get() = scan.selected
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        library = Library(this)
+        scan = ViewModelProvider(this)[MissingScan::class.java]
         setContentView(R.layout.activity_cleanup)
         val toolbar = findViewById<MaterialToolbar>(R.id.cleanup_toolbar)
         setSupportActionBar(toolbar)
@@ -71,7 +64,10 @@ class MissingBooksActivity : AppCompatActivity() {
         startScan()
     }
 
-    /** Walks every location; Cancel stops it and leaves the screen, forgetting nothing. */
+    /**
+     * Walks every location, or goes on with the walk begun before a recreate; Cancel stops
+     * it and leaves the screen, forgetting nothing.
+     */
     private fun startScan() {
         progress.visibility = View.VISIBLE
         summary.ellipsize = null
@@ -79,25 +75,18 @@ class MissingBooksActivity : AppCompatActivity() {
         leftButton.setOnClickListener { finish() }
         forgetButton.isEnabled = false
         forgetButton.setText(R.string.missing_forget)
-        val locations = MissingBooks.locations(roots)
-        scan = lifecycleScope.launch {
-            val found = withContext(AppDispatchers.io) {
-                val job = coroutineContext
-                MissingBooks(library, locations, alive = { job.isActive }, progress = { p ->
-                    runOnUiThread { if (!isFinishing) summary.text = progressText(p) }
-                }).run()
-            } ?: return@launch
-            show(found)
+        scan.start(this, MissingBooks.locations(roots))
+        lifecycleScope.launch {
+            scan.progress.collect { p -> if (p != null && result == null) summary.text = progressText(p) }
+        }
+        lifecycleScope.launch {
+            scan.result.collect { found -> if (found != null) show(found) }
         }
     }
 
-    /** Lists [found]; ticks [ticked] when given (what stays ticked after a forget), else every book when the scan was complete. */
-    private fun show(found: MissingBooks.Result, ticked: Set<BookId>? = null) {
-        result = found
+    /** Lists [found], the books in [selected] ticked. */
+    private fun show(found: MissingBooks.Result) {
         progress.visibility = View.GONE
-        selected.clear()
-        if (ticked != null) found.missing.filter { it.id in ticked }.mapTo(selected) { it.id }
-        else found.missing.filter { found.ticked(it) }.mapTo(selected) { it.id }
         val lines = ArrayList<String>()
         if (found.missing.isNotEmpty()) lines += resources.getQuantityString(R.plurals.missing_found, found.missing.size, found.missing.size)
         if (!found.complete) lines += getString(R.string.missing_skipped, found.skipped.joinToString(", "))
@@ -137,15 +126,7 @@ class MissingBooksActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun forget(ids: Set<BookId>) {
-        val app = applicationContext
-        lifecycleScope.launch {
-            withContext(AppDispatchers.io) { LibraryData.forget(app, library, ids) }
-            Toast.makeText(this@MissingBooksActivity, resources.getQuantityString(R.plurals.missing_forgotten, ids.size, ids.size), Toast.LENGTH_SHORT).show()
-            val now = result ?: return@launch
-            show(now.copy(missing = now.missing.filterNot { it.id in ids }), ticked = selected - ids)
-        }
-    }
+    private fun forget(ids: Set<BookId>) = scan.forget(this, ids)
 
     private fun progressText(p: MissingBooks.Progress): String =
         if (p.checking > 0) getString(R.string.missing_checking, p.checked, p.checking)

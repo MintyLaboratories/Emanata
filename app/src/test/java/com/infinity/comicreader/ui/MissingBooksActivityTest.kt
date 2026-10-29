@@ -120,4 +120,21 @@ class MissingBooksActivityTest {
         assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
         assertFalse(activity.findViewById<MaterialButton>(R.id.cleanup_delete).isEnabled)
     }
+
+    @Test
+    fun aRecreateKeepsTheScanAndWhatIsTicked() {
+        val root = Environment.getExternalStorageDirectory()
+        val gone = BookRef(BookId(0x0b01), File(root, "Comics/a.cbz").path)
+        library.setRead(gone, true)
+        val controller = Robolectric.buildActivity(MissingBooksActivity::class.java).setup()
+        var list = controller.get().findViewById<RecyclerView>(R.id.cleanup_list)
+        awaitUntil { list.childCount == 1 }
+        list.getChildAt(0).performClick()
+
+        controller.recreate()
+        list = controller.get().findViewById(R.id.cleanup_list)
+        awaitUntil { list.childCount == 1 }
+        assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
+        assertEquals(context.getString(R.string.missing_select_all), controller.get().findViewById<MaterialButton>(R.id.cleanup_select).text.toString())
+    }
 }

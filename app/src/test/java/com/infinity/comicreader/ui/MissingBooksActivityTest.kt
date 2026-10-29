@@ -99,4 +99,25 @@ class MissingBooksActivityTest {
         assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
         assertFalse(activity.findViewById<MaterialButton>(R.id.cleanup_delete).isEnabled)
     }
+
+    @Test
+    fun aBookUntickedStaysUntickedAfterOthersAreForgotten() {
+        val root = Environment.getExternalStorageDirectory()
+        val first = BookRef(BookId(0x0a01), File(root, "Comics/a.cbz").path)
+        val second = BookRef(BookId(0x0a02), File(root, "Comics/b.cbz").path)
+        library.setRead(first, true)
+        library.setRead(second, true)
+        val activity = Robolectric.buildActivity(MissingBooksActivity::class.java).setup().get()
+        val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
+        awaitUntil { list.childCount == 2 }
+        list.getChildAt(1).performClick()
+        activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
+        idle()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        awaitUntil { list.adapter!!.itemCount == 1 && list.childCount == 1 }
+        assertFalse(library.hasData(first.id))
+        assertEquals("b.cbz", list.getChildAt(0).findViewById<TextView>(R.id.title).text.toString())
+        assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
+        assertFalse(activity.findViewById<MaterialButton>(R.id.cleanup_delete).isEnabled)
+    }
 }

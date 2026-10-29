@@ -91,11 +91,13 @@ class MissingBooksActivity : AppCompatActivity() {
         }
     }
 
-    private fun show(found: MissingBooks.Result) {
+    /** Lists [found]; ticks [ticked] when given (what stays ticked after a forget), else every book when the scan was complete. */
+    private fun show(found: MissingBooks.Result, ticked: Set<BookId>? = null) {
         result = found
         progress.visibility = View.GONE
         selected.clear()
-        if (found.complete) found.missing.mapTo(selected) { it.id }
+        if (ticked != null) found.missing.filter { it.id in ticked }.mapTo(selected) { it.id }
+        else if (found.complete) found.missing.mapTo(selected) { it.id }
         val lines = ArrayList<String>()
         if (found.missing.isNotEmpty()) lines += resources.getQuantityString(R.plurals.missing_found, found.missing.size, found.missing.size)
         if (!found.complete) lines += getString(R.string.missing_skipped, found.skipped.joinToString(", "))
@@ -141,7 +143,7 @@ class MissingBooksActivity : AppCompatActivity() {
             withContext(AppDispatchers.io) { LibraryData.forget(app, library, ids) }
             Toast.makeText(this@MissingBooksActivity, resources.getQuantityString(R.plurals.missing_forgotten, ids.size, ids.size), Toast.LENGTH_SHORT).show()
             val now = result ?: return@launch
-            show(now.copy(missing = now.missing.filterNot { it.id in ids }))
+            show(now.copy(missing = now.missing.filterNot { it.id in ids }), ticked = selected - ids)
         }
     }
 

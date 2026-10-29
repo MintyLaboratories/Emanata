@@ -150,6 +150,13 @@
     <string name="pref_cover_spacing">Cover spacing</string>
     <string name="pref_toolbar_buttons">Toolbar buttons</string>
     <string name="toolbar_buttons_none">None</string>
+    <string name="pref_more_actions">Selection menu (⋮)</string>
+    <string name="pref_fab_one">Button with one item selected</string>
+    <string name="pref_fab_many">Button with several items selected</string>
+    <string name="fab_none">Nothing</string>
+    <string name="fab_open">Open</string>
+    <string name="more_compact">Compact</string>
+    <string name="more_make_compatible">Make compatible</string>
     <string name="toolbar_button_favorite">Favorite</string>
     <string name="toolbar_button_drag">Drag to reorder</string>
     <string name="pref_cover_spacing_desc">Space between covers in the grid, in dp</string>

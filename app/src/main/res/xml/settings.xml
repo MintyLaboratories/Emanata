@@ -69,6 +69,20 @@
             app:key="toolbar_buttons"
             app:persistent="false"
             app:title="@string/pref_toolbar_buttons" />
+        <Preference
+            app:key="more_actions"
+            app:persistent="false"
+            app:title="@string/pref_more_actions" />
+        <ListPreference
+            app:defaultValue="open"
+            app:key="pref_fab_one"
+            app:title="@string/pref_fab_one"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="move"
+            app:key="pref_fab_many"
+            app:title="@string/pref_fab_many"
+            app:useSimpleSummaryProvider="true" />
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory

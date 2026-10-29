@@ -20,6 +20,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryData
+import com.infinity.comicreader.data.FabAction
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.Thrift
@@ -215,6 +216,24 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     if (isAdded) pref.summary = ToolbarButtonsDialog.summary(requireContext(), prefs)
                 }
                 true
+            }
+        }
+
+        findPreference<Preference>("more_actions")?.let { pref ->
+            pref.summary = MoreActionsDialog.summary(requireContext(), prefs)
+            pref.setOnPreferenceClickListener {
+                MoreActionsDialog.show(requireContext(), prefs) {
+                    if (isAdded) pref.summary = MoreActionsDialog.summary(requireContext(), prefs)
+                }
+                true
+            }
+        }
+
+        for ((key, choices) in listOf(Prefs.KEY_FAB_ONE to FabAction.FOR_ONE, Prefs.KEY_FAB_MANY to FabAction.FOR_MANY)) {
+            findPreference<ListPreference>(key)?.apply {
+                entries = choices.map { MoreActionsDialog.fabLabel(requireContext(), it) }.toTypedArray()
+                entryValues = choices.map { it.key }.toTypedArray()
+                value = (if (key == Prefs.KEY_FAB_ONE) prefs.fabOne else prefs.fabMany).key
             }
         }
 

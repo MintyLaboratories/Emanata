@@ -309,6 +309,21 @@ class Prefs(context: Context) {
         get() = ToolbarButtons.decode(sp.getString(KEY_TOOLBAR_BUTTONS, null))
         set(v) = put(KEY_TOOLBAR_BUTTONS, v.encode())
 
+    /** The selection's ⋮ menu items, in order. */
+    var moreActions: MoreActions
+        get() = MoreActions.decode(sp.getString(KEY_MORE_ACTIONS, null))
+        set(v) = put(KEY_MORE_ACTIONS, v.encode())
+
+    /** What the floating button does with one item selected. */
+    var fabOne: FabAction
+        get() = FabAction.of(sp.getString(KEY_FAB_ONE, null), FabAction.OPEN)
+        set(v) = put(KEY_FAB_ONE, v.key)
+
+    /** What the floating button does with several items selected; never Open. */
+    var fabMany: FabAction
+        get() = FabAction.of(sp.getString(KEY_FAB_MANY, null), FabAction.MOVE).takeIf { it in FabAction.FOR_MANY } ?: FabAction.MOVE
+        set(v) = put(KEY_FAB_MANY, v.key)
+
     /** Space between grid covers, in dp. */
     var coverSpacing: Int
         get() = integer(KEY_COVER_SPACING, COVER_SPACING_DEFAULT).coerceIn(0, COVER_SPACING_MAX)
@@ -638,6 +653,9 @@ class Prefs(context: Context) {
         private const val KEY_COVER_SHAPE = "pref_cover_shape"
         private const val KEY_COVER_SPACING = "pref_cover_spacing"
         private const val KEY_TOOLBAR_BUTTONS = "pref_toolbar_buttons"
+        private const val KEY_MORE_ACTIONS = "pref_more_actions"
+        const val KEY_FAB_ONE = "pref_fab_one"
+        const val KEY_FAB_MANY = "pref_fab_many"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
         private const val KEY_PINCH_PEEK = "pref_pinch_peek"
@@ -681,7 +699,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
+            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 

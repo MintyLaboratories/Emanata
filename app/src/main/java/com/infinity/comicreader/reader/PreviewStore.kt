@@ -145,12 +145,12 @@ class PreviewStore(
         fun trim(dir: File, maxBytes: Long = MAX_BYTES, now: Long = System.currentTimeMillis()) {
             val files = dir.listFiles() ?: return
             files.filter { it.name.endsWith(PART_SUFFIX) && it.lastModified() < now - STALE_PART_MS }.forEach { it.delete() }
-            val kept = files.filter { it.name.endsWith(".jpg") && it.isFile }
-            var total = kept.sumOf { it.length() }
+            // Each file's size and time read once: one touched meanwhile cannot upset the order.
+            val kept = files.filter { it.name.endsWith(".jpg") && it.isFile }.map { Triple(it, it.length(), it.lastModified()) }
+            var total = kept.sumOf { it.second }
             if (total <= maxBytes) return
-            for (f in kept.sortedBy { it.lastModified() }) {
+            for ((f, size, _) in kept.sortedBy { it.third }) {
                 if (total <= maxBytes) break
-                val size = f.length()
                 if (f.delete()) total -= size
             }
         }

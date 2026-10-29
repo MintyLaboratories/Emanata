@@ -42,17 +42,23 @@ object CacheFiles {
 
     /**
      * Deletes the least recently used files directly in [dir] until those left take at
-     * most [maxBytes] on disk ([onDisk]); files [keep] holds stay.
+     * most [maxBytes] on disk ([onDisk]); files [keep] holds stay. Each file's time is read
+     * once, so files touched meanwhile cannot upset the order; a failure leaves the rest.
      */
     fun trim(dir: File, maxBytes: Long, keep: (File) -> Boolean = { false }) {
-        val files = dir.listFiles()?.filter { it.isFile }.orEmpty().map { it to onDisk(it) }
-        var total = files.sumOf { it.second }
-        if (total <= maxBytes) return
-        for ((f, size) in files.sortedBy { it.first.lastModified() }) {
-            if (total <= maxBytes) break
-            if (!keep(f) && f.delete()) total -= size
+        runCatching {
+            val files = dir.listFiles()?.filter { it.isFile }.orEmpty().map { Used(it, onDisk(it), it.lastModified()) }
+            var total = files.sumOf { it.bytes }
+            if (total <= maxBytes) return
+            for (u in files.sortedBy { it.at }) {
+                if (total <= maxBytes) break
+                if (!keep(u.file) && u.file.delete()) total -= u.bytes
+            }
         }
     }
+
+    /** A cache [file], the [bytes] it takes and when it was last used ([at]). */
+    private class Used(val file: File, val bytes: Long, val at: Long)
 
     private const val ID_PREFIX = "id:"
 

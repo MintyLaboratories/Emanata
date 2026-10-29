@@ -17,4 +17,10 @@ object FileClipboard {
 
     @Volatile
     var clip: Clip? = null
+
+    /** [items] once each, without those inside a folder among them: the folder takes them along. */
+    fun outermost(items: List<Item>): List<Item> {
+        val folders = items.filter { it.isDir }.map { it.path }
+        return items.distinctBy { it.path }.filter { item -> folders.none { it != item.path && Transfer.isWithin(item.path, it) } }
+    }
 }

@@ -95,6 +95,31 @@ class FileActionsManyTest {
     }
 
     @Test
+    fun aFolderSelectedWithWhatIsInItIsDeletedOnce() {
+        val folder = tmp.newFolder("Shelf")
+        val inner = File(folder, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.delete(listOf(FileClipboard.Item(inner.absolutePath, false), FileClipboard.Item(folder.absolutePath, true)))
+        shadowOf(Looper.getMainLooper()).idle()
+        val ask = ShadowDialog.getLatestDialog() as AlertDialog
+        assertEquals(context.getString(R.string.delete_item_title, "Shelf"), ask.text(androidx.appcompat.R.id.alertTitle))
+        ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle()
+        assertFalse(folder.exists())
+        val done = finished.single() as FileWork.Outcome.Done
+        assertEquals(1, done.count)
+        assertEquals(listOf(folder.absolutePath), done.gone)
+    }
+
+    @Test
+    fun aFolderPickedUpWithWhatIsInItGoesAlone() {
+        val folder = tmp.newFolder("Shelf")
+        val inner = File(folder, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.pickUp(listOf(FileClipboard.Item(inner.absolutePath, false), FileClipboard.Item(folder.absolutePath, true)), move = true)
+        assertEquals(listOf(folder.absolutePath), FileClipboard.clip!!.items.map { it.path })
+        FileClipboard.clip = null
+    }
+
+    @Test
     fun progressNamesTheItemAndWhichOfHowMany() {
         val context: Context = ApplicationProvider.getApplicationContext()
         val status = FileWork.Status(FileWork.Kind.DELETE, "b.cbz", 0, index = 1, count = 3)

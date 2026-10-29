@@ -125,8 +125,12 @@ internal class FileActions(
 
     // ------------------------------------------------------------------ delete
 
-    /** Deletes [items] once confirmed, asking once for all of them; [onConfirmed] runs as the deleting starts. */
-    fun delete(items: List<FileClipboard.Item>, onConfirmed: () -> Unit = {}) {
+    /**
+     * Deletes [selected] once confirmed, asking once for all of them, but for those inside a
+     * folder among them ([FileClipboard.outermost]); [onConfirmed] runs as the deleting starts.
+     */
+    fun delete(selected: List<FileClipboard.Item>, onConfirmed: () -> Unit = {}) {
+        val items = FileClipboard.outermost(selected)
         val first = items.firstOrNull() ?: return
         val place = items.map { placeOf(it.path) }.distinct().joinToString(", ")
         val res = activity.resources
@@ -168,10 +172,10 @@ internal class FileActions(
 
     // ------------------------------------------------------------------ move / copy
 
-    /** Puts [items] on the clipboard together, for Paste to move or copy. */
+    /** Puts [items] on the clipboard together, for Paste to move or copy; a folder among them takes along what is in it. */
     fun pickUp(items: List<FileClipboard.Item>, move: Boolean) {
         if (items.isEmpty()) return
-        FileClipboard.clip = FileClipboard.Clip(items, move)
+        FileClipboard.clip = FileClipboard.Clip(FileClipboard.outermost(items), move)
         onClipChanged()
     }
 

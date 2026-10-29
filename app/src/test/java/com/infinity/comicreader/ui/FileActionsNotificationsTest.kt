@@ -8,6 +8,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileWork
 import org.junit.After
 import org.junit.Assert.assertFalse
@@ -68,7 +69,7 @@ class FileActionsNotificationsTest {
     /** Deletes a new file through the confirmation, and waits for it to go. */
     private fun deleteOne(name: String) {
         val file = File(tmp.root, name).apply { writeBytes(ByteArray(10)) }
-        actions.delete(file, isDir = false)
+        actions.delete(listOf(FileClipboard.Item(file.absolutePath, isDir = false)))
         shadowOf(Looper.getMainLooper()).idle()
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle()

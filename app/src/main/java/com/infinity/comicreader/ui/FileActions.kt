@@ -22,6 +22,7 @@ import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
@@ -31,12 +32,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.CancellationException
 
 /**
- * The file operations of the library's long-press menu, on the device and on shares:
- * Rename, Delete, and Move or Copy, which pick the item up ([FileClipboard]) for the
- * Paste button to put into the folder browsed. Each runs as [FileWork]; its progress
- * shows in a dialog with Cancel once it takes a moment, and its outcome as a toast.
+ * The file operations of the library's selection, on the device and on shares: Rename,
+ * Delete, and Move or Copy, which pick the items up ([FileClipboard]) for the Paste button
+ * to put into the folder browsed. Each runs as one [FileWork], over its items one at a
+ * time; its progress shows in a dialog with Cancel once it takes a moment, and its outcome
+ * as a toast.
  * Favorites, history, bookmarks and all else kept for an item follow it when it moves
  * or is renamed, and go when it is deleted.
  */
@@ -116,39 +119,56 @@ internal class FileActions(
         start(FileWork.Kind.RENAME, old) {
             Transfer().rename(path, name)
             followMove(path, target)
-            FileWork.Outcome.Done(target, gone = path)
+            FileWork.Outcome.Done(target, gone = listOf(path))
         }
     }
 
     // ------------------------------------------------------------------ delete
 
-    fun delete(file: File, isDir: Boolean) {
-        val path = file.absolutePath
-        val place = placeOf(path)
-        confirm(
-            activity,
-            activity.getString(R.string.delete_item_title, file.name),
-            activity.getString(if (isDir) R.string.delete_folder_msg else R.string.delete_file_msg, place),
-            R.string.delete
-        ) {
-            start(FileWork.Kind.DELETE, file.name) {
-                val space = FileSpaces.of(path)
-                try {
-                    space.delete(path)
-                } finally {
-                    // Even a partial failure may have removed it: forget what is gone.
-                    if (runCatching { space.stat(path) == null }.getOrDefault(false)) forget(path)
+    /** Deletes [items] once confirmed, asking once for all of them; [onConfirmed] runs as the deleting starts. */
+    fun delete(items: List<FileClipboard.Item>, onConfirmed: () -> Unit = {}) {
+        val first = items.firstOrNull() ?: return
+        val place = items.map { placeOf(it.path) }.distinct().joinToString(", ")
+        val res = activity.resources
+        val (title, message) = if (items.size == 1) {
+            activity.getString(R.string.delete_item_title, first.name) to
+                activity.getString(if (first.isDir) R.string.delete_folder_msg else R.string.delete_file_msg, place)
+        } else {
+            res.getQuantityString(R.plurals.delete_items_title, items.size, items.size) to
+                res.getQuantityString(R.plurals.delete_items_msg, items.size, items.size, place)
+        }
+        confirm(activity, title, message, R.string.delete) {
+            onConfirmed()
+            start(FileWork.Kind.DELETE, first.name) { p ->
+                val gone = ArrayList<String>()
+                for ((i, item) in items.withIndex()) {
+                    if (items.size > 1) {
+                        if (!p.alive) throw CancellationException()
+                        p.item(item.name, i, items.size)
+                    }
+                    val path = item.path
+                    val space = FileSpaces.of(path)
+                    try {
+                        space.delete(path)
+                    } finally {
+                        // Even a partial failure may have removed it: forget what is gone.
+                        if (runCatching { space.stat(path) == null }.getOrDefault(false)) {
+                            forget(path)
+                            gone += path
+                        }
+                    }
                 }
-                FileWork.Outcome.Done(null, gone = path)
+                FileWork.Outcome.Done(null, gone = gone, count = items.size)
             }
         }
     }
 
     // ------------------------------------------------------------------ move / copy
 
-    /** Puts [file] on the clipboard, for Paste to move or copy. */
-    fun pickUp(file: File, isDir: Boolean, move: Boolean) {
-        FileClipboard.clip = FileClipboard.Clip(file.absolutePath, isDir, move)
+    /** Puts [items] on the clipboard together, for Paste to move or copy. */
+    fun pickUp(items: List<FileClipboard.Item>, move: Boolean) {
+        if (items.isEmpty()) return
+        FileClipboard.clip = FileClipboard.Clip(items, move)
         onClipChanged()
     }
 
@@ -158,70 +178,108 @@ internal class FileActions(
         onClipChanged()
     }
 
-    /** Pastes the item picked up into [dir], asking first when its name is taken there. */
+    /** An item to paste under [name], over what has that name there when [replace]; an empty name is still to be found. */
+    private data class Plan(val item: FileClipboard.Item, val name: String, val replace: Boolean = false)
+
+    /**
+     * Pastes the items picked up into [dir], one at a time as one operation, asking once for
+     * all whose names are taken there: Replace, Keep both, or Skip them (the others are pasted
+     * all the same). A copy beside itself, or an item whose name an earlier one takes, keeps both.
+     */
     fun paste(dir: File) {
         val clip = FileClipboard.clip ?: return toast(activity.getString(R.string.paste_dropped))
         if (FileWork.busy) return toast(activity.getString(R.string.file_busy))
         val targetDir = dir.absolutePath
-        if (Transfer.isWithin(targetDir, clip.path, ignoreCase = true)) return toast(activity.getString(R.string.paste_into_itself))
-        val sameFolder = Transfer.parentOf(clip.path) == targetDir
-        if (clip.move && sameFolder) return toast(activity.getString(R.string.paste_already_here))
+        if (clip.items.any { Transfer.isWithin(targetDir, it.path, ignoreCase = true) }) return toast(activity.getString(R.string.paste_into_itself))
+        // Moving what is already here leaves it where it is.
+        val items = if (clip.move) clip.items.filter { Transfer.parentOf(it.path) != targetDir } else clip.items
+        if (items.isEmpty()) return toast(activity.getString(R.string.paste_already_here))
         activity.lifecycleScope.launch {
-            val target = Transfer.child(targetDir, clip.name)
-            // The name is taken as the folder's storage tells: most storage ignores case.
+            // Names are taken as the folder's storage tells: most storage ignores case.
             val found = withContext(AppDispatchers.io) {
                 runCatching {
-                    if (FileSpaces.of(clip.path).stat(clip.path) == null) return@runCatching null
                     val space = FileSpaces.of(targetDir)
-                    val there = space.stat(target)
-                    val names = if (there == null) emptySet() else space.list(targetDir).map { it.name.lowercase(Locale.ROOT) }.toSet()
+                    val there = items.filter { FileSpaces.of(it.path).stat(it.path) != null }
+                        .associateWith { space.stat(Transfer.child(targetDir, it.name)) }
+                    val twins = there.keys.map { it.name.lowercase(Locale.ROOT) }.distinct().size < there.size
+                    val names = if (there.values.all { it == null } && !twins) emptySet() else space.list(targetDir).map { it.name.lowercase(Locale.ROOT) }.toSet()
                     there to names
                 }
             }
             val (there, names) = found.getOrElse {
                 toast(activity.getString(R.string.file_failed, describe(it)))
                 return@launch
-            } ?: run {
-                toast(activity.getString(R.string.paste_gone, clip.name))
+            }
+            if (there.isEmpty()) {
+                toast(activity.getString(R.string.paste_gone, items.first().name))
                 drop()
                 return@launch
             }
-            fun keepBoth() = Transfer.keepBothName(clip.name, clip.isDir) { it.lowercase(Locale.ROOT) in names }
-            when {
-                there == null -> transfer(clip, targetDir, clip.name, replace = false)
-                // A copy beside itself is a second copy.
-                sameFolder -> transfer(clip, targetDir, keepBoth(), replace = false)
-                else -> AlertDialog.Builder(activity).apply {
-                    setTitle(activity.getString(R.string.clash_title, clip.name))
-                    // Folders are replaced whole, never merged.
-                    if (there.isDirectory) setMessage(R.string.clash_folder)
-                    // Never replacing what holds the item: it would go with it.
-                    if (!Transfer.isWithin(clip.path, target, ignoreCase = true)) {
-                        setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, clip.name, replace = true) }
-                    }
-                    setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, keepBoth(), replace = false) }
-                    setNegativeButton(R.string.clash_skip, null)
-                }.show()
+            val plans = ArrayList<Plan>()
+            val clashes = ArrayList<FileClipboard.Item>()
+            val claimed = HashSet<String>()
+            for ((item, node) in there) {
+                val first = claimed.add(item.name.lowercase(Locale.ROOT))
+                when {
+                    // A copy beside itself is a second copy, as is an item whose name an earlier one takes.
+                    !first || (node != null && Transfer.parentOf(item.path) == targetDir) -> plans += Plan(item, "")
+                    node == null -> plans += Plan(item, item.name)
+                    else -> clashes += item
+                }
             }
+            val taken = (names + claimed).toHashSet()
+            fun keepBoth(item: FileClipboard.Item) =
+                Transfer.keepBothName(item.name, item.isDir) { it.lowercase(Locale.ROOT) in taken }.also { taken += it.lowercase(Locale.ROOT) }
+            for (i in plans.indices) if (plans[i].name.isEmpty()) plans[i] = plans[i].copy(name = keepBoth(plans[i].item))
+            if (clashes.isEmpty()) return@launch transfer(clip.move, targetDir, plans)
+            AlertDialog.Builder(activity).apply {
+                setTitle(
+                    if (clashes.size == 1) activity.getString(R.string.clash_title, clashes[0].name)
+                    else activity.resources.getQuantityString(R.plurals.clash_many_title, clashes.size, clashes.size)
+                )
+                // Folders are replaced whole, never merged.
+                if (clashes.any { there[it]?.isDirectory == true }) setMessage(R.string.clash_folder)
+                // Never replacing what holds an item: it would go with it.
+                if (clashes.none { Transfer.isWithin(it.path, Transfer.child(targetDir, it.name), ignoreCase = true) }) {
+                    setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, it.name, replace = true) }) }
+                }
+                setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip.move, targetDir, plans + clashes.map { Plan(it, keepBoth(it)) }) }
+                setNegativeButton(R.string.clash_skip) { _, _ -> if (plans.isNotEmpty()) transfer(clip.move, targetDir, plans) }
+            }.show()
         }
     }
 
-    private fun transfer(clip: FileClipboard.Clip, targetDir: String, name: String, replace: Boolean) {
-        val kind = if (clip.move) FileWork.Kind.MOVE else FileWork.Kind.COPY
-        start(kind, clip.name) { p ->
-            val target = Transfer.child(targetDir, name)
-            val result = Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable).run(clip.path, targetDir, name, clip.move, replace)
-            // What was kept for a replaced item goes with it.
-            if (replace) library.removePathsUnder(target)
-            if (clip.move) {
-                if (result.sourceLeft) {
-                    FileClipboard.clip = null
-                } else {
-                    followMove(clip.path, target)
-                    if (FileClipboard.clip?.path == target) FileClipboard.clip = null
+    private fun transfer(move: Boolean, targetDir: String, plans: List<Plan>) {
+        val kind = if (move) FileWork.Kind.MOVE else FileWork.Kind.COPY
+        start(kind, plans.first().item.name) { p ->
+            var sourceLeft = false
+            val gone = ArrayList<String>()
+            val sources = plans.map { it.item.path }.toSet()
+            val targets = HashSet<String>()
+            for ((i, plan) in plans.withIndex()) {
+                if (plans.size > 1) {
+                    if (!p.alive) throw CancellationException()
+                    p.item(plan.item.name, i, plans.size)
+                }
+                val source = plan.item.path
+                val target = Transfer.child(targetDir, plan.name)
+                val result = Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable)
+                    .run(source, targetDir, plan.name, move, plan.replace)
+                targets += target
+                // What was kept for a replaced item goes with it.
+                if (plan.replace) library.removePathsUnder(target)
+                if (move) {
+                    if (result.sourceLeft) {
+                        sourceLeft = true
+                    } else {
+                        followMove(source, target)
+                        gone += source
+                    }
                 }
             }
-            FileWork.Outcome.Done(target, result.sourceLeft, gone = clip.path.takeIf { clip.move && !result.sourceLeft })
+            // A move is pasted once: its items, wherever they ended, leave the clipboard.
+            if (move) FileClipboard.clip?.let { c -> if (c.items.all { it.path in sources || it.path in targets }) FileClipboard.clip = null }
+            FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, plans.size)
         }
     }
 
@@ -232,7 +290,8 @@ internal class FileActions(
         library.replacePath(old, new)
         prefs.followPath(old, new)
         FileClipboard.clip?.let { c ->
-            if (Transfer.isWithin(c.path, old)) FileClipboard.clip = c.copy(path = new + c.path.removePrefix(old))
+            if (c.items.none { Transfer.isWithin(it.path, old) }) return@let
+            FileClipboard.clip = c.copy(items = c.items.map { if (Transfer.isWithin(it.path, old)) it.copy(path = new + it.path.removePrefix(old)) else it })
         }
     }
 
@@ -242,7 +301,10 @@ internal class FileActions(
      */
     private fun forget(path: String) {
         BookCaches.deleted(activity, library, path)
-        FileClipboard.clip?.let { if (Transfer.isWithin(it.path, path)) FileClipboard.clip = null }
+        FileClipboard.clip?.let { c ->
+            val left = c.items.filterNot { Transfer.isWithin(it.path, path) }
+            if (left.size < c.items.size) FileClipboard.clip = if (left.isEmpty()) null else c.copy(items = left)
+        }
     }
 
     private fun start(kind: FileWork.Kind, name: String, work: (FileWork.Progress) -> FileWork.Outcome.Done) {
@@ -285,8 +347,8 @@ internal class FileActions(
     }
 
     private fun showProgress(status: FileWork.Status) {
-        val dialog = progress ?: makeProgress(status.kind).also { progress = it }
-        progressName?.text = status.name
+        val dialog = progress ?: makeProgress(status).also { progress = it }
+        progressName?.text = FileWorkService.nameOf(activity, status)
         val bar = progressBar ?: return
         val amount = progressAmount ?: return
         if (status.total > 0) {
@@ -312,14 +374,16 @@ internal class FileActions(
         progressCancel?.visibility = if (status.stoppable) View.VISIBLE else View.GONE
     }
 
-    private fun makeProgress(kind: FileWork.Kind): AlertDialog {
+    private fun makeProgress(status: FileWork.Status): AlertDialog {
+        val kind = status.kind
         val view = activity.layoutInflater.inflate(R.layout.dialog_progress, null)
         progressName = view.findViewById(R.id.progress_name)
         progressBar = view.findViewById(R.id.progress_bar)
         progressAmount = view.findViewById(R.id.progress_amount)
-        // Only copies stop part way: a share deletes or renames in one request, and copies
-        // made by a server in one request hide Cancel while under way ([FileWork.Status.stoppable]).
-        val cancelable = kind == FileWork.Kind.COPY || kind == FileWork.Kind.MOVE
+        // Only copies stop part way, and several items between two: a share deletes or renames
+        // in one request, and copies made by a server in one request hide Cancel while under
+        // way ([FileWork.Status.stoppable]).
+        val cancelable = kind == FileWork.Kind.COPY || kind == FileWork.Kind.MOVE || status.count > 1
         val builder = AlertDialog.Builder(activity)
             .setTitle(
                 when (kind) {
@@ -353,9 +417,10 @@ internal class FileActions(
     private fun tell(status: FileWork.Status, outcome: FileWork.Outcome) {
         val text = when (outcome) {
             is FileWork.Outcome.Done -> when (status.kind) {
-                FileWork.Kind.COPY -> activity.getString(R.string.file_copied)
-                FileWork.Kind.MOVE -> activity.getString(if (outcome.sourceLeft) R.string.file_source_left else R.string.file_moved)
-                FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, 1, 1)
+                FileWork.Kind.COPY -> counted(R.string.file_copied, R.plurals.copied_count, outcome.count)
+                FileWork.Kind.MOVE ->
+                    if (outcome.sourceLeft) activity.getString(R.string.file_source_left) else counted(R.string.file_moved, R.plurals.moved_count, outcome.count)
+                FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, outcome.count, outcome.count)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
             }
             FileWork.Outcome.Canceled -> activity.getString(R.string.file_canceled)
@@ -363,6 +428,10 @@ internal class FileActions(
         }
         toast(text)
     }
+
+    /** [one] for a single item, else [many] counting [count]. */
+    private fun counted(one: Int, many: Int, count: Int): String =
+        if (count == 1) activity.getString(one) else activity.resources.getQuantityString(many, count, count)
 
     /** [error] for the user: what went wrong, naming items without their paths. */
     private fun describe(error: Throwable): String = when {

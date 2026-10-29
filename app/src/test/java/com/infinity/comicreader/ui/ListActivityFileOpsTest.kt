@@ -368,7 +368,7 @@ class ListActivityFileOpsTest {
         idle()
         assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
         assertEquals(View.GONE, activity.paste().visibility)
-        assertEquals(book.absolutePath, FileClipboard.clip?.path)
+        assertEquals(book.absolutePath, FileClipboard.clip?.items?.single()?.path)
 
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
         idle()
@@ -600,6 +600,67 @@ class ListActivityFileOpsTest {
         activity.paste().performClick()
         settle { File(shelf, "one (2).cbz").exists() }
         assertArrayEquals(bytes, File(shelf, "one (2).cbz").readBytes())
+    }
+
+    /** Picks up [files] together, as a selection of them does. */
+    private fun pickUp(vararg files: File, move: Boolean) {
+        FileClipboard.clip = FileClipboard.Clip(files.map { FileClipboard.Item(it.absolutePath, it.isDirectory) }, move)
+    }
+
+    @Test
+    fun severalItemsMoveAsOneOperationAndTakeTheLibraryAlong() {
+        val two = File(shelf, "two.cbz").apply { writeBytes(ByteArray(300) { 3 }) }
+        val sub = File(shelf, "Sub").apply { mkdirs() }
+        File(sub, "inner.cbz").writeBytes(ByteArray(10))
+        pickUp(book, two, sub, move = true)
+        val activity = launch()
+        activity.open(other)
+        assertEquals(context.resources.getQuantityString(R.plurals.paste_count, 3, 3), activity.paste().contentDescription)
+        activity.paste().performClick()
+        settle { !book.exists() && !two.exists() && !sub.exists() }
+        assertEquals(listOf("Sub", "one.cbz", "two.cbz"), other.list()!!.sorted())
+        assertTrue(File(other, "Sub/inner.cbz").isFile)
+        assertTrue(library.isFavorite(bookId(File(other, "one.cbz"))))
+        assertEquals(context.resources.getQuantityString(R.plurals.moved_count, 3, 3), ShadowToast.getTextOfLatestToast())
+        // A move is pasted once.
+        assertNull(FileClipboard.clip)
+    }
+
+    @Test
+    fun takenNamesAreAskedOnceAndSkippingPastesTheRest() {
+        val two = File(shelf, "two.cbz").apply { writeBytes(ByteArray(300) { 3 }) }
+        val three = File(shelf, "three.cbz").apply { writeBytes(ByteArray(200) { 4 }) }
+        File(other, "one.cbz").writeBytes(ByteArray(3))
+        File(other, "two.cbz").writeBytes(ByteArray(3))
+        pickUp(book, two, three, move = false)
+        val activity = launch()
+        activity.open(other)
+        val ask = activity.pasteAsking()
+        assertEquals(context.resources.getQuantityString(R.plurals.clash_many_title, 2, 2), ask.title())
+        ask.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        settle { File(other, "three.cbz").exists() }
+        assertEquals(3L, File(other, "one.cbz").length())
+        assertEquals(context.getString(R.string.file_copied), ShadowToast.getTextOfLatestToast())
+
+        // Keep both names each anew.
+        activity.pasteAsking().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
+        settle { File(other, "one (2).cbz").exists() && File(other, "two (2).cbz").exists() && File(other, "three (2).cbz").exists() }
+        assertArrayEquals(bytes, File(other, "one (2).cbz").readBytes())
+        assertEquals(context.resources.getQuantityString(R.plurals.copied_count, 3, 3), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun itemsOfOneNameFromTwoFoldersKeepBoth() {
+        val twin = File(other, "one.cbz").apply { writeBytes(ByteArray(40) { 9 }) }
+        val target = File(shelf, "Target").apply { mkdirs() }
+        pickUp(book, twin, move = false)
+        val activity = launch()
+        activity.open(target)
+        activity.paste().performClick()
+        settle { target.list()!!.size == 2 }
+        assertEquals(listOf("one (2).cbz", "one.cbz"), target.list()!!.sorted())
+        assertArrayEquals(bytes, File(target, "one.cbz").readBytes())
+        assertEquals(40L, File(target, "one (2).cbz").length())
     }
 
     @Test

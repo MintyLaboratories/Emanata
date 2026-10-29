@@ -1651,7 +1651,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
         if (canChangeFiles(entry)) {
             val more = moreActions(entry)
-            op(R.id.file_op_delete, R.drawable.ic_delete, R.string.delete) { fileActions.delete(entry.file, entry.isDir) }
+            op(R.id.file_op_delete, R.drawable.ic_delete, R.string.delete) { fileActions.delete(listOf(FileClipboard.Item(entry.path, entry.isDir))) }
             op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
             op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
             op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
@@ -1692,7 +1692,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Puts [entry] on the clipboard for Paste, saying how Paste works. */
     private fun pickUp(entry: BookEntry, move: Boolean) {
-        fileActions.pickUp(entry.file, entry.isDir, move)
+        fileActions.pickUp(listOf(FileClipboard.Item(entry.path, entry.isDir)), move)
         if (pasteFab.visibility == View.VISIBLE) pasteFab.post { showPasteBubble() } else toast(R.string.paste_hint_browse)
     }
 
@@ -1701,7 +1701,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val clip = FileClipboard.clip
         val shown = clip != null && mode == TAB_BROWSE && currentDir != null
         pasteFab.visibility = if (shown) View.VISIBLE else View.GONE
-        pasteFab.contentDescription = clip?.let { getString(R.string.paste_named, it.name) } ?: getString(R.string.paste)
+        pasteFab.contentDescription = when {
+            clip == null -> getString(R.string.paste)
+            clip.count == 1 -> getString(R.string.paste_named, clip.name)
+            else -> resources.getQuantityString(R.plurals.paste_count, clip.count, clip.count)
+        }
         if (!shown) hidePasteBubble()
     }
 
@@ -1737,7 +1741,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val done = outcome as? FileWork.Outcome.Done
         val path = done?.path
         // Forward crumbs never lead into what is gone.
-        done?.gone?.let { trail = MissingFolder.trailAfter(trail, it) }
+        done?.gone?.forEach { trail = MissingFolder.trailAfter(trail, it) }
         val dir = currentDir
         if (mode == TAB_BROWSE && dir != null) {
             loadDirectory(dir, highlight = path?.takeIf { Transfer.parentOf(it) == dir.absolutePath })

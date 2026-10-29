@@ -333,6 +333,31 @@
     <string name="delete_item_title">Delete %1$s?</string>
     <string name="delete_file_msg">This permanently deletes it from %1$s.</string>
     <string name="delete_folder_msg">This permanently deletes the folder and everything in it from %1$s.</string>
+    <plurals name="delete_items_title">
+        <item quantity="one">Delete %1$d item?</item>
+        <item quantity="other">Delete %1$d items?</item>
+    </plurals>
+    <plurals name="delete_items_msg">
+        <item quantity="one">This permanently deletes %1$d item from %2$s, a folder with everything in it.</item>
+        <item quantity="other">This permanently deletes %1$d items from %2$s, folders with everything in them.</item>
+    </plurals>
+    <plurals name="clash_many_title">
+        <item quantity="one">%1$d item is already here</item>
+        <item quantity="other">%1$d items are already here</item>
+    </plurals>
+    <plurals name="copied_count">
+        <item quantity="one">Copied %1$d item</item>
+        <item quantity="other">Copied %1$d items</item>
+    </plurals>
+    <plurals name="moved_count">
+        <item quantity="one">Moved %1$d item</item>
+        <item quantity="other">Moved %1$d items</item>
+    </plurals>
+    <plurals name="paste_count">
+        <item quantity="one">Paste %1$d item</item>
+        <item quantity="other">Paste %1$d items</item>
+    </plurals>
+    <string name="file_item_of">%1$s (%2$d of %3$d)</string>
     <string name="new_folder_hint">Folder name</string>
     <string name="folder_created">Folder created</string>
     <string name="startup_folder_set">Startup folder set</string>

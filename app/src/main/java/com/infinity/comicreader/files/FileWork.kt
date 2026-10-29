@@ -24,10 +24,16 @@ object FileWork {
 
     sealed class Outcome {
         /**
-         * Finished: [path] is the item to show, if any; [gone] what is no longer where it was
-         * (deleted, or moved away); [sourceLeft] when a move could not delete its source.
+         * Finished with [count] items: [path] is the item to show, if any; [gone] what is no
+         * longer where it was (deleted, or moved away); [sourceLeft] when a move could not
+         * delete a source.
          */
-        data class Done(val path: String?, val sourceLeft: Boolean = false, val gone: String? = null) : Outcome()
+        data class Done(
+            val path: String?,
+            val sourceLeft: Boolean = false,
+            val gone: List<String> = emptyList(),
+            val count: Int = 1
+        ) : Outcome()
 
         object Canceled : Outcome()
 
@@ -35,9 +41,9 @@ object FileWork {
     }
 
     /**
-     * An operation on [name], [done] of [total] bytes (0 when it counts none), [started] by
-     * [clock]; [stoppable] while canceling can stop the step under way; finished once
-     * [outcome] is set.
+     * An operation on [name], item [index] (from 0) of [count], [done] of [total] bytes of
+     * it (0 when it counts none), [started] by [clock]; [stoppable] while canceling can stop
+     * the step under way; finished once [outcome] is set.
      */
     data class Status(
         val kind: Kind,
@@ -46,7 +52,9 @@ object FileWork {
         val done: Long = 0,
         val total: Long = 0,
         val stoppable: Boolean = true,
-        val outcome: Outcome? = null
+        val outcome: Outcome? = null,
+        val index: Int = 0,
+        val count: Int = 1
     )
 
     /** What an operation's work hears from and tells the runner. */
@@ -58,6 +66,9 @@ object FileWork {
 
         /** Tells whether canceling can stop the step under way: not a server copying a file in one request. */
         fun stoppable(can: Boolean)
+
+        /** Starts on item [name], [index] (from 0) of [count]: its progress counts from nothing. */
+        fun item(name: String, index: Int, count: Int)
     }
 
     @Volatile
@@ -104,6 +115,11 @@ object FileWork {
 
                 override fun stoppable(can: Boolean) {
                     flow.update { it?.copy(stoppable = can) }
+                }
+
+                override fun item(name: String, index: Int, count: Int) {
+                    reported = 0L
+                    flow.update { it?.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true) }
                 }
             }
             val outcome = try {

@@ -113,7 +113,7 @@ class FileWorkService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(if (status?.kind == FileWork.Kind.MOVE) R.drawable.ic_drive_file_move else R.drawable.ic_content_copy)
             .setContentTitle(getString(titleOf(status?.kind)))
-            .setContentText(status?.name)
+            .setContentText(status?.let { nameOf(this, it) })
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -126,7 +126,8 @@ class FileWorkService : Service() {
             builder.setProgress(0, 0, true)
         }
         val copying = status?.kind == FileWork.Kind.COPY || status?.kind == FileWork.Kind.MOVE
-        if (copying && status?.stoppable == true) {
+        // Several items stop between two.
+        if ((copying || (status?.count ?: 1) > 1) && status?.stoppable == true) {
             val cancel = PendingIntent.getService(
                 this, 0, Intent(this, FileWorkService::class.java).setAction(ACTION_CANCEL),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -157,6 +158,10 @@ class FileWorkService : Service() {
         private const val PROGRESS_STEPS = 1000
 
         private val TYPE = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
+
+        /** What [status] works on: the item's name, and which of how many when there are several. */
+        fun nameOf(context: Context, status: FileWork.Status): String =
+            if (status.count > 1) context.getString(R.string.file_item_of, status.name, status.index + 1, status.count) else status.name
 
         /** Starts the service for the operation that just started; ignored where Android refuses it. */
         fun start(context: Context) {

@@ -74,6 +74,7 @@ class MissingBooksActivityTest {
         forget.performClick()
         idle()
         val confirm = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(confirm.findViewById<TextView>(android.R.id.message)!!.text.startsWith("Its "))
         confirm.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
         assertTrue(library.hasData(gone.id))

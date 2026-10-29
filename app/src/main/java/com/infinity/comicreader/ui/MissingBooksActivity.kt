@@ -129,7 +129,7 @@ class MissingBooksActivity : AppCompatActivity() {
         if (ids.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle(resources.getQuantityString(R.plurals.missing_confirm_title, ids.size, ids.size))
-            .setMessage(R.string.missing_confirm_msg)
+            .setMessage(resources.getQuantityString(R.plurals.missing_confirm_msg, ids.size))
             .setPositiveButton(R.string.missing_forget_action) { _, _ -> forget(ids) }
             .setNegativeButton(R.string.cancel, null)
             .show()

@@ -194,7 +194,10 @@
         <item quantity="one">Forget %1$d book?</item>
         <item quantity="other">Forget %1$d books?</item>
     </plurals>
-    <string name="missing_confirm_msg">Their favorites, read marks, history, bookmarks, hidden pages and settings are deleted. This cannot be undone.</string>
+    <plurals name="missing_confirm_msg">
+        <item quantity="one">Its favorite and read marks, history, bookmarks, hidden pages and settings are deleted. This cannot be undone.</item>
+        <item quantity="other">Their favorite and read marks, history, bookmarks, hidden pages and settings are deleted. This cannot be undone.</item>
+    </plurals>
     <string name="missing_forget_action">Forget</string>
     <plurals name="missing_forgotten">
         <item quantity="one">Forgot %1$d book</item>

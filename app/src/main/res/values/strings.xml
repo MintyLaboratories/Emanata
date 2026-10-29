@@ -178,7 +178,7 @@
     <string name="delete_selected_n">Delete %1$d (%2$s)</string>
     <!-- Forget missing books: books the library keeps data for that no location holds. -->
     <string name="missing_scanning">%1$s · %2$d folders · %3$d books</string>
-    <string name="missing_checking">Checking books not found yet…</string>
+    <string name="missing_checking">Checking books not found yet: %1$d of %2$d</string>
     <string name="missing_none">Every book your library keeps is still there.</string>
     <plurals name="missing_found">
         <item quantity="one">%1$d book was found nowhere.</item>
@@ -186,6 +186,9 @@
     </plurals>
     <string name="missing_skipped">Not reached: %1$s. Books last seen there are kept.</string>
     <string name="missing_maybe_moved">Not ticked: it may have moved to a location not reached</string>
+    <string name="missing_changed">Not ticked: another file is at this path now, maybe this book edited</string>
+    <string name="missing_unknown_title">Unknown book %1$s</string>
+    <string name="missing_unknown_place">Not ticked: where it was is not known</string>
     <string name="missing_forget">Forget selected</string>
     <string name="missing_forget_n">Forget %1$d</string>
     <string name="missing_select_all">Select all</string>

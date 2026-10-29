@@ -32,9 +32,9 @@ import java.io.File
 /**
  * "Forget missing books" (Settings › Your data): scans every location for the books the
  * library keeps data for ([MissingBooks]), showing how far it got, with Cancel; then lists
- * those found nowhere for review. They are ticked only when every location was reached;
- * otherwise the locations not reached are named and each book says it may have moved
- * there. Forgetting asks first.
+ * those found nowhere for review. They are ticked only when every location was reached
+ * ([MissingBooks.Result.ticked]); otherwise the locations not reached are named and each
+ * book says it may have moved there. Forgetting asks first.
  */
 class MissingBooksActivity : AppCompatActivity() {
 
@@ -84,7 +84,7 @@ class MissingBooksActivity : AppCompatActivity() {
             val found = withContext(AppDispatchers.io) {
                 val job = coroutineContext
                 MissingBooks(library, locations, alive = { job.isActive }, progress = { p ->
-                    runOnUiThread { if (!isFinishing) summary.text = getString(R.string.missing_scanning, p.location, p.folders, p.books) }
+                    runOnUiThread { if (!isFinishing) summary.text = progressText(p) }
                 }).run()
             } ?: return@launch
             show(found)
@@ -97,7 +97,7 @@ class MissingBooksActivity : AppCompatActivity() {
         progress.visibility = View.GONE
         selected.clear()
         if (ticked != null) found.missing.filter { it.id in ticked }.mapTo(selected) { it.id }
-        else if (found.complete) found.missing.mapTo(selected) { it.id }
+        else found.missing.filter { found.ticked(it) }.mapTo(selected) { it.id }
         val lines = ArrayList<String>()
         if (found.missing.isNotEmpty()) lines += resources.getQuantityString(R.plurals.missing_found, found.missing.size, found.missing.size)
         if (!found.complete) lines += getString(R.string.missing_skipped, found.skipped.joinToString(", "))
@@ -147,6 +147,10 @@ class MissingBooksActivity : AppCompatActivity() {
         }
     }
 
+    private fun progressText(p: MissingBooks.Progress): String =
+        if (p.checking > 0) getString(R.string.missing_checking, p.checked, p.checking)
+        else getString(R.string.missing_scanning, p.location, p.folders, p.books)
+
     /** What is kept for [book], as a short list. */
     private fun keptText(book: MissingBooks.Missing): String {
         val k = book.kept
@@ -170,10 +174,16 @@ class MissingBooksActivity : AppCompatActivity() {
             val found = result ?: return
             val book = found.missing[position]
             val v = holder.itemView
-            val path = book.seen.path
-            v.findViewById<TextView>(R.id.title).text = File(path).name
-            val folder = Crumbs.of(File(path).parent.orEmpty(), roots).joinToString(" / ") { it.label }
-            val lines = listOf(folder, keptText(book)) + if (found.complete) emptyList() else listOf(getString(R.string.missing_maybe_moved))
+            val path = book.seen?.path
+            v.findViewById<TextView>(R.id.title).text = if (path != null) File(path).name else getString(R.string.missing_unknown_title, book.id.hex)
+            val folder = if (path != null) Crumbs.of(File(path).parent.orEmpty(), roots).joinToString(" / ") { it.label } else null
+            val note = when {
+                book.why == MissingBooks.Why.UNKNOWN -> R.string.missing_unknown_place
+                book.why == MissingBooks.Why.CHANGED -> R.string.missing_changed
+                !found.complete -> R.string.missing_maybe_moved
+                else -> null
+            }
+            val lines = listOfNotNull(folder, keptText(book), note?.let { getString(it) })
             v.findViewById<TextView>(R.id.subtitle).apply {
                 maxLines = lines.size
                 ellipsize = android.text.TextUtils.TruncateAt.END

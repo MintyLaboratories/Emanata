@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.json.JSONArray
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -116,11 +117,91 @@ class MissingBooksTest {
     }
 
     @Test
-    fun progressCountsFoldersAndBooks() {
+    fun progressCountsFoldersAndBooksButNotLooseImages() {
         keep(File(shelf, "A/a.cbz"), 300, 3)
         keep(File(shelf, "B/b.cbz"), 400, 5)
+        File(shelf, "B/photo.jpg").writeBytes(ByteArray(100) { 2 })
         val seen = ArrayList<MissingBooks.Progress>()
         MissingBooks(library, listOf(device), progress = { synchronized(seen) { seen += it } }).run()
         assertEquals(MissingBooks.Progress("Device", 3, 2), seen.last())
+    }
+
+    @Test
+    fun checkingUnknownFilesShowsHowFarItGot() {
+        val moved = keep(File(shelf, "a.cbz"), 300, 3)
+        val gone = keep(File(shelf, "b.cbz"), 400, 5)
+        File(gone.path).delete()
+        // Rewritten under another name: the index does not know it there.
+        val bytes = File(moved.path).readBytes()
+        File(moved.path).delete()
+        File(shelf, "c.cbz").writeBytes(bytes)
+        val seen = ArrayList<MissingBooks.Progress>()
+
+        val result = MissingBooks(library, listOf(device), progress = { synchronized(seen) { seen += it } }, lanes = 2).run()!!
+
+        assertEquals(listOf(gone.id), result.missing.map { it.id })
+        assertEquals(File(shelf, "c.cbz").path, library.pathOf(moved.id))
+        // Two last-seen paths, then the one file of a missing book's size.
+        val checks = seen.filter { it.checking > 0 }
+        assertEquals(MissingBooks.Progress("", 1, 1, 0, 3), checks.first())
+        assertEquals(MissingBooks.Progress("", 1, 1, 3, 3), checks.last())
+    }
+
+    @Test
+    fun aBookOfUnknownSizeIsLookedForWhereItWasOnlyAndLooseImagesAreNeverRead() {
+        // Kept without a size: no file was ever read for it.
+        val gone = BookRef(BookId(0xbeef), File(shelf, "gone.cbz").path)
+        library.setRead(gone, true)
+        val photo = File(shelf, "photo.jpg").apply { writeBytes(ByteArray(100) { 2 }) }
+        val other = File(shelf, "other.cbz").apply { writeBytes(ByteArray(700) { 1 }) }
+        val image = keep(File(shelf, "Pics/page.png"), 200, 13)
+
+        val result = MissingBooks(library, listOf(device)).run()!!
+
+        assertEquals(listOf(gone.id), result.missing.map { it.id })
+        assertNull(BookIds.known(photo.path, photo.length(), photo.lastModified()))
+        assertNull(BookIds.known(other.path, other.length(), other.lastModified()))
+        // An image book is found where it was seen, not by the walk.
+        assertEquals(image.path, library.pathOf(image.id))
+    }
+
+    @Test
+    fun aBookWhosePathHoldsAnotherFileNowIsListedUnticked() {
+        val edited = keep(File(shelf, "edited.cbz"), 300, 3)
+        File(edited.path).writeBytes(ByteArray(320) { 9 })
+
+        val result = MissingBooks(library, listOf(device)).run()!!
+
+        assertTrue(result.complete)
+        val book = result.missing.single()
+        assertEquals(MissingBooks.Why.CHANGED, book.why)
+        assertFalse(result.ticked(book))
+    }
+
+    @Test
+    fun aBookKeptWithNoPlaceKnownIsListedUnticked() {
+        val id = BookId(0xf00d)
+        context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().putString("read", JSONArray(listOf(id.hex)).toString()).commit()
+
+        val result = MissingBooks(library, listOf(device)).run()!!
+
+        val book = result.missing.single()
+        assertEquals(id, book.id)
+        assertNull(book.seen)
+        assertEquals(MissingBooks.Why.UNKNOWN, book.why)
+        assertFalse(result.ticked(book))
+    }
+
+    @Test
+    fun aDeviceThatCannotBeListedIsSkippedLikeAnyLocation() {
+        val gone = keep(File(shelf, "gone.cbz"), 500, 7)
+        File(gone.path).delete()
+        val unlisted = MissingBooks.Location(BookLocation.DEVICE, "Device", File(tmp.root, "absent").path)
+
+        val result = MissingBooks(library, listOf(unlisted)).run()!!
+
+        assertEquals(listOf("Device"), result.skipped)
+        assertTrue(result.missing.isEmpty())
+        assertTrue(library.hasData(gone.id))
     }
 }

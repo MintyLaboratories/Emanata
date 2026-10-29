@@ -8,15 +8,21 @@ import java.nio.file.Files
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * "Forget missing books": finds the books [library] keeps data for that no reachable
- * location holds any more. Every location is walked; a file the [BookIds] index knows at
- * its size and time costs no read, and an unknown file is hashed only when its size is
- * that of a book still missing (a Book ID holds its file's size). A book found anywhere
- * reachable notes where ([Library.seenAll]); one last seen in a location that cannot be
- * reached now (a share offline, storage not mounted) is left be, the location named in
- * [Result.skipped]. A book last seen outside every location is looked for at its path.
+ * location holds any more. Every location is walked for archives and PDFs; a file the
+ * [BookIds] index knows at its size and time costs no read, and an unknown one is hashed
+ * only when its size is that of a book still missing (a Book ID holds its file's size).
+ * Books not found so are looked for where last seen ([lanes] at a time, as are the unknown
+ * files hashed): loose images, books in hidden folders or outside every location, and books
+ * whose size is not known. A book found anywhere reachable notes where ([Library.seenAll]);
+ * one last seen in a location that cannot be reached now (a share offline, storage not
+ * mounted, a listing that failed) is left be, the location named in [Result.skipped].
  * Blocking; stops, returning null, once [alive] turns false.
  */
 class MissingBooks(
@@ -29,22 +35,34 @@ class MissingBooks(
     /** A place books are kept: [key] as [BookLocation] names it, [name] as shown, [root] its top folder. */
     data class Location(val key: String, val name: String, val root: String)
 
-    /** How far the scan is: in [location], [folders] folders and [books] books seen so far. */
-    data class Progress(val location: String, val folders: Int, val books: Int)
+    /**
+     * How far the scan is: in [location], [folders] folders and [books] books seen so far;
+     * then, once every location is walked, [checked] of [checking] books and files looked at.
+     */
+    data class Progress(val location: String, val folders: Int, val books: Int, val checked: Int = 0, val checking: Int = 0)
 
-    /** A book kept for, found nowhere: its [id], where it was last [seen], what is [kept] for it. */
-    data class Missing(val id: BookId, val seen: Library.Seen, val kept: Library.Kept)
+    /** Why a book is listed: [GONE] from where it was last seen, a [CHANGED] file there now, or no place known ([UNKNOWN]). */
+    enum class Why { GONE, CHANGED, UNKNOWN }
+
+    /** A book kept for, found nowhere: its [id], where it was last [seen] (null when not known), what is [kept] for it, [why]. */
+    data class Missing(val id: BookId, val seen: Library.Seen?, val kept: Library.Kept, val why: Why = Why.GONE)
 
     /**
-     * What a scan found: [missing] books, ticked for forgetting by default only when every
-     * location was reached ([complete]); the names of the locations [skipped].
+     * What a scan found: [missing] books, of which those [ticked] are ticked for forgetting
+     * by default: books gone from where they were seen, and only when every location was
+     * reached ([complete]); the names of the locations [skipped].
      */
     data class Result(val missing: List<Missing>, val skipped: List<String>, val found: Int) {
         val complete: Boolean get() = skipped.isEmpty()
+
+        fun ticked(book: Missing): Boolean = complete && book.why == Why.GONE
     }
 
     /** A file found by the walk. */
     private class Entry(val path: String, val size: Long, val modified: Long)
+
+    /** What is at a book's last-seen path: a file or not, and its ID when it could be read. */
+    private class AtPath(val present: Boolean, val id: BookId?)
 
     private var folders = 0
     private var books = 0
@@ -77,30 +95,56 @@ class MissingBooks(
             }
         }
 
-        // A location not reached: one whose listing failed, or storage not mounted now. The
-        // device's own storage is always reached; a path on it outside every location is
-        // looked at where it is, as is a share removed from the app (nothing is there).
-        fun skipped(s: Library.Seen) = s.location != BookLocation.DEVICE && s.location !in reached && !isRemovedShare(s.location)
+        // A location not reached: one whose listing failed, or storage not mounted now. A
+        // path on the device's own storage outside every location is looked at where it is,
+        // as is a share removed from the app (nothing is there).
+        val failedKeys = failed.mapTo(HashSet()) { it.key }
+        fun skipped(s: Library.Seen) = s.location in failedKeys ||
+            (s.location != BookLocation.DEVICE && s.location !in reached && !isRemovedShare(s.location))
 
-        // Still there where last seen: outside every location, or where the walk did not go (hidden folders).
-        for (id in wanted - foundAt.keys) {
-            if (!alive()) return null
-            val s = seen[id] ?: continue
-            if (skipped(s)) continue
-            if (idAt(s.path) == id) foundAt[id] = s.path
-        }
-
+        // Looked at where last seen: loose images, books outside every location or where the
+        // walk did not go (hidden folders), and books whose size is not known.
+        val atSeen = (wanted - foundAt.keys).filter { id -> seen[id]?.let { !skipped(it) } == true }
         // Unknown files of the size of a book still missing may be it.
         val sizes = library.sizes() + BookIds.sizesOf(wanted)
-        val left = wanted - foundAt.keys
-        val sizesLeft = left.mapNotNullTo(HashSet()) { sizes[it] }
-        val anySize = left.any { it !in sizes }
-        for (f in unknown) {
-            if (!alive()) return null
-            if (foundAt.keys.containsAll(left)) break
-            if (!anySize && f.size !in sizesLeft) continue
-            val id = BookIds.find(Remotes.file(f.path)) ?: continue
-            if (id in left && id !in foundAt) foundAt[id] = f.path
+        fun sizesLeft() = (wanted - foundAt.keys).mapNotNullTo(HashSet()) { sizes[it] }
+        val maybe = sizesLeft().let { left -> unknown.filter { it.size in left } }
+        val checking = atSeen.size + maybe.size
+        var checked = 0
+        fun step(n: Int = 1) {
+            checked += n
+            progress(Progress("", folders, books, checked, checking))
+        }
+        val changed = HashSet<BookId>()
+
+        if (checking > 0) {
+            step(0)
+            val pool = Executors.newFixedThreadPool(lanes) { r -> Thread(r, "missing-books").apply { isDaemon = true } }
+            try {
+                val there = atSeen.map { id -> pool.submit(Callable { atPath(seen.getValue(id).path) }) }
+                for ((i, f) in there.withIndex()) {
+                    val at = await(f) ?: return null
+                    val id = atSeen[i]
+                    if (at is AtPath && at.id == id) foundAt[id] = seen.getValue(id).path
+                    else if (at !is AtPath || at.present) changed += id
+                    step()
+                }
+                val left = sizesLeft()
+                val files = maybe.filter { it.size in left }
+                step(maybe.size - files.size)
+                val all = AtomicBoolean(foundAt.keys.containsAll(wanted))
+                val ids = files.map { e -> pool.submit(Callable { if (all.get()) null else BookIds.find(Remotes.file(e.path)) }) }
+                for ((i, f) in ids.withIndex()) {
+                    val id = await(f) ?: return null
+                    if (id is BookId && id in wanted && id !in foundAt) {
+                        foundAt[id] = files[i].path
+                        if (foundAt.keys.containsAll(wanted)) all.set(true)
+                    }
+                    step()
+                }
+            } finally {
+                pool.shutdownNow()
+            }
         }
 
         library.seenAll(foundAt.filter { (id, path) -> seen[id]?.path != path }.map { (id, path) -> BookRef(id, path) })
@@ -109,30 +153,51 @@ class MissingBooks(
         val skippedNames = LinkedHashSet<String>()
         failed.forEach { skippedNames += it.name }
         for (id in wanted - foundAt.keys) {
-            val s = seen[id] ?: continue
+            val s = seen[id]
+            if (s == null) {
+                missing += Missing(id, null, kept.getValue(id), Why.UNKNOWN)
+                continue
+            }
             if (skipped(s)) {
                 skippedNames += locations.firstOrNull { it.key == s.location }?.name ?: s.location.removePrefix(BookLocation.VOLUME_PREFIX)
                 continue
             }
-            missing += Missing(id, s, kept.getValue(id))
+            missing += Missing(id, s, kept.getValue(id), if (id in changed) Why.CHANGED else Why.GONE)
         }
-        missing.sortBy { it.seen.path.lowercase() }
+        missing.sortWith(compareBy({ it.seen == null }, { it.seen?.path?.lowercase() }))
         return Result(missing, skippedNames.toList(), foundAt.size)
+    }
+
+    /**
+     * What [f] gave once done ([Unit] for nothing, or when it failed); null when no longer
+     * [alive] first.
+     */
+    private fun await(f: Future<*>): Any? {
+        while (true) {
+            if (!alive()) return null
+            try {
+                return f.get(POLL_MS, TimeUnit.MILLISECONDS) ?: Unit
+            } catch (e: TimeoutException) {
+                // Still at it.
+            } catch (e: ExecutionException) {
+                return Unit
+            }
+        }
     }
 
     /** True for [key], a share's location, of a share removed from the app: never reachable again. */
     private fun isRemovedShare(key: String): Boolean =
         key.startsWith(BookLocation.SHARE_PREFIX) && Remotes.share(key.removePrefix(BookLocation.SHARE_PREFIX)) == null
 
-    /** The ID of the file at [path] when it is there; null when it is not or cannot be read. */
-    private fun idAt(path: String): BookId? {
+    /** What is at [path]: whether a file is, and its ID when it can be read. */
+    private fun atPath(path: String): AtPath {
         val file = Remotes.file(path)
-        if (!file.isFile) return null
-        return BookIds.find(file)
+        if (!file.isFile) return AtPath(false, null)
+        return AtPath(true, BookIds.find(file))
     }
 
     /**
-     * Every book file below [location]'s root, its folders listed [lanes] at a time, level
+     * Every archive and PDF below [location]'s root, its folders listed [lanes] at a time, level
      * by level; hidden folders are left out. Null when a listing failed, or once not [alive].
      */
     private fun walk(location: Location): List<Entry>? {
@@ -152,7 +217,7 @@ class MissingBooks(
                     if (e.isDir) {
                         // App folders hold no library; hidden ones are looked for where last seen.
                         if (!e.name.startsWith(".") && !(e.name == "Android" && e.parent == location.root)) next += e.path
-                    } else if (Formats.isOpenable(e.name)) {
+                    } else if (Formats.typeOf(e.name).let { it == EntryType.ARCHIVE || it == EntryType.PDF }) {
                         out += Entry(e.path, e.size, e.modified)
                     }
                 }
@@ -193,6 +258,9 @@ class MissingBooks(
     companion object {
         /** Folders listed at once: a share answers several requests in flight. */
         const val LANES = 4
+
+        /** How often a wait for a book being looked at checks whether the scan was canceled. */
+        private const val POLL_MS = 100L
 
         /** [roots], the storage mounted and the shares, as the locations to scan. */
         fun locations(roots: List<StorageRoot>): List<Location> = roots.map { Location(BookLocation.of(it.path), it.name, it.path) }

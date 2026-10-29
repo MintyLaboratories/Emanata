@@ -213,13 +213,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   what is kept by page follows the page of the same name, else of the same
   place. Never automatic.
 - **Forget missing books** (Settings → Your data) scans every location for the
-  books your library keeps data for, with progress and Cancel; known files cost
-  no reads, and an unseen file is read only when its size is a missing book's.
-  A book found elsewhere notes where. Books found nowhere are listed for review
-  before anything is forgotten. Books last seen in a location not reachable now
-  (a share offline, storage not mounted) are kept and the location named; then
-  the others are listed unticked, as they may have moved there. Books opened
-  from outside every location are looked for where they were.
+  books your library keeps data for, with progress and Cancel; it walks
+  archives and PDFs, known files cost no reads, and an unseen file is read only
+  when its size is a missing book's (several at once). Loose images, books
+  opened from outside every location and books of unknown size are looked for
+  where they were. A book found elsewhere notes where. Books found nowhere are
+  listed for review before anything is forgotten. Books last seen in a location
+  not reachable now (a share offline, storage not mounted, a listing that
+  failed) are kept and the location named; then the others are listed
+  unticked, as they may have moved there. Also unticked: a book whose path
+  holds another file now, and one whose place is not known.
 - Location bar below the tabs as tappable crumbs (`Device / Comics / Series`), roots
   named (`Device`, the SD card's label), at least 48 dp tall; back navigates up,
   never above a root. Going up keeps the deeper folders as gray **forward

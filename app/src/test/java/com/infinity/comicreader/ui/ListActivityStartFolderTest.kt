@@ -185,7 +185,7 @@ class ListActivityStartFolderTest {
     /** The dialog asking to wait for the startup share, if it shows. */
     private fun waitDialog(activity: ListActivity): AlertDialog? =
         (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf {
-            it.isShowing && it.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.text == activity.getString(R.string.network_waiting)
+            it.isShowing && it.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.text == activity.getString(R.string.network_waiting, "Share A")
         }
 
     private fun idleFor(ms: Long) {

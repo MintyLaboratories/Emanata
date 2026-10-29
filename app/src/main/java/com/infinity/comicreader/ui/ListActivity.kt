@@ -711,7 +711,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 delay(SHARE_DIALOG_MS - waitedMs)
                 // Never over the offer to resume reading, nor while the reader it opened is on top.
                 while (resumeOffer?.isShowing == true || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) delay(SHARE_DIALOG_CHECK_MS)
-                if (!wait.waitChosen) asked = askToWait(wait = { wait.waitChosen = true }) { device.complete(Unit) }
+                if (!wait.waitChosen) asked = askToWait(locationName(dir.absolutePath), wait = { wait.waitChosen = true }) { device.complete(Unit) }
             }
             val answer = try {
                 withTimeoutOrNull((Remotes.answerMs - waitedMs).coerceAtLeast(1)) {
@@ -735,12 +735,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     }
 
     /**
-     * Says the startup folder's share is being waited for, offering to wait on ("Wait" only
-     * closes it, the list spinning on; [wait] hears it) or to open the device now ([device]).
+     * Says the startup folder's share [name] is being waited for, offering to wait on ("Wait"
+     * only closes it, the list spinning on; [wait] hears it) or to open the device now ([device]).
      */
-    private fun askToWait(wait: () -> Unit, device: () -> Unit): AlertDialog =
+    private fun askToWait(name: String, wait: () -> Unit, device: () -> Unit): AlertDialog =
         AlertDialog.Builder(this)
-            .setTitle(R.string.network_waiting)
+            .setTitle(getString(R.string.network_waiting, name))
             .setPositiveButton(R.string.network_wait) { _, _ -> wait() }
             .setNegativeButton(R.string.network_open_device) { _, _ -> device() }
             .show()

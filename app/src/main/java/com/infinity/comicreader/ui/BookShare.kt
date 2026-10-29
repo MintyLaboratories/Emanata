@@ -33,7 +33,7 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Shares a book or folder: a dialog of check boxes, each followed by what it sends (the
+ * Shares a book or folder, or several in one action: a dialog of check boxes, each followed by what it sends (the
  * title, the cover, and for a book the file), starting from the last choice
  * ([Prefs.shareChoice]), then the system's share sheet. The cover shows as its row in the
  * list has it ([shownCover]); the whole cover sent is made only once its box is ticked, then
@@ -49,7 +49,12 @@ internal class BookShare(
 ) {
     private val notifications = NotificationAsk(activity, prefs)
 
-    fun show(entry: BookEntry) {
+    /** Shares [entries] in one action ([showMany] for several); [onSent] runs once Share is tapped. */
+    fun show(entries: List<BookEntry>, onSent: () -> Unit = {}) {
+        if (entries.size == 1) show(entries[0], onSent) else if (entries.isNotEmpty()) showMany(entries, onSent)
+    }
+
+    fun show(entry: BookEntry, onSent: () -> Unit = {}) {
         val view = activity.layoutInflater.inflate(R.layout.dialog_share_book, null)
         val title = titleOf(entry)
         val last = prefs.shareChoice
@@ -153,10 +158,11 @@ internal class BookShare(
             prefs.shareChoice = choice.copy(cover = if (coverFound) choice.cover else last.cover, file = if (folder) last.file else choice.file)
             sent = true
             send.isEnabled = false
+            onSent()
             val coverMade = if (choice.cover) cover() else null
             activity.lifecycleScope.launch {
                 val coverUri = coverMade?.let { made ->
-                    withContext(AppDispatchers.io) { runCatching { made.await()?.let { writeCover(it, title) } }.getOrNull() }
+                    withContext(AppDispatchers.io) { runCatching { made.await()?.let { writeCovers(listOf(it to title)).single() } }.getOrNull() }
                 }
                 dialog.dismiss()
                 val fileUri = if (choice.file) withContext(AppDispatchers.io) { runCatching { BookUris.of(app, entry.path) }.getOrNull() } else null
@@ -178,15 +184,110 @@ internal class BookShare(
     }
 
     /**
-     * Writes [bitmap] as the one shared cover under cache/shared, which the FileProvider serves,
-     * named after [title] ([coverName]), else `cover.png` where that name cannot be written.
+     * Shares several items in one action: the same check boxes, the titles listed, the covers
+     * counted and the books' files counted with their total size (folders send no file). Covers
+     * are made only once Share is tapped, one at a time; one that cannot be made is left out.
      */
-    private fun writeCover(bitmap: Bitmap, title: String): Uri {
+    private fun showMany(entries: List<BookEntry>, onSent: () -> Unit) {
+        val view = activity.layoutInflater.inflate(R.layout.dialog_share_book, null)
+        val res = activity.resources
+        val titles = entries.map { titleOf(it) }
+        val books = entries.filter { !it.isDir }
+        val last = prefs.shareChoice
+        val titleCheck = view.findViewById<CompoundButton>(R.id.share_title_check)
+        val coverCheck = view.findViewById<CompoundButton>(R.id.share_cover_check)
+        val fileCheck = view.findViewById<CompoundButton>(R.id.share_file_check)
+        val listed = titles.take(SHOWN_TITLES).joinToString("\n")
+        val more = titles.size - SHOWN_TITLES
+        view.findViewById<TextView>(R.id.share_title_text).apply {
+            maxLines = SHOWN_TITLES + 1
+            text = if (more > 0) listed + "\n" + res.getQuantityString(R.plurals.share_more_titles, more, more) else listed
+        }
+        view.findViewById<View>(R.id.share_cover_progress).visibility = View.GONE
+        view.findViewById<TextView>(R.id.share_cover_none).apply {
+            text = res.getQuantityString(R.plurals.share_covers, entries.size, entries.size)
+            visibility = View.VISIBLE
+        }
+        if (books.isEmpty()) view.findViewById<View>(R.id.share_file_row).visibility = View.GONE
+        view.findViewById<ImageView>(R.id.share_file_icon).setImageResource(R.drawable.ic_file)
+        view.findViewById<TextView>(R.id.share_file_text).text =
+            res.getQuantityString(R.plurals.share_files, books.size, books.size) + "\n" +
+            FileUtils.formatSize(activity, books.sumOf { it.size.coerceAtLeast(0) })
+        titleCheck.isChecked = last.title
+        coverCheck.isChecked = last.cover
+        fileCheck.isChecked = last.file && books.isNotEmpty()
+        for ((row, check) in listOf(R.id.share_title_row to titleCheck, R.id.share_cover_row to coverCheck, R.id.share_file_row to fileCheck)) {
+            view.findViewById<View>(row).setOnClickListener { check.toggle() }
+        }
+        notifications.once()
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.file_op_share)
+            .setView(view)
+            .setPositiveButton(R.string.file_op_share, null)
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+        val send = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+        fun picked() = ShareChoice(titleCheck.isChecked, coverCheck.isChecked, fileCheck.isChecked && books.isNotEmpty())
+        for (check in listOf(titleCheck, coverCheck, fileCheck)) check.setOnCheckedChangeListener { _, _ -> send.isEnabled = picked().any }
+        send.isEnabled = picked().any
+        val app = activity.applicationContext
+        val charset = prefs.charset
+        val style = prefs.coverStyle
+        val target = Target(COVER_WIDTH, COVER_HEIGHT, Fit.SHRINK, linear = style.linear, scaling = style.scaling)
+        send.setOnClickListener {
+            val choice = picked()
+            if (!choice.any) return@setOnClickListener
+            // Without books, the file choice stays as it was.
+            prefs.shareChoice = choice.copy(file = if (books.isEmpty()) last.file else choice.file)
+            send.isEnabled = false
+            onSent()
+            activity.lifecycleScope.launch {
+                val covers = if (!choice.cover) emptyList() else withContext(AppDispatchers.io) {
+                    val made = entries.mapNotNull { e ->
+                        coversMade++
+                        runCatching { coverHold(); Thumbs.shareCover(app, e, charset, target) }.getOrNull()?.let { it to titleOf(e) }
+                    }
+                    runCatching { writeCovers(made) }.getOrDefault(emptyList())
+                }
+                dialog.dismiss()
+                val files = if (!choice.file) emptyList() else withContext(AppDispatchers.io) {
+                    runCatching { BookUris.all(app, books.map { it.path }) }.getOrNull()
+                }
+                if (files == null) {
+                    Toast.makeText(activity, R.string.op_failed, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                if (choice.cover && covers.size < entries.size) {
+                    val alone = !choice.title && !choice.file && covers.isEmpty()
+                    Toast.makeText(activity, if (alone) R.string.share_cover_failed else R.string.share_cover_left_out, Toast.LENGTH_SHORT).show()
+                    if (alone) return@launch
+                }
+                val streams = covers.map { it to ShareIntents.COVER_TYPE } + files.zip(books) { uri, e -> uri to BookUris.mimeOf(e.name) }
+                val intent = ShareIntents.of(titles.joinToString("\n").takeIf { choice.title }, streams) ?: return@launch
+                // Started now, while the app is on screen: Android lets a foreground service start only then.
+                if (files.isNotEmpty()) SharingService.start(activity)
+                runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
+            }
+        }
+    }
+
+    /**
+     * Writes each bitmap of [covers] as a shared cover under cache/shared, which the FileProvider
+     * serves, in place of those shared before: named after its title ([coverName]), with ` (2)`
+     * and on after a name another took, else `cover.png` where that name cannot be written.
+     */
+    private fun writeCovers(covers: List<Pair<Bitmap, String>>): List<Uri> {
         val dir = File(activity.cacheDir, COVER_DIR).apply { mkdirs() }
         dir.listFiles()?.forEach { runCatching { it.delete() } }
-        val out = runCatching { File(dir, "${coverName(title)}.png").also { write(bitmap, it) } }.getOrNull()
-            ?: File(dir, "$FALLBACK_NAME.png").also { write(bitmap, it) }
-        return FileProvider.getUriForFile(activity, "${activity.packageName}.files", out)
+        val taken = HashSet<String>()
+        fun free(base: String): String = generateSequence(1) { it + 1 }
+            .map { if (it == 1) base else "$base ($it)" }
+            .first { taken.add(it.lowercase()) }
+        return covers.map { (bitmap, title) ->
+            val out = runCatching { File(dir, "${free(coverName(title))}.png").also { write(bitmap, it) } }.getOrNull()
+                ?: File(dir, "${free(FALLBACK_NAME)}.png").also { write(bitmap, it) }
+            FileProvider.getUriForFile(activity, "${activity.packageName}.files", out)
+        }
     }
 
     private fun write(bitmap: Bitmap, file: File) {
@@ -205,6 +306,9 @@ internal class BookShare(
 
         private const val COVER_DIR = "shared/cover"
         private const val FALLBACK_NAME = "cover"
+
+        /** Titles listed when sharing several; the rest are counted. */
+        private const val SHOWN_TITLES = 5
 
         /** The most a shared cover's name takes before `.png`, in UTF-8 bytes: file systems allow 255 with it. */
         const val MAX_NAME_BYTES = 246

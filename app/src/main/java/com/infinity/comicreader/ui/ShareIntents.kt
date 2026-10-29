@@ -11,8 +11,14 @@ object ShareIntents {
      * both the [cover] (a PNG) and the [file] (of type [fileType]); null when there is
      * nothing to send. The streams go in its clip too, readable by the app picked.
      */
-    fun of(title: String?, cover: Uri?, file: Uri?, fileType: String): Intent? {
-        val streams = listOfNotNull(cover?.let { it to COVER_TYPE }, file?.let { it to fileType })
+    fun of(title: String?, cover: Uri?, file: Uri?, fileType: String): Intent? =
+        of(title, listOfNotNull(cover?.let { it to COVER_TYPE }, file?.let { it to fileType }))
+
+    /**
+     * One ACTION_SEND for the [title] alone or with one stream, ACTION_SEND_MULTIPLE for
+     * several [streams] (each a URI with its type); null when there is nothing to send.
+     */
+    fun of(title: String?, streams: List<Pair<Uri, String>>): Intent? {
         if (title == null && streams.isEmpty()) return null
         val intent = when (streams.size) {
             0 -> Intent(Intent.ACTION_SEND).setType("text/plain")

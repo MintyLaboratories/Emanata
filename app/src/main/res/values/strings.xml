@@ -289,6 +289,18 @@
     <string name="share_cover">Cover</string>
     <string name="share_cover_failed">The cover could not be made</string>
     <string name="share_cover_left_out">The cover could not be made, so it is left out</string>
+    <plurals name="share_more_titles">
+        <item quantity="one">and %1$d more</item>
+        <item quantity="other">and %1$d more</item>
+    </plurals>
+    <plurals name="share_covers">
+        <item quantity="one">%1$d cover</item>
+        <item quantity="other">%1$d covers</item>
+    </plurals>
+    <plurals name="share_files">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
     <string name="paste">Paste</string>
     <string name="paste_named">Paste %1$s</string>
     <string name="paste_hint">Tap to paste here, hold to cancel</string>

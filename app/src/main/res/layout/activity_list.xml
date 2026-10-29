@@ -165,8 +165,22 @@
         android:contentDescription="@string/paste"
         android:src="@drawable/ic_content_paste"
         android:visibility="gone"
-        app:backgroundTint="?attr/colorTertiaryContainer"
-        app:tint="?attr/colorOnTertiaryContainer" />
+        app:backgroundTint="?attr/colorSurfaceInverse"
+        app:tint="?attr/colorOnSurfaceInverse" />
+
+    <!-- Tells on Paste whether it moves or copies: that action's icon and colors, over the button's top end. -->
+    <ImageView
+        android:id="@+id/paste_badge"
+        android:layout_width="@dimen/paste_badge_size"
+        android:layout_height="@dimen/paste_badge_size"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="@dimen/paste_badge_inset"
+        android:layout_marginBottom="@dimen/paste_badge_inset"
+        android:background="@drawable/bg_badge"
+        android:elevation="13dp"
+        android:importantForAccessibility="no"
+        android:padding="@dimen/paste_badge_padding"
+        android:visibility="gone" />
 
     <!-- What the selected items can do, floating at the bottom center; its rounded card and buttons are made in code. -->
     <LinearLayout

@@ -28,8 +28,11 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             )
         }
 
-        /** The Paste button of a move, or of a copy: the colors of Move and Copy. */
-        fun paste(move: Boolean): FabLook = (if (move) MOVE else COPY).copy(icon = R.drawable.ic_content_paste, label = R.string.paste)
+        /** The Paste button, never mistaken for an action's: the clipboard icon on the inverse surface. */
+        val PASTE = FabLook(R.drawable.ic_content_paste, R.string.paste, M.attr.colorSurfaceInverse, M.attr.colorOnSurfaceInverse)
+
+        /** The badge on Paste telling a move from a copy: that action's icon and colors. */
+        fun pasteBadge(move: Boolean): FabLook = if (move) MOVE else COPY
 
         private val MOVE = FabLook(R.drawable.ic_drive_file_move, R.string.file_op_move, M.attr.colorTertiaryContainer, M.attr.colorOnTertiaryContainer)
         private val COPY = FabLook(R.drawable.ic_content_copy, R.string.file_op_copy, M.attr.colorSecondary, M.attr.colorOnSecondary)

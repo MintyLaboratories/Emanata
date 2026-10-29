@@ -153,7 +153,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   one, **X** or Back leaves. The toolbar gives way to **n selected** with their
   total size (when every size is known) and **Select all**.
   - A floating bar at the bottom center, in a fixed order: **Move**, **Copy**,
-    **Delete**, **Share**, **Rename**, **Favorite**, **⋮**. Icons in the theme's primary color, names in gray. Rename stays in
+    **Delete**, **Share**, **Rename**, **Favorite**, **⋮**; icons in the
+    theme's primary color, names in gray. Rename stays in
     place, grayed, with more than one selected; Favorite adds them all, or
     removes them all when each already is one. Bookmarks offer no Move, Copy or
     Rename, and their Delete is **Remove** (the bookmarks, never the books).
@@ -190,8 +191,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   first Share or file operation asks once to show notifications. Books other
   apps send or open with this app are taken in every type it shares them as.
 - **Move** and **Copy** pick the items up: a **Paste** button shows at the
-  bottom left (the List/Grid button's mirror), in Move's or Copy's colors, with
-  a short hint. Tap it to paste into the folder browsed, long-press it to
+  bottom left (the List/Grid button's mirror), its own high-contrast color
+  (inverse surface) so it never passes for the Move button, with a small badge
+  in Move's or Copy's icon and colors, and a short hint. Tap it to paste into the folder browsed, long-press it to
   cancel. Picked up in Favorites or History, the items wait for a folder opened
   in Browse. Names already there are asked about once for all: **Replace /
   Keep both / Skip** (Keep both names it `Book (2).cbz`; Skip pastes the

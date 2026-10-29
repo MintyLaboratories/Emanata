@@ -37,4 +37,8 @@
     <dimen name="share_cover_height">128dp</dimen>
     <!-- The rounding of the selection's floating bar. -->
     <dimen name="selection_bar_corner">16dp</dimen>
+    <!-- The Move/Copy badge on Paste: its size, and its offset from the screen's corner, over the button's top end. -->
+    <dimen name="paste_badge_size">22dp</dimen>
+    <dimen name="paste_badge_inset">53dp</dimen>
+    <dimen name="paste_badge_padding">4dp</dimen>
 </resources>

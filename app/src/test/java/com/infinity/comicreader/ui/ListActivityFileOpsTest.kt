@@ -32,6 +32,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -302,6 +303,22 @@ class ListActivityFileOpsTest {
         assertEquals(listOf(book.absolutePath, other.absolutePath), FileClipboard.clip!!.items.map { it.path })
         assertTrue(FileClipboard.clip!!.move)
         assertFalse(activity.selection.active)
+
+        // Paste never looks like the Move button beside it: its own fill, Move's colors only on its badge.
+        val paste = activity.paste() as com.google.android.material.floatingactionbutton.FloatingActionButton
+        val badge = activity.findViewById<android.widget.ImageView>(R.id.paste_badge)
+        activity.select(book.absolutePath)
+        activity.select(other.absolutePath)
+        assertEquals(View.VISIBLE, paste.visibility)
+        assertEquals(View.VISIBLE, badge.visibility)
+        assertEquals(color(com.google.android.material.R.attr.colorSurfaceInverse), paste.backgroundTintList!!.defaultColor)
+        assertNotEquals(fab.backgroundTintList!!.defaultColor, paste.backgroundTintList!!.defaultColor)
+        assertEquals(fab.backgroundTintList!!.defaultColor, badge.backgroundTintList!!.defaultColor)
+        // A copy's badge has Copy's colors.
+        activity.bar(R.id.selection_copy).performClick()
+        idle()
+        assertEquals(color(com.google.android.material.R.attr.colorSecondary), badge.backgroundTintList!!.defaultColor)
+        assertEquals(color(com.google.android.material.R.attr.colorSurfaceInverse), paste.backgroundTintList!!.defaultColor)
 
         // Opening one: the book is read.
         activity.select(book.absolutePath)

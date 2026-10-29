@@ -158,6 +158,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Pastes the item Move or Copy picked up ([FileClipboard]) into the folder browsed; a long press drops it. */
     private lateinit var pasteFab: FloatingActionButton
+
+    /** On [pasteFab]: whether it moves or copies. */
+    private lateinit var pasteBadge: ImageView
     private lateinit var fileActions: FileActions
     private lateinit var bookShare: BookShare
 
@@ -303,6 +306,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         selectionBar = findViewById(R.id.selection_bar)
         selectionActions = findViewById(R.id.selection_actions)
         pasteFab = findViewById(R.id.paste_fab)
+        pasteBadge = findViewById(R.id.paste_badge)
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
@@ -1950,12 +1954,22 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (pasteFab.visibility == View.VISIBLE) pasteFab.post { showPasteBubble() } else toast(R.string.paste_hint_browse)
     }
 
-    /** Shows Paste while items are picked up and a folder is browsed, in the colors of Move or Copy. */
+    /**
+     * Shows Paste while items are picked up and a folder is browsed: its own look, never an
+     * action's ([FabLook.PASTE]), with a badge in the colors and icon of Move or Copy.
+     */
     private fun updatePasteButton() {
         val clip = FileClipboard.clip
         val shown = clip != null && mode == TAB_BROWSE && currentDir != null
         pasteFab.visibility = if (shown) View.VISIBLE else View.GONE
-        if (clip != null) paint(pasteFab, FabLook.paste(clip.move))
+        pasteBadge.visibility = pasteFab.visibility
+        if (clip != null) {
+            paint(pasteFab, FabLook.PASTE)
+            val badge = FabLook.pasteBadge(clip.move)
+            pasteBadge.setImageResource(badge.icon)
+            pasteBadge.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(pasteBadge, badge.background))
+            pasteBadge.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(pasteBadge, badge.foreground))
+        }
         pasteFab.contentDescription = when {
             clip == null -> getString(R.string.paste)
             clip.count == 1 -> getString(R.string.paste_named, clip.name)

@@ -20,6 +20,17 @@
             android:layout_height="?attr/actionBarSize"
             app:title="@string/app_name" />
 
+        <!-- In the toolbar's place while items are selected: X, "n selected" with their size, Select all. -->
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/selection_bar"
+            style="@style/Widget.ComicReader.Toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:visibility="gone"
+            app:navigationContentDescription="@string/selection_leave"
+            app:navigationIcon="@drawable/ic_close"
+            app:subtitleTextAppearance="?attr/textAppearanceBodySmall" />
+
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
@@ -141,8 +152,8 @@
         android:layout_margin="@dimen/space_4"
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
-        app:backgroundTint="?attr/colorPrimaryContainer"
-        app:tint="?attr/colorOnPrimaryContainer" />
+        app:backgroundTint="?attr/colorSecondaryContainer"
+        app:tint="?attr/colorOnSecondaryContainer" />
 
     <!-- Pastes the item Move or Copy picked up into the folder browsed; a long press drops it. -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -156,6 +167,18 @@
         android:visibility="gone"
         app:backgroundTint="?attr/colorTertiaryContainer"
         app:tint="?attr/colorOnTertiaryContainer" />
+
+    <!-- What the selected items can do, floating at the bottom center; its rounded card and buttons are made in code. -->
+    <LinearLayout
+        android:id="@+id/selection_actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="@dimen/space_4"
+        android:elevation="6dp"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/space_1"
+        android:visibility="gone" />
 
     <ProgressBar
         android:id="@+id/progress"

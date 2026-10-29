@@ -277,7 +277,20 @@
     <string name="delete_confirm_msg">This permanently deletes the selected files from storage.</string>
     <string name="renamed">Renamed</string>
     <string name="rename_failed">Could not rename</string>
-    <!-- File operations of the long-press menu, and the Paste button. -->
+    <!-- The selection bar, its ⋮ menu, and the Paste button. -->
+    <plurals name="selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="selection_leave">Leave selection</string>
+    <string name="select_all">Select all</string>
+    <string name="selection_unfavorite">Unfavorite</string>
+    <string name="selection_remove">Remove</string>
+    <plurals name="remove_bookmarks_title">
+        <item quantity="one">Remove %1$d bookmark?</item>
+        <item quantity="other">Remove %1$d bookmarks?</item>
+    </plurals>
+    <string name="remove_bookmarks_msg">The books stay where they are.</string>
     <string name="file_op_move">Move</string>
     <string name="file_op_copy">Copy</string>
     <string name="file_op_more">More</string>
@@ -726,6 +739,14 @@
     <string name="confirm_mark_read_msg">Marks every book directly in ^1 as read, replacing their current read marks. Reading progress is kept.</string>
     <string name="confirm_mark_unread_title">Mark all as unread?</string>
     <string name="confirm_mark_unread_msg">Clears the read mark of every book directly in ^1. Reading progress is kept.</string>
+    <plurals name="confirm_mark_read_many">
+        <item quantity="one">Marks every book directly in %1$d folder as read, replacing their current read marks. Reading progress is kept.</item>
+        <item quantity="other">Marks every book directly in %1$d folders as read, replacing their current read marks. Reading progress is kept.</item>
+    </plurals>
+    <plurals name="confirm_mark_unread_many">
+        <item quantity="one">Clears the read mark of every book directly in %1$d folder. Reading progress is kept.</item>
+        <item quantity="other">Clears the read mark of every book directly in %1$d folders. Reading progress is kept.</item>
+    </plurals>
 
     <string name="pref_pinch_peek">Pinch to peek</string>
     <string name="peek_off">Off</string>

@@ -5,15 +5,18 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
-import androidx.appcompat.app.AlertDialog
+import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.MoreAction
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,10 +24,9 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 
-/** History rows open their book; their menu offers the folder next to Continue. */
+/** History rows open their book; selected, the button continues it and the menu shows its folder. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class ListActivityHistoryTest {
@@ -70,14 +72,22 @@ class ListActivityHistoryTest {
     }
 
     @Test
-    fun longPressOffersShowInFolderRightAfterContinue() {
-        val (_, recycler) = launch()
+    fun selectedTheButtonContinuesAndTheMenuShowsTheFolder() {
+        val (activity, recycler) = launch()
         recycler.findViewHolderForAdapterPosition(0)!!.itemView.performLongClick()
         idle()
-        val list = (ShadowDialog.getLatestDialog() as AlertDialog).listView
-        val labels = (0 until list.adapter.count).map { list.adapter.getItem(it).toString() }
-        val at = labels.indexOf(context.getString(R.string.menu_continue))
-        assertEquals(context.getString(R.string.menu_open_location), labels[at + 1])
-        assertEquals(1, labels.count { it == context.getString(R.string.menu_open_location) })
+        activity.findViewById<View>(R.id.selection_more).performClick()
+        idle()
+        val menu = activity.moreMenu!!
+        assertTrue((0 until menu.childCount).any { menu.getChildAt(it).tag == MoreAction.SHOW_IN_FOLDER })
+        // The floating button opens it where reading goes on.
+        val fab = activity.findViewById<View>(R.id.fab)
+        assertEquals(context.getString(R.string.fab_open), fab.contentDescription)
+        fab.performClick()
+        idle()
+        val started = shadowOf(activity).nextStartedActivity
+        assertEquals(book.absolutePath, started.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertEquals(-1, started.getIntExtra(ViewerActivity.EXTRA_PAGE, 0))
+        assertFalse(activity.selection.active)
     }
 }

@@ -32,6 +32,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Timing
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -62,7 +63,7 @@ data class RowOptions(
  * Library rows. Each entry shows a cover thumbnail (page 1 for books, first image
  * for folders), its name, a size/pages subtitle, a progress badge and — only for
  * favorites — a star. Tapping a visible star removes the favorite; adding one
- * is done from the long-press menu.
+ * is done from the selection bar. Selected rows are tinted ([isSelected]).
  */
 class BookAdapter(
     grid: Boolean,
@@ -112,6 +113,15 @@ class BookAdapter(
 
     /** Tapped a section header. */
     var onSectionClick: ((SectionRow) -> Unit)? = null
+
+    /** True for an entry selected: its row is tinted with the theme's primary color, no check mark. */
+    var isSelected: (BookEntry) -> Boolean = { false }
+
+    /** Re-tints every row after the selection changed, touching nothing else. */
+    fun selectionChanged() = notifyItemRangeChanged(0, itemCount, SELECTION)
+
+    /** The entries listed, in order, without headers. */
+    fun entries(): List<BookEntry> = items.filterIsInstance<BookEntry>()
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -347,6 +357,9 @@ class BookAdapter(
         val title: TitleView = view.findViewById(R.id.title)
         val subtitle: TextView = view.findViewById(R.id.subtitle)
         val star: ImageView = view.findViewById(R.id.star)
+
+        /** The card's own color, shown while not selected. */
+        val cardColor: ColorStateList? = card?.cardBackgroundColor
         var job: Job? = null
 
         /** The entry bound here, and the cover size last requested for it (width in the high half). */
@@ -402,8 +415,12 @@ class BookAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
         val row = items.getOrNull(position - itemOffset)
-        if (holder is BookHolder && row is BookEntry && payloads.isNotEmpty() && payloads.all { it == DETAILS || it == COVER }) {
-            if (COVER in payloads) bindBook(holder, row) else bindDetails(holder, row)
+        if (holder is BookHolder && row is BookEntry && payloads.isNotEmpty() && payloads.all { it == DETAILS || it == COVER || it == SELECTION }) {
+            when {
+                COVER in payloads -> bindBook(holder, row)
+                DETAILS in payloads -> bindDetails(holder, row)
+                else -> applySelected(holder, row)
+            }
             return
         }
         onBindViewHolder(holder, position)
@@ -495,6 +512,7 @@ class BookAdapter(
 
         bindBadge(holder.badge, item)
         applyHighlight(holder, item)
+        applySelected(holder, item)
 
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener { onLongClick(item); true }
@@ -689,6 +707,17 @@ class BookAdapter(
         }
     }
 
+    /** Tints the row of [item] while it is selected. */
+    private fun applySelected(holder: BookHolder, item: BookEntry) {
+        val card = holder.card ?: return
+        val base = holder.cardColor ?: return
+        val selected = isSelected(item)
+        holder.itemView.isSelected = selected
+        if (!selected) return card.setCardBackgroundColor(base)
+        val primary = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
+        card.setCardBackgroundColor(MaterialColors.layer(base.defaultColor, primary, SELECTED_TINT))
+    }
+
     /**
      * The read or progress pill on the cover; none on bookmarks, whose page is drawn
      * there. A list thumbnail too narrow for the text gets the percentage, or a bare dot.
@@ -758,6 +787,12 @@ class BookAdapter(
 
         /** Redraws a book's row in the view it is in, which keeps its cover until the new one is drawn. */
         const val COVER = "cover"
+
+        /** Re-tints a row as it is selected or let go. */
+        const val SELECTION = "selection"
+
+        /** How much of the theme's primary color tints a selected row. */
+        const val SELECTED_TINT = 0.3f
         const val HEADER_ID = Long.MIN_VALUE
         const val SECTION_ID = Long.MIN_VALUE + 16
         const val THUMB_THREADS = 3

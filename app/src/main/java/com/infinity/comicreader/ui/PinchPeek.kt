@@ -22,7 +22,7 @@ import kotlin.math.hypot
  * covers of what [folderEntries] lists in it. [target] names the comic or folder
  * under a list point and the view its cover is drawn in; [mode] is the "Pinch to
  * peek" setting. The second finger landing on an entry takes the touch from its
- * row, so the row neither clicks nor opens its long-press menu.
+ * row, so the row is neither tapped nor selected.
  */
 class PinchPeek(
     private val activity: AppCompatActivity,

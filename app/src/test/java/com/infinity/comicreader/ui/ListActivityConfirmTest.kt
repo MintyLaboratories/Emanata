@@ -123,21 +123,8 @@ class ListActivityConfirmTest {
         assertTrue(library.isRead(bookId(book)))
     }
 
-    /** Long-presses the first History row and picks Clear history from its menu. */
-    private fun ListActivity.clearHistoryFromRow(): AlertDialog {
-        val recycler = findViewById<RecyclerView>(R.id.recycler)
-        recycler.measure(0, 0)
-        recycler.layout(0, 0, 1000, 2000)
-        recycler.findViewHolderForAdapterPosition(0)!!.itemView.performLongClick()
-        shadowOf(Looper.getMainLooper()).idle()
-        val menu = latestDialog()
-        val list = menu.listView
-        val label = context.getString(R.string.pref_clear_history)
-        val index = (0 until list.adapter.count).first { list.adapter.getItem(it).toString() == label }
-        list.performItemClick(list.adapter.getView(index, null, list), index, index.toLong())
-        shadowOf(Looper.getMainLooper()).idle()
-        return latestDialog()
-    }
+    /** Picks Clear history from the History tab's menu. */
+    private fun ListActivity.clearHistoryFromRow(): AlertDialog = menu(R.id.menu_clear_history)
 
     @Test
     fun clearHistoryFromTheHistoryTabWaitsForConfirmation() {

@@ -12,13 +12,17 @@
     <item name="location_add" type="id" />
     <!-- The grid of hidden pages, from "Unhide pages…". -->
     <item name="hidden_pages_grid" type="id" />
-    <!-- The long-press menu's file operations, added in code. -->
-    <item name="file_op_rename" type="id" />
-    <item name="file_op_delete" type="id" />
-    <item name="file_op_move" type="id" />
-    <item name="file_op_copy" type="id" />
-    <item name="file_op_share" type="id" />
-    <item name="file_op_more" type="id" />
+    <!-- The selection bar's buttons, added in code, and its Select all. -->
+    <item name="selection_move" type="id" />
+    <item name="selection_copy" type="id" />
+    <item name="selection_delete" type="id" />
+    <item name="selection_share" type="id" />
+    <item name="selection_rename" type="id" />
+    <item name="selection_favorite" type="id" />
+    <item name="selection_more" type="id" />
+    <item name="menu_select_all" type="id" />
+    <!-- The selection's ⋮ menu. -->
+    <item name="more_menu" type="id" />
     <!-- The hint beside the Paste button. -->
     <item name="paste_bubble" type="id" />
     <!-- Tags an activity's window whose system bars Immersive hid. -->

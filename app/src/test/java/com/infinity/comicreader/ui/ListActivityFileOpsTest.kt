@@ -19,6 +19,7 @@ import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
+import com.infinity.comicreader.data.MoreAction
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
@@ -52,7 +53,7 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import javax.crypto.spec.SecretKeySpec
 
-/** The long-press menu's file operations, the Paste button, and the library following what they change. */
+/** Selecting items, the selection bar's file operations, the Paste button, and the library following what they change. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class ListActivityFileOpsTest {
@@ -155,15 +156,31 @@ class ListActivityFileOpsTest {
         throw AssertionError("nothing asked")
     }
 
-    private fun ListActivity.longPress(path: String): AlertDialog {
+    /** Long-presses the row of [path]: it is selected, or let go while selecting. */
+    private fun ListActivity.select(path: String) {
         row(path).performLongClick()
         idle()
-        return ShadowDialog.getLatestDialog() as AlertDialog
     }
 
-    private fun AlertDialog.items(): List<String> = (0 until listView.adapter.count).map { listView.adapter.getItem(it).toString() }
+    /** The selection bar's button [id]. */
+    private fun ListActivity.bar(id: Int): View = findViewById(id)
 
-    private fun AlertDialog.op(id: Int): View? = findViewById<View>(id)?.takeIf { (it.parent as View).visibility == View.VISIBLE }
+    /** Selects [path] unless it is, and taps the bar's button [id]. */
+    private fun ListActivity.act(path: String, id: Int) {
+        if (selection.entries.none { it.path == path }) select(path)
+        bar(id).performClick()
+        idle()
+    }
+
+    /** The ⋮ menu's items for what is selected. */
+    private fun ListActivity.moreItems(): List<MoreAction> {
+        bar(R.id.selection_more).performClick()
+        idle()
+        val menu = moreMenu ?: return emptyList()
+        return (0 until menu.childCount).map { menu.getChildAt(it).tag as MoreAction }
+    }
+
+    private fun View.usable(): Boolean = visibility == View.VISIBLE && isEnabled
 
     private fun latest() = ShadowDialog.getLatestDialog() as AlertDialog
 
@@ -175,38 +192,172 @@ class ListActivityFileOpsTest {
     }
 
     @Test
-    fun fileOperationsAreIconsAboveTheComicOperations() {
+    fun longPressSelectsAndTheBarReplacesTheMenu() {
         val activity = launch()
-        val menu = activity.longPress(book.absolutePath)
-        for (id in listOf(R.id.file_op_rename, R.id.file_op_delete, R.id.file_op_move, R.id.file_op_copy)) assertNotNull(menu.op(id))
-        // More shows only with something in it.
-        assertNull(menu.op(R.id.file_op_more))
-        assertFalse(menu.items().contains(context.getString(R.string.menu_rename)))
-        assertFalse(menu.items().contains(context.getString(R.string.delete)))
-        assertTrue(menu.items().contains(context.getString(R.string.menu_peek)))
-        menu.dismiss()
+        activity.select(book.absolutePath)
+        assertTrue(activity.selection.active)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.toolbar).visibility)
+        val top = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.selection_bar)
+        assertEquals(View.VISIBLE, top.visibility)
+        assertEquals(context.resources.getQuantityString(R.plurals.selected_count, 1, 1), top.title.toString())
+        // The size of what is selected, where known.
+        assertEquals(com.infinity.comicreader.util.FileUtils.formatSize(context, bytes.size.toLong()), top.subtitle.toString())
+        val row = activity.findViewById<LinearLayout>(R.id.selection_actions)
+        assertEquals(
+            listOf(R.id.selection_move, R.id.selection_copy, R.id.selection_delete, R.id.selection_share, R.id.selection_rename, R.id.selection_favorite, R.id.selection_more),
+            (0 until row.childCount).map { row.getChildAt(it).id }
+        )
+        assertTrue((0 until row.childCount).all { row.getChildAt(it).usable() })
 
-        // A folder's startup choice is a comic operation; More holds nothing yet.
-        val folder = activity.longPress(other.absolutePath)
-        assertNull(folder.op(R.id.file_op_more))
-        assertTrue(folder.items().contains(context.getString(R.string.menu_set_startup)))
+        // A tap while selecting picks another item instead of opening it; Rename takes one.
+        activity.row(other.absolutePath).performClick()
+        idle()
+        assertEquals(2, activity.selection.size)
+        assertEquals(shelf.absolutePath, Prefs(context).lastPath)
+        assertEquals(View.VISIBLE, activity.bar(R.id.selection_rename).visibility)
+        assertFalse(activity.bar(R.id.selection_rename).isEnabled)
+        // A folder's size is not known yet.
+        assertNull(top.subtitle)
+
+        // Letting go of the last one leaves selection.
+        activity.row(other.absolutePath).performClick()
+        activity.row(book.absolutePath).performClick()
+        idle()
+        assertFalse(activity.selection.active)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.toolbar).visibility)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.selection_actions).visibility)
     }
 
     @Test
-    fun deleteIsFarthestFromTheThumb() {
+    fun xBackAndSelectAllWorkTheSelection() {
+        File(shelf, "two.cbz").writeBytes(ByteArray(10))
         val activity = launch()
-        val ops = activity.longPress(book.absolutePath).findViewById<LinearLayout>(R.id.file_ops)!!
-        assertEquals(
-            listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy, R.id.file_op_share),
-            (0 until ops.childCount).map { ops.getChildAt(it).id }
-        )
-        // A folder is shared too.
-        assertNotNull(activity.longPress(other.absolutePath).op(R.id.file_op_share))
+        activity.select(book.absolutePath)
+        val top = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.selection_bar)
+        top.menu.performIdentifierAction(R.id.menu_select_all, 0)
+        idle()
+        assertEquals(3, activity.selection.size)
+        @Suppress("DEPRECATION")
+        activity.onBackPressed()
+        idle()
+        assertFalse(activity.selection.active)
+        // Back left selection, not the folder.
+        assertEquals(shelf.absolutePath, Prefs(context).lastPath)
+
+        activity.select(book.absolutePath)
+        // The X leaves it too.
+        val x = (0 until top.childCount).map { top.getChildAt(it) }.first { it is android.widget.ImageButton }
+        x.performClick()
+        idle()
+        assertFalse(activity.selection.active)
+    }
+
+    @Test
+    fun theMoreMenuOffersWhatAppliesInTheSettingsOrder() {
+        val activity = launch()
+        activity.select(book.absolutePath)
+        // Read already; Peek is off until turned on; Book info for one book.
+        assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.BOOK_INFO), activity.moreItems())
+        activity.select(book.absolutePath)
+        activity.select(other.absolutePath)
+        assertEquals(listOf(MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP), activity.moreItems())
+        // Both: what applies to all of them, and nothing that takes one.
+        activity.select(book.absolutePath)
+        assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD), activity.moreItems())
+
+        // Settings reorder and hide items.
+        Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(3, 0).with(MoreAction.MARK_ALL_READ, false)
+        assertEquals(listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD), activity.moreItems())
+    }
+
+    @Test
+    fun markingFromTheMenuMarksEveryBookSelected() {
+        val two = File(shelf, "two.cbz").apply { writeBytes(ByteArray(30) { 1 }) }
+        val activity = launch()
+        activity.select(two.absolutePath)
+        activity.select(book.absolutePath)
+        assertEquals(listOf(MoreAction.MARK_READ, MoreAction.MARK_UNREAD), activity.moreItems())
+        val read = activity.moreMenu!!.getChildAt(0)
+        read.performClick()
+        settle { library.isRead(bookId(two)) }
+        assertTrue(library.isRead(bookId(book)))
+        assertFalse(activity.selection.active)
+    }
+
+    @Test
+    fun theButtonOpensOneAndMovesSeveralInTheirOwnColors() {
+        val activity = launch()
+        val fab = activity.findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab)
+        fun color(attr: Int) = com.google.android.material.color.MaterialColors.getColor(fab, attr)
+        val toggle = fab.backgroundTintList!!.defaultColor
+        assertEquals(color(com.google.android.material.R.attr.colorSecondaryContainer), toggle)
+        activity.select(book.absolutePath)
+        assertEquals(context.getString(R.string.fab_open), fab.contentDescription)
+        assertEquals(color(com.google.android.material.R.attr.colorPrimaryContainer), fab.backgroundTintList!!.defaultColor)
+        activity.select(other.absolutePath)
+        assertEquals(context.getString(R.string.file_op_move), fab.contentDescription)
+        assertEquals(color(com.google.android.material.R.attr.colorTertiaryContainer), fab.backgroundTintList!!.defaultColor)
+        fab.performClick()
+        idle()
+        assertEquals(listOf(book.absolutePath, other.absolutePath), FileClipboard.clip!!.items.map { it.path })
+        assertTrue(FileClipboard.clip!!.move)
+        assertFalse(activity.selection.active)
+
+        // Opening one: the book is read.
+        activity.select(book.absolutePath)
+        fab.performClick()
+        idle()
+        assertEquals(book.absolutePath, shadowOf(activity).nextStartedActivity.getStringExtra(ViewerActivity.EXTRA_PATH))
+    }
+
+    @Test
+    fun severalSelectedAreDeletedAfterOneQuestion() {
+        val two = File(shelf, "two.cbz").apply { writeBytes(ByteArray(30) { 1 }) }
+        val activity = launch()
+        activity.select(book.absolutePath)
+        activity.select(two.absolutePath)
+        activity.bar(R.id.selection_delete).performClick()
+        idle()
+        val ask = latest()
+        assertEquals(context.resources.getQuantityString(R.plurals.delete_items_title, 2, 2), ask.title())
+        // Still selected until it goes ahead.
+        assertTrue(activity.selection.active)
+        ask.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle { !book.exists() && !two.exists() }
+        assertFalse(activity.selection.active)
+        assertEquals(context.resources.getQuantityString(R.plurals.deleted_format, 2, 2), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun aFolderIsSharedToo() {
+        val activity = launch()
+        activity.select(other.absolutePath)
+        assertTrue(activity.bar(R.id.selection_share).usable())
+    }
+
+    @Test
+    fun favoriteAddsAllOrRemovesAllWhenEachAlreadyIs() {
+        val two = File(shelf, "two.cbz").apply { writeBytes(ByteArray(30) { 1 }) }
+        val activity = launch()
+        activity.select(book.absolutePath)
+        activity.select(two.absolutePath)
+        val favorite = activity.bar(R.id.selection_favorite)
+        assertEquals(context.getString(R.string.toolbar_button_favorite), favorite.contentDescription)
+        favorite.performClick()
+        settle { library.isFavorite(bookId(two)) }
+        assertTrue(library.isFavorite(bookId(book)))
+
+        activity.select(book.absolutePath)
+        activity.select(two.absolutePath)
+        assertEquals(context.getString(R.string.selection_unfavorite), favorite.contentDescription)
+        favorite.performClick()
+        settle { !library.isFavorite(bookId(two)) }
+        assertFalse(library.isFavorite(bookId(book)))
     }
 
     /** Opens the Share dialog of [path] from the long-press menu. */
     private fun ListActivity.shareDialog(path: String): AlertDialog {
-        longPress(path).op(R.id.file_op_share)!!.performClick()
+        act(path, R.id.selection_share)
         idle()
         return latest()
     }
@@ -336,11 +487,20 @@ class ListActivityFileOpsTest {
         for (tab in listOf(1, 2)) {
             activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
             idle()
-            val menu = activity.longPress(book.absolutePath)
-            assertEquals(View.VISIBLE, menu.findViewById<LinearLayout>(R.id.file_ops)!!.visibility)
-            for (id in listOf(R.id.file_op_delete, R.id.file_op_rename, R.id.file_op_move, R.id.file_op_copy)) assertNotNull(menu.op(id))
-            menu.dismiss()
+            activity.select(book.absolutePath)
+            for (id in listOf(R.id.selection_delete, R.id.selection_rename, R.id.selection_move, R.id.selection_copy)) assertTrue(activity.bar(id).usable())
+            activity.select(book.absolutePath)
+            assertFalse(activity.selection.active)
         }
+    }
+
+    @Test
+    fun switchingTabsEndsTheSelection() {
+        val activity = launch()
+        activity.select(book.absolutePath)
+        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
+        idle()
+        assertFalse(activity.selection.active)
     }
 
     @Test
@@ -348,7 +508,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
         idle()
-        activity.longPress(book.absolutePath).op(R.id.file_op_rename)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_rename)
         idle()
         val ask = latest()
         ask.edit().setText("two.cbz")
@@ -364,7 +524,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(2)!!.select()
         idle()
-        activity.longPress(book.absolutePath).op(R.id.file_op_move)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_move)
         idle()
         assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
         assertEquals(View.GONE, activity.paste().visibility)
@@ -385,7 +545,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(2)!!.select()
         idle()
-        activity.longPress(book.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_delete)
         idle()
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { !book.exists() }
@@ -397,28 +557,33 @@ class ListActivityFileOpsTest {
     fun aLocationRootCanStillBeTheStartupFolder() {
         Prefs(context).lastPath = Environment.getExternalStorageDirectory().absolutePath
         val activity = launch()
-        val menu = activity.longPress(shelf.absolutePath)
-        assertTrue(menu.items().contains(context.getString(R.string.menu_set_startup)))
+        activity.select(shelf.absolutePath)
+        assertTrue(MoreAction.SET_STARTUP in activity.moreItems())
     }
 
     @Test
-    fun bookmarksHaveNoFileOperations() {
+    fun bookmarksOfferNoFileOperationsAndRemoveBookmarks() {
         library.addBookmark(Bookmark(book.absolutePath, book.name, 1, "", 1L, bookId(book)))
         val activity = launch()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(3)!!.select()
         idle()
-        val menu = activity.recycler().findViewHolderForAdapterPosition(0)!!.itemView.let {
-            it.performLongClick()
-            idle()
-            latest()
-        }
-        assertEquals(View.GONE, menu.findViewById<LinearLayout>(R.id.file_ops)!!.visibility)
+        activity.recycler().findViewHolderForAdapterPosition(0)!!.itemView.performLongClick()
+        idle()
+        for (id in listOf(R.id.selection_move, R.id.selection_copy, R.id.selection_rename)) assertEquals(View.GONE, activity.bar(id).visibility)
+        val remove = activity.bar(R.id.selection_delete)
+        assertEquals(context.getString(R.string.selection_remove), remove.contentDescription)
+        remove.performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        idle()
+        assertTrue(library.bookmarks().isEmpty())
+        assertTrue(book.isFile)
     }
 
     @Test
     fun renamingTakesTheLibraryAlong() {
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_rename)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_rename)
         idle()
         val ask = latest()
         ask.edit().setText("two.cbz")
@@ -436,7 +601,7 @@ class ListActivityFileOpsTest {
     @Test
     fun renamingChangesTheCaseOnly() {
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_rename)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_rename)
         idle()
         val ask = latest()
         ask.edit().setText("One.cbz")
@@ -463,13 +628,13 @@ class ListActivityFileOpsTest {
         val facts = com.infinity.comicreader.data.BookFactsCache(context)
         facts.put(id, com.infinity.comicreader.data.BookFacts(3, 0))
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_delete)
         idle()
         latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
         assertTrue(book.isFile)
 
-        activity.longPress(book.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_delete)
         idle()
         val ask = latest()
         assertEquals(context.getString(R.string.delete_item_title, book.name), ask.title())
@@ -492,7 +657,7 @@ class ListActivityFileOpsTest {
         idle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         assertTrue(bar.crumbs.any { it.label == "Other" })
-        activity.longPress(other.absolutePath).op(R.id.file_op_delete)!!.performClick()
+        activity.act(other.absolutePath, R.id.selection_delete)
         idle()
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { !other.exists() }
@@ -503,7 +668,7 @@ class ListActivityFileOpsTest {
     fun movePicksUpAndPasteMovesIntoTheFolderBrowsed() {
         val activity = launch()
         assertEquals(View.GONE, activity.paste().visibility)
-        activity.longPress(book.absolutePath).op(R.id.file_op_move)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_move)
         idle()
         assertEquals(View.VISIBLE, activity.paste().visibility)
         activity.open(other)
@@ -523,7 +688,7 @@ class ListActivityFileOpsTest {
     fun aTakenNameAsksReplaceKeepBothOrSkip() {
         File(other, "one.cbz").writeBytes(ByteArray(3))
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_copy)
         idle()
         activity.open(other)
 
@@ -559,7 +724,7 @@ class ListActivityFileOpsTest {
         // Only where the storage ignores case, as the device's shared storage does.
         assumeTrue(File(other, "one.cbz").exists())
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_copy)
         idle()
         activity.open(other)
         activity.pasteAsking().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
@@ -573,7 +738,7 @@ class ListActivityFileOpsTest {
         File(other, "Sub").mkdirs()
         File(other, "Other").mkdirs()
         val activity = launch()
-        activity.longPress(File(shelf, "Sub").absolutePath).op(R.id.file_op_copy)!!.performClick()
+        activity.act(File(shelf, "Sub").absolutePath, R.id.selection_copy)
         idle()
         activity.open(other)
         val ask = activity.pasteAsking()
@@ -582,7 +747,7 @@ class ListActivityFileOpsTest {
         idle()
 
         // An item inside the folder its name takes: no Replace.
-        activity.longPress(File(other, "Other").absolutePath).op(R.id.file_op_move)!!.performClick()
+        activity.act(File(other, "Other").absolutePath, R.id.selection_move)
         idle()
         @Suppress("DEPRECATION")
         activity.onBackPressed()
@@ -595,7 +760,7 @@ class ListActivityFileOpsTest {
     @Test
     fun aCopyBesideItselfKeepsBoth() {
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_copy)
         idle()
         activity.paste().performClick()
         settle { File(shelf, "one (2).cbz").exists() }
@@ -666,7 +831,7 @@ class ListActivityFileOpsTest {
     @Test
     fun aFolderNeverGoesInsideItself() {
         val activity = launch()
-        activity.longPress(other.absolutePath).op(R.id.file_op_move)!!.performClick()
+        activity.act(other.absolutePath, R.id.selection_move)
         idle()
         activity.open(other)
         activity.paste().performClick()
@@ -756,7 +921,7 @@ class ListActivityFileOpsTest {
     fun copiesOntoAShareAndRenamesThere() {
         val shareDir = serveShare()
         val activity = launch()
-        activity.longPress(book.absolutePath).op(R.id.file_op_copy)!!.performClick()
+        activity.act(book.absolutePath, R.id.selection_copy)
         idle()
         Prefs(context).lastPath = "/net/s1"
         val share = launch()
@@ -767,7 +932,7 @@ class ListActivityFileOpsTest {
         // Only the finished copy is there.
         assertEquals(listOf("one.cbz"), shareDir.list()!!.toList())
 
-        share.longPress("/net/s1/one.cbz").op(R.id.file_op_rename)!!.performClick()
+        share.act("/net/s1/one.cbz", R.id.selection_rename)
         idle()
         val ask = latest()
         ask.edit().setText("renamed.cbz")

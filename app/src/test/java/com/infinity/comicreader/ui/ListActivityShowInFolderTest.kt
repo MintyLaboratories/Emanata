@@ -5,7 +5,6 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
-import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -22,7 +21,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 
 /** "Show in folder" is offered only where it leads somewhere new. */
@@ -50,7 +48,7 @@ class ListActivityShowInFolderTest {
         Thread.sleep(20)
     }
 
-    /** The long-press menu of the first row on tab [tab]. */
+    /** The selection's ⋮ menu of the book selected on tab [tab]. */
     private fun menu(tab: Int): List<String> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
@@ -64,8 +62,10 @@ class ListActivityShowInFolderTest {
         val adapter = recycler.adapter as BookAdapter
         recycler.findViewHolderForAdapterPosition(adapter.positionOf(book.absolutePath))!!.itemView.performLongClick()
         idle()
-        val list = (ShadowDialog.getLatestDialog() as AlertDialog).listView
-        return (0 until list.adapter.count).map { list.adapter.getItem(it).toString() }
+        activity.findViewById<android.view.View>(R.id.selection_more).performClick()
+        idle()
+        val menu = activity.moreMenu!!
+        return (0 until menu.childCount).map { menu.getChildAt(it).findViewById<android.widget.TextView>(R.id.more_action_label).text.toString() }
     }
 
     @Test

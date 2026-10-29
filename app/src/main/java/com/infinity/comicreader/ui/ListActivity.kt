@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -46,6 +47,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.shape.MaterialShapeDrawable
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
@@ -74,6 +76,7 @@ import com.infinity.comicreader.data.LibrarySort
 import com.infinity.comicreader.data.ListSettings
 import com.infinity.comicreader.data.LocationSpace
 import com.infinity.comicreader.data.MissingFolder
+import com.infinity.comicreader.data.MoreAction
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.ResumeMode
@@ -134,6 +137,24 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private lateinit var tabs: TabLayout
     private lateinit var pathbar: CrumbBar
     private lateinit var fab: FloatingActionButton
+
+    /** What [fab] does now; null while it is hidden. */
+    private var fabShows: SelectionActions.Fab? = null
+
+    /** The items selected: selecting swaps the toolbar for [selectionBar] and shows [selectionActions]. */
+    internal val selection = Selection()
+
+    /** X, "n selected" with their size, and Select all, in the toolbar's place while selecting. */
+    private lateinit var selectionBar: MaterialToolbar
+
+    /** The floating bar of what the selection can do, centered at the bottom. */
+    private lateinit var selectionActions: LinearLayout
+
+    /** The bar's buttons, by what they do. */
+    private val barViews = LinkedHashMap<SelectionActions.Bar, View>()
+
+    /** The selection's ⋮ menu while it shows. */
+    private var morePopup: PopupWindow? = null
 
     /** Pastes the item Move or Copy picked up ([FileClipboard]) into the folder browsed; a long press drops it. */
     private lateinit var pasteFab: FloatingActionButton
@@ -279,6 +300,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         pathbar = findViewById(R.id.pathbar)
         recycler = findViewById(R.id.recycler)
         fab = findViewById(R.id.fab)
+        selectionBar = findViewById(R.id.selection_bar)
+        selectionActions = findViewById(R.id.selection_actions)
         pasteFab = findViewById(R.id.paste_fab)
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
@@ -301,8 +324,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             prefs = prefs,
             onClick = { onEntryClick(it) },
             onLongClick = { onEntryLongClick(it) },
-            onStarClick = { toggleFavorite(it) }
+            onStarClick = { if (selection.active) toggleSelected(it) else toggleFavorite(it) }
         )
+        adapter.isSelected = { it in selection }
         adapter.onSectionClick = { toggleSection(it.kind) }
         adapter.hiddenPages = library::hiddenAll
         adapter.firstLayerOnly = settings.list.value.thrift.firstLayerCovers
@@ -332,7 +356,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
         })
 
-        fab.setOnClickListener { toggleGrid() }
+        fab.setOnClickListener { onFabClick() }
+        setUpSelection()
         fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, ::updatePasteButton)
         bookShare = BookShare(this, prefs) { adapter.shownCover(recycler, it.path) }
         pasteFab.setOnClickListener {
@@ -345,8 +370,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             toast(R.string.paste_canceled)
             true
         }
-        updateFabIcon()
-        fab.visibility = View.GONE
+        updateFab()
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         pathbar.onCrumbClick = { openCrumb(it) }
         pathbar.onLocationsClick = { showRootChooser() }
@@ -383,6 +407,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         currentDir?.let { outState.putString(STATE_DIR, it.absolutePath) }
         trail?.let { outState.putString(STATE_TRAIL, it) }
         if (resumeOffer?.isShowing == true) outState.putBoolean(STATE_OFFER, true)
+        if (selection.active) outState.putStringArrayList(STATE_SELECTED, ArrayList(selection.keys))
     }
 
     override fun onResume() {
@@ -421,6 +446,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         historyWatch?.close()
         resumeOffer?.dismiss()
         hidePasteBubble()
+        hideMore()
         fileActions.release()
         peek.hide()
         adapter.release()
@@ -492,9 +518,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
         if (s.statusBar != old.statusBar) applyStatusBarSetting()
         if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
-        if (s.quickFab != old.quickFab) {
-            fab.visibility = if (shown.isNotEmpty() && s.quickFab) View.VISIBLE else View.GONE
-        }
+        if (s.quickFab != old.quickFab) updateFab()
     }
 
     private fun applyStatusBarSetting() {
@@ -558,6 +582,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         restored = null
         val savedDir = state?.getString(STATE_DIR)?.let { Remotes.file(it) }?.takeIf { it.isDirectory }
         trail = state?.getString(STATE_TRAIL)
+        // Selected again once listed.
+        state?.getStringArrayList(STATE_SELECTED)?.let { selection.restore(it) }
         val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
         startTab = null
         started = true
@@ -809,7 +835,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         adapter.options = rowOptions()
         applyLayoutManager()
         updateCellSize()
-        updateFabIcon()
+        updateFab()
         updatePasteButton()
         invalidateOptionsMenu()
     }
@@ -1061,10 +1087,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * Before showing tab [tab] (Browse at [dir]): covers still loading for another tab or
-     * folder are dropped, so those of the view about to show come first.
+     * folder are dropped, so those of the view about to show come first, and the selection ends.
      */
     private fun switchingTo(tab: Int, dir: File? = null) {
-        if (mode != tab || (tab == TAB_BROWSE && currentDir?.absolutePath != dir?.absolutePath)) adapter.cancelCovers()
+        if (mode != tab || (tab == TAB_BROWSE && currentDir?.absolutePath != dir?.absolutePath)) {
+            adapter.cancelCovers()
+            endSelection()
+        }
     }
 
     /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
@@ -1365,6 +1394,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         shown.clear()
         shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it, hidden) })
+        // What is still listed stays selected, as listed now.
+        val selecting = selection.active
+        selection.retain(shown)
         filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
         if (resort) scheduleFacts(sort.keys + filter.keys)
         adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
@@ -1379,7 +1411,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
         updateRecentHeader()
         updateEmptyState()
-        updateFabIcon()
+        if (selecting || selection.active) updateSelection() else updateFab()
     }
 
     /**
@@ -1483,7 +1515,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun updateEmptyState() {
         val visible = shown.isEmpty()
         emptyView.visibility = if (visible) View.VISIBLE else View.GONE
-        fab.visibility = if (!visible && prefs.listQuickFab) View.VISIBLE else View.GONE
         val error = listError?.takeIf { mode == TAB_BROWSE }
         retryButton.visibility = if (error != null) View.VISIBLE else View.GONE
         if (!visible) return
@@ -1542,7 +1573,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     // ------------------------------------------------------------------ actions
 
-    private fun onEntryClick(entry: BookEntry) {
+    /** Opens [entry]: a folder is browsed, a book read where the reader picks up ([ResumeMode]), a bookmark at its page. */
+    private fun openEntry(entry: BookEntry) {
         when {
             entry.isDir -> loadDirectory(entry.file)
             // A favorite folder that is gone: browse what is left of it.
@@ -1563,108 +1595,341 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
     }
 
-    /**
-     * The long-press menu: the item's file operations as a row of icons (Delete, Rename,
-     * Move, Copy, Share for a file, and More when it holds anything; Delete farthest from
-     * the thumb) above its comic operations as a list.
-     */
-    private fun onEntryLongClick(entry: BookEntry) {
-        val path = entry.path
-        val labels = ArrayList<String>()
-        val actions = ArrayList<() -> Unit>()
-        fun add(label: String, action: () -> Unit) {
-            labels.add(label)
-            actions.add(action)
-        }
+    // ------------------------------------------------------------------ selection
 
-        if (mode == TAB_HISTORY) {
-            if (entry.file.exists()) add(getString(R.string.menu_continue)) { openViewer(entry.file, entry.id?.let { library.pageFor(it) } ?: 0) }
-            add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
-        }
-        if (canPeek(entry)) add(getString(R.string.menu_peek)) { peekFromMenu(entry) }
-        if (mode == TAB_BOOKMARKS) {
-            add(getString(R.string.menu_remove_favorite)) {
-                entry.id?.let { library.removeBookmark(it, entry.progressPage) }
-                showBookmarks()
-            }
-        } else {
-            val favorite = entry.favorite
-            add(if (favorite) getString(R.string.menu_remove_favorite) else getString(R.string.menu_add_favorite)) {
-                toggleFavorite(entry)
-            }
-            if (entry.isDir) {
-                add(getString(R.string.menu_continue)) { continueReading(entry.file) }
-                add(getString(R.string.menu_mark_all_read)) { markFolder(entry.file, true) }
-                add(getString(R.string.menu_mark_all_unread)) { markFolder(entry.file, false) }
-            } else {
-                val read = entry.read
-                add(if (read) getString(R.string.menu_mark_unread) else getString(R.string.menu_mark_read)) {
-                    withBook(entry) { book ->
-                        library.setRead(book, !read)
-                        refreshCurrent()
-                    }
-                }
-            }
-            if (mode != TAB_HISTORY && !isBrowsedHere(entry)) add(getString(R.string.menu_open_location)) { openLocation(entry.file) }
-            // An advanced setting: shown once Keep it simple is off.
-            if (!entry.isDir && !prefs.keepSimple && NameCharsetDialog.applies(entry.name)) {
-                add(getString(R.string.menu_name_charset)) {
-                    NameCharsetDialog.builder(this, library, idOf(entry), prefs.charset) { picked ->
-                        lifecycleScope.launch {
-                            withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, entry.file, prefs.charset, picked, cacheDir) }
-                            adapter.notifyDataSetChanged()
-                        }
-                    }.show()
-                }
-            }
-            if (entry.isDir) {
-                add(getString(R.string.menu_set_startup)) {
-                    prefs.setStartupFolder(path)
-                    toast(R.string.startup_folder_set)
-                }
-            }
-        }
-        if (mode == TAB_HISTORY) {
-            add(getString(R.string.pref_clear_history)) {
-                confirm(this, R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
-                    library.clearHistory()
-                    refreshCurrent()
-                }
-            }
-        }
+    /** A tap opens [entry]; while selecting, it selects it or lets it go. */
+    private fun onEntryClick(entry: BookEntry) {
+        if (selection.active) toggleSelected(entry) else openEntry(entry)
+    }
 
-        val head = layoutInflater.inflate(R.layout.dialog_entry_title, null)
-        head.findViewById<TextView>(R.id.entry_title).text = entry.name
-        val ops = head.findViewById<LinearLayout>(R.id.file_ops)
-        var menu: AlertDialog? = null
-        fun op(id: Int, icon: Int, label: Int, action: () -> Unit) {
-            val view = layoutInflater.inflate(R.layout.item_file_op, ops, false)
-            view.id = id
-            view.findViewById<ImageView>(R.id.file_op_icon).setImageResource(icon)
-            view.findViewById<TextView>(R.id.file_op_label).setText(label)
+    /** A long press selects [entry], starting selection; while selecting, it does as a tap. */
+    private fun onEntryLongClick(entry: BookEntry) = toggleSelected(entry)
+
+    private fun toggleSelected(entry: BookEntry) {
+        selection.toggle(entry)
+        if (!selection.active) hideMore()
+        adapter.selectionChanged()
+        updateSelection()
+    }
+
+    /** Lets go of everything selected, leaving selection. */
+    private fun endSelection() {
+        hideMore()
+        if (!selection.active) return
+        selection.clear()
+        adapter.selectionChanged()
+        updateSelection()
+    }
+
+    /** The selection bar's X and Select all, and the floating bar's buttons in their fixed order. */
+    private fun setUpSelection() {
+        selectionBar.setNavigationOnClickListener { endSelection() }
+        selectionBar.menu.add(Menu.NONE, R.id.menu_select_all, 0, R.string.select_all)
+            .setIcon(R.drawable.ic_select_all)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        selectionBar.setOnMenuItemClickListener {
+            selection.selectAll(adapter.entries())
+            adapter.selectionChanged()
+            updateSelection()
+            true
+        }
+        val row = selectionActions
+        // A card drawn in code: a MaterialCardView here runs an animation as the list starts.
+        row.background = MaterialShapeDrawable().apply {
+            fillColor = ColorStateList.valueOf(MaterialColors.getColor(row, com.google.android.material.R.attr.colorSurfaceContainerHigh))
+            setCornerSize(resources.getDimension(R.dimen.selection_bar_corner))
+        }
+        val primary = MaterialColors.getColor(row, androidx.appcompat.R.attr.colorPrimary)
+        for (bar in SelectionActions.Bar.entries) {
+            val view = layoutInflater.inflate(R.layout.item_bar_action, row, false)
+            view.id = barIdOf(bar)
+            view.findViewById<ImageView>(R.id.bar_action_icon).imageTintList = ColorStateList.valueOf(primary)
+            view.setOnClickListener { onBarAction(bar) }
+            row.addView(view)
+            barViews[bar] = view
+        }
+        labelBar(unfavorite = false)
+    }
+
+    /** Sets each bar button's icon and name; Favorite says whether it adds or removes, Delete in Bookmarks removes bookmarks. */
+    private fun labelBar(unfavorite: Boolean) {
+        for ((bar, view) in barViews) {
+            val (icon, label) = when (bar) {
+                SelectionActions.Bar.MOVE -> R.drawable.ic_drive_file_move to R.string.file_op_move
+                SelectionActions.Bar.COPY -> R.drawable.ic_content_copy to R.string.file_op_copy
+                SelectionActions.Bar.DELETE -> R.drawable.ic_delete to if (mode == TAB_BOOKMARKS) R.string.selection_remove else R.string.delete
+                SelectionActions.Bar.SHARE -> R.drawable.ic_share to R.string.file_op_share
+                SelectionActions.Bar.RENAME -> R.drawable.ic_edit to R.string.menu_rename
+                SelectionActions.Bar.FAVORITE ->
+                    if (unfavorite) R.drawable.ic_star to R.string.selection_unfavorite else R.drawable.ic_star_border to R.string.toolbar_button_favorite
+                SelectionActions.Bar.MORE -> R.drawable.ic_more_vert to R.string.file_op_more
+            }
+            view.findViewById<ImageView>(R.id.bar_action_icon).setImageResource(icon)
+            view.findViewById<TextView>(R.id.bar_action_label).setText(label)
             view.contentDescription = getString(label)
-            view.setOnClickListener {
-                menu?.dismiss()
-                action()
-            }
-            ops.addView(view)
         }
-        if (canChangeFiles(entry)) {
-            val more = moreActions(entry)
-            op(R.id.file_op_delete, R.drawable.ic_delete, R.string.delete) { fileActions.delete(listOf(FileClipboard.Item(entry.path, entry.isDir))) }
-            op(R.id.file_op_rename, R.drawable.ic_edit, R.string.menu_rename) { fileActions.rename(entry.file) }
-            op(R.id.file_op_move, R.drawable.ic_drive_file_move, R.string.file_op_move) { pickUp(entry, move = true) }
-            op(R.id.file_op_copy, R.drawable.ic_content_copy, R.string.file_op_copy) { pickUp(entry, move = false) }
-            op(R.id.file_op_share, R.drawable.ic_share, R.string.file_op_share) { bookShare.show(entry) }
-            if (more.isNotEmpty()) op(R.id.file_op_more, R.drawable.ic_more_horiz, R.string.file_op_more) { showMore(entry, more) }
-        } else {
-            ops.visibility = View.GONE
-        }
+    }
 
-        menu = AlertDialog.Builder(this)
-            .setCustomTitle(head)
-            .setItems(labels.toTypedArray()) { _, which -> actions[which].invoke() }
-            .show()
+    private fun barIdOf(bar: SelectionActions.Bar): Int = when (bar) {
+        SelectionActions.Bar.MOVE -> R.id.selection_move
+        SelectionActions.Bar.COPY -> R.id.selection_copy
+        SelectionActions.Bar.DELETE -> R.id.selection_delete
+        SelectionActions.Bar.SHARE -> R.id.selection_share
+        SelectionActions.Bar.RENAME -> R.id.selection_rename
+        SelectionActions.Bar.FAVORITE -> R.id.selection_favorite
+        SelectionActions.Bar.MORE -> R.id.selection_more
+    }
+
+    /** The bar as it applies to the selection in this tab. */
+    private fun barState(): SelectionActions.BarState = SelectionActions.bar(
+        bookmarks = mode == TAB_BOOKMARKS,
+        entries = selection.entries,
+        changeable = ::canChangeFiles,
+        shareable = ::canShare,
+        more = moreItems()
+    )
+
+    /** The ⋮ menu's items for the selection, in the order Settings gives. */
+    private fun moreItems(): List<MoreAction> = SelectionActions.more(
+        selection.entries,
+        prefs.moreActions.visible,
+        SelectionActions.MoreFacts(prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek)
+    )
+
+    /** While anything is selected: the selection bar instead of the toolbar, the floating bar, and the button for it. */
+    private fun updateSelection() {
+        val active = selection.active
+        val state = if (active) barState() else null
+        toolbar.visibility = if (active) View.GONE else View.VISIBLE
+        selectionBar.visibility = if (active) View.VISIBLE else View.GONE
+        selectionActions.visibility = if (active) View.VISIBLE else View.GONE
+        if (active) {
+            val n = selection.size
+            selectionBar.title = resources.getQuantityString(R.plurals.selected_count, n, n)
+            selectionBar.subtitle = selection.totalSize { folderSizes[it.path] }?.let { FileUtils.formatSize(this, it) }
+            labelBar(state!!.unfavorite)
+            for ((bar, view) in barViews) {
+                view.visibility = if (bar in state.shown) View.VISIBLE else View.GONE
+                val on = bar in state.enabled
+                view.isEnabled = on
+                view.alpha = if (on) 1f else DISABLED_ALPHA
+            }
+        }
+        updateFab(state)
+    }
+
+    /**
+     * Shows what the floating button does now ([SelectionActions.fab]): the list/grid toggle
+     * with nothing selected, else what Settings picks for one or several, each in its own
+     * colors ([FabLook]); hidden when it does nothing.
+     */
+    private fun updateFab(state: SelectionActions.BarState? = null) {
+        val bar = state ?: SelectionActions.BarState(emptySet(), emptySet(), false)
+        val shows = SelectionActions.fab(selection.size, prefs.listQuickFab && shown.isNotEmpty(), prefs.fabOne, prefs.fabMany, bar)
+        fabShows = shows
+        if (shows == null) {
+            fab.visibility = View.GONE
+            return
+        }
+        paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
+        fab.visibility = View.VISIBLE
+    }
+
+    /** Gives [button] the icon, name and colors of [look]. */
+    private fun paint(button: FloatingActionButton, look: FabLook) {
+        button.setImageResource(look.icon)
+        button.contentDescription = getString(look.label)
+        button.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.background))
+        button.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.foreground))
+    }
+
+    private fun onFabClick() {
+        when (fabShows) {
+            null, SelectionActions.Fab.GRID_LIST -> toggleGrid()
+            SelectionActions.Fab.OPEN -> selection.entries.singleOrNull()?.let {
+                endSelection()
+                openEntry(it)
+            }
+            SelectionActions.Fab.MOVE -> onBarAction(SelectionActions.Bar.MOVE)
+            SelectionActions.Fab.COPY -> onBarAction(SelectionActions.Bar.COPY)
+            SelectionActions.Fab.DELETE -> onBarAction(SelectionActions.Bar.DELETE)
+            SelectionActions.Fab.SHARE -> onBarAction(SelectionActions.Bar.SHARE)
+            SelectionActions.Fab.FAVORITE -> onBarAction(SelectionActions.Bar.FAVORITE)
+        }
+    }
+
+    private fun itemsOf(entries: List<BookEntry>) = entries.map { FileClipboard.Item(it.path, it.isDir) }
+
+    /**
+     * Runs bar button [bar] on the selection. Move and Copy pick it all up at once, Delete
+     * asks once for all (in Bookmarks it removes the bookmarks), Share is one share action;
+     * the selection ends as each goes ahead.
+     */
+    private fun onBarAction(bar: SelectionActions.Bar) {
+        val entries = selection.entries
+        if (entries.isEmpty()) return
+        when (bar) {
+            SelectionActions.Bar.MOVE, SelectionActions.Bar.COPY -> {
+                endSelection()
+                pickUp(entries, move = bar == SelectionActions.Bar.MOVE)
+            }
+            SelectionActions.Bar.DELETE ->
+                if (mode == TAB_BOOKMARKS) removeBookmarks(entries) else fileActions.delete(itemsOf(entries)) { endSelection() }
+            SelectionActions.Bar.SHARE -> bookShare.show(entries) { endSelection() }
+            SelectionActions.Bar.RENAME -> {
+                endSelection()
+                fileActions.rename(entries.single().file)
+            }
+            SelectionActions.Bar.FAVORITE -> {
+                val add = !barState().unfavorite
+                endSelection()
+                setFavorites(entries, add)
+            }
+            SelectionActions.Bar.MORE -> showMore()
+        }
+    }
+
+    /** Removes the bookmarks [entries] once confirmed; their books stay. */
+    private fun removeBookmarks(entries: List<BookEntry>) {
+        confirm(
+            this,
+            resources.getQuantityString(R.plurals.remove_bookmarks_title, entries.size, entries.size),
+            getString(R.string.remove_bookmarks_msg),
+            R.string.selection_remove
+        ) {
+            endSelection()
+            for (e in entries) e.id?.let { library.removeBookmark(it, e.bookmarkPage) }
+            showBookmarks()
+        }
+    }
+
+    /** The Book IDs of the books among [entries], as listed or found now; those that cannot be read are left out. */
+    private suspend fun refsOf(entries: List<BookEntry>): List<BookRef> {
+        val books = entries.filter { !it.isDir }
+        val unknown = books.filter { idOf(it) == null }
+        val found = if (unknown.isEmpty()) emptyMap() else idsOf(unknown.map { it.file })
+        return books.mapNotNull { e -> (idOf(e) ?: found[e.file])?.let { BookRef(it, e.path) } }
+    }
+
+    /** Adds [entries] (folders and books) to the favorites, or removes them, and says which. */
+    private fun setFavorites(entries: List<BookEntry>, add: Boolean) {
+        lifecycleScope.launch {
+            for (e in entries) if (e.isDir && library.isFavoriteFolder(e.path) != add) library.toggleFavoriteFolder(e.path)
+            val books = refsOf(entries)
+            withContext(AppDispatchers.io) { for (book in books) library.setFavorite(book, add) }
+            toast(if (add) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+            refreshCurrent()
+        }
+    }
+
+    /** Marks the books among [entries] read or unread. */
+    private fun markBooks(entries: List<BookEntry>, read: Boolean) {
+        lifecycleScope.launch {
+            val books = refsOf(entries)
+            if (books.isEmpty()) return@launch toast(R.string.error_open)
+            withContext(AppDispatchers.io) { library.setReadMany(books, read) }
+            toast(if (read) R.string.marked_read else R.string.marked_unread)
+            refreshCurrent()
+        }
+    }
+
+    /** The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮ button. */
+    private fun showMore() {
+        hideMore()
+        val anchor = barViews[SelectionActions.Bar.MORE] ?: return
+        val actions = moreItems()
+        if (actions.isEmpty()) return
+        val primary = ColorStateList.valueOf(MaterialColors.getColor(anchor, androidx.appcompat.R.attr.colorPrimary))
+        val list = LinearLayout(this).apply {
+            id = R.id.more_menu
+            orientation = LinearLayout.VERTICAL
+            val pad = resources.getDimensionPixelSize(R.dimen.space_2)
+            setPadding(0, pad, 0, pad)
+        }
+        for (action in actions) {
+            val item = layoutInflater.inflate(R.layout.item_more_action, list, false)
+            item.tag = action
+            item.findViewById<ImageView>(R.id.more_action_icon).apply {
+                setImageResource(MoreActionsDialog.iconOf(action))
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.more_action_label).setText(MoreActionsDialog.labelOf(action))
+            item.setOnClickListener {
+                hideMore()
+                onMoreAction(action)
+            }
+            list.addView(item)
+        }
+        list.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val popup = PopupWindow(list, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        val elevation = resources.displayMetrics.density * MORE_ELEVATION_DP
+        popup.setBackgroundDrawable(
+            MaterialShapeDrawable().apply {
+                fillColor = ColorStateList.valueOf(MaterialColors.getColor(anchor, com.google.android.material.R.attr.colorSurfaceContainerHigh))
+                setCornerSize(resources.getDimension(R.dimen.space_3))
+            }
+        )
+        popup.elevation = elevation
+        popup.isOutsideTouchable = true
+        popup.setOnDismissListener { if (morePopup === popup) morePopup = null }
+        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
+        popup.showAsDropDown(anchor, (anchor.width - list.measuredWidth) / 2, -(anchor.height + list.measuredHeight + gap))
+        morePopup = popup
+    }
+
+    private fun hideMore() {
+        val popup = morePopup ?: return
+        morePopup = null
+        popup.dismiss()
+    }
+
+    /** The ⋮ menu's items while it shows; for tests. */
+    internal val moreMenu: ViewGroup? get() = morePopup?.contentView as? ViewGroup
+
+    /** Runs ⋮ menu item [action] on the selection, which ends. */
+    private fun onMoreAction(action: MoreAction) {
+        val entries = selection.entries
+        val one = entries.singleOrNull()
+        endSelection()
+        when (action) {
+            MoreAction.MARK_READ -> markBooks(entries, read = true)
+            MoreAction.MARK_UNREAD -> markBooks(entries, read = false)
+            MoreAction.MARK_ALL_READ -> markFolders(entries.filter { it.isDir }.map { it.file }, read = true)
+            MoreAction.MARK_ALL_UNREAD -> markFolders(entries.filter { it.isDir }.map { it.file }, read = false)
+            MoreAction.SET_STARTUP -> one?.let {
+                prefs.setStartupFolder(it.path)
+                toast(R.string.startup_folder_set)
+            }
+            MoreAction.SHOW_IN_FOLDER -> one?.let { openLocation(it.file) }
+            MoreAction.BOOK_INFO -> one?.let { showBookInfo(it) }
+            MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
+            MoreAction.PEEK -> one?.let { peekFromMenu(it) }
+            // Built with lossless compaction.
+            MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> Unit
+        }
+    }
+
+    /** Book info of [entry] without opening it ([LibraryBookInfo]). */
+    private fun showBookInfo(entry: BookEntry) {
+        val where = entry.file.parentFile?.let { dir -> relativePath(dir).ifEmpty { locationName(dir.absolutePath) } }.orEmpty()
+        LibraryBookInfo.show(this, entry, prefs, factsCache, where) { pickCharset(entry) }
+    }
+
+    /** Asks which charset the file names of book [entry] are read in; an advanced setting. */
+    private fun pickCharset(entry: BookEntry) {
+        NameCharsetDialog.builder(this, library, idOf(entry), prefs.charset) { picked ->
+            lifecycleScope.launch {
+                withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, entry.file, prefs.charset, picked, cacheDir) }
+                adapter.notifyDataSetChanged()
+            }
+        }.show()
+    }
+
+    /** True when [entry] can be shared: a file or folder that can be changed, or in Bookmarks a book still there. */
+    private fun canShare(entry: BookEntry): Boolean {
+        if (mode != TAB_BOOKMARKS) return canChangeFiles(entry)
+        if (Remotes.isRemote(entry.path)) return !Remotes.isOrphan(entry.path)
+        return entry.file.exists()
     }
 
     /**
@@ -1679,28 +1944,18 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return entry.file.exists()
     }
 
-    /** What the long-press menu's More holds for [entry]: file tools beyond the four file operations, none yet. */
-    @Suppress("UNUSED_PARAMETER")
-    private fun moreActions(entry: BookEntry): List<Pair<String, () -> Unit>> = emptyList()
-
-    private fun showMore(entry: BookEntry, more: List<Pair<String, () -> Unit>>) {
-        AlertDialog.Builder(this)
-            .setTitle(entry.name)
-            .setItems(more.map { it.first }.toTypedArray()) { _, which -> more[which].second.invoke() }
-            .show()
-    }
-
-    /** Puts [entry] on the clipboard for Paste, saying how Paste works. */
-    private fun pickUp(entry: BookEntry, move: Boolean) {
-        fileActions.pickUp(listOf(FileClipboard.Item(entry.path, entry.isDir)), move)
+    /** Puts [entries] on the clipboard together for Paste, saying how Paste works. */
+    private fun pickUp(entries: List<BookEntry>, move: Boolean) {
+        fileActions.pickUp(itemsOf(entries), move)
         if (pasteFab.visibility == View.VISIBLE) pasteFab.post { showPasteBubble() } else toast(R.string.paste_hint_browse)
     }
 
-    /** Shows Paste while an item is picked up and a folder is browsed. */
+    /** Shows Paste while items are picked up and a folder is browsed, in the colors of Move or Copy. */
     private fun updatePasteButton() {
         val clip = FileClipboard.clip
         val shown = clip != null && mode == TAB_BROWSE && currentDir != null
         pasteFab.visibility = if (shown) View.VISIBLE else View.GONE
+        if (clip != null) paint(pasteFab, FabLook.paste(clip.move))
         pasteFab.contentDescription = when {
             clip == null -> getString(R.string.paste)
             clip.count == 1 -> getString(R.string.paste_named, clip.name)
@@ -1792,7 +2047,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun canPeek(entry: BookEntry) =
         if (entry.isDir) entry.file.isDirectory else Formats.isOpenable(entry.name) && entry.file.isFile
 
-    /** Peeks into [entry] from the long-press menu: the grid grows out of its tile and stays open. */
+    /** Peeks into [entry] from the selection's ⋮ menu: the grid grows out of its tile and stays open. */
     private fun peekFromMenu(entry: BookEntry) {
         val position = adapter.positionOf(entry.path)
         val tile = recycler.findViewHolderForAdapterPosition(position)?.itemView?.let { it.findViewById<View>(R.id.box) ?: it }
@@ -1802,12 +2057,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
     private fun toggleGrid() {
         prefs.setGrid(tabName(), !view.grid)
-    }
-
-    private fun updateFabIcon() {
-        val grid = view.grid
-        fab.setImageResource(if (grid) R.drawable.ic_view_list else R.drawable.ic_grid_view)
-        fab.contentDescription = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
     }
 
     private fun applyLayoutManager() {
@@ -2117,9 +2366,24 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
     }
 
-    private fun markFolderNow(dir: File, read: Boolean) {
+    /** Marks the books directly in [dirs] read or unread once confirmed, asking once for all of them. */
+    private fun markFolders(dirs: List<File>, read: Boolean) {
+        if (dirs.size == 1) return markFolder(dirs[0], read)
+        confirm(
+            this,
+            getString(if (read) R.string.confirm_mark_read_title else R.string.confirm_mark_unread_title),
+            resources.getQuantityString(if (read) R.plurals.confirm_mark_read_many else R.plurals.confirm_mark_unread_many, dirs.size, dirs.size),
+            if (read) R.string.menu_mark_all_read else R.string.menu_mark_all_unread
+        ) {
+            markFolderNow(dirs, read)
+        }
+    }
+
+    private fun markFolderNow(dir: File, read: Boolean) = markFolderNow(listOf(dir), read)
+
+    private fun markFolderNow(dirs: List<File>, read: Boolean) {
         lifecycleScope.launch {
-            val files = withContext(AppDispatchers.io) { dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() }
+            val files = withContext(AppDispatchers.io) { dirs.flatMap { dir -> dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() } }
             // Books never seen are read for their IDs, several at once.
             val books = idsOf(files).map { (f, id) -> BookRef(id, f.absolutePath) }
             withContext(AppDispatchers.io) { library.setReadMany(books, read) }
@@ -2291,6 +2555,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
+        menu.findItem(R.id.menu_clear_history)?.isVisible = mode == TAB_HISTORY
         menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
         menu.findItem(R.id.menu_large)?.isVisible = browsing && local
         menu.findItem(R.id.menu_search_deep)?.apply {
@@ -2323,6 +2588,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 scheduleDeepSearch()
             }
             R.id.menu_stats -> showStats()
+            R.id.menu_clear_history -> confirm(this, R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
+                library.clearHistory()
+                refreshCurrent()
+            }
             R.id.menu_dupes -> openCleanup(CleanupActivity.MODE_DUPES)
             R.id.menu_large -> openCleanup(CleanupActivity.MODE_LARGE)
             R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavoriteFolder(currentDir?.absolutePath)
@@ -2410,6 +2679,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             peek.close()
             return
         }
+        if (selection.active) {
+            endSelection()
+            return
+        }
         if (!navigateUp()) {
             @Suppress("DEPRECATION")
             super.onBackPressed()
@@ -2432,6 +2705,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val STATE_DIR = "dir"
         private const val STATE_TRAIL = "trail"
         private const val STATE_OFFER = "resume_offer"
+        private const val STATE_SELECTED = "selected"
+
+        /** How faint a button the selection cannot use now shows. */
+        private const val DISABLED_ALPHA = 0.38f
+
+        /** How far the selection's ⋮ menu floats above the list. */
+        private const val MORE_ELEVATION_DP = 8f
         private const val INCOMING_DIR = "incoming"
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L

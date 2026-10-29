@@ -10,7 +10,6 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -20,6 +19,8 @@ import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.LibraryFilter
+import com.infinity.comicreader.data.MoreAction
+import com.infinity.comicreader.data.MoreActions
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.reader.DirectionDetection
@@ -58,6 +59,8 @@ class ListActivityPeekTest {
         book = Fixtures.zip(File(dir, "Vol 1.cbz"), "01.png" to page, "02.png" to page, "03.png" to page)
         File(dir, "Extras").mkdirs()
         Prefs(context).lastPath = dir.absolutePath
+        // Off by default in the selection's menu.
+        Prefs(context).moreActions = MoreActions.DEFAULT.with(MoreAction.PEEK, true)
     }
 
     private fun idle(ms: Long = 0) {
@@ -78,9 +81,12 @@ class ListActivityPeekTest {
         recycler.findViewHolderForAdapterPosition(position)!!.itemView.performLongClick()
     }
 
-    private fun AlertDialog.click(label: String) {
-        val items = (0 until listView.adapter.count).map { listView.adapter.getItem(it).toString() }
-        listView.performItemClick(null, items.indexOf(label), 0)
+    /** Clicks ⋮ menu item [action] of the selection. */
+    private fun ListActivity.more(action: MoreAction) {
+        findViewById<View>(R.id.selection_more).performClick()
+        idle()
+        val menu = moreMenu!!
+        (0 until menu.childCount).map { menu.getChildAt(it) }.single { it.tag == action }.performClick()
     }
 
     @Test
@@ -88,8 +94,8 @@ class ListActivityPeekTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         activity.longPress(book)
-        val menu = ShadowDialog.getLatestDialog() as AlertDialog
-        menu.click("Peek")
+        idle()
+        activity.more(MoreAction.PEEK)
         idle(500)
         val peek = activity.peek()
         assertTrue(peek.isShowing)
@@ -158,6 +164,7 @@ class ListActivityPeekTest {
         idle()
         activity.spread(book, spread = 130f)
         assertNull(ShadowDialog.getLatestDialog())
+        assertFalse(activity.selection.active)
         assertTrue(activity.peek().isShowing)
         assertNull(shadowOf(activity).nextStartedActivity)
     }
@@ -207,7 +214,8 @@ class ListActivityPeekTest {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         idle()
         activity.longPress(extras)
-        (ShadowDialog.getLatestDialog() as AlertDialog).click("Peek")
+        idle()
+        activity.more(MoreAction.PEEK)
         idle(500)
         val peek = activity.peek()
         assertTrue(peek.isShowing)
@@ -230,10 +238,11 @@ class ListActivityPeekTest {
         assertFalse(peek.isShowing)
     }
 
-    /** The entries [folder]'s peek shows, opened from the long-press menu; null when it shows no grid. */
+    /** The entries [folder]'s peek shows, opened from the selection's menu; null when it shows no grid. */
     private fun ListActivity.peekedEntriesOrNull(folder: File): List<BookEntry>? {
         longPress(folder)
-        (ShadowDialog.getLatestDialog() as AlertDialog).click("Peek")
+        idle()
+        more(MoreAction.PEEK)
         idle(500)
         val adapter = peek().grid().adapter as? CoverPeekAdapter ?: return null
         return (0 until adapter.itemCount).map { adapter.entryAt(it) }

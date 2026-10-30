@@ -32,9 +32,10 @@ import java.util.zip.ZipOutputStream
  * page made anew ([FlatNames]), every other file copied as it is, OS litter left out.
  * Pages convert on up to [maxWorkers] threads at once, fewer while [limit] says so, and
  * only as many as [memory] bytes hold ([Request.cost]); each file passes through
- * [scratch] on its way, checked by the CRC its archive stores, if any. The new archive is
- * written beside the book, every entry checked by its CRC, and only then put in place: as the book itself when
- * [Request.inPlace] (a non-ZIP book's file removed), else beside it.
+ * [scratch] on its way, checked by the CRC its archive stores, if any; a folder's file kept
+ * as it is is read from where it is. The new archive is written beside the book, every entry
+ * checked by its CRC, and only then put in place: as the book itself when [Request.inPlace]
+ * (a non-ZIP book's file removed), as [Request.target] when given, else beside it.
  */
 class Compactor(
     private val scratch: File,
@@ -60,7 +61,11 @@ class Compactor(
         /** The memory making a page anew takes at most ([PageWork.memoryFor]). */
         val cost: (ByteArray) -> Long = { it.size * 3L },
         /** What puts the new file in place, and what goes with it. */
-        val placer: Placer = Placer { _, _, swap -> swap() }
+        val placer: Placer = Placer { _, _, swap -> swap() },
+        /** Where the new file goes, over a file there; null to name it from the book. */
+        val target: File? = null,
+        /** True to write the new file even when no page is made anew (a folder packed). */
+        val always: Boolean = false
     )
 
     /** Puts a rebuilt book in place. */
@@ -130,9 +135,9 @@ class Compactor(
 
     private fun run(request: Request, reader: ArchiveReader, progress: Progress, closeReader: () -> Unit): Result {
         val book = request.book
-        // Taken now: in place, the book goes or is replaced.
-        val time = book.lastModified()
         val all = reader.entries
+        // Taken now: in place, the book goes or is replaced. A folder's is its newest file's.
+        val time = if (book.isDirectory) all.maxOfOrNull { e -> reader.looseFile(e)?.lastModified() ?: 0L } ?: 0L else book.lastModified()
         if (all.any { Formats.isArchiveName(it.path) && !FlatNames.isJunk(it.path) }) return Result.Unchanged(Why.NESTED)
         val kept = all.filter { !FlatNames.isJunk(it.path) }
         val pages = pagesOf(kept.map { it.path to it.size }).map { kept[it] }
@@ -152,7 +157,7 @@ class Compactor(
             val pieces = convertAll(request, reader, files, work, progress, total)
             closeReader()
             val failedAt = files.indices.filter { pieces[it].failed }
-            if (pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
+            if (!request.always && pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
             val names = FlatNames.of(
                 files.map { it.path },
                 files.mapIndexed { i, e ->
@@ -165,13 +170,13 @@ class Compactor(
             part = out
             pack(out, names, pieces, time, progress, total)
             verify(out, names, pieces)
-            val before = book.length()
+            val before = if (book.isDirectory) all.sumOf { it.size.coerceAtLeast(0) } else book.length()
             val after = out.length()
             if (request.smallerOnly && after >= before) return Result.Unchanged(Why.NOT_SMALLER, failedAt.map { FlatNames.baseName(files[it].path) })
             check(progress)
             // In place, a ZIP is replaced under its name; any other book becomes a .cbz and goes.
             val over = request.inPlace && Formats.ext(book.name) in Formats.ZIP
-            val target = if (over) book else File(dir, FlatNames.output(book.name, request.suffix) { n -> File(dir, n).exists() })
+            val target = request.target ?: if (over) book else File(dir, FlatNames.output(book.name, request.suffix) { n -> File(dir, n).exists() })
             val removed = if (request.inPlace && !over) book else null
             val oldKeys = pages.map { e -> files.indexOf(e).let { if (it < 0) null else names[it] } }
             val newPages = pagesOf(names.indices.map { names[it] to pieces[it].size }).map { names[it] }
@@ -179,7 +184,7 @@ class Compactor(
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
             val result = Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
             request.placer.place(result, out) {
-                place(out, book, target, removed != null)
+                place(out, book, target, removed != null, replace = request.target != null)
                 part = null
                 if (time > 0) target.setLastModified(time)
             }
@@ -214,8 +219,7 @@ class Compactor(
                 val entry = files[i]
                 val file = File(work, i.toString())
                 if (!isPage(entry)) {
-                    ensureRoom(work, entry.size)
-                    pieces[i] = reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
+                    pieces[i] = asIs(reader, entry, file)
                     advance(entry.size.coerceAtLeast(0))
                     continue
                 }
@@ -235,11 +239,7 @@ class Compactor(
                     budget.give(held)
                     room.release()
                     // Too large to hold now: copied as it is.
-                    ensureRoom(work, entry.size)
-                    pieces[i] = reader.read(entry) { copy(it, file) }.let {
-                        checkRead(entry, it.size, it.crc)
-                        Piece(it.file, it.size, it.crc, null, failed = true)
-                    }
+                    pieces[i] = asIs(reader, entry, file).let { Piece(it.file, it.size, it.crc, null, failed = true) }
                     advance(entry.size.coerceAtLeast(0))
                     continue
                 }
@@ -267,9 +267,13 @@ class Compactor(
                             }
                         }
                         val keep = made?.bytes ?: bytes
-                        ensureRoom(work, keep.size.toLong())
-                        file.writeBytes(keep)
-                        pieces[i] = Piece(file, keep.size.toLong(), crcOf(keep), made, failed)
+                        // A folder's file kept as it is goes into the new archive from where it is.
+                        val own = if (made == null) reader.looseFile(entry) else null
+                        if (own == null) {
+                            ensureRoom(work, keep.size.toLong())
+                            file.writeBytes(keep)
+                        }
+                        pieces[i] = Piece(own ?: file, keep.size.toLong(), crcOf(keep), made, failed)
                         advance(entry.size.coerceAtLeast(0))
                     } finally {
                         budget.give(taken)
@@ -291,6 +295,16 @@ class Compactor(
             while (!pool.awaitTermination(WAIT_MS, TimeUnit.MILLISECONDS)) Unit
         }
         return pieces.map { it ?: throw IOException("A file was not read") }
+    }
+
+    /**
+     * [entry] as it is: a folder's file where it is, its size and CRC read; else copied to
+     * [file], checked by the CRC its archive stores.
+     */
+    private fun asIs(reader: ArchiveReader, entry: ArchiveEntry, file: File): Piece {
+        reader.looseFile(entry)?.let { own -> return reader.read(entry) { sum(it, own) } }
+        ensureRoom(file.parentFile!!, entry.size)
+        return reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
     }
 
     /** Writes [pieces] as [names] into [out], a stored ZIP, in order, each dated [time]. */
@@ -353,10 +367,14 @@ class Compactor(
         }
     }
 
-    /** Puts [out] in place as [target]: over [book] when it is the book, else never over a file there; [book] removed when [remove]. */
-    private fun place(out: File, book: File, target: File, remove: Boolean) {
-        if (target == book) {
-            Files.move(out.toPath(), book.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    /**
+     * Puts [out] in place as [target]: over [book] when it is the book, or over a file there
+     * when [replace], else never over one; [book] removed when [remove].
+     */
+    private fun place(out: File, book: File, target: File, remove: Boolean, replace: Boolean) {
+        if (target == book || replace) {
+            Files.move(out.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            if (remove && target != book && !book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
             return
         }
         Files.move(out.toPath(), target.toPath())
@@ -380,6 +398,20 @@ class Compactor(
     /** True for a file read whole to be converted: named as an image, of a size held in memory. */
     private fun isPage(entry: ArchiveEntry): Boolean =
         Formats.isImageName(entry.path) && entry.size in 1..MAX_PAGE_BYTES
+
+    /** [file] read through [input] for its size and CRC. */
+    private fun sum(input: InputStream, file: File): Piece {
+        val crc = CRC32()
+        val buffer = ByteArray(COPY_BYTES)
+        var size = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            crc.update(buffer, 0, n)
+            size += n
+        }
+        return Piece(file, size, crc.value, null)
+    }
 
     private fun copy(input: InputStream, file: File): Piece {
         val crc = CRC32()

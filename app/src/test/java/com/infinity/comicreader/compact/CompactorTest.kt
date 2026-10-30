@@ -371,6 +371,96 @@ class CompactorTest {
         assertTrue(Compactor(scratch, 4, memory = 10_000).run(alone, { ArchiveReader.open(source, "UTF-8")!! }, alive) is Compactor.Result.Rebuilt)
     }
 
+    /** A folder of loose [images] in the temporary folder. */
+    private fun folder(name: String, images: List<Pair<String, ByteArray>>): File {
+        val dir = File(tmp.root, name).apply { mkdirs() }
+        for ((n, data) in images) File(dir, n).writeBytes(data)
+        return dir
+    }
+
+    private val loose = listOf("10.png" to page(PNG), "2.jpg" to page(JPG), "1.jpg" to page(JPG, 1500))
+
+    private fun pack(dir: File, convert: (ByteArray) -> PageWork.Made?, target: File, progress: Compactor.Progress = alive, work: File = scratch): Compactor.Result {
+        val images = PackFolders.of(dir).images
+        val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", target = target, always = true, smallerOnly = false)
+        return Compactor(work, 2).run(request, { FolderReader(images) }, progress)
+    }
+
+    @Test
+    fun aFolderPacksIntoAStoredCbzOfItsImagesAsTheyAre() {
+        val dir = folder("Loose", loose)
+        File(dir, "1.jpg").setLastModified(1_700_000_000_000)
+        File(dir, "2.jpg").setLastModified(1_700_000_100_000)
+        File(dir, "10.png").setLastModified(1_600_000_000_000)
+        val work = scratch
+        val result = pack(dir, { null }, File(tmp.root, "Loose.cbz"), work = work) as Compactor.Result.Rebuilt
+        assertEquals(File(tmp.root, "Loose.cbz"), result.file)
+        val out = entries(result.file)
+        assertEquals(listOf("1.jpg", "2.jpg", "10.png"), out.map { it.first })
+        for ((name, data) in out) assertArrayEquals(File(dir, name).readBytes(), data)
+        ZipFile(result.file).use { z -> assertTrue(z.entries().toList().all { it.method == ZipEntry.STORED }) }
+        assertEquals(loose.sumOf { it.second.size.toLong() }, result.before)
+        assertEquals(result.file.length(), result.after)
+        assertArrayEquals(intArrayOf(0, 1, 2), result.moves)
+        assertEquals(3, result.pageCount)
+        // Dated as its newest image; the folder itself is left for the caller.
+        assertEquals(1_700_000_100_000 / 2000, result.file.lastModified() / 2000)
+        assertEquals(setOf("1.jpg", "2.jpg", "10.png"), dir.list()!!.toSet())
+        // Images kept as they are go in from where they are: nothing was written aside.
+        assertTrue(work.list()!!.isEmpty())
+    }
+
+    @Test
+    fun aFolderPacksCompactedWithItsPagesMadeAnew() {
+        val dir = folder("Loose", loose)
+        val result = pack(dir, halve, File(tmp.root, "Loose.cbz")) as Compactor.Result.Rebuilt
+        val out = entries(result.file)
+        assertEquals(listOf("1.jpg", "2.jpg", "10.jxl"), out.map { it.first })
+        assertEquals(200, out[2].second.size)
+        assertArrayEquals(page(JPG, 1500), out[0].second)
+        assertTrue(result.before > result.after)
+    }
+
+    @Test
+    fun aGivenTargetIsReplaced() {
+        val dir = folder("Loose", loose)
+        val target = File(tmp.root, "Loose.cbz").apply { writeText("old") }
+        val result = pack(dir, { null }, target) as Compactor.Result.Rebuilt
+        assertEquals(target, result.file)
+        assertEquals(3, entries(target).size)
+        assertEquals(listOf("Loose", "Loose.cbz"), tmp.root.list()!!.filter { it.startsWith("Loose") }.sorted())
+    }
+
+    @Test
+    fun cancelingPackingLeavesTheFolderAndNoFile() {
+        val dir = folder("Long", (1..20).map { "$it.png" to page(PNG) })
+        val reports = AtomicInteger()
+        val progress = object : Compactor.Progress {
+            override val alive: Boolean get() = reports.get() < 3
+
+            override fun report(done: Long, total: Long) {
+                reports.incrementAndGet()
+            }
+        }
+        assertThrows(CancellationException::class.java) { pack(dir, halve, File(tmp.root, "Long.cbz"), progress) }
+        assertEquals(20, dir.list()!!.size)
+        assertEquals(listOf("Long"), tmp.root.list()!!.filter { it.contains("Long") })
+    }
+
+    @Test
+    fun anImageChangedWhilePackedFailsTheCheck() {
+        val dir = folder("Loose", loose)
+        val images = PackFolders.of(dir).images
+        // The image changes after it was read, before it is packed.
+        val changing: (ByteArray) -> PageWork.Made? = { bytes ->
+            if (bytes[0] == JPG.toByte() && bytes.size == 1500) File(dir, "1.jpg").writeBytes(page(JPG + 1, 1500))
+            null
+        }
+        val request = Compactor.Request(dir, changing, inPlace = false, suffix = "", target = File(tmp.root, "Loose.cbz"), always = true, smallerOnly = false)
+        assertThrows(java.io.IOException::class.java) { Compactor(scratch, 1).run(request, { FolderReader(images) }, alive) }
+        assertFalse(File(tmp.root, "Loose.cbz").exists())
+    }
+
     private companion object {
         const val PNG = 0x50
         const val JPG = 0x4A

@@ -33,6 +33,9 @@ interface ArchiveReader : Closeable {
     /** Runs [block] on the contents of [entry]; implementations serialize this where the backend needs it. */
     fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T
 
+    /** The file holding [entry] alone, as it is, where it is one (a folder's file); null inside an archive. */
+    fun looseFile(entry: ArchiveEntry): File? = null
+
     companion object {
         /**
          * Reader for [file] as [kind] (by default from its leading bytes), or null when it

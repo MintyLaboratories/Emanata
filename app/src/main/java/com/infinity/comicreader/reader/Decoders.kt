@@ -393,7 +393,8 @@ object Decoders {
     /**
      * A [RegionReader] of [bytes], an image shown [w] x [h], reading its pixels as shown:
      * a [REGION_KINDS] image, a JPEG turned by its EXIF orientation too ([OrientedRegions]),
-     * a JPEG XL holding a JPEG through that JPEG ([jpegOf]), as Compact writes them; null for
+     * a JPEG XL holding a JPEG through that JPEG ([jpegOf]), as Compact writes them, a
+     * progressive JPEG through rows kept between reads ([KeptRows]); null for
      * other kinds, a PNG an eXIf chunk may turn, or where the reader sees another size.
      */
     private fun regionReader(bytes: ByteArray, w: Int, h: Int): RegionReader? {
@@ -403,7 +404,9 @@ object Decoders {
         if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
         val orientation = if (kind == ImageKind.JPEG) ImageHeaders.jpegOrientation(bytes) ?: return null else 1
         val raw = openRegions(bytes) ?: return null
-        val reader = if (orientation in 2..8) OrientedRegions(raw, orientation) else raw
+        val oriented = if (orientation in 2..8) OrientedRegions(raw, orientation) else raw
+        // Any part of a progressive JPEG decodes every scan of all of it: reads share a few.
+        val reader = if (kind == ImageKind.JPEG && ImageHeaders.jpegProgressive(bytes)) KeptRows(oriented, PROGRESSIVE_READ_PIXELS) else oriented
         if (reader.width == w && reader.height == h) return reader
         reader.close()
         return null
@@ -418,6 +421,9 @@ object Decoders {
         val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull()
         return BitmapDetail(decode(bytes, target.detail(size, maxBytes)))
     }
+
+    /** Most pixels a progressive JPEG's detail keeps of one read, for the reads after it ([KeptRows]): 32 MB of ARGB. */
+    private const val PROGRESSIVE_READ_PIXELS = 8_000_000L
 
     /** Pixels above which a page's detail is read a rectangle at a time ([RegionDetail]) rather than decoded whole. */
     private const val REGION_DETAIL_PIXELS = 16_000_000L

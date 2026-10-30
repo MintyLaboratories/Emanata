@@ -135,6 +135,14 @@ class ImageHeadersTest {
         TestImages.jpegHead(w, h, orientation, little, sof)
 
     @Test
+    fun jpegProgressiveFromFrameHeader() {
+        assertFalse(ImageHeaders.jpegProgressive(jpeg(640, 480)))
+        assertTrue(ImageHeaders.jpegProgressive(jpeg(640, 480, sof = 0xC2)))
+        assertTrue(ImageHeaders.jpegProgressive(jpeg(640, 480, orientation = 6, sof = 0xC2)))
+        assertFalse(ImageHeaders.jpegProgressive(ByteArray(8)))
+    }
+
+    @Test
     fun jpegSizeFromFrameHeader() {
         assertArrayEquals(intArrayOf(1988, 3056), ImageHeaders.jpegSize(jpeg(1988, 3056)))
         assertArrayEquals(intArrayOf(640, 480), ImageHeaders.jpegSize(jpeg(640, 480, sof = 0xC2)))

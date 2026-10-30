@@ -73,6 +73,51 @@ class OrientedRegions(private val raw: RegionReader, private val orientation: In
 }
 
 /**
+ * Reads of [inner], a source any part of which decodes it whole (a progressive JPEG),
+ * served from one taller read kept: unsampled reads take the rows asked and more, up to
+ * [maxPixels] in all, on in the direction they move, so a page's bands share a few decodes.
+ * Sampled reads pass straight through.
+ */
+class KeptRows(private val inner: RegionReader, private val maxPixels: Long) : RegionReader {
+    override val width: Int get() = inner.width
+    override val height: Int get() = inner.height
+
+    private var kept: Bitmap? = null
+    private var keptLeft = 0
+    private var keptTop = 0
+    private var keptRight = 0
+    private var keptBottom = 0
+
+    override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
+        if (sample != 1) return inner.read(left, top, right, bottom, sample)
+        val held = kept
+        val inside = held != null && left >= keptLeft && right <= keptRight && top >= keptTop && bottom <= keptBottom
+        val rows = if (inside) kept!! else {
+            val up = held != null && top < keptTop
+            val span = maxOf(bottom - top, (maxPixels / (right - left)).toInt()).coerceAtMost(height)
+            val t = (if (up) bottom - span else top).coerceIn(0, height - span)
+            held?.recycle()
+            kept = null
+            inner.read(left, t, right, t + span, 1).also {
+                kept = it
+                keptLeft = left
+                keptTop = t
+                keptRight = right
+                keptBottom = t + span
+            }
+        }
+        val part = Bitmap.createBitmap(rows, left - keptLeft, top - keptTop, right - left, bottom - top)
+        return if (part === rows) rows.copy(Bitmap.Config.ARGB_8888, false) else part
+    }
+
+    override fun close() {
+        kept?.recycle()
+        kept = null
+        inner.close()
+    }
+}
+
+/**
  * Which source rectangle a render of [plan] decodes, and at what power-of-two [sample]:
  * the plan's span with [margin] source pixels around it for the filter's taps, clamped to
  * the [w] x [h] image, so taps fall on real neighbors and only the image's own edges repeat.

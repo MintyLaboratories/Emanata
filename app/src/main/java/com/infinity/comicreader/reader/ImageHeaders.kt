@@ -45,7 +45,12 @@ object ImageHeaders {
     /** The EXIF orientation of a JPEG, 1 without one; null when its frame header is not found. */
     fun jpegOrientation(bytes: ByteArray): Int? = jpegHead(bytes)?.get(2)
 
-    /** `[width, height, orientation]` of a JPEG as stored, before any EXIF orientation. */
+    /** True when a JPEG's frame header is progressive (SOF2, 6, 10 or 14), so any part of it decodes every scan. */
+    fun jpegProgressive(bytes: ByteArray): Boolean = jpegHead(bytes)?.get(3) in PROGRESSIVE_SOF
+
+    private val PROGRESSIVE_SOF = setOf(0xC2, 0xC6, 0xCA, 0xCE)
+
+    /** `[width, height, orientation, frame marker]` of a JPEG as stored, before any EXIF orientation. */
     private fun jpegHead(bytes: ByteArray): IntArray? {
         if (bytes.size < 4 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xD8.toByte()) return null
         var at = 2
@@ -73,7 +78,7 @@ object ImageHeaders {
                 val h = be16(bytes, body + 1)
                 val w = be16(bytes, body + 3)
                 if (w <= 0 || h <= 0) return null
-                return intArrayOf(w, h, orientation)
+                return intArrayOf(w, h, orientation, marker)
             }
             at += 2 + length
         }

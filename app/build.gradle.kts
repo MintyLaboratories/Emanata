@@ -61,6 +61,21 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
+        // Release code with the debug build's checks and benchmarks, debug-signed: installs over
+        // the debug build, keeping its data, to time what a release build does (not debuggable).
+        create("bench") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-bench"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
+    }
+
+    sourceSets.getByName("bench") {
+        java.srcDir("src/debug/java")
+        res.srcDir("src/debug/res")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
 
     // AVIF decoding (libavif, dav1d) and Book IDs (xxHash), fetched and built by CMake (src/main/cpp).

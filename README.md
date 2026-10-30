@@ -183,7 +183,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   cover at first, then the last choice. A folder sends its title and cover.
   The share sheet gets one intent: the
   title as text, the cover as a PNG, the file in place through the app's own
-  content provider, which other apps read only when granted. Several items
+  content provider, which other apps read only when granted. Titles sent with a
+  cover or file are also copied to the clipboard, one per line ("Titles copied;
+  paste them into your message"), as many apps drop the text beside an image.
+  Several items
   share at once: their titles one per line, their covers (made one at a time
   only once Share is tapped, counted as they are, and stopped by Cancel; one
   that cannot be made is left out) and the books' files. A share's book is

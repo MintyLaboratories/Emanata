@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.ShareChoice
 import com.infinity.comicreader.files.BookUris
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -101,6 +102,24 @@ class BookShareManyTest {
         val streams = send.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)!!
         assertEquals(listOf(a.path, b.path), streams.map { BookUris.pathOf(context, it) })
         assertEquals(2, send.clipData!!.itemCount)
+        // Many apps drop the text beside files: the titles are on the clipboard too, and it says so.
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        assertEquals("first\nsecond\nSeries", clipboard.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(context.getString(R.string.share_titles_copied), org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun oneBooksTitleGoingWithItsFileIsCopiedToo() {
+        Prefs(context).shareChoice = ShareChoice(title = true, cover = false, file = true)
+        share.show(listOf(book("single.cbz", 100)))
+        idle()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        awaitChooser()
+        @Suppress("DEPRECATION")
+        val send = shadowOf(context).nextStartedActivity.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
+        assertEquals("single", send.getStringExtra(Intent.EXTRA_TEXT))
+        assertEquals("single", context.getSystemService(android.content.ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(context.getString(R.string.share_titles_copied), org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
     }
 
     @Test
@@ -168,6 +187,8 @@ class BookShareManyTest {
         val send = shadowOf(context).nextStartedActivity.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
         assertEquals(Intent.ACTION_SEND, send.action)
         assertEquals("One\nTwo", send.getStringExtra(Intent.EXTRA_TEXT))
+        // Titles alone go as text only, the clipboard untouched.
+        assertFalse(context.getSystemService(android.content.ClipboardManager::class.java).hasPrimaryClip())
         // The file choice stays for books.
         assertTrue(Prefs(context).shareChoice.file)
     }

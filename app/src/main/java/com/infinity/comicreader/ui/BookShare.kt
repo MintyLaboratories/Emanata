@@ -1,5 +1,8 @@
 package com.infinity.comicreader.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -40,8 +43,10 @@ import java.io.IOException
  * list has it ([shownCover]); the whole cover sent is made only once its box is ticked, then
  * goes as a PNG through the app's FileProvider; the file goes in place, through
  * [com.infinity.comicreader.files.BookProvider], never copied first, and [SharingService]
- * keeps the app running while the app it went to may read it. The first time the dialog
- * opens, it asks to show notifications ([NotificationAsk]).
+ * keeps the app running while the app it went to may read it. Titles sent along with
+ * covers or files are also copied to the clipboard ([copyTitles]): many apps drop the text
+ * when an image comes with it. The first time the dialog opens, it asks to show
+ * notifications ([NotificationAsk]).
  */
 internal class BookShare(
     private val activity: AppCompatActivity,
@@ -185,6 +190,7 @@ internal class BookShare(
                     if (alone) return@launch
                 }
                 val intent = ShareIntents.of(title.takeIf { choice.title }, coverUri, fileUri, BookUris.mimeOf(entry.name)) ?: return@launch
+                if (choice.title && (coverUri != null || fileUri != null)) copyTitles(listOf(title))
                 // Started now, while the app is on screen: Android lets a foreground service start only then.
                 if (fileUri != null) SharingService.start(activity)
                 runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
@@ -294,11 +300,22 @@ internal class BookShare(
                 }
                 val streams = covers.map { it to ShareIntents.COVER_TYPE } + files.zip(books) { uri, e -> uri to BookUris.mimeOf(e.name) }
                 val intent = ShareIntents.of(titles.joinToString("\n").takeIf { choice.title }, streams) ?: return@launch
+                if (choice.title && streams.isNotEmpty()) copyTitles(titles)
                 // Started now, while the app is on screen: Android lets a foreground service start only then.
                 if (files.isNotEmpty()) SharingService.start(activity)
                 runCatching { activity.startActivity(Intent.createChooser(intent, null)) }
             }
         }
+    }
+
+    /**
+     * Copies [titles] to the clipboard, one per line, and says to paste them: still sent as
+     * text too, for the apps that keep it beside an image or file.
+     */
+    private fun copyTitles(titles: List<String>) {
+        val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val copied = runCatching { clipboard.setPrimaryClip(ClipData.newPlainText(activity.getString(R.string.share_titles_label), titles.joinToString("\n"))) }
+        if (copied.isSuccess) Toast.makeText(activity, R.string.share_titles_copied, Toast.LENGTH_LONG).show()
     }
 
     /** Where shared covers go: cache/shared, which the FileProvider serves. */

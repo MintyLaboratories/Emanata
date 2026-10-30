@@ -267,7 +267,10 @@ class ListActivityFileOpsTest {
         assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.BOOK_INFO, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
-        assertEquals(listOf(MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP), activity.moreItems())
+        assertEquals(
+            listOf(MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE),
+            activity.moreItems()
+        )
         // Both: what applies to all of them, and nothing that takes one.
         activity.select(book.absolutePath)
         assertEquals(
@@ -321,6 +324,24 @@ class ListActivityFileOpsTest {
         settle()
         assertEquals(context.getString(R.string.file_failed, "JPEG XL is not available"), ShadowToast.getTextOfLatestToast())
         assertArrayEquals(bytes, book.readBytes())
+    }
+
+    @Test
+    fun compactingAFolderTakesEveryBookInside() {
+        File(other, "b.cbz").writeBytes(ByteArray(20))
+        File(other, "Sub").mkdirs()
+        File(other, "Sub/c.cbr").writeBytes(ByteArray(20))
+        File(other, ".hidden").mkdirs()
+        File(other, ".hidden/d.cbz").writeBytes(ByteArray(20))
+        File(other, "notes.txt").writeText("x")
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.moreItems()
+        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.MAKE_COMPATIBLE } }.performClick()
+        repeat(50) { if (ShadowDialog.getLatestDialog()?.isShowing != true) idle() }
+        assertEquals(context.resources.getQuantityString(R.plurals.compatible_title, 2, 2), latest().title())
+        latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        idle()
     }
 
     @Test

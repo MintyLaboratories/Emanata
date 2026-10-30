@@ -52,6 +52,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.compact.RebuildTargets
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Bookmark
@@ -1910,14 +1911,27 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             MoreAction.BOOK_INFO -> one?.let { showBookInfo(it) }
             MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
             MoreAction.PEEK -> one?.let { peekFromMenu(it) }
-            MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE ->
-                fileActions.rebuild(entries.filter(::canRebuild).map { it.path }, compatible = action == MoreAction.MAKE_COMPATIBLE) { endSelection() }
+            MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> rebuild(entries.filter(::canRebuild), compatible = action == MoreAction.MAKE_COMPATIBLE)
         }
     }
 
-    /** True when [entry] is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
+    /**
+     * True when [entry] is what Compact and Make compatible take, on the device and changeable:
+     * an archive, or a folder, which gives every book inside it.
+     */
     private fun canRebuild(entry: BookEntry): Boolean =
-        !entry.isDir && Formats.isArchiveName(entry.name) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
+        (entry.isDir || Formats.isArchiveName(entry.name)) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
+
+    /** Compacts or makes compatible the books among [entries] and every book inside the folders among them, once asked. */
+    private fun rebuild(entries: List<BookEntry>, compatible: Boolean) {
+        lifecycleScope.launch {
+            val books = entries.filter { !it.isDir }.map { it.file }
+            val folders = entries.filter { it.isDir }.map { it.file }
+            val paths = if (folders.isEmpty()) books.map { it.absolutePath } else withContext(AppDispatchers.io) { RebuildTargets.of(books, folders) }
+            if (paths.isEmpty()) return@launch toast(R.string.rebuild_no_books)
+            fileActions.rebuild(paths, compatible) { endSelection() }
+        }
+    }
 
     /** Book info of [entry] without opening it ([LibraryBookInfo]). */
     private fun showBookInfo(entry: BookEntry) {

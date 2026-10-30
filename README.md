@@ -163,7 +163,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     unread, Mark all as read / unread (folders), Set as startup folder (one
     folder), Show in folder (except from that folder itself), Book info (one
     book, without opening it), Filename charset (one book, advanced),
-    **Compact** and **Make compatible** (books on the device) and Peek (off by
+    **Compact** and **Make compatible** (books on the device; a folder gives
+    every book inside it and its subfolders) and Peek (off by
     default). Settings → **Selection menu (⋮)** shows, hides and
     reorders them like the toolbar buttons.
   - The floating button: the list/grid toggle with nothing selected (if

@@ -33,6 +33,11 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var dropWritesAfter = -1L
 
+    /** Calls made, offline ones too. */
+    @Volatile
+    var tries = 0
+        private set
+
     /** Calls that reached the host, failed or not. */
     @Volatile
     var attempts = 0
@@ -68,6 +73,7 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
                 held.decrementAndGet()
             }
         }
+        tries++
         if (offline) throw RemoteException(RemoteException.Reason.UNREACHABLE)
         attempts++
         refuse?.let { throw RemoteException(it, lasting = true) }

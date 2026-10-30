@@ -22,6 +22,8 @@ import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Node
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
+import com.infinity.comicreader.net.RemoteException
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
@@ -95,6 +97,28 @@ internal class FileJobs(
         return plan.copy(name = name, replace = false)
     }
 
+    /**
+     * The shares one operation found unreachable: its items left on them are not tried, so
+     * a share going away mid-operation stops them at once, with one failure told.
+     */
+    internal class Down {
+        private val ids = HashSet<String>()
+
+        /** Notes the shares of [paths] unreachable when [error] says one is: those that count as such now, else all of them. */
+        fun heard(error: Throwable?, vararg paths: String) {
+            if (!unreachable(error)) return
+            val shares = paths.mapNotNull { Remotes.idOf(it) }.distinct()
+            val now = shares.filter { Remotes.unreachable(it) }
+            ids += now.ifEmpty { shares }
+        }
+
+        /** True when any of [paths] is on a share found unreachable. */
+        fun blocks(vararg paths: String): Boolean = paths.any { p -> Remotes.idOf(p)?.let { it in ids } == true }
+
+        private fun unreachable(error: Throwable?): Boolean =
+            generateSequence(error) { it.cause }.take(8).any { it is RemoteException && it.reason == RemoteException.Reason.UNREACHABLE }
+    }
+
     /** The lookups of [chosen] once done, none when they failed. */
     private fun settled(chosen: Future<List<Result<Node?>>>): List<Result<Node?>>? = runCatching { chosen.get() }.getOrNull()
 
@@ -114,14 +138,16 @@ internal class FileJobs(
     fun delete(items: List<FileClipboard.Item>, chosen: Future<List<Result<Node?>>>, p: FileWork.Progress): FileWork.Outcome {
         val seen = settled(chosen)
         val gone = ArrayList<String>()
+        val down = Down()
         var done = 0
         var failure: Exception? = null
         for ((i, item) in items.withIndex()) {
+            val path = item.path
+            if (down.blocks(path)) continue
             if (items.size > 1) {
                 if (!p.alive) return FileWork.Outcome.Canceled(done, items.size, gone)
                 p.item(item.name, i, items.size)
             }
-            val path = item.path
             changed(path, seen?.getOrNull(i))?.let {
                 if (failure == null) failure = it
                 continue
@@ -136,6 +162,7 @@ internal class FileJobs(
             }
             if (error is CancellationException) return FileWork.Outcome.Canceled(done + (if (removed) 1 else 0), items.size, gone)
             if (error == null || removed) done++ else if (failure == null) failure = error
+            down.heard(error, path)
         }
         return failure?.let { FileWork.Outcome.Failed(it, done, items.size, gone) } ?: FileWork.Outcome.Done(null, gone = gone, count = done)
     }
@@ -152,6 +179,7 @@ internal class FileJobs(
         val gone = ArrayList<String>()
         // Sources not pasted (yet).
         val unsettled = plans.map { it.item.path }.toHashSet()
+        val down = Down()
         var done = 0
         var failure: Exception? = null
         fun ended(outcome: FileWork.Outcome): FileWork.Outcome {
@@ -159,6 +187,7 @@ internal class FileJobs(
             return if (outcome is FileWork.Outcome.Canceled) outcome.copy(givenBack = back) else outcome
         }
         for ((i, planned) in plans.withIndex()) {
+            if (down.blocks(planned.item.path, targetDir)) continue
             if (plans.size > 1) {
                 if (!p.alive) return ended(FileWork.Outcome.Canceled(done, plans.size, gone))
                 p.item(planned.item.name, i, plans.size)
@@ -167,6 +196,7 @@ internal class FileJobs(
                 settle(planned, targetDir, taken)
             } catch (e: Exception) {
                 if (failure == null) failure = e
+                down.heard(e, planned.item.path, targetDir)
                 continue
             }
             if (taken.isInitialized()) taken.value += plan.name.lowercase(Locale.ROOT)
@@ -180,6 +210,7 @@ internal class FileJobs(
                 return ended(FileWork.Outcome.Canceled(done, plans.size, gone))
             } catch (e: Exception) {
                 if (failure == null) failure = e
+                down.heard(e, source, targetDir)
                 continue
             }
             done++

@@ -357,6 +357,39 @@ class FileActionsManyTest {
     }
 
     @Test
+    fun aShareGoneUnreachableStopsTheItemsLeftOnIt() {
+        val (fake, dir) = share()
+        for (n in listOf("s1.cbz", "s2.cbz", "s3.cbz")) File(dir, n).writeBytes(ByteArray(20))
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        // Each call tries the network again, as once the quiet time after a failure is over.
+        var now = 0L
+        Remotes.clock = { now += Remotes.QUIET_MS; now }
+        val go = holdQueue()
+        actions.pickUp(listOf("s1.cbz", "s2.cbz").map { FileClipboard.Item("/net/s1/$it", false) } + item(a) + FileClipboard.Item("/net/s1/s3.cbz", false), move = true)
+        actions.paste(dest)
+        waitFor { FileWork.operations.value.size == 2 }
+        fake.offline = true
+        val before = fake.tries
+        go.release()
+        waitFor { finished.size == 2 }
+        settle()
+        val tried = fake.tries - before
+        // Only the first item on the share was tried; the device's went on.
+        assertEquals(listOf("a.cbz"), dest.list()!!.toList())
+        val failed = finished.last() as FileWork.Outcome.Failed
+        assertEquals(1, failed.done)
+        assertEquals(4, failed.count)
+        assertEquals(
+            context.getString(R.string.file_failed_part, context.resources.getQuantityString(R.plurals.moved_part, 4, 1, 4), context.getString(R.string.share_unreachable)),
+            ShadowToast.getTextOfLatestToast()
+        )
+        assertEquals(listOf("s1.cbz", "s2.cbz", "s3.cbz"), FileClipboard.clips.value.single().items.map { it.name })
+        // One try, at the first item.
+        assertEquals(1, tried)
+    }
+
+    @Test
     fun replaceTakesEveryNameTaken() {
         val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10) { 1 }) }
         val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(20) { 2 }) }

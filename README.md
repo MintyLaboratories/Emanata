@@ -220,7 +220,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   since, or a Replace that would now replace another item than the one chosen,
   keeps both. A queued Delete or Rename acts only on what was chosen: an item gone,
   changed or replaced by its turn is left alone, and the message says so. An item
-  that fails leaves the others going, and the message says how many were done. A move
+  that fails leaves the others going, and the message says how many were done;
+  a share found unreachable stops the items left on it, with one message. A move
   within one place is a rename; between places (device and share, two shares,
   internal storage and SD card) it copies, checks each file's size and reads it
   back to compare its CRC-32, then deletes what it copied from the source.

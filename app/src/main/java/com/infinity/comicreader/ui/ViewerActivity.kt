@@ -1168,8 +1168,8 @@ class ViewerActivity : AppCompatActivity() {
         lateDetectionJob?.cancel()
         slicesJob?.cancel()
         openJob = lifecycleScope.launch {
-            // A folder with its own direction keeps it: nothing to detect.
-            val detect = prefs.detectDirection && !folderDirection()
+            val folderDecides = folderDirection()
+            val perFolder = layoutFolder() != null
             val slice = maySlice()
             var known: KnownPages? = null
             var sliceSizes: List<IntArray?> = emptyList()
@@ -1193,6 +1193,9 @@ class ViewerActivity : AppCompatActivity() {
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
+                    // A book or folder with its own direction keeps it: nothing to detect. The book's own layout, known by its ID, decides over its folder's.
+                    val own = if (perFolder) id?.let { library.bookLayout(it) } else null
+                    val detect = prefs.detectDirection && !(own?.dirChosen ?: folderDecides)
                     val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
                     known = s.getOrNull()?.let { src -> knownSizes(target, src).also { sizeOpening(src, it.sizes, startOf(src.pageCount, id).page) } }
                     // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.

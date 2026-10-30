@@ -147,6 +147,26 @@ class ViewerActivityDirectionTest {
     }
 
     @Test
+    fun aBooksOwnLayoutWithoutADirectionDetectsUnderAFolderWithOne() {
+        val book = book("Series B v01.cbz", rtlInfo)
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("ltr"))
+        library.setBookLayout(com.infinity.comicreader.testing.ref(book), FolderLayout.Frozen(ReaderLayout(), dirChosen = false))
+        val viewer = launch(book).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
+    }
+
+    @Test
+    fun aBooksOwnDirectionIsNeverOverridden() {
+        val book = book("Series B v01.cbz", rtlInfo)
+        library.setBookLayout(com.infinity.comicreader.testing.ref(book), FolderLayout.Direction("ltr"))
+        val viewer = launch(book).get()
+        awaitOpen(viewer)
+        assertEquals(View.LAYOUT_DIRECTION_LTR, viewer.pagerDirection())
+        assertNotEquals(View.VISIBLE, viewer.hint().visibility)
+    }
+
+    @Test
     fun aDetectedDirectionPagesOverATopToBottomDefault() {
         prefs.pageMode = "continuous"
         prefs.readingDir = "ttb"

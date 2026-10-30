@@ -156,7 +156,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The selection's ⋮ menu while it shows. */
     private var morePopup: PopupWindow? = null
 
-    /** Under [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
+    /** Above [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
     internal lateinit var stack: OperationStack
     private lateinit var fileActions: FileActions
     private lateinit var bookShare: BookShare
@@ -1719,16 +1719,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun updateFab(state: SelectionActions.BarState? = null) {
         val bar = state ?: SelectionActions.BarState(emptySet(), emptySet(), false)
-        val shows = SelectionActions.fab(selection.size, prefs.listQuickFab && shown.isNotEmpty(), prefs.fabOne, prefs.fabMany, bar)
+        // Shown in an empty folder too: the button never comes and goes with the list.
+        val shows = SelectionActions.fab(selection.size, prefs.listQuickFab, prefs.fabOne, prefs.fabMany, bar)
         fabShows = shows
         if (shows == null) {
             fab.visibility = View.GONE
-            stack.setFab(false)
             return
         }
         paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
         fab.visibility = View.VISIBLE
-        stack.setFab(true)
     }
 
     /** Gives [button] the icon, name and colors of [look]. */

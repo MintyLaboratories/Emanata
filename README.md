@@ -193,10 +193,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   first Share or file operation asks once to show notifications. Books other
   apps send or open with this app are taken in every type it shares them as.
 - **Operation stack:** one column on the handed side (Settings › Appearance ›
-  Handedness, right by default): the floating button on top, never moving, and
-  under it a bubble for each pick waiting to be pasted and each file operation,
-  the newest at the bottom (from the bottom edge when the button is hidden). At
-  most four buttons show, the button included, and always the operation under
+  Handedness, right by default): the floating button at its foot, fixed low
+  (snackbars, empty folders and bubbles never move it), and above it a bubble
+  for each pick waiting to be pasted and each file operation, the newest
+  nearest the button; the bubbles keep their place when the button is hidden.
+  At most four buttons show, the button's place included, and always the operation under
   way; older bubbles fold into a count on the top one, which lists them on a
   tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible) go through
   one queue, one at a time, never in parallel; several items are one operation,

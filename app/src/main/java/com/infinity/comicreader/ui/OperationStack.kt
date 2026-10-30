@@ -60,24 +60,23 @@ internal sealed class Bubble {
 }
 
 /**
- * Which bubbles the stack shows: the newest, as many as fit, and always the operation under
- * way; the others are folded into a count.
+ * Which bubbles the stack shows: the newest, as many as fit above the floating button's
+ * place, and always the operation under way; the others are folded into a count.
  */
 internal object StackLayout {
-    /** Buttons in the stack at most, the floating button among them. */
+    /** Buttons in the stack at most, the floating button's place among them, shown or not. */
     const val MAX_BUTTONS = 4
 
-    /** [bubbles] from top (oldest) to bottom (newest), and those [hidden] (folded away), oldest first. */
+    /** [bubbles] from top (oldest) to bottom (newest, nearest the button), and those [hidden] (folded away), oldest first. */
     data class Shown(val bubbles: List<Bubble>, val hidden: List<Bubble>) {
         /** How many are folded away. */
         val folded: Int get() = hidden.size
     }
 
-    /** The bubbles for [clips] waiting and [operations] not finished, under the floating button when [fab]. */
-    fun of(clips: List<FileClipboard.Clip>, operations: List<FileWork.Status>, fab: Boolean): Shown {
+    /** The bubbles for [clips] waiting and [operations] not finished. */
+    fun of(clips: List<FileClipboard.Clip>, operations: List<FileWork.Status>): Shown {
         val all = (clips.map { Bubble.Paste(it) } + operations.filter { it.outcome == null }.map { Bubble.Work(it) }).sortedBy { it.order }
-        val room = MAX_BUTTONS - (if (fab) 1 else 0)
-        var shown = all.takeLast(room)
+        var shown = all.takeLast(MAX_BUTTONS - 1)
         // The one under way keeps its progress and Cancel in sight, in place of the oldest shown.
         val running = all.firstOrNull { it is Bubble.Work && it.status.running }
         if (running != null && running !in shown) shown = (listOf(running) + shown.drop(1)).sortedBy { it.order }
@@ -86,11 +85,11 @@ internal object StackLayout {
 }
 
 /**
- * The stack on the handed side: the floating button on top, never moving, and under it a
+ * The stack on the handed side: the floating button at its foot, fixed low, and above it a
  * bubble for each pick waiting to be pasted ([FileClipboard]) and each operation queued
- * ([FileWork]), the newest at the bottom; without the button they rise from the bottom edge.
- * Older bubbles fold into a count on the top one, which lists them on a tap; the operation
- * under way always shows.
+ * ([FileWork]), the newest nearest the button. Its place stays when the button is hidden,
+ * so neither ever moves. Older bubbles fold into a count on the top one, which lists them
+ * on a tap; the operation under way always shows.
  * A Paste bubble pastes on a tap ([onPaste]) and is let go on a long press ([onDrop]).
  * An operation's bubble is gray while it waits, and darkens with a progress ring in its
  * action's color while it runs; a tap shows its card, with Cancel, and a long press cancels it.
@@ -104,7 +103,6 @@ internal class OperationStack(
 ) {
     private var clips: List<FileClipboard.Clip> = FileClipboard.clips.value
     private var operations: List<FileWork.Status> = FileWork.operations.value
-    private var fabShown = false
     private var left = false
 
     /** The bubbles showing, by [Bubble.key]. */
@@ -135,13 +133,6 @@ internal class OperationStack(
                 }
             }
         }
-    }
-
-    /** Places the stack under a floating button shown, or rising from the bottom edge without it. */
-    fun setFab(shown: Boolean) {
-        if (shown == fabShown) return
-        fabShown = shown
-        render()
     }
 
     /** Puts the button and the stack on the left side for [left], else on the right. */
@@ -182,15 +173,8 @@ internal class OperationStack(
     }
 
     private fun render() {
-        val now = StackLayout.of(clips, operations, fabShown)
+        val now = StackLayout.of(clips, operations)
         shown = now
-        val lp = column.layoutParams as CoordinatorLayout.LayoutParams
-        val height = if (fabShown) activity.resources.getDimensionPixelSize(R.dimen.op_stack_room) else ViewGroup.LayoutParams.WRAP_CONTENT
-        if (lp.height != height) {
-            lp.height = height
-            column.layoutParams = lp
-        }
-        column.gravity = (if (fabShown) Gravity.TOP else Gravity.BOTTOM) or Gravity.CENTER_HORIZONTAL
         val keep = now.bubbles.map { it.key }.toSet()
         val gone = views.keys.filter { it !in keep }
         for (key in gone) column.removeView(views.remove(key))
@@ -207,11 +191,11 @@ internal class OperationStack(
         hintFor?.let { id -> views[Bubble.Paste.keyOf(id)]?.let { v -> hintFor = null; v.post { showHint(v) } } }
     }
 
-    /** A new bubble, coming out from under the button above it. */
+    /** A new bubble, rising from the button's place below it. */
     private fun make(): View {
         val view = LayoutInflater.from(activity).inflate(R.layout.item_op_bubble, column, false)
         view.alpha = 0f
-        view.translationY = -activity.resources.getDimension(R.dimen.op_bubble_gap) * 3
+        view.translationY = activity.resources.getDimension(R.dimen.op_bubble_gap) * 3
         view.animate().alpha(1f).translationY(0f).setDuration(APPEAR_MS).start()
         return view
     }

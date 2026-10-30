@@ -105,7 +105,7 @@ class ListActivityStackTest {
         val activity = launch()
         for (i in 1..5) pick("$i.cbz")
         idle()
-        // Under the button: three bubbles, the newest at the bottom.
+        // Above the button: three bubbles, the newest at the bottom.
         val buttons = activity.stack.buttons()
         assertEquals(3, buttons.size)
         assertEquals(FileClipboard.clips.value.takeLast(3).map { it.id }, buttons.map { it.first.order })
@@ -114,12 +114,39 @@ class ListActivityStackTest {
         assertEquals("+2", folded.text.toString())
         assertEquals(View.GONE, (buttons[1].second.parent as View).findViewById<TextView>(R.id.op_folded).visibility)
 
-        // Without the button, four.
+        // Without the button, its place stays: still three.
         Prefs(context).listQuickFab = false
         idle()
         assertEquals(View.GONE, activity.findViewById<View>(R.id.fab).visibility)
-        assertEquals(4, activity.stack.buttons().size)
-        assertEquals("+1", (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).text.toString())
+        assertEquals(3, activity.stack.buttons().size)
+        assertEquals("+2", (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).text.toString())
+    }
+
+    @Test
+    fun theButtonStaysFixedAndTheStackAboveItInAnEmptyFolder() {
+        val empty = File(shelf, "nothing").apply { mkdirs() }
+        Prefs(context).lastPath = empty.absolutePath
+        val activity = launch()
+        val fab = activity.findViewById<View>(R.id.fab)
+        val column = activity.findViewById<View>(R.id.operation_stack)
+        assertEquals(View.VISIBLE, fab.visibility)
+        val fabLp = fab.layoutParams as CoordinatorLayout.LayoutParams
+        // Never moved out of a snackbar's way.
+        assertTrue(fabLp.behavior is FixedBehavior)
+        assertEquals(Gravity.NO_GRAVITY, fabLp.dodgeInsetEdges)
+        val res = activity.resources
+        assertEquals(res.getDimensionPixelSize(R.dimen.fab_bottom), fabLp.bottomMargin)
+        val stackBottom = (column.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin
+        assertEquals(res.getDimensionPixelSize(R.dimen.op_stack_bottom), stackBottom)
+        pick("a.cbz")
+        idle()
+        assertEquals(1, activity.stack.buttons().size)
+        // Hiding the button moves nothing.
+        Prefs(context).listQuickFab = false
+        idle()
+        assertEquals(View.GONE, fab.visibility)
+        assertEquals(stackBottom, (column.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin)
+        assertEquals(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, column.layoutParams.height)
     }
 
     /** An operation that runs until [go] lets it end; returns its id once it runs. */

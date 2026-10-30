@@ -144,7 +144,7 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- The top of the operation stack, on the handed side: it never moves as bubbles come and go under it. -->
+    <!-- The foot of the operation stack, on the handed side: fixed low, it never moves for bubbles, snackbars or an empty list. -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab"
         android:layout_width="wrap_content"
@@ -156,9 +156,10 @@
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
         app:backgroundTint="?attr/colorSecondaryContainer"
+        app:layout_behavior="com.infinity.comicreader.ui.FixedBehavior"
         app:tint="?attr/colorOnSecondaryContainer" />
 
-    <!-- Paste bubbles and operations under way or waiting, oldest on top; filled in code ([OperationStack]). -->
+    <!-- Paste bubbles and operations under way or waiting, above the floating button's place, newest nearest it; filled in code ([OperationStack]). -->
     <LinearLayout
         android:id="@+id/operation_stack"
         android:layout_width="wrap_content"
@@ -166,7 +167,7 @@
         android:layout_gravity="bottom|end"
         android:layout_marginStart="@dimen/space_4"
         android:layout_marginEnd="@dimen/space_4"
-        android:layout_marginBottom="@dimen/space_4"
+        android:layout_marginBottom="@dimen/op_stack_bottom"
         android:clipChildren="false"
         android:clipToPadding="false"
         android:gravity="bottom|center_horizontal"

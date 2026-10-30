@@ -850,7 +850,7 @@ class Library(context: Context) {
      * page's with its own. Identical images are told apart by the name a row was kept under.
      * What [to] kept of these before is replaced. Images [shared] by copies elsewhere keep
      * their favorites and bookmarks, the book taking copies of them; the images keep the
-     * rest, for copies elsewhere.
+     * rest, for copies elsewhere. Written to disk before it returns.
      */
     fun carryFolder(folder: String, pages: List<BookRef?>, to: BookRef, pageCount: Int, shared: Set<BookId> = emptySet()) {
         synchronized(LOCK) {
@@ -952,7 +952,8 @@ class Library(context: Context) {
             books.remove(toHex)
             putSeen(books, to.id, to.path)
             e.putString(KEY_BOOKS, books.toString())
-            e.apply()
+            // The folder goes next: what it kept is on disk first.
+            e.commit()
         }
     }
 

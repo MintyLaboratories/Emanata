@@ -122,6 +122,22 @@ class CompactorTest {
     }
 
     @Test
+    fun foldersArePrefixedToKeepTheReadingOrderAndDotFoldersGo() {
+        val source = zip(
+            "Parts.cbz",
+            listOf(
+                "Part B/01.png" to page(PNG),
+                "Part A/02.png" to page(PNG),
+                "Part A/.thumbs/02.png" to page(PNG)
+            )
+        )
+        val result = run(source) as Compactor.Result.Rebuilt
+        assertEquals(listOf("Part A_02.jxl", "Part B_01.jxl"), entries(result.file).map { it.first })
+        assertArrayEquals(intArrayOf(0, 1), result.moves)
+        assertEquals(2, result.pageCount)
+    }
+
+    @Test
     fun inPlaceANonZipBookBecomesACbzAndItsFileGoes() {
         val source = sevenZip("Book.cb7", book)
         source.setLastModified(1_600_000_000_000)

@@ -258,10 +258,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - a page is replaced only when smaller; lossy pages (lossy WebP, AVIF, HEIF,
     lossy JPEG XL), GIF, PNG of 16 bits and animations are never touched, so a
     book may mix formats, always pixel-perfect and never larger;
-  - names stay but for the extension; when two match, those in folders take the
-    folder's name in front (`sub_001.jxl`). ComicInfo.xml and other files are
-    copied as they are; OS litter (`__MACOSX/`, `._*`, `Thumbs.db`,
-    `desktop.ini`, `.DS_Store`) is left out. A book holding other archives is
+  - names stay but for the extension; when two match, or flat names would
+    change the reading order, those in folders take the folder's name in front
+    (`sub_001.jxl`), and their place in the order too should that not keep it.
+    ComicInfo.xml and other files are copied as they are; OS litter
+    (`__MACOSX/`, `._*`, `Thumbs.db`, `desktop.ini`, `.DS_Store`) and whatever is
+    in a dot-folder are left out. A book holding other archives is
     left alone.
   - It asks first, warning: "Pixel-perfect and reversible, but older readers
     may not open JPEG XL pages." **Skip hidden pages** (off each time) leaves the

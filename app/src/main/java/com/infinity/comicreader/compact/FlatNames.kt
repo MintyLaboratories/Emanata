@@ -1,41 +1,63 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.NaturalOrder
 import java.util.Locale
 
 /** Names in a rebuilt archive, and of the file it becomes. */
 object FlatNames {
     private val JUNK_NAMES = setOf("thumbs.db", "desktop.ini", ".ds_store")
 
-    /** OS litter left out: `__MACOSX/`, `._*` resource forks, `Thumbs.db`, `desktop.ini`, `.DS_Store`. */
+    /**
+     * Left out: OS litter (`__MACOSX/`, `._*` resource forks, `Thumbs.db`, `desktop.ini`,
+     * `.DS_Store`) and whatever is in a dot-folder (`.cache/`), which the reader never shows.
+     */
     fun isJunk(path: String): Boolean {
         val parts = parts(path)
         val name = parts.lastOrNull() ?: return true
-        return parts.any { it.equals("__MACOSX", ignoreCase = true) } || name.startsWith("._") || name.lowercase(Locale.ROOT) in JUNK_NAMES
+        return parts.any { it.equals("__MACOSX", ignoreCase = true) } || parts.dropLast(1).any(::isDotFolder) ||
+            name.startsWith("._") || name.lowercase(Locale.ROOT) in JUNK_NAMES
     }
+
+    /** A hidden folder's name; `...Extras` and other names opening with an ellipsis are not hidden. */
+    private fun isDotFolder(name: String) = name.startsWith('.') && !name.startsWith("..")
 
     /** The file name at the end of archive path [path]. */
     fun baseName(path: String): String = parts(path).lastOrNull().orEmpty()
 
     /**
      * Flat names for the files at archive [paths], to be named [names] (their own, or
-     * with another extension): bare when no two match ignoring case; otherwise each one
-     * under a folder takes the folder's path in front (`sub_001.jxl`, folders joined by
-     * `_`), and a name still taken gets ` 2`, ` 3`... after its stem.
+     * with another extension), keeping the pages' reading order (natural order of their
+     * paths): bare when no two match ignoring case and the pages read in the same order;
+     * otherwise each one under a folder takes the folder's path in front (`sub_001.jxl`,
+     * folders joined by `_`), a name still taken getting ` 2`, ` 3`... after its stem; and
+     * should even that change the order, each also takes its place in it in front (`07_sub_001.jxl`).
      */
     fun of(paths: List<String>, names: List<String>): List<String> {
         require(paths.size == names.size)
-        if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size) return names
+        if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size && keepsOrder(paths, names)) return names
         val prefixed = paths.indices.map { i ->
             val folders = parts(paths[i]).dropLast(1)
             if (folders.isEmpty()) names[i] else folders.joinToString("_") + "_" + names[i]
         }
         val used = HashSet<String>()
-        return prefixed.map { name ->
+        val unique = prefixed.map { name ->
             var out = name
             var n = 1
             while (!used.add(out.lowercase(Locale.ROOT))) out = "${stem(name)} ${++n}${extension(name)}"
             out
         }
+        if (keepsOrder(paths, unique)) return unique
+        val rank = IntArray(paths.size)
+        paths.indices.sortedWith(compareBy(NaturalOrder) { paths[it] }).forEachIndexed { place, i -> rank[i] = place + 1 }
+        val width = paths.size.toString().length
+        return unique.indices.map { i -> rank[i].toString().padStart(width, '0') + "_" + unique[i] }
+    }
+
+    /** True when the pages (images) among [paths] read in the same order named [flat]. */
+    private fun keepsOrder(paths: List<String>, flat: List<String>): Boolean {
+        val pages = paths.indices.filter { Formats.isImageName(paths[it]) }
+        return pages.sortedWith(compareBy(NaturalOrder) { paths[it] }) == pages.sortedWith(compareBy(NaturalOrder) { flat[it] })
     }
 
     /** [name] with its extension made [ext] (without the dot). */

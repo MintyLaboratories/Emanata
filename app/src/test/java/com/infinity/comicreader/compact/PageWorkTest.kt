@@ -193,6 +193,12 @@ class PageWorkTest {
         assertFalse(alpha.reencoded)
         assertEquals(2, Png.decode(alpha.bytes)!!.channels)
         assertEquals("png", work.compatible(iso("avif", 1, PageWork.JPEG_MAX_SIDE + 1))!!.ext)
+        // In a profile of its own that does not convert, kept: all its channels, in that profile.
+        jxl.convertsLossy = false
+        val own = work.compatible(jxl.lossy(source, srgb = false))!!
+        assertEquals("png", own.ext)
+        assertEquals(4, Png.decode(own.bytes)!!.channels)
+        assertNotNull(PageProbe.pngIcc(own.bytes))
     }
 
     @Test

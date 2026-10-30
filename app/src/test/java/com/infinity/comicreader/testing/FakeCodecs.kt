@@ -30,6 +30,9 @@ class FakeJxl : JxlCodec {
     /** Encoded pixels decode one sample off. */
     var badDecode = false
 
+    /** Lossy files decode to sRGB. */
+    var convertsLossy = true
+
     var transcodes = 0
     var encodes = 0
 
@@ -83,8 +86,8 @@ class FakeJxl : JxlCodec {
     override fun decode(jxl: ByteArray, channels: Int, bits: Int, srgb: Boolean): ByteArray? {
         val info = info(jxl) ?: return null
         val lossy = !info.originalProfile
-        // Only XYB converts.
-        if (srgb && !lossy) return null
+        // Only XYB converts, unless told otherwise.
+        if (srgb && (!lossy || !convertsLossy)) return null
         if (bits != info.bits) return null
         val data = inflate(jxl.copyOfRange(14, jxl.size))
         if (badDecode) data[0] = (data[0] + 1).toByte()

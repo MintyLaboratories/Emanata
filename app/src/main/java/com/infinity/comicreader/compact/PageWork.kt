@@ -176,7 +176,8 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
             return Made(out, "webp", reencoded = true)
         }
         if (icc == null && side <= JPEG_MAX_SIDE && !hasAlpha(pixels)) images.jpeg(pixels, JPEG_QUALITY)?.let { return Made(it, "jpg", reencoded = true) }
-        return png(reduced(pixels), icc)
+        // Fewer channels only in sRGB: a color profile takes color samples.
+        return png(if (icc == null) reduced(pixels) else pixels, icc)
     }
 
     /**

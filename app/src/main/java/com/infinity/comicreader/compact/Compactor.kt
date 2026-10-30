@@ -129,6 +129,7 @@ class Compactor(
         val files = kept.filter { it !in dropped }.sortedWith(compareBy(NaturalOrder) { it.path })
         val total = files.sumOf { it.size.coerceAtLeast(0) }.coerceAtLeast(1)
         val dir = book.parentFile ?: throw IOException("No folder")
+        sweep(dir)
         // Room for the pieces and for the new file, each as large as the files unpacked when it must be smaller, else twice.
         val room = total * (if (request.smallerOnly) 1 else GROWTH)
         val enough = if (sameVolume(scratch, dir)) free(dir) >= 2 * room + SPARE_BYTES else free(scratch) >= room + SPARE_BYTES && free(dir) >= room + SPARE_BYTES
@@ -442,6 +443,17 @@ class Compactor(
 
         /** How much larger than its files the pieces of a book made compatible may grow: lossless JPEG XL becomes WebP or PNG. */
         private const val GROWTH = 2
+
+        /** How old a new file left in a book's folder ([PART]) must be to be taken for one a run that ended early left. */
+        const val STALE_PART_MS = 6L * 60 * 60 * 1000
+
+        /** The new file of a book, written in its folder before it takes its place: `.<book>.<nanos>.part`. */
+        private val PART = Regex("""^\..+\.\d+\.part$""")
+
+        /** Deletes from [dir] new files ([PART]) that runs ending early (the app stopped) left there [STALE_PART_MS] ago or more. */
+        fun sweep(dir: File, now: Long = System.currentTimeMillis()) {
+            dir.listFiles { f -> f.isFile && PART.matches(f.name) && now - f.lastModified() >= STALE_PART_MS }?.forEach { it.delete() }
+        }
 
         /** True when [a] and [b] seem on one volume: of the same size, as the shared storage and the app's own files are; or one store. */
         fun sameVolume(a: File, b: File): Boolean =

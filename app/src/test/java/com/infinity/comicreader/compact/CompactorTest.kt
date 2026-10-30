@@ -248,6 +248,20 @@ class CompactorTest {
     }
 
     @Test
+    fun newFilesLeftByRunsThatEndedEarlyAreSweptOnceStale() {
+        val source = zip("Swept.cbz", listOf("1.png" to page(PNG)))
+        val stale = File(tmp.root, ".Other.cbr.123456789.part").apply { writeBytes(ByteArray(10)) }
+        stale.setLastModified(System.currentTimeMillis() - Compactor.STALE_PART_MS - 60_000)
+        val fresh = File(tmp.root, ".Other.cbr.987654321.part").apply { writeBytes(ByteArray(10)) }
+        val mine = File(tmp.root, ".notes.part").apply { writeBytes(ByteArray(10)) }
+        mine.setLastModified(stale.lastModified())
+        run(source)
+        assertFalse(stale.exists())
+        assertTrue(fresh.exists())
+        assertTrue(mine.exists())
+    }
+
+    @Test
     fun aBookHoldingArchivesIsLeftAlone() {
         val inner = zip("inner.cbz", listOf("1.png" to page(PNG))).readBytes()
         val source = zip("Outer.cbz", listOf("Issue 1.cbz" to inner, "cover.png" to page(PNG)))

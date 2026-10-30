@@ -254,6 +254,11 @@ internal class BookShare(
         // True once the share goes ahead: the dialog closes for it, not to cancel.
         var sent = false
         dialog.setOnDismissListener { if (!sent) sending?.cancel() }
+        // Stopped at the tap: the dialog closes later, and a cover done meanwhile must not begin the next.
+        dialog.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener {
+            sending?.cancel()
+            dialog.dismiss()
+        }
         send.setOnClickListener {
             val choice = picked()
             if (!choice.any) return@setOnClickListener

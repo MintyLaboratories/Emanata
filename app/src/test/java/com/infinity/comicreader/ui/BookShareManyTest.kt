@@ -124,8 +124,14 @@ class BookShareManyTest {
 
     @Test
     fun cancelWhileCoversAreMadeSendsNothing() {
+        val begun = Semaphore(0)
         val taps = Semaphore(0)
-        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        val held = Semaphore(0)
+        BookShare.coverHold = {
+            begun.release()
+            taps.tryAcquire(10, TimeUnit.SECONDS)
+            held.release()
+        }
         try {
             Prefs(context).shareChoice = ShareChoice(title = true, cover = true, file = false)
             val before = BookShare.coversMade
@@ -134,6 +140,10 @@ class BookShareManyTest {
             idle()
             val dialog = ShadowDialog.getLatestDialog() as AlertDialog
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            // The first cover under way, however long the I/O threads take to get to it.
+            var left = 500
+            while (!begun.tryAcquire() && left-- > 0) idle()
+            assertTrue(left >= 0)
             idle()
             // Counted as they are made; still selected, and the dialog stays until they are.
             assertEquals(context.getString(R.string.share_making_covers, 1, 2), dialog.findViewById<TextView>(R.id.share_cover_none)!!.text.toString())
@@ -141,10 +151,12 @@ class BookShareManyTest {
             assertEquals(0, sent)
             dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
             taps.release(2)
+            assertTrue(held.tryAcquire(10, TimeUnit.SECONDS))
             repeat(20) { idle() }
             assertNull(shadowOf(context).nextStartedActivity)
             assertEquals(0, sent)
             // The second cover was never begun.
+            assertFalse(begun.tryAcquire())
             assertEquals(before + 1, BookShare.coversMade)
         } finally {
             BookShare.coverHold = {}

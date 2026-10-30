@@ -390,6 +390,22 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun lyingFlatUpsideDownTheReversePortraitComesBack() {
+        @Suppress("DEPRECATION")
+        val display = (context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+        shadowOf(display).setRotation(android.view.Surface.ROTATION_180)
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        sensors.gravity(0f, 0f, 9.8f)
+        shadowOf(display).setRotation(android.view.Surface.ROTATION_90)
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT, viewer.requestedOrientation)
+    }
+
+    @Test
     fun landscapeOnlyKeepsOnePageAScreenWhileTurnedForAWidePage() {
         prefs.twoPage = TwoPage.LANDSCAPE
         val viewer = launch(book(numbered(1, 8), setOf("Tale 001-003")))

@@ -2106,11 +2106,23 @@ class ViewerActivity : AppCompatActivity() {
     private fun autoRotate() =
         android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 1) != 0
 
-    /** The fixed orientation the screen is in now, from the display's rotation. */
+    /** The fixed orientation the display is in now, from its rotation and shape (not the window's, which may be a part of it). */
     private fun screenOrientation(): Int {
         @Suppress("DEPRECATION")
         val display = window.decorView.display ?: windowManager.defaultDisplay
-        return SpreadRotation.fixedOrientation(display?.rotation ?: -1, landscape(), reverseDefaultRotation)
+        return SpreadRotation.fixedOrientation(display?.rotation ?: -1, displayLandscape(display), reverseDefaultRotation)
+    }
+
+    /** True when [display] is wider than tall, whatever part of it the reader's window takes. */
+    private fun displayLandscape(display: android.view.Display?): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            if (!bounds.isEmpty) return bounds.width() > bounds.height()
+        }
+        val size = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        display?.getRealSize(size) ?: return landscape()
+        return if (size.x == size.y) landscape() else size.x > size.y
     }
 
     /** The platform's `config_reverseDefaultRotation`: which quarter turn its landscape (or portrait) is. */

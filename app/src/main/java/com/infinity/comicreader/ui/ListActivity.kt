@@ -32,6 +32,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -367,6 +368,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         fab.setOnClickListener { onFabClick() }
         setUpSelection()
+        placeButton()
         fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, {}, ::folderName)
         bookShare = BookShare(this, prefs) { adapter.shownCover(recycler, it.path) }
         updateFab()
@@ -1618,6 +1620,28 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         selection.clear()
         adapter.selectionChanged()
         updateSelection()
+    }
+
+    /**
+     * The floating button's fixed place: low, beside the selection's centered bar; in a
+     * window too narrow for both, above the bar (its margin and height, and a gap), the
+     * stack above the button alike. Set once: a window resized is made anew.
+     */
+    private fun placeButton() {
+        val bar = selectionActions
+        val unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        bar.measure(unspecified, unspecified)
+        fab.measure(unspecified, unspecified)
+        val gap = resources.getDimensionPixelSize(R.dimen.op_bubble_gap)
+        val fabLp = fab.layoutParams as CoordinatorLayout.LayoutParams
+        val window = resources.configuration.screenWidthDp * resources.displayMetrics.density
+        if ((window - bar.measuredWidth) / 2 >= fabLp.marginEnd + fab.measuredWidth + gap) return
+        val raise = (bar.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin + bar.measuredHeight + gap - fabLp.bottomMargin
+        for (v in listOf<View>(fab, findViewById(R.id.operation_stack))) {
+            val lp = v.layoutParams as CoordinatorLayout.LayoutParams
+            lp.bottomMargin += raise
+            v.layoutParams = lp
+        }
     }
 
     /** The selection bar's X and Select all, and the floating bar's buttons in their fixed order. */

@@ -144,7 +144,7 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- The foot of the operation stack, on the handed side: fixed low, it never moves for bubbles, snackbars or an empty list. -->
+    <!-- The foot of the operation stack, on the handed side: fixed low (above the selection's bar in narrow windows), it never moves for bubbles, snackbars or an empty list. -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab"
         android:layout_width="wrap_content"

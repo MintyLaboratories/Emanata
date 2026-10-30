@@ -47,7 +47,7 @@
     <dimen name="op_bubble_gap">8dp</dimen>
     <dimen name="op_badge_size">20dp</dimen>
     <dimen name="op_card_width">280dp</dimen>
-    <!-- The floating button's bottom margin: fixed low, level with the selection's bar. -->
+    <!-- The floating button's bottom margin: fixed low, level with the selection's bar (raised above it in narrow windows, in code). -->
     <dimen name="fab_bottom">16dp</dimen>
     <!-- The stack's bottom margin: above the floating button's place (its margin, its 56dp, a gap). -->
     <dimen name="op_stack_bottom">80dp</dimen>

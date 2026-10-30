@@ -135,9 +135,8 @@ class ListActivityStackTest {
         assertTrue(fabLp.behavior is FixedBehavior)
         assertEquals(Gravity.NO_GRAVITY, fabLp.dodgeInsetEdges)
         val res = activity.resources
-        assertEquals(res.getDimensionPixelSize(R.dimen.fab_bottom), fabLp.bottomMargin)
         val stackBottom = (column.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin
-        assertEquals(res.getDimensionPixelSize(R.dimen.op_stack_bottom), stackBottom)
+        assertEquals(res.getDimensionPixelSize(R.dimen.op_stack_bottom) - res.getDimensionPixelSize(R.dimen.fab_bottom), stackBottom - fabLp.bottomMargin)
         pick("a.cbz")
         idle()
         assertEquals(1, activity.stack.buttons().size)
@@ -147,6 +146,38 @@ class ListActivityStackTest {
         assertEquals(View.GONE, fab.visibility)
         assertEquals(stackBottom, (column.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin)
         assertEquals(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, column.layoutParams.height)
+    }
+
+    /** True when the floating button and the selection's bar, both shown after selecting a book, do not overlap. */
+    private fun buttonClearsTheBar(): Boolean {
+        val activity = launch()
+        val recycler = activity.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recycler)
+        var row: View? = null
+        repeat(300) { if (row == null) row = recycler.findViewHolderForAdapterPosition(0)?.itemView ?: run { idle(); null } }
+        row!!.performLongClick()
+        idle()
+        val fab = activity.findViewById<View>(R.id.fab)
+        val bar = activity.findViewById<View>(R.id.selection_actions)
+        assertEquals(View.VISIBLE, fab.visibility)
+        assertEquals(View.VISIBLE, bar.visibility)
+        assertTrue(bar.width > 0 && fab.width > 0)
+        val a = android.graphics.Rect(fab.left, fab.top, fab.right, fab.bottom)
+        return !a.intersect(bar.left, bar.top, bar.right, bar.bottom)
+    }
+
+    @Test
+    @Config(qualifiers = "w460dp-h800dp")
+    fun inANarrowWindowTheButtonSitsAboveTheSelectionsBar() {
+        assertTrue(buttonClearsTheBar())
+    }
+
+    @Test
+    @Config(qualifiers = "w924dp-h1480dp")
+    fun inAWideWindowTheButtonSitsLowBesideTheSelectionsBar() {
+        assertTrue(buttonClearsTheBar())
+        val activity = controller!!.get()
+        val low = (16 * activity.resources.displayMetrics.density).toInt()
+        assertEquals(low, (activity.findViewById<View>(R.id.fab).layoutParams as CoordinatorLayout.LayoutParams).bottomMargin)
     }
 
     /** An operation that runs until [go] lets it end; returns its id once it runs. */

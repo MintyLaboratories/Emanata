@@ -71,6 +71,7 @@ import com.infinity.comicreader.data.FolderSize
 import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LibraryList
 import com.infinity.comicreader.data.LibraryFilter
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
@@ -284,8 +285,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Compact or Make compatible finding the books in selected folders; taps wait for it, and ending the selection stops it. */
     private var rebuildWalk: Job? = null
 
-    /** Keeps the "Recent" row on the book opened last, as the reader records it. */
-    private var historyWatch: AutoCloseable? = null
+    /** Keeps the "Recent" row on the book opened last, as the reader records it, and notes [listsChangedAway]. */
+    private var listWatch: AutoCloseable? = null
+
+    /** True when the favorites, history or bookmarks were written while out of sight (Settings, the reader): Favorites, History and Bookmarks list again on return. */
+    private var listsChangedAway = false
     private lateinit var kindCache: FavoriteKindCache
 
     /** Follows drives as they are plugged in and pulled out, while started. */
@@ -311,7 +315,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         settings = SettingsRepository.get(this)
         kindCache = FavoriteKindCache(this)
         factsCache = BookFactsCache(this)
-        historyWatch = library.watchHistory { if (started && mode == TAB_BROWSE) updateRecentHeader() }
+        listWatch = library.watchLists { list ->
+            if (list == LibraryList.HISTORY && started && mode == TAB_BROWSE) updateRecentHeader()
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) listsChangedAway = true
+        }
         lifecycleScope.launch {
             withContext(AppDispatchers.io) { factsCache.load() }
             // A list shown before the facts were in sorts again with them.
@@ -447,8 +454,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         // Refresh so files added/removed outside the app (or from the viewer)
         // appear immediately.
         if (mode == TAB_BROWSE) currentDir?.let { loadDirectory(it) }
-        else if (relistOnResume) refreshCurrent()
+        else if (relistOnResume || listsChangedAway) refreshCurrent()
         relistOnResume = false
+        listsChangedAway = false
     }
 
     override fun onStart() {
@@ -465,7 +473,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onDestroy() {
         super.onDestroy()
-        historyWatch?.close()
+        listWatch?.close()
         resumeOffer?.dismiss()
         missingSheet?.dismiss()
         stack.release()

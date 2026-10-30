@@ -12,6 +12,9 @@ import org.json.JSONObject
 import java.io.File
 import java.time.LocalDate
 
+/** The lists of books the library shows in their own tabs ([Library.watchLists]). */
+enum class LibraryList { FAVORITES, HISTORY, BOOKMARKS }
+
 /**
  * Favorites, read marks, reading history, bookmarks, per-folder layouts, per-book
  * color adjustments, hidden pages and file name charsets, and reading statistics, persisted
@@ -277,12 +280,19 @@ class Library(context: Context) {
     fun clearHistory() = synchronized(LOCK) { sp.edit().putString(KEY_HISTORY, "[]").apply() }
 
     /**
-     * Calls [onChange] on the main thread after each write to the history, from any
-     * screen of this process, until the returned handle is closed. The caller keeps the
-     * handle: SharedPreferences holds its listener only weakly.
+     * Calls [onChange] on the main thread after each write to the favorites, the history
+     * or the bookmarks, with the list written, from any screen of this process, until the
+     * returned handle is closed. The caller keeps the handle: SharedPreferences holds its
+     * listener only weakly.
      */
-    fun watchHistory(onChange: () -> Unit): AutoCloseable {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == KEY_HISTORY) onChange() }
+    fun watchLists(onChange: (LibraryList) -> Unit): AutoCloseable {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                KEY_FAVORITES -> onChange(LibraryList.FAVORITES)
+                KEY_HISTORY -> onChange(LibraryList.HISTORY)
+                KEY_BOOKMARKS -> onChange(LibraryList.BOOKMARKS)
+            }
+        }
         sp.registerOnSharedPreferenceChangeListener(listener)
         return AutoCloseable { sp.unregisterOnSharedPreferenceChangeListener(listener) }
     }

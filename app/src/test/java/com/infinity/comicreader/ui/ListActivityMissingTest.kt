@@ -118,6 +118,9 @@ class ListActivityMissingTest {
     private fun RecyclerView.row(name: String): View =
         (0 until childCount).map { getChildAt(it) }.first { (it.findViewById<View>(R.id.title) as? TitleView)?.text?.toString() == name }
 
+    private fun RecyclerView.hasRow(name: String): Boolean =
+        (0 until childCount).any { (getChildAt(it).findViewById<View>(R.id.title) as? TitleView)?.text?.toString() == name }
+
     /** What a row draws inside its card: faint for a missing item. */
     private fun View.body(): View = (this as android.view.ViewGroup).getChildAt(0)
 
@@ -341,5 +344,20 @@ class ListActivityMissingTest {
         controller.pause().stop().destroy()
         idle()
         assertFalse(sheet.isShowing)
+    }
+
+    @Test
+    fun listsClearedElsewhereAreListedAgainOnReturn() {
+        library.setFavorite(com.infinity.comicreader.data.BookRef(bookId(here), here.absolutePath), true)
+        history(here)
+        for ((tab, clear) in listOf(1 to { library.clearFavorites() }, 2 to { library.clearHistory() })) {
+            val controller = start(tab)
+            assertTrue(controller.get().laidOut().hasRow("here.cbz"))
+            controller.pause().stop()
+            clear()
+            controller.restart().resume()
+            idle()
+            assertFalse("tab $tab", controller.get().laidOut().hasRow("here.cbz"))
+        }
     }
 }

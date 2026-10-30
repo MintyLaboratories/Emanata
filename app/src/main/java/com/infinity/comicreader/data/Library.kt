@@ -841,6 +841,111 @@ class Library(context: Context) {
     }
 
     /**
+     * Hands what was kept for [folder], a folder of loose images, and for its images to [to],
+     * the book they were packed into, of [pageCount] pages: page `p` was the image of ID
+     * [pages]`[p]` (null where none is known). The folder's favorite, layout and answer to
+     * reading tall pages as a strip become the book's, as does an image's favorite; the book
+     * is read when every image was; its history resumes at the image read last; bookmarks
+     * and hidden images move to their pages; its adjustments are the image's read last, else
+     * the first page's with its own. What [to] kept of these before is replaced; the images
+     * keep theirs, for copies elsewhere.
+     */
+    fun carryFolder(folder: String, pages: List<BookId?>, to: BookRef, pageCount: Int) {
+        synchronized(LOCK) {
+            val toHex = to.id.hex
+            val at = HashMap<BookId, Int>()
+            pages.forEachIndexed { p, id -> if (id != null && p < pageCount) at.putIfAbsent(id, p) }
+            fun ofFolder(t: String) = t == folder || bookToken(t)?.let { it in at } == true
+            val e = sp.edit()
+            val favorites = readStringList(KEY_FAVORITES)
+            val token = tokenOf(to.id)
+            if (favorites.any(::ofFolder)) {
+                favorites.remove(token)
+                favorites[favorites.indexOfFirst(::ofFolder)] = token
+                favorites.remove(folder)
+                e.putString(KEY_FAVORITES, JSONArray(favorites).toString())
+            }
+            val read = readIds(KEY_READ)
+            val allRead = pageCount > 0 && pages.size >= pageCount && pages.take(pageCount).all { it != null && it in read }
+            if (allRead) read.add(to.id) else read.remove(to.id)
+            e.putString(KEY_READ, JSONArray(read.map { it.hex }).toString())
+            val hiddenAll = readObject(KEY_HIDDEN)
+            val hidden = at.filterKeys { id -> 0 in parseHidden(hiddenAll.optJSONArray(id.hex)) }.values.toSortedSet()
+            if (hidden.isEmpty()) hiddenAll.remove(toHex) else hiddenAll.put(toHex, JSONArray(hidden.toList()))
+            e.putString(KEY_HIDDEN, hiddenAll.toString())
+            // Pages as shown, as history and bookmarks count them; every page when all are hidden.
+            val none = hidden.size >= pageCount
+            val shownCount = if (none) pageCount else pageCount - hidden.size
+            fun shown(p: Int) = (if (none) p else HiddenPages.toShown(p, hidden)).coerceIn(0, (shownCount - 1).coerceAtLeast(0))
+            val name = File(to.path).name
+            val history = readArray(KEY_HISTORY)
+            var lastPage = -1
+            var lastTime = Long.MIN_VALUE
+            var place = -1
+            val rows = ArrayList<JSONObject>()
+            for (i in 0 until history.length()) {
+                val o = history.optJSONObject(i) ?: continue
+                if (o.optString("id") == toHex) continue
+                val p = BookId.parse(o.optString("id"))?.let { at[it] }
+                if (p != null) {
+                    if (place < 0) place = rows.size
+                    if (o.optLong("time") > lastTime) {
+                        lastTime = o.optLong("time")
+                        lastPage = p
+                    }
+                }
+                rows += o
+            }
+            if (lastPage >= 0) {
+                rows.add(place, JSONObject().put("id", toHex).put("name", name).put("page", shown(lastPage)).put("total", shownCount).put("time", lastTime))
+            }
+            e.putString(KEY_HISTORY, JSONArray(rows).toString())
+            val marks = readArray(KEY_BOOKMARKS)
+            val others = ArrayList<JSONObject>()
+            val moved = LinkedHashMap<Int, JSONObject>()
+            var markPlace = -1
+            for (i in 0 until marks.length()) {
+                val o = marks.optJSONObject(i) ?: continue
+                if (o.optString("id") == toHex) continue
+                val p = BookId.parse(o.optString("id"))?.let { at[it] }
+                if (p == null) {
+                    others += o
+                    continue
+                }
+                if (markPlace < 0) markPlace = others.size
+                val page = shown(p)
+                val there = moved[page]
+                if (there == null) {
+                    moved[page] = JSONObject().put("id", toHex).put("name", name).put("page", page).put("note", o.optString("note")).put("time", o.optLong("time"))
+                } else {
+                    there.put("note", listOf(there.optString("note"), o.optString("note")).filter { it.isNotBlank() }.distinct().joinToString(NOTE_JOIN))
+                }
+            }
+            if (markPlace >= 0) others.addAll(markPlace, moved.values)
+            e.putString(KEY_BOOKMARKS, JSONArray(others).toString())
+            val adjust = readObject(KEY_ADJUST)
+            val own = (listOfNotNull(pages.getOrNull(lastPage)) + pages.filterNotNull()).firstOrNull { adjust.has(it.hex) }
+            val adjustments = own?.let { adjust.get(it.hex) }
+            adjust.remove(toHex)
+            adjustments?.let { adjust.put(toHex, it) }
+            e.putString(KEY_ADJUST, adjust.toString())
+            val layouts = readObject(KEY_BOOK_LAYOUTS)
+            layouts.remove(toHex)
+            readObject(KEY_SERIES).optJSONObject(folder)?.let { layouts.put(toHex, it) }
+            e.putString(KEY_BOOK_LAYOUTS, layouts.toString())
+            val tall = readObject(KEY_TALL)
+            tall.remove(toHex)
+            readObject(KEY_TALL_FOLDERS).let { if (it.has(folder)) tall.put(toHex, it.optBoolean(folder)) }
+            e.putString(KEY_TALL, tall.toString())
+            val books = readObject(KEY_BOOKS)
+            books.remove(toHex)
+            putSeen(books, to.id, to.path)
+            e.putString(KEY_BOOKS, books.toString())
+            e.apply()
+        }
+    }
+
+    /**
      * Forgets everything kept for books [ids]: favorites, read marks, history, bookmarks,
      * hidden pages, their own settings and where they were seen.
      */
@@ -1070,6 +1175,9 @@ class Library(context: Context) {
 
         /** Books' own layouts, from the folders packed into them ([bookLayout]). */
         private const val KEY_BOOK_LAYOUTS = "book_layouts"
+
+        /** Between the notes of bookmarks joined on one page. */
+        private const val NOTE_JOIN = "\n"
 
         /** Where each book with anything kept was last seen ([seenAt]). */
         private const val KEY_BOOKS = "books"

@@ -4,8 +4,10 @@ import android.content.Context
 import com.infinity.comicreader.compact.AndroidImages
 import com.infinity.comicreader.compact.CompactWorkers
 import com.infinity.comicreader.compact.Compactor
+import com.infinity.comicreader.compact.FolderReader
 import com.infinity.comicreader.compact.Handovers
 import com.infinity.comicreader.compact.LibJxl
+import com.infinity.comicreader.compact.PackFolders
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.BookId
@@ -15,6 +17,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.files.DeviceSpace
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
@@ -57,6 +60,12 @@ internal class FileJobs(
      * [over], found there as the user chose to replace it.
      */
     data class Plan(val item: FileClipboard.Item, val name: String, val replace: Boolean = false, val over: Node? = null)
+
+    /**
+     * The folder at [folder] to pack into [name] beside it, over the file there when
+     * [replace]: the one [over], found there as the user chose to replace it.
+     */
+    data class PackPlan(val folder: String, val name: String, val replace: Boolean = false, val over: Node? = null)
 
     /**
      * What is at each of [paths] as they are chosen, looked up at once beside the queue: a
@@ -331,6 +340,119 @@ internal class FileJobs(
         }
         return failure?.let { FileWork.Outcome.Failed(it, done + unchanged, paths.size, gone, summary()) }
             ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary())
+    }
+
+    /**
+     * Packs the folders of loose images [plans] name, on the device, one at a time: each
+     * into a stored `.cbz` beside it of its images as they are, or with [compacted] made
+     * smaller losslessly ([PageWork.compact]). Once the new file is written and checked, it
+     * takes what was kept for the folder and its images ([Library.carryFolder]), and the
+     * folder goes. Goes on past one that fails; one no longer what was [chosen] ([look]), or
+     * holding more than images now, is left alone.
+     */
+    fun pack(plans: List<PackPlan>, compacted: Boolean, chosen: Future<List<Result<Node?>>>, p: FileWork.Progress): FileWork.Outcome {
+        val pages = if (compacted) pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, plans.size) else null
+        val seen = settled(chosen)
+        val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
+        val workers = CompactWorkers.max()
+        val compactor = Compactor(scratch, workers, CompactWorkers.limit(app, workers), CompactWorkers.threads)
+        val convert: (ByteArray) -> PageWork.Made? = pages?.let { it::compact } ?: { null }
+        val cost: (ByteArray) -> Long = pages?.let { it::memoryFor } ?: { it.size.toLong() }
+        val progress = object : Compactor.Progress {
+            override val alive: Boolean get() = p.alive
+
+            override fun report(done: Long, total: Long) = p.report(done, total)
+        }
+        var done = 0
+        var saved = 0L
+        var last: String? = null
+        val gone = ArrayList<String>()
+        val failedPages = LinkedHashMap<String, List<String>>()
+        var failure: Exception? = null
+        fun summary() = FileWork.Summary(saved, failed = failedPages)
+        try {
+            for ((i, plan) in plans.withIndex()) {
+                if (!p.alive) return FileWork.Outcome.Canceled(done, plans.size, gone, summary())
+                val dir = File(plan.folder)
+                if (plans.size > 1) p.item(dir.name, i, plans.size)
+                changed(plan.folder, seen?.getOrNull(i))?.let {
+                    if (failure == null) failure = it
+                    continue
+                }
+                try {
+                    val contents = PackFolders.of(dir)
+                    if (contents.why != null) throw FileProblem(FileProblem.Kind.ALTERED, dir.name)
+                    val images = contents.images
+                    val stats = images.map { it.length() to it.lastModified() }
+                    // Known without reading them: an image never opened has nothing kept.
+                    val ids = images.map { BookIds.known(it) ?: BookIds.last(it.absolutePath) }
+                    val (target, replace) = packTarget(plan, dir.parentFile ?: throw IOException("No folder"))
+                    var removed = false
+                    val placer = Compactor.Placer { result, part, swap ->
+                        // Neither an image nor the file replaced open meanwhile: the reader waits.
+                        OpenBooks.unlessOpenIn(plan.folder) {
+                            OpenBooks.unlessOpen(target.absolutePath) {
+                                val newId = BookIds.peek(part)
+                                swap()
+                                if (replace) BookCaches.deleted(app, library, target.absolutePath)
+                                val folderPages = Compactor.pagesOf(images.map { it.name to it.length() })
+                                val byPage = arrayOfNulls<BookId>(result.pageCount)
+                                folderPages.forEachIndexed { k, at -> result.moves.getOrNull(k)?.takeIf { it in byPage.indices }?.let { byPage[it] = ids[at] } }
+                                library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, target.absolutePath), result.pageCount)
+                                removed = removeFolder(dir, images, stats)
+                            }
+                        }
+                    }
+                    val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, always = true)
+                    val result = compactor.run(request, { FolderReader(images) }, progress) as? Compactor.Result.Rebuilt
+                        ?: throw IOException("Not packed: ${dir.name}")
+                    done++
+                    saved += result.before - result.after
+                    last = result.file.absolutePath
+                    if (result.failed.isNotEmpty()) failedPages[result.file.name] = result.failed
+                    if (removed) {
+                        forget(plan.folder)
+                        gone += plan.folder
+                    } else if (failure == null) {
+                        failure = IOException("Could not remove ${dir.name}")
+                    }
+                } catch (e: CancellationException) {
+                    return FileWork.Outcome.Canceled(done, plans.size, gone, summary())
+                } catch (e: Exception) {
+                    if (failure == null) failure = e
+                } catch (e: OutOfMemoryError) {
+                    if (failure == null) failure = IOException("Out of memory", e)
+                }
+            }
+        } finally {
+            scratch.deleteRecursively()
+        }
+        return failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone, summary()) }
+            ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary())
+    }
+
+    /**
+     * Where [plan]'s new file goes in [parent], and whether over the file there: as planned,
+     * unless that name was taken since, or what is there is no longer what the user chose
+     * to replace; then beside it under a free name ("Keep both").
+     */
+    private fun packTarget(plan: PackPlan, parent: File): Pair<File, Boolean> {
+        val there = File(parent, plan.name)
+        val now = DeviceSpace.stat(there.absolutePath) ?: return there to false
+        if (plan.replace && !now.isDirectory && same(plan.over, now)) return there to true
+        return File(parent, Transfer.keepBothName(plan.name, false) { File(parent, it).exists() }) to false
+    }
+
+    /**
+     * Removes folder [dir] once packed: its [images], each still as it was ([stats], size and
+     * time), and its litter, then the folder itself. False, and nothing removed, when an image
+     * changed; false, the folder left, when anything else is in it now.
+     */
+    private fun removeFolder(dir: File, images: List<File>, stats: List<Pair<Long, Long>>): Boolean {
+        if (images.indices.any { images[it].length() != stats[it].first || images[it].lastModified() != stats[it].second }) return false
+        for (f in images) f.delete()
+        dir.listFiles()?.filter { it.isFile && PackFolders.isJunk(it.name) }?.forEach { it.delete() }
+        return dir.delete()
     }
 
     /**

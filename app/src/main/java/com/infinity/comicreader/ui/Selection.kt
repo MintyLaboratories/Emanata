@@ -97,6 +97,8 @@ object SelectionActions {
         val canPeek: (BookEntry) -> Boolean,
         /** True when the item is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
         val rebuildable: (BookEntry) -> Boolean = { false },
+        /** True when the item is a folder Pack can take: on the device and changeable; what it holds is checked as the menu opens. */
+        val packable: (BookEntry) -> Boolean = { false },
         /** The items are listed in History. */
         val inHistory: Boolean = false,
         /** The items are listed in Bookmarks. */
@@ -147,6 +149,7 @@ object SelectionActions {
                 MoreAction.NAME_CHARSET -> book != null && !facts.keepSimple && facts.charsetApplies(book)
                 MoreAction.PEEK -> one != null && facts.canPeek(one)
                 MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> entries.any(facts.rebuildable)
+                MoreAction.PACK, MoreAction.PACK_COMPACTED -> entries.isNotEmpty() && entries.all { it.isDir && facts.packable(it) }
                 MoreAction.REMOVE_FROM_HISTORY -> facts.inHistory && entries.isNotEmpty()
                 MoreAction.REMOVE_BOOKMARK -> facts.inBookmarks && entries.isNotEmpty()
             }

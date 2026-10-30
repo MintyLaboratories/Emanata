@@ -45,13 +45,16 @@
     <color name="md_inverse_on_surface">#F1F0F7</color>
     <color name="md_inverse_primary">#C0C1FF</color>
 
-    <!-- Operation bubbles: Compact lime, Make compatible fuchsia. -->
+    <!-- Operation bubbles: Compact lime, Make compatible fuchsia, Pack sky. -->
     <color name="op_compact">#D9F99D</color>
     <color name="op_on_compact">#1A2E05</color>
     <color name="op_compact_ring">#65A30D</color>
     <color name="op_compatible">#FAE8FF</color>
     <color name="op_on_compatible">#4A044E</color>
     <color name="op_compatible_ring">#C026D3</color>
+    <color name="op_pack">#E0F2FE</color>
+    <color name="op_on_pack">#0C4A6E</color>
+    <color name="op_pack_ring">#0284C7</color>
 
 
     <!-- ================= Semantic extras ================= -->

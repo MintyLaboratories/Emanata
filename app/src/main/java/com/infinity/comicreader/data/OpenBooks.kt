@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import com.infinity.comicreader.net.ChangeRefused
+import java.io.File
 
 /**
  * The books open in the reader, by path. Rebuilding one would leave the reader saving
@@ -28,6 +29,13 @@ object OpenBooks {
     @Synchronized
     fun <T> unlessOpen(path: String, block: () -> T): T {
         if (path in open) throw ChangeRefused(ChangeRefused.Why.IN_READER)
+        return block()
+    }
+
+    /** [unlessOpen] for every book in the folder at [dir] (not in its subfolders). */
+    @Synchronized
+    fun <T> unlessOpenIn(dir: String, block: () -> T): T {
+        if (open.keys.any { File(it).parent == dir }) throw ChangeRefused(ChangeRefused.Why.IN_READER)
         return block()
     }
 }

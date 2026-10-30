@@ -49,6 +49,9 @@
         <item name="colorOpCompatible">@color/op_compatible</item>
         <item name="colorOnOpCompatible">@color/op_on_compatible</item>
         <item name="colorOpCompatibleRing">@color/op_compatible_ring</item>
+        <item name="colorOpPack">@color/op_pack</item>
+        <item name="colorOnOpPack">@color/op_on_pack</item>
+        <item name="colorOpPackRing">@color/op_pack_ring</item>
 
         <item name="colorSurfaceInverse">@color/md_inverse_surface</item>
         <item name="colorOnSurfaceInverse">@color/md_inverse_on_surface</item>

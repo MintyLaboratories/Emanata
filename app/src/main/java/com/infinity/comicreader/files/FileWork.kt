@@ -15,14 +15,14 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The queue of file operations (copy, move, delete, rename, compact, make compatible): one at a time, never two
+ * The queue of file operations (copy, move, delete, rename, compact, make compatible, pack): one at a time, never two
  * at once, each in turn as it was started. They run in the app's process rather than in
  * a screen, so turning the device does not stop them, and [onStart] keeps the app running
  * meanwhile ([FileWorkService]). Whichever library screen is there shows their [operations],
  * and [acknowledge]s each outcome once it has shown it.
  */
 object FileWork {
-    enum class Kind { COPY, MOVE, DELETE, RENAME, COMPACT, COMPATIBLE }
+    enum class Kind { COPY, MOVE, DELETE, RENAME, COMPACT, COMPATIBLE, PACK }
 
     /**
      * What rebuilding books did beyond their count: bytes [saved] (less than 0 when they

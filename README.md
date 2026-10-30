@@ -164,8 +164,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     folder), Show in folder (except from that folder itself), Book info (one
     book, without opening it), Filename charset (one book, advanced),
     **Compact** and **Make compatible** (books on the device; a folder gives
-    every book inside it and its subfolders) and Peek (off by
-    default). Settings → **Selection menu (⋮)** shows, hides and
+    every book inside it and its subfolders), **Pack** and **Pack compacted**
+    (folders on the device; off, saying why, unless each holds images only)
+    and Peek (off by default). Settings → **Selection menu (⋮)** shows, hides and
     reorders them like the toolbar buttons.
   - The floating button: the list/grid toggle with nothing selected (if
     shown), **Open** with one (continues a book, enters a folder), **Move** with
@@ -204,7 +205,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   nearest the button; the bubbles keep their place when the button is hidden.
   At most four buttons show, the button's place included, and always the operation under
   way; older bubbles fold into a count on the top one, which lists them on a
-  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible) go through
+  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible, pack) go through
   one queue, one at a time, never in parallel; several items are one operation,
   done one item at a time. A waiting bubble is gray; the running one darkens
   with a progress ring in its action's color. Tap it for a card (what it does,
@@ -319,6 +320,23 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     (pinned with its SHA-256), and used only when `libjxl.so` reports that
     release; no second copy of libjxl in the APK. Efforts:
     JPEG transcode and lossless 7, recompressing files already JPEG XL 9.
+- **Pack** turns the selected folders of loose images (on the device) into
+  books: each becomes `<folder name>.cbz` beside it, stored entries in natural
+  order, its images as they are (**Pack**) or each made smaller losslessly by
+  the Compact rules, extensions changed and nothing else (**Pack compacted**,
+  which warns as Compact does). A folder holding anything but images (OS litter
+  aside: `Thumbs.db`, `desktop.ini`, `.DS_Store`, `._*`, `.nomedia`) or another
+  folder can't be packed: the items show off, saying why. A `.cbz` of that name
+  already there asks, as Paste does: Replace, Keep both or Skip. Every entry is
+  read back and checked against its CRC-32 before the new file takes its name;
+  only then does the folder take its data along and go (its images, still as
+  they were, and its litter). One queued operation, a folder at a time;
+  canceled, the folder stays as it was. The new book takes over the folder's
+  favorite (or an image's), its layout (kept as the book's own: "This folder"
+  in the reader then keeps it for the book) and its answer to reading tall
+  pages as a strip; it is read when every image was, resumes at the image read
+  last, and has the images' bookmarks and hidden images on their pages, and the
+  color adjustments of the image read last.
 - **Book ID:** everything kept for a book (favorite, read mark, history,
   bookmarks, hidden pages, its own settings and color adjustments, cover, page
   previews, sizes and seams, facts, network copy) is kept by an ID made from its
@@ -700,8 +718,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 ```
 app/src/main/java/com/infinity/comicreader/
   App.kt                     application; applies theme + locale
-  compact/                   Compact and Make compatible: Compactor (flat CBZ),
-                             PageWork (each page), LibJxl (JNI)
+  compact/                   Compact, Make compatible and Pack: Compactor (flat
+                             CBZ), PageWork (each page), PackFolders, LibJxl (JNI)
   data/                      Prefs, Library (history/bookmarks/favorites),
                              Thumbs, models
   files/                     FileSpace (device and shares), Transfer (copy/move

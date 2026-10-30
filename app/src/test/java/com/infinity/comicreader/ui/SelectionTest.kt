@@ -125,6 +125,20 @@ class SelectionTest {
     }
 
     @Test
+    fun packIsForFoldersOnlyThatItMayTake() {
+        val packs = listOf(MoreAction.PACK, MoreAction.PACK_COMPACTED)
+        val all = MoreActions.DEFAULT.visible
+        val facts = SelectionActions.MoreFacts(true, { true }, { true }, { true }, packable = { it.name != "Share" })
+        fun packing(vararg entries: BookEntry) = SelectionActions.more(entries.toList(), all, facts).filter { it in packs }
+        assertEquals(packs, packing(folder("A"), folder("B")))
+        assertEquals(emptyList<MoreAction>(), packing(folder("A"), book("a.cbz")))
+        assertEquals(emptyList<MoreAction>(), packing(folder("A"), folder("Share")))
+        // Where nothing says a folder may be taken (a share's), none.
+        val none = SelectionActions.MoreFacts(true, { true }, { true }, { true })
+        assertTrue(SelectionActions.more(listOf(folder("A")), all, none).none { it in packs })
+    }
+
+    @Test
     fun theButtonFollowsTheCountAndSettings() {
         val bar = SelectionActions.bar(false, listOf(book("a.cbz"), book("b.cbz")), { true }, { true }, emptyList())
         val none = SelectionActions.BarState(emptySet(), emptySet(), false)

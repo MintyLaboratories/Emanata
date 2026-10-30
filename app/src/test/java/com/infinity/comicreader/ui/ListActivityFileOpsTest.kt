@@ -268,7 +268,10 @@ class ListActivityFileOpsTest {
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
         assertEquals(
-            listOf(MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE),
+            listOf(
+                MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.COMPACT,
+                MoreAction.MAKE_COMPATIBLE, MoreAction.PACK, MoreAction.PACK_COMPACTED
+            ),
             activity.moreItems()
         )
         // Both: what applies to all of them, and nothing that takes one.
@@ -364,6 +367,69 @@ class ListActivityFileOpsTest {
         assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
         latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
+    }
+
+    /** The ⋮ menu's item [action] once what it depends on is known. */
+    private fun ListActivity.moreItem(action: MoreAction): View {
+        bar(R.id.selection_more).performClick()
+        idle()
+        val menu = moreMenu!!
+        return (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == action }
+    }
+
+    @Test
+    fun packIsOffSayingWhyForAFolderHoldingMoreThanImages() {
+        File(other, "1.jpg").writeBytes(byteArrayOf(1, 2))
+        File(other, "notes.txt").writeText("x")
+        val activity = launch()
+        activity.select(other.absolutePath)
+        val item = activity.moreItem(MoreAction.PACK)
+        assertFalse(item.isEnabled)
+        assertEquals(activity.getString(R.string.pack_why_other_files), item.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
+        item.performClick()
+        idle()
+        assertTrue(activity.selection.active)
+        assertTrue(other.exists())
+    }
+
+    @Test
+    fun packingAFolderOfImagesMakesABookBesideItAndTheFolderGoes() {
+        val images = (1..3).map { File(other, "$it.png").apply { writeBytes(ByteArray(300) { b -> (b + it).toByte() }) } }
+        File(other, "Thumbs.db").writeBytes(byteArrayOf(1))
+        val first = ref(images[0])
+        library.setRead(first, true)
+        val activity = launch()
+        activity.select(other.absolutePath)
+        val item = activity.moreItem(MoreAction.PACK)
+        assertTrue(item.isEnabled)
+        assertEquals(View.GONE, item.findViewById<View>(R.id.more_action_reason).visibility)
+        item.performClick()
+        idle()
+        assertEquals(activity.getString(R.string.pack_title_one, "Other"), latest().title())
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        val cbz = File(shelf, "Other.cbz")
+        settle { cbz.exists() && !other.exists() }
+        assertFalse(activity.selection.active)
+        java.util.zip.ZipFile(cbz).use { z -> assertEquals(listOf("1.png", "2.png", "3.png"), z.entries().toList().map { it.name }) }
+        assertFalse(library.isRead(bookId(cbz)))
+        assertEquals(context.resources.getQuantityString(R.plurals.packed_count, 1, 1), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun packingOverABookAsksAsPasteDoes() {
+        File(other, "1.png").writeBytes(ByteArray(300) { 4 })
+        val there = File(shelf, "Other.cbz").apply { writeText("there") }
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.moreItem(MoreAction.PACK).performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        repeat(50) { if (latest().title() != activity.getString(R.string.clash_title, "Other.cbz")) idle() }
+        assertEquals(activity.getString(R.string.clash_title, "Other.cbz"), latest().title())
+        latest().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
+        val kept = File(shelf, "Other (2).cbz")
+        settle { kept.exists() && !other.exists() }
+        assertEquals("there", there.readText())
     }
 
     @Test

@@ -7,4 +7,7 @@
     <attr name="colorOpCompatible" format="color" />
     <attr name="colorOnOpCompatible" format="color" />
     <attr name="colorOpCompatibleRing" format="color" />
+    <attr name="colorOpPack" format="color" />
+    <attr name="colorOnOpPack" format="color" />
+    <attr name="colorOpPackRing" format="color" />
 </resources>

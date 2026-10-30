@@ -14,6 +14,10 @@ enum class MoreAction(val key: String) {
     COMPACT("compact"),
     MAKE_COMPATIBLE("make_compatible"),
 
+    /** Folders of loose images only. */
+    PACK("pack"),
+    PACK_COMPACTED("pack_compacted"),
+
     /** History only. */
     REMOVE_FROM_HISTORY("remove_from_history"),
 

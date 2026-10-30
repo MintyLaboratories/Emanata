@@ -35,7 +35,7 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
         /** The badge on Paste telling a move from a copy: that action's icon and colors. */
         fun pasteBadge(move: Boolean): FabLook = if (move) MOVE else COPY
 
-        /** The bubble of an operation of [kind]: Move and Copy as their buttons, Delete on the error container, Compact and Make compatible each on its own. */
+        /** The bubble of an operation of [kind]: Move and Copy as their buttons, Delete on the error container, Compact, Make compatible and Pack each on its own. */
         fun of(kind: FileWork.Kind): FabLook = when (kind) {
             FileWork.Kind.COPY -> COPY
             FileWork.Kind.MOVE -> MOVE
@@ -43,6 +43,7 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             FileWork.Kind.RENAME -> RENAME
             FileWork.Kind.COMPACT -> COMPACT
             FileWork.Kind.COMPATIBLE -> COMPATIBLE
+            FileWork.Kind.PACK -> PACK
         }
 
         /** The color of the progress ring around a running bubble of [kind]: the action's own, strong over the list. */
@@ -53,6 +54,7 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             FileWork.Kind.RENAME -> androidx.appcompat.R.attr.colorPrimary
             FileWork.Kind.COMPACT -> R.attr.colorOpCompactRing
             FileWork.Kind.COMPATIBLE -> R.attr.colorOpCompatibleRing
+            FileWork.Kind.PACK -> R.attr.colorOpPackRing
         }
 
         /** A bubble waiting its turn: gray, whatever it will do. */
@@ -66,5 +68,6 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
         // Roles of their own: Material's are taken by the floating button's actions.
         private val COMPACT = FabLook(R.drawable.ic_compress, R.string.more_compact, R.attr.colorOpCompact, R.attr.colorOnOpCompact)
         private val COMPATIBLE = FabLook(R.drawable.ic_unfold_more, R.string.more_make_compatible, R.attr.colorOpCompatible, R.attr.colorOnOpCompatible)
+        private val PACK = FabLook(R.drawable.ic_archive, R.string.more_pack, R.attr.colorOpPack, R.attr.colorOnOpPack)
     }
 }

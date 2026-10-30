@@ -558,6 +558,34 @@
     <string name="op_described">%1$s, %2$s</string>
     <string name="op_percent">%1$d%%</string>
     <string name="op_folded_badge">+%1$d</string>
+    <!-- Pack, from the selection's ⋮ menu for folders of loose images. -->
+    <string name="more_pack">Pack</string>
+    <string name="more_pack_compacted">Pack compacted</string>
+    <string name="file_packing">Packing</string>
+    <plurals name="op_packing">
+        <item quantity="one">Packing %1$d folder</item>
+        <item quantity="other">Packing %1$d folders</item>
+    </plurals>
+    <string name="pack_title_one">Pack %1$s?</string>
+    <plurals name="pack_title">
+        <item quantity="one">Pack %1$d folder?</item>
+        <item quantity="other">Pack %1$d folders?</item>
+    </plurals>
+    <string name="pack_message">Each folder becomes a CBZ of its images beside it. The folder is removed once the CBZ is checked.</string>
+    <string name="pack_why_subfolders">Holds folders</string>
+    <string name="pack_why_other_files">Holds files other than images</string>
+    <string name="pack_why_no_images">Holds no images</string>
+    <string name="pack_why_unreadable">Can\'t be read</string>
+    <!-- %1$s: a folder; %2$s: why it can't be packed. -->
+    <string name="pack_why_named">%1$s: %2$s</string>
+    <plurals name="packed_count">
+        <item quantity="one">Packed %1$d folder</item>
+        <item quantity="other">Packed %1$d folders</item>
+    </plurals>
+    <plurals name="packed_part">
+        <item quantity="one">Packed %1$d of %2$d folder</item>
+        <item quantity="other">Packed %1$d of %2$d folders</item>
+    </plurals>
     <string name="op_waiting">Waiting for the operations before it</string>
     <!-- On a bubble: older bubbles folded away. -->
     <string name="op_folded">%1$d more</string>

@@ -55,6 +55,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.compact.PackFolders
 import com.infinity.comicreader.compact.RebuildTargets
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookFactsCache
@@ -162,6 +163,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** The selection's ⋮ menu while it shows. */
     private var morePopup: PopupWindow? = null
+
+    /** Looking at what the folders selected hold before the ⋮ menu shows. */
+    private var moreLook: Job? = null
 
     /** Above [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
     internal lateinit var stack: OperationStack
@@ -1828,7 +1832,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         prefs.moreActions.visible,
         SelectionActions.MoreFacts(
             prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek, ::canRebuild,
-            inHistory = mode == TAB_HISTORY, inBookmarks = mode == TAB_BOOKMARKS
+            packable = ::canPack, inHistory = mode == TAB_HISTORY, inBookmarks = mode == TAB_BOOKMARKS
         )
     )
 
@@ -2051,7 +2055,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         else -> toast(what)
     }
 
-    /** The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮ button. */
+    /**
+     * The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮
+     * button. Pack and Pack compacted stay off until every folder selected is found to hold
+     * images only ([PackFolders]), else say why.
+     */
     private fun showMore() {
         hideMore()
         val anchor = barViews[SelectionActions.Bar.MORE] ?: return
@@ -2073,11 +2081,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             }
             item.findViewById<TextView>(R.id.more_action_label).setText(MoreActionsDialog.labelOf(action))
             item.setOnClickListener {
+                if (!it.isEnabled) return@setOnClickListener
                 hideMore()
                 onMoreAction(action)
             }
             list.addView(item)
         }
+        val packs = actions.filter { it == MoreAction.PACK || it == MoreAction.PACK_COMPACTED }
+        for (action in packs) offMore(list, action, "")
         list.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val popup = PopupWindow(list, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true)
         val elevation = resources.displayMetrics.density * MORE_ELEVATION_DP
@@ -2093,9 +2104,44 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val gap = resources.getDimensionPixelSize(R.dimen.space_2)
         popup.showAsDropDown(anchor, (anchor.width - list.measuredWidth) / 2, -(anchor.height + list.measuredHeight + gap))
         morePopup = popup
+        if (packs.isEmpty()) return
+        val folders = selection.entries.map { it.file }
+        moreLook = lifecycleScope.launch {
+            val blocked = withContext(AppDispatchers.io) { PackFolders.firstBlocked(folders) }
+            val why = blocked?.let { (dir, why) ->
+                val text = getString(packWhy(why))
+                if (folders.size > 1) getString(R.string.pack_why_named, dir.name, text) else text
+            }
+            if (morePopup !== popup) return@launch
+            for (action in packs) offMore(list, action, why)
+            // A reason shown makes the menu taller: it still ends above the button.
+            list.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            popup.update(anchor, (anchor.width - list.measuredWidth) / 2, -(anchor.height + list.measuredHeight + gap), list.measuredWidth, list.measuredHeight)
+        }
+    }
+
+    /** Turns ⋮ menu item [action] in [list] off saying [why] (nothing while it is not known), or on again when null. */
+    private fun offMore(list: ViewGroup, action: MoreAction, why: String?) {
+        val item = (0 until list.childCount).map { list.getChildAt(it) }.firstOrNull { it.tag == action } ?: return
+        item.isEnabled = why == null
+        item.alpha = if (why == null) 1f else DISABLED_ALPHA
+        item.findViewById<TextView>(R.id.more_action_reason).apply {
+            text = why.orEmpty()
+            visibility = if (why.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** What [why] says of a folder Pack cannot take. */
+    private fun packWhy(why: PackFolders.Why): Int = when (why) {
+        PackFolders.Why.SUBFOLDERS -> R.string.pack_why_subfolders
+        PackFolders.Why.OTHER_FILES -> R.string.pack_why_other_files
+        PackFolders.Why.NO_IMAGES -> R.string.pack_why_no_images
+        PackFolders.Why.UNREADABLE -> R.string.pack_why_unreadable
     }
 
     private fun hideMore() {
+        moreLook?.cancel()
+        moreLook = null
         val popup = morePopup ?: return
         morePopup = null
         popup.dismiss()
@@ -2109,6 +2155,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val entries = selection.entries
         val one = entries.singleOrNull()
         val asks = action == MoreAction.COMPACT || action == MoreAction.MAKE_COMPATIBLE ||
+            action == MoreAction.PACK || action == MoreAction.PACK_COMPACTED ||
             action == MoreAction.REMOVE_FROM_HISTORY || action == MoreAction.REMOVE_BOOKMARK
         if (!asks) endSelection()
         when (action) {
@@ -2126,6 +2173,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
             MoreAction.PEEK -> one?.let { peekFromMenu(it) }
             MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> rebuild(entries.filter(::canRebuild), compatible = action == MoreAction.MAKE_COMPATIBLE)
+            MoreAction.PACK, MoreAction.PACK_COMPACTED ->
+                fileActions.pack(entries.filter(::canPack).map { it.file }, compacted = action == MoreAction.PACK_COMPACTED) { endSelection() }
             MoreAction.REMOVE_FROM_HISTORY -> removeHistory(entries)
             MoreAction.REMOVE_BOOKMARK -> removeBookmarks(entries)
         }
@@ -2137,6 +2186,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun canRebuild(entry: BookEntry): Boolean =
         (entry.isDir || Formats.isArchiveName(entry.name)) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
+
+    /** True when [entry] is a folder Pack may take: on the device and changeable. */
+    private fun canPack(entry: BookEntry): Boolean = entry.isDir && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
 
     /**
      * Compacts or makes compatible the books among [entries] and every book inside the
@@ -3007,7 +3059,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val STATE_OFFER = "resume_offer"
         private const val STATE_SELECTED = "selected"
 
-        /** How faint a button the selection cannot use now shows. */
+        /** How faint a button or ⋮ menu item the selection cannot use now shows. */
         private const val DISABLED_ALPHA = 0.38f
 
         /** How far the selection's ⋮ menu floats above the list. */

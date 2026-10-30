@@ -31,8 +31,8 @@ import java.util.Locale
 /**
  * The file operations of the library's selection, on the device and on shares: Rename,
  * Delete, and Move or Copy, which pick the items up ([FileClipboard]) for a Paste bubble
- * to put into the folder browsed; and for books on the device, Compact and Make
- * compatible ([FileJobs.rebuild]). Each runs as one queued [FileWork], over its items one
+ * to put into the folder browsed; for books on the device, Compact and Make
+ * compatible ([FileJobs.rebuild]); and for folders of loose images, Pack ([FileJobs.pack]). Each runs as one queued [FileWork], over its items one
  * at a time, going on past one that fails; its progress shows on its bubble, and its
  * outcome as a toast, saying how many were done when not all. Favorites, history,
  * bookmarks and all else kept for an item follow it when it moves or is renamed, and go
@@ -174,6 +174,72 @@ internal class FileActions(
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
+
+    // ------------------------------------------------------------------ pack
+
+    /**
+     * Packs [folders], each holding images only, into a `.cbz` beside it once confirmed: its
+     * images as they are, or with [compacted] made smaller losslessly (warned as Compact is).
+     * Asks once for all whose `.cbz` name is taken: Replace, Keep both, or Skip them. One
+     * queued operation, a folder at a time; [onConfirmed] runs as the dialog is confirmed.
+     */
+    fun pack(folders: List<File>, compacted: Boolean, onConfirmed: () -> Unit = {}) {
+        val first = folders.firstOrNull() ?: return
+        val title = if (folders.size == 1) activity.getString(R.string.pack_title_one, first.name)
+        else activity.resources.getQuantityString(R.plurals.pack_title, folders.size, folders.size)
+        val message = activity.getString(R.string.pack_message) +
+            if (compacted) "\n\n" + activity.getString(R.string.compact_warning) else ""
+        AlertDialog.Builder(activity)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(if (compacted) R.string.more_pack_compacted else R.string.more_pack) { _, _ ->
+                onConfirmed()
+                activity.lifecycleScope.launch { planPack(folders, compacted) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** Packs [folders], asking first about the `.cbz` names taken beside them. */
+    private suspend fun planPack(folders: List<File>, compacted: Boolean) {
+        val there = withContext(AppDispatchers.io) {
+            folders.associateWith { FileSpaces.of(it.absolutePath).stat(Transfer.child(it.parent ?: "", packName(it))) }
+        }
+        val plans = folders.filter { there[it] == null }.map { FileJobs.PackPlan(it.absolutePath, packName(it)) }
+        val clashes = folders.filter { there[it] != null }
+        if (clashes.isEmpty()) return startPack(plans, compacted)
+        fun keepBoth(dir: File) = Transfer.keepBothName(packName(dir), false) { File(dir.parentFile, it).exists() }
+        AlertDialog.Builder(activity).apply {
+            setTitle(
+                if (clashes.size == 1) activity.getString(R.string.clash_title, packName(clashes[0]))
+                else activity.resources.getQuantityString(R.plurals.clash_many_title, clashes.size, clashes.size)
+            )
+            // A folder of that name is never replaced: it would go, with everything in it.
+            if (clashes.none { there[it]?.isDirectory == true }) {
+                setPositiveButton(R.string.clash_replace) { _, _ ->
+                    startPack(plans + clashes.map { FileJobs.PackPlan(it.absolutePath, packName(it), replace = true, over = there[it]) }, compacted)
+                }
+            }
+            setNeutralButton(R.string.clash_keep_both) { _, _ ->
+                activity.lifecycleScope.launch {
+                    val kept = withContext(AppDispatchers.io) { clashes.map { FileJobs.PackPlan(it.absolutePath, keepBoth(it)) } }
+                    startPack(plans + kept, compacted)
+                }
+            }
+            setNegativeButton(R.string.clash_skip) { _, _ -> startPack(plans, compacted) }
+        }.show()
+    }
+
+    /** Queues packing as [plans] say, in the order the folders were selected. */
+    private fun startPack(plans: List<FileJobs.PackPlan>, compacted: Boolean) {
+        val first = plans.firstOrNull() ?: return
+        val jobs = this.jobs
+        val chosen = jobs.look(plans.map { it.folder })
+        start(FileWork.Kind.PACK, File(first.folder).name, plans.size) { p -> jobs.pack(plans, compacted, chosen, p) }
+    }
+
+    /** The name of the `.cbz` folder [dir] is packed into. */
+    private fun packName(dir: File) = "${dir.name}.cbz"
 
     // ------------------------------------------------------------------ move / copy
 
@@ -343,6 +409,7 @@ internal class FileActions(
                 FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, outcome.count, outcome.count)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
                 FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE -> rebuilt(status.kind, outcome)
+                FileWork.Kind.PACK -> packed(outcome)
             }
             is FileWork.Outcome.Canceled -> canceled(status.kind, outcome)
             is FileWork.Outcome.Failed ->
@@ -390,6 +457,13 @@ internal class FileActions(
         return text
     }
 
+    /** What packing folders did: how many, and the bytes Pack compacted saved. */
+    private fun packed(outcome: FileWork.Outcome.Done): String {
+        val text = activity.resources.getQuantityString(R.plurals.packed_count, outcome.count, outcome.count)
+        val saved = outcome.summary?.saved ?: 0L
+        return if (saved > 0) activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved)) else text
+    }
+
     /** [text] with how many pages [summary] re-encoded, if any. */
     private fun withReencoded(text: String, summary: FileWork.Summary?): String {
         val pages = summary?.reencoded?.values?.sumOf { it.size } ?: 0
@@ -419,11 +493,12 @@ internal class FileActions(
                 FileWork.Kind.DELETE, FileWork.Kind.RENAME -> R.plurals.deleted_part
                 FileWork.Kind.COMPACT -> R.plurals.compacted_part
                 FileWork.Kind.COMPATIBLE -> R.plurals.compatible_part
+                FileWork.Kind.PACK -> R.plurals.packed_part
             },
             count, done, count
         )
         val saved = summary?.saved ?: 0L
-        if (kind == FileWork.Kind.COMPACT && saved > 0) return activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved))
+        if ((kind == FileWork.Kind.COMPACT || kind == FileWork.Kind.PACK) && saved > 0) return activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved))
         return withReencoded(text, summary)
     }
 

@@ -459,7 +459,7 @@
         <item quantity="other">Make %1$d books compatible?</item>
     </plurals>
     <string name="compact_warning">Pixel-perfect and reversible, but older readers may not open JPEG XL pages.</string>
-    <string name="compatible_message">JPEG XL pages become their original JPEG, byte for byte, or lossless WebP. Lossy JPEG XL pages are re-encoded as WebP at quality 90 and change slightly.</string>
+    <string name="compatible_message">Converts the comic into legacy formats every reader opens. This may be lossy if no better way is found, but aims for minimal visible loss. Comics compacted by Emanata convert losslessly.</string>
     <string name="compact_in_place">In place</string>
     <string name="compact_in_place_hint">Replaces each book once its new file is written and checked; .cbr, .cb7 and .cbt books become .cbz. Off, the new file goes beside it.</string>
     <string name="compact_skip_hidden">Skip hidden pages</string>
@@ -484,7 +484,7 @@
     <!-- %1$s: how many books, as "Compacted 2 of 5 books"; %2$s: how much smaller, as "120 MB". -->
     <string name="rebuild_saved">%1$s, saved %2$s</string>
     <string name="compact_nothing">Nothing to compact: no page got smaller</string>
-    <string name="compatible_nothing">Nothing to change: no JPEG XL pages</string>
+    <string name="compatible_nothing">Nothing to change: every page already opens in every reader</string>
     <!-- %1$s: what was done, as "Compacted 2 books, saved 40 MB". -->
     <plurals name="rebuild_unchanged">
         <item quantity="one">%1$s; %2$d book was left as it was</item>
@@ -505,9 +505,11 @@
     </plurals>
     <string name="unconverted_title">Pages not converted</string>
     <string name="unconverted_compact">These pages couldn\'t be converted and were kept as they were:</string>
-    <string name="unconverted_compatible">These pages couldn\'t be converted and are still JPEG XL:</string>
-    <string name="reencoded_title">Pages changed slightly</string>
-    <string name="reencoded_message">These pages were lossy JPEG XL and are now WebP at quality 90:</string>
+    <!-- %1$s: what was done, as "Made 2 books compatible"; %2$d: pages re-encoded. -->
+    <plurals name="rebuild_reencoded">
+        <item quantity="one">%1$s; %2$d page re-encoded as very-high-quality WebP</item>
+        <item quantity="other">%1$s; %2$d pages re-encoded as very-high-quality WebP</item>
+    </plurals>
     <!-- %1$s: a book; %2$s: its pages. -->
     <string name="reencoded_book">%1$s: %2$s</string>
     <!-- %1$s: what it does, as "Copying 3 items"; %2$s: the folder. -->

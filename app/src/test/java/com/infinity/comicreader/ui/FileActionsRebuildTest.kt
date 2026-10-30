@@ -11,6 +11,8 @@ import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.util.FileUtils
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -57,22 +59,34 @@ class FileActionsRebuildTest {
 
     private fun message(dialog: AlertDialog) = dialog.findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString()
 
+    private fun reencoded(text: String, pages: Int) = context.resources.getQuantityString(R.plurals.rebuild_reencoded, pages, text, pages)
+
     @Test
-    fun pagesReencodedAreListedWhenAnotherBookFails() {
-        val summary = FileWork.Summary(0, reencoded = mapOf("Book A.cbz" to listOf("3.webp", "7.webp")))
-        FileWork.start(FileWork.Kind.COMPATIBLE, "Book A.cbz", 2) { FileWork.Outcome.Failed(IOException("broken"), 1, 2, summary = summary) }
+    fun pagesReencodedAreCountedNeverListed() {
+        val summary = FileWork.Summary(0, reencoded = mapOf("Book A.cbz" to listOf("3.webp", "7.webp"), "Book B.cbz" to listOf("1.webp")))
+        FileWork.start(FileWork.Kind.COMPATIBLE, "Book A.cbz", 2) { FileWork.Outcome.Done("/x/Book B.cbz", count = 2, summary = summary) }
         settle()
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        assertTrue(message(dialog).contains(context.getString(R.string.reencoded_book, "Book A.cbz", "3.webp, 7.webp")))
+        assertEquals(reencoded(context.resources.getQuantityString(R.plurals.compatible_count, 2, 2), 3), ShadowToast.getTextOfLatestToast())
+        assertNull(ShadowDialog.getLatestDialog())
+        assertFalse(ShadowToast.getTextOfLatestToast().contains("90"))
     }
 
     @Test
-    fun pagesReencodedAreListedWhenCanceled() {
+    fun pagesReencodedAreCountedWhenAnotherBookFails() {
+        val summary = FileWork.Summary(0, reencoded = mapOf("Book A.cbz" to listOf("3.webp", "7.webp")))
+        FileWork.start(FileWork.Kind.COMPATIBLE, "Book A.cbz", 2) { FileWork.Outcome.Failed(IOException("broken"), 1, 2, summary = summary) }
+        settle()
+        val part = reencoded(context.resources.getQuantityString(R.plurals.compatible_part, 2, 1, 2), 2)
+        assertEquals(context.getString(R.string.file_failed_part, part, "broken"), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun pagesReencodedAreCountedWhenCanceled() {
         val summary = FileWork.Summary(0, reencoded = mapOf("Book A.cbz" to listOf("2.webp")))
         FileWork.start(FileWork.Kind.COMPATIBLE, "Book A.cbz", 3) { FileWork.Outcome.Canceled(1, 3, summary = summary) }
         settle()
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        assertTrue(message(dialog).contains(context.getString(R.string.reencoded_book, "Book A.cbz", "2.webp")))
+        val part = reencoded(context.resources.getQuantityString(R.plurals.compatible_part, 3, 1, 3), 1)
+        assertEquals(context.getString(R.string.file_canceled_part, part), ShadowToast.getTextOfLatestToast())
     }
 
     @Test
@@ -83,7 +97,7 @@ class FileActionsRebuildTest {
         val made = context.resources.getQuantityString(R.plurals.compatible_count, 1, 1)
         assertEquals(context.resources.getQuantityString(R.plurals.rebuild_failed_pages, 1, made, 1), ShadowToast.getTextOfLatestToast())
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        assertTrue(message(dialog).startsWith(context.getString(R.string.unconverted_compatible)))
+        assertTrue(message(dialog).startsWith(context.getString(R.string.unconverted_compact)))
         assertTrue(message(dialog).contains(context.getString(R.string.reencoded_book, "Book A.cbz", "4.jxl")))
     }
 

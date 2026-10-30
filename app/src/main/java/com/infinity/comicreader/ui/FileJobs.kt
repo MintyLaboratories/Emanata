@@ -231,7 +231,7 @@ internal class FileJobs(
 
     /**
      * Rebuilds the books at [paths] on the device one at a time ([Compactor]): with
-     * [compatible], their JPEG XL pages made ones every reader opens, else compacted
+     * [compatible], their pages in formats few readers open made ones every reader opens, else compacted
      * losslessly. Goes on past one that fails; one no longer what was [chosen] ([look]) is
      * left alone. Everything kept for each book follows its new file, which takes the
      * book's place when [inPlace]; [skipHidden] leaves its hidden pages out.

@@ -268,14 +268,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - It asks first, warning: "Pixel-perfect and reversible, but older readers
     may not open JPEG XL pages." **Skip hidden pages** (off each time) leaves the
     pages hidden with Hide this page out; that part can't be reversed.
-- **Make compatible** reverses it: a JPEG XL holding a JPEG gives back that
-  JPEG byte for byte; a lossless one becomes lossless WebP (Android 11+; PNG
-  before, for 16-bit pages, and where the WebP does not decode back the same),
-  checked pixel for pixel, its color profile embedded unless sRGB; a lossy one
-  (never made by Compact) becomes WebP at quality 90, the one step that changes
-  pixels: the dialog says so, and a list of those pages follows the run. Other
-  pages are left as they are; a JPEG XL page that can't be converted (an
-  animation) stays, and is counted and listed.
+- **Make compatible** converts a comic into formats every reader opens, and
+  reverses Compact losslessly: a JPEG XL holding a JPEG gives back that JPEG
+  byte for byte; a lossless one becomes lossless WebP (Android 11+; PNG before,
+  for 16-bit pages, and where the WebP does not decode back the same), checked
+  pixel for pixel, its color profile embedded unless sRGB. Lossy pages in
+  formats few readers open (lossy JPEG XL, which Compact never makes; AVIF,
+  layered ones too, as their full image; HEIF) become very-high-quality WebP,
+  the one step that changes pixels: the dialog says so ("Converts the comic
+  into legacy formats every reader opens. This may be lossy if no better way is
+  found, but aims for minimal visible loss. Comics compacted by Emanata convert
+  losslessly."), and the message counts those pages. Other pages are left as
+  they are; a page that can't be converted (an animation) stays, and is
+  counted and listed.
   - **In place** (both; off by default, remembered): off, the new file goes
     beside the book (`Book.cbz`, or `Book (compacted).cbz` /
     `Book (compatible).cbz` when taken); on, it replaces the book once fully
@@ -287,7 +292,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - Each file read is checked against the CRC-32 its archive stores (zip; RAR
     and 7z check their own), and every entry of the new file is read back and
     checked against its CRC-32 before it takes its place; a book left as it was
-    (nothing smaller, no JPEG XL page, or holding other archives) is said so.
+    (nothing smaller, nothing to convert, or holding other archives) is said so.
     The message gives the bytes saved, and the list of pages re-encoded or not
     converted follows, also when another book failed or the run was canceled.
     The new file keeps the book's modification time.

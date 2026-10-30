@@ -106,8 +106,9 @@ object PageProbe {
         return false
     }
 
-    /** Width and height of a page by its header: PNG, JPEG, JPEG XL, BMP, WebP or TIFF; null when unknown. */
+    /** Width and height of a page by its header: PNG, JPEG, JPEG XL, BMP, WebP, TIFF, AVIF or HEIF; null when unknown. */
     fun sizeOf(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
+        ImageKind.AVIF, ImageKind.HEIF -> isoSize(bytes)
         ImageKind.PNG -> ImageHeaders.pngSize(bytes)
         ImageKind.JPEG -> ImageHeaders.jpegSize(bytes)
         ImageKind.JXL -> ImageHeaders.jxlSize(bytes)
@@ -116,6 +117,30 @@ object PageProbe {
         ImageKind.TIFF -> runCatching { Tiff.page(Tiff.ByteInput(bytes)).let { intArrayOf(it.width, it.height) } }.getOrNull()
         else -> null
     }?.takeIf { it[0] > 0 && it[1] > 0 }
+
+    /** True for an AVIF or HEIF image sequence (an animation): its major brand says so. */
+    fun isoSequence(bytes: ByteArray): Boolean = type(bytes, 4) == "ftyp" && type(bytes, 8) in SEQUENCE_BRANDS
+
+    /**
+     * The largest size an AVIF's or HEIF's `ispe` properties give (a grid's whole image is
+     * the largest), from its first [ISO_SCAN] bytes; null when none is found.
+     */
+    private fun isoSize(b: ByteArray): IntArray? {
+        var best: IntArray? = null
+        val end = minOf(b.size, ISO_SCAN) - 16
+        var at = 4
+        while (at <= end) {
+            if (b[at] == 'i'.code.toByte() && type(b, at) == "ispe") {
+                val w = be32(b, at + 8)
+                val h = be32(b, at + 12)
+                if (w > 0 && h > 0 && (best == null || w.toLong() * h > best[0].toLong() * best[1])) best = intArrayOf(w, h)
+                at += 16
+            } else {
+                at++
+            }
+        }
+        return best
+    }
 
     /** A WebP's canvas (`VP8X`) or image size (`VP8L`, `VP8 `), from its first chunk. */
     private fun webpSize(b: ByteArray): IntArray? {
@@ -157,6 +182,12 @@ object PageProbe {
 
     private fun le32(b: ByteArray, at: Int): Int =
         (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8) or ((b[at + 2].toInt() and 0xFF) shl 16) or ((b[at + 3].toInt() and 0xFF) shl 24)
+
+    /** Bytes of an AVIF or HEIF searched for its size: its `meta` box comes first. */
+    private const val ISO_SCAN = 64 * 1024
+
+    /** Major brands of AVIF and HEIF image sequences. */
+    private val SEQUENCE_BRANDS = setOf("avis", "msf1", "hevc", "hevx")
 
     private const val VP8X_ANIMATION = 0x02
     private const val VP8X_ICC = 0x20

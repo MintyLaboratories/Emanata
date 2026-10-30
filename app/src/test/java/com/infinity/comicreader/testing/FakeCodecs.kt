@@ -158,6 +158,12 @@ class FakeImages(var losslessWebp: Boolean = true) : PlatformImages {
     /** Decoded WebPs come out one sample off. */
     var badWebp = false
 
+    /** AVIF and HEIF pages it decodes: a 2 x 2 gray image each; others are taken as not decoding. */
+    var decodesIso = true
+
+    override fun lossyWebp(page: ByteArray, quality: Int): ByteArray? =
+        if (decodesIso) webp(Pixels(2, 2, 4, 8, ByteArray(16) { 0x80.toByte() }), lossless = false, quality = quality) else null
+
     override fun decode(bytes: ByteArray): Pixels? {
         Png.decode(bytes)?.let { png ->
             if (png.bits != 8) return null

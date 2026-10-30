@@ -4,10 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorSpace
 import android.os.Build
+import com.infinity.comicreader.reader.Avif
+import com.infinity.comicreader.reader.ImageKind
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
-/** The platform's image codecs ([BitmapFactory], [Bitmap.compress]) for compaction. */
+/** The platform's image codecs ([BitmapFactory], [Bitmap.compress]), and libavif ([Avif]), for compaction. */
 object AndroidImages : PlatformImages {
     override fun decode(bytes: ByteArray): Pixels? {
         val options = BitmapFactory.Options().apply {
@@ -43,6 +45,25 @@ object AndroidImages : PlatformImages {
             bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels.data))
             bitmap.setHasAlpha(hasAlpha(pixels.data))
             val out = ByteArrayOutputStream(pixels.data.size / 4)
+            return if (bitmap.compress(format, quality, out)) out.toByteArray() else null
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    override fun lossyWebp(page: ByteArray, quality: Int): ByteArray? {
+        val bitmap = when (ImageKind.sniff(page)) {
+            ImageKind.AVIF -> runCatching { Avif.decode(page, Avif.MAX_PIXELS) }.getOrNull()
+            ImageKind.HEIF -> BitmapFactory.decodeByteArray(page, 0, page.size, BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
+                inScaled = false
+            })
+            else -> null
+        } ?: return null
+        try {
+            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
+            val out = ByteArrayOutputStream(page.size * 2)
             return if (bitmap.compress(format, quality, out)) out.toByteArray() else null
         } finally {
             bitmap.recycle()

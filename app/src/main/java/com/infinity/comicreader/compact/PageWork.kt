@@ -13,13 +13,19 @@ interface PlatformImages {
 
     /** RGBA [pixels] (8 bits) as a WebP: lossless, else lossy at [quality]; null where the platform cannot (lossless before Android 11). */
     fun webp(pixels: Pixels, lossless: Boolean, quality: Int): ByteArray?
+
+    /**
+     * An AVIF (its full image, layered ones too) or HEIF page as lossy WebP at [quality],
+     * in sRGB; null where it does not decode.
+     */
+    fun lossyWebp(page: ByteArray, quality: Int): ByteArray?
 }
 
 /**
  * Each page made anew, or left alone (null). [compact]: the smallest page without a
- * pixel changed, kept only when smaller. [compatible]: a JPEG XL page as one every reader
- * opens. Every page made is checked before it is kept: a JPEG rebuilt byte for byte, or
- * the pixels decoded back the same.
+ * pixel changed, kept only when smaller. [compatible]: a page in a format few readers
+ * open (JPEG XL, AVIF, HEIF) as one every reader opens. Every page made losslessly is
+ * checked before it is kept: a JPEG rebuilt byte for byte, or the pixels decoded back the same.
  */
 class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     /** A page made anew: its [bytes] and extension [ext]; [reencoded] when its pixels changed slightly. */
@@ -54,15 +60,27 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     /**
      * [page] as one every reader opens: a JPEG XL holding a JPEG as that JPEG, a lossless
      * one as lossless WebP (PNG before Android 11, for 16 bits, and where the WebP does not
-     * decode back the same), a lossy one as WebP at [LOSSY_QUALITY] ([Made.reencoded]); null
-     * for every other page. Throws [Unconverted] for a JPEG XL it cannot make so.
+     * decode back the same); a lossy JPEG XL, an AVIF or a HEIF as very-high-quality WebP
+     * ([LOSSY_QUALITY], [Made.reencoded]); null for every other page. Throws [Unconverted]
+     * for one it cannot make so, an animation among them.
      */
     fun compatible(page: ByteArray): Made? {
-        if (ImageKind.sniff(page) != ImageKind.JXL) return null
+        when (ImageKind.sniff(page)) {
+            ImageKind.JXL -> Unit
+            ImageKind.AVIF, ImageKind.HEIF -> return reencoded(page)
+            else -> return null
+        }
         if (PageProbe.jxlHoldsJpeg(page)) jxl.reconstruct(page)?.let { return Made(it, "jpg") }
         val info = jxl.info(page) ?: throw Unconverted("Unreadable JPEG XL")
         if (info.animated) throw Unconverted("Animated JPEG XL")
         return (if (info.lossless) losslessOut(page, info) else lossyOut(page, info)) ?: throw Unconverted("JPEG XL not converted")
+    }
+
+    /** An AVIF or HEIF still image as lossy WebP. */
+    private fun reencoded(page: ByteArray): Made {
+        if (PageProbe.isoSequence(page)) throw Unconverted("Animated image")
+        val webp = images.lossyWebp(page, LOSSY_QUALITY) ?: throw Unconverted("Image not decoded")
+        return Made(webp, "webp", reencoded = true)
     }
 
     /** The JPEG [jpeg] transcoded at [effort], kept once it rebuilds byte for byte. */
@@ -167,7 +185,7 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         const val EFFORT_REPACK = 9
         const val EFFORT_RECOMPRESS = 9
 
-        /** WebP quality of a lossy JPEG XL made compatible. */
+        /** WebP quality of a lossy page made compatible: very high, the smallest that shows no loss in comparisons. */
         const val LOSSY_QUALITY = 90
 
         /** Android's lossless WebP takes its effort as "quality": 100 is the smallest. */

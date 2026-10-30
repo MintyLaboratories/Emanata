@@ -139,7 +139,7 @@ internal class FileActions(
 
     /**
      * Rebuilds the books at [paths] once confirmed: compacts them losslessly, or with
-     * [compatible] makes their JPEG XL pages ones every reader opens. The dialog warns,
+     * [compatible] makes their pages in formats few readers open ones every reader opens. The dialog warns,
      * and offers In place (remembered) and, for Compact, Skip hidden pages (off each time).
      * One queued operation, a book at a time; [onConfirmed] runs as it is queued.
      */
@@ -350,8 +350,8 @@ internal class FileActions(
                 else activity.getString(R.string.file_failed, describe(outcome.error))
         }
         toast(text, long = outcome is FileWork.Outcome.Canceled && outcome.givenBack > 0)
-        // Also when other books failed or the run was canceled: these pages changed all the same.
-        outcome.rebuilt?.let { tellPages(status.kind, it) }
+        // Also when other books failed or the run was canceled: those books were rebuilt all the same.
+        outcome.rebuilt?.let { tellPages(it) }
     }
 
     /** What a canceled operation did; for a move, how many items it did not reach are back as a Paste. */
@@ -385,24 +385,24 @@ internal class FileActions(
             else -> res.getQuantityString(R.plurals.compacted_count, count, count, FileUtils.formatSize(activity, summary.saved.coerceAtLeast(0)))
         }
         if (count > 0 && unchanged > 0) text = res.getQuantityString(R.plurals.rebuild_unchanged, unchanged, text, unchanged)
+        text = withReencoded(text, summary)
         if (count > 0 && failed > 0) text = res.getQuantityString(R.plurals.rebuild_failed_pages, failed, text, failed)
         return text
     }
 
-    /** Lists by book the pages a rebuild of [kind] re-encoded (their pixels changed slightly) and those it could not make anew, if any. */
-    private fun tellPages(kind: FileWork.Kind, summary: FileWork.Summary) {
-        fun list(pages: Map<String, List<String>>) =
-            pages.entries.joinToString("\n") { (book, names) -> activity.getString(R.string.reencoded_book, book, names.joinToString(", ")) }
-        val parts = ArrayList<String>()
-        if (summary.reencoded.isNotEmpty()) parts += activity.getString(R.string.reencoded_message) + "\n\n" + list(summary.reencoded)
-        if (summary.failed.isNotEmpty()) {
-            val intro = if (kind == FileWork.Kind.COMPATIBLE) R.string.unconverted_compatible else R.string.unconverted_compact
-            parts += activity.getString(intro) + "\n\n" + list(summary.failed)
-        }
-        if (parts.isEmpty()) return
+    /** [text] with how many pages [summary] re-encoded, if any. */
+    private fun withReencoded(text: String, summary: FileWork.Summary?): String {
+        val pages = summary?.reencoded?.values?.sumOf { it.size } ?: 0
+        return if (pages > 0) activity.resources.getQuantityString(R.plurals.rebuild_reencoded, pages, text, pages) else text
+    }
+
+    /** Lists by book the pages a rebuild could not make anew, if any; those re-encoded are only counted ([withReencoded]). */
+    private fun tellPages(summary: FileWork.Summary) {
+        if (summary.failed.isEmpty()) return
+        val list = summary.failed.entries.joinToString("\n") { (book, names) -> activity.getString(R.string.reencoded_book, book, names.joinToString(", ")) }
         AlertDialog.Builder(activity)
-            .setTitle(if (summary.failed.isEmpty()) R.string.reencoded_title else R.string.unconverted_title)
-            .setMessage(parts.joinToString("\n\n"))
+            .setTitle(R.string.unconverted_title)
+            .setMessage(activity.getString(R.string.unconverted_compact) + "\n\n" + list)
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -423,7 +423,8 @@ internal class FileActions(
             count, done, count
         )
         val saved = summary?.saved ?: 0L
-        return if (kind == FileWork.Kind.COMPACT && saved > 0) activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved)) else text
+        if (kind == FileWork.Kind.COMPACT && saved > 0) return activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved))
+        return withReencoded(text, summary)
     }
 
     /** [one] for a single item, else [many] counting [count]. */

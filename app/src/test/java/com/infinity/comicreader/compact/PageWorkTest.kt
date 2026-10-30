@@ -154,6 +154,41 @@ class PageWorkTest {
         assertTrue(source.same(Png.decode(made.bytes)))
     }
 
+    /** A minimal ISO-BMFF image of [brand]: its `ftyp`, then an `ispe` of [width] x [height]. */
+    private fun iso(brand: String, width: Int, height: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val b = java.nio.ByteBuffer.allocate(64)
+        b.putInt(16).put("ftyp".toByteArray()).put(brand.toByteArray()).putInt(0)
+        b.putInt(20).put("ispe".toByteArray()).putInt(0).putInt(width).putInt(height)
+        out.write(b.array(), 0, b.position())
+        return out.toByteArray()
+    }
+
+    @Test
+    fun avifAndHeifPagesBecomeVeryHighQualityWebp() {
+        for (brand in listOf("avif", "heic", "mif1")) {
+            val made = work.compatible(iso(brand, 300, 200))!!
+            assertEquals("webp", made.ext)
+            assertTrue(made.reencoded)
+            assertEquals("RIFF", String(made.bytes, 0, 4))
+        }
+        assertEquals(PageWork.LOSSY_QUALITY, 90)
+        // Compact leaves them alone.
+        assertNull(work.compact(iso("avif", 300, 200)))
+    }
+
+    @Test
+    fun animatedOrUndecodableAvifStaysAndSaysSo() {
+        assertThrows(PageWork.Unconverted::class.java) { work.compatible(iso("avis", 30, 20)) }
+        assertThrows(PageWork.Unconverted::class.java) { PageWork(jxl, FakeImages().apply { decodesIso = false }).compatible(iso("avif", 30, 20)) }
+    }
+
+    @Test
+    fun anAvifsSizeComesFromItsLargestIspe() {
+        assertArrayEquals(intArrayOf(300, 200), PageProbe.sizeOf(iso("avif", 300, 200)))
+        assertEquals(iso("avif", 300, 200).size * 3L + 300L * 200 * PageWork.BYTES_PER_PIXEL, work.memoryFor(iso("avif", 300, 200)))
+    }
+
     @Test
     fun aJpegXlThatCannotBeMadeCompatibleSaysSo() {
         assertThrows(PageWork.Unconverted::class.java) { work.compatible(FakeJxl.CONTAINER + ByteArray(20)) }

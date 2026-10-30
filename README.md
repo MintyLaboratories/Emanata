@@ -300,8 +300,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     and 7z check their own), and every entry of the new file is read back and
     checked against its CRC-32 before it takes its place; a book left as it was
     (nothing smaller, nothing to convert, or holding other archives) is said so.
-    The message gives the bytes saved, and the list of pages re-encoded or not
-    converted follows, also when another book failed or the run was canceled.
+    The message gives the bytes saved and counts the pages re-encoded; the
+    list of pages not converted follows, also when another book failed or the
+    run was canceled.
     The new file keeps the book's modification time.
   - Pages convert on up to half the cores (at most four) at background
     priority, fewer as the device warms up or saves power, and only as many at

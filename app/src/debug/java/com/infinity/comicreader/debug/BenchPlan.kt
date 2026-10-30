@@ -1,6 +1,7 @@
 package com.infinity.comicreader.debug
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import org.json.JSONObject
 
 /**
@@ -18,7 +19,10 @@ internal data class BenchPlan(
     val label: String = "",
     /** [PAGED], [TWO] or [CONTINUOUS]. */
     val layout: String = PAGED,
-    /** How pages are turned: [TAP] (the tap zones), [KEY] (a volume key, no gesture wait); a drag in [CONTINUOUS]. */
+    /**
+     * How pages are turned: [TAP] (the tap zones), [KEY] (a volume key, no gesture wait) or [DRAG]
+     * (slow drags of most of a screen); [CONTINUOUS], which has no tap zones, takes [DRAG] for [TAP].
+     */
     val input: String = TAP,
     /** The page a book opens at. */
     val page: Int = 0,
@@ -33,12 +37,15 @@ internal data class BenchPlan(
     /** Auto-crop on. */
     val crop: Boolean = false,
     /** Double-tap to zoom: on, off, or null to keep the setting. */
-    val doubleTap: Boolean? = null
+    val doubleTap: Boolean? = null,
+    /** The orientation every activity of the run is turned to ([ORIENTATIONS]): portrait unless asked, so sizes repeat. */
+    val orientation: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
         .put("turns", turns).put("pace", pace).put("fresh", fresh).put("crop", crop)
         .put("doubleTap", doubleTap ?: JSONObject.NULL)
+        .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
 
     companion object {
         const val READ = "read"
@@ -48,6 +55,14 @@ internal data class BenchPlan(
         const val CONTINUOUS = "continuous"
         const val TAP = "tap"
         const val KEY = "key"
+        const val DRAG = "drag"
+
+        /** Orientations by name: `portrait`, `landscape`, or `any` (as the device is held). */
+        val ORIENTATIONS = mapOf(
+            "portrait" to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            "landscape" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            "any" to ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        )
 
         /** The plan [intent]'s extras give; null when they name nothing to do. */
         fun of(intent: Intent): BenchPlan? {
@@ -58,8 +73,10 @@ internal data class BenchPlan(
             if (what != READ && what != GRID) return null
             val layout = intent.getStringExtra("layout") ?: PAGED
             if (layout !in setOf(PAGED, TWO, CONTINUOUS)) return null
-            val input = intent.getStringExtra("input") ?: TAP
-            if (input !in setOf(TAP, KEY)) return null
+            val asked = intent.getStringExtra("input") ?: TAP
+            if (asked !in setOf(TAP, KEY, DRAG)) return null
+            val input = if (asked == TAP && layout == CONTINUOUS) DRAG else asked
+            val orientation = ORIENTATIONS[intent.getStringExtra("orientation") ?: "portrait"] ?: return null
             return BenchPlan(
                 what = what,
                 path = path,
@@ -73,7 +90,8 @@ internal data class BenchPlan(
                 reps = intent.getIntExtra("reps", 1).coerceIn(1, 50),
                 fresh = intent.getBooleanExtra("fresh", false),
                 crop = intent.getBooleanExtra("crop", false),
-                doubleTap = intent.getStringExtra("doubletap")?.let { it == "on" }
+                doubleTap = intent.getStringExtra("doubletap")?.let { it == "on" },
+                orientation = orientation
             )
         }
     }

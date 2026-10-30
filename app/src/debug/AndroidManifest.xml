@@ -31,6 +31,7 @@
         <!-- Times reading sessions and library grids, driving the app as a person would; only the shell may start it. -->
         <activity
             android:name="com.infinity.comicreader.debug.BenchActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="true"
             android:permission="android.permission.DUMP"
             android:theme="@android:style/Theme.Material.NoActionBar" />

@@ -3,6 +3,7 @@ package com.infinity.comicreader.debug
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -59,6 +60,7 @@ internal class BenchRunner(private val app: Application) {
 
     /** Runs [plan] from [host], the activity it was started in; one result per session. */
     suspend fun run(host: Activity, plan: BenchPlan): List<JSONObject> {
+        tracker.orientation = plan.orientation
         app.registerActivityLifecycleCallbacks(tracker)
         tracker.resumed = host
         ReadProbes.current = probe
@@ -132,7 +134,7 @@ internal class BenchRunner(private val app: Application) {
         awaitDestroyed(viewer)
 
         return JSONObject()
-            .put("kind", "read").put("rep", rep).put("plan", plan.toJson())
+            .put("kind", "read").put("rep", rep).put("plan", plan.toJson()).put("screen", screen(viewer))
             .put("openVisibleMs", Stats.ms(open.visible)).put("openSharpMs", Stats.ms(open.sharp)).put("openTimedOut", !openOk)
             .put("openStartMs", if (probe.opening >= 0) Stats.ms(probe.opening - start) else -1)
             .put("openCpuMs", cpuOpen)
@@ -153,9 +155,9 @@ internal class BenchRunner(private val app: Application) {
         val before = probe.pages.pages(probe.pageViewsOnScreen())
         var movedAt = -1L
         probe.onMoved = { if (movedAt < 0) movedAt = it }
-        val start = when {
-            plan.layout == BenchPlan.CONTINUOUS -> drag(viewer)
-            plan.input == BenchPlan.KEY -> key(viewer)
+        val start = when (plan.input) {
+            BenchPlan.DRAG -> drag(viewer).also { repeat(DRAGS - 1) { drag(viewer) } }
+            BenchPlan.KEY -> key(viewer)
             else -> tap(viewer, TAP_X, TAP_Y)
         }
         val m = Milestones(start)
@@ -211,8 +213,11 @@ internal class BenchRunner(private val app: Application) {
             delay(DRAG_STEP_MS)
             touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, from + (to - from) * step / DRAG_STEPS)
         }
-        delay(DRAG_HOLD_MS)
-        touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, to)
+        // Held still, moving nowhere frame after frame, so the velocity at the lift is nil.
+        repeat((DRAG_HOLD_MS / DRAG_STEP_MS).toInt()) {
+            delay(DRAG_STEP_MS)
+            touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, to)
+        }
         touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, to)
         return at
     }
@@ -271,7 +276,7 @@ internal class BenchRunner(private val app: Application) {
         list.finish()
         awaitDestroyed(list)
         return JSONObject()
-            .put("kind", "grid").put("plan", plan.toJson())
+            .put("kind", "grid").put("plan", plan.toJson()).put("screen", screen(list))
             .put("firstCoverMs", since(start, probe.firstCover)).put("firstFullMs", since(start, probe.firstFullCover))
             .put("lastFullMs", since(start, probe.lastFullCover))
             .put("onScreen", shown.size).put("onScreenFull", shown.count { it.second }).put("coverEvents", probe.coverEvents)
@@ -280,6 +285,9 @@ internal class BenchRunner(private val app: Application) {
     }
 
     private fun since(start: Long, at: Long) = if (at < 0) -1 else Stats.ms(at - start)
+
+    /** [activity]'s window size, "width x height". */
+    private fun screen(activity: Activity): String = activity.window.decorView.let { "${it.width}x${it.height}" }
 
     // ------------------------------------------------------------------ plumbing
 
@@ -331,10 +339,12 @@ internal class BenchRunner(private val app: Application) {
     @Suppress("DEPRECATION")
     private fun frameNs(window: Window): Long = (1e9 / (window.windowManager.defaultDisplay.refreshRate.takeIf { it > 0 } ?: 60f)).toLong()
 
-    /** The activity in front, as the lifecycle tells. */
+    /** The activity in front, as the lifecycle tells; each one created turned to [orientation]. */
     private class Tracker : Application.ActivityLifecycleCallbacks {
         @Volatile
         var resumed: Activity? = null
+
+        var orientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
         override fun onActivityResumed(activity: Activity) {
             resumed = activity
@@ -344,7 +354,9 @@ internal class BenchRunner(private val app: Application) {
             if (resumed === activity) resumed = null
         }
 
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+            activity.requestedOrientation = orientation
+        }
         override fun onActivityStarted(activity: Activity) = Unit
         override fun onActivityStopped(activity: Activity) = Unit
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
@@ -412,9 +424,13 @@ internal class BenchRunner(private val app: Application) {
         /** How long a tap is held. */
         private const val TAP_MS = 60L
 
-        /** A drag of most of a screen: about a page at fit width, so the pages on screen change. */
-        private const val DRAG_FROM = 0.95f
-        private const val DRAG_TO = 0.05f
+        /**
+         * A drag between the bars (the bottom one holds the seek bar), [DRAGS] in a row: about a page
+         * and a half at fit width, so the pages on screen change.
+         */
+        private const val DRAG_FROM = 0.8f
+        private const val DRAG_TO = 0.1f
+        private const val DRAGS = 2
         private const val DRAG_STEPS = 20
         private const val DRAG_STEP_MS = 12L
         private const val DRAG_HOLD_MS = 120L

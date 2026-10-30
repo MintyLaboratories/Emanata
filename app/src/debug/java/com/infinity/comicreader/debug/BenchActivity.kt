@@ -14,8 +14,8 @@ import kotlinx.coroutines.launch
  * process, staying behind the reader or library it drives. Only the shell may start it:
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do read (--es path <book> | --es share first) [--es label <name>]
- * [--es layout paged|two|continuous] [--es input tap|key] [--ei page <n>] [--ei turns <n>] [--ei pace <ms>] [--ei reps <n>]
- * [--ez fresh true] [--ez crop true] [--es doubletap on|off]`
+ * [--es layout paged|two|continuous] [--es input tap|key|drag] [--ei page <n>] [--ei turns <n>] [--ei pace <ms>] [--ei reps <n>]
+ * [--ez fresh true] [--ez crop true] [--es doubletap on|off] [--es orientation portrait|landscape|any]`
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do grid --es path <folder> [--ez fresh true]`
  *
@@ -45,6 +45,8 @@ class BenchActivity : Activity() {
             return
         }
         running = true
+        // Turned before the reader starts, so it opens in the run's orientation rather than turning after.
+        requestedOrientation = plan.orientation
         scope.launch {
             try {
                 for (result in BenchRunner(application).run(this@BenchActivity, plan)) BenchRunner.record(application, result)

@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.app.Application
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -68,6 +69,23 @@ class BenchStatsTest {
         assertEquals(false, plan.doubleTap)
         assertEquals(1, plan.reps)
         assertNull(BenchPlan.of(Intent().putExtra("do", "read").putExtra("path", "/a.cbz"))!!.doubleTap)
+    }
+
+    @Test
+    fun aContinuousTapTurnsByDrag() {
+        val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz").putExtra("layout", "continuous")
+        assertEquals(BenchPlan.DRAG, BenchPlan.of(read)!!.input)
+        assertEquals(BenchPlan.KEY, BenchPlan.of(Intent(read).putExtra("input", "key"))!!.input)
+    }
+
+    @Test
+    fun portraitUnlessAnotherOrientationIsAsked() {
+        val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz")
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, BenchPlan.of(read)!!.orientation)
+        assertEquals("portrait", BenchPlan.of(read)!!.toJson().getString("orientation"))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, BenchPlan.of(Intent(read).putExtra("orientation", "landscape"))!!.orientation)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, BenchPlan.of(Intent(read).putExtra("orientation", "any"))!!.orientation)
+        assertNull(BenchPlan.of(Intent(read).putExtra("orientation", "diagonal")))
     }
 
     @Test

@@ -231,6 +231,18 @@ class ListActivityMissingTest {
     }
 
     @Test
+    fun aMissingFavoriteBookShowsNoSizeAndItsSheetOpensWhole() {
+        library.setFavorite(com.infinity.comicreader.data.BookRef(goneId, gone.absolutePath), true)
+        gone.delete()
+        val (activity, recycler) = launch(1)
+        val row = recycler.row("gone.cbz")
+        assertEquals(context.getString(R.string.presence_missing), row.findViewById<TextView>(R.id.subtitle).text.toString())
+        row.performClick()
+        idle()
+        assertEquals(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED, activity.missingSheet!!.behavior.state)
+    }
+
+    @Test
     fun aMissingFavoriteFolderKeepsItsIconAndSection() {
         val series = File(dir, "Series").apply { mkdirs() }
         library.toggleFavoriteFolder(series.absolutePath)

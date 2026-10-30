@@ -46,6 +46,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
@@ -1405,7 +1406,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         allEntries.addAll(list)
         applyFilterAndSort()
         if (query.isNotBlank()) scheduleDeepSearch()
-        invalidateOptionsMenu()
+        updateClearItems()
         checkPresence()
     }
 
@@ -1450,7 +1451,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             changed = true
         }
         if (changed) applyFilterAndSort(resort = false)
-        invalidateOptionsMenu()
+        updateClearItems()
     }
 
     /** The items listed that are missing for sure: what "Clear missing" takes. */
@@ -1981,6 +1982,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         row(R.id.missing_show, R.drawable.ic_folder_open, R.string.menu_open_location) { openLocation(entry.file) }
         row(R.id.missing_forget, R.drawable.ic_search, R.string.missing_item_forget) { forgetMissing() }
         sheet.setContentView(content)
+        // Opens whole: in landscape the collapsed height cut the rows off.
+        sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        sheet.behavior.skipCollapsed = true
+        SheetExit.passTouchesWhileLeaving(sheet)
         sheet.setOnDismissListener { if (missingSheet === sheet) missingSheet = null }
         sheet.show()
         missingSheet = sheet
@@ -2769,8 +2774,27 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
+        updateClearItems(menu)
+        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_large)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_search_deep)?.apply {
+            isVisible = browsing
+            isChecked = prefs.deepSearch
+        }
+        updateToolbarButtons()
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    /**
+     * The toolbar menu's Clear all and Clear missing, titled for the tab; Clear missing only
+     * while something is missing for sure. Changed in place: rebuilding the menu would close
+     * an open search.
+     */
+    private fun updateClearItems(menu: Menu? = this.menu) {
+        if (menu == null) return
+        val lists = mode != TAB_BROWSE
         menu.findItem(R.id.menu_clear_all)?.apply {
-            isVisible = !browsing
+            isVisible = lists
             isEnabled = allEntries.isNotEmpty()
             title = getString(
                 when (mode) {
@@ -2790,14 +2814,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 }
             )
         }
-        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
-        menu.findItem(R.id.menu_large)?.isVisible = browsing && local
-        menu.findItem(R.id.menu_search_deep)?.apply {
-            isVisible = browsing
-            isChecked = prefs.deepSearch
-        }
-        updateToolbarButtons()
-        return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

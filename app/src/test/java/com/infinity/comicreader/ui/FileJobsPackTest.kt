@@ -125,6 +125,19 @@ class FileJobsPackTest {
     }
 
     @Test
+    fun imagesNeverSeenTakeWhatTheirCopiesKeep() {
+        val elsewhere = File(tmp.root, "Elsewhere").apply { mkdirs() }
+        val copies = (1..2).map { File(elsewhere, "$it.jpg").apply { writeBytes(jpeg(it)) } }
+        library.setReadMany(copies.map { ref(it) }, true)
+        library.addHistory(HistoryItem(copies[1].absolutePath, "2.jpg", 0, 1, 100, ref(copies[1]).id))
+        val dir = folder("Copy", 2)
+        pack(plan(dir)) as FileWork.Outcome.Done
+        val book = bookId(File(tmp.root, "Copy.cbz"))
+        assertTrue(library.isRead(book))
+        assertEquals(1, library.historyFor(book)!!.page)
+    }
+
+    @Test
     fun packCompactedMakesItsPagesSmaller() {
         val dir = folder("Loose", 2)
         val outcome = pack(plan(dir), compacted = true) as FileWork.Outcome.Done

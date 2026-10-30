@@ -384,8 +384,8 @@ internal class FileJobs(
                     if (contents.why != null) throw FileProblem(FileProblem.Kind.ALTERED, dir.name)
                     val images = contents.images
                     val stats = images.map { it.length() to it.lastModified() }
-                    // Known without reading them: an image never opened has nothing kept.
-                    val ids = images.map { BookIds.known(it) ?: BookIds.last(it.absolutePath) }
+                    // Found as for any book: an image never seen here may share what an identical copy keeps.
+                    val ids = images.map { BookIds.find(it) }
                     val (target, replace) = packTarget(plan, dir.parentFile ?: throw IOException("No folder"))
                     var removed = false
                     val placer = Compactor.Placer { result, part, swap ->

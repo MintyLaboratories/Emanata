@@ -34,6 +34,17 @@ class RebuildTargetsTest {
     }
 
     @Test
+    fun aStoppedSearchEndsBeforeTheNextFolder() {
+        file("A/1.cbz")
+        file("A/B/2.cbz")
+        var asked = 0
+        org.junit.Assert.assertThrows(java.util.concurrent.CancellationException::class.java) {
+            RebuildTargets.of(emptyList(), listOf(File(tmp.root, "A"))) { ++asked > 1 }
+        }
+        assertEquals(2, asked)
+    }
+
+    @Test
     fun anEmptyOrMissingFolderGivesNothing() {
         val empty = File(tmp.root, "Empty").apply { mkdirs() }
         assertEquals(emptyList<String>(), RebuildTargets.of(emptyList(), listOf(empty, File(tmp.root, "Gone"))))

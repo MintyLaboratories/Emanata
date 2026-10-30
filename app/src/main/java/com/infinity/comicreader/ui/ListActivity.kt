@@ -261,6 +261,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
     private var listJob: Job? = null
 
+    /** Compact or Make compatible finding the books in selected folders; taps wait for it, and ending the selection stops it. */
+    private var rebuildWalk: Job? = null
+
     /** Keeps the "Recent" row on the book opened last, as the reader records it. */
     private var historyWatch: AutoCloseable? = null
     private lateinit var kindCache: FavoriteKindCache
@@ -1610,6 +1613,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Lets go of everything selected, leaving selection. */
     private fun endSelection() {
         hideMore()
+        rebuildWalk?.cancel()
         if (!selection.active) return
         selection.clear()
         adapter.selectionChanged()
@@ -1922,12 +1926,27 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun canRebuild(entry: BookEntry): Boolean =
         (entry.isDir || Formats.isArchiveName(entry.name)) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
 
-    /** Compacts or makes compatible the books among [entries] and every book inside the folders among them, once asked. */
+    /**
+     * Compacts or makes compatible the books among [entries] and every book inside the
+     * folders among them, once asked; the spinner shows while folders are searched.
+     */
     private fun rebuild(entries: List<BookEntry>, compatible: Boolean) {
-        lifecycleScope.launch {
+        if (rebuildWalk?.isActive == true) return
+        rebuildWalk = lifecycleScope.launch {
             val books = entries.filter { !it.isDir }.map { it.file }
             val folders = entries.filter { it.isDir }.map { it.file }
-            val paths = if (folders.isEmpty()) books.map { it.absolutePath } else withContext(AppDispatchers.io) { RebuildTargets.of(books, folders) }
+            val paths = if (folders.isEmpty()) {
+                books.map { it.absolutePath }
+            } else {
+                // Left to a listing that shows it already.
+                val spin = progress.visibility != View.VISIBLE
+                if (spin) progress.visibility = View.VISIBLE
+                try {
+                    withContext(AppDispatchers.io) { RebuildTargets.of(books, folders) { !isActive } }
+                } finally {
+                    if (spin) progress.visibility = View.GONE
+                }
+            }
             if (paths.isEmpty()) return@launch toast(R.string.rebuild_no_books)
             fileActions.rebuild(paths, compatible) { endSelection() }
         }

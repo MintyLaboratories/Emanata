@@ -345,6 +345,28 @@ class ListActivityFileOpsTest {
     }
 
     @Test
+    fun searchingFoldersShowsTheSpinnerAndTakesOneTapAtATime() {
+        File(other, "b.cbz").writeBytes(ByteArray(20))
+        val activity = launch()
+        activity.select(other.absolutePath)
+        val spinner = activity.findViewById<View>(R.id.progress)
+        fun tap() {
+            activity.bar(R.id.selection_more).performClick()
+            activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+        }
+        // The search's end waits on the main thread, which these taps hold.
+        tap()
+        assertEquals(View.VISIBLE, spinner.visibility)
+        tap()
+        repeat(50) { if (ShadowDialog.getLatestDialog()?.isShowing != true) idle() }
+        idle()
+        assertEquals(View.GONE, spinner.visibility)
+        assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
+        latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        idle()
+    }
+
+    @Test
     fun cancelingCompactKeepsTheSelection() {
         val activity = launch()
         activity.select(book.absolutePath)

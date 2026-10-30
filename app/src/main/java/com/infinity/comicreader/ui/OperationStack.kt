@@ -282,7 +282,8 @@ internal class OperationStack(
         if (cardId == id && card?.isShowing == true) return hideCard()
         hideCard()
         val content = LayoutInflater.from(activity).inflate(R.layout.card_operation, column.rootView as ViewGroup, false)
-        val popup = PopupWindow(content, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        // A popup takes no width from its content's layout: the card's own, given.
+        val popup = PopupWindow(content, activity.resources.getDimensionPixelSize(R.dimen.op_card_width), ViewGroup.LayoutParams.WRAP_CONTENT)
         popup.isOutsideTouchable = true
         popup.setOnDismissListener {
             if (card === popup) {
@@ -383,7 +384,8 @@ internal class OperationStack(
     /** Shows [popup] holding [content] beside [anchor], toward the middle of the screen. */
     private fun place(popup: PopupWindow, content: View, anchor: View) {
         if (!anchor.isAttachedToWindow) return
-        content.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val width = if (popup.width > 0) View.MeasureSpec.makeMeasureSpec(popup.width, View.MeasureSpec.EXACTLY) else View.MeasureSpec.UNSPECIFIED
+        content.measure(width, View.MeasureSpec.UNSPECIFIED)
         val at = IntArray(2)
         anchor.getLocationInWindow(at)
         val gap = activity.resources.getDimensionPixelSize(R.dimen.space_2)

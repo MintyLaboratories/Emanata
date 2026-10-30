@@ -34,6 +34,7 @@ class ImageSourceDetailTest {
     private val opened = ArrayList<IntArray>()
     private val platform = Decoders.openRegions
     private val rebuild = Decoders.jpegOf
+    private val jxlRegions = Decoders.openJxlRegions
 
     @Before
     fun setUp() {
@@ -60,6 +61,7 @@ class ImageSourceDetailTest {
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
         Decoders.openRegions = platform
         Decoders.jpegOf = rebuild
+        Decoders.openJxlRegions = jxlRegions
     }
 
     /** A page 100 wide and 20,000 tall, far taller than one bitmap may be, as a PNG. */
@@ -139,9 +141,28 @@ class ImageSourceDetailTest {
     }
 
     @Test
-    fun aJpegXlOfPixelsIsNotReadByRegions() {
+    fun aJpegXlOfPixelsReadsRegionsOfItsOwn() {
         Decoders.jpegOf = { null }
-        Decoders.openRegions = { blank(100, 20_000) }
+        val reads = ArrayList<IntArray>()
+        Decoders.openJxlRegions = { _, w, h ->
+            object : RegionReader {
+                override val width = w
+                override val height = h
+                override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
+                    reads += intArrayOf(left, top, right, bottom)
+                    return Bitmap.createBitmap(right - left, bottom - top, Bitmap.Config.ARGB_8888)
+                }
+
+                override fun close() = Unit
+            }
+        }
+        val detail = Decoders.detail(jxlHead(100, 20_000), banded, Long.MAX_VALUE)
+        assertTrue(detail is RegionDetail)
+        // Each read decodes all of it: one read serves the bands near it.
+        for (y in 0 until 4) detail.render(Region(0.0, y * 0.01, 1.0, 0.01), 100, 200, false)
+        assertEquals(1, reads.size)
+        // Without libjxl it is decoded whole.
+        Decoders.openJxlRegions = { _, _, _ -> null }
         assertEquals(null, Decoders.regionDetail(jxlHead(100, 20_000), banded))
     }
 }

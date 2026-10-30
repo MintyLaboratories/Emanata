@@ -1,5 +1,7 @@
 package com.infinity.comicreader.compact
 
+import android.graphics.Bitmap
+
 /**
  * What a JPEG XL file's header tells: its size, samples ([bits] each, floating point
  * when [exponentBits] > 0), [colorChannels] (1 gray, 3 color), [alphaBits] (0 without
@@ -131,6 +133,15 @@ object LibJxl : JxlCodec {
     override fun encode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray? =
         nEncode(pixels, width, height, channels, bits, profile, effort)
 
+    /**
+     * Decodes [jxl], shown [width] x [height], in sRGB into [out]: its rectangle [left]..[right]
+     * x [top]..[bottom], every [sample]th pixel each way, so [out] is that span divided by
+     * [sample], rounded up, ARGB_8888. The whole image decodes; only those pixels are kept.
+     * False when it fails, or the image is another size or has no sRGB rendering.
+     */
+    fun region(jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int): Boolean =
+        nRegion(jxl, out, width, height, left, top, right, bottom, sample)
+
     @JvmStatic
     private external fun nVersion(): Int
 
@@ -148,6 +159,9 @@ object LibJxl : JxlCodec {
 
     @JvmStatic
     private external fun nDecode(jxl: ByteArray, channels: Int, bits: Int, srgb: Boolean): ByteArray?
+
+    @JvmStatic
+    private external fun nRegion(jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int): Boolean
 
     @JvmStatic
     private external fun nEncode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray?

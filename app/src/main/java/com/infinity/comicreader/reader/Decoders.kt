@@ -79,7 +79,7 @@ object Decoders {
         val sampled = sampledFor(target, size)
         return reported(kind) {
             val full = when {
-                kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels)
+                kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels, standIn = sampled != target)
                 kind == ImageKind.AVIF -> decodeAvif(bytes, sampled)
                 kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), sampled.capPixels)
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
@@ -391,22 +391,36 @@ object Decoders {
     internal var jpegOf: (ByteArray) -> ByteArray? = { jxl -> runCatching { if (LibJxl.available) LibJxl.reconstruct(jxl) else null }.getOrNull() }
 
     /**
+     * Opens a [RegionReader] over a JPEG XL of pixels [bytes] shown [w] x [h], each read
+     * decoding it whole natively ([JxlRegions]); null where libjxl is missing or cannot give
+     * it in sRGB. Tests stand in for it.
+     */
+    @VisibleForTesting
+    internal var openJxlRegions: (ByteArray, Int, Int) -> RegionReader? = { bytes, w, h ->
+        runCatching { LibJxl.takeIf { it.available }?.info(bytes)?.takeIf { it.srgb || !it.originalProfile } }.getOrNull()?.let { JxlRegions(bytes, w, h) }
+    }
+
+    /**
      * A [RegionReader] of [bytes], an image shown [w] x [h], reading its pixels as shown:
      * a [REGION_KINDS] image, a JPEG turned by its EXIF orientation too ([OrientedRegions]),
-     * a JPEG XL holding a JPEG through that JPEG ([jpegOf]), as Compact writes them, a
-     * progressive JPEG through rows kept between reads ([KeptRows]); null for
+     * a JPEG XL holding a JPEG through that JPEG ([jpegOf]), as Compact writes them, else
+     * its own pixels ([openJxlRegions]); progressive JPEGs and JPEG XL of pixels, any part
+     * of which decodes all of it, through rows kept between reads ([KeptRows]). Null for
      * other kinds, a PNG an eXIf chunk may turn, or where the reader sees another size.
      */
     private fun regionReader(bytes: ByteArray, w: Int, h: Int): RegionReader? {
         val kind = ImageKind.sniff(bytes)
-        if (kind == ImageKind.JXL) return jpegOf(bytes)?.takeIf { ImageKind.sniff(it) == ImageKind.JPEG }?.let { regionReader(it, w, h) }
+        if (kind == ImageKind.JXL) {
+            jpegOf(bytes)?.takeIf { ImageKind.sniff(it) == ImageKind.JPEG }?.let { jpeg -> regionReader(jpeg, w, h)?.let { return it } }
+            return openJxlRegions(bytes, w, h)?.let { KeptRows(it, KEPT_READ_PIXELS) }
+        }
         if (kind !in REGION_KINDS) return null
         if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
         val orientation = if (kind == ImageKind.JPEG) ImageHeaders.jpegOrientation(bytes) ?: return null else 1
         val raw = openRegions(bytes) ?: return null
         val oriented = if (orientation in 2..8) OrientedRegions(raw, orientation) else raw
         // Any part of a progressive JPEG decodes every scan of all of it: reads share a few.
-        val reader = if (kind == ImageKind.JPEG && ImageHeaders.jpegProgressive(bytes)) KeptRows(oriented, PROGRESSIVE_READ_PIXELS) else oriented
+        val reader = if (kind == ImageKind.JPEG && ImageHeaders.jpegProgressive(bytes)) KeptRows(oriented, KEPT_READ_PIXELS) else oriented
         if (reader.width == w && reader.height == h) return reader
         reader.close()
         return null
@@ -422,8 +436,8 @@ object Decoders {
         return BitmapDetail(decode(bytes, target.detail(size, maxBytes)))
     }
 
-    /** Most pixels a progressive JPEG's detail keeps of one read, for the reads after it ([KeptRows]): 32 MB of ARGB. */
-    private const val PROGRESSIVE_READ_PIXELS = 8_000_000L
+    /** Most pixels the detail of an image any part of which decodes whole keeps of one read, for the reads after it ([KeptRows]): 32 MB of ARGB. */
+    private const val KEPT_READ_PIXELS = 8_000_000L
 
     /** Pixels above which a page's detail is read a rectangle at a time ([RegionDetail]) rather than decoded whole. */
     private const val REGION_DETAIL_PIXELS = 16_000_000L
@@ -792,13 +806,20 @@ object Decoders {
     /** JPEG XL decodes running at once, bounding that native memory. */
     private val jxlGate = Semaphore(2)
 
-    /** Full decode; only past [capPixels] does jxl-coder's sampled decode do the coarse reduction. */
-    private fun decodeJxl(bytes: ByteArray, capPixels: Long): Bitmap {
+    /**
+     * Full decode; only past [capPixels] does jxl-coder's sampled decode do the coarse
+     * reduction. A [standIn] for a page drawn in bands is point-sampled natively instead
+     * ([openJxlRegions]), so the whole image is never held.
+     */
+    private fun decodeJxl(bytes: ByteArray, capPixels: Long, standIn: Boolean = false): Bitmap {
         val size = jxlSize(bytes) ?: throw DecodeException("Not a valid JXL image")
         if (size[0].toLong() * size[1] > MAX_JXL_PIXELS) {
             throw DecodeException("JXL image is too large (${size[0]} x ${size[1]})")
         }
         val sample = capSample(size[0], size[1], capPixels)
+        if (standIn && sample > 1) {
+            runCatching { openJxlRegions(bytes, size[0], size[1])?.read(0, 0, size[0], size[1], sample) }.getOrNull()?.let { return it }
+        }
         jxlGate.acquireUninterruptibly()
         try {
             if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
@@ -813,6 +834,29 @@ object Decoders {
         } finally {
             jxlGate.release()
         }
+    }
+
+    /** Rectangles of a JPEG XL of pixels shown [width] x [height], each decoding it whole natively ([LibJxl.region]), sampled by point. */
+    private class JxlRegions(private val bytes: ByteArray, override val width: Int, override val height: Int) : RegionReader {
+        override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
+            val out = Bitmap.createBitmap((right - left + sample - 1) / sample, (bottom - top + sample - 1) / sample, Bitmap.Config.ARGB_8888)
+            val done = try {
+                jxlGate.acquireUninterruptibly()
+                try {
+                    LibJxl.region(bytes, out, width, height, left, top, right, bottom, sample)
+                } finally {
+                    jxlGate.release()
+                }
+            } catch (t: Throwable) {
+                out.recycle()
+                throw t
+            }
+            if (done) return out
+            out.recycle()
+            throw DecodeException("Could not decode part of this JXL image")
+        }
+
+        override fun close() = Unit
     }
 
     /** Header size, or the library's own reading for layouts [ImageHeaders.jxlSize] does not follow. */

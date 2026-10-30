@@ -627,8 +627,11 @@ class PageAdapter(
      * The full-detail pages [holder] keeps: its own, and those of every image drawing bands,
      * which a column may show two of at once.
      */
-    private fun keptKeys(holder: PageHolder): List<PageKey> =
-        detailKeys(holder) + images.filter { it.isAttachedToWindow && it.hasBands }.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey }
+    private fun keptKeys(holder: PageHolder): List<PageKey> = detailKeys(holder) + bandKeys()
+
+    /** The full-detail pages of every image drawing bands. */
+    private fun bandKeys(): List<PageKey> =
+        images.filter { it.isAttachedToWindow && it.hasBands }.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey }
 
     /**
      * What [key]'s full detail is held by: its page and how it is cropped and scaled, not
@@ -670,12 +673,18 @@ class PageAdapter(
             return { job.cancel() }
         }
 
-        /** Loads the page at full detail within its share of [detailBudget]: the item's, split between the pages shown. */
+        /**
+         * Loads the page at full detail within its share of [detailBudget], split between the
+         * pages shown and those kept beside them ([keptKeys]); a page drawn in [bands] may be
+         * kept beside another's, so it takes half at most.
+         */
         fun loader(): () -> PageDetail {
             val chapter = strip.chapterOf(key.page)
             val source = chapter.value.source
             val index = key.page - chapter.first
-            val maxBytes = detailBudget / holder.images.count { it.visibility != View.GONE }.coerceAtLeast(1)
+            val shown = holder.images.filter { it.visibility != View.GONE }
+            val kept = (shown.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey } + bandKeys() + detailKey).distinct().size
+            val maxBytes = detailBudget / maxOf(shown.size, kept, if (bands) BANDED_SHARES else 1)
             return { source.loadDetail(index, key.target, maxBytes) }
         }
     }
@@ -1159,6 +1168,9 @@ class PageAdapter(
          * of two: about half the size each way for most pages.
          */
         private const val MEASURE_PIXELS = 4_000_000L
+
+        /** Pages drawn in bands whose detail a column may keep at once: one ending, the next starting. */
+        private const val BANDED_SHARES = 2
 
         /** A decode that only measures a page's crop. */
         private val MEASURE = Target(16, 16, autoCrop = true, capPixels = MEASURE_PIXELS)

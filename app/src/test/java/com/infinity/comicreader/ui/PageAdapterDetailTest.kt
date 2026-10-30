@@ -44,14 +44,14 @@ class PageAdapterDetailTest {
         }
     }
 
-    private class DetailSource(override val pageCount: Int) : PageSource {
+    private class DetailSource(override val pageCount: Int, val srcW: Double = 2000.0, val srcH: Double = 3000.0) : PageSource {
         val details: MutableList<Detail> = Collections.synchronizedList(ArrayList())
         val budgets: MutableList<Pair<Target, Long>> = Collections.synchronizedList(ArrayList())
         val loads: MutableList<Target> = Collections.synchronizedList(ArrayList())
 
         override fun loadPage(index: Int, target: Target): Bitmap {
             loads += target
-            val plan = target.plan(2000.0, 3000.0)
+            val plan = target.plan(srcW, srcH)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         }
 
@@ -222,6 +222,27 @@ class PageAdapterDetailTest {
         assertEquals(listOf(Target(1480, 1848, banded = true), Target(1480, 1848, banded = true)), source.loads.toList())
         assertEquals(2, source.details.size)
         assertTrue(source.details.none { it.released })
+        adapter.release()
+    }
+
+    @Test
+    fun aPageDrawnInBandsTakesHalfTheBudgetAtMost() {
+        // 1:29: a column shows it in bands, and may keep the next page's detail beside it.
+        val source = DetailSource(2, 1000.0, 25000.0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.CONTINUOUS, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context)
+            this.adapter = adapter
+            layOut(1848, 2960)
+        }
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        idle { image.detailSource != null }
+        assertTrue(image.detailSource!!.bands)
+        image.detailSource!!.renderBand(Region(0.0, 0.0, 1.0, 0.02), 1848, 1024, {}) { }
+        idle { source.budgets.isNotEmpty() }
+        val am = context.getSystemService(android.app.ActivityManager::class.java)
+        val budget = DetailStore.budget(android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem)
+        assertEquals(budget / 2, source.budgets.first().second)
         adapter.release()
     }
 }

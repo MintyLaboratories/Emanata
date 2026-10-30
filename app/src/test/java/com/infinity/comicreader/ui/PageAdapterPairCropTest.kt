@@ -136,7 +136,7 @@ class PageAdapterPairCropTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, twoPage = true, preload = 0)
         val rv = recycler(adapter, 1200, 800)
         idle(rv) { rv.images().all { it.bitmap() != null } }
-        assertEquals(listOf(0 to Target(600, 800), 1 to Target(600, 800)), source.requests.sortedBy { it.first })
+        assertEquals(listOf(0 to Target(600, 800, banded = true), 1 to Target(600, 800, banded = true)), source.requests.sortedBy { it.first })
         val (l, r) = rv.images()
         assertEquals(null, l.fitBox)
         assertEquals(1f, l.alignX)
@@ -153,7 +153,7 @@ class PageAdapterPairCropTest {
         )
         val rv = recycler(adapter, 1200, 800)
         idle(rv) { rv.images().first().bitmap() != null }
-        assertEquals(listOf(0 to Target(1200, 800, autoCrop = true)), source.requests.toList())
+        assertEquals(listOf(0 to Target(1200, 800, autoCrop = true, banded = true)), source.requests.toList())
         assertEquals(0.5f, rv.images().first().alignX)
         adapter.release()
     }

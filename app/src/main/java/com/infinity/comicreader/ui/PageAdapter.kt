@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Handler
@@ -89,6 +90,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * keep their gutter edges. Paired pages meet at the gutter; the halves of one picture
  * show as one, zooming and panning together ([ZoomImageView.joinWith]).
  *
+ * A page larger than one bitmap should hold at its size ([Target.bandsAt]) shows a smaller
+ * stand-in, over which its image draws it in bands at its full size ([ZoomImageView.updateBands]),
+ * rendered from its full detail; in a continuous column, around what the list shows.
+ * In paged reading, [tallPages] show at fit width, from their top.
+ *
  * A continuous column may hold more than one chapter ([append]), with
  * [dropTo]/[dropAfter] trimming chapters off either end; pages are addressed by
  * their absolute number in the strip, so the cache survives trims untouched.
@@ -130,6 +136,22 @@ class PageAdapter(
             field = value
             resize()
         }
+
+    /** Pages, by number in the strip, that paged reading shows at fit width whatever [fitMode] is. */
+    var tallPages: Set<Int> = emptySet()
+        set(value) {
+            if (field == value) return
+            val changed = mode == Mode.PAGED && fitMode != ZoomImageView.FitMode.WIDTH
+            field = value
+            if (changed) resize()
+        }
+
+    /** A page of [tallPages] that shows from its bottom, as one turned back to; -1 for none. */
+    private var fromBottom = NO_PAGE
+
+    /** The fit page [page] shows at: [fitMode], or fit width for one of [tallPages] in paged reading. */
+    private fun fitOf(page: Int): ZoomImageView.FitMode =
+        if (mode == Mode.PAGED && page in tallPages) ZoomImageView.FitMode.WIDTH else fitMode
 
     /**
      * Shows every page at the size the layout now asks for, in place: decodes for an
@@ -313,9 +335,17 @@ class PageAdapter(
 
     override fun getItemCount(): Int = strip.itemCount
 
+    /** Lets the images of a continuous column render their bands around what shows as it scrolls. */
+    private val bandScroll = object : RecyclerView.OnScrollListener() {
+        override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+            for (image in images) if (image.isAttachedToWindow) image.updateBands()
+        }
+    }
+
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
         recycler = recyclerView
+        if (mode == Mode.CONTINUOUS) recyclerView.addOnScrollListener(bandScroll)
         recyclerView.context.getSystemService(ActivityManager::class.java)?.let { am ->
             detailBudget = DetailStore.budget(ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem)
         }
@@ -339,6 +369,7 @@ class PageAdapter(
         super.onDetachedFromRecyclerView(recyclerView)
         layoutListener?.let { recyclerView.removeOnLayoutChangeListener(it) }
         layoutListener = null
+        recyclerView.removeOnScrollListener(bandScroll)
         if (recycler === recyclerView) recycler = null
     }
 
@@ -415,7 +446,52 @@ class PageAdapter(
         if (this@PageAdapter.onLongPress != null) onLongPress = { pressed(this) }
         verticalDrag = this@PageAdapter.verticalDrag
         look = this@PageAdapter.look
+        if (mode == Mode.CONTINUOUS) viewport = { out -> listArea(this, out) }
         images += this
+    }
+
+    /** Puts the list's area into [out] in [image]'s coordinates; false while it is not in the list. */
+    private fun listArea(image: View, out: Rect): Boolean {
+        val list = recycler ?: return false
+        if (!image.isAttachedToWindow) return false
+        out.set(0, 0, list.width, list.height)
+        return try {
+            list.offsetRectIntoDescendantCoords(image, out)
+            true
+        } catch (e: IllegalArgumentException) {
+            false
+        }
+    }
+
+    /**
+     * Scrolls the page of [tallPages] item [position] shows alone by most of a screen,
+     * [forward] or back, gliding; false when it shows none or is already at that end.
+     */
+    fun scrollTall(position: Int, forward: Boolean): Boolean {
+        val image = tallImage(position) ?: return false
+        return image.scrollPage(if (forward) TALL_STEP else -TALL_STEP)
+    }
+
+    /**
+     * Shows the page of [tallPages] item [position] shows alone from its top, or from its
+     * bottom when [atBottom] (turned back to), now if it is bound, else once it is.
+     */
+    fun landTall(position: Int, atBottom: Boolean) {
+        if (mode != Mode.PAGED) return
+        val part = strip.parts(position).filterNotNull().singleOrNull()
+        fromBottom = if (atBottom && part != null && part.page in tallPages) part.page else NO_PAGE
+        val image = tallImage(position) ?: return
+        image.startAtBottom = atBottom
+        image.fit()
+    }
+
+    /** The image of the page of [tallPages] item [position] shows alone, when it is bound. */
+    private fun tallImage(position: Int): ZoomImageView? {
+        if (mode != Mode.PAGED) return null
+        val part = strip.parts(position).filterNotNull().singleOrNull() ?: return null
+        if (part.page !in tallPages) return null
+        val holder = recycler?.findViewHolderForAdapterPosition(position) as? PageHolder ?: return null
+        return holder.images.firstOrNull { it.visibility != View.GONE && pageOf[it] == part.page }
     }
 
     /** The page each image last showed, by its number in the strip. */
@@ -547,6 +623,13 @@ class PageAdapter(
         holder.images.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey }
 
     /**
+     * The full-detail pages [holder] keeps: its own, and those of every image drawing bands,
+     * which a column may show two of at once.
+     */
+    private fun keptKeys(holder: PageHolder): List<PageKey> =
+        detailKeys(holder) + images.filter { it.isAttachedToWindow && it.hasBands }.mapNotNull { (it.detailSource as? SlotDetail)?.detailKey }
+
+    /**
      * What [key]'s full detail is held by: its page and how it is cropped and scaled, not
      * its size or fit ([Target.detail]), so a zoom after a new fit finds it still loaded.
      */
@@ -559,17 +642,30 @@ class PageAdapter(
             )
         )
 
-    /** The detail of [key]'s page, shown in [holder], for its image's settled zooms. */
-    private inner class SlotDetail(private val holder: PageHolder, val key: PageKey) : ZoomImageView.DetailSource {
+    /**
+     * The detail of [key]'s page, shown in [holder], for its image's settled zooms, and for
+     * its [bands] when its bitmap is a stand-in for a page larger than one bitmap.
+     */
+    private inner class SlotDetail(private val holder: PageHolder, val key: PageKey, override val bands: Boolean = false) :
+        ZoomImageView.DetailSource {
         val detailKey = detailKey(key)
 
         override fun prepare() {
-            if (!released) details.prepare(detailKey, detailKeys(holder), loader())
+            if (!released) details.prepare(detailKey, keptKeys(holder), loader())
         }
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
-            val job = details.render(detailKey, detailKeys(holder), loader(), { frozen(it.render(region, width, height, linear, zoomScaling)) }, done = done)
+            val job = details.render(detailKey, keptKeys(holder), loader(), { frozen(it.render(region, width, height, linear, zoomScaling)) }, done = done)
+            return { job.cancel() }
+        }
+
+        override fun renderBand(region: Region, width: Int, height: Int, done: (Bitmap?) -> Unit): () -> Unit {
+            if (released) return {}
+            val job = details.render(
+                detailKey, keptKeys(holder), loader(), { frozen(it.render(region, width, height, linear, pageScaling)) },
+                failed = { done(null) }, done = done
+            )
             return { job.cancel() }
         }
 
@@ -613,6 +709,7 @@ class PageAdapter(
             }
             return
         }
+        image.startAtBottom = pageIndex == fromBottom
         if (holder.joined) image.setFitGeometry(joinedBoxOf(key), 0.5f) else image.setFitGeometry(fitBoxOf(key, slotType), alignOf(slotType))
         val cached = cache.get(key)
         if (cached != null) {
@@ -625,7 +722,7 @@ class PageAdapter(
         }
         // The page at another size stands in, scaled to the new one, until that arrives.
         if (holder.shown[slot] == code) {
-            image.setFitMode(fitMode)
+            image.setFitMode(fitOf(pageIndex))
         } else {
             val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
             if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
@@ -671,7 +768,7 @@ class PageAdapter(
             return
         }
         val plan = key.target.plan(shown.width.toDouble(), shown.height.toDouble())
-        val detail = SlotDetail(holder, key)
+        val detail = SlotDetail(holder, key, key.target.bandsAt(shown.width.toDouble(), shown.height.toDouble()))
         // [failed] can run before [DetailStore.render] returns, the decode then waited on.
         var decoding = false
         val job = details.render(detail.detailKey, detailKeys(holder), detail.loader(), {
@@ -708,7 +805,7 @@ class PageAdapter(
     /** The box a paired page with a shared crop fits into at fit screen: its target, of the pair's one height. */
     private fun fitBoxOf(key: PageKey, slot: PageTargets.Slot): IntArray? {
         val t = key.target
-        if (slot == PageTargets.Slot.ALONE || fitMode != ZoomImageView.FitMode.SCREEN || t.box == null) return null
+        if (slot == PageTargets.Slot.ALONE || fitOf(key.page) != ZoomImageView.FitMode.SCREEN || t.box == null) return null
         return if (t.width > 0 && t.height > 0) intArrayOf(t.width, t.height) else null
     }
 
@@ -718,7 +815,7 @@ class PageAdapter(
      */
     private fun joinedBoxOf(key: PageKey): IntArray? {
         val t = key.target
-        if (fitMode != ZoomImageView.FitMode.SCREEN || t.box == null || t.height <= 0) return null
+        if (fitOf(key.page) != ZoomImageView.FitMode.SCREEN || t.box == null || t.height <= 0) return null
         return intArrayOf(itemSize()[0], t.height)
     }
 
@@ -734,9 +831,10 @@ class PageAdapter(
         sizedH = h
         val slot = slotOf(part)
         val view = PageTargets.viewSize(mode, spread && !merged, w, h, spacingPx, slot)
-        var target = PageTargets.target(mode, fitMode, view[0], view[1], autoCrop, linear, pageScaling)
+        val fit = fitOf(part.page)
+        var target = PageTargets.target(mode, fit, view[0], view[1], autoCrop, linear, pageScaling)
         if (part.half != Half.WHOLE) target = target.copy(half = part.half)
-        if (slot == PageTargets.Slot.ALONE || !autoCrop || fitMode == ZoomImageView.FitMode.STRETCH) return PageKey(part.page, target)
+        if (slot == PageTargets.Slot.ALONE || !autoCrop || fit == ZoomImageView.FitMode.STRETCH) return PageKey(part.page, target)
         val parts = layout.parts(layout.itemOf(part), end)
         val left = parts[0] ?: return PageKey(part.page, target)
         val right = parts[1] ?: return PageKey(part.page, target)
@@ -744,7 +842,7 @@ class PageAdapter(
         val foundRight = bounds[right.page] ?: return null
         // The halves of one picture keep their gutter edges whole.
         val (boxLeft, boxRight) = PairCrop.boxes(foundLeft.box, foundRight.box, spread = layout.joined(layout.itemOf(part)))
-        if (fitMode == ZoomImageView.FitMode.SCREEN) {
+        if (fit == ZoomImageView.FitMode.SCREEN) {
             val la = foundLeft.aspect(boxLeft)
             val ra = foundRight.aspect(boxRight)
             if (la > 0 && ra > 0) target = target.copy(height = PageTargets.pairHeight(w, h, la, ra))
@@ -831,13 +929,14 @@ class PageAdapter(
      */
     private fun showBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
+        val fit = fitOf(key.page)
         when {
             holder.shown[slot] != key.code -> applyBitmap(holder, slot, key, bitmap)
-            (image.drawable as? BitmapDrawable)?.bitmap === bitmap -> image.setFitMode(fitMode)
+            (image.drawable as? BitmapDrawable)?.bitmap === bitmap -> image.setFitMode(fit)
             else -> {
                 // A cached bitmap can arrive at once, before the stand-in took the new fit.
-                if (image.fitMode != fitMode) image.setFitMode(fitMode)
-                image.swapBitmap(bitmap, SlotDetail(holder, key))
+                if (image.fitMode != fit) image.setFitMode(fit)
+                image.swapBitmap(bitmap, slotDetail(holder, key, bitmap))
             }
         }
         timing.done(image)
@@ -847,10 +946,14 @@ class PageAdapter(
     private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
         image.setImageBitmap(bitmap)
-        image.setFitMode(fitMode)
-        image.detailSource = SlotDetail(holder, key)
+        image.setFitMode(fitOf(key.page))
+        image.detailSource = slotDetail(holder, key, bitmap)
         holder.shown[slot] = key.code
     }
+
+    /** The detail of [key]'s page shown as [bitmap]: drawn in bands when [bitmap] stands in for a page larger than one bitmap. */
+    private fun slotDetail(holder: PageHolder, key: PageKey, bitmap: Bitmap) =
+        SlotDetail(holder, key, key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble()))
 
     private fun clearImage(holder: PageHolder, slot: Int) {
         val image = holder.images[slot]
@@ -867,7 +970,7 @@ class PageAdapter(
         val res = image.resources
         val name = failure.name ?: res.getString(R.string.page_number, failure.index + 1)
         image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
-        image.setFitMode(fitMode)
+        image.setFitMode(fitOf(pageOf[image] ?: NO_PAGE))
         holder.shown[slot] = NO_PAGE
     }
 
@@ -1042,6 +1145,9 @@ class PageAdapter(
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2
+
+        /** Share of a screen a tall page scrolls by at a time ([scrollTall]). */
+        const val TALL_STEP = 0.9f
 
         /** Rebinds an item on its own holder, which keeps its bitmaps meanwhile. */
         private val RESIZE = Any()

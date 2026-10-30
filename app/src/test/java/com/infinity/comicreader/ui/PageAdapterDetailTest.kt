@@ -101,7 +101,7 @@ class PageAdapterDetailTest {
         assertEquals(1480, shown[1]!!.width)
         assertEquals(setOf(0, 1), source.details.map { it.page }.toSet())
         // Each half has half the budget, and asks for the target its half was decoded for.
-        assertTrue(source.budgets.all { it.first == Target(1480, 1848) })
+        assertTrue(source.budgets.all { it.first == Target(1480, 1848, banded = true) })
         assertEquals(1, source.budgets.map { it.second }.distinct().size)
         assertTrue(source.details.none { it.released })
 
@@ -160,7 +160,7 @@ class PageAdapterDetailTest {
         idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
         // The 1848 x 2772 page at the height of the screen, made without decoding it again.
         assertEquals(1973, (image.drawable as BitmapDrawable).bitmap.width)
-        assertEquals(listOf(Target(1848, 2960)), source.loads.toList())
+        assertEquals(listOf(Target(1848, 2960, banded = true)), source.loads.toList())
         assertEquals(1, source.details.size)
         assertTrue(image.drawsOneToOne)
 
@@ -193,7 +193,7 @@ class PageAdapterDetailTest {
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
         idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
-        assertEquals(listOf(Target(1848, 2960), Target(0, 2960)), source.loads.toList())
+        assertEquals(listOf(Target(1848, 2960, banded = true), Target(0, 2960, banded = true)), source.loads.toList())
         assertTrue(image.drawsOneToOne)
         adapter.release()
     }
@@ -219,7 +219,7 @@ class PageAdapterDetailTest {
         idle { images.all { (it.drawable as BitmapDrawable).bitmap.height == 2220 } }
         assertTrue(images.all { (it.drawable as BitmapDrawable).bitmap.width == 1480 })
         assertTrue(images.all { it.drawsOneToOne })
-        assertEquals(listOf(Target(1480, 1848), Target(1480, 1848)), source.loads.toList())
+        assertEquals(listOf(Target(1480, 1848, banded = true), Target(1480, 1848, banded = true)), source.loads.toList())
         assertEquals(2, source.details.size)
         assertTrue(source.details.none { it.released })
         adapter.release()

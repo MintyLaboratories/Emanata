@@ -76,7 +76,7 @@ class PageAdapterTargetTest {
         val adapter = adapter(source)
         recycler(adapter, 1848, 2960)
         idle { source.requests.isNotEmpty() }
-        assertEquals(0 to Target(1848, 2960), source.requests.first())
+        assertEquals(0 to Target(1848, 2960, banded = true), source.requests.first())
         adapter.release()
     }
 
@@ -86,14 +86,14 @@ class PageAdapterTargetTest {
         val adapter = adapter(source, twoPage = true)
         val rv = recycler(adapter, 2960, 1848)
         idle { source.requests.size >= 2 }
-        assertTrue(0 to Target(1480, 1848) in source.requests)
-        assertTrue(1 to Target(1480, 1848) in source.requests)
+        assertTrue(0 to Target(1480, 1848, banded = true) in source.requests)
+        assertTrue(1 to Target(1480, 1848, banded = true) in source.requests)
 
         // The odd last page has the whole row.
         rv.scrollToPosition(1)
         rv.layOut(2960, 1848)
         idle { source.requests.any { it.first == 2 } }
-        assertTrue(2 to Target(2960, 1848) in source.requests)
+        assertTrue(2 to Target(2960, 1848, banded = true) in source.requests)
         adapter.release()
     }
 
@@ -110,7 +110,7 @@ class PageAdapterTargetTest {
         idle()
         rv.layOut(2960, 1848)
         idle { source.requests.size >= 2 }
-        assertEquals(0 to Target(2960, 1848), source.requests.last())
+        assertEquals(0 to Target(2960, 1848, banded = true), source.requests.last())
 
         rv.layOut(2960, 1848)
         idle()
@@ -139,8 +139,8 @@ class PageAdapterTargetTest {
         val source = RecordingSource(6)
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 3)
         val rv = recycler(adapter, 1848, 2960)
-        val screen = Target(1848, 2960)
-        val height = Target(0, 2960)
+        val screen = Target(1848, 2960, banded = true)
+        val height = Target(0, 2960, banded = true)
         // Page 0 shows, pages 1 to 3 are preloaded; each step waits for its decodes to be put away.
         idle { 3 to screen in source.requests && !adapter.decoding }
 
@@ -190,13 +190,13 @@ class PageAdapterTargetTest {
         assertTrue(holder.joined)
         // Both views cover the whole item; each page is still decoded for its half.
         holder.images.forEach { assertEquals(2960, it.width) }
-        assertTrue(1 to Target(1480, 1848) in source.requests)
-        assertTrue(2 to Target(1480, 1848) in source.requests)
+        assertTrue(1 to Target(1480, 1848, banded = true) in source.requests)
+        assertTrue(2 to Target(1480, 1848, banded = true) in source.requests)
         rv.layOut(2960, 1848)
         idle()
         val left = FloatArray(9).also { holder.images[0].imageMatrix.getValues(it) }
         val right = FloatArray(9).also { holder.images[1].imageMatrix.getValues(it) }
-        val page = Target(1480, 1848).plan(2000.0, 3000.0)
+        val page = Target(1480, 1848, banded = true).plan(2000.0, 3000.0)
         // Side by side, centered as one, meeting at the gutter.
         assertEquals((2960 - 2 * page.width) / 2f, left[Matrix.MTRANS_X], 1f)
         assertEquals(left[Matrix.MTRANS_X] + page.width, right[Matrix.MTRANS_X], 1f)
@@ -249,7 +249,7 @@ class PageAdapterTargetTest {
 
         source.gate.countDown()
         idle { shownBitmap(image) !== screen }
-        assertEquals(0 to Target(0, 2960), source.requests.last())
+        assertEquals(0 to Target(0, 2960, banded = true), source.requests.last())
         assertEquals(2960, shownBitmap(image).height)
         assertTrue(image.drawsOneToOne)
         assertTrue(timingLogs().last().matches(Regex("""Resize exact in \d+ ms""")))
@@ -285,7 +285,7 @@ class PageAdapterTargetTest {
         idle { source.requests.size >= 2 }
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
         assertSame(screen, shownBitmap(image))
-        assertEquals(0 to Target(1808, 2920), source.requests.last())
+        assertEquals(0 to Target(1808, 2920, banded = true), source.requests.last())
 
         source.gate.countDown()
         idle { shownBitmap(image) !== screen }
@@ -308,7 +308,7 @@ class PageAdapterTargetTest {
         idle { source.requests.size >= 2 }
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
         assertSame(portrait, shownBitmap(image))
-        assertEquals(0 to Target(2960, 1848), source.requests.last())
+        assertEquals(0 to Target(2960, 1848, banded = true), source.requests.last())
 
         source.gate.countDown()
         idle { shownBitmap(image) !== portrait }
@@ -338,7 +338,7 @@ class PageAdapterTargetTest {
         idle()
         assertSame(shown, shownBitmap(image))
         assertEquals(requests, source.requests.toList())
-        assertTrue(requests.all { it.second == Target(1848, 0) })
+        assertTrue(requests.all { it.second == Target(1848, 0, banded = true) })
         adapter.release()
     }
 

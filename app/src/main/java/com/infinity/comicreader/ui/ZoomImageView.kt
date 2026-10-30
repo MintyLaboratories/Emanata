@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -27,8 +28,10 @@ import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
+import com.infinity.comicreader.reader.Target
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -37,7 +40,10 @@ import kotlin.math.roundToInt
  * bitmap is drawn unfiltered on whole pixels ([applyMatrix]); enlarged through
  * [zoomScaling]'s filter on the GPU ([PageShader], API 33+); shrunk, or below API 33,
  * bilinear.
- * A zoom that settles is re-rendered from the full-detail page ([DetailSource]).
+ * A zoom that settles is re-rendered from the full-detail page ([DetailSource]). A page
+ * whose bitmap is a stand-in smaller than the page drawn ([DetailSource.bands]) is drawn in
+ * bands at the scale it fits at, rendered from its full detail around what shows
+ * ([updateBands]), so it is sharp at rest without one bitmap the size of the page.
  * A [look] beyond a plain color matrix runs in the same GPU pass, at every scale.
  *
  * [onTap] receives the tap position as fractions of the view's width and height, for
@@ -154,8 +160,10 @@ class ZoomImageView @JvmOverloads constructor(
             // Shaders are made per filter; the ones held drew with the old one.
             clearShaders(pageShaders)
             clearShaders(detailShaders)
+            clearShaders(bandShaders)
             pageShaders.fill(null)
             detailShaders.fill(null)
+            bandShaders.fill(null)
             invalidate()
         }
 
@@ -234,6 +242,9 @@ class ZoomImageView @JvmOverloads constructor(
         fit(mode)
     }
 
+    /** True when a page taller than the view starts at its bottom rather than its top, as one turned back to. */
+    var startAtBottom = false
+
     /** Where a page narrower than the view sits across it: 0 at its left edge, 1 at its right, 0.5 centered. */
     var alignX = 0.5f
         private set
@@ -290,10 +301,15 @@ class ZoomImageView @JvmOverloads constructor(
         val scaledW = drawableW * scale
         val scaledH = drawableH * scale
         // Center what fits; when a page is taller (or wider) than the view start at its
-        // top (left) edge so reading begins at the beginning and the rest can be panned to.
+        // top (left) edge so reading begins at the beginning and the rest can be panned to,
+        // or at its bottom when [startAtBottom].
         // Whole-pixel offsets, so a page at 1:1 lands on the pixel grid.
         val startX = if (scaledW > viewW) 0f else ((viewW - scaledW) * alignX).roundToInt().toFloat()
-        val startY = if (scaledH > viewH) 0f else ((viewH - scaledH) / 2f).roundToInt().toFloat()
+        val startY = when {
+            scaledH <= viewH -> ((viewH - scaledH) / 2f).roundToInt().toFloat()
+            startAtBottom -> (viewH - scaledH).roundToInt().toFloat()
+            else -> 0f
+        }
         baseMatrix.postTranslate(startX, startY)
         matrix.set(baseMatrix)
         currentScale = scale
@@ -525,6 +541,7 @@ class ZoomImageView @JvmOverloads constructor(
         }
         if (oneToOne || !zoomed) dropDetail() else if (detailSource != null) settler.postDelayed(settle, SETTLE_MS)
         follower?.follow(this)
+        updateBands()
     }
 
     // ------------------------------------------------------------------ detail
@@ -543,6 +560,19 @@ class ZoomImageView @JvmOverloads constructor(
          * receives it on the main thread. Returns what cancels it.
          */
         fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit
+
+        /** True when the page shows in bands ([updateBands]): its bitmap is a stand-in smaller than the page. */
+        val bands: Boolean get() = false
+
+        /**
+         * Starts rendering [region] at [width] x [height] as pages at rest are scaled, for a
+         * band; [done] receives it on the main thread, or null when it fails. Returns what
+         * cancels it.
+         */
+        fun renderBand(region: Region, width: Int, height: Int, done: (Bitmap?) -> Unit): () -> Unit {
+            done(null)
+            return {}
+        }
     }
 
     /** Where settled zooms get their detail; none keeps the scaled page as it is. */
@@ -656,6 +686,7 @@ class ZoomImageView @JvmOverloads constructor(
         }
         stopFling()
         dropDetail()
+        dropBands()
         clearShaders(pageShaders)
         super.setImageDrawable(drawable)
         updateLayer()
@@ -666,6 +697,7 @@ class ZoomImageView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         resettle()
+        post { updateBands() }
     }
 
     /** Waits for the view to settle again, if it is zoomed, to render its detail. */
@@ -680,8 +712,10 @@ class ZoomImageView @JvmOverloads constructor(
         super.onWindowVisibilityChanged(visibility)
         if (visibility == VISIBLE) {
             resettle()
+            updateBands()
         } else {
             dropDetail()
+            dropBands()
             clearShaders(pageShaders)
         }
     }
@@ -692,6 +726,7 @@ class ZoomImageView @JvmOverloads constructor(
         moving = false
         stopFling()
         dropDetail()
+        dropBands()
         clearShaders(pageShaders)
     }
 
@@ -734,10 +769,11 @@ class ZoomImageView @JvmOverloads constructor(
      */
     private val pageShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
     private val detailShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
+    private val bandShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
     private var shaderFailed = false
 
     /** The bitmaps the shaders hold; for tests. */
-    internal val shadersHold: List<Bitmap> get() = (pageShaders + detailShaders).mapNotNull { it?.held }
+    internal val shadersHold: List<Bitmap> get() = (pageShaders + detailShaders + bandShaders).mapNotNull { it?.held }
 
     private fun shaderSlot(kernel: PageShader.Kernel, colored: Boolean) = kernel.ordinal * 2 + if (colored) 1 else 0
 
@@ -804,7 +840,8 @@ class ZoomImageView @JvmOverloads constructor(
                 hole = tileRect
             }
         }
-        if (hole == null || !covers(hole)) drawPage(canvas, hole)
+        if ((hole == null || !covers(hole)) && !bandsCover(canvas)) drawPage(canvas, hole)
+        if (d != null) drawBands(canvas, d)
         if (tile != null && d != null && hole != null) drawDetail(canvas, tile, d, tileAtOneToOne)
     }
 
@@ -881,6 +918,197 @@ class ZoomImageView @JvmOverloads constructor(
         canvas.restoreToCount(saved)
     }
 
+    // ------------------------------------------------------------------ bands
+
+    /**
+     * Writes the part of the screen that shows this view into [out], in the view's own
+     * coordinates (it may reach past the view); false when none can be found. Unset, the
+     * view itself is what shows, as a page of a pager.
+     */
+    var viewport: ((out: Rect) -> Boolean)? = null
+
+    /** Bands drawn, by number, the renders running for others, and those that failed. */
+    private val bands = HashMap<Int, Bitmap>()
+    private val bandRenders = HashMap<Int, () -> Unit>()
+    private val bandsFailed = HashSet<Int>()
+
+    /** The page's size at the scale it fits at, and the height of its bands, that [bands] were made for. */
+    private var bandW = 0
+    private var bandH = 0.0
+    private var bandStep = 0
+
+    /** Counts the times [bands] were dropped, so renders asked for before never land. */
+    private var bandRound = 0
+    private val bandDraw = Matrix()
+    private val bandValues = FloatArray(9)
+    private val viewportRect = Rect()
+    private val clipRect = Rect()
+    private val bandRect = RectF()
+    private val bandShown = RectF()
+
+    /** The bands drawn now; for tests. */
+    internal val bandsShown: Map<Int, Bitmap> get() = bands
+
+    /** True while this view draws its page in bands, or may; for its adapter. */
+    internal val hasBands: Boolean get() = bands.isNotEmpty() || bandRenders.isNotEmpty() || bandScale() > 0f
+
+    /**
+     * The page's fitted scale when it shows in bands ([DetailSource.bands]): enlarged past
+     * its bitmap's size, alone, not stretched; 0 otherwise.
+     */
+    private fun bandScale(): Float {
+        if (details?.bands != true || leader != null || follower != null || fitMode == FitMode.STRETCH) return 0f
+        if (drawable !is BitmapDrawable || width <= 0 || height <= 0 || contentW() <= 0f) return 0f
+        return if (minScale > 1f + BAND_SLACK) minScale else 0f
+    }
+
+    /**
+     * Renders the bands of the page around what shows ([viewport]) at the scale it fits at,
+     * [BAND_HEIGHT] rows each, and drops those far from it: rendered from a quarter screen
+     * above to a screen below, kept from half a screen above to a screen and a half below. A
+     * band that failed is not asked for again; the page's bitmap shows there.
+     */
+    internal fun updateBands() {
+        val scale = bandScale()
+        if (scale <= 0f || !isAttachedToWindow) {
+            dropBands()
+            return
+        }
+        val fw = (contentW() * scale).roundToInt()
+        val fh = contentH().toDouble() * scale
+        val step = bandStep(fw)
+        if (step <= 0) {
+            dropBands()
+            return
+        }
+        if (fw != bandW || abs(fh - bandH) >= 1.0 || step != bandStep) {
+            dropBands()
+            bandW = fw
+            bandH = fh
+            bandStep = step
+        }
+        viewportRect.set(0, 0, width, height)
+        if (viewport?.invoke(viewportRect) == false || viewportRect.isEmpty) return
+        matrix.getValues(values)
+        val zoom = (currentScale / scale).toDouble()
+        val top = values[Matrix.MTRANS_Y] + paddingTop.toDouble()
+        val screen = viewportRect.height() / zoom
+        val shownTop = (viewportRect.top - top) / zoom
+        val shownBottom = (viewportRect.bottom - top) / zoom
+        val count = ceil(fh / step).toInt()
+        val want = bandRange(shownTop - screen * WANT_BEFORE, shownBottom + screen * WANT_AFTER, step, count)
+        val keep = bandRange(shownTop - screen * KEEP_BEFORE, shownBottom + screen * KEEP_AFTER, step, count)
+        if (bands.keys.removeAll { it !in keep }) invalidate()
+        bandRenders.keys.filter { it !in want }.forEach { bandRenders.remove(it)?.invoke() }
+        val source = details ?: return
+        for (k in want) {
+            if (k in bands || k in bandRenders || k in bandsFailed) continue
+            val y = k * step
+            val h = minOf(step, ceil(fh).toInt() - y)
+            if (h <= 0) continue
+            val round = bandRound
+            var delivered = false
+            val cancel = source.renderBand(Region(0.0, y / fh, 1.0, h / fh), fw, h) { band ->
+                delivered = true
+                if (round != bandRound) return@renderBand
+                bandRenders.remove(k)
+                if (band == null) bandsFailed += k else bands[k] = band
+                invalidate()
+            }
+            if (!delivered && round == bandRound) bandRenders[k] = cancel
+        }
+    }
+
+    /** Rows of the bands of a page [fw] wide: [BAND_HEIGHT], fewer where a band that wide would be too large; 0 when none can be. */
+    private fun bandStep(fw: Int): Int {
+        if (fw <= 0 || fw > Target.MAX_OUTPUT_SIDE) return 0
+        return minOf(BAND_HEIGHT.toLong(), Target.MAX_OUTPUT_PIXELS / fw).toInt()
+    }
+
+    /** Forgets every band and stops their renders. */
+    private fun dropBands() {
+        bandRound++
+        bandsFailed.clear()
+        if (bandRenders.isNotEmpty()) {
+            val cancels = bandRenders.values.toList()
+            bandRenders.clear()
+            cancels.forEach { it() }
+        }
+        clearShaders(bandShaders)
+        if (bands.isNotEmpty()) {
+            bands.clear()
+            invalidate()
+        }
+        bandW = 0
+        bandH = 0.0
+        bandStep = 0
+    }
+
+    /** Puts where band [k] lands in the view into [bandDraw], snapped when at 1:1; true when it is. */
+    private fun placeBand(k: Int, scale: Float): Boolean {
+        bandDraw.set(drawMatrix)
+        bandDraw.preScale(1f / scale, 1f / scale)
+        bandDraw.preTranslate(0f, (k * bandStep).toFloat())
+        bandDraw.getValues(bandValues)
+        val oneToOne = snapOneToOne(bandValues)
+        if (oneToOne) bandDraw.setValues(bandValues)
+        return oneToOne
+    }
+
+    /** True when the bands drawn hide every pixel the page shows on in [canvas]'s clip, so the page need not be drawn. */
+    private fun bandsCover(canvas: Canvas): Boolean {
+        val scale = bandScale()
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return false
+        if (bands.isEmpty() || scale <= 0f || bandStep <= 0) return false
+        bandShown.set(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+        drawMatrix.mapRect(bandShown)
+        bandShown.offset(paddingLeft.toFloat(), paddingTop.toFloat())
+        if (!canvas.getClipBounds(clipRect)) return true
+        if (!bandShown.intersect(clipRect.left.toFloat(), clipRect.top.toFloat(), clipRect.right.toFloat(), clipRect.bottom.toFloat())) return true
+        var reached = first(bandShown.top)
+        val end = first(bandShown.bottom)
+        for (k in bands.keys.sorted()) {
+            placeBand(k, scale)
+            bandRect.set(0f, 0f, bandW.toFloat(), bands.getValue(k).height.toFloat())
+            bandDraw.mapRect(bandRect)
+            bandRect.offset(paddingLeft.toFloat(), paddingTop.toFloat())
+            if (first(bandRect.top) > reached) continue
+            if (first(bandRect.left) > first(bandShown.left) || first(bandRect.right) < first(bandShown.right)) return false
+            reached = maxOf(reached, first(bandRect.bottom))
+            if (reached >= end) return true
+        }
+        return false
+    }
+
+    /** The [bands] over the page: at 1:1 unfiltered, else through [zoomScaling]; a [colored] look runs in the same shader. */
+    private fun drawBands(canvas: Canvas, d: BitmapDrawable) {
+        val scale = bandScale()
+        if (bands.isEmpty() || scale <= 0f) return
+        val colored = this.colored
+        for ((k, band) in bands) {
+            if (band.isRecycled) continue
+            val oneToOne = placeBand(k, scale)
+            val saved = canvas.save()
+            canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+            canvas.concat(bandDraw)
+            val shader = when {
+                !oneToOne -> shader(bandShaders, PageShader.Kernel.FILTERED, colored)
+                colored -> shader(bandShaders, PageShader.Kernel.NEAREST, true)
+                else -> null
+            }
+            if (shader != null) {
+                val paint = shader.paint(band, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
+                canvas.drawRect(0f, 0f, band.width.toFloat(), band.height.toFloat(), paint)
+            } else {
+                val paint = if (oneToOne) plainPaint else filteredPaint
+                paint.colorFilter = d.colorFilter
+                paint.alpha = d.paint.alpha
+                canvas.drawBitmap(band, 0f, 0f, paint)
+            }
+            canvas.restoreToCount(saved)
+        }
+    }
+
     /** Glides the page at [velocityX], [velocityY] px/s, slowing down, within its edges. */
     internal fun fling(velocityX: Float, velocityY: Float) {
         if (contentW() <= 0f) return
@@ -899,6 +1127,26 @@ class ZoomImageView @JvmOverloads constructor(
         if (scroller.isFinished) return
         scroller.forceFinished(true)
         removeCallbacks(flingStep)
+    }
+
+    /**
+     * Scrolls the page up the view by [fraction] of the view's height (down it when
+     * negative), gliding there, no further than its edge; false when it is already there.
+     */
+    fun scrollPage(fraction: Float): Boolean {
+        if (leader != null || contentH() <= 0f || height <= 0) return false
+        matrix.getValues(values)
+        val contentH = contentH() * values[Matrix.MSCALE_Y]
+        if (contentH <= height + EDGE_SLOP) return false
+        // A glide still running counts from where it was going.
+        val from = if (scroller.isFinished) values[Matrix.MTRANS_Y] else scroller.finalY.toFloat()
+        val to = (from - fraction * height).coerceIn(height - contentH, 0f)
+        if (abs(to - from) <= EDGE_SLOP) return false
+        stopFling()
+        val y = values[Matrix.MTRANS_Y].roundToInt()
+        scroller.startScroll(values[Matrix.MTRANS_X].roundToInt(), y, 0, to.roundToInt() - y, SCROLL_MS)
+        postOnAnimation(flingStep)
+        return true
     }
 
     override fun performClick(): Boolean {
@@ -1034,6 +1282,29 @@ class ZoomImageView @JvmOverloads constructor(
 
         /** How long the view must be still before it renders its detail. */
         private const val SETTLE_MS = 150L
+
+        /** How long [scrollPage] glides. */
+        private const val SCROLL_MS = 250
+
+        /** Rows of one band ([updateBands]): 7.5 MB of ARGB at 1848 px wide. */
+        const val BAND_HEIGHT = 1024
+
+        /** How far past its bitmap's size a page must show for its bands to be drawn. */
+        private const val BAND_SLACK = 0.02f
+
+        /** Screens above and below what shows whose bands are rendered and kept ([updateBands]). */
+        private const val WANT_BEFORE = 0.25
+        private const val WANT_AFTER = 1.0
+        private const val KEEP_BEFORE = 0.5
+        private const val KEEP_AFTER = 1.5
+
+        /** Bands of [step] rows, of [count], that rows [from] until [to] of a page touch. */
+        fun bandRange(from: Double, to: Double, step: Int, count: Int): IntRange {
+            if (to <= from || step <= 0 || count <= 0) return IntRange.EMPTY
+            val first = floor(from / step).toInt().coerceAtLeast(0)
+            val last = (ceil(to / step).toInt() - 1).coerceAtMost(count - 1)
+            return first..last
+        }
 
         /** The scale [mode] fits a [drawableW] x [drawableH] drawable into a [viewW] x [viewH] view at; not for [FitMode.STRETCH]. */
         fun fittedScale(mode: FitMode, viewW: Float, viewH: Float, drawableW: Float, drawableH: Float): Float = when (mode) {

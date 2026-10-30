@@ -37,7 +37,7 @@ object PageTargets {
     /**
      * What a page shown in a [viewW] x [viewH] view needs for [fit]: the box [ZoomImageView]
      * fits it into, so its fitted scale comes out at exactly 1. A continuous column always
-     * fits the width.
+     * fits the width. A page too large for one bitmap is drawn in bands ([Target.banded]).
      */
     fun target(
         mode: PageAdapter.Mode,
@@ -48,11 +48,11 @@ object PageTargets {
         linear: Boolean = false,
         scaling: Scaling = Scaling.PLAIN
     ): Target = when {
-        mode == PageAdapter.Mode.CONTINUOUS -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling)
-        fit == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling)
-        fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling)
+        mode == PageAdapter.Mode.CONTINUOUS -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling, banded = true)
+        fit == ZoomImageView.FitMode.WIDTH -> Target(viewW, 0, autoCrop = autoCrop, linear = linear, scaling = scaling, banded = true)
+        fit == ZoomImageView.FitMode.HEIGHT -> Target(0, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling, banded = true)
         fit == ZoomImageView.FitMode.STRETCH -> Target(viewW, viewH, Fit.STRETCH, autoCrop, linear, scaling = scaling)
-        else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling)
+        else -> Target(viewW, viewH, autoCrop = autoCrop, linear = linear, scaling = scaling, banded = true)
     }
 
     /**

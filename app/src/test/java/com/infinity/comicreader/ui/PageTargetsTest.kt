@@ -7,6 +7,8 @@ import com.infinity.comicreader.ui.PageTargets.Slot
 import com.infinity.comicreader.ui.ZoomImageView.FitMode
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PageTargetsTest {
@@ -34,18 +36,30 @@ class PageTargetsTest {
 
     @Test
     fun targetFollowsTheFitMode() {
-        assertEquals(Target(1848, 2960), PageTargets.target(Mode.PAGED, FitMode.SCREEN, 1848, 2960))
-        assertEquals(Target(1848, 0), PageTargets.target(Mode.PAGED, FitMode.WIDTH, 1848, 2960))
-        assertEquals(Target(0, 2960), PageTargets.target(Mode.PAGED, FitMode.HEIGHT, 1848, 2960))
+        assertEquals(Target(1848, 2960, banded = true), PageTargets.target(Mode.PAGED, FitMode.SCREEN, 1848, 2960))
+        assertEquals(Target(1848, 0, banded = true), PageTargets.target(Mode.PAGED, FitMode.WIDTH, 1848, 2960))
+        assertEquals(Target(0, 2960, banded = true), PageTargets.target(Mode.PAGED, FitMode.HEIGHT, 1848, 2960))
         assertEquals(Target(1848, 2960, Fit.STRETCH), PageTargets.target(Mode.PAGED, FitMode.STRETCH, 1848, 2960))
-        assertEquals(Target(1848, 0, autoCrop = true, linear = true),
+        assertEquals(Target(1848, 0, autoCrop = true, linear = true, banded = true),
             PageTargets.target(Mode.PAGED, FitMode.WIDTH, 1848, 2960, autoCrop = true, linear = true))
     }
 
     @Test
     fun aColumnFitsTheWidthCroppedWhenAsked() {
-        assertEquals(Target(1848, 0), PageTargets.target(Mode.CONTINUOUS, FitMode.HEIGHT, 1848, 2960))
-        assertEquals(Target(1848, 0, autoCrop = true), PageTargets.target(Mode.CONTINUOUS, FitMode.SCREEN, 1848, 2960, autoCrop = true))
+        assertEquals(Target(1848, 0, banded = true), PageTargets.target(Mode.CONTINUOUS, FitMode.HEIGHT, 1848, 2960))
+        assertEquals(Target(1848, 0, autoCrop = true, banded = true), PageTargets.target(Mode.CONTINUOUS, FitMode.SCREEN, 1848, 2960, autoCrop = true))
+    }
+
+    @Test
+    fun aVeryTallPageAtFitWidthGetsAStandInForItsBands() {
+        val target = PageTargets.target(Mode.CONTINUOUS, FitMode.WIDTH, 1848, 2960)
+        // 1:29 at 1848 wide would be over 98 million pixels.
+        assertTrue(target.bandsAt(1000.0, 25000.0))
+        val plan = target.plan(1000.0, 25000.0)
+        assertTrue(plan.width.toLong() * plan.height <= Target.BASE_PIXELS)
+        // A page of the screen's shape fits in one bitmap at its size.
+        assertFalse(target.bandsAt(1000.0, 1600.0))
+        assertEquals(1848, target.plan(1000.0, 1600.0).width)
     }
 
     @Test

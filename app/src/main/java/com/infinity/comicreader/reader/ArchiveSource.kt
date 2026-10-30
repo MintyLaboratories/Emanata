@@ -166,11 +166,10 @@ class ArchiveSource(
         }
     }
 
-    /** Read a rectangle at a time where the page is large ([Decoders.regionDetail]), else decoded whole. */
+    /** Read a rectangle at a time where the page is large, else decoded whole ([Decoders.detail]). */
     override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
         val bytes = readPage(index) { BitmapUtils.readCapped(it) }
-        Decoders.regionDetail(bytes, target)?.let { return it }
-        return BitmapDetail(Decoders.decode(bytes, target.detail(sizeOf(bytes), maxBytes)))
+        return Decoders.detail(bytes, target, maxBytes)
     }
 
     /** Which pages are worth reading for a quick preview. */

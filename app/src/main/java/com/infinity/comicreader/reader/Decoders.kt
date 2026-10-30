@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlResizeFilter
 import com.awxkee.jxlcoder.PreferredColorConfig
@@ -360,15 +361,51 @@ object Decoders {
         if (kind !in REGION_KINDS) return null
         if (kind == ImageKind.JPEG && ImageHeaders.jpegOrientation(bytes) != 1) return null
         if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
-        val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val decoder = newRegionDecoder(bytes) ?: return null
+        if (decoder.width == w && decoder.height == h) return decoder
+        decoder.recycle()
+        return null
+    }
+
+    private fun newRegionDecoder(bytes: ByteArray): BitmapRegionDecoder? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
         } else {
             @Suppress("DEPRECATION")
             BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
-        } ?: return null
-        if (decoder.width == w && decoder.height == h) return decoder
-        decoder.recycle()
+        }
+
+    /**
+     * Opens a [RegionReader] over encoded [bytes] as stored, before any EXIF orientation;
+     * null when the platform has none for them. Tests stand in for it: Robolectric has none.
+     */
+    @VisibleForTesting
+    internal var openRegions: (ByteArray) -> RegionReader? = { bytes -> newRegionDecoder(bytes)?.let { PlatformRegions(it) } }
+
+    /**
+     * A [RegionReader] of [bytes], an image shown [w] x [h], reading its pixels as shown:
+     * a [REGION_KINDS] image; null for other kinds, a PNG an eXIf chunk may turn, or where
+     * the reader sees another size.
+     */
+    private fun regionReader(bytes: ByteArray, w: Int, h: Int): RegionReader? {
+        val kind = ImageKind.sniff(bytes)
+        if (kind !in REGION_KINDS) return null
+        if (kind == ImageKind.JPEG && ImageHeaders.jpegOrientation(bytes) != 1) return null
+        if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
+        val reader = openRegions(bytes) ?: return null
+        if (reader.width == w && reader.height == h) return reader
+        reader.close()
         return null
+    }
+
+    /**
+     * The full detail of [bytes] for [target] ([PageSource.loadDetail]): read a rectangle at
+     * a time where it is large ([regionDetail]), else decoded whole within [maxBytes]. Blocking.
+     */
+    fun detail(bytes: ByteArray, target: Target, maxBytes: Long): PageDetail {
+        regionDetail(bytes, target)?.let { return it }
+        val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull()
+        return BitmapDetail(decode(bytes, target.detail(size, maxBytes)))
     }
 
     /** Pixels above which a page's detail is read a rectangle at a time ([RegionDetail]) rather than decoded whole. */
@@ -388,12 +425,12 @@ object Decoders {
         val whole = target.area(w, h)
         val large = w.toLong() * h > REGION_DETAIL_PIXELS || target.bandsAt((whole[2] - whole[0]).toDouble(), (whole[3] - whole[1]).toDouble())
         if (!large) return null
-        val decoder = runCatching { regionDecoder(bytes, w, h) }.getOrNull() ?: return null
+        val reader = runCatching { regionReader(bytes, w, h) }.getOrNull() ?: return null
         try {
             val bounds = if (target.autoCrop && target.box == null) cropOf(bytes, target, size) else null
-            return RegionDetail(PlatformRegions(decoder), target.area(w, h, bounds), bytes.size.toLong())
+            return RegionDetail(reader, target.area(w, h, bounds), bytes.size.toLong())
         } catch (t: Throwable) {
-            decoder.recycle()
+            reader.close()
             throw t
         }
     }

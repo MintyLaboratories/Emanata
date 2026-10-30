@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
+import com.infinity.comicreader.reader.TallPages
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -102,6 +103,7 @@ data class ReaderSettings(
     val coverAlone: Boolean = true,
     val rotateSpreads: Boolean = true,
     val joinSpreads: Boolean = true,
+    val tallThreshold: Int = TallPages.DEFAULT_THRESHOLD,
     val pageScaling: Scaling = Scaling.DEFAULT,
     val zoomScaling: Scaling = Scaling.DEFAULT,
     val thumbScaling: Scaling = Scaling.DEFAULT,
@@ -138,6 +140,7 @@ data class ReaderSettings(
             coverAlone = p.coverAlone,
             rotateSpreads = p.rotateSpreads,
             joinSpreads = p.joinSpreads,
+            tallThreshold = p.tallThreshold,
             pageScaling = p.pageScaling,
             zoomScaling = p.zoomScaling,
             thumbScaling = p.thumbScaling,

@@ -260,6 +260,18 @@
                 android:name="advanced"
                 android:value="true" />
         </SeekBarPreference>
+        <SeekBarPreference
+            android:max="200"
+            app:defaultValue="120"
+            app:key="pref_tall_threshold"
+            app:min="101"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="false"
+            app:title="@string/pref_tall_threshold">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </SeekBarPreference>
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_per_series"

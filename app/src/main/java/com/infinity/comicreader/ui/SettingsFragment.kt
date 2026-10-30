@@ -15,6 +15,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
+import androidx.preference.SeekBarPreference
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookCaches
@@ -30,12 +31,14 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareBackup
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.reader.AutoScroll
+import com.infinity.comicreader.reader.TallPages
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Backup
 import com.infinity.comicreader.util.Locales
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import kotlin.concurrent.thread
 
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -178,6 +181,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
+        findPreference<SeekBarPreference>(Prefs.KEY_TALL_THRESHOLD)?.let { setUpTallThreshold(it) }
 
         findPreference<Preference>(Prefs.KEY_NETWORK_CACHE)?.setOnPreferenceChangeListener { _, value ->
             val bytes = ((value as String).toLongOrNull() ?: return@setOnPreferenceChangeListener false) shl 20
@@ -430,6 +434,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
         show()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { settings.reader.collect { show() } }
+        }
+    }
+
+    /** Shows the threshold and the page shape it makes tall on this screen. */
+    private fun setUpTallThreshold(pref: SeekBarPreference) {
+        val aspect = ScreenShape.portraitAspect(requireContext())
+        pref.summaryProvider = Preference.SummaryProvider<SeekBarPreference> { p ->
+            getString(
+                R.string.pref_tall_threshold_summary,
+                String.format(Locale.getDefault(), "%.2f", p.value / 100.0),
+                String.format(Locale.getDefault(), "%.2f", TallPages.minAspect(p.value, aspect))
+            )
         }
     }
 

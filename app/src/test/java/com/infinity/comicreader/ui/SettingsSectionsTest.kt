@@ -34,7 +34,7 @@ class SettingsSectionsTest {
 
     private val advanced = listOf(
         "pref_name_charset", "pref_scale_pages", "pref_scale_zoom", "pref_scale_thumbs", "pref_ring_up", "pref_ring_down",
-        "pref_network_timeout"
+        "pref_network_timeout", "pref_tall_threshold"
     )
 
     @Before

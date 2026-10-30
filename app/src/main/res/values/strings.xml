@@ -802,6 +802,11 @@
     <string name="pref_ring_up">Anti-ringing when enlarging (%)</string>
     <string name="pref_ring_down">Anti-ringing when shrinking (%)</string>
     <string name="pref_ring_desc">Holds back the halos sharp filters leave beside hard edges</string>
+    <string name="pref_tall_threshold">Tall page threshold</string>
+    <string name="pref_tall_threshold_summary">%1$s × the screen\'s shape: pages from %2$s:1 are tall</string>
+    <string name="tall_strip_ask">Tall pages: read as a continuous strip?</string>
+    <string name="tall_strip_yes">Yes</string>
+    <string name="tall_strip_no">No</string>
     <string name="pref_join_spreads">Join spreads by their edges</string>
     <string name="pref_join_spreads_desc">Show or pair two pages as one picture when their facing edges run on</string>
     <string name="pref_rotate_spreads">Rotate for spreads</string>

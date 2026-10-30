@@ -278,8 +278,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   for 16-bit pages, and where the WebP does not decode back the same), checked
   pixel for pixel, its color profile embedded unless sRGB. Lossy pages in
   formats few readers open (lossy JPEG XL, which Compact never makes; AVIF,
-  layered ones too, as their full image; HEIF) become very-high-quality WebP,
-  the one step that changes pixels: the dialog says so ("Converts the comic
+  layered ones too, as their full image; HEIF) become very-high-quality WebP
+  (JPEG where a side is over WebP's 16,383 px; PNG of the decoded pixels when
+  such a page is transparent or too long for JPEG too), the one step that
+  changes pixels: the dialog says so ("Converts the comic
   into legacy formats every reader opens. This may be lossy if no better way is
   found, but aims for minimal visible loss. Comics compacted by Emanata convert
   losslessly."), and the message counts those pages. Other pages are left as

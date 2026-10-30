@@ -2,6 +2,8 @@ package com.infinity.comicreader.testing
 
 import com.infinity.comicreader.compact.JxlCodec
 import com.infinity.comicreader.compact.JxlInfo
+import com.infinity.comicreader.compact.PageProbe
+import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.compact.Pixels
 import com.infinity.comicreader.compact.PlatformImages
 import com.infinity.comicreader.compact.Png
@@ -158,11 +160,29 @@ class FakeImages(var losslessWebp: Boolean = true) : PlatformImages {
     /** Decoded WebPs come out one sample off. */
     var badWebp = false
 
-    /** AVIF and HEIF pages it decodes: a 2 x 2 gray image each; others are taken as not decoding. */
+    /**
+     * AVIF and HEIF pages it decodes: gray, of the size their `ispe` gives (2 x 2 without
+     * one), half transparent with [isoAlpha]; others are taken as not decoding.
+     */
     var decodesIso = true
+    var isoAlpha = false
 
-    override fun lossyWebp(page: ByteArray, quality: Int): ByteArray? =
-        if (decodesIso) webp(Pixels(2, 2, 4, 8, ByteArray(16) { 0x80.toByte() }), lossless = false, quality = quality) else null
+    /** JPEG qualities asked for, in order. */
+    val jpegQualities = ArrayList<Int>()
+
+    override fun isoPixels(page: ByteArray): Pixels? {
+        if (!decodesIso) return null
+        val size = PageProbe.sizeOf(page) ?: intArrayOf(2, 2)
+        val data = ByteArray(size[0] * size[1] * 4) { if (it % 4 == 3 && !isoAlpha) (-1).toByte() else 0x80.toByte() }
+        return Pixels(size[0], size[1], 4, 8, data)
+    }
+
+    /** A JPEG of its own making: its start of image, then the pixels deflated. */
+    override fun jpeg(pixels: Pixels, quality: Int): ByteArray? {
+        if (maxOf(pixels.width, pixels.height) > PageWork.JPEG_MAX_SIDE) return null
+        jpegQualities += quality
+        return byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + FakeJxl.deflate(pixels.data)
+    }
 
     override fun decode(bytes: ByteArray): Pixels? {
         Png.decode(bytes)?.let { png ->
@@ -187,7 +207,7 @@ class FakeImages(var losslessWebp: Boolean = true) : PlatformImages {
     }
 
     override fun webp(pixels: Pixels, lossless: Boolean, quality: Int): ByteArray? {
-        if (lossless && !losslessWebp) return null
+        if (lossless && !losslessWebp || maxOf(pixels.width, pixels.height) > PageWork.WEBP_MAX_SIDE) return null
         val packed = FakeJxl.deflate(pixels.data)
         val chunk = ByteArrayOutputStream()
         if (lossless) {

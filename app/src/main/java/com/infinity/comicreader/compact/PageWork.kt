@@ -11,14 +11,20 @@ interface PlatformImages {
      */
     fun decode(bytes: ByteArray): Pixels?
 
-    /** RGBA [pixels] (8 bits) as a WebP: lossless, else lossy at [quality]; null where the platform cannot (lossless before Android 11). */
+    /**
+     * RGBA [pixels] (8 bits) as a WebP: lossless, else lossy at [quality]; null where the
+     * platform cannot (lossless before Android 11, a side over [PageWork.WEBP_MAX_SIDE]).
+     */
     fun webp(pixels: Pixels, lossless: Boolean, quality: Int): ByteArray?
 
+    /** Opaque RGBA [pixels] (8 bits) as a JPEG at [quality]; null where the platform cannot. */
+    fun jpeg(pixels: Pixels, quality: Int): ByteArray?
+
     /**
-     * An AVIF (its full image, layered ones too) or HEIF page as lossy WebP at [quality],
-     * in sRGB; null where it does not decode.
+     * An AVIF (its full image, layered ones too) or HEIF page as RGBA of 8 bits, not
+     * premultiplied, in sRGB; null where it does not decode.
      */
-    fun lossyWebp(page: ByteArray, quality: Int): ByteArray?
+    fun isoPixels(page: ByteArray): Pixels?
 }
 
 /**
@@ -61,7 +67,7 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
      * [page] as one every reader opens: a JPEG XL holding a JPEG as that JPEG, a lossless
      * one as lossless WebP (PNG before Android 11, for 16 bits, and where the WebP does not
      * decode back the same); a lossy JPEG XL, an AVIF or a HEIF as very-high-quality WebP
-     * ([LOSSY_QUALITY], [Made.reencoded]); null for every other page. Throws [Unconverted]
+     * ([lossy]); null for every other page. Throws [Unconverted]
      * for one it cannot make so, an animation among them.
      */
     fun compatible(page: ByteArray): Made? {
@@ -76,11 +82,11 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         return (if (info.lossless) losslessOut(page, info) else lossyOut(page, info)) ?: throw Unconverted("JPEG XL not converted")
     }
 
-    /** An AVIF or HEIF still image as lossy WebP. */
+    /** An AVIF or HEIF still image made [lossy]. */
     private fun reencoded(page: ByteArray): Made {
         if (PageProbe.isoSequence(page)) throw Unconverted("Animated image")
-        val webp = images.lossyWebp(page, LOSSY_QUALITY) ?: throw Unconverted("Image not decoded")
-        return Made(webp, "webp", reencoded = true)
+        val pixels = images.isoPixels(page) ?: throw Unconverted("Image not decoded")
+        return lossy(pixels, null) ?: throw Unconverted("Image not converted")
     }
 
     /** The JPEG [jpeg] transcoded at [effort], kept once it rebuilds byte for byte. */
@@ -128,16 +134,33 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         return if (pixels.same(Png.decode(png))) Made(png, "png") else null
     }
 
-    /** A lossy JPEG XL as lossy WebP, in sRGB where it converts, else in its own profile embedded. */
+    /** A lossy JPEG XL made [lossy], in sRGB where it converts, else in its own profile. */
     private fun lossyOut(page: ByteArray, info: JxlInfo): Made? {
         var icc: ByteArray? = null
         val data = jxl.decode(page, 4, 8, srgb = true) ?: run {
             if (!info.srgb) icc = jxl.iccOfPixels(page) ?: return null
             jxl.decode(page, 4, 8)
         } ?: return null
-        val webp = images.webp(Pixels(info.width, info.height, 4, 8, data), lossless = false, quality = LOSSY_QUALITY) ?: return null
-        val out = icc?.let { WebpIcc.embed(webp, it) ?: return null } ?: webp
-        return Made(out, "webp", reencoded = true)
+        return lossy(Pixels(info.width, info.height, 4, 8, data), icc)
+    }
+
+    /**
+     * The decoded RGBA pixels of a lossy page, in sRGB or in profile [icc] (embedded), as
+     * very-high-quality WebP ([LOSSY_QUALITY], [Made.reencoded]); where a side is too long
+     * for WebP ([WEBP_MAX_SIDE]), as a JPEG ([JPEG_QUALITY]) when opaque, in sRGB and
+     * short enough ([JPEG_MAX_SIDE]), else as a PNG of those pixels.
+     */
+    private fun lossy(pixels: Pixels, icc: ByteArray?): Made? {
+        val side = maxOf(pixels.width, pixels.height)
+        if (side <= WEBP_MAX_SIDE) {
+            val webp = images.webp(pixels, lossless = false, quality = LOSSY_QUALITY) ?: return null
+            val out = icc?.let { WebpIcc.embed(webp, it) ?: return null } ?: webp
+            return Made(out, "webp", reencoded = true)
+        }
+        if (icc == null && side <= JPEG_MAX_SIDE && !hasAlpha(pixels)) images.jpeg(pixels, JPEG_QUALITY)?.let { return Made(it, "jpg", reencoded = true) }
+        val reduced = reduced(pixels)
+        val png = Png.encode(reduced, icc)
+        return if (reduced.same(Png.decode(png))) Made(png, "png") else null
     }
 
     /**
@@ -188,11 +211,32 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         /** WebP quality of a lossy page made compatible: very high, the smallest that shows no loss in comparisons. */
         const val LOSSY_QUALITY = 90
 
+        /** JPEG quality of a lossy page too tall or wide for WebP: very high too. */
+        const val JPEG_QUALITY = 95
+
+        /** Longest side WebP holds. */
+        const val WEBP_MAX_SIDE = 16_383
+
+        /** Longest side the platform's JPEG encoder (libjpeg-turbo) writes. */
+        const val JPEG_MAX_SIDE = 65_500
+
         /** Android's lossless WebP takes its effort as "quality": 100 is the smallest. */
         const val WEBP_LOSSLESS_EFFORT = 100
 
         /** Bytes per pixel decoded pages hold at most: RGBA, its fewest channels and what decodes back, or RGBA and PNG's filtered rows. */
         const val BYTES_PER_PIXEL = 16
+
+        /** True when any pixel of RGBA [rgba] (8 bits) is not opaque. */
+        fun hasAlpha(rgba: Pixels): Boolean {
+            require(rgba.channels == 4 && rgba.bits == 8)
+            val d = rgba.data
+            var i = 3
+            while (i < d.size) {
+                if (d[i] != (-1).toByte()) return true
+                i += 4
+            }
+            return false
+        }
 
         /** RGBA [rgba] in the fewest channels that hold it: gray when every pixel is, alpha only when any is not opaque. */
         fun reduced(rgba: Pixels): Pixels {

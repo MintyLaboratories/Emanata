@@ -178,6 +178,24 @@ class PageWorkTest {
     }
 
     @Test
+    fun aPageTooTallForWebpBecomesAJpegOrAPng() {
+        // Opaque: a very-high-quality JPEG.
+        val tall = work.compatible(iso("avif", 10, PageWork.WEBP_MAX_SIDE + 1))!!
+        assertEquals("jpg", tall.ext)
+        assertTrue(tall.reencoded)
+        assertEquals(listOf(PageWork.JPEG_QUALITY), images.jpegQualities)
+        // Lossy JPEG XL too.
+        val source = Pixels(2, PageWork.WEBP_MAX_SIDE + 1, 4, 8, ByteArray(2 * (PageWork.WEBP_MAX_SIDE + 1) * 4) { if (it % 4 == 3) -1 else 7 })
+        assertEquals("jpg", work.compatible(jxl.lossy(source))!!.ext)
+        // Transparent, or too tall for JPEG: a PNG of the decoded pixels, which changes none.
+        val alpha = PageWork(jxl, FakeImages().apply { isoAlpha = true }).compatible(iso("heic", 3, PageWork.WEBP_MAX_SIDE + 1))!!
+        assertEquals("png", alpha.ext)
+        assertFalse(alpha.reencoded)
+        assertEquals(2, Png.decode(alpha.bytes)!!.channels)
+        assertEquals("png", work.compatible(iso("avif", 1, PageWork.JPEG_MAX_SIDE + 1))!!.ext)
+    }
+
+    @Test
     fun animatedOrUndecodableAvifStaysAndSaysSo() {
         assertThrows(PageWork.Unconverted::class.java) { work.compatible(iso("avis", 30, 20)) }
         assertThrows(PageWork.Unconverted::class.java) { PageWork(jxl, FakeImages().apply { decodesIso = false }).compatible(iso("avif", 30, 20)) }

@@ -33,17 +33,28 @@ object AndroidImages : PlatformImages {
 
     override fun webp(pixels: Pixels, lossless: Boolean, quality: Int): ByteArray? {
         require(pixels.channels == 4 && pixels.bits == 8)
+        if (maxOf(pixels.width, pixels.height) > PageWork.WEBP_MAX_SIDE) return null
         val format = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> if (lossless) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP_LOSSY
             lossless -> return null
             else -> @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
         }
+        return compress(pixels, format, quality)
+    }
+
+    override fun jpeg(pixels: Pixels, quality: Int): ByteArray? {
+        require(pixels.channels == 4 && pixels.bits == 8)
+        if (maxOf(pixels.width, pixels.height) > PageWork.JPEG_MAX_SIDE) return null
+        return compress(pixels, Bitmap.CompressFormat.JPEG, quality)
+    }
+
+    private fun compress(pixels: Pixels, format: Bitmap.CompressFormat, quality: Int): ByteArray? {
         val bitmap = Bitmap.createBitmap(pixels.width, pixels.height, Bitmap.Config.ARGB_8888)
         try {
             // Samples as they are: copyPixelsFromBuffer converts nothing.
             bitmap.isPremultiplied = false
             bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels.data))
-            bitmap.setHasAlpha(hasAlpha(pixels.data))
+            bitmap.setHasAlpha(PageWork.hasAlpha(pixels))
             val out = ByteArrayOutputStream(pixels.data.size / 4)
             return if (bitmap.compress(format, quality, out)) out.toByteArray() else null
         } finally {
@@ -51,8 +62,8 @@ object AndroidImages : PlatformImages {
         }
     }
 
-    override fun lossyWebp(page: ByteArray, quality: Int): ByteArray? {
-        val bitmap = when (ImageKind.sniff(page)) {
+    override fun isoPixels(page: ByteArray): Pixels? {
+        val decoded = when (ImageKind.sniff(page)) {
             ImageKind.AVIF -> runCatching { Avif.decode(page, Avif.MAX_PIXELS) }.getOrNull()
             ImageKind.HEIF -> BitmapFactory.decodeByteArray(page, 0, page.size, BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -61,21 +72,25 @@ object AndroidImages : PlatformImages {
             })
             else -> null
         } ?: return null
+        val bitmap = if (decoded.config == Bitmap.Config.ARGB_8888) decoded else decoded.copy(Bitmap.Config.ARGB_8888, false).also { decoded.recycle() } ?: return null
         try {
-            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
-            val out = ByteArrayOutputStream(page.size * 2)
-            return if (bitmap.compress(format, quality, out)) out.toByteArray() else null
+            val w = bitmap.width
+            val out = ByteArray(w * bitmap.height * 4)
+            // Row by row, as sRGB colors not premultiplied.
+            val row = IntArray(w)
+            var o = 0
+            for (y in 0 until bitmap.height) {
+                bitmap.getPixels(row, 0, w, 0, y, w, 1)
+                for (c in row) {
+                    out[o++] = (c shr 16).toByte()
+                    out[o++] = (c shr 8).toByte()
+                    out[o++] = c.toByte()
+                    out[o++] = (c ushr 24).toByte()
+                }
+            }
+            return Pixels(w, bitmap.height, 4, 8, out)
         } finally {
             bitmap.recycle()
         }
-    }
-
-    private fun hasAlpha(rgba: ByteArray): Boolean {
-        var i = 3
-        while (i < rgba.size) {
-            if (rgba[i] != (-1).toByte()) return true
-            i += 4
-        }
-        return false
     }
 }

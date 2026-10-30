@@ -81,13 +81,13 @@ class ListActivityConfirmTest {
     }
 
     @Test
-    fun resetStatisticsWaitsForConfirmation() {
+    fun clearStatisticsWaitsForConfirmation() {
         library.addReading(60, 5)
         val activity = launch()
 
         activity.menu(R.id.menu_stats).press(DialogInterface.BUTTON_NEUTRAL)
         val canceled = latestDialog()
-        assertEquals(context.getString(R.string.confirm_reset_stats_msg), canceled.message())
+        assertEquals(context.getString(R.string.confirm_clear_stats_msg), canceled.message())
         canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(5L, library.stats().pages.toLong())
 

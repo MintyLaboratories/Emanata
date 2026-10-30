@@ -2684,8 +2684,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             .setTitle(R.string.menu_stats)
             .setMessage(statsText(st))
             .setPositiveButton(R.string.ok, null)
-            .setNeutralButton(R.string.reset_stats) { _, _ ->
-                confirm(this, R.string.confirm_reset_stats_title, R.string.confirm_reset_stats_msg, R.string.reset) {
+            .setNeutralButton(R.string.clear) { _, _ ->
+                confirm(this, R.string.confirm_clear_stats_title, R.string.confirm_clear_stats_msg, R.string.clear) {
                     library.clearStats()
                 }
             }

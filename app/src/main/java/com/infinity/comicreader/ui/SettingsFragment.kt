@@ -280,7 +280,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<Preference>("pref_clear_stats")?.setOnPreferenceClickListener {
-            confirm(requireContext(), R.string.confirm_clear_stats_title, R.string.confirm_reset_stats_msg, R.string.clear) {
+            confirm(requireContext(), R.string.confirm_clear_stats_title, R.string.confirm_clear_stats_msg, R.string.clear) {
                 library.clearStats()
                 toast(R.string.pref_cleared)
             }

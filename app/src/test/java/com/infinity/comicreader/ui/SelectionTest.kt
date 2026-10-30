@@ -108,7 +108,7 @@ class SelectionTest {
             SelectionActions.more(listOf(book("a.cbz", read = true)), all, SelectionActions.MoreFacts(false, { false }, { true }, { true }))
         )
         assertEquals(
-            listOf(MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.PEEK),
+            listOf(MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.PEEK),
             SelectionActions.more(listOf(folder("Sub")), all, facts)
         )
         assertEquals(

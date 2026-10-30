@@ -267,7 +267,7 @@ class ListActivityFileOpsTest {
         assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.BOOK_INFO, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
-        assertEquals(listOf(MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP), activity.moreItems())
+        assertEquals(listOf(MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP), activity.moreItems())
         // Both: what applies to all of them, and nothing that takes one.
         activity.select(book.absolutePath)
         assertEquals(
@@ -276,8 +276,25 @@ class ListActivityFileOpsTest {
         )
 
         // Settings reorder and hide items.
-        Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(3, 0).with(MoreAction.MARK_ALL_READ, false)
+        Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(4, 0).with(MoreAction.MARK_ALL_READ, false)
         assertEquals(listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
+    }
+
+    @Test
+    fun continueReadingOpensTheNextBookInOneSelectedFolder() {
+        val inside = File(other, "inside.cbz").apply { writeBytes(ByteArray(40) { 3 }) }
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.moreItems()
+        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.CONTINUE_READING } }.performClick()
+        var started: android.content.Intent? = null
+        repeat(100) {
+            idle()
+            started = started ?: shadowOf(activity).nextStartedActivity
+            if (started != null) return@repeat
+        }
+        assertEquals(inside.absolutePath, started!!.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertFalse(activity.selection.active)
     }
 
     @Test

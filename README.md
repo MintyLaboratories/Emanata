@@ -158,7 +158,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     place, grayed, with more than one selected; Favorite adds them all, or
     removes them all when each already is one. Bookmarks offer no Move, Copy or
     Rename, and their Delete is **Remove** (the bookmarks, never the books).
-  - **⋮** lists only what applies to the selection: Mark as read, Mark as
+  - **⋮** lists only what applies to the selection: Continue reading (one
+    folder: its book in progress, else the next unread), Mark as read, Mark as
     unread, Mark all as read / unread (folders), Set as startup folder (one
     folder), Show in folder (except from that folder itself), Book info (one
     book, without opening it), Filename charset (one book, advanced),

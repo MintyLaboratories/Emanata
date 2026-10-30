@@ -16,6 +16,7 @@ object MoreActionsDialog {
     fun label(context: Context, action: MoreAction): String = context.getString(labelOf(action))
 
     fun labelOf(action: MoreAction): Int = when (action) {
+        MoreAction.CONTINUE_READING -> R.string.menu_continue
         MoreAction.MARK_READ -> R.string.menu_mark_read
         MoreAction.MARK_UNREAD -> R.string.menu_mark_unread
         MoreAction.MARK_ALL_READ -> R.string.menu_mark_all_read
@@ -30,6 +31,7 @@ object MoreActionsDialog {
     }
 
     fun iconOf(action: MoreAction): Int = when (action) {
+        MoreAction.CONTINUE_READING -> R.drawable.ic_auto_stories
         MoreAction.MARK_READ -> R.drawable.ic_done
         MoreAction.MARK_UNREAD -> R.drawable.ic_radio_unchecked
         MoreAction.MARK_ALL_READ -> R.drawable.ic_done_all

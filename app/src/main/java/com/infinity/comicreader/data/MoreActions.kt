@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 /** An item of the selection's ⋮ menu. */
 enum class MoreAction(val key: String) {
+    CONTINUE_READING("continue_reading"),
     MARK_READ("mark_read"),
     MARK_UNREAD("mark_unread"),
     MARK_ALL_READ("mark_all_read"),

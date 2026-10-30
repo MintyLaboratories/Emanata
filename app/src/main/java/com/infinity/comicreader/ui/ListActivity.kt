@@ -1897,6 +1897,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val asks = action == MoreAction.COMPACT || action == MoreAction.MAKE_COMPATIBLE
         if (!asks) endSelection()
         when (action) {
+            MoreAction.CONTINUE_READING -> one?.let { continueReading(it.file) }
             MoreAction.MARK_READ -> markBooks(entries, read = true)
             MoreAction.MARK_UNREAD -> markBooks(entries, read = false)
             MoreAction.MARK_ALL_READ -> markFolders(entries.filter { it.isDir }.map { it.file }, read = true)

@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.MoreAction.BOOK_INFO
 import com.infinity.comicreader.data.MoreAction.COMPACT
+import com.infinity.comicreader.data.MoreAction.CONTINUE_READING
 import com.infinity.comicreader.data.MoreAction.MAKE_COMPATIBLE
 import com.infinity.comicreader.data.MoreAction.MARK_ALL_READ
 import com.infinity.comicreader.data.MoreAction.MARK_ALL_UNREAD
@@ -30,7 +31,7 @@ class MoreActionsTest {
     @Test
     fun defaultOffersEveryItemButPeekInTheAgreedOrder() {
         assertEquals(
-            listOf(MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE),
+            listOf(CONTINUE_READING, MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE),
             MoreActions.DEFAULT.visible
         )
         // Peek is listed, off.
@@ -41,7 +42,7 @@ class MoreActionsTest {
 
     @Test
     fun encodingRoundTripsOrderAndHiddenItems() {
-        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(10, 0)
+        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(11, 0)
         assertEquals(PEEK, actions.visible.first())
         assertFalse(MARK_READ in actions.visible)
         assertEquals(actions, MoreActions.decode(actions.encode()))
@@ -49,7 +50,7 @@ class MoreActionsTest {
 
     @Test
     fun movingAnItemClosesUpTheOthers() {
-        val moved = MoreActions.DEFAULT.moved(7, 10)
+        val moved = MoreActions.DEFAULT.moved(8, 11)
         assertEquals(listOf(COMPACT, MAKE_COMPATIBLE, PEEK, NAME_CHARSET), moved.offered.takeLast(4))
         assertEquals(MoreActions.DEFAULT, MoreActions.DEFAULT.moved(0, 99))
     }
@@ -57,7 +58,7 @@ class MoreActionsTest {
     @Test
     fun decodingDropsUnknownAndRepeatedNamesAndAppendsMissingOnesAsByDefault() {
         val actions = MoreActions.decode("peek,bogus,-peek,-mark_read")
-        assertEquals(listOf(PEEK, MARK_READ), actions.order.take(2))
+        assertEquals(listOf(PEEK, MARK_READ, CONTINUE_READING), actions.order.take(3))
         assertEquals(MoreAction.entries.size, actions.order.size)
         assertEquals(MoreAction.SHOWN_BY_DEFAULT - MARK_READ + PEEK, actions.shown)
     }

@@ -133,6 +133,7 @@ object SelectionActions {
         val book = one?.takeIf { !it.isDir && Formats.isOpenable(it.name) }
         return offered.filter { action ->
             when (action) {
+                MoreAction.CONTINUE_READING -> one?.isDir == true
                 MoreAction.MARK_READ -> books.any { !it.read }
                 MoreAction.MARK_UNREAD -> books.any { it.read }
                 MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD -> folders.isNotEmpty()

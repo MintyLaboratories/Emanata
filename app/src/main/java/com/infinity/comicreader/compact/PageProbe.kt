@@ -142,6 +142,76 @@ object PageProbe {
         return best
     }
 
+    /**
+     * True for an AVIF stored as libavif stores lossless images, so that it decodes to its
+     * samples exactly: each `av1C` 4:4:4 of 8 bits (none monochrome: gray, or alpha, which
+     * decodes premultiplied) and each `colr` an `nclx` with identity matrix coefficients
+     * (0), full range, BT.709 or unspecified primaries and the sRGB, BT.709 or unspecified
+     * curve, at least one of each.
+     */
+    fun avifLossless(b: ByteArray): Boolean {
+        if (ImageKind.sniff(b) != ImageKind.AVIF) return false
+        val meta = box(b, 0, b.size, "meta") ?: return false
+        val iprp = box(b, meta.first + 4, meta.last + 1, "iprp") ?: return false
+        val ipco = box(b, iprp.first, iprp.last + 1, "ipco") ?: return false
+        var codecs = 0
+        var colors = 0
+        var ok = true
+        boxes(b, ipco.first, ipco.last + 1) { kind, body ->
+            when (kind) {
+                "av1C" -> {
+                    codecs++
+                    if (body.last - body.first < 2) ok = false
+                    else {
+                        // seq_tier_0, high_bitdepth, twelve_bit, monochrome, chroma_subsampling_x, _y, chroma_sample_position.
+                        val flags = b[body.first + 2].toInt() and 0xFF
+                        if ((flags and 0x7C) != 0) ok = false
+                    }
+                }
+                "colr" -> {
+                    if (body.last - body.first < 10 || type(b, body.first) != "nclx") ok = false
+                    else {
+                        colors++
+                        val primaries = be16(b, body.first + 4)
+                        val transfer = be16(b, body.first + 6)
+                        val matrix = be16(b, body.first + 8)
+                        val full = (b[body.first + 10].toInt() and 0x80) != 0
+                        if (matrix != 0 || !full || primaries !in SRGB_PRIMARIES || transfer !in SRGB_TRANSFERS) ok = false
+                    }
+                }
+            }
+        }
+        return ok && codecs > 0 && colors > 0
+    }
+
+    /** The body (`first..last`) of the first box of [kind] among those in `[from, to)` of [b]; null when none. */
+    private fun box(b: ByteArray, from: Int, to: Int, kind: String): IntRange? {
+        var found: IntRange? = null
+        boxes(b, from, to) { k, body -> if (found == null && k == kind) found = body }
+        return found
+    }
+
+    /** Each box in `[from, to)` of [b], its type and body (`first..last`), until one does not fit. */
+    private fun boxes(b: ByteArray, from: Int, to: Int, each: (String, IntRange) -> Unit) {
+        var at = from.toLong()
+        val end = minOf(to, b.size).toLong()
+        while (at + 8 <= end) {
+            val i = at.toInt()
+            var size = be32(b, i).toLong() and 0xFFFFFFFFL
+            var header = 8
+            if (size == 1L) {
+                if (at + 16 > end) return
+                size = (be32(b, i + 8).toLong() shl 32) or (be32(b, i + 12).toLong() and 0xFFFFFFFFL)
+                header = 16
+            } else if (size == 0L) {
+                size = end - at
+            }
+            if (size < header || at + size > end) return
+            each(type(b, i + 4), (i + header) until (at + size).toInt())
+            at += size
+        }
+    }
+
     /** A WebP's canvas (`VP8X`) or image size (`VP8L`, `VP8 `), from its first chunk. */
     private fun webpSize(b: ByteArray): IntArray? {
         if (b.size < 30 || type(b, 0) != "RIFF" || type(b, 8) != "WEBP") return null
@@ -180,11 +250,17 @@ object PageProbe {
     private fun be32(b: ByteArray, at: Int): Int =
         ((b[at].toInt() and 0xFF) shl 24) or ((b[at + 1].toInt() and 0xFF) shl 16) or ((b[at + 2].toInt() and 0xFF) shl 8) or (b[at + 3].toInt() and 0xFF)
 
+    private fun be16(b: ByteArray, at: Int): Int = ((b[at].toInt() and 0xFF) shl 8) or (b[at + 1].toInt() and 0xFF)
+
     private fun le32(b: ByteArray, at: Int): Int =
         (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8) or ((b[at + 2].toInt() and 0xFF) shl 16) or ((b[at + 3].toInt() and 0xFF) shl 24)
 
     /** Bytes of an AVIF or HEIF searched for its size: its `meta` box comes first. */
     private const val ISO_SCAN = 64 * 1024
+
+    /** CICP primaries (BT.709, unspecified) and curves (BT.709, unspecified, sRGB) libavif's pixels come out in unchanged. */
+    private val SRGB_PRIMARIES = setOf(1, 2)
+    private val SRGB_TRANSFERS = setOf(1, 2, 13)
 
     /** Major brands of AVIF and HEIF image sequences. */
     private val SEQUENCE_BRANDS = setOf("avis", "msf1", "hevc", "hevx")

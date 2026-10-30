@@ -65,15 +65,17 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
 
     /**
      * [page] as one every reader opens: a JPEG XL holding a JPEG as that JPEG, a lossless
-     * one as lossless WebP (PNG before Android 11, for 16 bits, and where the WebP does not
-     * decode back the same); a lossy JPEG XL, an AVIF or a HEIF as very-high-quality WebP
-     * ([lossy]); null for every other page. Throws [Unconverted]
+     * one, and an AVIF stored lossless ([PageProbe.avifLossless]), as lossless WebP (PNG
+     * before Android 11, for 16 bits, for a side too long, and where the WebP does not
+     * decode back the same); a lossy JPEG XL, any other AVIF or a HEIF as very-high-quality
+     * WebP ([lossy]); null for every other page. Throws [Unconverted]
      * for one it cannot make so, an animation among them.
      */
     fun compatible(page: ByteArray): Made? {
         when (ImageKind.sniff(page)) {
             ImageKind.JXL -> Unit
-            ImageKind.AVIF, ImageKind.HEIF -> return reencoded(page)
+            ImageKind.AVIF -> return if (PageProbe.avifLossless(page)) losslessIso(page) else reencoded(page)
+            ImageKind.HEIF -> return reencoded(page)
             else -> return null
         }
         if (PageProbe.jxlHoldsJpeg(page)) jxl.reconstruct(page)?.let { return Made(it, "jpg") }
@@ -83,10 +85,17 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     }
 
     /** An AVIF or HEIF still image made [lossy]. */
-    private fun reencoded(page: ByteArray): Made {
+    private fun reencoded(page: ByteArray): Made = lossy(isoPixels(page), null) ?: throw Unconverted("Image not converted")
+
+    /** A lossless AVIF still image as lossless WebP, else PNG. */
+    private fun losslessIso(page: ByteArray): Made {
+        val pixels = isoPixels(page)
+        return losslessWebp(pixels, null) ?: png(reduced(pixels), null) ?: throw Unconverted("Image not converted")
+    }
+
+    private fun isoPixels(page: ByteArray): Pixels {
         if (PageProbe.isoSequence(page)) throw Unconverted("Animated image")
-        val pixels = images.isoPixels(page) ?: throw Unconverted("Image not decoded")
-        return lossy(pixels, null) ?: throw Unconverted("Image not converted")
+        return images.isoPixels(page) ?: throw Unconverted("Image not decoded")
     }
 
     /** The JPEG [jpeg] transcoded at [effort], kept once it rebuilds byte for byte. */
@@ -123,13 +132,22 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         val bits = info.sampleBits
         if (bits == 8) {
             val rgba = jxl.decode(page, 4, 8)?.let { Pixels(info.width, info.height, 4, 8, it) } ?: return null
-            val webp = images.webp(rgba, lossless = true, quality = WEBP_LOSSLESS_EFFORT)
-            if (webp != null && rgba.same(images.decode(webp))) {
-                val out = if (icc == null) webp else WebpIcc.embed(webp, icc)
-                if (out != null) return Made(out, "webp")
-            }
+            losslessWebp(rgba, icc)?.let { return it }
         }
         val pixels = jxl.decode(page, info.channels, bits)?.let { Pixels(info.width, info.height, info.channels, bits, it) } ?: return null
+        return png(pixels, icc)
+    }
+
+    /** RGBA [rgba] (8 bits) as lossless WebP, profile [icc] embedded, once it decodes back the same; else null. */
+    private fun losslessWebp(rgba: Pixels, icc: ByteArray?): Made? {
+        val webp = images.webp(rgba, lossless = true, quality = WEBP_LOSSLESS_EFFORT) ?: return null
+        if (!rgba.same(images.decode(webp))) return null
+        val out = if (icc == null) webp else WebpIcc.embed(webp, icc) ?: return null
+        return Made(out, "webp")
+    }
+
+    /** [pixels] as PNG, profile [icc] embedded, once it decodes back the same; else null. */
+    private fun png(pixels: Pixels, icc: ByteArray?): Made? {
         val png = Png.encode(pixels, icc)
         return if (pixels.same(Png.decode(png))) Made(png, "png") else null
     }
@@ -158,9 +176,7 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
             return Made(out, "webp", reencoded = true)
         }
         if (icc == null && side <= JPEG_MAX_SIDE && !hasAlpha(pixels)) images.jpeg(pixels, JPEG_QUALITY)?.let { return Made(it, "jpg", reencoded = true) }
-        val reduced = reduced(pixels)
-        val png = Png.encode(reduced, icc)
-        return if (reduced.same(Png.decode(png))) Made(png, "png") else null
+        return png(reduced(pixels), icc)
     }
 
     /**

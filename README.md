@@ -274,17 +274,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     pages hidden with Hide this page out; that part can't be reversed.
 - **Make compatible** converts a comic into formats every reader opens, and
   reverses Compact losslessly: a JPEG XL holding a JPEG gives back that JPEG
-  byte for byte; a lossless one becomes lossless WebP (Android 11+; PNG before,
-  for 16-bit pages, and where the WebP does not decode back the same), checked
-  pixel for pixel, its color profile embedded unless sRGB. Lossy pages in
-  formats few readers open (lossy JPEG XL, which Compact never makes; AVIF,
-  layered ones too, as their full image; HEIF) become very-high-quality WebP
-  (JPEG where a side is over WebP's 16,383 px; PNG of the decoded pixels when
-  such a page is transparent or too long for JPEG too), the one step that
-  changes pixels: the dialog says so ("Converts the comic
-  into legacy formats every reader opens. This may be lossy if no better way is
-  found, but aims for minimal visible loss. Comics compacted by Emanata convert
-  losslessly."), and the message counts those pages. Other pages are left as
+  byte for byte; a lossless one, and an AVIF stored lossless (4:4:4 of 8 bits,
+  identity matrix, full range, sRGB), becomes lossless WebP (Android 11+; PNG
+  before, for 16-bit pages, for a side over WebP's 16,383 px, and where the WebP
+  does not decode back the same), checked pixel for pixel, its color profile
+  embedded unless sRGB. Other pages in formats few readers open (lossy JPEG XL,
+  which Compact never makes; other AVIF, layered ones too, as their full image;
+  HEIF) become very-high-quality WebP (JPEG where a side is over 16,383 px; PNG
+  of the decoded pixels when such a page is transparent or too long for JPEG
+  too), the one step that changes pixels: the dialog says so ("Converts the
+  comic into legacy formats every reader opens. This may be lossy if no better
+  way is found, but aims for minimal visible loss. Comics compacted by Emanata
+  convert losslessly."), and the message counts those pages. Other pages are left as
   they are; a page that can't be converted (an animation) stays, and is
   counted and listed.
   - **In place** (both; off by default, remembered): off, the new file goes

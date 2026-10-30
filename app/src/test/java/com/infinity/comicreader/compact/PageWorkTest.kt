@@ -201,6 +201,56 @@ class PageWorkTest {
         assertThrows(PageWork.Unconverted::class.java) { PageWork(jxl, FakeImages().apply { decodesIso = false }).compatible(iso("avif", 30, 20)) }
     }
 
+    /** One ISO-BMFF box of [kind] holding [body]. */
+    private fun box(kind: String, vararg body: ByteArray): ByteArray {
+        val content = body.fold(ByteArray(0)) { a, b -> a + b }
+        return ByteBuffer.allocate(8).putInt(8 + content.size).put(kind.toByteArray()).array() + content
+    }
+
+    /**
+     * A minimal AVIF: `ftyp`, then `meta` holding an `ispe` of [width] x [height], an `av1C`
+     * whose third byte is [av1Flags] (0: 4:4:4 of 8 bits), and an `nclx` `colr` of [matrix],
+     * [full] range, primaries 1 and transfer 13; [icc] adds a `prof` `colr`.
+     */
+    private fun avif(width: Int, height: Int, av1Flags: Int = 0, matrix: Int = 0, full: Boolean = true, icc: Boolean = false): ByteArray {
+        val ispe = box("ispe", ByteBuffer.allocate(12).putInt(0).putInt(width).putInt(height).array())
+        val av1c = box("av1C", byteArrayOf(0x81.toByte(), 0, av1Flags.toByte(), 0))
+        val nclx = box("colr", "nclx".toByteArray(), ByteBuffer.allocate(7).putShort(1).putShort(13).putShort(matrix.toShort()).put((if (full) 0x80 else 0).toByte()).array())
+        val props = if (icc) arrayOf(ispe, av1c, nclx, box("colr", "prof".toByteArray(), ByteArray(4))) else arrayOf(ispe, av1c, nclx)
+        return box("ftyp", "avif".toByteArray(), ByteArray(4)) + box("meta", ByteArray(4), box("iprp", box("ipco", *props)))
+    }
+
+    @Test
+    fun anAvifStoredLosslessBecomesLosslessWebpCheckedPixelForPixel() {
+        assertTrue(PageProbe.avifLossless(avif(30, 20)))
+        val made = work.compatible(avif(30, 20))!!
+        assertEquals("webp", made.ext)
+        assertFalse(made.reencoded)
+        assertEquals("VP8L", String(made.bytes, 12, 4))
+        assertTrue(images.isoPixels(avif(30, 20))!!.same(images.decode(made.bytes)))
+        // Without lossless WebP, for a side too long, or where the WebP decodes back otherwise: PNG.
+        for (other in listOf(PageWork(jxl, FakeImages(losslessWebp = false)), PageWork(jxl, FakeImages().apply { badWebp = true }))) {
+            val png = other.compatible(avif(30, 20))!!
+            assertEquals("png", png.ext)
+            assertFalse(png.reencoded)
+        }
+        assertEquals("png", work.compatible(avif(2, PageWork.WEBP_MAX_SIDE + 1))!!.ext)
+    }
+
+    @Test
+    fun anAvifStoredOtherwiseIsReencoded() {
+        // 4:2:0, 10 bits, monochrome (gray or alpha), other matrix coefficients, limited range, an ICC profile.
+        for (page in listOf(avif(30, 20, av1Flags = 0x0C), avif(30, 20, av1Flags = 0x40), avif(30, 20, av1Flags = 0x1C), avif(30, 20, matrix = 1), avif(30, 20, full = false), avif(30, 20, icc = true))) {
+            assertFalse(PageProbe.avifLossless(page))
+            val made = work.compatible(page)!!
+            assertEquals("webp", made.ext)
+            assertTrue(made.reencoded)
+        }
+        // Without its properties.
+        assertFalse(PageProbe.avifLossless(iso("avif", 30, 20)))
+        assertFalse(PageProbe.avifLossless(avif(30, 20).copyOf(40)))
+    }
+
     @Test
     fun anAvifsSizeComesFromItsLargestIspe() {
         assertArrayEquals(intArrayOf(300, 200), PageProbe.sizeOf(iso("avif", 300, 200)))

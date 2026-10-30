@@ -21,6 +21,7 @@ import com.infinity.comicreader.compact.FlatNames
 import com.infinity.comicreader.compact.JxlVersion
 import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.compact.PageWork
+import com.infinity.comicreader.compact.Pixels
 import com.infinity.comicreader.compact.Png
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -105,6 +106,17 @@ class CompactCheckService : Service() {
             log("  back: ${webp?.ext} ${webp?.bytes?.size}, same pixels: ${original?.same(webp?.let { AndroidImages.decode(it.bytes) })} in ${ms(t)} ms")
             val repacked = made?.let { pages.compact(it.bytes) }
             log("  recompressed: ${repacked?.bytes?.size ?: "kept"}")
+        }
+
+        // A PNG with a color profile: its samples and profile kept as they are.
+        val icc = LibJxl.encode(ByteArray(64 * 48 * 3) { it.toByte() }, 64, 48, 3, 8, null, 1)?.let { LibJxl.iccOfPixels(it) }
+        val stored = Png.decode(compress(clear, Bitmap.CompressFormat.PNG, 100))?.let { Pixels(it.width, it.height, it.channels, 8, it.data) }
+        if (icc != null && stored != null) {
+            val made = pages.compact(Png.encode(stored, icc))
+            log(
+                "png with profile -> ${made?.ext}, profile kept: ${made?.let { LibJxl.iccOfPixels(it.bytes) }?.contentEquals(icc)}, " +
+                    "same samples: ${made?.let { LibJxl.decode(it.bytes, stored.channels, 8) }?.contentEquals(stored.data)}"
+            )
         }
 
         // 16 bits: a PNG of 16 bits back.

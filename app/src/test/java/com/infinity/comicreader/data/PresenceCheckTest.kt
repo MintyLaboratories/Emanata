@@ -21,6 +21,7 @@ class PresenceCheckTest {
         val onShare = HashSet<String>()
         var failing = false
         var asked = 0
+        var mountChecks = 0
         var changes = 0L
         var clock = 1_000L
 
@@ -38,7 +39,10 @@ class PresenceCheckTest {
             return path in onShare
         }
         override fun exists(path: String) = path in files
-        override fun mounted(root: String) = root in mountedRoots
+        override fun mounted(root: String): Boolean {
+            mountChecks++
+            return root in mountedRoots
+        }
         override fun changes() = changes
         override fun now() = clock
     }
@@ -66,6 +70,19 @@ class PresenceCheckTest {
         assertEquals(Presence.MISSING, check.quick(path).presence)
         world.files += path
         assertEquals(Presence.PRESENT, check.quick(path).presence)
+    }
+
+    @Test
+    fun oneListLooksAtEachVolumeAndFolderOnce() {
+        world.mountedRoots += "/storage/1234-ABCD"
+        world.listings["/net/s1/Comics"] = setOf("a.cbz")
+        val seen = PresenceCheck.Seen()
+        for (i in 1..5) {
+            check.quick("/storage/1234-ABCD/Comics/$i.cbz", seen)
+            check.quick("/net/s1/Comics/$i.cbz", seen)
+        }
+        assertEquals(1, world.mountChecks)
+        assertEquals(setOf("/net/s1/Comics"), seen.names.keys)
     }
 
     @Test

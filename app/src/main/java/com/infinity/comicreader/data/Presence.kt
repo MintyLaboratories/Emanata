@@ -95,12 +95,15 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
         }
     }
 
-    /**
-     * The presence of [path] from what is known now; never asks a share. Folder listings
-     * looked at are kept in [listed], when given, for the next items of one list.
-     */
-    fun quick(path: String, listed: MutableMap<String, Set<String>?>? = null): Found {
-        val id = world.shareOf(path) ?: return device(path)
+    /** What [quick] looked up for one list, kept for its next items: folder listings and whether volumes are mounted. */
+    class Seen {
+        internal val names = HashMap<String, Set<String>?>()
+        internal val mounted = HashMap<String, Boolean>()
+    }
+
+    /** The presence of [path] from what is known now; never asks a share. What it looks up goes in [seen], when given. */
+    fun quick(path: String, seen: Seen? = null): Found {
+        val id = world.shareOf(path) ?: return device(path, seen)
         if (!world.shareKnown(id)) return Found(Presence.MISSING, settled = true)
         val folder = path.substringBeforeLast('/')
         memo.get(path)?.let { a ->
@@ -109,7 +112,7 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
         }
         if (world.shareUnreachable(id)) return Found(Presence.UNREACHABLE, settled = true)
         if (world.statKept(path)) return Found(Presence.PRESENT, settled = false)
-        val names = (if (listed != null) listed.getOrPut(folder) { world.namesKept(folder) } else world.namesKept(folder))
+        val names = (if (seen != null) seen.names.getOrPut(folder) { world.namesKept(folder) } else world.namesKept(folder))
             ?: return Found(Presence.UNKNOWN, settled = false)
         return Found(if (path.substringAfterLast('/') in names) Presence.PRESENT else Presence.MISSING, settled = false)
     }
@@ -129,9 +132,12 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
         return found
     }
 
-    private fun device(path: String): Found {
+    private fun device(path: String, seen: Seen?): Found {
         val volume = BookLocation.volumeRoot(path)
-        if (volume != null && !world.mounted(volume)) return Found(Presence.UNREACHABLE, settled = true)
+        if (volume != null) {
+            val mounted = if (seen != null) seen.mounted.getOrPut(volume) { world.mounted(volume) } else world.mounted(volume)
+            if (!mounted) return Found(Presence.UNREACHABLE, settled = true)
+        }
         return Found(if (world.exists(path)) Presence.PRESENT else Presence.MISSING, settled = true)
     }
 

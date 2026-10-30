@@ -1337,14 +1337,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
     }
 
-    /** What [quickPresence] found for one list's items, by path, and the names of the folders it looked up. */
+    /** What [quickPresence] found for one list's items, by path, and what it looked up on the way. */
     private class Lookups : HashMap<String, PresenceCheck.Found>() {
-        val listed = HashMap<String, Set<String>?>()
+        val seen = PresenceCheck.Seen()
     }
 
     /** Whether the item at [path] is there, as found now without the network, noted in [found]. */
     private fun quickPresence(path: String, found: Lookups): Presence =
-        found.getOrPut(path) { presenceCheck.quick(path, found.listed) }.presence
+        found.getOrPut(path) { presenceCheck.quick(path, found.seen) }.presence
 
     private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot, found: Lookups): BookEntry {
         val file = Remotes.file(item.path, askNetwork = false)

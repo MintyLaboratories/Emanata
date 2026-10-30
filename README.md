@@ -263,7 +263,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     book may mix formats, always pixel-perfect and never larger;
   - names stay but for the extension; when two match, or flat names would
     change the reading order, those in folders take the folder's name in front
-    (`sub_001.jxl`), and their place in the order too should that not keep it.
+    (`sub_001.jxl`), and pages their place in the order too should that not
+    keep it.
     ComicInfo.xml and other files are copied as they are; OS litter
     (`__MACOSX/`, `._*`, `Thumbs.db`, `desktop.ini`, `.DS_Store`) and whatever is
     in a dot-folder are left out. A book holding other archives is

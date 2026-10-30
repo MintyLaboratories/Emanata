@@ -31,33 +31,44 @@ object FlatNames {
      * paths): bare when no two match ignoring case and the pages read in the same order;
      * otherwise each one under a folder takes the folder's path in front (`sub_001.jxl`,
      * folders joined by `_`), a name still taken getting ` 2`, ` 3`... after its stem; and
-     * should even that change the order, each also takes its place in it in front (`07_sub_001.jxl`).
+     * should even that change the order, each page also takes its place in it in front
+     * (`07_sub_001.jxl`), other files keeping their names (`ComicInfo.xml`) unless a page
+     * took one.
      */
     fun of(paths: List<String>, names: List<String>): List<String> {
         require(paths.size == names.size)
-        if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size && keepsOrder(paths, names)) return names
+        val pages = paths.indices.filter { Formats.isImageName(paths[it]) }
+        if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size && keepsOrder(pages, paths, names)) return names
         val prefixed = paths.indices.map { i ->
             val folders = parts(paths[i]).dropLast(1)
             if (folders.isEmpty()) names[i] else folders.joinToString("_") + "_" + names[i]
         }
-        val used = HashSet<String>()
-        val unique = prefixed.map { name ->
+        val unique = distinct(prefixed, emptySet())
+        if (keepsOrder(pages, paths, unique)) return unique
+        val rank = IntArray(paths.size)
+        pages.sortedWith(compareBy(NaturalOrder) { paths[it] }).forEachIndexed { place, i -> rank[i] = place + 1 }
+        val width = pages.size.toString().length
+        val numbered = unique.indices.map { i -> if (rank[i] == 0) unique[i] else rank[i].toString().padStart(width, '0') + "_" + unique[i] }
+        return distinct(numbered, pages.toSet())
+    }
+
+    /** True when [pages] (places in [paths]) read in the same order named [flat]. */
+    private fun keepsOrder(pages: List<Int>, paths: List<String>, flat: List<String>): Boolean =
+        pages.sortedWith(compareBy(NaturalOrder) { paths[it] }) == pages.sortedWith(compareBy(NaturalOrder) { flat[it] })
+
+    /**
+     * [names] with no two matching ignoring case: those at [kept] (already distinct) as
+     * they are, and of the others each name taken getting ` 2`, ` 3`... after its stem.
+     */
+    private fun distinct(names: List<String>, kept: Set<Int>): List<String> {
+        val used = kept.mapTo(HashSet()) { names[it].lowercase(Locale.ROOT) }
+        return names.mapIndexed { i, name ->
+            if (i in kept) return@mapIndexed name
             var out = name
             var n = 1
             while (!used.add(out.lowercase(Locale.ROOT))) out = "${stem(name)} ${++n}${extension(name)}"
             out
         }
-        if (keepsOrder(paths, unique)) return unique
-        val rank = IntArray(paths.size)
-        paths.indices.sortedWith(compareBy(NaturalOrder) { paths[it] }).forEachIndexed { place, i -> rank[i] = place + 1 }
-        val width = paths.size.toString().length
-        return unique.indices.map { i -> rank[i].toString().padStart(width, '0') + "_" + unique[i] }
-    }
-
-    /** True when the pages (images) among [paths] read in the same order named [flat]. */
-    private fun keepsOrder(paths: List<String>, flat: List<String>): Boolean {
-        val pages = paths.indices.filter { Formats.isImageName(paths[it]) }
-        return pages.sortedWith(compareBy(NaturalOrder) { paths[it] }) == pages.sortedWith(compareBy(NaturalOrder) { flat[it] })
     }
 
     /** [name] with its extension made [ext] (without the dot). */

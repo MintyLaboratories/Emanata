@@ -58,6 +58,14 @@ class FlatNamesTest {
     }
 
     @Test
+    fun onlyPagesAreNumberedOtherFilesKeepTheirNames() {
+        assertEquals(
+            listOf("ComicInfo.xml", "1_A_2.jpg", "2_A B_1.jpg", "A_notes.txt"),
+            FlatNames.of(listOf("ComicInfo.xml", "A/2.jpg", "A B/1.jpg", "A/notes.txt"), listOf("ComicInfo.xml", "2.jpg", "1.jpg", "notes.txt"))
+        )
+    }
+
+    @Test
     fun theNewFileIsNamedAfterTheBookUnlessTaken() {
         assertEquals("Book.cbz", FlatNames.output("Book.cbr", "compacted") { false })
         assertEquals("Book (compacted).cbz", FlatNames.output("Book.cbz", "compacted") { it == "Book.cbz" })

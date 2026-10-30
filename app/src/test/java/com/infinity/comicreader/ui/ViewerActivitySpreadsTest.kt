@@ -5,6 +5,8 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Looper
 import android.view.View
 import android.widget.TextView
@@ -34,6 +36,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSensor
+import org.robolectric.shadows.ShadowSensorManager
 import java.io.File
 import java.time.Duration
 
@@ -226,6 +230,84 @@ class ViewerActivitySpreadsTest {
         RuntimeEnvironment.setQualifiers(qualifier)
         onConfigurationChanged(resources.configuration)
         idle()
+    }
+
+    /** Gives the device an accelerometer, as the reader's sensor watch finds it. */
+    private fun accelerometer(): ShadowSensorManager =
+        shadowOf(context.getSystemService(Context.SENSOR_SERVICE) as SensorManager).apply {
+            addSensor(ShadowSensor.newInstance(Sensor.TYPE_ACCELEROMETER))
+        }
+
+    /** Gravity along the device's [x], [y] and [z] axes: (0, 9.8, 0) upright, (0, 0, 9.8) lying flat. */
+    private fun ShadowSensorManager.gravity(x: Float, y: Float, z: Float) {
+        val event = ShadowSensorManager.createSensorEvent(3, Sensor.TYPE_ACCELEROMETER)
+        event.values[0] = x
+        event.values[1] = y
+        event.values[2] = z
+        sendSensorEventToListeners(event)
+        idle()
+    }
+
+    private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+
+    @Test
+    fun lyingFlatThePortraitTurnedFromComesBackAndStaysUntilPickedUp() {
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        assertEquals(1, sensors.listeners.size)
+        sensors.gravity(0f, 0f, 9.8f)
+        viewer.turn("land")
+        viewer.next()
+        // Flat, the sensor would leave the screen in landscape: portrait comes back explicitly.
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, viewer.requestedOrientation)
+        viewer.turn("port")
+        sensors.gravity(0.2f, 0.1f, 9.8f)
+        idleFor(2_000)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, viewer.requestedOrientation)
+        // Picked up: once the sensor settles, it decides again, and is let go.
+        sensors.gravity(0f, 9.8f, 0f)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, viewer.requestedOrientation)
+        idleFor(500)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+    }
+
+    @Test
+    fun heldUpTheSensorTakesOverAtOnce() {
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        // Held in landscape for the spread.
+        sensors.gravity(9.8f, 0f, 0f)
+        idleFor(500)
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+    }
+
+    @Test
+    fun theSensorIsReadOnlyWhileTurnedAndShown() {
+        val sensors = accelerometer()
+        val controller = Robolectric.buildActivity(
+            ViewerActivity::class.java,
+            Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
+        ).setup()
+        val viewer = controller.get()
+        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        sizesRead()
+        assertTrue(sensors.listeners.isEmpty())
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        assertEquals(1, sensors.listeners.size)
+        controller.pause().stop()
+        assertTrue(sensors.listeners.isEmpty())
+        controller.start().resume()
+        assertEquals(1, sensors.listeners.size)
     }
 
     @Test

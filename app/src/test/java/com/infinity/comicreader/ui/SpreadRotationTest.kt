@@ -2,6 +2,8 @@ package com.infinity.comicreader.ui
 
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 import org.junit.Assert.assertEquals
@@ -107,5 +109,105 @@ class SpreadRotationTest {
         r.restore(intArrayOf(1))
         assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, r.user)
         assertEquals(-1, r.held)
+    }
+
+    @Test
+    fun lyingFlatTheOrientationTurnedFromStaysUntilTheSensorSettles() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, landscape = false, screen = SCREEN_ORIENTATION_PORTRAIT)
+        assertTrue(r.watching)
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, r.show(-1, enabled = true, landscape = true, screen = SCREEN_ORIENTATION_LANDSCAPE, unsure = true))
+        assertTrue(r.keeping)
+        assertTrue(r.watching)
+        // Further narrow pages keep it as it is.
+        assertNull(r.show(-1, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT, unsure = true))
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, r.settled())
+        assertFalse(r.keeping)
+        assertFalse(r.watching)
+        assertNull(r.settled())
+    }
+
+    @Test
+    fun anUpsideDownStartComesBackUpsideDown() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_REVERSE_PORTRAIT)
+        assertEquals(SCREEN_ORIENTATION_REVERSE_PORTRAIT, r.show(-1, enabled = true, unsure = true))
+    }
+
+    @Test
+    fun aSettledSensorTakesOverAtOnce() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT)
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, r.show(-1, enabled = true, unsure = false))
+        assertFalse(r.keeping)
+        assertNull(r.settled())
+    }
+
+    @Test
+    fun anUnknownStartHandsBackToTheSensor() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true)
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, r.show(-1, enabled = true, unsure = true))
+        assertFalse(r.keeping)
+    }
+
+    @Test
+    fun theReadersLockComesBackWhateverTheSensor() {
+        val r = SpreadRotation()
+        r.choose(SCREEN_ORIENTATION_LANDSCAPE)
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_LANDSCAPE)
+        assertEquals(SCREEN_ORIENTATION_LANDSCAPE, r.show(-1, enabled = true, unsure = true))
+        assertFalse(r.keeping)
+    }
+
+    @Test
+    fun aChoiceWhileKeptWins() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT)
+        r.show(-1, enabled = true, unsure = true)
+        assertEquals(SCREEN_ORIENTATION_LANDSCAPE, r.choose(SCREEN_ORIENTATION_LANDSCAPE))
+        assertFalse(r.keeping)
+        assertNull(r.settled())
+    }
+
+    @Test
+    fun aWidePageWhileKeptTurnsAgainFromTheKeptOrientation() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT)
+        r.show(-1, enabled = true, landscape = true, unsure = true)
+        assertEquals(SCREEN_ORIENTATION_SENSOR_LANDSCAPE, r.show(7, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT))
+        assertFalse(r.keeping)
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, r.show(-1, enabled = true, unsure = true))
+    }
+
+    @Test
+    fun aRestoredCopyKeepsWhatIsKept() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT)
+        r.show(-1, enabled = true, unsure = true)
+        val copy = SpreadRotation()
+        copy.restore(r.save())
+        assertTrue(copy.keeping)
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, copy.settled())
+    }
+
+    @Test
+    fun rotationsOfAPortraitDisplay() {
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, SpreadRotation.fixedOrientation(0, landscape = false))
+        assertEquals(SCREEN_ORIENTATION_LANDSCAPE, SpreadRotation.fixedOrientation(1, landscape = true))
+        assertEquals(SCREEN_ORIENTATION_REVERSE_PORTRAIT, SpreadRotation.fixedOrientation(2, landscape = false))
+        assertEquals(SCREEN_ORIENTATION_REVERSE_LANDSCAPE, SpreadRotation.fixedOrientation(3, landscape = true))
+        assertEquals(SCREEN_ORIENTATION_LANDSCAPE, SpreadRotation.fixedOrientation(3, landscape = true, reversed = true))
+        assertEquals(SCREEN_ORIENTATION_REVERSE_LANDSCAPE, SpreadRotation.fixedOrientation(1, landscape = true, reversed = true))
+    }
+
+    @Test
+    fun rotationsOfALandscapeDisplay() {
+        assertEquals(SCREEN_ORIENTATION_LANDSCAPE, SpreadRotation.fixedOrientation(0, landscape = true))
+        assertEquals(SCREEN_ORIENTATION_REVERSE_LANDSCAPE, SpreadRotation.fixedOrientation(2, landscape = true))
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, SpreadRotation.fixedOrientation(3, landscape = false))
+        assertEquals(SCREEN_ORIENTATION_REVERSE_PORTRAIT, SpreadRotation.fixedOrientation(1, landscape = false))
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, SpreadRotation.fixedOrientation(1, landscape = false, reversed = true))
+        assertEquals(SCREEN_ORIENTATION_UNSPECIFIED, SpreadRotation.fixedOrientation(-1, landscape = false))
     }
 }

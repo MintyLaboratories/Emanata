@@ -515,7 +515,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   on its own (one page at a time only).
 - **Rotate for spreads** (on by default): a wide page or a merged spread shown
   whole turns the screen to landscape, either way up, until a page that is not
-  wide shows; then the reader's own orientation is back.
+  wide shows; then the reader's own orientation is back. Lying flat, where the
+  sensor cannot tell which way is up, the screen turns back to the way it was
+  and stays so until the device is picked up.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right, right-to-left (left/right tap zones

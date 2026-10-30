@@ -344,6 +344,12 @@ class ViewerActivity : AppCompatActivity() {
     /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
     private val spreadRotation = SpreadRotation()
 
+    /** Tells [spreadRotation] when the sensor knows the way up; made when first needed ([upright]). */
+    private var uprightWatch: UprightWatch? = null
+
+    /** True between [onStart] and [onStop]. */
+    private var started = false
+
     /** The layout on screen: [chosenMode], unless the direction pages or detected slices run on ([shownMode]). */
     private var mode = MODE_PAGED
 
@@ -717,6 +723,8 @@ class ViewerActivity : AppCompatActivity() {
         // The drive may have gone while the reader was away.
         checkStorage()
         updateShareWait()
+        started = true
+        watchUpright()
     }
 
     /** Closes the book, saying why, once the drive it is read from is gone from [now]. */
@@ -740,6 +748,8 @@ class ViewerActivity : AppCompatActivity() {
         flushStats()
         storeVisits()
         handler.removeCallbacks(checkShareWait)
+        started = false
+        watchUpright()
     }
 
     /**
@@ -2069,7 +2079,35 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Turns the screen for the wide page on screen, or back, as [spreadRotation] says. */
     private fun updateSpreadRotation() {
-        spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape())?.let { requestedOrientation = it }
+        val unsure = spreadRotation.held >= 0 && upright().unsure()
+        spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
+        watchUpright()
+    }
+
+    private fun upright(): UprightWatch = uprightWatch ?: UprightWatch(this) {
+        spreadRotation.settled()?.let { requestedOrientation = it }
+        watchUpright()
+    }.also { uprightWatch = it }
+
+    /** Reads the sensor only while the reader shows and [spreadRotation] needs it. */
+    private fun watchUpright() {
+        if (spreadRotation.watching && started) upright().enabled = true
+        else uprightWatch?.enabled = false
+    }
+
+    /** The fixed orientation the screen is in now, from the display's rotation. */
+    private fun screenOrientation(): Int {
+        @Suppress("DEPRECATION")
+        val display = window.decorView.display ?: windowManager.defaultDisplay
+        return SpreadRotation.fixedOrientation(display?.rotation ?: -1, landscape(), reverseDefaultRotation)
+    }
+
+    /** The platform's `config_reverseDefaultRotation`: which quarter turn its landscape (or portrait) is. */
+    private val reverseDefaultRotation by lazy {
+        val res = android.content.res.Resources.getSystem()
+        @android.annotation.SuppressLint("DiscouragedApi")
+        val id = res.getIdentifier("config_reverseDefaultRotation", "bool", "android")
+        id != 0 && runCatching { res.getBoolean(id) }.getOrDefault(false)
     }
 
     /** True while items show numbers of their own: a page split in halves takes two. */
@@ -3245,6 +3283,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun setOrientationLock(value: Int) {
         requestedOrientation = spreadRotation.choose(value)
+        watchUpright()
         invalidateOptionsMenu()
     }
 

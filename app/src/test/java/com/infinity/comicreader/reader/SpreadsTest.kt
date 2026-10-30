@@ -438,6 +438,13 @@ class SpreadsTest {
     }
 
     @Test
+    fun tallPagesNeverShareAScreen() {
+        val paths = book(run("page", 1..6, pad = 2))
+        val views = Spreads.pair(Spreads.classify(paths), Spreads.Options(coverAlone = false, alone = setOf(2)))
+        assertEquals(listOf(listOf(0, 1), listOf(2), listOf(3, 4), listOf(5)), views.map { it.toList() })
+    }
+
+    @Test
     fun mostlyWideBookIsReadOneAtATime() {
         val paths = book(run("strip", 1..10, pad = 2))
         val a = Spreads.classify(paths, paths.map { wide })

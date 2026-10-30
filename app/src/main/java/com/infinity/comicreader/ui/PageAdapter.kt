@@ -141,7 +141,8 @@ class PageAdapter(
     var tallPages: Set<Int> = emptySet()
         set(value) {
             if (field == value) return
-            val changed = mode == Mode.PAGED && fitMode != ZoomImageView.FitMode.WIDTH
+            // Before it shows any page, an adapter just takes them.
+            val changed = mode == Mode.PAGED && fitMode != ZoomImageView.FitMode.WIDTH && recycler != null
             field = value
             if (changed) resize()
         }

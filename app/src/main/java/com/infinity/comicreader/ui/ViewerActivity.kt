@@ -61,6 +61,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CopyMatch
+import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.HistoryItem
@@ -108,6 +109,7 @@ import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.reader.Spreads
 import com.infinity.comicreader.reader.StoredPages
+import com.infinity.comicreader.reader.TallPages
 import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
@@ -419,6 +421,25 @@ class ViewerActivity : AppCompatActivity() {
 
     /** True once the open book's pages were checked for slices, or are being. */
     private var slicesChecked = false
+
+    /**
+     * True while the open book reads as one continuous strip top to bottom because its pages
+     * are mostly tall and the reader said so ([askTallStrip]), unless its folder keeps a
+     * layout or direction.
+     */
+    private var tallStrip = false
+
+    /** True once the open book was judged for tall pages, or its answer was kept: it is asked at most once. */
+    private var tallJudged = false
+
+    /** The open book's tall pages ([TallPages]), by index, as its known sizes tell; paged reading shows them at fit width. */
+    private var tallPages: Set<Int> = emptySet()
+
+    /** Reads the sizes of images beside a loose image, to judge its folder ([judgeTall]). */
+    private var tallJob: Job? = null
+
+    /** The question whether to read the open book as a strip, while it shows. */
+    private var tallAsk: AlertDialog? = null
 
     /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
     private var slicesJob: Job? = null
@@ -879,6 +900,10 @@ class ViewerActivity : AppCompatActivity() {
             applyJoinSpreads()
             shown = true
         }
+        if (s.tallThreshold != old.tallThreshold && source != null) {
+            updateTallPages()
+            relayout()
+        }
         if (s.fullscreen != old.fullscreen) {
             applyFullscreen(s.fullscreen)
             shown = true
@@ -978,7 +1003,10 @@ class ViewerActivity : AppCompatActivity() {
      * bottom, and continuous for detected slices of one strip, unless the folder keeps a
      * whole layout or a layout was picked for the book.
      */
-    private fun shownMode(): String = ReaderLayout.shownMode(chosenMode, readingDir, sliced())
+    private fun shownMode(): String = ReaderLayout.shownMode(chosenMode, readingDir, sliced() || tallStripOn())
+
+    /** True while the open book reads as a strip for its tall pages: the folder keeps no layout or direction of its own. */
+    private fun tallStripOn() = tallStrip && !folderScope() && !folderDirection()
 
     /** True while detected slices may lay the book out in one column: no frozen folder layout, no layout picked. */
     private fun sliced() = slices != null && prefs.detectDirection && !folderScope() && !layoutPicked
@@ -1012,6 +1040,7 @@ class ViewerActivity : AppCompatActivity() {
         val found = found()
         detectedActive = found != null && !folderDirection() && prefs.detectDirection
         if (detectedActive && found != null) readingDir = found.direction.key
+        if (tallStripOn()) readingDir = DIR_TTB
         mode = shownMode()
     }
 
@@ -1123,6 +1152,10 @@ class ViewerActivity : AppCompatActivity() {
         slices = null
         slicesChecked = false
         layoutPicked = false
+        tallStrip = false
+        tallJudged = false
+        tallPages = emptySet()
+        tallJob?.cancel()
         resolveLayout()
 
         lateDetectionJob?.cancel()
@@ -1195,6 +1228,12 @@ class ViewerActivity : AppCompatActivity() {
             detection = contents?.detected
             slices = sliced
             slicesChecked = slice
+            keptTallStrip(target)?.let { strip ->
+                // An answer kept counts as a layout picked for the book.
+                tallStrip = strip
+                tallJudged = true
+                layoutPicked = true
+            }
             applyDetection()
             source = src
             known?.let { showPages(it) }
@@ -1297,8 +1336,13 @@ class ViewerActivity : AppCompatActivity() {
                 }.getOrNull()?.also { if (job.isActive) keepSlices(book, it) }
                 checked?.found
             }
-            if (found == null || source !== src || file != book || choices != directionChoices) return@launch
-            if (!maySlice()) return@launch
+            if (source !== src || file != book) return@launch
+            if (found == null || choices != directionChoices || !maySlice()) {
+                // Not slices of one strip: its tall pages may still be asked about.
+                judgeTall(slicesDone = true)
+                return@launch
+            }
+            tallAsk?.dismiss()
             slices = found
             showDetection()
             noteDetection()
@@ -1542,6 +1586,7 @@ class ViewerActivity : AppCompatActivity() {
         attach()
         scanSizes(file!!, src)
         prepareStripAhead()
+        judgeTall()
 
         // Carrying an auto-scroll run into the next chapter must survive the reload.
         if (keepAutoScroll) {
@@ -1626,6 +1671,7 @@ class ViewerActivity : AppCompatActivity() {
         storedVisits = visitedPages.cardinality()
         keepVisits = !known.seen.isEmpty || known.seams.anyChecked
         shownVisits = 0
+        tallPages = findTallPages()
     }
 
     /**
@@ -1661,7 +1707,9 @@ class ViewerActivity : AppCompatActivity() {
             pageSizes = sizes
             analysis = found
             layoutStale = true
+            updateTallPages()
             relayout()
+            judgeTall()
         }
     }
 
@@ -1691,8 +1739,111 @@ class ViewerActivity : AppCompatActivity() {
             if (round != learnRound || source !== src || file != book) return@launch
             analysis = found
             layoutStale = true
+            updateTallPages()
             relayout()
+            judgeTall()
         }
+    }
+
+    // ------------------------------------------------------------------ tall pages
+
+    /** The tall pages among the open book's known sizes, for the threshold set and this screen's shape. */
+    private fun findTallPages(): Set<Int> = TallPages.of(pageSizes.toList(), prefs.tallThreshold, ScreenShape.portraitAspect(this))
+
+    /** Takes the open book's tall pages anew: paged reading shows them alone, at fit width, from their top. */
+    private fun updateTallPages() {
+        val found = findTallPages()
+        if (found == tallPages) return
+        tallPages = found
+        layoutStale = true
+        adapter?.tallPages = if (mode == MODE_PAGED) found else emptySet()
+    }
+
+    /** True when [book] is a loose image, judged and answered for with the images of its folder. */
+    private fun looseImage(book: File) = Formats.typeOf(book.name) == EntryType.IMAGE
+
+    /** Whether [book] reads as a strip, as answered before for it, or for its folder when it is a loose image; null when never asked. */
+    private fun keptTallStrip(book: File): Boolean? =
+        if (looseImage(book)) book.parent?.let { library.folderTallStrip(it) } else bookId?.let { library.tallStrip(it) }
+
+    /** Keeps [strip] as the answer for the open book, or for its folder when it is a loose image. */
+    private fun keepTallStrip(strip: Boolean) {
+        val book = favoriteFile() ?: return
+        if (looseImage(book)) book.parent?.let { library.setFolderTallStrip(it, strip) } else book()?.let { library.setTallStrip(it, strip) }
+    }
+
+    /**
+     * Asks once whether the open book reads as a continuous strip when at least half its
+     * pages of known size are tall ([TallPages.mostlyTall]): a book once the sizes of
+     * [TallPages.FOLDER_SAMPLE] pages, or all, are known; a loose image by the images nearest
+     * it in its folder. Never asked where the folder keeps a layout or direction, a layout
+     * was picked, slices read as one already, or the book shows as a strip anyway; nor
+     * before its pages are checked for slices, unless [slicesDone].
+     */
+    private fun judgeTall(slicesDone: Boolean = false) {
+        val src = source ?: return
+        val book = file ?: return
+        if (tallJudged || folderLayout != null || layoutPicked || slices != null) return
+        if (!slicesDone && slicesJob?.isActive == true) return
+        if (mode == MODE_CONTINUOUS && readingDir == DIR_TTB) return
+        if (looseImage(book)) {
+            if (tallJob?.isActive == true) return
+            val images = chapters.filter { looseImage(it) }
+            val at = images.indexOfFirst { it.absolutePath == book.absolutePath }
+            if (at < 0) return
+            val threshold = prefs.tallThreshold
+            val aspect = ScreenShape.portraitAspect(this)
+            tallJob = lifecycleScope.launch {
+                val verdict = withContext(AppDispatchers.io) {
+                    val sizes = TallPages.nearest(images.size, at).map { i ->
+                        ensureActive()
+                        runCatching { headerSize(images[i]) }.getOrNull()
+                    }
+                    TallPages.mostlyTall(sizes, threshold, aspect)
+                } ?: return@launch
+                if (source !== src || file != book) return@launch
+                tallJudged = true
+                if (verdict && !layoutPicked && folderLayout == null) askTallStrip()
+            }
+            return
+        }
+        if (pageSizes.count { it != null } < minOf(src.pageCount, TallPages.FOLDER_SAMPLE)) return
+        val verdict = TallPages.mostlyTall(pageSizes.toList(), prefs.tallThreshold, ScreenShape.portraitAspect(this)) ?: return
+        tallJudged = true
+        if (verdict) askTallStrip()
+    }
+
+    /** `[width, height]` of image [file] from its header alone. Blocking. */
+    private fun headerSize(file: File): IntArray? =
+        if (file is RemoteFile) Remotes.inputStream(file.path).use { Decoders.headerSize(it) } else Decoders.size(file)
+
+    /** "Tall pages: read as a continuous strip?" Yes reads the book continuous top to bottom; either answer is kept. */
+    private fun askTallStrip() {
+        val book = file
+        var answered = false
+        fun answer(strip: Boolean) {
+            if (answered || file != book) return
+            answered = true
+            keepTallStrip(strip)
+            layoutPicked = true
+            if (!strip) return
+            tallStrip = true
+            showDetection()
+        }
+        tallAsk = AlertDialog.Builder(this)
+            .setMessage(R.string.tall_strip_ask)
+            .setPositiveButton(R.string.tall_strip_yes) { _, _ -> answer(true) }
+            .setNegativeButton(R.string.tall_strip_no) { _, _ -> answer(false) }
+            .setOnCancelListener { answer(false) }
+            .setOnDismissListener { tallAsk = null }
+            .showKeepingFullscreen()
+    }
+
+    /** Lets the open book follow the layout the reader picks instead of reading as a strip, and keeps that. */
+    private fun leaveTallStrip() {
+        if (!tallStrip) return
+        tallStrip = false
+        keepTallStrip(false)
     }
 
     /**
@@ -1708,7 +1859,7 @@ class ViewerActivity : AppCompatActivity() {
         visit(currentIndex)
         shownVisits = visitedPages.cardinality()
         val visited = visitedPages.stream().boxed().collect(Collectors.toSet())
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames, visited)
+        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames, visited, tallPages)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -1930,6 +2081,7 @@ class ViewerActivity : AppCompatActivity() {
             }
         )
         a.fitMode = effectiveFit()
+        a.tallPages = if (mode == MODE_PAGED) tallPages else emptySet()
         a.filter = filter
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
@@ -2175,13 +2327,19 @@ class ViewerActivity : AppCompatActivity() {
         currentIndex = page
         val item = pageToItem(currentIndex)
         currentItem = item
-        if (mode == MODE_PAGED) pager.setCurrentItem(item, false) else vertical.scrollToPosition(item)
+        if (mode == MODE_PAGED) showItem(item) else vertical.scrollToPosition(item)
         seek.progress = item
         onPageChanged()
     }
 
-    /** Shows [item]; before the first or past the last it acts as [goTo] does there. */
-    private fun goToItem(item: Int) {
+    /** Shows [item] in the pager; a tall page there from its top, or its bottom when turned [back] to. */
+    private fun showItem(item: Int, back: Boolean = false) {
+        pager.setCurrentItem(item, false)
+        adapter?.landTall(item, back)
+    }
+
+    /** Shows [item]; before the first or past the last it acts as [goTo] does there. [back]: turned back to. */
+    private fun goToItem(item: Int, back: Boolean = false) {
         val count = source?.pageCount ?: return
         when {
             item < 0 -> goTo(-1)
@@ -2189,15 +2347,21 @@ class ViewerActivity : AppCompatActivity() {
             else -> {
                 currentItem = item
                 currentIndex = itemToPage(item)
-                if (mode == MODE_PAGED) pager.setCurrentItem(item, false) else vertical.scrollToPosition(item)
+                if (mode == MODE_PAGED) showItem(item, back) else vertical.scrollToPosition(item)
                 seek.progress = item
                 onPageChanged()
             }
         }
     }
 
-    /** Moves [delta] items (pages, spreads, or halves of a page) from the current one. */
-    private fun turn(delta: Int) = goToItem(shownItem() + delta)
+    /**
+     * Moves [delta] items (pages, spreads, or halves of a page) from the current one; a tall
+     * page shown alone scrolls by most of a screen first, until its bottom (top going back).
+     */
+    private fun turn(delta: Int) {
+        if (mode == MODE_PAGED && delta != 0 && adapter?.scrollTall(shownItem(), delta > 0) == true) return
+        goToItem(shownItem() + delta, back = delta < 0)
+    }
 
     /** Called when the reader is told to move past the last page. */
     private fun handleAdvance() {
@@ -2921,6 +3085,7 @@ class ViewerActivity : AppCompatActivity() {
      */
     private fun setReadingDir(dir: String) {
         // The direction on screen may still be chosen, to keep it from detection and the defaults.
+        if (dir != DIR_TTB) leaveTallStrip()
         val changed = readingDir != dir
         if (!changed && (layoutFolder() == null || folderDirection())) return
         val oldMode = mode
@@ -2999,6 +3164,7 @@ class ViewerActivity : AppCompatActivity() {
     /** The layout picked in the sheet: kept, and shown while the direction allows it (continuous reads top to bottom only). */
     private fun setPageMode(newMode: String) {
         if (newMode == chosenMode && newMode == mode) return
+        if (newMode != MODE_CONTINUOUS) leaveTallStrip()
         chosenMode = newMode
         layoutPicked = true
         val oldMode = mode

@@ -113,14 +113,15 @@ object Spreads {
      * reading order, null where not checked. A shift chosen before seams paired pages
      * ([shiftByNames]) flips the pairing names and spreads give, seams unread. [visited]
      * holds the pages the reader has had on screen: a lone seam match settles a run only
-     * within [NEAR] pages of one of them.
+     * within [NEAR] pages of one of them. Pages in [alone] (tall ones) never share a screen.
      */
     data class Options(
         val coverAlone: Boolean = true,
         val shift: Boolean = false,
         val seams: List<SpreadSeams.Verdict?> = emptyList(),
         val shiftByNames: Boolean = false,
-        val visited: Set<Int> = emptySet()
+        val visited: Set<Int> = emptySet(),
+        val alone: Set<Int> = emptySet()
     ) {
         /** True when the picture runs on from page [i] into the next. */
         fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
@@ -407,11 +408,12 @@ object Spreads {
         return out
     }
 
-    /** Pages that may share a screen: story pages, covers too without [Options.coverAlone]; never wide ones. */
+    /** Pages that may share a screen: story pages, covers too without [Options.coverAlone]; never wide ones, nor [Options.alone]. */
     private fun pairable(pages: List<Page>, options: Options) = BooleanArray(pages.size) { i ->
         val k = pages[i].kind
         when {
             i == 0 && options.coverAlone -> false
+            i in options.alone -> false
             // A wide page is alone whatever its kind, a wraparound cover too.
             pages[i].aspect > 1.0 -> false
             k == Kind.STORY -> true

@@ -439,6 +439,8 @@
     <string name="op_waiting">Waiting for the operations before it</string>
     <!-- On a bubble: older bubbles folded away. -->
     <string name="op_folded">%1$d more</string>
+    <!-- What tapping the count of bubbles folded away does, as accessibility services say it. -->
+    <string name="op_folded_show">Show them</string>
     <string name="new_folder_hint">Folder name</string>
     <string name="folder_created">Folder created</string>
     <string name="startup_folder_set">Startup folder set</string>

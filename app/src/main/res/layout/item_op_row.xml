@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A bubble folded away: its action's icon, what it is, and Cancel. Tapping a Paste's row pastes. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:minHeight="48dp"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/space_4"
+    android:paddingEnd="@dimen/space_1">
+
+    <ImageView
+        android:id="@+id/op_row_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/op_row_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_3"
+        android:layout_weight="1"
+        android:ellipsize="middle"
+        android:maxLines="2"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+    <Button
+        android:id="@+id/op_row_cancel"
+        style="?attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/cancel" />
+</LinearLayout>

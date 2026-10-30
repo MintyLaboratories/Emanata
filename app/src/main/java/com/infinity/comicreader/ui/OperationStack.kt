@@ -2,8 +2,10 @@ package com.infinity.comicreader.ui
 
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Rect
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.TouchDelegate
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -14,6 +16,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.graphics.ColorUtils
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -55,20 +59,29 @@ internal sealed class Bubble {
     }
 }
 
-/** Which bubbles the stack shows: the newest, as many as fit, the older ones folded into a count. */
+/**
+ * Which bubbles the stack shows: the newest, as many as fit, and always the operation under
+ * way; the others are folded into a count.
+ */
 internal object StackLayout {
     /** Buttons in the stack at most, the floating button among them. */
     const val MAX_BUTTONS = 4
 
-    /** [bubbles] from top (oldest) to bottom (newest), and how many older ones are [folded] away. */
-    data class Shown(val bubbles: List<Bubble>, val folded: Int)
+    /** [bubbles] from top (oldest) to bottom (newest), and those [hidden] (folded away), oldest first. */
+    data class Shown(val bubbles: List<Bubble>, val hidden: List<Bubble>) {
+        /** How many are folded away. */
+        val folded: Int get() = hidden.size
+    }
 
     /** The bubbles for [clips] waiting and [operations] not finished, under the floating button when [fab]. */
     fun of(clips: List<FileClipboard.Clip>, operations: List<FileWork.Status>, fab: Boolean): Shown {
         val all = (clips.map { Bubble.Paste(it) } + operations.filter { it.outcome == null }.map { Bubble.Work(it) }).sortedBy { it.order }
         val room = MAX_BUTTONS - (if (fab) 1 else 0)
-        val shown = all.takeLast(room)
-        return Shown(shown, all.size - shown.size)
+        var shown = all.takeLast(room)
+        // The one under way keeps its progress and Cancel in sight, in place of the oldest shown.
+        val running = all.firstOrNull { it is Bubble.Work && it.status.running }
+        if (running != null && running !in shown) shown = (listOf(running) + shown.drop(1)).sortedBy { it.order }
+        return Shown(shown, all.filter { it !in shown })
     }
 }
 
@@ -76,6 +89,8 @@ internal object StackLayout {
  * The stack on the handed side: the floating button on top, never moving, and under it a
  * bubble for each pick waiting to be pasted ([FileClipboard]) and each operation queued
  * ([FileWork]), the newest at the bottom; without the button they rise from the bottom edge.
+ * Older bubbles fold into a count on the top one, which lists them on a tap; the operation
+ * under way always shows.
  * A Paste bubble pastes on a tap ([onPaste]) and is let go on a long press ([onDrop]).
  * An operation's bubble is gray while it waits, and darkens with a progress ring in its
  * action's color while it runs; a tap shows its card, with Cancel, and a long press cancels it.
@@ -96,8 +111,12 @@ internal class OperationStack(
     private val views = LinkedHashMap<Any, View>()
 
     /** What shows now. */
-    var shown = StackLayout.Shown(emptyList(), 0)
+    var shown = StackLayout.Shown(emptyList(), emptyList())
         private set
+
+    /** The list of the bubbles folded away while it shows, and their keys as listed. */
+    private var foldedList: PopupWindow? = null
+    private var foldedKeys: List<Any> = emptyList()
 
     private var card: PopupWindow? = null
     private var cardId: Long? = null
@@ -136,6 +155,7 @@ internal class OperationStack(
         }
         hideCard()
         hideHint()
+        hideFolded()
     }
 
     /** The button of each bubble shown, from top to bottom; for tests. */
@@ -145,16 +165,20 @@ internal class OperationStack(
     /** The card's content while it shows; for tests. */
     internal fun cardView(): View? = card?.contentView
 
+    /** The list of bubbles folded away while it shows; for tests. */
+    internal fun foldedView(): View? = foldedList?.contentView
+
     /** Shows the hint for Paste [id] beside its bubble as soon as it is there. */
     fun hint(id: Long) {
         hintFor = id
         render()
     }
 
-    /** Lets go of the card and hint, as the screen goes. */
+    /** Lets go of the card, hint and list, as the screen goes. */
     fun release() {
         hideCard()
         hideHint()
+        hideFolded()
     }
 
     private fun render() {
@@ -178,6 +202,7 @@ internal class OperationStack(
             }
             bind(view, bubble, if (i == 0) now.folded else 0)
         }
+        if (foldedList != null && now.hidden.map { it.key } != foldedKeys) hideFolded()
         updateCard()
         hintFor?.let { id -> views[Bubble.Paste.keyOf(id)]?.let { v -> hintFor = null; v.post { showHint(v) } } }
     }
@@ -225,6 +250,18 @@ internal class OperationStack(
         count.visibility = if (folded > 0) View.VISIBLE else View.GONE
         count.text = activity.getString(R.string.op_folded_badge, folded)
         count.contentDescription = activity.getString(R.string.op_folded, folded)
+        if (folded > 0) {
+            count.setOnClickListener { showFolded(view) }
+            ViewCompat.replaceAccessibilityAction(count, AccessibilityActionCompat.ACTION_CLICK, activity.getString(R.string.op_folded_show), null)
+            // Its touch reaches past the small badge.
+            view.post { reach(view, count) }
+        } else {
+            count.setOnClickListener(null)
+            count.isClickable = false
+            if (view.touchDelegate != null) view.touchDelegate = null
+        }
+        // Long-press is announced as what it does.
+        ViewCompat.replaceAccessibilityAction(button, AccessibilityActionCompat.ACTION_LONG_CLICK, activity.getString(R.string.cancel), null)
         when (bubble) {
             is Bubble.Paste -> {
                 val clip = bubble.clip
@@ -235,8 +272,7 @@ internal class OperationStack(
                 badge.imageTintList = ColorStateList.valueOf(color(badge, kind.foreground))
                 badge.visibility = View.VISIBLE
                 ring.visibility = View.INVISIBLE
-                button.contentDescription = if (clip.count == 1) activity.getString(R.string.paste_named, clip.name)
-                else activity.resources.getQuantityString(R.plurals.paste_count, clip.count, clip.count)
+                button.contentDescription = pasteLabel(clip)
                 button.setOnClickListener {
                     hideHint()
                     onPaste(clip.id)
@@ -386,6 +422,95 @@ internal class OperationStack(
         val popup = card
         card = null
         cardId = null
+        popup?.dismiss()
+    }
+
+    /** What pasting [clip] pastes: "Paste a.cbz", "Paste 3 items". */
+    private fun pasteLabel(clip: FileClipboard.Clip): String =
+        if (clip.count == 1) activity.getString(R.string.paste_named, clip.name)
+        else activity.resources.getQuantityString(R.plurals.paste_count, clip.count, clip.count)
+
+    /** Lets touches near [badge] within [bubble] reach the badge. */
+    private fun reach(bubble: View, badge: View) {
+        if (badge.visibility != View.VISIBLE) return
+        val area = Rect()
+        badge.getHitRect(area)
+        val more = activity.resources.getDimensionPixelSize(R.dimen.space_2)
+        area.inset(-more, -more)
+        bubble.touchDelegate = TouchDelegate(area, badge)
+    }
+
+    // ------------------------------------------------------------------ folded
+
+    /**
+     * Lists the bubbles folded away beside [anchor], the top bubble: tapping a Paste's row
+     * pastes, and each row's Cancel cancels its pick or operation.
+     */
+    private fun showFolded(anchor: View) {
+        hideHint()
+        hideCard()
+        if (foldedList?.isShowing == true) return hideFolded()
+        val hidden = shown.hidden
+        if (hidden.isEmpty()) return
+        val content = LayoutInflater.from(activity).inflate(R.layout.card_folded, column.rootView as ViewGroup, false)
+        val rows = content.findViewById<LinearLayout>(R.id.op_rows)
+        for (bubble in hidden) rows.addView(row(rows, bubble))
+        val popup = PopupWindow(content, activity.resources.getDimensionPixelSize(R.dimen.op_card_width), ViewGroup.LayoutParams.WRAP_CONTENT)
+        popup.isOutsideTouchable = true
+        popup.setOnDismissListener {
+            if (foldedList === popup) {
+                foldedList = null
+                foldedKeys = emptyList()
+            }
+        }
+        foldedList = popup
+        foldedKeys = hidden.map { it.key }
+        place(popup, content, anchor)
+    }
+
+    /** The row of [bubble] in the list of those folded away. */
+    private fun row(parent: ViewGroup, bubble: Bubble): View {
+        val row = LayoutInflater.from(activity).inflate(R.layout.item_op_row, parent, false)
+        val icon = row.findViewById<ImageView>(R.id.op_row_icon)
+        val text = row.findViewById<TextView>(R.id.op_row_text)
+        val cancel = row.findViewById<Button>(R.id.op_row_cancel)
+        when (bubble) {
+            is Bubble.Paste -> {
+                val clip = bubble.clip
+                val kind = if (clip.move) FileWork.Kind.MOVE else FileWork.Kind.COPY
+                icon.setImageResource(FabLook.PASTE.icon)
+                icon.imageTintList = ColorStateList.valueOf(color(icon, FabLook.ringOf(kind)))
+                text.text = activity.getString(R.string.op_item_named, pasteLabel(clip), activity.getString(FabLook.pasteBadge(clip.move).label))
+                row.setOnClickListener {
+                    hideFolded()
+                    onPaste(clip.id)
+                }
+                cancel.setOnClickListener {
+                    hideFolded()
+                    onDrop(clip.id)
+                }
+            }
+            is Bubble.Work -> {
+                val status = bubble.status
+                icon.setImageResource(FabLook.of(status.kind).icon)
+                icon.imageTintList = ColorStateList.valueOf(color(icon, if (status.waiting) FabLook.WAITING_FOREGROUND else FabLook.ringOf(status.kind)))
+                text.text = describe(status)
+                // Nothing to do on a tap: it waits its turn.
+                row.background = null
+                val id = status.id
+                cancel.setOnClickListener {
+                    hideFolded()
+                    FileWork.cancel(id)
+                }
+            }
+        }
+        return row
+    }
+
+    private fun hideFolded() {
+        val popup = foldedList
+        foldedList = null
+        foldedKeys = emptyList()
         popup?.dismiss()
     }
 

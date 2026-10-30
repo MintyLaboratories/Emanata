@@ -208,6 +208,54 @@ class ListActivityStackTest {
     }
 
     @Test
+    fun theCountListsWhatIsFoldedToPasteOrCancel() {
+        val activity = launch()
+        val from = File(shelf, "from").apply { mkdirs() }
+        for (i in 1..4) File(from, "$i.cbz").writeBytes(ByteArray(10))
+        for (i in 1..4) FileClipboard.add(FileClipboard.Clip(listOf(FileClipboard.Item(File(from, "$i.cbz").absolutePath, false)), move = false))
+        idle()
+        val top = activity.stack.buttons().first().second.parent as View
+        val count = top.findViewById<TextView>(R.id.op_folded)
+        assertEquals("+1", count.text.toString())
+        val actions = androidx.core.view.ViewCompat.getAccessibilityDelegate(count)
+        assertTrue(actions != null)
+        count.performClick()
+        idle()
+        val rows = activity.stack.foldedView()!!.findViewById<android.widget.LinearLayout>(R.id.op_rows)
+        assertEquals(1, rows.childCount)
+        val oldest = FileClipboard.clips.value.first()
+        assertTrue(rows.getChildAt(0).findViewById<TextView>(R.id.op_row_text).text.toString().contains("1.cbz"))
+
+        // Its Cancel lets the pick go; the list goes with it.
+        rows.getChildAt(0).findViewById<View>(R.id.op_row_cancel).performClick()
+        idle()
+        assertTrue(FileClipboard[oldest.id] == null)
+        assertTrue(activity.stack.foldedView() == null)
+        assertEquals(View.GONE, (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).visibility)
+
+        // A row's tap pastes.
+        FileClipboard.add(FileClipboard.Clip(listOf(FileClipboard.Item(File(from, "1.cbz").absolutePath, false)), move = false, id = 0))
+        idle()
+        (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).performClick()
+        idle()
+        activity.stack.foldedView()!!.findViewById<android.widget.LinearLayout>(R.id.op_rows).getChildAt(0).performClick()
+        waitFor { FileWork.operations.value.isEmpty() && File(shelf, "1.cbz").exists() }
+        assertTrue(FileClipboard[0] == null)
+    }
+
+    @Test
+    fun longPressesAreAnnouncedAsCancel() {
+        val activity = launch()
+        pick("one.cbz")
+        idle()
+        val button = activity.stack.buttons().single().second
+        val info = android.view.accessibility.AccessibilityNodeInfo.obtain()
+        button.onInitializeAccessibilityNodeInfo(info)
+        val longClick = info.actionList.first { it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK }
+        assertEquals(context.getString(R.string.cancel), longClick.label?.toString())
+    }
+
+    @Test
     fun theRunningBubbleDarkensWithARingWaitingOnesAreGrayAndALongPressCancels() {
         val activity = launch()
         val started = Semaphore(0)

@@ -39,7 +39,7 @@ class StackLayoutTest {
         val shown = StackLayout.of(listOf(clip(1)), listOf(op(2)), fab = true)
         assertEquals(listOf(1L, 2L), orders(shown))
         assertEquals(0, shown.folded)
-        assertEquals(StackLayout.Shown(emptyList(), 0), StackLayout.of(emptyList(), emptyList(), fab = true))
+        assertEquals(StackLayout.Shown(emptyList(), emptyList()), StackLayout.of(emptyList(), emptyList(), fab = true))
     }
 
     @Test
@@ -49,6 +49,15 @@ class StackLayoutTest {
         assertEquals(listOf(3L, 7L), orders(shown))
         assertEquals(Bubble.Paste::class, shown.bubbles[0]::class)
         assertEquals(Bubble.Work::class, shown.bubbles[1]::class)
+    }
+
+    @Test
+    fun theOperationUnderWayAlwaysShowsAndTheRestFold() {
+        val running = op(1).copy(started = 0)
+        val shown = StackLayout.of(listOf(clip(2), clip(3), clip(4)), listOf(running, op(5)), fab = true)
+        assertEquals(listOf(1L, 4L, 5L), orders(shown))
+        assertEquals(listOf(2L, 3L), shown.hidden.map { it.order })
+        assertEquals(2, shown.folded)
     }
 
     @Test

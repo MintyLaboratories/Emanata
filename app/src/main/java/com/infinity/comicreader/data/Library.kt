@@ -494,10 +494,12 @@ class Library(context: Context) {
         synchronized(LOCK) {
             fun remap(p: String) = if (under(p, old)) new + p.removePrefix(old) else p
             writeStringList(KEY_FAVORITES, readStringList(KEY_FAVORITES).map { if (isFolderToken(it)) remap(it) else it })
-            val series = readObject(KEY_SERIES)
-            val moved = JSONObject()
-            series.keys().forEach { k -> moved.put(remap(k), series.get(k)) }
-            sp.edit().putString(KEY_SERIES, moved.toString()).apply()
+            for (key in FOLDER_KEYS) {
+                val old = readObject(key)
+                val moved = JSONObject()
+                old.keys().forEach { k -> moved.put(remap(k), old.get(k)) }
+                sp.edit().putString(key, moved.toString()).apply()
+            }
             val books = readObject(KEY_BOOKS)
             for (k in books.keys().asSequence().toList()) {
                 val path = books.optJSONObject(k)?.optString("path") ?: continue
@@ -538,10 +540,12 @@ class Library(context: Context) {
      */
     fun removePathsUnder(root: String) {
         synchronized(LOCK) {
-            val series = readObject(KEY_SERIES)
-            val kept = JSONObject()
-            series.keys().forEach { k -> if (!under(k, root)) kept.put(k, series.get(k)) }
-            sp.edit().putString(KEY_SERIES, kept.toString()).apply()
+            for (key in FOLDER_KEYS) {
+                val old = readObject(key)
+                val kept = JSONObject()
+                old.keys().forEach { k -> if (!under(k, root)) kept.put(k, old.get(k)) }
+                sp.edit().putString(key, kept.toString()).apply()
+            }
         }
         removeListsUnder(root)
         BookIds.removed(root)
@@ -613,6 +617,30 @@ class Library(context: Context) {
                 keep(book)
             }
             sp.edit().putString(KEY_ADJUST, all.toString()).apply()
+        }
+    }
+
+    // ---------------- tall pages ----------------
+    /** Whether book [id] reads as a continuous strip, as answered when its tall pages were found; null when never asked. */
+    fun tallStrip(id: BookId): Boolean? = readObject(KEY_TALL).let { if (it.has(id.hex)) it.optBoolean(id.hex) else null }
+
+    fun setTallStrip(book: BookRef, strip: Boolean) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_TALL)
+            all.put(book.id.hex, strip)
+            sp.edit().putString(KEY_TALL, all.toString()).apply()
+            keep(book)
+        }
+    }
+
+    /** Whether the loose images in [folder] read as a continuous strip, as answered; null when never asked. */
+    fun folderTallStrip(folder: String): Boolean? = readObject(KEY_TALL_FOLDERS).let { if (it.has(folder)) it.optBoolean(folder) else null }
+
+    fun setFolderTallStrip(folder: String, strip: Boolean) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_TALL_FOLDERS)
+            all.put(folder, strip)
+            sp.edit().putString(KEY_TALL_FOLDERS, all.toString()).apply()
         }
     }
 
@@ -717,7 +745,7 @@ class Library(context: Context) {
         val marks = readArray(KEY_BOOKMARKS).ids()
         val hidden = hiddenCounts()
         val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) +
-            readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids()
+            readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
         return all.associateWith { id ->
             Kept(
@@ -1022,6 +1050,10 @@ class Library(context: Context) {
         /** Books' own file name charsets ([nameCharset]). */
         private const val KEY_CHARSETS = "name_charsets"
 
+        /** Books' answers to reading their tall pages as a strip ([tallStrip]), and folders' ([folderTallStrip]). */
+        private const val KEY_TALL = "tall_strip"
+        private const val KEY_TALL_FOLDERS = "tall_folders"
+
         /** Where each book with anything kept was last seen ([seenAt]). */
         private const val KEY_BOOKS = "books"
 
@@ -1038,18 +1070,21 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS)
+        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS)
+
+        /** Documents kept by folder path, re-pointed when the app moves a folder. */
+        private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS)
 
         /** Lists of book IDs. */
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
 
         /** Documents kept by book ID. */
-        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS)
+        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL)
 
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS, KEY_TALL
         )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */

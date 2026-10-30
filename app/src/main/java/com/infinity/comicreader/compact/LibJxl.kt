@@ -81,6 +81,11 @@ interface JxlCodec {
      * with alpha), in [profile] ([JxlCodec.profile]), sRGB when null, at [effort] (1-9).
      */
     fun encode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray?
+
+    companion object {
+        /** The first byte of a [profile] holding an ICC profile, which follows it (`PROFILE_ICC` in jxl_jni.c). */
+        const val PROFILE_ICC: Byte = 1
+    }
 }
 
 /** libjxl as jxl-coder ships it, through our JNI binding (`src/main/cpp/jxl_jni.c`). */

@@ -55,6 +55,16 @@ class PageProbeTest {
     }
 
     @Test
+    fun colorProfilesAreFound() {
+        val icc = ByteArray(300) { (it * 7).toByte() }
+        assertArrayEquals(icc, PageProbe.pngIcc(Png.encode(pixels(3, 8), icc)))
+        assertNull(PageProbe.pngIcc(Png.encode(pixels(3, 8))))
+        // A lossless WebP with a profile is left alone.
+        val webp = FakeImages().webp(pixels(4, 8), lossless = true, quality = 100)!!
+        assertEquals(PageForm.OTHER, PageProbe.formOf(WebpIcc.embed(webp, icc)!!))
+    }
+
+    @Test
     fun tiffsAreLosslessPagesOnlyWhenTheyDecodeExactly() {
         assertTrue(Tiff.exact(Tiff.ByteInput(tiff("rgb-none-strips.tif"))))
         assertEquals(PageForm.LOSSLESS, PageProbe.formOf(tiff("rgb-lzw-predictor-msb.tif")))

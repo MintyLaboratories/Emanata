@@ -3,6 +3,8 @@ package com.infinity.comicreader.compact
 import com.infinity.comicreader.reader.ImageHeaders
 import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.reader.Tiff
+import java.io.IOException
+import java.util.zip.InflaterInputStream
 
 /** What a page's bytes are, as compaction tells them apart. */
 enum class PageForm {
@@ -50,7 +52,43 @@ object PageProbe {
         return false
     }
 
-    /** True for a still lossless WebP: its image a `VP8L` chunk, with no animation. */
+    /**
+     * The color profile of PNG [bytes] (its `iCCP` chunk, inflated); null without one,
+     * and empty when it cannot be read. The platform decodes such a PNG converted, or as
+     * sRGB, so [PageWork] reads its samples itself.
+     */
+    fun pngIcc(bytes: ByteArray): ByteArray? {
+        val chunk = pngChunk(bytes, "iCCP") ?: return null
+        // A name of 1-79 Latin-1 characters, a zero, the method (0: deflate), the profile.
+        val end = chunk.indexOf(0)
+        if (end !in 1..79 || end + 2 > chunk.size || chunk[end + 1].toInt() != 0) return ByteArray(0)
+        return try {
+            InflaterInputStream(chunk.inputStream(end + 2, chunk.size - end - 2)).use { it.readBytes() }
+        } catch (e: IOException) {
+            ByteArray(0)
+        }
+    }
+
+    /** The data of PNG [bytes]' first chunk of [kind] before its image data; null without one. */
+    fun pngChunk(bytes: ByteArray, kind: String): ByteArray? {
+        if (bytes.size < 33 || type(bytes, 12) != "IHDR") return null
+        var at = 8
+        while (at + 8 <= bytes.size) {
+            val length = be32(bytes, at)
+            if (length < 0 || at + 12 + length > bytes.size) return null
+            when (type(bytes, at + 4)) {
+                kind -> return bytes.copyOfRange(at + 8, at + 8 + length)
+                "IDAT", "IEND" -> return null
+            }
+            at += 12 + length
+        }
+        return null
+    }
+
+    /**
+     * True for a still lossless WebP: its image a `VP8L` chunk, with no animation and no
+     * color profile (which the platform may convert from, or drop).
+     */
     fun webpLossless(bytes: ByteArray): Boolean {
         if (bytes.size < 20 || type(bytes, 0) != "RIFF" || type(bytes, 8) != "WEBP") return false
         var at = 12
@@ -60,7 +98,8 @@ object PageProbe {
             when (type(bytes, at)) {
                 "VP8L" -> return true
                 "VP8 ", "ANIM", "ANMF" -> return false
-                "VP8X" -> if (at + 8 < bytes.size && bytes[at + 8].toInt() and VP8X_ANIMATION != 0) return false
+                "VP8X" -> if (at + 8 < bytes.size && bytes[at + 8].toInt() and (VP8X_ANIMATION or VP8X_ICC) != 0) return false
+                "ICCP" -> return false
             }
             at += 8 + length + (length and 1)
         }
@@ -120,4 +159,5 @@ object PageProbe {
         (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8) or ((b[at + 2].toInt() and 0xFF) shl 16) or ((b[at + 3].toInt() and 0xFF) shl 24)
 
     private const val VP8X_ANIMATION = 0x02
+    private const val VP8X_ICC = 0x20
 }

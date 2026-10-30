@@ -44,7 +44,7 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     fun compact(page: ByteArray): Made? {
         val made = when (PageProbe.formOf(page)) {
             PageForm.JPEG -> transcode(page, EFFORT_TRANSCODE)
-            PageForm.LOSSLESS -> exactPixels(page)?.let { lossless(reduced(it), null, EFFORT_LOSSLESS) }
+            PageForm.LOSSLESS -> losslessIn(page)
             PageForm.JXL -> recompress(page)
             PageForm.OTHER -> null
         }
@@ -120,6 +120,20 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         val webp = images.webp(Pixels(info.width, info.height, 4, 8, data), lossless = false, quality = LOSSY_QUALITY) ?: return null
         val out = icc?.let { WebpIcc.embed(webp, it) ?: return null } ?: webp
         return Made(out, "webp", reencoded = true)
+    }
+
+    /**
+     * A lossless page as lossless JPEG XL: a PNG with a color profile read here, its samples
+     * as stored and the profile kept as it is; any other as the platform decodes it, in sRGB.
+     */
+    private fun losslessIn(page: ByteArray): Made? {
+        val icc = if (ImageKind.sniff(page) == ImageKind.PNG) PageProbe.pngIcc(page) else null
+        if (icc == null) return exactPixels(page)?.let { lossless(reduced(it), null, EFFORT_LOSSLESS) }
+        // Unreadable, or with a transparent color, which this reading leaves out.
+        if (icc.isEmpty() || PageProbe.pngChunk(page, "tRNS") != null) return null
+        val pixels = Png.decode(page)?.takeIf { it.bits == 8 } ?: return null
+        val made = lossless(pixels, byteArrayOf(JxlCodec.PROFILE_ICC) + icc, EFFORT_LOSSLESS) ?: return null
+        return made.takeIf { jxl.iccOfPixels(it.bytes)?.contentEquals(icc) == true }
     }
 
     /** A lossless page's pixels as stored; null unless decoded exactly. */

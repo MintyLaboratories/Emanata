@@ -73,7 +73,10 @@ class FakeJxl : JxlCodec {
 
     override fun profile(jxl: ByteArray): ByteArray = "profile".toByteArray()
 
-    override fun iccOfPixels(jxl: ByteArray): ByteArray = "icc".toByteArray()
+    /** ICC profiles given to [encode], by what it made. */
+    private val iccs = HashMap<ByteBuffer, ByteArray>()
+
+    override fun iccOfPixels(jxl: ByteArray): ByteArray = iccs[ByteBuffer.wrap(jxl)] ?: "icc".toByteArray()
 
     override fun decode(jxl: ByteArray, channels: Int, bits: Int, srgb: Boolean): ByteArray? {
         val info = info(jxl) ?: return null
@@ -90,7 +93,9 @@ class FakeJxl : JxlCodec {
         encodes++
         efforts += effort
         channelsEncoded += channels
-        return codestream('L', width, height, channels, bits, profile == null, pixels)
+        val out = codestream('L', width, height, channels, bits, profile == null, pixels)
+        if (profile != null && profile[0] == JxlCodec.PROFILE_ICC) iccs[ByteBuffer.wrap(out)] = profile.copyOfRange(1, profile.size)
+        return out
     }
 
     /** A lossy JPEG XL of RGBA [pixels] (8 bits), as from elsewhere. */

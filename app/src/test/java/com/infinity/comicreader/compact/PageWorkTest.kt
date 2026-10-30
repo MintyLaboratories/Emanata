@@ -108,6 +108,25 @@ class PageWorkTest {
     }
 
     @Test
+    fun aPngWithAColorProfileKeepsItsSamplesAndProfile() {
+        val icc = "a profile Android may not read".toByteArray()
+        // Noise, which PNG's filters do not help.
+        val random = Random(5)
+        val stored = pixels(3) { random.nextInt() }
+        val made = work.compact(Png.encode(stored, icc))!!
+        assertEquals("jxl", made.ext)
+        assertArrayEquals(icc, jxl.iccOfPixels(made.bytes))
+        assertArrayEquals(stored.data, jxl.decode(made.bytes, 3, 8))
+        // Read as stored, not through the platform.
+        assertEquals(listOf(3), jxl.channelsEncoded)
+        // With a transparent color, which that reading leaves out, it stays.
+        val png = Png.encode(stored, icc)
+        val trns = byteArrayOf(0, 0, 0, 2, 't'.code.toByte(), 'R'.code.toByte(), 'N'.code.toByte(), 'S'.code.toByte(), 0, 1, 0, 0, 0, 0)
+        val withTrns = png.copyOfRange(0, 33) + trns + png.copyOfRange(33, png.size)
+        assertNull(work.compact(withTrns))
+    }
+
+    @Test
     fun makeCompatibleGivesBackTheJpegByteForByte() {
         val made = work.compatible(jxl.transcode(jpeg, 7))!!
         assertEquals("jpg", made.ext)

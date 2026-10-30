@@ -699,6 +699,8 @@ class PageAdapter(
         stopWaiting(holder, slot)
         val pageIndex = part?.page ?: NO_PAGE
         pageOf[image] = pageIndex
+        // A view used again starts a page from its top unless that page was turned back to.
+        image.startAtBottom = pageIndex >= 0 && pageIndex == fromBottom
         if (part == null || pageIndex < 0 || pageIndex >= end) {
             clearImage(holder, slot)
             return
@@ -719,7 +721,6 @@ class PageAdapter(
             }
             return
         }
-        image.startAtBottom = pageIndex == fromBottom
         if (holder.joined) image.setFitGeometry(joinedBoxOf(key), 0.5f) else image.setFitGeometry(fitBoxOf(key, slotType), alignOf(slotType))
         val cached = cache.get(key)
         if (cached != null) {

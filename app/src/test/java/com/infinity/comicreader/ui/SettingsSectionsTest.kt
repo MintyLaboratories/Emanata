@@ -64,6 +64,15 @@ class SettingsSectionsTest {
     }
 
     @Test
+    fun theTallThresholdShowsWhileItIsDragged() {
+        val (_, fragment) = open()
+        val pref = fragment.pref("pref_tall_threshold") as androidx.preference.SeekBarPreference
+        assertTrue(pref.updatesContinuously)
+        pref.value = 150
+        assertTrue(pref.summary.toString().startsWith("1.50"))
+    }
+
+    @Test
     fun turnedOffAdvancedSettingsShowTagged() {
         val (_, fragment) = open()
         fragment.pref("pref_keep_simple").performClick()

@@ -267,7 +267,8 @@
             app:min="101"
             app:seekBarIncrement="1"
             app:showSeekBarValue="false"
-            app:title="@string/pref_tall_threshold">
+            app:title="@string/pref_tall_threshold"
+            app:updatesContinuously="true">
             <extra
                 android:name="advanced"
                 android:value="true" />

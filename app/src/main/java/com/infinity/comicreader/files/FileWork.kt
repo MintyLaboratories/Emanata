@@ -34,6 +34,14 @@ object FileWork {
         /** What is no longer where it was: deleted, or moved away. */
         abstract val gone: List<String>
 
+        /** What the books rebuilt came to, if any were. */
+        val rebuilt: Summary?
+            get() = when (this) {
+                is Done -> summary
+                is Canceled -> summary
+                is Failed -> summary
+            }
+
         /**
          * Finished with [count] items: [path] is the item to show, if any; [sourceLeft] when a
          * move could not delete a source; [summary] for books rebuilt.
@@ -46,15 +54,24 @@ object FileWork {
             val summary: Summary? = null
         ) : Outcome()
 
-        /** Canceled after [done] of [count] items. */
-        data class Canceled(val done: Int = 0, val count: Int = 1, override val gone: List<String> = emptyList()) : Outcome()
+        /** Canceled after [done] of [count] items; [summary] for books rebuilt before. */
+        data class Canceled(
+            val done: Int = 0,
+            val count: Int = 1,
+            override val gone: List<String> = emptyList(),
+            val summary: Summary? = null
+        ) : Outcome()
 
-        /** Failed with [error], the first of its items' failures; [done] of [count] items were done all the same. */
+        /**
+         * Failed with [error], the first of its items' failures; [done] of [count] items were
+         * done all the same, [summary] for books rebuilt among them.
+         */
         data class Failed(
             val error: Throwable,
             val done: Int = 0,
             val count: Int = 1,
-            override val gone: List<String> = emptyList()
+            override val gone: List<String> = emptyList(),
+            val summary: Summary? = null
         ) : Outcome()
     }
 

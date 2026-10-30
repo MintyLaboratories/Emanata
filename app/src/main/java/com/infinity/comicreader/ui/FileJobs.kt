@@ -226,9 +226,10 @@ internal class FileJobs(
         val gone = ArrayList<String>()
         val reencoded = LinkedHashMap<String, List<String>>()
         var failure: Exception? = null
+        fun summary() = FileWork.Summary(saved, unchanged, reencoded)
         try {
             for ((i, path) in paths.withIndex()) {
-                if (!p.alive) return FileWork.Outcome.Canceled(done, paths.size, gone)
+                if (!p.alive) return FileWork.Outcome.Canceled(done, paths.size, gone, summary())
                 val book = File(path)
                 if (paths.size > 1) p.item(book.name, i, paths.size)
                 changed(path, seen?.getOrNull(i))?.let {
@@ -254,7 +255,7 @@ internal class FileJobs(
                         }
                     }
                 } catch (e: CancellationException) {
-                    return FileWork.Outcome.Canceled(done, paths.size, gone)
+                    return FileWork.Outcome.Canceled(done, paths.size, gone, summary())
                 } catch (e: Exception) {
                     if (failure == null) failure = e
                 }
@@ -262,9 +263,8 @@ internal class FileJobs(
         } finally {
             scratch.deleteRecursively()
         }
-        val summary = FileWork.Summary(saved, unchanged, reencoded)
-        return failure?.let { FileWork.Outcome.Failed(it, done + unchanged, paths.size, gone) }
-            ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary)
+        return failure?.let { FileWork.Outcome.Failed(it, done + unchanged, paths.size, gone, summary()) }
+            ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary())
     }
 
     /**

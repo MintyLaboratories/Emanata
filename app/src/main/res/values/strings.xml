@@ -471,6 +471,8 @@
         <item quantity="one">Made %1$d of %2$d book compatible</item>
         <item quantity="other">Made %1$d of %2$d books compatible</item>
     </plurals>
+    <!-- %1$s: how many books, as "Compacted 2 of 5 books"; %2$s: how much smaller, as "120 MB". -->
+    <string name="rebuild_saved">%1$s, saved %2$s</string>
     <string name="compact_nothing">Nothing to compact: no page got smaller</string>
     <string name="compatible_nothing">Nothing to change: no JPEG XL pages</string>
     <!-- %1$s: what was done, as "Compacted 2 books, saved 40 MB". -->

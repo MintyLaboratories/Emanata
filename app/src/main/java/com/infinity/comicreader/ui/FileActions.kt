@@ -345,14 +345,15 @@ internal class FileActions(
                 FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE -> rebuilt(status.kind, outcome)
             }
             is FileWork.Outcome.Canceled ->
-                if (outcome.done > 0) activity.getString(R.string.file_canceled_part, part(status.kind, outcome.done, outcome.count))
+                if (outcome.done > 0) activity.getString(R.string.file_canceled_part, part(status.kind, outcome.done, outcome.count, outcome.summary))
                 else activity.getString(R.string.file_canceled)
             is FileWork.Outcome.Failed ->
-                if (outcome.done > 0) activity.getString(R.string.file_failed_part, part(status.kind, outcome.done, outcome.count), describe(outcome.error))
+                if (outcome.done > 0) activity.getString(R.string.file_failed_part, part(status.kind, outcome.done, outcome.count, outcome.summary), describe(outcome.error))
                 else activity.getString(R.string.file_failed, describe(outcome.error))
         }
         toast(text)
-        val reencoded = (outcome as? FileWork.Outcome.Done)?.summary?.reencoded.orEmpty()
+        // Also when other books failed or the run was canceled: these pages changed all the same.
+        val reencoded = outcome.rebuilt?.reencoded.orEmpty()
         if (reencoded.isNotEmpty()) tellReencoded(reencoded)
     }
 
@@ -381,17 +382,24 @@ internal class FileActions(
             .show()
     }
 
-    /** How many of [count] items an operation of [kind] did: "Deleted 3 of 5 items". */
-    private fun part(kind: FileWork.Kind, done: Int, count: Int): String = activity.resources.getQuantityString(
-        when (kind) {
-            FileWork.Kind.COPY -> R.plurals.copied_part
-            FileWork.Kind.MOVE -> R.plurals.moved_part
-            FileWork.Kind.DELETE, FileWork.Kind.RENAME -> R.plurals.deleted_part
-            FileWork.Kind.COMPACT -> R.plurals.compacted_part
-            FileWork.Kind.COMPATIBLE -> R.plurals.compatible_part
-        },
-        count, done, count
-    )
+    /**
+     * How many of [count] items an operation of [kind] did: "Deleted 3 of 5 items"; for
+     * Compact, with the bytes its [summary] saved.
+     */
+    private fun part(kind: FileWork.Kind, done: Int, count: Int, summary: FileWork.Summary? = null): String {
+        val text = activity.resources.getQuantityString(
+            when (kind) {
+                FileWork.Kind.COPY -> R.plurals.copied_part
+                FileWork.Kind.MOVE -> R.plurals.moved_part
+                FileWork.Kind.DELETE, FileWork.Kind.RENAME -> R.plurals.deleted_part
+                FileWork.Kind.COMPACT -> R.plurals.compacted_part
+                FileWork.Kind.COMPATIBLE -> R.plurals.compatible_part
+            },
+            count, done, count
+        )
+        val saved = summary?.saved ?: 0L
+        return if (kind == FileWork.Kind.COMPACT && saved > 0) activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved)) else text
+    }
 
     /** [one] for a single item, else [many] counting [count]. */
     private fun counted(one: Int, many: Int, count: Int): String =

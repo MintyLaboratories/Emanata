@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.compact.PageWork
+import com.infinity.comicreader.compact.Pixels
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
@@ -26,7 +27,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 /** Compact and Make compatible as queued: each book rebuilt, and what the library keeps for it follows its new file. */
 @RunWith(RobolectricTestRunner::class)
@@ -155,6 +158,22 @@ class FileJobsRebuildTest {
         val again = rebuild(cbz, compatible = true) as FileWork.Outcome.Done
         assertEquals(0, again.count)
         assertEquals(1, again.summary!!.unchanged)
+    }
+
+    @Test
+    fun whenALaterBookFailsTheSummaryStillNamesThePagesReencoded() {
+        val pixels = Pixels(4, 3, 4, 8, ByteArray(4 * 3 * 4) { (it * 5).toByte() })
+        val book = File(tmp.root, "Lossy.cbz")
+        ZipOutputStream(book.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("1.jxl"))
+            zip.write(jxl.lossy(pixels))
+            zip.closeEntry()
+        }
+        val broken = File(tmp.root, "Broken.cbz").apply { writeBytes(ByteArray(100) { 7 }) }
+        val paths = listOf(book.absolutePath, broken.absolutePath)
+        val outcome = jobs.rebuild(paths, true, true, false, jobs.look(paths), Going) as FileWork.Outcome.Failed
+        assertEquals(1, outcome.done)
+        assertEquals(mapOf("Lossy.cbz" to listOf("1.webp")), outcome.summary!!.reencoded)
     }
 
     @Test

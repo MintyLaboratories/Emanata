@@ -46,7 +46,8 @@ class SpreadRotation {
      * Page [widePage] shows (a wide page shown whole, or -1 for anything else), with the
      * setting [enabled] or not, the screen in [landscape] or not and in the fixed
      * orientation [screen] (unspecified when unknown), the sensor [unsure] of the way up
-     * or not: the orientation to request now, or null to leave it as is.
+     * or not: the orientation to request now, or null to leave it as is. A wide page
+     * while [keeping] turns from the kept orientation, whatever the screen shows yet.
      */
     fun show(
         widePage: Int,
@@ -61,8 +62,11 @@ class SpreadRotation {
         held = want
         return when {
             want >= 0 && !wasHeld -> {
-                heldFromLandscape = landscape
-                heldFrom = screen
+                // While kept, the screen may still be turning to the kept orientation: it stays the one to come back to.
+                if (!keeping) {
+                    heldFromLandscape = landscape
+                    heldFrom = screen
+                }
                 keeping = false
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }

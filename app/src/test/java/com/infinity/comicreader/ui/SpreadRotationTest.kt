@@ -181,6 +181,17 @@ class SpreadRotationTest {
     }
 
     @Test
+    fun aWidePageWhileStillTurningBackTurnsFromTheKeptOrientation() {
+        val r = SpreadRotation()
+        r.show(5, enabled = true, landscape = false, screen = SCREEN_ORIENTATION_PORTRAIT)
+        r.show(-1, enabled = true, landscape = true, screen = SCREEN_ORIENTATION_LANDSCAPE, unsure = true)
+        // The screen is still in landscape, turning back to portrait, when the next wide page shows.
+        r.show(7, enabled = true, landscape = true, screen = SCREEN_ORIENTATION_LANDSCAPE)
+        assertFalse(r.layoutLandscape(true))
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, r.show(-1, enabled = true, landscape = true, screen = SCREEN_ORIENTATION_LANDSCAPE, unsure = true))
+    }
+
+    @Test
     fun aRestoredCopyKeepsWhatIsKept() {
         val r = SpreadRotation()
         r.show(5, enabled = true, screen = SCREEN_ORIENTATION_PORTRAIT)

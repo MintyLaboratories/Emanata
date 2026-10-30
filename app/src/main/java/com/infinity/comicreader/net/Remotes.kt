@@ -107,6 +107,11 @@ object Remotes {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
 
+    /** When each folder was last listed from its share ([list]), by [clock]. */
+    private val listedAt = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>) = size > MAX_STATS
+    }
+
     /**
      * Counts the changes the app made to shares and their settings: what was found on a
      * share before the count last moved may be out of date.
@@ -198,12 +203,14 @@ object Remotes {
                 failedAt.clear()
                 refused.clear()
                 stats.clear()
+                listedAt.clear()
             } else {
                 open.remove(id)?.let { closing += it }
                 failedAt.remove(id)
                 refused.remove(id)
                 val root = rootOf(id)
                 stats.keys.removeAll { it == root || it.startsWith("$root/") }
+                listedAt.keys.removeAll { it == root || it.startsWith("$root/") }
             }
         }
         for (fs in closing) runCatching { fs.close() }
@@ -258,8 +265,13 @@ object Remotes {
         val base = path.trimEnd('/')
         val found = Timing.span("share list") { call(path) { fs -> asked { fs.list(relOf(path)) } } }.filter { isName(it.name) }
         listings.put(base, found)
+        synchronized(this) { listedAt[base] = clock() }
         return filesOf(base, found, fresh = true)
     }
+
+    /** When the folder at [path] was last listed from its share in this run, by [clock]; null when it was not. */
+    @Synchronized
+    fun listedAt(path: String): Long? = listedAt[path.trimEnd('/')]
 
     /**
      * The entries of the folder at [path] as last listed, in memory or on disk, with the

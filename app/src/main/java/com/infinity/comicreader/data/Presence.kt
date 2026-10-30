@@ -24,7 +24,8 @@ enum class Presence {
  * from the app as missing at once, one on a share failing now as unreachable, else from
  * what was last found there (a check made since nothing changed, the stat kept, the
  * listing of its folder kept). What [quick] cannot settle, [stat] asks the share for,
- * off the main thread; its answer stands until the app changes a share or [MEMO_MS] pass.
+ * off the main thread; its answer stands until the app changes a share, its folder is
+ * listed again or [MEMO_MS] pass.
  */
 class PresenceCheck(private val world: World, private val memo: Memo = Memo.shared) {
 
@@ -44,6 +45,9 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
 
         /** The names in folder [path] as last listed; null when it never was. */
         fun namesKept(path: String): Set<String>?
+
+        /** When folder [path] was last listed from its share, by [now]; null when it was not in this run. */
+        fun listedAt(path: String): Long?
 
         /** True when something is at [path] on its share, asking it; throws when the share fails. */
         fun stat(path: String): Boolean
@@ -98,12 +102,13 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
     fun quick(path: String, listed: MutableMap<String, Set<String>?>? = null): Found {
         val id = world.shareOf(path) ?: return device(path)
         if (!world.shareKnown(id)) return Found(Presence.MISSING, settled = true)
+        val folder = path.substringBeforeLast('/')
         memo.get(path)?.let { a ->
-            if (a.changes == world.changes() && world.now() - a.at in 0 until MEMO_MS) return a.found
+            val listedSince = world.listedAt(folder)?.let { it >= a.at } == true
+            if (a.changes == world.changes() && world.now() - a.at in 0 until MEMO_MS && !listedSince) return a.found
         }
         if (world.shareUnreachable(id)) return Found(Presence.UNREACHABLE, settled = true)
         if (world.statKept(path)) return Found(Presence.PRESENT, settled = false)
-        val folder = path.substringBeforeLast('/')
         val names = (if (listed != null) listed.getOrPut(folder) { world.namesKept(folder) } else world.namesKept(folder))
             ?: return Found(Presence.UNKNOWN, settled = false)
         return Found(if (path.substringAfterLast('/') in names) Presence.PRESENT else Presence.MISSING, settled = false)
@@ -155,6 +160,8 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
 
         override fun namesKept(path: String): Set<String>? = Remotes.cachedNames(path)
 
+        override fun listedAt(path: String): Long? = Remotes.listedAt(path)
+
         override fun stat(path: String): Boolean = Remotes.stat(path) != null
 
         override fun exists(path: String): Boolean = File(path).exists()
@@ -163,6 +170,6 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
 
         override fun changes(): Long = Remotes.changes
 
-        override fun now(): Long = System.nanoTime() / 1_000_000
+        override fun now(): Long = Remotes.clock()
     }
 }

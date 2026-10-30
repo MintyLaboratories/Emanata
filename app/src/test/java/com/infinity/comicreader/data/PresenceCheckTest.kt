@@ -17,6 +17,7 @@ class PresenceCheckTest {
         val unreachable = HashSet<String>()
         val statsKept = HashSet<String>()
         val listings = HashMap<String, Set<String>>()
+        val listedAt = HashMap<String, Long>()
         val onShare = HashSet<String>()
         var failing = false
         var asked = 0
@@ -30,6 +31,7 @@ class PresenceCheckTest {
         override fun shareUnreachable(id: String) = id in unreachable
         override fun statKept(path: String) = path in statsKept
         override fun namesKept(path: String) = listings[path]
+        override fun listedAt(path: String) = listedAt[path]
         override fun stat(path: String): Boolean {
             asked++
             if (failing) throw IOException("down")
@@ -110,6 +112,21 @@ class PresenceCheckTest {
         check.stat("/net/s1/a.cbz")
         world.clock += PresenceCheck.MEMO_MS
         assertEquals(found(Presence.UNKNOWN, false), check.quick("/net/s1/a.cbz"))
+    }
+
+    @Test
+    fun aFolderListedSinceAnAnswerOutranksIt() {
+        assertTrue(check.stat("/net/s1/Comics/a.cbz").missing)
+        world.clock += 1
+        // Put back from elsewhere, then seen as its folder is browsed.
+        world.listings["/net/s1/Comics"] = setOf("a.cbz")
+        world.listedAt["/net/s1/Comics"] = world.clock
+        val f = check.quick("/net/s1/Comics/a.cbz")
+        assertEquals(found(Presence.PRESENT, false), f)
+        assertTrue(check.asks("/net/s1/Comics/a.cbz", f))
+        // A folder listed before the answer leaves it standing.
+        world.listedAt["/net/s1/Comics"] = world.clock - 2
+        assertTrue(check.quick("/net/s1/Comics/a.cbz").missing)
     }
 
     @Test

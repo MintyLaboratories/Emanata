@@ -78,6 +78,17 @@ class RemotesTest {
     }
 
     @Test
+    fun foldersListedFromTheShareTellWhen() {
+        assertNull(Remotes.listedAt("/net/s1/Series"))
+        Remotes.file("/net/s1/Series").listFiles()
+        assertEquals(now, Remotes.listedAt("/net/s1/Series/"))
+        // A kept listing is not a listing from the share.
+        Remotes.changed(null)
+        assertNull(Remotes.listedAt("/net/s1/Series"))
+        assertTrue(Remotes.cachedNames("/net/s1/Series") != null)
+    }
+
+    @Test
     fun theRootIsAFolderKnownWithoutAsking() {
         val root = Remotes.file("/net/s1")
         assertTrue(root.isDirectory)

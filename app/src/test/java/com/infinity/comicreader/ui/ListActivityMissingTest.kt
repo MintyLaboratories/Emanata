@@ -289,6 +289,7 @@ class ListActivityMissingTest {
             override fun shareUnreachable(id: String) = false
             override fun statKept(path: String) = false
             override fun namesKept(path: String): Set<String>? = null
+            override fun listedAt(path: String): Long? = null
             override fun stat(path: String): Boolean {
                 assertFalse(Looper.getMainLooper().isCurrentThread)
                 synchronized(asked) { asked += path }

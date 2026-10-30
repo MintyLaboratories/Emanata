@@ -337,6 +337,33 @@ class FileActionsManyTest {
     }
 
     @Test
+    fun aMoveCanceledWhileWaitingIsPickedUpAgain() {
+        val go = java.util.concurrent.Semaphore(0)
+        val started = java.util.concurrent.Semaphore(0)
+        FileWork.start(FileWork.Kind.COPY, "held.cbz") {
+            started.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        started.acquire()
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        val clip = actions.pickUp(listOf(item(a)), move = true)!!
+        actions.paste(dest)
+        waitFor { FileWork.operations.value.size == 2 }
+        assertTrue(FileClipboard.clips.value.isEmpty())
+        FileWork.cancel(FileWork.operations.value.last().id)
+        waitFor { finished.isNotEmpty() }
+        val back = FileClipboard.clips.value.single()
+        assertEquals(listOf(a.absolutePath), back.items.map { it.path })
+        assertTrue(back.move)
+        assertTrue(back.id > clip.id)
+        assertTrue(a.exists())
+        go.release()
+        settle()
+    }
+
+    @Test
     fun aFailedMoveKeepsPickedUpWhatFailed() {
         val (fake, dir) = share()
         File(dir, "s.cbz").writeBytes(ByteArray(20))

@@ -103,7 +103,7 @@ object FileWork {
         fun item(name: String, index: Int, count: Int)
     }
 
-    private class Op(val id: Long, val count: Int, val work: (Progress) -> Outcome) {
+    private class Op(val id: Long, val count: Int, val unrun: () -> Unit, val work: (Progress) -> Outcome) {
         var job: Job? = null
     }
 
@@ -140,8 +140,9 @@ object FileWork {
 
     /**
      * Queues [work] of [kind] on [count] items, the first [name], putting them [into] a folder
-     * so named if anywhere, as the newest; it starts once those before it have ended. Work that throws ends [Outcome.Canceled] or
-     * [Outcome.Failed] with nothing counted. Returns the operation's id.
+     * so named if anywhere, as the newest; it starts once those before it have ended. Work
+     * that throws ends [Outcome.Canceled] or [Outcome.Failed] with nothing counted; [unrun]
+     * runs in its place when it is canceled before it began. Returns the operation's id.
      */
     @Synchronized
     fun start(
@@ -149,11 +150,12 @@ object FileWork {
         name: String,
         count: Int = 1,
         into: String? = null,
+        unrun: () -> Unit = {},
         work: (Progress) -> Outcome
     ): Long {
         val id = nextOrder()
         state.update { it + Status(kind, name, null, count = count, id = id, into = into) }
-        waiting.addLast(Op(id, count, work))
+        waiting.addLast(Op(id, count, unrun, work))
         pump()
         onStart()
         return id
@@ -168,7 +170,9 @@ object FileWork {
         val flow = state
         edit(flow, op.id) { it.copy(started = clock()) }
         var outcome: Outcome? = null
+        var ran = false
         val job = CoroutineScope(SupervisorJob() + dispatcher).launch {
+            ran = true
             val context = coroutineContext
             var reported = 0L
             val progress = object : Progress {
@@ -200,7 +204,10 @@ object FileWork {
         }
         op.job = job
         // Also when canceled before it ever ran.
-        job.invokeOnCompletion { finish(flow, op, outcome ?: Outcome.Canceled(0, op.count)) }
+        job.invokeOnCompletion {
+            if (!ran && flow === state) op.unrun()
+            finish(flow, op, outcome ?: Outcome.Canceled(0, op.count))
+        }
     }
 
     @Synchronized
@@ -221,6 +228,7 @@ object FileWork {
         val queued = waiting.firstOrNull { it.id == id }
         if (queued != null) {
             waiting.remove(queued)
+            queued.unrun()
             edit(state, id) { it.copy(outcome = Outcome.Canceled(0, queued.count)) }
             return
         }

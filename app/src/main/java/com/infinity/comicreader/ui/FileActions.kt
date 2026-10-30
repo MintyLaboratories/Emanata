@@ -260,7 +260,7 @@ internal class FileActions(
 
     /**
      * Queues pasting [plans] of [clip] into [targetDir] in place of its Paste; what a move
-     * failed at or never reached is picked up again as it was ([paste]).
+     * failed at or never reached, canceled before it began too, is picked up again ([paste]).
      */
     private fun transfer(clip: FileClipboard.Clip, targetDir: String, plans: List<Plan>) {
         // Canceled while asked about.
@@ -269,7 +269,8 @@ internal class FileActions(
         onClipChanged()
         val move = clip.move
         val kind = if (move) FileWork.Kind.MOVE else FileWork.Kind.COPY
-        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir)) { p ->
+        val unrun = { if (move) FileClipboard.add(clip.copy(items = plans.map { it.item }, id = FileWork.nextOrder())) }
+        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir), unrun) { p ->
             var sourceLeft = false
             val gone = ArrayList<String>()
             // Sources not pasted (yet).
@@ -346,9 +347,10 @@ internal class FileActions(
         name: String,
         count: Int,
         into: String? = null,
+        unrun: () -> Unit = {},
         work: (FileWork.Progress) -> FileWork.Outcome
     ) {
-        FileWork.start(kind, name, count, into, work)
+        FileWork.start(kind, name, count, into, unrun, work)
         // Asked once, as the first operation starts: operations show their progress there while the app is away.
         notificationAsk.once()
     }

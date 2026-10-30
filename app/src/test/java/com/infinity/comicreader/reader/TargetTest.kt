@@ -10,14 +10,15 @@ class TargetTest {
     @Test
     fun aBandedTargetMakesAStandInOfAPageTooLargeForOneBitmap() {
         val banded = Target(1848, 0, banded = true)
-        // 1848 x 15708: past the band threshold, though under the bitmap cap.
+        // 1848 x 15708: past the bitmap cap, though under its longest side.
         assertTrue(banded.bandsAt(1000.0, 8500.0))
         val plan = banded.plan(1000.0, 8500.0)
         assertTrue(plan.width.toLong() * plan.height <= Target.BASE_PIXELS)
         assertEquals(8.5, plan.height.toDouble() / plan.width, 0.02)
-        // Unbanded, the same page is as large as one bitmap may be.
+        // Unbanded, the same page is reduced to as large as one bitmap may be.
         val whole = Target(1848, 0).plan(1000.0, 8500.0)
-        assertTrue(whole.width.toLong() * whole.height > Target.BAND_ABOVE_PIXELS)
+        assertTrue(whole.width < 1848)
+        assertTrue(whole.width.toLong() * whole.height <= Target.MAX_OUTPUT_PIXELS)
         assertFalse(Target(1848, 0).bandsAt(1000.0, 8500.0))
     }
 
@@ -26,6 +27,17 @@ class TargetTest {
         val banded = Target(1848, 2960, banded = true)
         assertFalse(banded.bandsAt(4000.0, 6000.0))
         assertEquals(Target(1848, 2960).plan(4000.0, 6000.0), banded.plan(4000.0, 6000.0))
+    }
+
+    @Test
+    fun aPageThatFitsOneBitmapInLandscapeIsNotBanded() {
+        // Fit width on a landscape screen: 2960 x 4440 and 2960 x 8584 each fit one bitmap.
+        val banded = Target(2960, 0, banded = true)
+        assertFalse(banded.bandsAt(1000.0, 1500.0))
+        assertFalse(banded.bandsAt(1000.0, 2900.0))
+        assertEquals(Target(2960, 0).plan(1000.0, 2900.0), banded.plan(1000.0, 2900.0))
+        // Past the cap, it takes bands.
+        assertTrue(banded.bandsAt(1000.0, 3000.0))
     }
 
     @Test

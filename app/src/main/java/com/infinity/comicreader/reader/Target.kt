@@ -213,8 +213,8 @@ data class Target(
         /** The source as it is. */
         val NATIVE = Target()
 
-        /** Largest page a [banded] target makes in one bitmap: 48 MB of ARGB. */
-        const val BAND_ABOVE_PIXELS = 12_000_000L
+        /** Largest page a [banded] target makes in one bitmap: as large as one may be ([MAX_OUTPUT_PIXELS]), so only pages it would reduce take bands. */
+        const val BAND_ABOVE_PIXELS = MAX_OUTPUT_PIXELS
 
         /** Largest stand-in of a page drawn in bands: 16 MB of ARGB. */
         const val BASE_PIXELS = 4_000_000L

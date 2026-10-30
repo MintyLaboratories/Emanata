@@ -191,18 +191,28 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shares (all books of one share together), and while a file is open. The
   first Share or file operation asks once to show notifications. Books other
   apps send or open with this app are taken in every type it shares them as.
-- **Move** and **Copy** pick the items up: a **Paste** button shows at the
-  bottom left (the List/Grid button's mirror), its own high-contrast color
-  (inverse surface) so it never passes for the Move button, with a small badge
-  in Move's or Copy's icon and colors, and a short hint. Tap it to paste into
-  the folder browsed, long-press it to cancel. Picked up in Favorites or
-  History, the items wait for a folder opened in Browse. Names already there
+- **Operation stack:** one column on the handed side (Settings › Appearance ›
+  Handedness, right by default): the floating button on top, never moving, and
+  under it a bubble for each pick waiting to be pasted and each file operation,
+  the newest at the bottom (from the bottom edge when the button is hidden). At
+  most four buttons show, the button included; older bubbles fold into a count
+  on the top one. All file operations (copy, move, delete, rename) go through
+  one queue, one at a time, never in parallel; several items are one operation,
+  done one item at a time. A waiting bubble is gray; the running one darkens
+  with a progress ring in its action's color. Tap it for a card (what it does,
+  which item of how many, how far, Cancel); long-press it to cancel. When it
+  ends it goes, with a short message ("Copied 12 items"), or says why it failed.
+- **Move** and **Copy** pick the items up: a **Paste** bubble joins the stack,
+  its own high-contrast color (inverse surface) and clipboard icon so it never
+  passes for the Move button, with a small badge in Move's or Copy's icon and
+  colors, and a short hint. Tap it to paste into the folder browsed in Browse,
+  long-press it to cancel. Several picks wait side by side. Names already there
   are asked about once for all: **Replace / Keep both / Skip** (Keep both names
   it `Book (2).cbz`; Skip pastes the others); two items of one name keep both.
   A folder is replaced whole, never merged, and the dialog says so. A folder
-  picked up takes along what was selected inside it. A copy can be pasted
-  again; a move is pasted once, and only items that failed or that a Cancel
-  never reached stay picked up. An item that fails leaves the others going,
+  picked up takes along what was selected inside it. A pick is pasted once: its
+  Paste becomes the operation, and only items a move failed at or that a Cancel
+  never reached come back as a Paste. An item that fails leaves the others going,
   and the message says how many were done. A move
   within one place is a rename; between places (device and share, two shares,
   internal storage and SD card) it copies, checks each file's size and reads it
@@ -212,12 +222,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   once complete, so a canceled or failed one never leaves a half-written file;
   what one cut off part way (the app closed) left is put right when its folder
   is next listed. Within one share the server copies itself (SMB server-side
-  copy, WebDAV COPY) where it can. Progress shows once an operation takes a
-  moment, naming the item and which of how many, with Cancel while canceling
-  can stop it (not during a rename or a WebDAV COPY, which the server makes in
-  one request; several items also stop between two); it goes on when the
-  device turns, and in the background (a notification shows it; Android 13+
-  asks once to allow notifications, as the first operation starts). Favorite
+  copy, WebDAV COPY) where it can. Cancel shows while canceling can stop the
+  step under way (not during a rename or a WebDAV COPY, which the server makes
+  in one request; several items also stop between two). Operations go on when
+  the device turns, and in the background (a notification shows the one under
+  way and how many wait; Android 13+ asks once to allow notifications, as the
+  first operation starts). Favorite
   folders, folder layouts and start folders follow a folder moved or renamed.
   A deleted item's favorites, history and bookmarks go with it, and what is
   cached for its books (facts, network copy, page sizes, seams, previews,
@@ -273,8 +283,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Start folder per location:** long-press the device or a share in the
   Locations sheet to pick the folder it opens at (its top by default); picking
   that location opens there. A startup folder on a share is waited for up to
-  the **Network timeout**; after 2 s without an answer a dialog "Waiting for
-  network location…" offers **Wait** (the list keeps spinning) or **Open
+  the **Network timeout**; after 2 s without an answer a dialog naming the share
+  ("Waiting for Share A…") offers **Wait** (the list keeps spinning) or **Open
   device** (the device's start folder at once). When the timeout passes, or the
   share cannot be reached, the dialog closes and the device's start folder
   opens with a note. While the app is shown and that folder browsed,

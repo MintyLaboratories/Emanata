@@ -3,9 +3,12 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.compact.Handovers
 import com.infinity.comicreader.compact.JxlCodec
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.compact.Pixels
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
@@ -113,6 +116,7 @@ class FileJobsRebuildTest {
         assertEquals(cbz.absolutePath, library.historyFor(now)!!.path)
         assertEquals(listOf(1), library.bookmarksFor(now).map { it.page })
         assertFalse(library.hasData(old.id))
+        assertTrue(jobs.handovers.entries().isEmpty())
     }
 
     @Test
@@ -238,6 +242,31 @@ class FileJobsRebuildTest {
         assertTrue(book.exists())
         assertFalse(File(tmp.root, "Late.cbz").exists())
         assertTrue(library.isRead(old.id))
+    }
+
+    @Test
+    fun dataLeftBehindWhenTheAppStoppedFollowsOnRecovery() {
+        val book = sevenZip("Stopped.cb7", 2)
+        val old = ref(book)
+        library.setFavorite(old, true)
+        // The new file took the book's place; the app stopped before the data followed.
+        val cbz = File(tmp.root, "Stopped.cbz")
+        ZipOutputStream(cbz.outputStream()).use { zip ->
+            for ((name, data) in listOf("1.jxl" to byteArrayOf(1, 2, 3), "2.jxl" to byteArrayOf(4, 5))) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(data)
+                zip.closeEntry()
+            }
+        }
+        val new = BookIds.peek(cbz)
+        jobs.handovers.add(Handovers.Entry(old.id, new, book.absolutePath, cbz.absolutePath, true, intArrayOf(0, 1), 2))
+        book.delete()
+        // One whose new file never took its place is let go.
+        jobs.handovers.add(Handovers.Entry(old.id, BookId(42), book.absolutePath, File(tmp.root, "Never.cbz").absolutePath, true, intArrayOf(0, 1), 2))
+        jobs.recover()
+        assertTrue(library.isFavorite(new))
+        assertFalse(library.isFavorite(old.id))
+        assertTrue(jobs.handovers.entries().isEmpty())
     }
 
     @Test

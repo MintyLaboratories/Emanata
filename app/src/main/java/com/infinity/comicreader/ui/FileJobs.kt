@@ -4,6 +4,7 @@ import android.content.Context
 import com.infinity.comicreader.compact.AndroidImages
 import com.infinity.comicreader.compact.CompactWorkers
 import com.infinity.comicreader.compact.Compactor
+import com.infinity.comicreader.compact.Handovers
 import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.data.BookCaches
@@ -45,6 +46,9 @@ internal class FileJobs(
     private val pageWork: () -> PageWork? = ::platformPages
 ) {
     private val app = context.applicationContext
+
+    /** Books' data on its way to their rebuilt files ([recover]). */
+    internal val handovers = Handovers(File(app.filesDir, HANDOVERS))
 
     /**
      * An item to paste under [name], over what has that name there when [replace]: the item
@@ -210,6 +214,7 @@ internal class FileJobs(
         p: FileWork.Progress
     ): FileWork.Outcome {
         val pages = pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
+        recover()
         val seen = settled(chosen)
         // One operation at a time: whatever is there was left by one that ended early.
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
@@ -252,8 +257,14 @@ internal class FileJobs(
                     val placer = Compactor.Placer { result, part, swap ->
                         OpenBooks.unlessOpen(path) {
                             val newId = BookIds.peek(part)
+                            val target = result.file.absolutePath
+                            val removed = result.removed != null
+                            // Kept on the device until the data has followed, should the app stop in between.
+                            val handover = id?.takeIf { it != newId }
+                                ?.let { handovers.add(Handovers.Entry(it, newId, path, target, removed, result.moves, result.pageCount)) }
                             swap()
-                            follow(book, id, result, newId)
+                            follow(path, id, newId, target, removed, result.moves, result.pageCount)
+                            handover?.let(handovers::remove)
                         }
                     }
                     val request = Compactor.Request(
@@ -292,26 +303,37 @@ internal class FileJobs(
     }
 
     /**
-     * Hands everything kept for [book] (Book ID [old]) to its rebuilt file (Book ID [new]):
-     * its pages where they went, its own charset dropped (the new file names its pages in
-     * UTF-8). When the book's own file went or was replaced, what is cached for it goes
-     * too, unless a copy elsewhere keeps it, and picks waiting follow the new file.
+     * Hands the data of books whose new file took their place, the app stopping before
+     * their data followed it, to those files; each once.
      */
-    private fun follow(book: File, old: BookId?, result: Compactor.Result.Rebuilt, new: BookId) {
-        val path = book.absolutePath
-        val target = result.file.absolutePath
-        val replaced = result.removed != null || target == path
+    fun recover() = synchronized(RECOVERY) {
+        for (e in handovers.entries()) {
+            val placed = File(e.target).isFile && runCatching { BookIds.peek(File(e.target)) }.getOrNull() == e.new
+            if (placed && library.mayHaveData(e.old) && !library.mayHaveData(e.new)) follow(e.book, e.old, e.new, e.target, e.removed, e.moves, e.pageCount)
+            handovers.remove(e)
+        }
+    }
+
+    /**
+     * Hands everything kept for the book at [path] (Book ID [old]) to its rebuilt file at
+     * [target] (Book ID [new]): book page `i` is now page [moves]`[i]` of [pageCount], its own
+     * charset dropped (the new file names its pages in UTF-8). When the book's own file
+     * went ([removed]) or was replaced, what is cached for it goes too, unless a copy
+     * elsewhere keeps it, and picks waiting follow the new file.
+     */
+    private fun follow(path: String, old: BookId?, new: BookId, target: String, removed: Boolean, moves: IntArray, pageCount: Int) {
+        val replaced = removed || target == path
         if (replaced && old != null && BookIds.elsewhere(setOf(old), path).isEmpty()) BookCaches.forget(app, old)
         if (replaced) BookIds.removed(path)
         val ref = BookRef(new, target)
         if (old != null && old != ref.id) {
-            library.carryOver(old, ref, result.moves, result.pageCount)
+            library.carryOver(old, ref, moves, pageCount)
             library.setNameCharset(ref, null)
             if (replaced) LikenessStore(app).remove(listOf(old))
         } else {
             library.seen(ref)
         }
-        if (result.removed != null) FileClipboard.edit { items -> items.map { if (it.path == path) it.copy(path = target) else it } }
+        if (removed) FileClipboard.edit { items -> items.map { if (it.path == path) it.copy(path = target) else it } }
     }
 
     /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. */
@@ -341,6 +363,12 @@ internal class FileJobs(
 
         /** Under the cache: the pieces of a book being rebuilt. */
         const val SCRATCH = "compact"
+
+        /** Under the app's files: books' data on its way to their rebuilt files. */
+        const val HANDOVERS = "handovers"
+
+        /** Held while handing data over, so two never hand over one book. */
+        val RECOVERY = Any()
         const val SUFFIX_COMPACTED = "compacted"
         const val SUFFIX_COMPATIBLE = "compatible"
     }

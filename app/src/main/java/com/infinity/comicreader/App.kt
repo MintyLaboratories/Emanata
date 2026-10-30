@@ -20,6 +20,7 @@ import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PreviewStore
+import com.infinity.comicreader.ui.FileJobs
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Locales
 import com.infinity.comicreader.util.Timing
@@ -44,7 +45,11 @@ class App : Application() {
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
         // Off the main thread: lookups by ID never wait on the database.
-        thread(name = "book-index", isDaemon = true) { runCatching { BookIds.load() } }
+        thread(name = "book-index", isDaemon = true) {
+            runCatching { BookIds.load() }
+            // A rebuild the app stopped midway hands its book's data over now.
+            runCatching { FileJobs(this, Library(this), prefs).recover() }
+        }
         cleanCaches()
     }
 

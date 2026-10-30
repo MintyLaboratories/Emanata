@@ -187,7 +187,7 @@ internal class FileActions(
         val first = folders.firstOrNull() ?: return
         val title = if (folders.size == 1) activity.getString(R.string.pack_title_one, first.name)
         else activity.resources.getQuantityString(R.plurals.pack_title, folders.size, folders.size)
-        val message = activity.getString(R.string.pack_message) +
+        val message = activity.getString(if (folders.size == 1) R.string.pack_message_one else R.string.pack_message) +
             if (compacted) "\n\n" + activity.getString(R.string.compact_warning) else ""
         AlertDialog.Builder(activity)
             .setTitle(title)

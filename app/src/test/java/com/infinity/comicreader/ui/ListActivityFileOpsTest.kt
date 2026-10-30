@@ -406,6 +406,7 @@ class ListActivityFileOpsTest {
         item.performClick()
         idle()
         assertEquals(activity.getString(R.string.pack_title_one, "Other"), latest().title())
+        assertEquals(activity.getString(R.string.pack_message_one), latest().findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString())
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         val cbz = File(shelf, "Other.cbz")
         settle { cbz.exists() && !other.exists() }

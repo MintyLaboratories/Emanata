@@ -571,6 +571,7 @@
         <item quantity="one">Pack %1$d folder?</item>
         <item quantity="other">Pack %1$d folders?</item>
     </plurals>
+    <string name="pack_message_one">The folder becomes a CBZ of its images beside it. It is removed once the CBZ is checked.</string>
     <string name="pack_message">Each folder becomes a CBZ of its images beside it. The folder is removed once the CBZ is checked.</string>
     <string name="pack_why_subfolders">Holds folders</string>
     <string name="pack_why_other_files">Holds files other than images</string>

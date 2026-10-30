@@ -94,7 +94,9 @@ object SelectionActions {
         val browsedHere: (BookEntry) -> Boolean,
         /** True when the book's file names may be read in another charset. */
         val charsetApplies: (BookEntry) -> Boolean,
-        val canPeek: (BookEntry) -> Boolean
+        val canPeek: (BookEntry) -> Boolean,
+        /** True when the item is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
+        val rebuildable: (BookEntry) -> Boolean = { false }
     )
 
     /**
@@ -139,7 +141,7 @@ object SelectionActions {
                 MoreAction.BOOK_INFO -> book != null
                 MoreAction.NAME_CHARSET -> book != null && !facts.keepSimple && facts.charsetApplies(book)
                 MoreAction.PEEK -> one != null && facts.canPeek(one)
-                MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> action.ready
+                MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> entries.any(facts.rebuildable)
             }
         }
     }

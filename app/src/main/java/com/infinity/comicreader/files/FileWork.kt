@@ -15,14 +15,20 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The queue of file operations (copy, move, delete, rename): one at a time, never two
+ * The queue of file operations (copy, move, delete, rename, compact, make compatible): one at a time, never two
  * at once, each in turn as it was started. They run in the app's process rather than in
  * a screen, so turning the device does not stop them, and [onStart] keeps the app running
  * meanwhile ([FileWorkService]). Whichever library screen is there shows their [operations],
  * and [acknowledge]s each outcome once it has shown it.
  */
 object FileWork {
-    enum class Kind { COPY, MOVE, DELETE, RENAME }
+    enum class Kind { COPY, MOVE, DELETE, RENAME, COMPACT, COMPATIBLE }
+
+    /**
+     * What rebuilding books did beyond their count: bytes [saved] (less than 0 when they
+     * grew), books left [unchanged], and the pages [reencoded] (their pixels changed slightly), by book.
+     */
+    data class Summary(val saved: Long, val unchanged: Int = 0, val reencoded: Map<String, List<String>> = emptyMap())
 
     sealed class Outcome {
         /** What is no longer where it was: deleted, or moved away. */
@@ -30,13 +36,14 @@ object FileWork {
 
         /**
          * Finished with [count] items: [path] is the item to show, if any; [sourceLeft] when a
-         * move could not delete a source.
+         * move could not delete a source; [summary] for books rebuilt.
          */
         data class Done(
             val path: String?,
             val sourceLeft: Boolean = false,
             override val gone: List<String> = emptyList(),
-            val count: Int = 1
+            val count: Int = 1,
+            val summary: Summary? = null
         ) : Outcome()
 
         /** Canceled after [done] of [count] items. */

@@ -28,14 +28,12 @@ import org.robolectric.annotation.Config
 class MoreActionsTest {
 
     @Test
-    fun defaultOffersAllReadyItemsButPeekInTheAgreedOrder() {
+    fun defaultOffersEveryItemButPeekInTheAgreedOrder() {
         assertEquals(
-            listOf(MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET),
+            listOf(MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE),
             MoreActions.DEFAULT.visible
         )
-        // Compaction waits for its work; Peek is listed, off.
-        assertFalse(COMPACT in MoreActions.DEFAULT.offered)
-        assertFalse(MAKE_COMPATIBLE in MoreActions.DEFAULT.offered)
+        // Peek is listed, off.
         assertEquals(PEEK, MoreActions.DEFAULT.offered.last())
         assertEquals(MoreActions.DEFAULT, MoreActions.decode(null))
         assertEquals(MoreActions.DEFAULT, MoreActions.decode(""))
@@ -43,17 +41,16 @@ class MoreActionsTest {
 
     @Test
     fun encodingRoundTripsOrderAndHiddenItems() {
-        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(8, 0)
+        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(10, 0)
         assertEquals(PEEK, actions.visible.first())
         assertFalse(MARK_READ in actions.visible)
         assertEquals(actions, MoreActions.decode(actions.encode()))
     }
 
     @Test
-    fun movingSkipsItemsNotReadyAndKeepsTheirPlaces() {
-        val moved = MoreActions.DEFAULT.moved(7, 8)
-        assertEquals(listOf(NAME_CHARSET, PEEK), moved.offered.takeLast(2).reversed())
-        assertEquals(MoreActions.DEFAULT.order.indexOf(COMPACT), moved.order.indexOf(COMPACT))
+    fun movingAnItemClosesUpTheOthers() {
+        val moved = MoreActions.DEFAULT.moved(7, 10)
+        assertEquals(listOf(COMPACT, MAKE_COMPATIBLE, PEEK, NAME_CHARSET), moved.offered.takeLast(4))
         assertEquals(MoreActions.DEFAULT, MoreActions.DEFAULT.moved(0, 99))
     }
 

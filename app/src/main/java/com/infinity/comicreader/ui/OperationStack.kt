@@ -335,6 +335,8 @@ internal class OperationStack(
             FileWork.Kind.MOVE -> res.getQuantityString(R.plurals.op_moving, count, count)
             FileWork.Kind.DELETE -> res.getQuantityString(R.plurals.op_deleting, count, count)
             FileWork.Kind.RENAME -> activity.getString(R.string.op_renaming, status.name)
+            FileWork.Kind.COMPACT -> res.getQuantityString(R.plurals.op_compacting, count, count)
+            FileWork.Kind.COMPATIBLE -> res.getQuantityString(R.plurals.op_making_compatible, count, count)
         }
         return status.into?.let { activity.getString(R.string.op_into, doing, it) } ?: doing
     }

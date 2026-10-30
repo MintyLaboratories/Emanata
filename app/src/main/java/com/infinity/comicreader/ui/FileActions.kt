@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.text.InputType
+import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -9,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -29,7 +31,8 @@ import java.util.Locale
 /**
  * The file operations of the library's selection, on the device and on shares: Rename,
  * Delete, and Move or Copy, which pick the items up ([FileClipboard]) for a Paste bubble
- * to put into the folder browsed. Each runs as one queued [FileWork], over its items one
+ * to put into the folder browsed; and for books on the device, Compact and Make
+ * compatible ([FileJobs.rebuild]). Each runs as one queued [FileWork], over its items one
  * at a time, going on past one that fails; its progress shows on its bubble, and its
  * outcome as a toast, saying how many were done when not all. Favorites, history,
  * bookmarks and all else kept for an item follow it when it moves or is renamed, and go
@@ -130,6 +133,46 @@ internal class FileActions(
             val chosen = jobs.look(items.map { it.path })
             start(FileWork.Kind.DELETE, first.name, items.size) { p -> jobs.delete(items, chosen, p) }
         }
+    }
+
+    // ------------------------------------------------------------------ compact
+
+    /**
+     * Rebuilds the books at [paths] once confirmed: compacts them losslessly, or with
+     * [compatible] makes their JPEG XL pages ones every reader opens. The dialog warns,
+     * and offers In place (remembered) and, for Compact, Skip hidden pages (off each time).
+     * One queued operation, a book at a time; [onConfirmed] runs as it is queued.
+     */
+    fun rebuild(paths: List<String>, compatible: Boolean, onConfirmed: () -> Unit = {}) {
+        val first = paths.firstOrNull() ?: return
+        val title = if (paths.size == 1) {
+            activity.getString(if (compatible) R.string.compatible_title_one else R.string.compact_title_one, File(first).name)
+        } else {
+            activity.resources.getQuantityString(if (compatible) R.plurals.compatible_title else R.plurals.compact_title, paths.size, paths.size)
+        }
+        val view = activity.layoutInflater.inflate(R.layout.dialog_compact, null)
+        val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place).apply { isChecked = prefs.compactInPlace }
+        val skip = view.findViewById<MaterialSwitch>(R.id.compact_skip_hidden)
+        if (compatible) {
+            skip.visibility = View.GONE
+            view.findViewById<View>(R.id.compact_skip_hidden_hint).visibility = View.GONE
+        }
+        AlertDialog.Builder(activity)
+            .setTitle(title)
+            .setMessage(if (compatible) R.string.compatible_message else R.string.compact_warning)
+            .setView(view)
+            .setPositiveButton(if (compatible) R.string.more_make_compatible else R.string.more_compact) { _, _ ->
+                prefs.compactInPlace = inPlace.isChecked
+                onConfirmed()
+                val jobs = this.jobs
+                val chosen = jobs.look(paths)
+                val place = inPlace.isChecked
+                val skipHidden = !compatible && skip.isChecked
+                val kind = if (compatible) FileWork.Kind.COMPATIBLE else FileWork.Kind.COMPACT
+                start(kind, File(first).name, paths.size) { p -> jobs.rebuild(paths, compatible, place, skipHidden, chosen, p) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     // ------------------------------------------------------------------ move / copy
@@ -299,6 +342,7 @@ internal class FileActions(
                     if (outcome.sourceLeft) activity.getString(R.string.file_source_left) else counted(R.string.file_moved, R.plurals.moved_count, outcome.count)
                 FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, outcome.count, outcome.count)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
+                FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE -> rebuilt(status.kind, outcome)
             }
             is FileWork.Outcome.Canceled ->
                 if (outcome.done > 0) activity.getString(R.string.file_canceled_part, part(status.kind, outcome.done, outcome.count))
@@ -308,6 +352,33 @@ internal class FileActions(
                 else activity.getString(R.string.file_failed, describe(outcome.error))
         }
         toast(text)
+        val reencoded = (outcome as? FileWork.Outcome.Done)?.summary?.reencoded.orEmpty()
+        if (reencoded.isNotEmpty()) tellReencoded(reencoded)
+    }
+
+    /** What rebuilding books did: how many, the bytes Compact saved, and how many were left as they were. */
+    private fun rebuilt(kind: FileWork.Kind, outcome: FileWork.Outcome.Done): String {
+        val res = activity.resources
+        val compatible = kind == FileWork.Kind.COMPATIBLE
+        val count = outcome.count
+        val saved = outcome.summary?.saved ?: 0L
+        val text = when {
+            count == 0 -> activity.getString(if (compatible) R.string.compatible_nothing else R.string.compact_nothing)
+            compatible -> res.getQuantityString(R.plurals.compatible_count, count, count)
+            else -> res.getQuantityString(R.plurals.compacted_count, count, count, FileUtils.formatSize(activity, saved.coerceAtLeast(0)))
+        }
+        val unchanged = outcome.summary?.unchanged ?: 0
+        return if (count > 0 && unchanged > 0) res.getQuantityString(R.plurals.rebuild_unchanged, unchanged, text, unchanged) else text
+    }
+
+    /** Lists the pages Make compatible re-encoded, by book: their pixels changed slightly. */
+    private fun tellReencoded(pages: Map<String, List<String>>) {
+        val list = pages.entries.joinToString("\n") { (book, names) -> activity.getString(R.string.reencoded_book, book, names.joinToString(", ")) }
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.reencoded_title)
+            .setMessage(activity.getString(R.string.reencoded_message) + "\n\n" + list)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     /** How many of [count] items an operation of [kind] did: "Deleted 3 of 5 items". */
@@ -316,6 +387,8 @@ internal class FileActions(
             FileWork.Kind.COPY -> R.plurals.copied_part
             FileWork.Kind.MOVE -> R.plurals.moved_part
             FileWork.Kind.DELETE, FileWork.Kind.RENAME -> R.plurals.deleted_part
+            FileWork.Kind.COMPACT -> R.plurals.compacted_part
+            FileWork.Kind.COMPATIBLE -> R.plurals.compatible_part
         },
         count, done, count
     )

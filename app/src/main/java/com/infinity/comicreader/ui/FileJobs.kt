@@ -1,8 +1,17 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import com.infinity.comicreader.compact.AndroidImages
+import com.infinity.comicreader.compact.CompactWorkers
+import com.infinity.comicreader.compact.Compactor
+import com.infinity.comicreader.compact.LibJxl
+import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.data.BookCaches
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
@@ -10,9 +19,12 @@ import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Node
 import com.infinity.comicreader.files.Transfer
+import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.asExecutor
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
@@ -23,7 +35,13 @@ import java.util.Locale
  * screen, so a long queue keeps no screen alive. Favorites, history, bookmarks and all
  * else kept for an item follow it when it moves or is renamed, and go when it is deleted.
  */
-internal class FileJobs(context: Context, private val library: Library, private val prefs: Prefs) {
+internal class FileJobs(
+    context: Context,
+    private val library: Library,
+    private val prefs: Prefs,
+    /** What makes pages anew for Compact and Make compatible; null where libjxl is missing. Tests stand in their own. */
+    private val pageWork: () -> PageWork? = ::platformPages
+) {
     private val app = context.applicationContext
 
     /**
@@ -174,6 +192,104 @@ internal class FileJobs(context: Context, private val library: Library, private 
         return ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(first, sourceLeft, gone, done))
     }
 
+    /**
+     * Rebuilds the books at [paths] on the device one at a time ([Compactor]): with
+     * [compatible], their JPEG XL pages made ones every reader opens, else compacted
+     * losslessly. Goes on past one that fails; one no longer what was [chosen] ([look]) is
+     * left alone. Everything kept for each book follows its new file, which takes the
+     * book's place when [inPlace]; [skipHidden] leaves its hidden pages out.
+     */
+    fun rebuild(
+        paths: List<String>,
+        compatible: Boolean,
+        inPlace: Boolean,
+        skipHidden: Boolean,
+        chosen: Future<List<Result<Node?>>>,
+        p: FileWork.Progress
+    ): FileWork.Outcome {
+        val pages = pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
+        val seen = settled(chosen)
+        // One operation at a time: whatever is there was left by one that ended early.
+        val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
+        val workers = CompactWorkers.max()
+        val compactor = Compactor(scratch, workers, CompactWorkers.limit(app, workers), CompactWorkers.threads)
+        val convert: (ByteArray) -> PageWork.Made? = if (compatible) pages::compatible else pages::compact
+        val progress = object : Compactor.Progress {
+            override val alive: Boolean get() = p.alive
+
+            override fun report(done: Long, total: Long) = p.report(done, total)
+        }
+        var done = 0
+        var unchanged = 0
+        var saved = 0L
+        var last: String? = null
+        val gone = ArrayList<String>()
+        val reencoded = LinkedHashMap<String, List<String>>()
+        var failure: Exception? = null
+        try {
+            for ((i, path) in paths.withIndex()) {
+                if (!p.alive) return FileWork.Outcome.Canceled(done, paths.size, gone)
+                val book = File(path)
+                if (paths.size > 1) p.item(book.name, i, paths.size)
+                changed(path, seen?.getOrNull(i))?.let {
+                    if (failure == null) failure = it
+                    continue
+                }
+                try {
+                    val id = BookIds.find(book)
+                    val hidden = if (skipHidden && id != null) library.hiddenPages(id) else emptySet()
+                    val request = Compactor.Request(
+                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible
+                    )
+                    val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
+                    when (val result = compactor.run(request, open, progress)) {
+                        is Compactor.Result.Unchanged -> unchanged++
+                        is Compactor.Result.Rebuilt -> {
+                            follow(book, id, result)
+                            done++
+                            saved += result.before - result.after
+                            last = result.file.absolutePath
+                            result.removed?.let { gone += it.absolutePath }
+                            if (result.reencoded.isNotEmpty()) reencoded[result.file.name] = result.reencoded
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    return FileWork.Outcome.Canceled(done, paths.size, gone)
+                } catch (e: Exception) {
+                    if (failure == null) failure = e
+                }
+            }
+        } finally {
+            scratch.deleteRecursively()
+        }
+        val summary = FileWork.Summary(saved, unchanged, reencoded)
+        return failure?.let { FileWork.Outcome.Failed(it, done + unchanged, paths.size, gone) }
+            ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary)
+    }
+
+    /**
+     * Hands everything kept for [book] (Book ID [old]) to its rebuilt file: its pages
+     * where they went, its own charset dropped (the new file names its pages in UTF-8).
+     * When the book's own file went or was replaced, what is cached for it goes too,
+     * unless a copy elsewhere keeps it, and picks waiting follow the new file.
+     */
+    private fun follow(book: File, old: BookId?, result: Compactor.Result.Rebuilt) {
+        val path = book.absolutePath
+        val target = result.file.absolutePath
+        val replaced = result.removed != null || target == path
+        if (replaced && old != null && BookIds.elsewhere(setOf(old), path).isEmpty()) BookCaches.forget(app, old)
+        if (replaced) BookIds.removed(path)
+        val ref = BookRef(BookIds.of(result.file), target)
+        if (old != null && old != ref.id) {
+            library.carryOver(old, ref, result.moves, result.pageCount)
+            library.setNameCharset(ref, null)
+            if (replaced) LikenessStore(app).remove(listOf(old))
+        } else {
+            library.seen(ref)
+        }
+        if (result.removed != null) FileClipboard.edit { items -> items.map { if (it.path == path) it.copy(path = target) else it } }
+    }
+
     /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. */
     fun giveBack(clip: FileClipboard.Clip, items: List<FileClipboard.Item>) {
         if (clip.move && items.isNotEmpty()) FileClipboard.add(clip.copy(items = items, id = FileWork.nextOrder()))
@@ -193,6 +309,16 @@ internal class FileJobs(context: Context, private val library: Library, private 
     private fun forget(path: String) {
         BookCaches.deleted(app, library, path)
         FileClipboard.edit { items -> items.filterNot { Transfer.isWithin(it.path, path) } }
+    }
+
+    private companion object {
+        /** libjxl and the platform's codecs; null where libjxl is missing. */
+        fun platformPages(): PageWork? = if (runCatching { LibJxl.available }.getOrDefault(false)) PageWork(LibJxl, AndroidImages) else null
+
+        /** Under the cache: the pieces of a book being rebuilt. */
+        const val SCRATCH = "compact"
+        const val SUFFIX_COMPACTED = "compacted"
+        const val SUFFIX_COMPATIBLE = "compatible"
     }
 
     /** Runs [block]; what it threw, else null. */

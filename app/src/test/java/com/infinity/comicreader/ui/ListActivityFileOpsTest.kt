@@ -263,18 +263,46 @@ class ListActivityFileOpsTest {
     fun theMoreMenuOffersWhatAppliesInTheSettingsOrder() {
         val activity = launch()
         activity.select(book.absolutePath)
-        // Read already; Peek is off until turned on; Book info for one book.
-        assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.BOOK_INFO), activity.moreItems())
+        // Read already; Peek is off until turned on; Book info for one book; an archive on the device can be compacted.
+        assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.BOOK_INFO, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
         assertEquals(listOf(MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP), activity.moreItems())
         // Both: what applies to all of them, and nothing that takes one.
         activity.select(book.absolutePath)
-        assertEquals(listOf(MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD), activity.moreItems())
+        assertEquals(
+            listOf(MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE),
+            activity.moreItems()
+        )
 
         // Settings reorder and hide items.
         Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(3, 0).with(MoreAction.MARK_ALL_READ, false)
-        assertEquals(listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD), activity.moreItems())
+        assertEquals(listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
+    }
+
+    @Test
+    fun compactAsksFirstAndRemembersInPlace() {
+        val activity = launch()
+        activity.select(book.absolutePath)
+        activity.select(other.absolutePath)
+        activity.moreItems()
+        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+        idle()
+        val dialog = latest()
+        // The books among those selected; the warning; Skip hidden pages off each time.
+        assertEquals(context.getString(R.string.compact_title_one, book.name), dialog.title())
+        assertEquals(context.getString(R.string.compact_warning), dialog.findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString())
+        val inPlace = dialog.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.compact_in_place)!!
+        assertFalse(inPlace.isChecked)
+        assertFalse(dialog.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.compact_skip_hidden)!!.isChecked)
+        inPlace.isChecked = true
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(Prefs(context).compactInPlace)
+        // Queued; with no libjxl on the JVM it fails, leaving the book as it was.
+        settle()
+        assertEquals(context.getString(R.string.file_failed, "JPEG XL is not available"), ShadowToast.getTextOfLatestToast())
+        assertArrayEquals(bytes, book.readBytes())
     }
 
     @Test
@@ -283,7 +311,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.select(two.absolutePath)
         activity.select(book.absolutePath)
-        assertEquals(listOf(MoreAction.MARK_READ, MoreAction.MARK_UNREAD), activity.moreItems())
+        assertEquals(listOf(MoreAction.MARK_READ, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
         val read = activity.moreMenu!!.getChildAt(0)
         read.performClick()
         settle { library.isRead(bookId(two)) }

@@ -115,8 +115,13 @@ class SelectionTest {
             listOf(MoreAction.MARK_READ, MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD),
             SelectionActions.more(listOf(book("a.cbz"), book("b.cbz", read = true), folder("Sub")), all, facts)
         )
-        // Nothing not ready is ever offered.
-        assertFalse(SelectionActions.more(listOf(book("a.cbz")), MoreAction.entries.toList(), facts).any { !it.ready })
+        // Compaction for books it can rebuild among those selected.
+        val rebuild = SelectionActions.MoreFacts(true, { true }, { true }, { true }, rebuildable = { it.name.endsWith(".cbr") })
+        assertEquals(
+            listOf(MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE),
+            SelectionActions.more(listOf(book("a.cbr"), folder("Sub")), all, rebuild).filter { it == MoreAction.COMPACT || it == MoreAction.MAKE_COMPATIBLE }
+        )
+        assertFalse(MoreAction.COMPACT in SelectionActions.more(listOf(book("a.pdf"), folder("Sub")), all, rebuild))
     }
 
     @Test

@@ -119,7 +119,7 @@ class FileWorkService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val builder = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(if (status?.kind == FileWork.Kind.MOVE) R.drawable.ic_drive_file_move else R.drawable.ic_content_copy)
+            .setSmallIcon(iconOf(status?.kind))
             .setContentTitle(getString(titleOf(status?.kind)))
             .setContentText(status?.let { nameOf(this, it) })
             .setSubText(if (more > 0) resources.getQuantityString(R.plurals.file_more_waiting, more, more) else null)
@@ -135,9 +135,9 @@ class FileWorkService : Service() {
         } else {
             builder.setProgress(0, 0, true)
         }
-        val copying = status?.kind == FileWork.Kind.COPY || status?.kind == FileWork.Kind.MOVE
+        val lasting = status?.kind in LONG_KINDS
         // Several items stop between two.
-        if ((copying || (status?.count ?: 1) > 1) && status?.stoppable == true && status.running) {
+        if ((lasting || (status?.count ?: 1) > 1) && status?.stoppable == true && status.running) {
             val cancel = PendingIntent.getService(
                 this, 0, Intent(this, FileWorkService::class.java).setAction(ACTION_CANCEL),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -153,8 +153,21 @@ class FileWorkService : Service() {
             FileWork.Kind.MOVE -> R.string.file_moving
             FileWork.Kind.DELETE -> R.string.file_deleting
             FileWork.Kind.RENAME -> R.string.file_renaming
+            FileWork.Kind.COMPACT -> R.string.file_compacting
+            FileWork.Kind.COMPATIBLE -> R.string.file_making_compatible
             else -> R.string.file_copying
         }
+
+        /** The notification's icon for an operation of [kind]. */
+        private fun iconOf(kind: FileWork.Kind?): Int = when (kind) {
+            FileWork.Kind.MOVE -> R.drawable.ic_drive_file_move
+            FileWork.Kind.COMPACT -> R.drawable.ic_compress
+            FileWork.Kind.COMPATIBLE -> R.drawable.ic_unfold_more
+            else -> R.drawable.ic_content_copy
+        }
+
+        /** Operations that take a while even for one item: Cancel shows for them alone too. */
+        private val LONG_KINDS = setOf(FileWork.Kind.COPY, FileWork.Kind.MOVE, FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE)
 
         private const val CHANNEL = "file_work"
         private const val NOTIFICATION_ID = 7301

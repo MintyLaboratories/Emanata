@@ -1,10 +1,7 @@
 package com.infinity.comicreader.data
 
-/**
- * An item of the selection's ⋮ menu. Those not [ready] are kept in the setting's order
- * but never offered until their work is built.
- */
-enum class MoreAction(val key: String, val ready: Boolean = true) {
+/** An item of the selection's ⋮ menu. */
+enum class MoreAction(val key: String) {
     MARK_READ("mark_read"),
     MARK_UNREAD("mark_unread"),
     MARK_ALL_READ("mark_all_read"),
@@ -13,8 +10,8 @@ enum class MoreAction(val key: String, val ready: Boolean = true) {
     SHOW_IN_FOLDER("show_in_folder"),
     BOOK_INFO("book_info"),
     NAME_CHARSET("name_charset"),
-    COMPACT("compact", ready = false),
-    MAKE_COMPATIBLE("make_compatible", ready = false),
+    COMPACT("compact"),
+    MAKE_COMPATIBLE("make_compatible"),
     PEEK("peek");
 
     companion object {
@@ -31,26 +28,21 @@ enum class MoreAction(val key: String, val ready: Boolean = true) {
  */
 data class MoreActions(val order: List<MoreAction>, val shown: Set<MoreAction>) {
 
-    /** The items the setting lists: those [MoreAction.ready], in order. */
-    val offered: List<MoreAction> get() = order.filter { it.ready }
+    /** The items the setting lists, in order. */
+    val offered: List<MoreAction> get() = order
 
     /** The items to offer, in order. */
-    val visible: List<MoreAction> get() = offered.filter { it in shown }
+    val visible: List<MoreAction> get() = order.filter { it in shown }
 
     fun encode(): String = order.joinToString(",") { if (it in shown) it.key else "-${it.key}" }
 
     /** [action] shown or hidden. */
     fun with(action: MoreAction, show: Boolean) = copy(shown = if (show) shown + action else shown - action)
 
-    /** The offered item at [from] moved to [to] among the offered ones, the others closing up; unready items keep their places. */
+    /** The item at [from] moved to [to], the others closing up. */
     fun moved(from: Int, to: Int): MoreActions {
-        val list = offered
-        if (from !in list.indices || to !in list.indices || from == to) return this
-        val reordered = list.toMutableList().apply { add(to, removeAt(from)) }
-        val slots = order.indices.filter { order[it].ready }
-        val out = order.toMutableList()
-        for ((i, slot) in slots.withIndex()) out[slot] = reordered[i]
-        return copy(order = out)
+        if (from !in order.indices || to !in order.indices || from == to) return this
+        return copy(order = order.toMutableList().apply { add(to, removeAt(from)) })
     }
 
     companion object {

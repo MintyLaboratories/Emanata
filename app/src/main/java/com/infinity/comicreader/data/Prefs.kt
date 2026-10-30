@@ -394,6 +394,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /** True when Compact and Make compatible replace each book with its new file; off, the new file goes beside it. */
+    var compactInPlace: Boolean
+        get() = bool(KEY_COMPACT_IN_PLACE, false)
+        set(v) = put(KEY_COMPACT_IN_PLACE, v)
+
     /** True for left-handed: the floating button and operation bubbles on the left. */
     var leftHanded: Boolean
         get() = sp.getString(KEY_HANDED, null) == HANDED_LEFT
@@ -670,6 +675,7 @@ class Prefs(context: Context) {
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
         const val KEY_HANDED = "pref_handed"
+        private const val KEY_COMPACT_IN_PLACE = "pref_compact_in_place"
         const val HANDED_LEFT = "left"
         const val HANDED_RIGHT = "right"
         private const val KEY_GROUP_FAVORITES = "pref_group_favorites"
@@ -708,7 +714,7 @@ class Prefs(context: Context) {
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
-            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_COMPACT_IN_PLACE
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

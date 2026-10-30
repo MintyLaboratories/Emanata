@@ -1687,7 +1687,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun moreItems(): List<MoreAction> = SelectionActions.more(
         selection.entries,
         prefs.moreActions.visible,
-        SelectionActions.MoreFacts(prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek)
+        SelectionActions.MoreFacts(prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek, ::canRebuild)
     )
 
     /** While anything is selected: the selection bar instead of the toolbar, the floating bar, and the button for it. */
@@ -1909,10 +1909,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             MoreAction.BOOK_INFO -> one?.let { showBookInfo(it) }
             MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
             MoreAction.PEEK -> one?.let { peekFromMenu(it) }
-            // Built with lossless compaction.
-            MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> Unit
+            MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE ->
+                fileActions.rebuild(entries.filter(::canRebuild).map { it.path }, compatible = action == MoreAction.MAKE_COMPATIBLE)
         }
     }
+
+    /** True when [entry] is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
+    private fun canRebuild(entry: BookEntry): Boolean =
+        !entry.isDir && Formats.isArchiveName(entry.name) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
 
     /** Book info of [entry] without opening it ([LibraryBookInfo]). */
     private fun showBookInfo(entry: BookEntry) {

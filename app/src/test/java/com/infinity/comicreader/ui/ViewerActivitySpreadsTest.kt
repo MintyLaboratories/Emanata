@@ -311,6 +311,70 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun aStillDeviceShownAgainHandsBackOnceItsReadingRepeats() {
+        val sensors = accelerometer()
+        val controller = Robolectric.buildActivity(
+            ViewerActivity::class.java,
+            Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
+        ).setup()
+        val viewer = controller.get()
+        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        sizesRead()
+        viewer.next()
+        // Standing still in landscape for the spread.
+        sensors.gravity(9.8f, 0f, 0f)
+        idleFor(500)
+        viewer.turn("land")
+        controller.pause().stop()
+        controller.start().resume()
+        // The same reading as before it stopped: still enough to tell the way up.
+        sensors.gravity(9.8f, 0f, 0f)
+        idleFor(500)
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+    }
+
+    @Test
+    fun keptOverAStopTheSensorStillLetsGo() {
+        val sensors = accelerometer()
+        val controller = Robolectric.buildActivity(
+            ViewerActivity::class.java,
+            Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
+        ).setup()
+        val viewer = controller.get()
+        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        sizesRead()
+        viewer.next()
+        sensors.gravity(0f, 0f, 9.8f)
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, viewer.requestedOrientation)
+        controller.pause().stop()
+        assertTrue(sensors.listeners.isEmpty())
+        controller.start().resume()
+        assertEquals(1, sensors.listeners.size)
+        sensors.gravity(0f, 9.8f, 0f)
+        idleFor(500)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+    }
+
+    @Test
+    fun reclinedAsFarAsTheSystemStillTurnsTheSensorTakesOver() {
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        // Lying back 64 degrees from upright, in landscape: past where orientation events give up.
+        sensors.gravity(9.8f * 0.438f, 0f, 9.8f * 0.899f)
+        idleFor(500)
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    @Test
     fun landscapeOnlyKeepsOnePageAScreenWhileTurnedForAWidePage() {
         prefs.twoPage = TwoPage.LANDSCAPE
         val viewer = launch(book(numbered(1, 8), setOf("Tale 001-003")))

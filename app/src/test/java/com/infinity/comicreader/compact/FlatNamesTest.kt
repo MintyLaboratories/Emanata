@@ -63,6 +63,20 @@ class FlatNamesTest {
             listOf("ComicInfo.xml", "1_A_2.jpg", "2_A B_1.jpg", "A_notes.txt"),
             FlatNames.of(listOf("ComicInfo.xml", "A/2.jpg", "A B/1.jpg", "A/notes.txt"), listOf("ComicInfo.xml", "2.jpg", "1.jpg", "notes.txt"))
         )
+        // A file already named as a numbered page gives way.
+        assertEquals(
+            listOf("1_A_2.jpg", "2_A B_1.jpg", "1_A_2 2.jpg"),
+            FlatNames.of(listOf("A/2.jpg", "A B/1.jpg", "1_A_2.jpg"), listOf("2.jpg", "1.jpg", "1_A_2.jpg"), pages = listOf(0, 1))
+        )
+    }
+
+    @Test
+    fun imagesTheReaderDoesNotShowLeaveTheOrderAlone() {
+        // ".x.jpg" would read first flat, but the reader never shows a dotfile.
+        assertEquals(listOf("01.jpg", ".x.jpg"), FlatNames.of(listOf("a/01.jpg", "b/.x.jpg"), listOf("01.jpg", ".x.jpg")))
+        // Nor an empty file.
+        val paths = listOf("a/01.jpg", "b/00.jpg")
+        assertEquals(listOf("01.jpg", "00.jpg"), FlatNames.of(paths, listOf("01.jpg", "00.jpg"), Compactor.pagesOf(listOf(paths[0] to 10L, paths[1] to 0L))))
     }
 
     @Test

@@ -158,7 +158,8 @@ class Compactor(
                 files.mapIndexed { i, e ->
                     val base = FlatNames.baseName(e.path)
                     pieces[i].made?.let { FlatNames.withExtension(base, it.ext) } ?: base
-                }
+                },
+                pagesOf(files.map { it.path to it.size })
             )
             val out = File(dir, ".${book.name}.${System.nanoTime()}.part")
             part = out

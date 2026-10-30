@@ -1,6 +1,5 @@
 package com.infinity.comicreader.compact
 
-import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
 import java.util.Locale
 
@@ -27,17 +26,16 @@ object FlatNames {
 
     /**
      * Flat names for the files at archive [paths], to be named [names] (their own, or
-     * with another extension), keeping the pages' reading order (natural order of their
-     * paths): bare when no two match ignoring case and the pages read in the same order;
+     * with another extension), keeping the reading order (natural order of their paths)
+     * of [pages], the places of those the reader shows: bare when no two match ignoring case and the pages read in the same order;
      * otherwise each one under a folder takes the folder's path in front (`sub_001.jxl`,
      * folders joined by `_`), a name still taken getting ` 2`, ` 3`... after its stem; and
      * should even that change the order, each page also takes its place in it in front
      * (`07_sub_001.jxl`), other files keeping their names (`ComicInfo.xml`) unless a page
      * took one.
      */
-    fun of(paths: List<String>, names: List<String>): List<String> {
+    fun of(paths: List<String>, names: List<String>, pages: List<Int> = Compactor.pagesOf(paths.map { it to 1L })): List<String> {
         require(paths.size == names.size)
-        val pages = paths.indices.filter { Formats.isImageName(paths[it]) }
         if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size && keepsOrder(pages, paths, names)) return names
         val prefixed = paths.indices.map { i ->
             val folders = parts(paths[i]).dropLast(1)

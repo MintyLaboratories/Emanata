@@ -1783,9 +1783,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun judgeTall(slicesDone: Boolean = false) {
         val src = source ?: return
         val book = file ?: return
-        if (tallJudged || folderLayout != null || layoutPicked || slices != null) return
-        if (!slicesDone && slicesJob?.isActive == true) return
-        if (mode == MODE_CONTINUOUS && readingDir == DIR_TTB) return
+        if (!mayAskTall(slicesDone)) return
         if (looseImage(book)) {
             if (tallJob?.isActive == true) return
             val images = chapters.filter { looseImage(it) }
@@ -1801,9 +1799,10 @@ class ViewerActivity : AppCompatActivity() {
                     }
                     TallPages.mostlyTall(sizes, threshold, aspect)
                 } ?: return@launch
-                if (source !== src || file != book) return@launch
+                // What was found while the sizes were read may settle it first.
+                if (source !== src || file != book || !mayAskTall(slicesDone)) return@launch
                 tallJudged = true
-                if (verdict && !layoutPicked && folderLayout == null) askTallStrip()
+                if (verdict) askTallStrip()
             }
             return
         }
@@ -1811,6 +1810,17 @@ class ViewerActivity : AppCompatActivity() {
         val verdict = TallPages.mostlyTall(pageSizes.toList(), prefs.tallThreshold, ScreenShape.portraitAspect(this)) ?: return
         tallJudged = true
         if (verdict) askTallStrip()
+    }
+
+    /**
+     * True while the open book may still be asked whether it reads as a strip: not asked
+     * yet, no folder layout or direction, no layout picked, no slices reading as one, not
+     * shown continuous top to bottom already, and its slices checked unless [slicesDone].
+     */
+    private fun mayAskTall(slicesDone: Boolean): Boolean {
+        if (tallJudged || folderLayout != null || layoutPicked || slices != null) return false
+        if (!slicesDone && slicesJob?.isActive == true) return false
+        return !(mode == MODE_CONTINUOUS && readingDir == DIR_TTB)
     }
 
     /** `[width, height]` of image [file] from its header alone. Blocking. */

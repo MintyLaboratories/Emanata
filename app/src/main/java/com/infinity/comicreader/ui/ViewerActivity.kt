@@ -67,6 +67,7 @@ import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Likeness
 import com.infinity.comicreader.data.LikenessStore
+import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
@@ -216,7 +217,18 @@ class ViewerActivity : AppCompatActivity() {
 
     private var source: PageSource? = null
     private var adapter: PageAdapter? = null
+
+    /** The book open; a rebuild leaves it alone meanwhile ([OpenBooks]). */
     private var file: File? = null
+        set(value) {
+            val was = field?.absolutePath
+            val now = value?.absolutePath
+            if (now != was) {
+                was?.let(OpenBooks::closed)
+                now?.let(OpenBooks::opened)
+            }
+            field = value
+        }
 
     /** The open book's [BookId], as known when it began to open, then as found; null while unknown or unreadable. */
     private var bookId: BookId? = null
@@ -729,6 +741,7 @@ class ViewerActivity : AppCompatActivity() {
         openJob?.cancel()
         closeSource()
         deleteCropSource()
+        file = null
     }
 
     /** Adds this session's reading time and newly seen pages to the statistics. */

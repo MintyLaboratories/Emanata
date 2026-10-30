@@ -12,6 +12,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LikenessStore
+import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
@@ -19,6 +20,7 @@ import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Node
 import com.infinity.comicreader.files.Transfer
+import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
@@ -238,11 +240,25 @@ internal class FileJobs(
                     if (failure == null) failure = it
                     continue
                 }
+                // The reader would go on saving progress for its old file.
+                if (OpenBooks.isOpen(path)) {
+                    if (failure == null) failure = ChangeRefused(ChangeRefused.Why.IN_USE, "Open in the reader")
+                    continue
+                }
                 try {
                     val id = BookIds.find(book)
                     val hidden = if (skipHidden && id != null) library.hiddenPages(id) else emptySet()
+                    // Not opened meanwhile: the reader waits while the new file takes the book's place and its data follows.
+                    val placer = Compactor.Placer { result, part, swap ->
+                        OpenBooks.unlessOpen(path) {
+                            val newId = BookIds.peek(part)
+                            swap()
+                            follow(book, id, result, newId)
+                        }
+                    }
                     val request = Compactor.Request(
-                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible, cost = pages::memoryFor
+                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible,
+                        cost = pages::memoryFor, placer = placer
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {
@@ -252,7 +268,6 @@ internal class FileJobs(
                             if (result.failed.isNotEmpty()) failedPages[book.name] = result.failed
                         }
                         is Compactor.Result.Rebuilt -> {
-                            follow(book, id, result)
                             done++
                             saved += result.before - result.after
                             last = result.file.absolutePath
@@ -277,18 +292,18 @@ internal class FileJobs(
     }
 
     /**
-     * Hands everything kept for [book] (Book ID [old]) to its rebuilt file: its pages
-     * where they went, its own charset dropped (the new file names its pages in UTF-8).
-     * When the book's own file went or was replaced, what is cached for it goes too,
-     * unless a copy elsewhere keeps it, and picks waiting follow the new file.
+     * Hands everything kept for [book] (Book ID [old]) to its rebuilt file (Book ID [new]):
+     * its pages where they went, its own charset dropped (the new file names its pages in
+     * UTF-8). When the book's own file went or was replaced, what is cached for it goes
+     * too, unless a copy elsewhere keeps it, and picks waiting follow the new file.
      */
-    private fun follow(book: File, old: BookId?, result: Compactor.Result.Rebuilt) {
+    private fun follow(book: File, old: BookId?, result: Compactor.Result.Rebuilt, new: BookId) {
         val path = book.absolutePath
         val target = result.file.absolutePath
         val replaced = result.removed != null || target == path
         if (replaced && old != null && BookIds.elsewhere(setOf(old), path).isEmpty()) BookCaches.forget(app, old)
         if (replaced) BookIds.removed(path)
-        val ref = BookRef(BookIds.of(result.file), target)
+        val ref = BookRef(new, target)
         if (old != null && old != ref.id) {
             library.carryOver(old, ref, result.moves, result.pageCount)
             library.setNameCharset(ref, null)

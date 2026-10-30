@@ -139,6 +139,10 @@ object BookIds {
         }
     }
 
+    /** The ID of local [file] as its contents are now, read and hashed, not remembered for its path (a file about to be renamed). Blocking. */
+    @Throws(IOException::class)
+    fun peek(file: File): BookId = BookIdBytes.idOf(localBytes(file), hash())
+
     /** The cache key of [file]'s contents: its ID when it can be found, else its path, size and time. Blocking. */
     fun keyOf(file: File): String = find(file)?.let { "id:${it.hex}" } ?: "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 

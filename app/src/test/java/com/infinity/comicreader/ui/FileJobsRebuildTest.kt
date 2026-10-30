@@ -3,13 +3,16 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.compact.JxlCodec
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.compact.Pixels
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.testing.FakeImages
 import com.infinity.comicreader.testing.FakeJxl
 import com.infinity.comicreader.testing.bookId
@@ -192,6 +195,49 @@ class FileJobsRebuildTest {
         val outcome = rebuild(book, compatible = true) as FileWork.Outcome.Done
         assertEquals(1, outcome.count)
         assertEquals(mapOf("Mixed.cbz" to listOf("2.jxl")), outcome.summary!!.failed)
+    }
+
+    @Test
+    fun aBookOpenInTheReaderIsLeftAlone() {
+        val book = sevenZip("Open.cb7", 2)
+        val bytes = book.readBytes()
+        OpenBooks.opened(book.absolutePath)
+        try {
+            val outcome = rebuild(book) as FileWork.Outcome.Failed
+            assertEquals(ChangeRefused.Why.IN_USE, (outcome.error as ChangeRefused).why)
+            assertTrue(book.readBytes().contentEquals(bytes))
+        } finally {
+            OpenBooks.closed(book.absolutePath)
+        }
+        assertTrue(rebuild(book) is FileWork.Outcome.Done)
+    }
+
+    @Test
+    fun aBookOpenedWhileItsPagesConvertKeepsItsFile() {
+        val book = sevenZip("Late.cb7", 2)
+        val old = ref(book)
+        library.setRead(old, true)
+        // The reader opens the book while its pages convert.
+        var opened = false
+        val opens = object : JxlCodec by jxl {
+            override fun transcode(jpeg: ByteArray, effort: Int): ByteArray? {
+                synchronized(this) {
+                    if (!opened) OpenBooks.opened(book.absolutePath)
+                    opened = true
+                }
+                return jxl.transcode(jpeg, effort)
+            }
+        }
+        val opening = FileJobs(context, library, prefs) { PageWork(opens, FakeImages()) }
+        try {
+            val outcome = opening.rebuild(listOf(book.absolutePath), false, true, false, opening.look(listOf(book.absolutePath)), Going)
+            assertEquals(ChangeRefused.Why.IN_USE, ((outcome as FileWork.Outcome.Failed).error as ChangeRefused).why)
+        } finally {
+            OpenBooks.closed(book.absolutePath)
+        }
+        assertTrue(book.exists())
+        assertFalse(File(tmp.root, "Late.cbz").exists())
+        assertTrue(library.isRead(old.id))
     }
 
     @Test

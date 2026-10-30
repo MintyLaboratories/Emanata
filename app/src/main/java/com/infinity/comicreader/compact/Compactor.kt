@@ -58,8 +58,19 @@ class Compactor(
         /** True to keep the new file only when smaller than the book. */
         val smallerOnly: Boolean = false,
         /** The memory making a page anew takes at most ([PageWork.memoryFor]). */
-        val cost: (ByteArray) -> Long = { it.size * 3L }
+        val cost: (ByteArray) -> Long = { it.size * 3L },
+        /** What puts the new file in place, and what goes with it. */
+        val placer: Placer = Placer { _, _, swap -> swap() }
     )
+
+    /** Puts a rebuilt book in place. */
+    fun interface Placer {
+        /**
+         * Runs [swap], which puts the new file [part] where [result] says ([Result.Rebuilt.file])
+         * and removes what it says, with what goes before and after it; throws to leave the book as it is.
+         */
+        fun place(result: Result.Rebuilt, part: File, swap: () -> Unit)
+    }
 
     /** What an operation's work hears from and tells its runner. */
     interface Progress {
@@ -157,14 +168,21 @@ class Compactor(
             val after = out.length()
             if (request.smallerOnly && after >= before) return Result.Unchanged(Why.NOT_SMALLER, failedAt.map { FlatNames.baseName(files[it].path) })
             check(progress)
-            val (target, removed) = place(out, book, request)
-            part = null
-            if (time > 0) target.setLastModified(time)
+            // In place, a ZIP is replaced under its name; any other book becomes a .cbz and goes.
+            val over = request.inPlace && Formats.ext(book.name) in Formats.ZIP
+            val target = if (over) book else File(dir, FlatNames.output(book.name, request.suffix) { n -> File(dir, n).exists() })
+            val removed = if (request.inPlace && !over) book else null
             val oldKeys = pages.map { e -> files.indexOf(e).let { if (it < 0) null else names[it] } }
             val newPages = pagesOf(names.indices.map { names[it] to pieces[it].size }).map { names[it] }
             val moves = PageMoves.of(oldKeys.mapIndexed { i, n -> n ?: "\u0000$i" }, newPages)
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
-            return Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
+            val result = Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
+            request.placer.place(result, out) {
+                place(out, book, target, removed != null)
+                part = null
+                if (time > 0) target.setLastModified(time)
+            }
+            return result
         } finally {
             part?.delete()
             work.deleteRecursively()
@@ -334,23 +352,14 @@ class Compactor(
         }
     }
 
-    /**
-     * Puts [out] in place: over [book] in place when it is a ZIP, else as a `.cbz` named after
-     * it ([FlatNames.output]), the book removed when in place. Returns the file and what was removed.
-     */
-    private fun place(out: File, book: File, request: Request): Pair<File, File?> {
-        val dir = out.parentFile!!
-        if (request.inPlace && Formats.ext(book.name) in Formats.ZIP) {
+    /** Puts [out] in place as [target]: over [book] when it is the book, else never over a file there; [book] removed when [remove]. */
+    private fun place(out: File, book: File, target: File, remove: Boolean) {
+        if (target == book) {
             Files.move(out.toPath(), book.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            return book to null
+            return
         }
-        val name = FlatNames.output(book.name, request.suffix) { n -> File(dir, n).exists() }
-        val target = File(dir, name)
-        // Never over a file there.
         Files.move(out.toPath(), target.toPath())
-        if (!request.inPlace) return target to null
-        if (!book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
-        return target to book
+        if (remove && !book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
     }
 
     private fun check(progress: Progress) {

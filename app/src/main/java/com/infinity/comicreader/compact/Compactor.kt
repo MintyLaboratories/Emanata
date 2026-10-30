@@ -41,7 +41,9 @@ class Compactor(
     private val maxWorkers: Int,
     private val limit: () -> Int = { maxWorkers },
     private val threads: ThreadFactory = ThreadFactory { r -> Thread(r, "compact").apply { isDaemon = true } },
-    private val memory: Long = Runtime.getRuntime().maxMemory() / 2
+    private val memory: Long = Runtime.getRuntime().maxMemory() / 2,
+    /** The bytes free for files where a file is; tests stand in their own. */
+    private val free: (File) -> Long = { it.usableSpace }
 ) {
     /** What to make of a book. */
     class Request(
@@ -127,9 +129,10 @@ class Compactor(
         val files = kept.filter { it !in dropped }.sortedWith(compareBy(NaturalOrder) { it.path })
         val total = files.sumOf { it.size.coerceAtLeast(0) }.coerceAtLeast(1)
         val dir = book.parentFile ?: throw IOException("No folder")
-        // Room for the pieces and the new file: no larger than the book when it must be smaller, else up to twice.
-        val room = book.length() * (if (request.smallerOnly) 1 else 2) + SPARE_BYTES
-        if (scratch.usableSpace < room || dir.usableSpace < room) throw ChangeRefused(ChangeRefused.Why.FULL)
+        // Room for the pieces and for the new file, each as large as the files unpacked when it must be smaller, else twice.
+        val room = total * (if (request.smallerOnly) 1 else GROWTH)
+        val enough = if (sameVolume(scratch, dir)) free(dir) >= 2 * room + SPARE_BYTES else free(scratch) >= room + SPARE_BYTES && free(dir) >= room + SPARE_BYTES
+        if (!enough) throw ChangeRefused(ChangeRefused.Why.FULL)
         val work = File(scratch, "book-${System.nanoTime()}")
         if (!work.mkdirs()) throw IOException("Cannot make ${work.name}")
         var part: File? = null
@@ -191,6 +194,7 @@ class Compactor(
                 val entry = files[i]
                 val file = File(work, i.toString())
                 if (!isPage(entry)) {
+                    ensureRoom(work, entry.size)
                     pieces[i] = reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
                     advance(entry.size.coerceAtLeast(0))
                     continue
@@ -211,6 +215,7 @@ class Compactor(
                     budget.give(held)
                     room.release()
                     // Too large to hold now: copied as it is.
+                    ensureRoom(work, entry.size)
                     pieces[i] = reader.read(entry) { copy(it, file) }.let {
                         checkRead(entry, it.size, it.crc)
                         Piece(it.file, it.size, it.crc, null, failed = true)
@@ -242,6 +247,7 @@ class Compactor(
                             }
                         }
                         val keep = made?.bytes ?: bytes
+                        ensureRoom(work, keep.size.toLong())
                         file.writeBytes(keep)
                         pieces[i] = Piece(file, keep.size.toLong(), crcOf(keep), made, failed)
                         advance(entry.size.coerceAtLeast(0))
@@ -277,6 +283,7 @@ class Compactor(
             zip.setMethod(ZipOutputStream.STORED)
             for ((i, piece) in pieces.withIndex()) {
                 check(progress)
+                ensureRoom(out.parentFile!!, piece.size)
                 val entry = ZipEntry(names[i])
                 entry.method = ZipEntry.STORED
                 entry.size = piece.size
@@ -347,6 +354,11 @@ class Compactor(
 
     private fun check(progress: Progress) {
         if (!progress.alive) throw CancellationException("Canceled")
+    }
+
+    /** Throws [ChangeRefused] (full) unless [bytes] more leave [SPARE_BYTES] free where [dir] is. */
+    private fun ensureRoom(dir: File, bytes: Long) {
+        if (free(dir) - bytes.coerceAtLeast(0) < SPARE_BYTES) throw ChangeRefused(ChangeRefused.Why.FULL)
     }
 
     /** Throws unless [entry] read as [size] bytes of [crc] is what its archive says it holds. */
@@ -425,8 +437,15 @@ class Compactor(
 
         private const val COPY_BYTES = 256 * 1024
 
-        /** Room left free beyond what a book needs. */
-        private const val SPARE_BYTES = 64L * 1024 * 1024
+        /** Room left free beyond what a book needs, for the system and other apps. */
+        const val SPARE_BYTES = 256L * 1024 * 1024
+
+        /** How much larger than its files the pieces of a book made compatible may grow: lossless JPEG XL becomes WebP or PNG. */
+        private const val GROWTH = 2
+
+        /** True when [a] and [b] seem on one volume: of the same size, as the shared storage and the app's own files are; or one store. */
+        fun sameVolume(a: File, b: File): Boolean =
+            a.totalSpace == b.totalSpace || runCatching { Files.getFileStore(a.toPath()) == Files.getFileStore(b.toPath()) }.getOrDefault(false)
         private const val WAIT_MS = 200L
 
         /** Shares of the progress: converting, then packing, then the check. */

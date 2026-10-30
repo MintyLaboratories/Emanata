@@ -1,5 +1,6 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.reader.ArchiveReader
 import org.apache.commons.compress.archivers.sevenz.SevenZMethod
 import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
@@ -221,6 +222,29 @@ class CompactorTest {
         bytes[at] = 'y'.code.toByte()
         text.writeBytes(bytes)
         assertThrows(java.io.IOException::class.java) { run(text, inPlace = true) }
+    }
+
+    @Test
+    fun withoutRoomForThePiecesAndTheNewFileNothingIsWritten() {
+        val source = zip("Full.cbz", (1..4).map { "$it.png" to page(PNG) })
+        val before = source.readBytes()
+        val request = Compactor.Request(source, halve, inPlace = true, suffix = "compacted", smallerOnly = true)
+        // The pieces and the new file need the files' size each, on one volume.
+        val need = 2 * 4 * 2000L + Compactor.SPARE_BYTES
+        assertThrows(ChangeRefused::class.java) {
+            Compactor(scratch, 2, free = { need - 1 }).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive)
+        }
+        // Room at first, then none: the run stops as it fills up, leaving nothing behind.
+        val dir = scratch
+        var calls = 0
+        val shrinking: (File) -> Long = { if (calls++ == 0) need else Compactor.SPARE_BYTES }
+        assertThrows(ChangeRefused::class.java) {
+            Compactor(dir, 2, free = shrinking).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive)
+        }
+        assertArrayEquals(before, source.readBytes())
+        assertTrue(dir.list()!!.isEmpty())
+        assertTrue(tmp.root.list()!!.none { it.endsWith(".part") })
+        assertTrue(Compactor(scratch, 2, free = { need }).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive) is Compactor.Result.Rebuilt)
     }
 
     @Test

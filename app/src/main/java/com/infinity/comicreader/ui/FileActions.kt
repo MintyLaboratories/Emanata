@@ -10,7 +10,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.infinity.comicreader.R
-import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
@@ -26,7 +25,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
-import java.util.concurrent.CancellationException
 
 /**
  * The file operations of the library's selection, on the device and on shares: Rename,
@@ -57,6 +55,9 @@ internal class FileActions(
     private val pasting = HashSet<Long>()
 
     private val notificationAsk = NotificationAsk(activity, prefs)
+
+    /** The operations' work, holding nothing of this screen; lambdas queued take it as a local. */
+    private val jobs = FileJobs(activity, library, prefs)
 
     init {
         activity.lifecycleScope.launch {
@@ -97,13 +98,8 @@ internal class FileActions(
     }
 
     private fun renameTo(path: String, name: String) {
-        val old = File(path).name
-        val target = Transfer.child(Transfer.parentOf(path), name)
-        start(FileWork.Kind.RENAME, old, 1) {
-            Transfer().rename(path, name)
-            followMove(path, target)
-            FileWork.Outcome.Done(target, gone = listOf(path))
-        }
+        val jobs = this.jobs
+        start(FileWork.Kind.RENAME, File(path).name, 1) { jobs.rename(path, name) }
     }
 
     // ------------------------------------------------------------------ delete
@@ -129,29 +125,8 @@ internal class FileActions(
         }
         confirm(activity, title, message, R.string.delete) {
             onConfirmed()
-            start(FileWork.Kind.DELETE, first.name, items.size) { p ->
-                val gone = ArrayList<String>()
-                var done = 0
-                var failure: Exception? = null
-                for ((i, item) in items.withIndex()) {
-                    if (items.size > 1) {
-                        if (!p.alive) return@start FileWork.Outcome.Canceled(done, items.size, gone)
-                        p.item(item.name, i, items.size)
-                    }
-                    val path = item.path
-                    val space = FileSpaces.of(path)
-                    val error = attempt { space.delete(path) }
-                    // Even a partial failure may have removed it, and what was gone already counts as deleted.
-                    val removed = runCatching { space.stat(path) == null }.getOrDefault(false)
-                    if (removed) {
-                        forget(path)
-                        gone += path
-                    }
-                    if (error is CancellationException) return@start FileWork.Outcome.Canceled(done + (if (removed) 1 else 0), items.size, gone)
-                    if (error == null || removed) done++ else if (failure == null) failure = error
-                }
-                failure?.let { FileWork.Outcome.Failed(it, done, items.size, gone) } ?: FileWork.Outcome.Done(null, gone = gone, count = done)
-            }
+            val jobs = this.jobs
+            start(FileWork.Kind.DELETE, first.name, items.size) { p -> jobs.delete(items, p) }
         }
     }
 
@@ -171,9 +146,6 @@ internal class FileActions(
         FileClipboard.remove(id)
         onClipChanged()
     }
-
-    /** An item to paste under [name], over what has that name there when [replace]; an empty name is still to be found. */
-    private data class Plan(val item: FileClipboard.Item, val name: String, val replace: Boolean = false)
 
     /**
      * Pastes the items of pick [id] (the latest when null) into [dir], one at a time as one
@@ -224,15 +196,15 @@ internal class FileActions(
             drop(clip.id)
             return
         }
-        val plans = ArrayList<Plan>()
+        val plans = ArrayList<FileJobs.Plan>()
         val clashes = ArrayList<FileClipboard.Item>()
         val claimed = HashSet<String>()
         for ((item, node) in there) {
             val first = claimed.add(item.name.lowercase(Locale.ROOT))
             when {
                 // A copy beside itself is a second copy, as is an item whose name an earlier one takes.
-                !first || (node != null && Transfer.parentOf(item.path) == targetDir) -> plans += Plan(item, "")
-                node == null -> plans += Plan(item, item.name)
+                !first || (node != null && Transfer.parentOf(item.path) == targetDir) -> plans += FileJobs.Plan(item, "")
+                node == null -> plans += FileJobs.Plan(item, item.name)
                 else -> clashes += item
             }
         }
@@ -250,9 +222,9 @@ internal class FileActions(
             if (clashes.any { there[it]?.isDirectory == true }) setMessage(R.string.clash_folder)
             // Never replacing what holds an item: it would go with it.
             if (clashes.none { Transfer.isWithin(it.path, Transfer.child(targetDir, it.name), ignoreCase = true) }) {
-                setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, plans + clashes.map { Plan(it, it.name, replace = true) }) }
+                setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, plans + clashes.map { FileJobs.Plan(it, it.name, replace = true) }) }
             }
-            setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, plans + clashes.map { Plan(it, keepBoth(it)) }) }
+            setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, plans + clashes.map { FileJobs.Plan(it, keepBoth(it)) }) }
             // Skipping every one is the pick done with too.
             setNegativeButton(R.string.clash_skip) { _, _ -> if (plans.isNotEmpty()) transfer(clip, targetDir, plans) else drop(clip.id) }
         }.show()
@@ -262,84 +234,20 @@ internal class FileActions(
      * Queues pasting [plans] of [clip] into [targetDir] in place of its Paste; what a move
      * failed at or never reached, canceled before it began too, is picked up again ([paste]).
      */
-    private fun transfer(clip: FileClipboard.Clip, targetDir: String, plans: List<Plan>) {
+    private fun transfer(clip: FileClipboard.Clip, targetDir: String, plans: List<FileJobs.Plan>) {
         // Canceled while asked about.
         if (FileClipboard[clip.id] == null) return
         FileClipboard.remove(clip.id)
         onClipChanged()
         val move = clip.move
         val kind = if (move) FileWork.Kind.MOVE else FileWork.Kind.COPY
-        val unrun = { if (move) FileClipboard.add(clip.copy(items = plans.map { it.item }, id = FileWork.nextOrder())) }
-        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir), unrun) { p ->
-            var sourceLeft = false
-            val gone = ArrayList<String>()
-            // Sources not pasted (yet).
-            val unsettled = plans.map { it.item.path }.toHashSet()
-            var done = 0
-            var failure: Exception? = null
-            fun ended(outcome: FileWork.Outcome): FileWork.Outcome {
-                val left = plans.map { it.item }.filter { it.path in unsettled }
-                if (move && left.isNotEmpty()) FileClipboard.add(clip.copy(items = left, id = FileWork.nextOrder()))
-                return outcome
-            }
-            for ((i, plan) in plans.withIndex()) {
-                if (plans.size > 1) {
-                    if (!p.alive) return@start ended(FileWork.Outcome.Canceled(done, plans.size, gone))
-                    p.item(plan.item.name, i, plans.size)
-                }
-                val source = plan.item.path
-                val target = Transfer.child(targetDir, plan.name)
-                val result = try {
-                    Transfer(alive = { p.alive }, progress = p::report, stoppable = p::stoppable)
-                        .run(source, targetDir, plan.name, move, plan.replace)
-                } catch (e: CancellationException) {
-                    return@start ended(FileWork.Outcome.Canceled(done, plans.size, gone))
-                } catch (e: Exception) {
-                    if (failure == null) failure = e
-                    continue
-                }
-                done++
-                unsettled -= source
-                // What was kept for a replaced item goes with it.
-                if (plan.replace) library.removePathsUnder(target)
-                if (move) {
-                    if (result.sourceLeft) {
-                        sourceLeft = true
-                    } else {
-                        followMove(source, target)
-                        gone += source
-                    }
-                }
-            }
-            ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, done))
+        val jobs = this.jobs
+        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir), { jobs.giveBack(clip, plans.map { it.item }) }) { p ->
+            jobs.transfer(clip, targetDir, plans, p)
         }
     }
 
-    // ------------------------------------------------------------------ bookkeeping
-
-    /** Re-points everything kept for [old] and inside it to [new]: the library, start folders and the picks waiting. */
-    private fun followMove(old: String, new: String) {
-        library.replacePath(old, new)
-        prefs.followPath(old, new)
-        FileClipboard.edit { items -> items.map { if (Transfer.isWithin(it.path, old)) it.copy(path = new + it.path.removePrefix(old)) else it } }
-    }
-
-    /**
-     * Forgets everything kept for the deleted [path] and inside it, the picks' items too;
-     * what is cached for the books there goes with them, unless a copy elsewhere keeps it ([BookCaches.deleted]).
-     */
-    private fun forget(path: String) {
-        BookCaches.deleted(activity, library, path)
-        FileClipboard.edit { items -> items.filterNot { Transfer.isWithin(it.path, path) } }
-    }
-
-    /** Runs [block]; what it threw, else null. */
-    private inline fun attempt(block: () -> Unit): Exception? = try {
-        block()
-        null
-    } catch (e: Exception) {
-        e
-    }
+    // ------------------------------------------------------------------ queue
 
     /** Queues [work]; see [FileWork.start]. */
     private fun start(

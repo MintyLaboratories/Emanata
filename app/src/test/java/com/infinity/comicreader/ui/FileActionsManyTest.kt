@@ -377,6 +377,50 @@ class FileActionsManyTest {
         assertEquals(listOf("/net/s1/s.cbz"), FileClipboard.clips.value.single().items.map { it.path })
     }
 
+    /** True when [root] holds an [android.app.Activity] within [depth] fields, outside the JDK and the platform. */
+    private fun holdsActivity(root: Any?, depth: Int, seen: MutableSet<Any> = java.util.Collections.newSetFromMap(java.util.IdentityHashMap())): Boolean {
+        if (root == null || !seen.add(root)) return false
+        if (root is android.app.Activity) return true
+        if (depth == 0) return false
+        if (root is Iterable<*>) return root.any { holdsActivity(it, depth - 1, seen) }
+        val name = root.javaClass.name
+        if (name.startsWith("java.") || name.startsWith("android.") || name.startsWith("kotlin.")) return false
+        var type: Class<*>? = root.javaClass
+        while (type != null && type != Any::class.java) {
+            for (field in type.declaredFields) {
+                if (java.lang.reflect.Modifier.isStatic(field.modifiers) || field.type.isPrimitive) continue
+                field.isAccessible = true
+                if (holdsActivity(field.get(root), depth - 1, seen)) return true
+            }
+            type = type.superclass
+        }
+        return false
+    }
+
+    @Test
+    fun queuedWorkHoldsNoScreen() {
+        val go = java.util.concurrent.Semaphore(0)
+        val started = java.util.concurrent.Semaphore(0)
+        FileWork.start(FileWork.Kind.COPY, "held.cbz") {
+            started.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        started.acquire()
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.delete(listOf(item(a)))
+        answer(DialogInterface.BUTTON_POSITIVE)
+        actions.pickUp(listOf(item(b)), move = true)
+        actions.paste(tmp.newFolder("Dest"))
+        waitFor { FileWork.operations.value.size == 3 }
+        val waiting = FileWork::class.java.getDeclaredField("waiting").apply { isAccessible = true }.get(FileWork) as Iterable<*>
+        assertEquals(2, waiting.count())
+        for (op in waiting) assertFalse(holdsActivity(op, 6))
+        go.release()
+        settle()
+    }
+
     @Test
     fun progressNamesTheItemAndWhichOfHowMany() {
         val context: Context = ApplicationProvider.getApplicationContext()

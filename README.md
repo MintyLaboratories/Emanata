@@ -161,8 +161,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - **⋮** lists only what applies to the selection: Mark as read, Mark as
     unread, Mark all as read / unread (folders), Set as startup folder (one
     folder), Show in folder (except from that folder itself), Book info (one
-    book, without opening it), Filename charset (one book, advanced) and Peek
-    (off by default). Settings → **Selection menu (⋮)** shows, hides and
+    book, without opening it), Filename charset (one book, advanced),
+    **Compact** and **Make compatible** (books on the device) and Peek (off by
+    default). Settings → **Selection menu (⋮)** shows, hides and
     reorders them like the toolbar buttons.
   - The floating button: the list/grid toggle with nothing selected (if
     shown), **Open** with one (continues a book, enters a folder), **Move** with
@@ -197,7 +198,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the newest at the bottom (from the bottom edge when the button is hidden). At
   most four buttons show, the button included, and always the operation under
   way; older bubbles fold into a count on the top one, which lists them on a
-  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename) go through
+  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible) go through
   one queue, one at a time, never in parallel; several items are one operation,
   done one item at a time. A waiting bubble is gray; the running one darkens
   with a progress ring in its action's color. Tap it for a card (what it does,
@@ -237,6 +238,53 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   A deleted item's favorites, history and bookmarks go with it, and what is
   cached for its books (facts, network copy, page sizes, seams, previews,
   nested archives), unless an identical copy elsewhere keeps them.
+- **Compact** (lossless compaction) rebuilds the selected books (archives on the
+  device; several are one operation, one book at a time) as flat `.cbz` files
+  of stored entries in natural order, every page as small as it gets without
+  changing a pixel:
+  - a JPEG becomes its byte-exact JPEG XL transcode, kept once rebuilding the
+    JPEG from it gives back the same bytes;
+  - a lossless page (PNG of up to 8 bits, BMP, TIFF that decodes exactly, still
+    lossless WebP) becomes lossless JPEG XL in the fewest channels that hold it
+    (gray, alpha only when used), kept once it decodes back to the same pixels;
+    only pages in sRGB;
+  - a lossless JPEG XL is encoded again at a higher effort, one holding a JPEG
+    transcoded again, each checked the same way;
+  - a page is replaced only when smaller; lossy pages (lossy WebP, AVIF, HEIF,
+    lossy JPEG XL), GIF, PNG of 16 bits and animations are never touched, so a
+    book may mix formats, always pixel-perfect and never larger;
+  - names stay but for the extension; when two match, those in folders take the
+    folder's name in front (`sub_001.jxl`). ComicInfo.xml and other files are
+    copied as they are; OS litter (`__MACOSX/`, `._*`, `Thumbs.db`,
+    `desktop.ini`, `.DS_Store`) is left out. A book holding other archives is
+    left alone.
+  - It asks first, warning: "Pixel-perfect and reversible, but older readers
+    may not open JPEG XL pages." **Skip hidden pages** (off each time) leaves the
+    pages hidden with Hide this page out; that part can't be reversed.
+- **Make compatible** reverses it: a JPEG XL holding a JPEG gives back that
+  JPEG byte for byte; a lossless one becomes lossless WebP (Android 11+; PNG
+  before, and for 16-bit pages), checked pixel for pixel, its color profile
+  embedded unless sRGB; a lossy one (never made by Compact) becomes WebP at
+  quality 90, the one step that changes pixels: the dialog says so, and a list
+  of those pages follows the run. Other pages are left as they are.
+  - **In place** (both; off by default, remembered): off, the new file goes
+    beside the book (`Book.cbz`, or `Book (compacted).cbz` /
+    `Book (compatible).cbz` when taken); on, it replaces the book once fully
+    written and checked (a `.cbr`, `.cb7` or `.cbt` becomes `.cbz`, its old file
+    removed). Either way the new file takes the book's favorite, read mark,
+    history, bookmarks, hidden pages and own settings (pages renumbered where
+    hidden ones were left out); its file name charset is dropped, the new file
+    naming its pages in UTF-8.
+  - Every entry of the new file is read back and checked against its CRC-32
+    before it takes its place; a book left as it was (nothing smaller, or no
+    JPEG XL page) is said so. The message gives the bytes saved. The new file
+    keeps the book's modification time. Pages convert on up to half the cores
+    (at most four) at background priority, fewer as the device warms up or saves
+    power; each passes through the app's cache, which needs room for the book.
+  - JPEG XL: libjxl as jxl-coder ships it (`libjxl.so`), through our own JNI
+    binding (`jxl_jni.c`), compiled against the headers of the same release
+    (pinned with its SHA-256); no second copy of libjxl in the APK. Efforts:
+    JPEG transcode and lossless 7, recompressing files already JPEG XL 9.
 - **Book ID:** everything kept for a book (favorite, read mark, history,
   bookmarks, hidden pages, its own settings and color adjustments, cover, page
   previews, sizes and seams, facts, network copy) is kept by an ID made from its
@@ -618,6 +666,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 ```
 app/src/main/java/com/infinity/comicreader/
   App.kt                     application; applies theme + locale
+  compact/                   Compact and Make compatible: Compactor (flat CBZ),
+                             PageWork (each page), LibJxl (JNI)
   data/                      Prefs, Library (history/bookmarks/favorites),
                              Thumbs, models
   files/                     FileSpace (device and shares), Transfer (copy/move
@@ -635,7 +685,7 @@ screenshots/                 README screenshots
 
 Requirements: JDK 17+ (JDK 21 verified) and the Android SDK (platform 34, build-tools 34),
 with NDK 30.0.16248370 and CMake 4.1.2. The first build downloads the pinned
-libavif, dav1d and xxHash sources (checked against their SHA-256).
+libavif, dav1d and xxHash sources and libjxl's headers (checked against their SHA-256).
 
 ```bash
 ./gradlew assembleDebug

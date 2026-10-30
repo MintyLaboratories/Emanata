@@ -166,7 +166,7 @@ internal class BenchRunner(private val app: Application) {
             val views = probe.pageViewsOnScreen()
             val pages = probe.pages.pages(views)
             if (pages == before || pages.isEmpty()) {
-                now - start > NO_MOVE_MS * 1_000_000 && movedAt < 0 && plan.layout != BenchPlan.CONTINUOUS
+                now - start > NO_MOVE_MS * 1_000_000 && (movedAt < 0 || plan.layout == BenchPlan.CONTINUOUS)
             } else {
                 shownPages = pages
                 val ready = probe.pages.ready(views)
@@ -412,8 +412,9 @@ internal class BenchRunner(private val app: Application) {
         /** How long a tap is held. */
         private const val TAP_MS = 60L
 
-        private const val DRAG_FROM = 0.85f
-        private const val DRAG_TO = 0.15f
+        /** A drag of most of a screen: about a page at fit width, so the pages on screen change. */
+        private const val DRAG_FROM = 0.95f
+        private const val DRAG_TO = 0.05f
         private const val DRAG_STEPS = 20
         private const val DRAG_STEP_MS = 12L
         private const val DRAG_HOLD_MS = 120L

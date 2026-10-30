@@ -146,6 +146,19 @@ class Library(context: Context) {
         if (favorite) keep(book)
     }
 
+    /** Takes folders [folders] and books [books] out of the favorites; the files stay. */
+    fun removeFavorites(folders: Collection<String> = emptyList(), books: Collection<BookId> = emptyList()) {
+        if (folders.isEmpty() && books.isEmpty()) return
+        synchronized(LOCK) {
+            val drop = folders.toHashSet() + books.map { tokenOf(it) }
+            val list = readStringList(KEY_FAVORITES)
+            if (list.removeAll { it in drop }) writeStringList(KEY_FAVORITES, list)
+        }
+    }
+
+    /** Empties the favorites, books and folders alike. */
+    fun clearFavorites() = synchronized(LOCK) { sp.edit().putString(KEY_FAVORITES, "[]").apply() }
+
     private fun toggle(token: String): Boolean {
         val list = readStringList(KEY_FAVORITES)
         val added = if (list.remove(token)) false else {
@@ -255,7 +268,13 @@ class Library(context: Context) {
         }
     }
 
-    fun clearHistory() = sp.edit().putString(KEY_HISTORY, "[]").apply()
+    /** Takes books [ids] out of the history; what else is kept for them stays. */
+    fun removeHistory(ids: Collection<BookId>) {
+        if (ids.isEmpty()) return
+        synchronized(LOCK) { dropRows(KEY_HISTORY) { id, _ -> id in ids } }
+    }
+
+    fun clearHistory() = synchronized(LOCK) { sp.edit().putString(KEY_HISTORY, "[]").apply() }
 
     /**
      * Calls [onChange] on the main thread after each write to the history, from any
@@ -313,7 +332,26 @@ class Library(context: Context) {
         }
     }
 
-    fun clearBookmarks() = sp.edit().putString(KEY_BOOKMARKS, "[]").apply()
+    /** Removes the bookmarks [marks], each a book and its page. */
+    fun removeBookmarks(marks: Collection<Pair<BookId, Int>>) {
+        if (marks.isEmpty()) return
+        val drop = marks.toHashSet()
+        synchronized(LOCK) { dropRows(KEY_BOOKMARKS) { id, o -> id to o.optInt("page") in drop } }
+    }
+
+    fun clearBookmarks() = synchronized(LOCK) { sp.edit().putString(KEY_BOOKMARKS, "[]").apply() }
+
+    /** Drops the rows of list [key] that [drops], books whose ID cannot be read kept as they are. Called under [LOCK]. */
+    private fun dropRows(key: String, drops: (BookId, JSONObject) -> Boolean) {
+        val arr = readArray(key)
+        val left = JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = BookId.parse(o.optString("id"))
+            if (id == null || !drops(id, o)) left.put(o)
+        }
+        if (left.length() != arr.length()) sp.edit().putString(key, left.toString()).apply()
+    }
 
     // ---------------- hidden pages ----------------
     /** The pages left out of book [id] ("Hide this page"), by book index. */

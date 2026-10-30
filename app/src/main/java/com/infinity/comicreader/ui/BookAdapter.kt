@@ -784,12 +784,10 @@ class BookAdapter(
                 else -> context.resources.getQuantityString(R.plurals.books_count, item.childCount, item.childCount)
             }
         }
-        val size = FileUtils.formatSize(context, item.size)
-        return if (item.pages > 0) {
-            "$size · ${context.resources.getQuantityString(R.plurals.pages_count, item.pages, item.pages)}"
-        } else {
-            size
-        }
+        val pages = if (item.pages > 0) context.resources.getQuantityString(R.plurals.pages_count, item.pages, item.pages) else null
+        // An item not there has no size to show.
+        val size = if (item.presence != Presence.PRESENT && item.size <= 0) null else FileUtils.formatSize(context, item.size)
+        return listOfNotNull(size, pages).joinToString(DetailText.SEPARATOR)
     }
 
     private companion object {

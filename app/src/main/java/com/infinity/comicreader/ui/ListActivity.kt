@@ -728,7 +728,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      */
     private fun askToWait(name: String, wait: () -> Unit, device: () -> Unit): AlertDialog =
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.network_waiting, name))
+            .setTitle(getString(R.string.network_waiting_named, name))
             .setPositiveButton(R.string.network_wait) { _, _ -> wait() }
             .setNegativeButton(R.string.network_open_device) { _, _ -> device() }
             .show()

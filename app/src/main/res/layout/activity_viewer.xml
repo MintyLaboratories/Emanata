@@ -342,6 +342,7 @@
             android:indeterminateTint="@color/reader_on_surface_dim" />
 
         <TextView
+            android:id="@+id/viewer_share_wait_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/network_waiting"

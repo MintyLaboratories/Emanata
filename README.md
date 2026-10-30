@@ -247,7 +247,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - a lossless page (PNG of up to 8 bits, BMP, TIFF that decodes exactly, still
     lossless WebP) becomes lossless JPEG XL in the fewest channels that hold it
     (gray, alpha only when used), kept once it decodes back to the same pixels;
-    only pages in sRGB;
+    only pages in sRGB, and PNGs with a color profile, read as stored and the
+    profile kept as it is (a lossless WebP with one is left alone);
   - a lossless JPEG XL is encoded again at a higher effort, one holding a JPEG
     transcoded again, each checked the same way;
   - a page is replaced only when smaller; lossy pages (lossy WebP, AVIF, HEIF,
@@ -263,10 +264,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     pages hidden with Hide this page out; that part can't be reversed.
 - **Make compatible** reverses it: a JPEG XL holding a JPEG gives back that
   JPEG byte for byte; a lossless one becomes lossless WebP (Android 11+; PNG
-  before, and for 16-bit pages), checked pixel for pixel, its color profile
-  embedded unless sRGB; a lossy one (never made by Compact) becomes WebP at
-  quality 90, the one step that changes pixels: the dialog says so, and a list
-  of those pages follows the run. Other pages are left as they are.
+  before, for 16-bit pages, and where the WebP does not decode back the same),
+  checked pixel for pixel, its color profile embedded unless sRGB; a lossy one
+  (never made by Compact) becomes WebP at quality 90, the one step that changes
+  pixels: the dialog says so, and a list of those pages follows the run. Other
+  pages are left as they are; a JPEG XL page that can't be converted (an
+  animation) stays, and is counted and listed.
   - **In place** (both; off by default, remembered): off, the new file goes
     beside the book (`Book.cbz`, or `Book (compacted).cbz` /
     `Book (compatible).cbz` when taken); on, it replaces the book once fully
@@ -275,15 +278,27 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     history, bookmarks, hidden pages and own settings (pages renumbered where
     hidden ones were left out); its file name charset is dropped, the new file
     naming its pages in UTF-8.
-  - Every entry of the new file is read back and checked against its CRC-32
-    before it takes its place; a book left as it was (nothing smaller, or no
-    JPEG XL page) is said so. The message gives the bytes saved. The new file
-    keeps the book's modification time. Pages convert on up to half the cores
-    (at most four) at background priority, fewer as the device warms up or saves
-    power; each passes through the app's cache, which needs room for the book.
+  - Each file read is checked against the CRC-32 its archive stores (zip; RAR
+    and 7z check their own), and every entry of the new file is read back and
+    checked against its CRC-32 before it takes its place; a book left as it was
+    (nothing smaller, no JPEG XL page, or holding other archives) is said so.
+    The message gives the bytes saved, and the list of pages re-encoded or not
+    converted follows, also when another book failed or the run was canceled.
+    The new file keeps the book's modification time.
+  - Pages convert on up to half the cores (at most four) at background
+    priority, fewer as the device warms up or saves power, and only as many at
+    once as half the app's memory holds by their size decoded; pages over 64 MB
+    are copied as they are. Each passes through the app's cache: the files
+    unpacked need room there and again for the new file (twice for Make
+    compatible), and the run stops before free space drops under 256 MB.
+  - A book open in the reader is left out (in use). Should the app stop between
+    the new file taking the book's place and the book's data following it, the
+    data follows when the app starts again; a new file left half-written in the
+    book's folder (`.Book.cbz.<n>.part`) is removed by a later run.
   - JPEG XL: libjxl as jxl-coder ships it (`libjxl.so`), through our own JNI
     binding (`jxl_jni.c`), compiled against the headers of the same release
-    (pinned with its SHA-256); no second copy of libjxl in the APK. Efforts:
+    (pinned with its SHA-256), and used only when `libjxl.so` reports that
+    release; no second copy of libjxl in the APK. Efforts:
     JPEG transcode and lossless 7, recompressing files already JPEG XL 9.
 - **Book ID:** everything kept for a book (favorite, read mark, history,
   bookmarks, hidden pages, its own settings and color adjustments, cover, page

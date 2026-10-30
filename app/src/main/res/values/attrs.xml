@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Operation bubbles' own roles, beside Material's, so a theme restyles them: a fill, what is on it, and the progress ring. -->
+    <attr name="colorOpCompact" format="color" />
+    <attr name="colorOnOpCompact" format="color" />
+    <attr name="colorOpCompactRing" format="color" />
+    <attr name="colorOpCompatible" format="color" />
+    <attr name="colorOnOpCompatible" format="color" />
+    <attr name="colorOpCompatibleRing" format="color" />
+</resources>

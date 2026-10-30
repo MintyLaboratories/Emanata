@@ -43,6 +43,13 @@
     <color name="md_inverse_on_surface">#2F3038</color>
     <color name="md_inverse_primary">#4F46E5</color>
 
+    <color name="op_compact">#3F6212</color>
+    <color name="op_on_compact">#ECFCCB</color>
+    <color name="op_compact_ring">#A3E635</color>
+    <color name="op_compatible">#86198F</color>
+    <color name="op_on_compatible">#FAE8FF</color>
+    <color name="op_compatible_ring">#F0ABFC</color>
+
 
 
 </resources>

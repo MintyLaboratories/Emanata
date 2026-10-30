@@ -50,8 +50,9 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             FileWork.Kind.COPY -> M.attr.colorSecondary
             FileWork.Kind.MOVE -> M.attr.colorTertiary
             FileWork.Kind.DELETE -> androidx.appcompat.R.attr.colorError
-            FileWork.Kind.RENAME, FileWork.Kind.COMPACT -> androidx.appcompat.R.attr.colorPrimary
-            FileWork.Kind.COMPATIBLE -> M.attr.colorSecondary
+            FileWork.Kind.RENAME -> androidx.appcompat.R.attr.colorPrimary
+            FileWork.Kind.COMPACT -> R.attr.colorOpCompactRing
+            FileWork.Kind.COMPATIBLE -> R.attr.colorOpCompatibleRing
         }
 
         /** A bubble waiting its turn: gray, whatever it will do. */
@@ -62,7 +63,8 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
         private val COPY = FabLook(R.drawable.ic_content_copy, R.string.file_op_copy, M.attr.colorSecondary, M.attr.colorOnSecondary)
         private val DELETE = FabLook(R.drawable.ic_delete, R.string.delete, M.attr.colorErrorContainer, M.attr.colorOnErrorContainer)
         private val RENAME = FabLook(R.drawable.ic_edit, R.string.menu_rename, androidx.appcompat.R.attr.colorPrimary, M.attr.colorOnPrimary)
-        private val COMPACT = FabLook(R.drawable.ic_compress, R.string.more_compact, M.attr.colorPrimaryContainer, M.attr.colorOnPrimaryContainer)
-        private val COMPATIBLE = FabLook(R.drawable.ic_unfold_more, R.string.more_make_compatible, M.attr.colorSecondaryContainer, M.attr.colorOnSecondaryContainer)
+        // Roles of their own: Material's are taken by the floating button's actions.
+        private val COMPACT = FabLook(R.drawable.ic_compress, R.string.more_compact, R.attr.colorOpCompact, R.attr.colorOnOpCompact)
+        private val COMPATIBLE = FabLook(R.drawable.ic_unfold_more, R.string.more_make_compatible, R.attr.colorOpCompatible, R.attr.colorOnOpCompatible)
     }
 }

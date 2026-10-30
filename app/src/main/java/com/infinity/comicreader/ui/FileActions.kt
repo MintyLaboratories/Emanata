@@ -153,9 +153,10 @@ internal class FileActions(
      * Pastes the items of pick [id] (the latest when null) into [dir], one at a time as one
      * queued operation, asking once for all whose names are taken there: Replace, Keep both,
      * or Skip them (the others are pasted all the same). A copy beside itself, or an item whose
-     * name an earlier one takes, keeps both. A pick is pasted once: its Paste turns into the
-     * operation, newest in the stack, and only what a move failed at or never reached comes
-     * back, as a new Paste.
+     * name an earlier one takes, keeps both; so does one whose name is taken by its turn, or
+     * whose Replace finds another item there than the one chosen. A pick is pasted once: its
+     * Paste turns into the operation, newest in the stack, and only what a move failed at or
+     * never reached comes back, as a new Paste.
      */
     fun paste(dir: File, id: Long? = null) {
         val clip = (if (id == null) FileClipboard.clips.value.lastOrNull() else FileClipboard[id])
@@ -224,7 +225,7 @@ internal class FileActions(
             if (clashes.any { there[it]?.isDirectory == true }) setMessage(R.string.clash_folder)
             // Never replacing what holds an item: it would go with it.
             if (clashes.none { Transfer.isWithin(it.path, Transfer.child(targetDir, it.name), ignoreCase = true) }) {
-                setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, plans + clashes.map { FileJobs.Plan(it, it.name, replace = true) }) }
+                setPositiveButton(R.string.clash_replace) { _, _ -> transfer(clip, targetDir, plans + clashes.map { FileJobs.Plan(it, it.name, replace = true, over = there[it]) }) }
             }
             setNeutralButton(R.string.clash_keep_both) { _, _ -> transfer(clip, targetDir, plans + clashes.map { FileJobs.Plan(it, keepBoth(it)) }) }
             // Skipping every one is the pick done with too.

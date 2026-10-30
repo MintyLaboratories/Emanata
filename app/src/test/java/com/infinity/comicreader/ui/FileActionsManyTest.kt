@@ -230,6 +230,47 @@ class FileActionsManyTest {
     }
 
     @Test
+    fun twoQueuedPastesOfOneNameKeepBoth() {
+        val go = holdQueue()
+        val one = File(tmp.newFolder("One"), "x.cbz").apply { writeBytes(ByteArray(10)) }
+        val two = File(tmp.newFolder("Two"), "x.cbz").apply { writeBytes(ByteArray(20)) }
+        val dest = tmp.newFolder("Dest")
+        actions.pickUp(listOf(item(one)), move = false)
+        actions.paste(dest)
+        waitFor { FileWork.operations.value.size == 2 }
+        actions.pickUp(listOf(item(two)), move = true)
+        actions.paste(dest)
+        waitFor { FileWork.operations.value.size == 3 }
+        go.release()
+        settle()
+        assertEquals(listOf("x (2).cbz", "x.cbz"), dest.list()!!.sorted())
+        assertEquals(10L, File(dest, "x.cbz").length())
+        assertEquals(20L, File(dest, "x (2).cbz").length())
+        assertFalse(two.exists())
+        assertTrue(finished.all { it is FileWork.Outcome.Done })
+    }
+
+    @Test
+    fun aQueuedReplaceKeepsBothWhenAnotherItemCameInItsPlace() {
+        val go = holdQueue()
+        val a = File(tmp.root, "x.cbz").apply { writeBytes(ByteArray(10)) }
+        val dest = tmp.newFolder("Dest")
+        val old = File(dest, "x.cbz").apply { writeBytes(ByteArray(3)) }
+        actions.pickUp(listOf(item(a)), move = true)
+        actions.paste(dest)
+        waitFor { ShadowDialog.getLatestDialog()?.isShowing == true }
+        answer(DialogInterface.BUTTON_POSITIVE)
+        waitFor { FileWork.operations.value.size == 2 }
+        old.delete()
+        old.writeBytes(ByteArray(30))
+        go.release()
+        settle()
+        assertEquals(30L, File(dest, "x.cbz").length())
+        assertEquals(10L, File(dest, "x (2).cbz").length())
+        assertFalse(a.exists())
+    }
+
+    @Test
     fun aQueuedRenameLeavesAloneWhatCameInItsPlace() {
         val go = holdQueue()
         val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }

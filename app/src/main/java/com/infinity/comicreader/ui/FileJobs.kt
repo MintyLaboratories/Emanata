@@ -16,6 +16,7 @@ import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
+import java.util.Locale
 
 /**
  * The work of queued file operations ([FileWork]): it holds the application, never a
@@ -25,8 +26,11 @@ import java.util.concurrent.Future
 internal class FileJobs(context: Context, private val library: Library, private val prefs: Prefs) {
     private val app = context.applicationContext
 
-    /** An item to paste under [name], over what has that name there when [replace]. */
-    data class Plan(val item: FileClipboard.Item, val name: String, val replace: Boolean = false)
+    /**
+     * An item to paste under [name], over what has that name there when [replace]: the item
+     * [over], found there as the user chose to replace it.
+     */
+    data class Plan(val item: FileClipboard.Item, val name: String, val replace: Boolean = false, val over: Node? = null)
 
     /**
      * What is at each of [paths] as they are chosen, looked up at once beside the queue: a
@@ -45,9 +49,26 @@ internal class FileJobs(context: Context, private val library: Library, private 
         val name = File(path).name
         if (now == null) return FileProblem(FileProblem.Kind.GONE, name)
         if (chosen == null || chosen.isFailure) return null
-        val was = chosen.getOrNull()
-        val same = was != null && was.isDirectory == now.isDirectory && was.size == now.size && was.modified == now.modified
-        return if (same) null else FileProblem(FileProblem.Kind.ALTERED, name)
+        return if (same(chosen.getOrNull(), now)) null else FileProblem(FileProblem.Kind.ALTERED, name)
+    }
+
+    /** True when [was] and [now] look like the same item, unchanged. */
+    private fun same(was: Node?, now: Node?): Boolean =
+        was != null && now != null && was.isDirectory == now.isDirectory && was.size == now.size && was.modified == now.modified
+
+    /**
+     * [plan] as things are now in [targetDir], whose names [taken] (lowercase) holds once
+     * listed: a name taken since it was planned keeps both, as does a Replace when what it
+     * would replace is no longer what the user chose to replace.
+     */
+    private fun settle(plan: Plan, targetDir: String, taken: Lazy<MutableSet<String>>): Plan {
+        val space = FileSpaces.of(targetDir)
+        // Unknown: the transfer finds out, and fails as it would.
+        val there = runCatching { space.stat(Transfer.child(targetDir, plan.name)) }.getOrElse { return plan }
+        if (there == null) return plan.copy(replace = false)
+        if (plan.replace && same(plan.over, there)) return plan
+        val name = Transfer.keepBothName(plan.item.name, plan.item.isDir) { it.lowercase(Locale.ROOT) in taken.value }
+        return plan.copy(name = name, replace = false)
     }
 
     /** The lookups of [chosen] once done, none when they failed. */
@@ -101,6 +122,8 @@ internal class FileJobs(context: Context, private val library: Library, private 
      */
     fun transfer(clip: FileClipboard.Clip, targetDir: String, plans: List<Plan>, p: FileWork.Progress): FileWork.Outcome {
         val move = clip.move
+        val taken = lazy { FileSpaces.of(targetDir).list(targetDir).mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) } }
+        var first: String? = null
         var sourceLeft = false
         val gone = ArrayList<String>()
         // Sources not pasted (yet).
@@ -111,11 +134,19 @@ internal class FileJobs(context: Context, private val library: Library, private 
             giveBack(clip, plans.map { it.item }.filter { it.path in unsettled })
             return outcome
         }
-        for ((i, plan) in plans.withIndex()) {
+        for ((i, planned) in plans.withIndex()) {
             if (plans.size > 1) {
                 if (!p.alive) return ended(FileWork.Outcome.Canceled(done, plans.size, gone))
-                p.item(plan.item.name, i, plans.size)
+                p.item(planned.item.name, i, plans.size)
             }
+            val plan = try {
+                settle(planned, targetDir, taken)
+            } catch (e: Exception) {
+                if (failure == null) failure = e
+                continue
+            }
+            if (taken.isInitialized()) taken.value += plan.name.lowercase(Locale.ROOT)
+            if (first == null) first = Transfer.child(targetDir, plan.name)
             val source = plan.item.path
             val target = Transfer.child(targetDir, plan.name)
             val result = try {
@@ -140,7 +171,7 @@ internal class FileJobs(context: Context, private val library: Library, private 
                 }
             }
         }
-        return ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(Transfer.child(targetDir, plans.first().name), sourceLeft, gone, done))
+        return ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(first, sourceLeft, gone, done))
     }
 
     /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. */

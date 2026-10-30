@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.os.Trace
 import android.util.Log
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Times one resize of the pages (a new fit, page gap or item size) for profiling: until
@@ -29,7 +30,8 @@ internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMil
             if (!shown) endSection(SHOWN)
             endSection(EXACT)
         }
-        cookie++
+        // Unique across adapters, whose resizes may overlap as one replaces another.
+        cookie = cookies.incrementAndGet()
         start = now()
         shown = false
         waiting.clear()
@@ -83,5 +85,8 @@ internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMil
         const val TAG = "ResizeTiming"
         const val SHOWN = "Resize shown"
         const val EXACT = "Resize exact"
+
+        /** The last trace cookie taken by any resize. */
+        val cookies = AtomicInteger()
     }
 }

@@ -447,8 +447,33 @@ object Tiff {
         fun read(b: ByteArray, at: Int, n: Int): Long = Tiff.read(b, at, n, bigEndian)
     }
 
-    /** The first page's directory, skipping reduced-resolution images (thumbnails) when a full one follows. */
-    private fun pageIfd(input: Input): Ifd {
+    /**
+     * True when [input] decodes to exactly the pixels it stores, none reduced or converted,
+     * so they can be stored anew losslessly: one directory alone, top-left orientation, no
+     * color profile; gray or RGB of at most 8 bits, or a palette of 8-bit colors; alpha
+     * unassociated; not JPEG-compressed.
+     */
+    fun exact(input: Input): Boolean = try {
+        val page = page(input)
+        val (ifd, next) = firstIfd(input)
+        next == 0L && ifd.int(ORIENTATION, 1) == 1 && !ifd.has(ICC_PROFILE) &&
+            page.compression != COMPRESSION_JPEG && page.photometric != PHOTO_CMYK && page.photometric != PHOTO_YCBCR &&
+            page.bits <= 8 && page.alpha != ALPHA_ASSOCIATED &&
+            (page.photometric != PHOTO_PALETTE || ifd.longs(COLOR_MAP)?.all { it % 257 == 0L } == true)
+    } catch (e: IOException) {
+        false
+    } catch (e: RuntimeException) {
+        false
+    }
+
+    /** The first directory of [input] and where the next one is (0: none). */
+    private fun firstIfd(input: Input): Pair<Ifd, Long> {
+        val (offset, big, bigEndian) = header(input)
+        return readIfd(input, offset, big, bigEndian)
+    }
+
+    /** Where [input]'s first directory is, whether it is a BigTIFF, and whether big-endian. */
+    private fun header(input: Input): Triple<Long, Boolean, Boolean> {
         val head = ByteArray(16)
         input.read(0, head, 0, minOf(16L, input.length).toInt())
         val bigEndian = when {
@@ -461,7 +486,13 @@ object Tiff {
             43 -> true
             else -> throw DecodeException("Not a TIFF image")
         }
-        var offset = if (big) read(head, 8, 8, bigEndian) else read(head, 4, 4, bigEndian)
+        return Triple(if (big) read(head, 8, 8, bigEndian) else read(head, 4, 4, bigEndian), big, bigEndian)
+    }
+
+    /** The first page's directory, skipping reduced-resolution images (thumbnails) when a full one follows. */
+    private fun pageIfd(input: Input): Ifd {
+        val (start, big, bigEndian) = header(input)
+        var offset = start
         var first: Ifd? = null
         val seen = HashSet<Long>()
         while (offset > 0 && seen.size < MAX_PAGES && seen.add(offset)) {
@@ -736,6 +767,8 @@ object Tiff {
     private const val EXTRA_SAMPLES = 338
     private const val SAMPLE_FORMAT = 339
     private const val JPEG_TABLES = 347
+    private const val ORIENTATION = 274
+    private const val ICC_PROFILE = 34675
 
     private const val COMPRESSION_LZW = 5
     private const val COMPRESSION_JPEG = 7

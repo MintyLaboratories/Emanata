@@ -394,6 +394,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /** True for left-handed: the floating button and operation bubbles on the left. */
+    var leftHanded: Boolean
+        get() = sp.getString(KEY_HANDED, null) == HANDED_LEFT
+        set(v) = put(KEY_HANDED, if (v) HANDED_LEFT else HANDED_RIGHT)
+
     /**
      * The folder a location ([StorageRoot], by its [root] path) opens at when picked: one
      * set below it ([setLocationStart]), else the root itself.
@@ -664,6 +669,9 @@ class Prefs(context: Context) {
         private const val KEY_PATHVIEW = "pref_list_pathview"
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
+        const val KEY_HANDED = "pref_handed"
+        const val HANDED_LEFT = "left"
+        const val HANDED_RIGHT = "right"
         private const val KEY_GROUP_FAVORITES = "pref_group_favorites"
         private const val KEY_STARTUP_TAB = "pref_startup_tab"
         private const val KEY_STARTUP_LOCATION = "pref_startup_location"
@@ -699,7 +707,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
+            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS
         ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 

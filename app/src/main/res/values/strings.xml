@@ -153,6 +153,7 @@
     <string name="pref_more_actions">Selection menu (⋮)</string>
     <string name="pref_fab_one">Button with one item selected</string>
     <string name="pref_fab_many">Button with several items selected</string>
+    <string name="pref_handed">Handedness</string>
     <string name="fab_none">Nothing</string>
     <string name="fab_open">Open</string>
     <string name="more_compact">Compact</string>
@@ -848,6 +849,14 @@
     <string name="about_project_page">Project page</string>
 
     <!-- ===================== Arrays ===================== -->
+    <string-array name="handed_entries">
+        <item>Right-handed</item>
+        <item>Left-handed</item>
+    </string-array>
+    <string-array name="handed_values" translatable="false">
+        <item>right</item>
+        <item>left</item>
+    </string-array>
     <string-array name="network_cache_entries">
         <item>512 MB</item>
         <item>1 GB</item>

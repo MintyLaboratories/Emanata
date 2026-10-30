@@ -83,6 +83,13 @@
             app:key="pref_fab_many"
             app:title="@string/pref_fab_many"
             app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="right"
+            app:entries="@array/handed_entries"
+            app:entryValues="@array/handed_values"
+            app:key="pref_handed"
+            app:title="@string/pref_handed"
+            app:useSimpleSummaryProvider="true" />
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory

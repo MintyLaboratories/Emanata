@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
 import android.widget.TextView
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.color.MaterialColors
@@ -74,6 +76,8 @@ class ListActivityStackTest {
     private fun launch(): ListActivity =
         Robolectric.buildActivity(ListActivity::class.java).also { controller = it }.setup().get().also { idle() }
 
+    private fun gravity(activity: ListActivity, id: Int) = (activity.findViewById<View>(id).layoutParams as CoordinatorLayout.LayoutParams).gravity
+
     private fun waitFor(what: () -> Boolean) {
         repeat(300) {
             idle()
@@ -83,6 +87,18 @@ class ListActivityStackTest {
     }
 
     private fun pick(name: String) = FileClipboard.add(FileClipboard.Clip(listOf(FileClipboard.Item(File(shelf, name).absolutePath, false)), move = false))
+
+    @Test
+    fun theButtonAndItsStackSitOnTheHandedSide() {
+        val activity = launch()
+        for (id in listOf(R.id.fab, R.id.operation_stack)) assertEquals(Gravity.BOTTOM or Gravity.END, gravity(activity, id))
+        Prefs(context).leftHanded = true
+        idle()
+        for (id in listOf(R.id.fab, R.id.operation_stack)) assertEquals(Gravity.BOTTOM or Gravity.START, gravity(activity, id))
+        Prefs(context).leftHanded = false
+        idle()
+        assertEquals(Gravity.BOTTOM or Gravity.END, gravity(activity, R.id.operation_stack))
+    }
 
     @Test
     fun olderBubblesFoldIntoACountOnTheTopOne() {

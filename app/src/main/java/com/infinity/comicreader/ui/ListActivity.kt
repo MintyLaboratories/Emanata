@@ -307,6 +307,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             fileActions.drop(it)
             toast(R.string.paste_canceled)
         }
+        stack.setLeftHanded(prefs.leftHanded)
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
@@ -512,6 +513,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (s.statusBar != old.statusBar) applyStatusBarSetting()
         if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
         if (s.quickFab != old.quickFab) updateFab()
+        if (s.leftHanded != old.leftHanded) stack.setLeftHanded(s.leftHanded)
     }
 
     private fun applyStatusBarSetting() {

@@ -15,6 +15,7 @@ import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlResizeFilter
 import com.awxkee.jxlcoder.PreferredColorConfig
 import com.awxkee.jxlcoder.ScaleMode
+import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
@@ -383,12 +384,21 @@ object Decoders {
     internal var openRegions: (ByteArray) -> RegionReader? = { bytes -> newRegionDecoder(bytes)?.let { PlatformRegions(it) } }
 
     /**
+     * The JPEG a JPEG XL was transcoded from, rebuilt byte for byte ([LibJxl.reconstruct]);
+     * null when it holds none or libjxl is missing. Tests stand in for it.
+     */
+    @VisibleForTesting
+    internal var jpegOf: (ByteArray) -> ByteArray? = { jxl -> runCatching { if (LibJxl.available) LibJxl.reconstruct(jxl) else null }.getOrNull() }
+
+    /**
      * A [RegionReader] of [bytes], an image shown [w] x [h], reading its pixels as shown:
-     * a [REGION_KINDS] image, a JPEG turned by its EXIF orientation too ([OrientedRegions]);
-     * null for other kinds, a PNG an eXIf chunk may turn, or where the reader sees another size.
+     * a [REGION_KINDS] image, a JPEG turned by its EXIF orientation too ([OrientedRegions]),
+     * a JPEG XL holding a JPEG through that JPEG ([jpegOf]), as Compact writes them; null for
+     * other kinds, a PNG an eXIf chunk may turn, or where the reader sees another size.
      */
     private fun regionReader(bytes: ByteArray, w: Int, h: Int): RegionReader? {
         val kind = ImageKind.sniff(bytes)
+        if (kind == ImageKind.JXL) return jpegOf(bytes)?.takeIf { ImageKind.sniff(it) == ImageKind.JPEG }?.let { regionReader(it, w, h) }
         if (kind !in REGION_KINDS) return null
         if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
         val orientation = if (kind == ImageKind.JPEG) ImageHeaders.jpegOrientation(bytes) ?: return null else 1

@@ -1,6 +1,8 @@
 # AVIF decoding: libavif with the dav1d AV1 decoder, both built from pinned
 # sources, behind a small JNI binding (avif_jni.c); Book IDs: xxHash's XXH3-64,
-# header-only from its pinned release (book_id_jni.c).
+# header-only from its pinned release (book_id_jni.c); lossless compaction: libjxl
+# as jxl-coder ships it, opened at run time and compiled against the headers of
+# the same pinned release (jxl_jni.c).
 cmake_minimum_required(VERSION 3.22)
 
 # Optimized native code in every app build type: an unoptimized AV1 decoder takes
@@ -44,9 +46,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(xxhash)
 
-add_library(avifjni SHARED avif_jni.c book_id_jni.c)
-target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}")
-target_link_libraries(avifjni PRIVATE avif jnigraphics log)
+# Only libjxl's public headers are used; jxl-coder's libjxl.so (the same release)
+# provides the code, so nothing of libjxl is built. jxl_headers stands in for the
+# two headers its build generates.
+FetchContent_Declare(
+    libjxl
+    URL "https://github.com/libjxl/libjxl/archive/refs/tags/v0.12.0.tar.gz"
+    URL_HASH SHA256=03e9be69a30be4011f559da75328b6d7cea8ad921fabfbd551ce10bf45cdc992
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR headers-only
+)
+FetchContent_MakeAvailable(libjxl)
+
+add_library(avifjni SHARED avif_jni.c book_id_jni.c jxl_jni.c)
+target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}" "${CMAKE_CURRENT_LIST_DIR}/jxl_headers" "${libjxl_SOURCE_DIR}/lib/include")
+target_link_libraries(avifjni PRIVATE avif jnigraphics log dl)
 target_compile_options(avifjni PRIVATE -Wall -Wextra)
 # Only the JNI entry points are exported; unused code is dropped.
 set_target_properties(avifjni PROPERTIES C_VISIBILITY_PRESET hidden)

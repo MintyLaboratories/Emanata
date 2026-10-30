@@ -1,0 +1,511 @@
+// JNI binding over libjxl for com.infinity.comicreader.compact.LibJxl: lossless JPEG
+// transcoding and the JPEG's reconstruction, lossless encoding of pixels, decoding,
+// and what a file's header tells. libjxl is not built here: jxl-coder ships it whole
+// (libjxl.so, exporting the public C API), so it is opened at run time and compiled
+// against the headers of the same release (CMakeLists.txt). Each call is single-threaded.
+
+#include <dlfcn.h>
+#include <jni.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <jxl/decode.h>
+#include <jxl/encode.h>
+
+#define EXPORT JNIEXPORT __attribute__((visibility("default")))
+
+// Every libjxl function used, resolved from libjxl.so once.
+#define FUNCTIONS(X)                                                                                      \
+    X(JxlDecoderVersion) X(JxlDecoderCreate) X(JxlDecoderDestroy) X(JxlDecoderSubscribeEvents)            \
+    X(JxlDecoderSetInput) X(JxlDecoderCloseInput) X(JxlDecoderProcessInput) X(JxlDecoderGetBasicInfo)     \
+    X(JxlDecoderGetColorAsEncodedProfile) X(JxlDecoderGetICCProfileSize) X(JxlDecoderGetColorAsICCProfile) \
+    X(JxlDecoderSetPreferredColorProfile) X(JxlDecoderImageOutBufferSize) X(JxlDecoderSetImageOutBuffer)  \
+    X(JxlDecoderSetJPEGBuffer) X(JxlDecoderReleaseJPEGBuffer)                                             \
+    X(JxlEncoderCreate) X(JxlEncoderDestroy) X(JxlEncoderStoreJPEGMetadata) X(JxlEncoderFrameSettingsCreate) \
+    X(JxlEncoderFrameSettingsSetOption) X(JxlEncoderAddJPEGFrame) X(JxlEncoderAddImageFrame)              \
+    X(JxlEncoderCloseInput) X(JxlEncoderProcessOutput) X(JxlEncoderInitBasicInfo) X(JxlEncoderSetBasicInfo) \
+    X(JxlEncoderSetColorEncoding) X(JxlEncoderSetICCProfile) X(JxlEncoderSetFrameLossless)                \
+    X(JxlColorEncodingSetToSRGB)
+
+#define DECLARE(name) static __typeof__(&name) p_##name;
+FUNCTIONS(DECLARE)
+#undef DECLARE
+
+// Calls libjxl's `name`.
+#define J(name) (p_##name)
+
+static pthread_once_t once = PTHREAD_ONCE_INIT;
+static int loaded;
+
+static void load(void)
+{
+    void * lib = dlopen("libjxl.so", RTLD_NOW | RTLD_LOCAL);
+    if (lib == NULL) {
+        return;
+    }
+#define RESOLVE(name)                                       \
+    p_##name = (__typeof__(&name))dlsym(lib, #name);        \
+    if (p_##name == NULL) {                                 \
+        return;                                             \
+    }
+    FUNCTIONS(RESOLVE)
+#undef RESOLVE
+    loaded = 1;
+}
+
+static int ready(void)
+{
+    pthread_once(&once, load);
+    return loaded;
+}
+
+// Bytes growing as they are written.
+typedef struct {
+    uint8_t * data;
+    size_t size;
+    size_t capacity;
+} Buffer;
+
+static int reserve(Buffer * b, size_t capacity)
+{
+    if (capacity <= b->capacity) {
+        return 1;
+    }
+    uint8_t * grown = realloc(b->data, capacity);
+    if (grown == NULL) {
+        return 0;
+    }
+    b->data = grown;
+    b->capacity = capacity;
+    return 1;
+}
+
+static jbyteArray toJava(JNIEnv * env, const uint8_t * data, size_t size)
+{
+    if (size > INT32_MAX) {
+        return NULL;
+    }
+    jbyteArray out = (*env)->NewByteArray(env, (jsize)size);
+    if (out != NULL && size > 0) {
+        (*env)->SetByteArrayRegion(env, out, 0, (jsize)size, (const jbyte *)data);
+    }
+    return out;
+}
+
+// A Java byte array's contents for the length of a call.
+typedef struct {
+    jbyteArray array;
+    jbyte * data;
+    size_t size;
+} Input;
+
+static int borrow(JNIEnv * env, jbyteArray array, Input * in)
+{
+    in->array = array;
+    in->size = (size_t)(*env)->GetArrayLength(env, array);
+    in->data = (*env)->GetByteArrayElements(env, array, NULL);
+    return in->data != NULL;
+}
+
+static void giveBack(JNIEnv * env, Input * in)
+{
+    if (in->data != NULL) {
+        (*env)->ReleaseByteArrayElements(env, in->array, in->data, JNI_ABORT);
+        in->data = NULL;
+    }
+}
+
+// Runs the encoder to its end into `out`; 0 when it fails.
+static int drain(JxlEncoder * enc, Buffer * out)
+{
+    if (!reserve(out, 1u << 16)) {
+        return 0;
+    }
+    for (;;) {
+        uint8_t * next = out->data + out->size;
+        size_t available = out->capacity - out->size;
+        const JxlEncoderStatus status = J(JxlEncoderProcessOutput)(enc, &next, &available);
+        out->size = (size_t)(next - out->data);
+        if (status == JXL_ENC_SUCCESS) {
+            return 1;
+        }
+        if (status != JXL_ENC_NEED_MORE_OUTPUT || !reserve(out, out->capacity * 2)) {
+            return 0;
+        }
+    }
+}
+
+// True for sRGB (gray or color): D65 white, sRGB primaries and transfer.
+static int isSrgb(const JxlColorEncoding * c)
+{
+    if (c->white_point != JXL_WHITE_POINT_D65 || c->transfer_function != JXL_TRANSFER_FUNCTION_SRGB) {
+        return 0;
+    }
+    if (c->color_space == JXL_COLOR_SPACE_GRAY) {
+        return 1;
+    }
+    return c->color_space == JXL_COLOR_SPACE_RGB && c->primaries == JXL_PRIMARIES_SRGB;
+}
+
+// libjxl's version as major * 1000000 + minor * 1000 + patch; 0 when libjxl.so is missing.
+EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nVersion(JNIEnv * env, jclass clazz)
+{
+    (void)env;
+    (void)clazz;
+    return ready() ? (jint)J(JxlDecoderVersion)() : 0;
+}
+
+// The JPEG `jpeg` as a JPEG XL holding what rebuilds it byte for byte; null when it cannot be.
+EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nTranscode(JNIEnv * env, jclass clazz, jbyteArray jpeg, jint effort)
+{
+    (void)clazz;
+    if (!ready()) {
+        return NULL;
+    }
+    Input in = { 0 };
+    Buffer out = { 0 };
+    jbyteArray result = NULL;
+    JxlEncoder * enc = J(JxlEncoderCreate)(NULL);
+    if (enc != NULL && borrow(env, jpeg, &in) && J(JxlEncoderStoreJPEGMetadata)(enc, JXL_TRUE) == JXL_ENC_SUCCESS) {
+        JxlEncoderFrameSettings * settings = J(JxlEncoderFrameSettingsCreate)(enc, NULL);
+        if (settings != NULL && J(JxlEncoderFrameSettingsSetOption)(settings, JXL_ENC_FRAME_SETTING_EFFORT, effort) == JXL_ENC_SUCCESS &&
+            J(JxlEncoderAddJPEGFrame)(settings, (const uint8_t *)in.data, in.size) == JXL_ENC_SUCCESS) {
+            J(JxlEncoderCloseInput)(enc);
+            if (drain(enc, &out)) {
+                result = toJava(env, out.data, out.size);
+            }
+        }
+    }
+    giveBack(env, &in);
+    if (enc != NULL) {
+        J(JxlEncoderDestroy)(enc);
+    }
+    free(out.data);
+    return result;
+}
+
+// The JPEG a JPEG XL `jxl` was transcoded from, byte for byte; null when it holds none or fails.
+EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nReconstruct(JNIEnv * env, jclass clazz, jbyteArray jxl)
+{
+    (void)clazz;
+    if (!ready()) {
+        return NULL;
+    }
+    Input in = { 0 };
+    Buffer out = { 0 };
+    jbyteArray result = NULL;
+    int ok = 0;
+    // Bytes of `out` handed to the decoder, from `out.size` on.
+    size_t handed = 0;
+    JxlDecoder * dec = J(JxlDecoderCreate)(NULL);
+    if (dec != NULL && borrow(env, jxl, &in) &&
+        J(JxlDecoderSubscribeEvents)(dec, JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE) == JXL_DEC_SUCCESS &&
+        J(JxlDecoderSetInput)(dec, (const uint8_t *)in.data, in.size) == JXL_DEC_SUCCESS) {
+        J(JxlDecoderCloseInput)(dec);
+        for (;;) {
+            const JxlDecoderStatus status = J(JxlDecoderProcessInput)(dec);
+            if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
+                if (!reserve(&out, in.size * 2 + 65536)) {
+                    break;
+                }
+                handed = out.capacity;
+                if (J(JxlDecoderSetJPEGBuffer)(dec, out.data, handed) != JXL_DEC_SUCCESS) {
+                    break;
+                }
+            } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+                out.size += handed - J(JxlDecoderReleaseJPEGBuffer)(dec);
+                if (!reserve(&out, out.capacity * 2)) {
+                    break;
+                }
+                handed = out.capacity - out.size;
+                if (J(JxlDecoderSetJPEGBuffer)(dec, out.data + out.size, handed) != JXL_DEC_SUCCESS) {
+                    break;
+                }
+            } else if (status == JXL_DEC_FULL_IMAGE) {
+                if (handed == 0) {
+                    break;
+                }
+                out.size += handed - J(JxlDecoderReleaseJPEGBuffer)(dec);
+                handed = 0;
+                ok = 1;
+            } else if (status == JXL_DEC_SUCCESS) {
+                break;
+            } else {
+                // An image buffer asked for: no JPEG to rebuild. Or an error.
+                ok = 0;
+                break;
+            }
+        }
+    }
+    giveBack(env, &in);
+    if (ok) {
+        result = toJava(env, out.data, out.size);
+    }
+    if (dec != NULL) {
+        J(JxlDecoderDestroy)(dec);
+    }
+    free(out.data);
+    return result;
+}
+
+// Opens a decoder on `in` subscribed to `events`.
+static JxlDecoder * decoder(Input * in, int events)
+{
+    JxlDecoder * dec = J(JxlDecoderCreate)(NULL);
+    if (dec == NULL) {
+        return NULL;
+    }
+    if (J(JxlDecoderSubscribeEvents)(dec, events) != JXL_DEC_SUCCESS ||
+        J(JxlDecoderSetInput)(dec, (const uint8_t *)in->data, in->size) != JXL_DEC_SUCCESS) {
+        J(JxlDecoderDestroy)(dec);
+        return NULL;
+    }
+    J(JxlDecoderCloseInput)(dec);
+    return dec;
+}
+
+// What `jxl`'s header tells (see JxlInfo); null when it is no JPEG XL.
+EXPORT jintArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nInfo(JNIEnv * env, jclass clazz, jbyteArray jxl)
+{
+    (void)clazz;
+    if (!ready()) {
+        return NULL;
+    }
+    Input in = { 0 };
+    jintArray result = NULL;
+    JxlBasicInfo info;
+    int have = 0;
+    JxlDecoder * dec = borrow(env, jxl, &in) ? decoder(&in, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING) : NULL;
+    while (dec != NULL) {
+        const JxlDecoderStatus status = J(JxlDecoderProcessInput)(dec);
+        if (status == JXL_DEC_BASIC_INFO) {
+            have = J(JxlDecoderGetBasicInfo)(dec, &info) == JXL_DEC_SUCCESS;
+            if (!have) {
+                break;
+            }
+        } else if (status == JXL_DEC_COLOR_ENCODING) {
+            JxlColorEncoding color;
+            const int srgb = J(JxlDecoderGetColorAsEncodedProfile)(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color) == JXL_DEC_SUCCESS && isSrgb(&color);
+            const jint values[] = {
+                (jint)info.xsize, (jint)info.ysize, (jint)info.bits_per_sample, (jint)info.exponent_bits_per_sample,
+                (jint)info.num_color_channels, (jint)info.alpha_bits, (jint)info.num_extra_channels,
+                info.uses_original_profile ? 1 : 0, info.have_animation ? 1 : 0, srgb, info.alpha_premultiplied ? 1 : 0,
+                (jint)info.alpha_exponent_bits
+            };
+            const jsize count = (jsize)(sizeof(values) / sizeof(values[0]));
+            result = (*env)->NewIntArray(env, count);
+            if (result != NULL) {
+                (*env)->SetIntArrayRegion(env, result, 0, count, values);
+            }
+            break;
+        } else {
+            break;
+        }
+    }
+    giveBack(env, &in);
+    if (dec != NULL) {
+        J(JxlDecoderDestroy)(dec);
+    }
+    return result;
+}
+
+// The ICC profile of `jxl` as `target` gives it; null when it fails.
+static jbyteArray icc(JNIEnv * env, JxlDecoder * dec, JxlColorProfileTarget target)
+{
+    size_t size = 0;
+    if (J(JxlDecoderGetICCProfileSize)(dec, target, &size) != JXL_DEC_SUCCESS || size == 0) {
+        return NULL;
+    }
+    uint8_t * bytes = malloc(size);
+    jbyteArray result = NULL;
+    if (bytes != NULL && J(JxlDecoderGetColorAsICCProfile)(dec, target, bytes, size) == JXL_DEC_SUCCESS) {
+        result = toJava(env, bytes, size);
+    }
+    free(bytes);
+    return result;
+}
+
+// Profile tags (JxlProfile): an encoded color profile follows, or an ICC profile.
+#define PROFILE_ENCODED 0
+#define PROFILE_ICC 1
+
+// `jxl`'s color profile as stored: a tag, then the JxlColorEncoding or the ICC
+// profile, for nEncode to give the same to another; with `data`, the ICC profile of
+// the decoded pixels instead, untagged. Null when it fails.
+EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nProfile(JNIEnv * env, jclass clazz, jbyteArray jxl, jboolean data)
+{
+    (void)clazz;
+    if (!ready()) {
+        return NULL;
+    }
+    Input in = { 0 };
+    jbyteArray result = NULL;
+    JxlDecoder * dec = borrow(env, jxl, &in) ? decoder(&in, JXL_DEC_COLOR_ENCODING) : NULL;
+    if (dec != NULL && J(JxlDecoderProcessInput)(dec) == JXL_DEC_COLOR_ENCODING) {
+        if (data) {
+            result = icc(env, dec, JXL_COLOR_PROFILE_TARGET_DATA);
+        } else {
+            JxlColorEncoding color;
+            if (J(JxlDecoderGetColorAsEncodedProfile)(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color) == JXL_DEC_SUCCESS) {
+                uint8_t tagged[1 + sizeof(color)];
+                tagged[0] = PROFILE_ENCODED;
+                memcpy(tagged + 1, &color, sizeof(color));
+                result = toJava(env, tagged, sizeof(tagged));
+            } else {
+                jbyteArray plain = icc(env, dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL);
+                if (plain != NULL) {
+                    const jsize n = (*env)->GetArrayLength(env, plain);
+                    result = (*env)->NewByteArray(env, n + 1);
+                    if (result != NULL) {
+                        const jbyte tag = PROFILE_ICC;
+                        (*env)->SetByteArrayRegion(env, result, 0, 1, &tag);
+                        jbyte * bytes = (*env)->GetByteArrayElements(env, plain, NULL);
+                        if (bytes != NULL) {
+                            (*env)->SetByteArrayRegion(env, result, 1, n, bytes);
+                            (*env)->ReleaseByteArrayElements(env, plain, bytes, JNI_ABORT);
+                        }
+                    }
+                    (*env)->DeleteLocalRef(env, plain);
+                }
+            }
+        }
+    }
+    giveBack(env, &in);
+    if (dec != NULL) {
+        J(JxlDecoderDestroy)(dec);
+    }
+    return result;
+}
+
+// The first frame of `jxl` as `channels` interleaved samples of `bits` (8, or 16 little-endian),
+// in its own color profile, or converted to sRGB with `srgb`; null when it fails or cannot convert.
+EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nDecode(JNIEnv * env, jclass clazz, jbyteArray jxl, jint channels, jint bits, jboolean srgb)
+{
+    (void)clazz;
+    if (!ready() || channels < 1 || channels > 4 || (bits != 8 && bits != 16)) {
+        return NULL;
+    }
+    Input in = { 0 };
+    uint8_t * pixels = NULL;
+    size_t size = 0;
+    int ok = 0;
+    jbyteArray result = NULL;
+    JxlBasicInfo info;
+    const JxlPixelFormat format = { (uint32_t)channels, bits == 16 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0 };
+    JxlDecoder * dec = borrow(env, jxl, &in) ? decoder(&in, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE) : NULL;
+    while (dec != NULL) {
+        const JxlDecoderStatus status = J(JxlDecoderProcessInput)(dec);
+        if (status == JXL_DEC_BASIC_INFO) {
+            if (J(JxlDecoderGetBasicInfo)(dec, &info) != JXL_DEC_SUCCESS) {
+                break;
+            }
+        } else if (status == JXL_DEC_COLOR_ENCODING) {
+            if (srgb) {
+                JxlColorEncoding color;
+                J(JxlColorEncodingSetToSRGB)(&color, info.num_color_channels == 1 ? JXL_TRUE : JXL_FALSE);
+                if (J(JxlDecoderSetPreferredColorProfile)(dec, &color) != JXL_DEC_SUCCESS) {
+                    break;
+                }
+            }
+        } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+            if (J(JxlDecoderImageOutBufferSize)(dec, &format, &size) != JXL_DEC_SUCCESS || size > INT32_MAX) {
+                break;
+            }
+            pixels = malloc(size);
+            if (pixels == NULL || J(JxlDecoderSetImageOutBuffer)(dec, &format, pixels, size) != JXL_DEC_SUCCESS) {
+                break;
+            }
+        } else if (status == JXL_DEC_FULL_IMAGE) {
+            // The first frame only.
+            ok = pixels != NULL;
+            break;
+        } else {
+            break;
+        }
+    }
+    giveBack(env, &in);
+    if (ok) {
+        result = toJava(env, pixels, size);
+    }
+    if (dec != NULL) {
+        J(JxlDecoderDestroy)(dec);
+    }
+    free(pixels);
+    return result;
+}
+
+// `pixels` (`channels` interleaved samples of `bits`, 8 or 16 little-endian; 2 and 4 with
+// alpha last) as a lossless JPEG XL at `effort`, in `profile` (nProfile's), else sRGB; null when it fails.
+EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nEncode(
+    JNIEnv * env, jclass clazz, jbyteArray pixels, jint width, jint height, jint channels, jint bits, jbyteArray profile, jint effort)
+{
+    (void)clazz;
+    if (!ready() || width <= 0 || height <= 0 || channels < 1 || channels > 4 || (bits != 8 && bits != 16)) {
+        return NULL;
+    }
+    const size_t expected = (size_t)width * (size_t)height * (size_t)channels * (size_t)(bits / 8);
+    if ((size_t)(*env)->GetArrayLength(env, pixels) != expected) {
+        return NULL;
+    }
+    Input in = { 0 };
+    Input color = { 0 };
+    Buffer out = { 0 };
+    jbyteArray result = NULL;
+    const int gray = channels <= 2;
+    const int alpha = channels == 2 || channels == 4;
+    JxlEncoder * enc = J(JxlEncoderCreate)(NULL);
+    int ok = enc != NULL && borrow(env, pixels, &in);
+    if (ok) {
+        JxlBasicInfo info;
+        J(JxlEncoderInitBasicInfo)(&info);
+        info.xsize = (uint32_t)width;
+        info.ysize = (uint32_t)height;
+        info.bits_per_sample = (uint32_t)bits;
+        info.num_color_channels = gray ? 1 : 3;
+        info.num_extra_channels = alpha ? 1 : 0;
+        info.alpha_bits = alpha ? (uint32_t)bits : 0;
+        info.uses_original_profile = JXL_TRUE;
+        ok = J(JxlEncoderSetBasicInfo)(enc, &info) == JXL_ENC_SUCCESS;
+    }
+    if (ok) {
+        if (profile == NULL) {
+            JxlColorEncoding srgb;
+            J(JxlColorEncodingSetToSRGB)(&srgb, gray ? JXL_TRUE : JXL_FALSE);
+            ok = J(JxlEncoderSetColorEncoding)(enc, &srgb) == JXL_ENC_SUCCESS;
+        } else if (borrow(env, profile, &color) && color.size > 1) {
+            if (color.data[0] == PROFILE_ENCODED && color.size == 1 + sizeof(JxlColorEncoding)) {
+                JxlColorEncoding encoded;
+                memcpy(&encoded, color.data + 1, sizeof(encoded));
+                ok = J(JxlEncoderSetColorEncoding)(enc, &encoded) == JXL_ENC_SUCCESS;
+            } else if (color.data[0] == PROFILE_ICC) {
+                ok = J(JxlEncoderSetICCProfile)(enc, (const uint8_t *)color.data + 1, color.size - 1) == JXL_ENC_SUCCESS;
+            } else {
+                ok = 0;
+            }
+        } else {
+            ok = 0;
+        }
+        giveBack(env, &color);
+    }
+    if (ok) {
+        JxlEncoderFrameSettings * settings = J(JxlEncoderFrameSettingsCreate)(enc, NULL);
+        const JxlPixelFormat format = { (uint32_t)channels, bits == 16 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0 };
+        ok = settings != NULL && J(JxlEncoderSetFrameLossless)(settings, JXL_TRUE) == JXL_ENC_SUCCESS &&
+             J(JxlEncoderFrameSettingsSetOption)(settings, JXL_ENC_FRAME_SETTING_EFFORT, effort) == JXL_ENC_SUCCESS &&
+             J(JxlEncoderAddImageFrame)(settings, &format, in.data, in.size) == JXL_ENC_SUCCESS;
+    }
+    if (ok) {
+        J(JxlEncoderCloseInput)(enc);
+        if (drain(enc, &out)) {
+            result = toJava(env, out.data, out.size);
+        }
+    }
+    giveBack(env, &in);
+    if (enc != NULL) {
+        J(JxlEncoderDestroy)(enc);
+    }
+    free(out.data);
+    return result;
+}

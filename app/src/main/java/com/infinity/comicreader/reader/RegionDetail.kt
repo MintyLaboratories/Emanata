@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -15,6 +16,60 @@ interface RegionReader {
     fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap
 
     fun close()
+}
+
+/**
+ * The pixels of [raw], an image stored turned or mirrored, as its EXIF [orientation]
+ * (1-8) shows them: each read takes the stored rectangle under the one asked for and
+ * turns it likewise.
+ */
+class OrientedRegions(private val raw: RegionReader, private val orientation: Int) : RegionReader {
+    private val swapped = orientation in 5..8
+    override val width: Int get() = if (swapped) raw.height else raw.width
+    override val height: Int get() = if (swapped) raw.width else raw.height
+
+    override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
+        val r = stored(orientation, raw.width, raw.height, left, top, right, bottom)
+        val pixels = raw.read(r[0], r[1], r[2], r[3], sample)
+        if (orientation == 1) return pixels
+        val m = Matrix()
+        m.setValues(floatArrayOf(TURNS[orientation][0], TURNS[orientation][1], 0f, TURNS[orientation][2], TURNS[orientation][3], 0f, 0f, 0f, 1f))
+        val shown = Bitmap.createBitmap(pixels, 0, 0, pixels.width, pixels.height, m, false)
+        if (shown !== pixels) pixels.recycle()
+        return shown
+    }
+
+    override fun close() = raw.close()
+
+    companion object {
+        /** By orientation, how a stored pixel's x and y make the shown one's: `[xx, xy, yx, yy]`. */
+        private val TURNS = arrayOf(
+            floatArrayOf(1f, 0f, 0f, 1f),
+            floatArrayOf(1f, 0f, 0f, 1f),
+            floatArrayOf(-1f, 0f, 0f, 1f),
+            floatArrayOf(-1f, 0f, 0f, -1f),
+            floatArrayOf(1f, 0f, 0f, -1f),
+            floatArrayOf(0f, 1f, 1f, 0f),
+            floatArrayOf(0f, -1f, 1f, 0f),
+            floatArrayOf(0f, -1f, -1f, 0f),
+            floatArrayOf(0f, 1f, -1f, 0f)
+        )
+
+        /**
+         * `[left, top, right, bottom]` of a [w] x [h] stored image under the rectangle
+         * [left]..[right] x [top]..[bottom] of it shown in [orientation].
+         */
+        fun stored(orientation: Int, w: Int, h: Int, left: Int, top: Int, right: Int, bottom: Int): IntArray = when (orientation) {
+            2 -> intArrayOf(w - right, top, w - left, bottom)
+            3 -> intArrayOf(w - right, h - bottom, w - left, h - top)
+            4 -> intArrayOf(left, h - bottom, right, h - top)
+            5 -> intArrayOf(top, left, bottom, right)
+            6 -> intArrayOf(top, h - right, bottom, h - left)
+            7 -> intArrayOf(w - bottom, h - right, w - top, h - left)
+            8 -> intArrayOf(w - bottom, left, w - top, right)
+            else -> intArrayOf(left, top, right, bottom)
+        }
+    }
 }
 
 /**

@@ -384,15 +384,16 @@ object Decoders {
 
     /**
      * A [RegionReader] of [bytes], an image shown [w] x [h], reading its pixels as shown:
-     * a [REGION_KINDS] image; null for other kinds, a PNG an eXIf chunk may turn, or where
-     * the reader sees another size.
+     * a [REGION_KINDS] image, a JPEG turned by its EXIF orientation too ([OrientedRegions]);
+     * null for other kinds, a PNG an eXIf chunk may turn, or where the reader sees another size.
      */
     private fun regionReader(bytes: ByteArray, w: Int, h: Int): RegionReader? {
         val kind = ImageKind.sniff(bytes)
         if (kind !in REGION_KINDS) return null
-        if (kind == ImageKind.JPEG && ImageHeaders.jpegOrientation(bytes) != 1) return null
         if (kind == ImageKind.PNG && ImageHeaders.pngMayHaveExif(bytes)) return null
-        val reader = openRegions(bytes) ?: return null
+        val orientation = if (kind == ImageKind.JPEG) ImageHeaders.jpegOrientation(bytes) ?: return null else 1
+        val raw = openRegions(bytes) ?: return null
+        val reader = if (orientation in 2..8) OrientedRegions(raw, orientation) else raw
         if (reader.width == w && reader.height == h) return reader
         reader.close()
         return null

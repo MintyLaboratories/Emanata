@@ -91,4 +91,25 @@ class ImageSourceDetailTest {
         File(share, "p.png").writeBytes(tallPng())
         checkRegions(ImageSource(Remotes.file("/net/s1/p.png") as RemoteFile))
     }
+
+    /** Blank reads of an image stored [w] x [h]. */
+    private fun blank(w: Int, h: Int) = object : RegionReader {
+        override val width = w
+        override val height = h
+        override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap =
+            Bitmap.createBitmap((right - left) / sample, (bottom - top) / sample, Bitmap.Config.ARGB_8888)
+
+        override fun close() = Unit
+    }
+
+    @Test
+    fun aJpegTurnedByExifReadsRegionsAsShown() {
+        // Stored 20,000 x 100, shown turned a quarter: 100 x 20,000.
+        Decoders.openRegions = { blank(20_000, 100) }
+        val detail = Decoders.detail(TestImages.jpegHead(20_000, 100, orientation = 6), banded, Long.MAX_VALUE)
+        assertTrue(detail is RegionDetail)
+        val band = detail.render(Region(0.0, 0.5, 1.0, 0.01), 100, 200, false)
+        assertEquals(100, band.width)
+        assertEquals(200, band.height)
+    }
 }

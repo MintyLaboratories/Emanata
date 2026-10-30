@@ -70,6 +70,7 @@ import com.infinity.comicreader.data.Likeness
 import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.RemovalNotices
@@ -1182,11 +1183,12 @@ class ViewerActivity : AppCompatActivity() {
                 }
                 // Before opening keeps anything for it.
                 fresh = found?.let { !library.hasData(it) } == true
+                val id = found
                 try {
                     ensureActive()
                     val siblings = siblingChapters(target)
                     val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
-                    known = s.getOrNull()?.let { knownSizes(target, it) }
+                    known = s.getOrNull()?.let { src -> knownSizes(target, src).also { sizeOpening(src, it.sizes, startOf(src.pageCount, id).page) } }
                     // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.
                     s.getOrNull()?.takeIf { slice }?.let { src ->
                         val checked = keptSlices(target) ?: run {
@@ -1569,11 +1571,11 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun setup(src: PageSource) {
         val requested = intent.getIntExtra(EXTRA_PAGE, -1)
-        // Used once: a later reopen sets it again, and anything else starts from history.
-        intent.removeExtra(EXTRA_PAGE)
         val id = bookId
         val saved = id?.let { library.pageFor(it) } ?: 0
-        val start = prefs.resumeMode.start(requested, saved, src.pageCount, finished = id != null && library.isRead(id))
+        val start = startOf(src.pageCount, id)
+        // Used once: a later reopen sets it again, and anything else starts from history.
+        intent.removeExtra(EXTRA_PAGE)
         currentIndex = start.page.coerceIn(0, src.pageCount - 1)
         // Come back to from the next chapter: the end card waits for a move past the end,
         // and the chapter counts as read only once its last page is reached again.
@@ -1597,6 +1599,22 @@ class ViewerActivity : AppCompatActivity() {
         // Recorded on opening, so the library's "Recent" row follows at once.
         saveHistory()
         if (start.ask) askStartPage(saved, src.pageCount)
+    }
+
+    /** Where book [id] of [count] pages opens ([ResumeMode.start]): the page asked for, else as its history says. */
+    private fun startOf(count: Int, id: BookId?): ResumeMode.Start {
+        val saved = id?.let { library.pageFor(it) } ?: 0
+        return prefs.resumeMode.start(intent.getIntExtra(EXTRA_PAGE, -1), saved, count, finished = id != null && library.isRead(id))
+    }
+
+    /**
+     * Reads the sizes [sizes] lacks of the pages a book opens on, page [at] and those beside
+     * it, from their headers where that is cheap ([PageSource.cheapSizes]), so a tall page
+     * among them is decoded as one from the start. Blocking.
+     */
+    private fun sizeOpening(src: PageSource, sizes: Array<IntArray?>, at: Int) {
+        if (!src.cheapSizes) return
+        for (i in at - 1..at + 1) if (i in sizes.indices && sizes[i] == null) sizes[i] = runCatching { src.pageSize(i) }.getOrNull()
     }
 
     /**

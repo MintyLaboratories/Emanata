@@ -10,8 +10,10 @@ import org.json.JSONObject
 internal data class BenchPlan(
     /** [READ] or [GRID]. */
     val what: String,
-    /** The book read, or the folder whose grid fills. */
-    val path: String,
+    /** The book read, or the folder whose grid fills; null for the first book on [share]. */
+    val path: String?,
+    /** A share id, or [DebugBooks.FIRST]: its first book is read, so no name need be given. */
+    val share: String? = null,
     /** A name for the results, so no file name need appear in them. */
     val label: String = "",
     /** [PAGED], [TWO] or [CONTINUOUS]. */
@@ -34,7 +36,7 @@ internal data class BenchPlan(
     val doubleTap: Boolean? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
-        .put("what", what).put("label", label).put("layout", layout).put("input", input).put("page", page)
+        .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
         .put("turns", turns).put("pace", pace).put("fresh", fresh).put("crop", crop)
         .put("doubleTap", doubleTap ?: JSONObject.NULL)
 
@@ -50,7 +52,9 @@ internal data class BenchPlan(
         /** The plan [intent]'s extras give; null when they name nothing to do. */
         fun of(intent: Intent): BenchPlan? {
             val what = intent.getStringExtra("do") ?: return null
-            val path = intent.getStringExtra("path") ?: return null
+            val path = intent.getStringExtra("path")
+            val share = intent.getStringExtra("share")
+            if (path == null && (share == null || what != READ)) return null
             if (what != READ && what != GRID) return null
             val layout = intent.getStringExtra("layout") ?: PAGED
             if (layout !in setOf(PAGED, TWO, CONTINUOUS)) return null
@@ -59,6 +63,7 @@ internal data class BenchPlan(
             return BenchPlan(
                 what = what,
                 path = path,
+                share = share,
                 label = intent.getStringExtra("label").orEmpty(),
                 layout = layout,
                 input = input,

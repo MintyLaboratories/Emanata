@@ -19,6 +19,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PreviewStore
@@ -26,8 +27,10 @@ import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -81,6 +84,9 @@ internal class BenchRunner(private val app: Application) {
     // ------------------------------------------------------------------ reading
 
     private suspend fun read(plan: BenchPlan, rep: Int): JSONObject {
+        val path = plan.path ?: withContext(Dispatchers.IO) {
+            DebugBooks.shareId(plan.share)?.let { DebugBooks.firstBook(Remotes.rootOf(it), SHARE_DEPTH, largest = false) }
+        } ?: error("No book found on the share")
         if (plan.fresh) forgetBook()
         probe.clear()
         idle()
@@ -89,7 +95,7 @@ internal class BenchRunner(private val app: Application) {
         val host = tracker.resumed ?: error("No activity to start the reader from")
         host.startActivity(
             Intent(host, ViewerActivity::class.java)
-                .putExtra(ViewerActivity.EXTRA_PATH, plan.path)
+                .putExtra(ViewerActivity.EXTRA_PATH, path)
                 .putExtra(ViewerActivity.EXTRA_PAGE, plan.page)
         )
         val viewer = awaitResumed<ViewerActivity>(OPEN_TIMEOUT_MS)
@@ -244,7 +250,7 @@ internal class BenchRunner(private val app: Application) {
         val before = ProcStats.now(app)
         val start = System.nanoTime()
         val host = tracker.resumed ?: error("No activity to start the library from")
-        host.startActivity(Intent(host, ListActivity::class.java).putExtra(ListActivity.EXTRA_START_PATH, plan.path))
+        host.startActivity(Intent(host, ListActivity::class.java).putExtra(ListActivity.EXTRA_START_PATH, plan.path ?: error("No folder")))
         val list = awaitResumed<ListActivity>(OPEN_TIMEOUT_MS)
         watch(list.window)
         var lastEvents = -1
@@ -395,6 +401,9 @@ internal class BenchRunner(private val app: Application) {
         private const val NO_MOVE_MS = 3_000L
         private const val IDLE_MS = 1_000L
         private const val POLL_MS = 16L
+
+        /** Folders down a share's root its first book is looked for. */
+        private const val SHARE_DEPTH = 3
 
         /** Where taps land: the right edge, halfway down, which turns forward in the left / right zones ([PrefsKept.apply]). */
         private const val TAP_X = 0.92f

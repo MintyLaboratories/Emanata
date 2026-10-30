@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
  * Debug builds only: runs a benchmark ([BenchPlan], [BenchRunner]) in the app's own
  * process, staying behind the reader or library it drives. Only the shell may start it:
  *
- * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do read --es path <book> [--es label <name>]
+ * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do read (--es path <book> | --es share first) [--es label <name>]
  * [--es layout paged|two|continuous] [--es input tap|key] [--ei page <n>] [--ei turns <n>] [--ei pace <ms>] [--ei reps <n>]
  * [--ez fresh true] [--ez crop true] [--es doubletap on|off]`
  *

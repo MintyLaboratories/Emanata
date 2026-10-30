@@ -71,6 +71,14 @@ class BenchStatsTest {
     }
 
     @Test
+    fun aShareStandsInForAPathWhenReading() {
+        val plan = BenchPlan.of(Intent().putExtra("do", "read").putExtra("share", DebugBooks.FIRST))!!
+        assertNull(plan.path)
+        assertEquals(DebugBooks.FIRST, plan.share)
+        assertNull(BenchPlan.of(Intent().putExtra("do", "grid").putExtra("share", DebugBooks.FIRST)))
+    }
+
+    @Test
     fun noPlanWithoutWhatAndWhere() {
         assertNull(BenchPlan.of(Intent().putExtra("path", "/a.cbz")))
         assertNull(BenchPlan.of(Intent().putExtra("do", "read")))

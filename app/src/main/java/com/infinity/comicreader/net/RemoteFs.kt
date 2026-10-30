@@ -74,6 +74,9 @@ class ChangeRefused(val why: Why, message: String? = null) : IOException(message
         /** Another program has the item open, or locked it. */
         IN_USE,
 
+        /** The app's own reader has the book open. */
+        IN_READER,
+
         /** Something is there by that name. */
         TAKEN
     }

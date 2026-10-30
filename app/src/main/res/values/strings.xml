@@ -366,6 +366,7 @@
     <string name="file_read_only">The share takes no changes</string>
     <string name="file_full">Not enough space there</string>
     <string name="file_in_use">In use; try again later</string>
+    <string name="file_in_reader">Open in the reader; close it first</string>
     <string name="paste_hint_browse">Picked up: open a folder in Browse and tap Paste</string>
     <string name="delete_item_title">Delete %1$s?</string>
     <string name="delete_file_msg">This permanently deletes it from %1$s.</string>

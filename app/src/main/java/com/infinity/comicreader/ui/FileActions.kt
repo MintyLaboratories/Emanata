@@ -440,6 +440,7 @@ internal class FileActions(
                 ChangeRefused.Why.READ_ONLY -> R.string.file_read_only
                 ChangeRefused.Why.FULL -> R.string.file_full
                 ChangeRefused.Why.IN_USE -> R.string.file_in_use
+                ChangeRefused.Why.IN_READER -> R.string.file_in_reader
                 ChangeRefused.Why.TAKEN -> R.string.file_exists
             }
         )

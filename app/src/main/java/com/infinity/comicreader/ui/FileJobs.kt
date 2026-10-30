@@ -247,7 +247,7 @@ internal class FileJobs(
                 }
                 // The reader would go on saving progress for its old file.
                 if (OpenBooks.isOpen(path)) {
-                    if (failure == null) failure = ChangeRefused(ChangeRefused.Why.IN_USE, "Open in the reader")
+                    if (failure == null) failure = ChangeRefused(ChangeRefused.Why.IN_READER)
                     continue
                 }
                 try {

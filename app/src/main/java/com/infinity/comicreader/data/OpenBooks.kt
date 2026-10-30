@@ -27,7 +27,7 @@ object OpenBooks {
     /** Runs [block] unless the book at [path] is open, which it keeps from opening meanwhile; throws [ChangeRefused] (in use) when it is. */
     @Synchronized
     fun <T> unlessOpen(path: String, block: () -> T): T {
-        if (path in open) throw ChangeRefused(ChangeRefused.Why.IN_USE, "Open in the reader")
+        if (path in open) throw ChangeRefused(ChangeRefused.Why.IN_READER)
         return block()
     }
 }

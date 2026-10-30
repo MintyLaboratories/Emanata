@@ -208,7 +208,7 @@ class FileJobsRebuildTest {
         OpenBooks.opened(book.absolutePath)
         try {
             val outcome = rebuild(book) as FileWork.Outcome.Failed
-            assertEquals(ChangeRefused.Why.IN_USE, (outcome.error as ChangeRefused).why)
+            assertEquals(ChangeRefused.Why.IN_READER, (outcome.error as ChangeRefused).why)
             assertTrue(book.readBytes().contentEquals(bytes))
         } finally {
             OpenBooks.closed(book.absolutePath)
@@ -235,7 +235,7 @@ class FileJobsRebuildTest {
         val opening = FileJobs(context, library, prefs) { PageWork(opens, FakeImages()) }
         try {
             val outcome = opening.rebuild(listOf(book.absolutePath), false, true, false, opening.look(listOf(book.absolutePath)), Going)
-            assertEquals(ChangeRefused.Why.IN_USE, ((outcome as FileWork.Outcome.Failed).error as ChangeRefused).why)
+            assertEquals(ChangeRefused.Why.IN_READER, ((outcome as FileWork.Outcome.Failed).error as ChangeRefused).why)
         } finally {
             OpenBooks.closed(book.absolutePath)
         }

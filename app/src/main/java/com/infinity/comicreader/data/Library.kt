@@ -182,9 +182,13 @@ class Library(context: Context) {
     fun setReadMany(books: Collection<BookRef>, read: Boolean) {
         synchronized(LOCK) {
             val set = readSet()
+            val before = set.size
             val changed = if (read) set.addAll(books.map { it.id }) else set.removeAll(books.map { it.id }.toSet())
             if (!changed) return@synchronized
             writeIds(KEY_READ, set)
+            val stats = readObject(KEY_STATS)
+            stats.put(STAT_CHAPTERS, (chaptersRead(stats, before) + set.size - before).coerceAtLeast(0))
+            sp.edit().putString(KEY_STATS, stats.toString()).apply()
             if (read) keepAll(books)
         }
     }
@@ -741,14 +745,27 @@ class Library(context: Context) {
         return ReadingStats(
             seconds = o.optLong("seconds"),
             pages = o.optLong("pages"),
-            chapters = readSet().size,
+            chapters = chaptersRead(o, readSet().size),
             daysRead = days.size,
             streak = streak,
             bestStreak = best
         )
     }
 
-    fun clearStats() = sp.edit().putString(KEY_STATS, "{}").apply()
+    /** Sets every statistic back to zero; read marks stay. */
+    fun clearStats() {
+        synchronized(LOCK) {
+            sp.edit().putString(KEY_STATS, JSONObject().put(STAT_CHAPTERS, 0).toString()).apply()
+        }
+    }
+
+    /**
+     * Chapters read in statistics [o]: books marked read, less those unmarked, since the
+     * statistics were last cleared. Statistics kept before they counted them start from
+     * the [readMarks] there are.
+     */
+    private fun chaptersRead(o: JSONObject, readMarks: Int): Int =
+        if (o.has(STAT_CHAPTERS)) o.optInt(STAT_CHAPTERS).coerceAtLeast(0) else readMarks
 
     // ---------------- what books keep ----------------
     /** What is kept for each book with anything kept, by ID. */
@@ -1166,6 +1183,7 @@ class Library(context: Context) {
         private const val KEY_BOOKMARKS = "bookmarks"
         private const val KEY_SERIES = "series"
         private const val KEY_STATS = "stats"
+        private const val STAT_CHAPTERS = "chapters"
         private const val KEY_ADJUST = "adjust"
         private const val KEY_HIDDEN = "hidden_pages"
 

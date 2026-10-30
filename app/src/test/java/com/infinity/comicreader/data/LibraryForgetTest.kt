@@ -100,6 +100,37 @@ class LibraryForgetTest {
         assertTrue(library.seenAt().isEmpty())
         assertNull(library.folderLayout("/storage/emulated/0/Comics"))
         assertEquals(60, library.stats().seconds)
+        assertEquals(1, library.stats().chapters)
+    }
+
+    @Test
+    fun chaptersReadFollowMarksUntilStatisticsAreCleared() {
+        library.setReadMany(listOf(a, b), true)
+        library.setRead(a, true)
+        assertEquals(2, library.stats().chapters)
+        library.setRead(a, false)
+        assertEquals(1, library.stats().chapters)
+        library.clearStats()
+        assertEquals(0, library.stats().chapters)
+        assertTrue(library.isRead(b.id))
+        library.setRead(c, true)
+        assertEquals(1, library.stats().chapters)
+        library.setReadMany(listOf(b, c), false)
+        assertEquals(0, library.stats().chapters)
+        library.forgetBooks(setOf(a.id))
+        library.setRead(a, true)
+        library.forgetBooks(setOf(a.id))
+        assertEquals(1, library.stats().chapters)
+    }
+
+    @Test
+    fun statisticsKeptBeforeChaptersCountedStartFromTheReadMarks() {
+        library.setReadMany(listOf(a, b), true)
+        context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().putString("stats", "{\"seconds\":60}").commit()
+        assertEquals(2, library.stats().chapters)
+        library.setRead(c, true)
+        assertEquals(3, library.stats().chapters)
+        assertEquals(60, library.stats().seconds)
     }
 
     @Test

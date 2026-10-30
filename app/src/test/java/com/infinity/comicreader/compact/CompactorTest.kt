@@ -380,9 +380,16 @@ class CompactorTest {
 
     private val loose = listOf("10.png" to page(PNG), "2.jpg" to page(JPG), "1.jpg" to page(JPG, 1500))
 
-    private fun pack(dir: File, convert: (ByteArray) -> PageWork.Made?, target: File, progress: Compactor.Progress = alive, work: File = scratch): Compactor.Result {
+    private fun pack(
+        dir: File,
+        convert: (ByteArray) -> PageWork.Made?,
+        target: File,
+        progress: Compactor.Progress = alive,
+        work: File = scratch,
+        replace: Boolean = false
+    ): Compactor.Result {
         val images = PackFolders.of(dir).images
-        val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", target = target, always = true, smallerOnly = false)
+        val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", target = target, replace = replace, always = true, smallerOnly = false)
         return Compactor(work, 2).run(request, { FolderReader(images) }, progress)
     }
 
@@ -425,10 +432,22 @@ class CompactorTest {
     fun aGivenTargetIsReplaced() {
         val dir = folder("Loose", loose)
         val target = File(tmp.root, "Loose.cbz").apply { writeText("old") }
-        val result = pack(dir, { null }, target) as Compactor.Result.Rebuilt
+        val result = pack(dir, { null }, target, replace = true) as Compactor.Result.Rebuilt
         assertEquals(target, result.file)
         assertEquals(3, entries(target).size)
         assertEquals(listOf("Loose", "Loose.cbz"), tmp.root.list()!!.filter { it.startsWith("Loose") }.sorted())
+    }
+
+    @Test
+    fun aFileAtTheTargetSinceIsNeverReplaced() {
+        val dir = folder("Loose", loose)
+        val target = File(tmp.root, "Loose.cbz")
+        // Another app writes the name while the folder is packed.
+        val racing: (ByteArray) -> PageWork.Made? = { if (!target.exists()) target.writeText("theirs"); null }
+        assertThrows(java.nio.file.FileAlreadyExistsException::class.java) { pack(dir, racing, target) }
+        assertEquals("theirs", target.readText())
+        assertEquals(listOf("Loose", "Loose.cbz"), tmp.root.list()!!.filter { it.startsWith("Loose") }.sorted())
+        assertEquals(3, dir.list()!!.size)
     }
 
     @Test

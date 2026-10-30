@@ -33,6 +33,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.asExecutor
 import java.io.File
 import java.io.IOException
+import java.nio.file.FileAlreadyExistsException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
@@ -393,7 +394,13 @@ internal class FileJobs(
                         OpenBooks.unlessOpenIn(plan.folder) {
                             OpenBooks.unlessOpen(target.absolutePath) {
                                 val newId = BookIds.peek(part)
-                                swap()
+                                // Over only the file the user chose to replace; never over one put there since.
+                                if (replace) DeviceSpace.stat(target.absolutePath)?.let { if (!same(plan.over, it)) throw FileProblem(FileProblem.Kind.ALTERED, target.name) }
+                                try {
+                                    swap()
+                                } catch (e: FileAlreadyExistsException) {
+                                    throw FileProblem(FileProblem.Kind.ALTERED, target.name)
+                                }
                                 if (replace) BookCaches.deleted(app, library, target.absolutePath)
                                 val folderPages = Compactor.pagesOf(images.map { it.name to it.length() })
                                 val byPage = arrayOfNulls<BookId>(result.pageCount)
@@ -403,7 +410,7 @@ internal class FileJobs(
                             }
                         }
                     }
-                    val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, always = true)
+                    val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true)
                     val result = compactor.run(request, { FolderReader(images) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")
                     done++

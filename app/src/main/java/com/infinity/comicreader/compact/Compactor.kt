@@ -35,7 +35,8 @@ import java.util.zip.ZipOutputStream
  * [scratch] on its way, checked by the CRC its archive stores, if any; a folder's file kept
  * as it is is read from where it is. The new archive is written beside the book, every entry
  * checked by its CRC, and only then put in place: as the book itself when [Request.inPlace]
- * (a non-ZIP book's file removed), as [Request.target] when given, else beside it.
+ * (a non-ZIP book's file removed), as [Request.target] when given (over a file there only
+ * when [Request.replace]), else beside it.
  */
 class Compactor(
     private val scratch: File,
@@ -62,8 +63,10 @@ class Compactor(
         val cost: (ByteArray) -> Long = { it.size * 3L },
         /** What puts the new file in place, and what goes with it. */
         val placer: Placer = Placer { _, _, swap -> swap() },
-        /** Where the new file goes, over a file there; null to name it from the book. */
+        /** Where the new file goes; null to name it from the book. */
         val target: File? = null,
+        /** True to put the new file over one at [target]; else a file found there fails it. */
+        val replace: Boolean = false,
         /** True to write the new file even when no page is made anew (a folder packed). */
         val always: Boolean = false
     )
@@ -184,7 +187,7 @@ class Compactor(
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
             val result = Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
             request.placer.place(result, out) {
-                place(out, book, target, removed != null, replace = request.target != null)
+                place(out, book, target, removed != null, request.replace)
                 part = null
                 if (time > 0) target.setLastModified(time)
             }
@@ -369,7 +372,8 @@ class Compactor(
 
     /**
      * Puts [out] in place as [target]: over [book] when it is the book, or over a file there
-     * when [replace], else never over one; [book] removed when [remove].
+     * when [replace], else never over one (throws [java.nio.file.FileAlreadyExistsException]);
+     * [book] removed when [remove].
      */
     private fun place(out: File, book: File, target: File, remove: Boolean, replace: Boolean) {
         if (target == book || replace) {

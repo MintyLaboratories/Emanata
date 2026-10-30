@@ -169,6 +169,39 @@ class FileJobsPackTest {
         assertFalse(library.isFavorite(oldRef.id))
     }
 
+    /** Progress that runs [then] once, at the first report. */
+    private fun onFirstReport(then: () -> Unit) = object : Going() {
+        private var told = false
+
+        override fun report(done: Long, total: Long) {
+            if (!told) then()
+            told = true
+        }
+    }
+
+    @Test
+    fun aFileWrittenAtTheNameMeanwhileIsNeverReplaced() {
+        val dir = folder("Loose", 2)
+        val cbz = File(tmp.root, "Loose.cbz")
+        val outcome = pack(plan(dir), p = onFirstReport { cbz.writeText("theirs") }) as FileWork.Outcome.Failed
+        assertEquals(FileProblem.Kind.ALTERED, (outcome.error as FileProblem).kind)
+        assertEquals("theirs", cbz.readText())
+        assertEquals(2, dir.list()!!.size)
+        assertEquals(listOf("Loose", "Loose.cbz"), tmp.root.list()!!.filter { it.startsWith("Loose") }.sorted())
+    }
+
+    @Test
+    fun replaceLeavesAFileChangedMeanwhile() {
+        val dir = folder("Loose", 1)
+        val old = File(tmp.root, "Loose.cbz").apply { writeText("there") }
+        val over = com.infinity.comicreader.files.DeviceSpace.stat(old.absolutePath)
+        val plan = FileJobs.PackPlan(dir.absolutePath, "Loose.cbz", replace = true, over = over)
+        val outcome = pack(plan, p = onFirstReport { old.writeText("changed since") }) as FileWork.Outcome.Failed
+        assertEquals(FileProblem.Kind.ALTERED, (outcome.error as FileProblem).kind)
+        assertEquals("changed since", old.readText())
+        assertTrue(dir.exists())
+    }
+
     @Test
     fun aFolderHoldingMoreThanImagesNowIsLeftAlone() {
         val dir = folder("Loose", 2)

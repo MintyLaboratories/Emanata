@@ -458,13 +458,18 @@ internal class FileJobs(
 
     /**
      * Removes folder [dir] once packed: its [images], each still as it was ([stats], size and
-     * time), and its litter, then the folder itself. False, and nothing removed, when an image
-     * changed; false, the folder left, when anything else is in it now.
+     * time), and its litter (junk files, junk folders whole), then the folder itself. False,
+     * and nothing removed, when an image changed or anything else is in it now; false, the
+     * folder left, when a file in it could not be deleted.
      */
     private fun removeFolder(dir: File, images: List<File>, stats: List<Pair<Long, Long>>): Boolean {
         if (images.indices.any { images[it].length() != stats[it].first || images[it].lastModified() != stats[it].second }) return false
-        for (f in images) f.delete()
-        dir.listFiles()?.filter { it.isFile && PackFolders.isJunk(it.name) }?.forEach { it.delete() }
+        val children = dir.listFiles() ?: return false
+        val packed = images.toHashSet()
+        val litter = children.filter { it !in packed }
+        if (litter.any { if (it.isFile) !PackFolders.isJunk(it.name) else !PackFolders.isJunkFolder(it.name) }) return false
+        for (f in images) if (!f.delete() && f.exists()) return false
+        for (f in litter) if (!f.deleteRecursively() && f.exists()) return false
         return dir.delete()
     }
 

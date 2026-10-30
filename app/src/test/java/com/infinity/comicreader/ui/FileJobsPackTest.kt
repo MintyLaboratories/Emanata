@@ -249,6 +249,28 @@ class FileJobsPackTest {
     }
 
     @Test
+    fun litterFoldersGoWithTheFolder() {
+        val dir = folder("Mac", 2)
+        File(dir, "__MACOSX").mkdirs()
+        File(dir, "__MACOSX/._1.jpg").writeBytes(byteArrayOf(1))
+        File(dir, ".thumbnails/sub").mkdirs()
+        File(dir, ".thumbnails/sub/1.jpg").writeBytes(byteArrayOf(1))
+        pack(plan(dir)) as FileWork.Outcome.Done
+        assertEquals(listOf("1.jpg", "2.jpg"), names(File(tmp.root, "Mac.cbz")))
+        assertFalse(dir.exists())
+    }
+
+    @Test
+    fun aFileAddedMeanwhileLeavesTheFolderWhole() {
+        val dir = folder("Loose", 2)
+        val outcome = pack(plan(dir), p = onFirstReport { File(dir, "notes.txt").writeText("x") }) as FileWork.Outcome.Failed
+        assertEquals(1, outcome.done)
+        assertTrue(outcome.gone.isEmpty())
+        assertEquals(listOf("1.jpg", "2.jpg"), names(File(tmp.root, "Loose.cbz")))
+        assertEquals(setOf("1.jpg", "2.jpg", "notes.txt"), dir.list()!!.toSet())
+    }
+
+    @Test
     fun cancelingLeavesTheFolderAsItWas() {
         val dir = folder("Long", 12)
         val reports = AtomicInteger()

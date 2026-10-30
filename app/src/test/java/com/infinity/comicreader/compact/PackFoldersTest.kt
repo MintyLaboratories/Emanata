@@ -30,6 +30,17 @@ class PackFoldersTest {
     @Test
     fun aFolderInsideBlocksIt() {
         assertEquals(PackFolders.Why.SUBFOLDERS, PackFolders.why(files("01.jpg") + ("Extras" to true)))
+        assertEquals(PackFolders.Why.SUBFOLDERS, PackFolders.why(files("01.jpg") + ("...Extras" to true)))
+    }
+
+    @Test
+    fun litterFoldersAreIgnored() {
+        assertNull(PackFolders.why(files("01.jpg") + ("__MACOSX" to true) + (".thumbnails" to true)))
+        assertEquals(PackFolders.Why.NO_IMAGES, PackFolders.why(listOf("__MACOSX" to true)))
+        val dir = tmp.newFolder("Mac")
+        File(dir, "1.jpg").writeBytes(byteArrayOf(1))
+        File(dir, "__MACOSX").mkdirs()
+        assertEquals(listOf("1.jpg"), PackFolders.of(dir).images.map { it.name })
     }
 
     @Test

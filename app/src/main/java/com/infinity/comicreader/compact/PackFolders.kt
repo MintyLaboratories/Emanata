@@ -20,10 +20,13 @@ object PackFolders {
     /** OS litter beside the images, left out and removed with the folder. */
     fun isJunk(name: String): Boolean = FlatNames.isJunk(name) || name.lowercase(Locale.ROOT) in MORE_JUNK
 
+    /** An OS litter folder (`__MACOSX/`) or a dot-folder (`.thumbnails/`), which the reader never shows: removed, whole, with the folder. */
+    fun isJunkFolder(name: String): Boolean = FlatNames.isJunk("$name/-")
+
     /** Why a folder listing [names] (each with true for a folder) cannot be packed; null when it can. */
     fun why(names: List<Pair<String, Boolean>>): Why? {
-        if (names.any { it.second }) return Why.SUBFOLDERS
-        val files = names.map { it.first }.filterNot(::isJunk)
+        if (names.any { it.second && !isJunkFolder(it.first) }) return Why.SUBFOLDERS
+        val files = names.filter { !it.second }.map { it.first }.filterNot(::isJunk)
         if (files.any { !Formats.isImageName(it) }) return Why.OTHER_FILES
         return if (files.isEmpty()) Why.NO_IMAGES else null
     }
@@ -33,7 +36,7 @@ object PackFolders {
         val children = dir.listFiles() ?: return Contents(emptyList(), Why.UNREADABLE)
         val why = why(children.map { it.name to !it.isFile })
         if (why != null) return Contents(emptyList(), why)
-        val images = children.filter { !isJunk(it.name) }.sortedWith(compareBy(NaturalOrder) { it.name })
+        val images = children.filter { it.isFile && !isJunk(it.name) }.sortedWith(compareBy(NaturalOrder) { it.name })
         return Contents(images, null)
     }
 

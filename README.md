@@ -216,7 +216,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   picked up takes along what was selected inside it. A pick is pasted once: its
   Paste becomes the operation, the newest in the stack, and only items a move
   failed at or that a Cancel never reached (canceled while waiting too) come back
-  as a new Paste. Names are checked again as each item's turn comes: one taken
+  as a new Paste, and a canceled move says so; a canceled copy is gone. Names are checked again as each item's turn comes: one taken
   since, or a Replace that would now replace another item than the one chosen,
   keeps both. A queued Delete or Rename acts only on what was chosen: an item gone,
   changed or replaced by its turn is left alone, and the message says so. An item

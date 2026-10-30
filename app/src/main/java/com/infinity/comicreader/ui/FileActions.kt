@@ -301,7 +301,7 @@ internal class FileActions(
         name: String,
         count: Int,
         into: String? = null,
-        unrun: () -> Unit = {},
+        unrun: () -> Int = { 0 },
         work: (FileWork.Progress) -> FileWork.Outcome
     ) {
         FileWork.start(kind, name, count, into, unrun, work)
@@ -344,16 +344,26 @@ internal class FileActions(
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
                 FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE -> rebuilt(status.kind, outcome)
             }
-            is FileWork.Outcome.Canceled ->
-                if (outcome.done > 0) activity.getString(R.string.file_canceled_part, part(status.kind, outcome.done, outcome.count, outcome.summary))
-                else activity.getString(R.string.file_canceled)
+            is FileWork.Outcome.Canceled -> canceled(status.kind, outcome)
             is FileWork.Outcome.Failed ->
                 if (outcome.done > 0) activity.getString(R.string.file_failed_part, part(status.kind, outcome.done, outcome.count, outcome.summary), describe(outcome.error))
                 else activity.getString(R.string.file_failed, describe(outcome.error))
         }
-        toast(text)
+        toast(text, long = outcome is FileWork.Outcome.Canceled && outcome.givenBack > 0)
         // Also when other books failed or the run was canceled: these pages changed all the same.
         outcome.rebuilt?.let { tellPages(status.kind, it) }
+    }
+
+    /** What a canceled operation did; for a move, how many items it did not reach are back as a Paste. */
+    private fun canceled(kind: FileWork.Kind, outcome: FileWork.Outcome.Canceled): String {
+        val back = outcome.givenBack
+        val returned = activity.resources.getQuantityString(R.plurals.move_back, back, back)
+        return when {
+            back > 0 && outcome.done > 0 -> activity.getString(R.string.file_canceled_back_part, part(kind, outcome.done, outcome.count), returned)
+            back > 0 -> activity.getString(R.string.file_canceled_back, returned)
+            outcome.done > 0 -> activity.getString(R.string.file_canceled_part, part(kind, outcome.done, outcome.count, outcome.summary))
+            else -> activity.getString(R.string.file_canceled)
+        }
     }
 
     /**
@@ -454,5 +464,5 @@ internal class FileActions(
         else -> FileProblem.namesOnly(error.message ?: error.javaClass.simpleName)
     }
 
-    private fun toast(text: String) = Toast.makeText(activity, text, Toast.LENGTH_SHORT).show()
+    private fun toast(text: String, long: Boolean = false) = Toast.makeText(activity, text, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
 }

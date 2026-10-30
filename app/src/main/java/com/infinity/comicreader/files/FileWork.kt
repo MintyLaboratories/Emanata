@@ -65,12 +65,16 @@ object FileWork {
             val summary: Summary? = null
         ) : Outcome()
 
-        /** Canceled after [done] of [count] items; [summary] for books rebuilt before. */
+        /**
+         * Canceled after [done] of [count] items; [summary] for books rebuilt before; [givenBack]
+         * items a move did not reach picked up again as a Paste.
+         */
         data class Canceled(
             val done: Int = 0,
             val count: Int = 1,
             override val gone: List<String> = emptyList(),
-            val summary: Summary? = null
+            val summary: Summary? = null,
+            val givenBack: Int = 0
         ) : Outcome()
 
         /**
@@ -138,7 +142,7 @@ object FileWork {
         fun item(name: String, index: Int, count: Int)
     }
 
-    private class Op(val id: Long, val count: Int, val unrun: () -> Unit, val work: (Progress) -> Outcome) {
+    private class Op(val id: Long, val count: Int, val unrun: () -> Int, val work: (Progress) -> Outcome) {
         var job: Job? = null
     }
 
@@ -177,7 +181,8 @@ object FileWork {
      * Queues [work] of [kind] on [count] items, the first [name], putting them [into] a folder
      * so named if anywhere, as the newest; it starts once those before it have ended. Work
      * that throws ends [Outcome.Canceled] or [Outcome.Failed] with nothing counted; [unrun]
-     * runs in its place when it is canceled before it began. Returns the operation's id.
+     * runs in its place when it is canceled before it began, telling how many items it gave
+     * back ([Outcome.Canceled.givenBack]). Returns the operation's id.
      */
     @Synchronized
     fun start(
@@ -185,7 +190,7 @@ object FileWork {
         name: String,
         count: Int = 1,
         into: String? = null,
-        unrun: () -> Unit = {},
+        unrun: () -> Int = { 0 },
         work: (Progress) -> Outcome
     ): Long {
         val id = nextOrder()
@@ -240,8 +245,8 @@ object FileWork {
         op.job = job
         // Also when canceled before it ever ran.
         job.invokeOnCompletion {
-            if (!ran && flow === state) op.unrun()
-            finish(flow, op, outcome ?: Outcome.Canceled(0, op.count))
+            val back = if (!ran && flow === state) op.unrun() else 0
+            finish(flow, op, outcome ?: Outcome.Canceled(0, op.count, givenBack = back))
         }
     }
 
@@ -263,8 +268,8 @@ object FileWork {
         val queued = waiting.firstOrNull { it.id == id }
         if (queued != null) {
             waiting.remove(queued)
-            queued.unrun()
-            edit(state, id) { it.copy(outcome = Outcome.Canceled(0, queued.count)) }
+            val back = queued.unrun()
+            edit(state, id) { it.copy(outcome = Outcome.Canceled(0, queued.count, givenBack = back)) }
             return
         }
         running?.takeIf { it.id == id }?.job?.cancel()

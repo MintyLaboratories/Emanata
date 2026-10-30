@@ -155,8 +155,8 @@ internal class FileJobs(
         var done = 0
         var failure: Exception? = null
         fun ended(outcome: FileWork.Outcome): FileWork.Outcome {
-            giveBack(clip, plans.map { it.item }.filter { it.path in unsettled })
-            return outcome
+            val back = giveBack(clip, plans.map { it.item }.filter { it.path in unsettled })
+            return if (outcome is FileWork.Outcome.Canceled) outcome.copy(givenBack = back) else outcome
         }
         for ((i, planned) in plans.withIndex()) {
             if (plans.size > 1) {
@@ -336,9 +336,11 @@ internal class FileJobs(
         if (removed) FileClipboard.edit { items -> items.map { if (it.path == path) it.copy(path = target) else it } }
     }
 
-    /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. */
-    fun giveBack(clip: FileClipboard.Clip, items: List<FileClipboard.Item>) {
-        if (clip.move && items.isNotEmpty()) FileClipboard.add(clip.copy(items = items, id = FileWork.nextOrder()))
+    /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. Returns how many were picked up. */
+    fun giveBack(clip: FileClipboard.Clip, items: List<FileClipboard.Item>): Int {
+        if (!clip.move || items.isEmpty()) return 0
+        FileClipboard.add(clip.copy(items = items, id = FileWork.nextOrder()))
+        return items.size
     }
 
     /** Re-points everything kept for [old] and inside it to [new]: the library, start folders and the picks waiting. */

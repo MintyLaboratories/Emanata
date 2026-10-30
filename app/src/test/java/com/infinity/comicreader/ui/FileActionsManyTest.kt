@@ -439,9 +439,14 @@ class FileActionsManyTest {
         hold.countDown()
         waitFor { finished.isNotEmpty() }
         settle()
-        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/a.cbz")), finished.single())
+        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/a.cbz"), givenBack = 1), finished.single())
         assertTrue(File(dest, "a.cbz").exists())
         assertEquals(listOf("/net/s1/b.cbz"), FileClipboard.clips.value.single().items.map { it.path })
+        val res = context.resources
+        assertEquals(
+            context.getString(R.string.file_canceled_back_part, res.getQuantityString(R.plurals.moved_part, 2, 1, 2), res.getQuantityString(R.plurals.move_back, 1, 1)),
+            ShadowToast.getTextOfLatestToast()
+        )
     }
 
     @Test
@@ -462,6 +467,11 @@ class FileActionsManyTest {
         assertTrue(FileClipboard.clips.value.isEmpty())
         FileWork.cancel(FileWork.operations.value.last().id)
         waitFor { finished.any { it is FileWork.Outcome.Canceled } }
+        assertEquals(1, (finished.single { it is FileWork.Outcome.Canceled } as FileWork.Outcome.Canceled).givenBack)
+        assertEquals(
+            context.getString(R.string.file_canceled_back, context.resources.getQuantityString(R.plurals.move_back, 1, 1)),
+            ShadowToast.getTextOfLatestToast()
+        )
         val back = FileClipboard.clips.value.single()
         assertEquals(listOf(a.absolutePath), back.items.map { it.path })
         assertTrue(back.move)

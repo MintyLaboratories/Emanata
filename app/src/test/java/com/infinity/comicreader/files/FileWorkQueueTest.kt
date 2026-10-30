@@ -98,12 +98,12 @@ class FileWorkQueueTest {
         val go = Semaphore(0)
         val log = Collections.synchronizedList(ArrayList<String>())
         val started = Semaphore(0)
-        val a = FileWork.start(FileWork.Kind.MOVE, "a", unrun = { log += "unrun a" }) {
+        val a = FileWork.start(FileWork.Kind.MOVE, "a", unrun = { log += "unrun a"; 0 }) {
             started.release()
             go.acquire()
             FileWork.Outcome.Done(null)
         }
-        val b = FileWork.start(FileWork.Kind.MOVE, "b", unrun = { log += "unrun b" }) { log += "ran b"; FileWork.Outcome.Done(null) }
+        val b = FileWork.start(FileWork.Kind.MOVE, "b", unrun = { log += "unrun b"; 0 }) { log += "ran b"; FileWork.Outcome.Done(null) }
         started.acquire()
         FileWork.cancel(b)
         FileWork.cancel(a)

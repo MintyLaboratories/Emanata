@@ -351,6 +351,14 @@
     <string name="file_failed">Could not finish: %1$s</string>
     <!-- %1$s: what was done, as "Moved 3 of 5 items". -->
     <string name="file_canceled_part">%1$s, then canceled; nothing was left half-written</string>
+    <!-- %1$s: the items given back, as "the 3 items not moved are back as a Paste". -->
+    <string name="file_canceled_back">Canceled; %1$s</string>
+    <!-- %1$s: what was done, as "Moved 2 of 5 items"; %2$s: the items given back. -->
+    <string name="file_canceled_back_part">%1$s, then canceled; %2$s</string>
+    <plurals name="move_back">
+        <item quantity="one">the item not moved is back as a Paste</item>
+        <item quantity="other">the %1$d items not moved are back as a Paste</item>
+    </plurals>
     <!-- %1$s: what was done, as "Moved 3 of 5 items"; %2$s: why the others failed. -->
     <string name="file_failed_part">%1$s; the others failed: %2$s</string>
     <string name="file_exists">That name is already taken</string>

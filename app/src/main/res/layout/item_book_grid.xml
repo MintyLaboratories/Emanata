@@ -61,6 +61,20 @@
                     tools:visibility="visible" />
 
                 <ImageView
+                    android:id="@+id/offline"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="6dp"
+                    android:background="@drawable/bg_scrim_circle"
+                    android:contentDescription="@string/share_unreachable"
+                    android:padding="5dp"
+                    android:src="@drawable/ic_cloud_off"
+                    android:visibility="gone"
+                    app:tint="@android:color/white"
+                    tools:visibility="visible" />
+
+                <ImageView
                     android:id="@+id/star"
                     android:layout_width="26dp"
                     android:layout_height="26dp"

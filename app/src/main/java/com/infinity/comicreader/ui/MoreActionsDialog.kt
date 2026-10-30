@@ -27,6 +27,8 @@ object MoreActionsDialog {
         MoreAction.NAME_CHARSET -> R.string.menu_name_charset
         MoreAction.COMPACT -> R.string.more_compact
         MoreAction.MAKE_COMPATIBLE -> R.string.more_make_compatible
+        MoreAction.REMOVE_FROM_HISTORY -> R.string.more_remove_history
+        MoreAction.REMOVE_BOOKMARK -> R.string.more_remove_bookmark
         MoreAction.PEEK -> R.string.menu_peek
     }
 
@@ -42,6 +44,8 @@ object MoreActionsDialog {
         MoreAction.NAME_CHARSET -> R.drawable.ic_translate
         MoreAction.COMPACT -> R.drawable.ic_compress
         MoreAction.MAKE_COMPATIBLE -> R.drawable.ic_unfold_more
+        MoreAction.REMOVE_FROM_HISTORY -> R.drawable.ic_playlist_remove
+        MoreAction.REMOVE_BOOKMARK -> R.drawable.ic_bookmark_remove
         MoreAction.PEEK -> R.drawable.ic_visibility
     }
 

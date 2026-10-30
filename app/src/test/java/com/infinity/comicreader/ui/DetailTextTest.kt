@@ -51,4 +51,11 @@ class DetailTextTest {
         assertEquals("40/192", DetailText.dense(book(progress = 39, size = 0), mb))
         assertEquals("", DetailText.dense(book(pages = -1, size = 0), mb))
     }
+
+    @Test
+    fun aNoteGoesFirst() {
+        assertEquals("Missing · Page 4", DetailText.withNote("Missing", "Page 4"))
+        assertEquals("Missing", DetailText.withNote("Missing", ""))
+        assertEquals("Page 4", DetailText.withNote(null, "Page 4"))
+    }
 }

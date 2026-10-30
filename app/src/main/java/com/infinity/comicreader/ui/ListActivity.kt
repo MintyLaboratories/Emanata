@@ -46,6 +46,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.shape.MaterialShapeDrawable
@@ -80,6 +81,8 @@ import com.infinity.comicreader.data.LocationSpace
 import com.infinity.comicreader.data.MissingFolder
 import com.infinity.comicreader.data.MoreAction
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.Presence
+import com.infinity.comicreader.data.PresenceCheck
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.SettingsRepository
@@ -165,6 +168,21 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Whether device items checked since the list was made are there, by path ([isThere]). */
     private val present = HashMap<String, Boolean>()
+
+    /** Finds whether items in Favorites, History and Bookmarks are where they were last seen; tests stand in their own. */
+    internal var presenceCheck = PresenceCheck.live()
+
+    /** What was found for each item Favorites, History or Bookmarks lists, by path. */
+    private val presences = HashMap<String, PresenceCheck.Found>()
+
+    /** Asks shares whether the items listed are there ([checkPresence]). */
+    private var presenceJob: Job? = null
+
+    /** The sheet of a missing item while it shows ([showMissing]). */
+    internal var missingSheet: BottomSheetDialog? = null
+
+    /** Lists the tab again on return from "Forget missing books". */
+    private var relistOnResume = false
 
     private lateinit var filterChip: Chip
     private lateinit var peek: PeekOverlay
@@ -428,6 +446,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         // Refresh so files added/removed outside the app (or from the viewer)
         // appear immediately.
         if (mode == TAB_BROWSE) currentDir?.let { loadDirectory(it) }
+        else if (relistOnResume) refreshCurrent()
+        relistOnResume = false
     }
 
     override fun onStart() {
@@ -1104,6 +1124,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         listJob?.cancel()
         classifyJob?.cancel()
         factsJob?.cancel()
+        presenceJob?.cancel()
         listJob = lifecycleScope.launch(block = load)
     }
 
@@ -1162,16 +1183,20 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         invalidateOptionsMenu()
         showProgress(true)
         launchListing {
-            val (list, kinds) = withContext(AppDispatchers.io) { favoriteEntries() }
+            val found = Lookups()
+            val (list, kinds) = withContext(AppDispatchers.io) { favoriteEntries(found) }
             progress.visibility = View.GONE
             favoriteKinds = kinds
-            displayEntries(list)
+            displayEntries(list, found)
             classifyPending(list)
         }
     }
 
-    /** The favorites with their labels, and the sections already known for them. */
-    private fun favoriteEntries(): Pair<List<BookEntry>, Map<String, FavoriteKind>> {
+    /**
+     * The favorites with their labels, and the sections already known for them; whether each
+     * is there goes in [found]. A folder not there keeps its icon and the section it had.
+     */
+    private fun favoriteEntries(found: Lookups): Pair<List<BookEntry>, Map<String, FavoriteKind>> {
         val snap = snapshot()
         val items = library.favoriteItems()
         val paths = items.map { it.path }
@@ -1179,13 +1204,18 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         val kinds = HashMap<String, FavoriteKind>()
         val list = items.map { (path, id) ->
             val label = labels[path]
+            val presence = quickPresence(path, found)
             // Favorites on shares show from what is known, without waiting for the network.
             val entry = entryFor(Remotes.file(path, askNetwork = false), snap)
                 .let { if (id != null) snap.withId(it, id) else it }
+                .let { if (id == null && !it.isDir) it.copy(isDir = true, type = EntryType.FOLDER, favorite = true) else it }
                 .let { if (label != null) it.copy(name = label.name, label = label) else it }
+                .copy(presence = presence)
             val kind = when {
                 !entry.isDir -> FavoriteKind.COMIC
                 Remotes.isRemote(path) -> kindCache.peek(path)
+                // Nothing there to look into: the section it was in, else Sets.
+                presence != Presence.PRESENT -> kindCache.peek(path) ?: FavoriteKind.SET
                 else -> kindCache.get(path, entry.lastModified)
             }
             if (kind != null) kinds[path] = kind
@@ -1266,12 +1296,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         invalidateOptionsMenu()
         showProgress(true)
         launchListing {
+            val found = Lookups()
             val list = withContext(AppDispatchers.io) {
                 val snap = snapshot()
-                library.history().map { entryForHistory(it, snap) }
+                library.history().map { entryForHistory(it, snap, found) }
             }
             progress.visibility = View.GONE
-            displayEntries(list)
+            displayEntries(list, found)
         }
     }
 
@@ -1286,19 +1317,29 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         invalidateOptionsMenu()
         showProgress(true)
         launchListing {
+            val found = Lookups()
             val list = withContext(AppDispatchers.io) {
                 val snap = snapshot()
-                library.bookmarks().map { entryForBookmark(it, snap) }
+                library.bookmarks().map { entryForBookmark(it, snap, found) }
             }
             progress.visibility = View.GONE
-            displayEntries(list)
+            displayEntries(list, found)
         }
     }
 
-    private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot): BookEntry {
+    /** What [quickPresence] found for one list's items, by path, and the names of the folders it looked up. */
+    private class Lookups : HashMap<String, PresenceCheck.Found>() {
+        val listed = HashMap<String, Set<String>?>()
+    }
+
+    /** Whether the item at [path] is there, as found now without the network, noted in [found]. */
+    private fun quickPresence(path: String, found: Lookups): Presence =
+        found.getOrPut(path) { presenceCheck.quick(path, found.listed) }.presence
+
+    private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot, found: Lookups): BookEntry {
         val file = Remotes.file(item.path, askNetwork = false)
-        val exists = file.exists()
-        val stat = if (exists) FileStat.of(file) else null
+        val presence = quickPresence(item.path, found)
+        val stat = if (presence == Presence.PRESENT) FileStat.of(file) else null
         // Chapters are usually just "Chapter 12.cbz", so the folder below the name is
         // what tells two chapters from different comics apart.
         val where = file.parentFile?.let { relativePath(it) }
@@ -1320,17 +1361,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             year = Years.fromName(item.name),
             direction = snap.directionOf(item.path, isDir = false),
             directionSet = snap.isDirectionSet(item.path, isDir = false),
-            subtitle = when {
-                !exists -> getString(R.string.missing_file)
-                where != null && where.isNotEmpty() -> where
-                else -> null
-            }
+            subtitle = where?.ifEmpty { null },
+            presence = presence
         )
     }
 
-    private fun entryForBookmark(bookmark: Bookmark, snap: LibrarySnapshot): BookEntry {
+    private fun entryForBookmark(bookmark: Bookmark, snap: LibrarySnapshot, found: Lookups): BookEntry {
         val file = Remotes.file(bookmark.path, askNetwork = false)
-        val stat = if (file.exists()) FileStat.of(file) else null
+        val presence = quickPresence(bookmark.path, found)
+        val stat = if (presence == Presence.PRESENT) FileStat.of(file) else null
         return BookEntry(
             file = file,
             name = file.name.ifEmpty { bookmark.name },
@@ -1351,18 +1390,72 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             year = Years.fromName(file.name),
             direction = snap.directionOf(bookmark.path, isDir = false),
             directionSet = snap.isDirectionSet(bookmark.path, isDir = false),
-            subtitle = getString(R.string.page_number, bookmark.page + 1)
+            subtitle = getString(R.string.page_number, bookmark.page + 1),
+            presence = presence
         )
     }
 
-    private fun displayEntries(list: List<BookEntry>) {
+    /** Shows [list], whose items are there as [found] says (Favorites, History, Bookmarks), then asks shares what that left open. */
+    private fun displayEntries(list: List<BookEntry>, found: Map<String, PresenceCheck.Found> = emptyMap()) {
         listing++
         present.clear()
+        presences.clear()
+        presences.putAll(found)
         allEntries.clear()
         allEntries.addAll(list)
         applyFilterAndSort()
         if (query.isNotBlank()) scheduleDeepSearch()
+        invalidateOptionsMenu()
+        checkPresence()
     }
+
+    /**
+     * Asks shares, [PresenceCheck.LANES] at a time, whether the items listed whose presence
+     * could not be settled without the network are there; rows change as answers come, at
+     * most every [PRESENCE_PUBLISH_MS]. Like [scheduleFacts], it waits while the library is
+     * out of sight or battery saver pauses scans; a new listing stops it.
+     */
+    private fun checkPresence() {
+        presenceJob?.cancel()
+        val asking = presences.filter { (path, f) -> presenceCheck.asks(path, f) }.keys.toList()
+        if (mode == TAB_BROWSE || asking.isEmpty()) return
+        val check = presenceCheck
+        presenceJob = lifecycleScope.launch {
+            val answers = HashMap<String, PresenceCheck.Found>()
+            var shownAt = SystemClock.uptimeMillis()
+            val batches = asking.chunked(PresenceCheck.LANES)
+            for ((i, batch) in batches.withIndex()) {
+                withStarted {}
+                awaitScans()
+                withContext(AppDispatchers.io) {
+                    batch.map { path -> async { path to check.stat(path) } }.awaitAll()
+                }.toMap(answers)
+                val now = SystemClock.uptimeMillis()
+                if (i < batches.lastIndex && now - shownAt < PRESENCE_PUBLISH_MS) continue
+                shownAt = now
+                showPresence(answers)
+                answers.clear()
+            }
+        }
+    }
+
+    /** Shows what was [found] for the items listed, in place. */
+    private fun showPresence(found: Map<String, PresenceCheck.Found>) {
+        presences.putAll(found)
+        var changed = false
+        for ((i, e) in allEntries.withIndex()) {
+            val presence = found[e.path]?.presence ?: continue
+            if (e.presence == presence) continue
+            allEntries[i] = e.copy(presence = presence)
+            changed = true
+        }
+        if (changed) applyFilterAndSort(resort = false)
+        invalidateOptionsMenu()
+    }
+
+    /** The items listed that are missing for sure: what "Clear missing" takes. */
+    private fun missingEntries(): List<BookEntry> =
+        if (mode == TAB_BROWSE) emptyList() else allEntries.filter { presences[it.path]?.missing == true }
 
     /** Sort and filter values as found so far: folder totals and what books' contents told. */
     private fun values(hidden: Map<BookId, Int>) =
@@ -1576,9 +1669,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** Opens [entry]: a folder is browsed, a book read where the reader picks up ([ResumeMode]), a bookmark at its page. */
     private fun openEntry(entry: BookEntry) {
         when {
+            mode != TAB_BROWSE && entry.presence == Presence.MISSING -> showMissing(entry)
+            // Storage not mounted: nothing to try.
+            mode != TAB_BROWSE && entry.presence == Presence.UNREACHABLE && !Remotes.isRemote(entry.path) -> toast(R.string.share_unreachable)
             entry.isDir -> loadDirectory(entry.file)
-            // A favorite folder that is gone: browse what is left of it.
-            mode == TAB_FAVORITES && !Formats.isOpenable(entry.name) && !entry.file.exists() -> loadDirectory(entry.file)
             mode == TAB_HISTORY -> {
                 // The reader decides where to start (ResumeMode.start).
                 if (entry.file.exists()) openViewer(entry.file, -1) else toast(R.string.open_location_failed)
@@ -1716,7 +1810,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun moreItems(): List<MoreAction> = SelectionActions.more(
         selection.entries,
         prefs.moreActions.visible,
-        SelectionActions.MoreFacts(prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek, ::canRebuild)
+        SelectionActions.MoreFacts(
+            prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek, ::canRebuild,
+            inHistory = mode == TAB_HISTORY, inBookmarks = mode == TAB_BOOKMARKS
+        )
     )
 
     /** While anything is selected: the selection bar instead of the toolbar, the floating bar, and the button for it. */
@@ -1822,9 +1919,77 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             R.string.selection_remove
         ) {
             endSelection()
-            for (e in entries) e.id?.let { library.removeBookmark(it, e.bookmarkPage) }
-            showBookmarks()
+            removeFromList(entries)
         }
+    }
+
+    /** Takes the books [entries] out of the history once confirmed; the books stay. */
+    private fun removeHistory(entries: List<BookEntry>) {
+        confirm(
+            this,
+            resources.getQuantityString(R.plurals.remove_history_title, entries.size, entries.size),
+            getString(R.string.remove_history_msg),
+            R.string.selection_remove
+        ) {
+            endSelection()
+            removeFromList(entries)
+        }
+    }
+
+    /** Takes [entries] out of the list shown (Favorites, History or Bookmarks), and lists it again. */
+    private fun removeFromList(entries: List<BookEntry>) {
+        when (mode) {
+            TAB_HISTORY -> library.removeHistory(entries.mapNotNull { it.id })
+            TAB_BOOKMARKS -> library.removeBookmarks(entries.mapNotNull { e -> e.id?.let { it to e.bookmarkPage } })
+            TAB_FAVORITES -> library.removeFavorites(entries.filter { it.isDir && it.id == null }.map { it.path }, entries.mapNotNull { it.id })
+            else -> return
+        }
+        refreshCurrent()
+    }
+
+    /**
+     * The sheet of [entry], missing from where it was last seen: Remove from this list, Show
+     * in folder (what is left of it), Forget missing books (the scan that also finds books moved).
+     */
+    private fun showMissing(entry: BookEntry) {
+        missingSheet?.dismiss()
+        val sheet = BottomSheetDialog(this)
+        val content = layoutInflater.inflate(R.layout.sheet_missing, null)
+        content.findViewById<TextView>(R.id.missing_title).text = entry.name
+        val where = entry.file.parent?.let { relativePath(Remotes.file(it, askNetwork = false)).ifEmpty { locationName(it) } }.orEmpty()
+        content.findViewById<TextView>(R.id.missing_where).apply {
+            text = getString(R.string.missing_item_where, where)
+            visibility = if (where.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val rows = content.findViewById<LinearLayout>(R.id.missing_actions)
+        val primary = ColorStateList.valueOf(MaterialColors.getColor(rows, androidx.appcompat.R.attr.colorPrimary))
+        fun row(id: Int, icon: Int, label: Int, action: () -> Unit) {
+            val item = layoutInflater.inflate(R.layout.item_more_action, rows, false)
+            item.id = id
+            item.findViewById<ImageView>(R.id.more_action_icon).apply {
+                setImageResource(icon)
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.more_action_label).setText(label)
+            item.setOnClickListener {
+                sheet.dismiss()
+                action()
+            }
+            rows.addView(item)
+        }
+        row(R.id.missing_remove, R.drawable.ic_playlist_remove, R.string.missing_item_remove) { removeFromList(listOf(entry)) }
+        row(R.id.missing_show, R.drawable.ic_folder_open, R.string.menu_open_location) { openLocation(entry.file) }
+        row(R.id.missing_forget, R.drawable.ic_search, R.string.missing_item_forget) { forgetMissing() }
+        sheet.setContentView(content)
+        sheet.setOnDismissListener { if (missingSheet === sheet) missingSheet = null }
+        sheet.show()
+        missingSheet = sheet
+    }
+
+    /** Opens "Forget missing books", which also finds books moved; the tab lists again on return. */
+    private fun forgetMissing() {
+        relistOnResume = true
+        startActivity(Intent(this, MissingBooksActivity::class.java))
     }
 
     /** The Book IDs of the books among [entries], as listed or found now; those that cannot be read are left out. */
@@ -1923,7 +2088,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun onMoreAction(action: MoreAction) {
         val entries = selection.entries
         val one = entries.singleOrNull()
-        val asks = action == MoreAction.COMPACT || action == MoreAction.MAKE_COMPATIBLE
+        val asks = action == MoreAction.COMPACT || action == MoreAction.MAKE_COMPATIBLE ||
+            action == MoreAction.REMOVE_FROM_HISTORY || action == MoreAction.REMOVE_BOOKMARK
         if (!asks) endSelection()
         when (action) {
             MoreAction.CONTINUE_READING -> one?.let { continueReading(it.file) }
@@ -1940,6 +2106,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
             MoreAction.PEEK -> one?.let { peekFromMenu(it) }
             MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> rebuild(entries.filter(::canRebuild), compatible = action == MoreAction.MAKE_COMPATIBLE)
+            MoreAction.REMOVE_FROM_HISTORY -> removeHistory(entries)
+            MoreAction.REMOVE_BOOKMARK -> removeBookmarks(entries)
         }
     }
 
@@ -1994,6 +2162,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** True when [entry] can be shared: a file or folder that can be changed, or in Bookmarks a book still there. */
     private fun canShare(entry: BookEntry): Boolean {
+        if (entry.presence == Presence.MISSING) return false
         if (mode != TAB_BOOKMARKS) return canChangeFiles(entry)
         if (Remotes.isRemote(entry.path)) return !Remotes.isOrphan(entry.path)
         return isThere(entry)
@@ -2011,7 +2180,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
      * device or a share, listed in Browse, Favorites or History, never a location itself.
      */
     private fun canChangeFiles(entry: BookEntry): Boolean {
-        if (mode == TAB_BOOKMARKS) return false
+        if (mode == TAB_BOOKMARKS || entry.presence == Presence.MISSING) return false
         val path = entry.path
         if (roots.any { it.path == path }) return false
         if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)
@@ -2600,7 +2769,27 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
-        menu.findItem(R.id.menu_clear_history)?.isVisible = mode == TAB_HISTORY
+        menu.findItem(R.id.menu_clear_all)?.apply {
+            isVisible = !browsing
+            isEnabled = allEntries.isNotEmpty()
+            title = getString(
+                when (mode) {
+                    TAB_HISTORY -> R.string.menu_clear_all_history
+                    TAB_BOOKMARKS -> R.string.menu_clear_all_bookmarks
+                    else -> R.string.menu_clear_all_favorites
+                }
+            )
+        }
+        menu.findItem(R.id.menu_clear_missing)?.apply {
+            isVisible = missingEntries().isNotEmpty()
+            title = getString(
+                when (mode) {
+                    TAB_HISTORY -> R.string.menu_clear_missing_history
+                    TAB_BOOKMARKS -> R.string.menu_clear_missing_bookmarks
+                    else -> R.string.menu_clear_missing_favorites
+                }
+            )
+        }
         menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
         menu.findItem(R.id.menu_large)?.isVisible = browsing && local
         menu.findItem(R.id.menu_search_deep)?.apply {
@@ -2633,10 +2822,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
                 scheduleDeepSearch()
             }
             R.id.menu_stats -> showStats()
-            R.id.menu_clear_history -> confirm(this, R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
-                library.clearHistory()
-                refreshCurrent()
-            }
+            R.id.menu_clear_all -> clearAll()
+            R.id.menu_clear_missing -> clearMissing()
             R.id.menu_dupes -> openCleanup(CleanupActivity.MODE_DUPES)
             R.id.menu_large -> openCleanup(CleanupActivity.MODE_LARGE)
             R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavoriteFolder(currentDir?.absolutePath)
@@ -2651,6 +2838,43 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     private fun showSortDialog() {
         TabDialogFragment.show(this, TabDialogFragment.Kind.SORT, tabName())
+    }
+
+    /** Empties the list shown (Favorites, History or Bookmarks) once confirmed. */
+    private fun clearAll() {
+        val (title, message, clear) = when (mode) {
+            TAB_HISTORY -> Triple(R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, library::clearHistory)
+            TAB_BOOKMARKS -> Triple(R.string.confirm_clear_bookmarks_title, R.string.confirm_clear_bookmarks_msg, library::clearBookmarks)
+            TAB_FAVORITES -> Triple(R.string.confirm_clear_favorites_title, R.string.confirm_clear_favorites_msg, library::clearFavorites)
+            else -> return
+        }
+        confirm(this, title, message, R.string.clear) {
+            clear()
+            refreshCurrent()
+        }
+    }
+
+    /**
+     * Takes the items missing for sure out of the list shown once confirmed; those that cannot
+     * be reached now stay. The question says books moved outside the app look missing, and
+     * offers to look for them first ("Forget missing books").
+     */
+    private fun clearMissing() {
+        val missing = missingEntries()
+        if (missing.isEmpty()) return
+        val (title, plural) = when (mode) {
+            TAB_HISTORY -> R.string.confirm_clear_missing_history_title to R.plurals.confirm_clear_missing_history_msg
+            TAB_BOOKMARKS -> R.string.confirm_clear_missing_bookmarks_title to R.plurals.confirm_clear_missing_bookmarks_msg
+            else -> R.string.confirm_clear_missing_favorites_title to R.plurals.confirm_clear_missing_favorites_msg
+        }
+        val message = resources.getQuantityString(plural, missing.size, missing.size) + "\n\n" + getString(R.string.confirm_clear_missing_note)
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(R.string.clear) { _, _ -> removeFromList(missing) }
+            .setNeutralButton(R.string.find_moved_first) { _, _ -> forgetMissing() }
+            .setNegativeButton(R.string.cancel, null)
+            .showKeepingFullscreen()
     }
 
 
@@ -2782,6 +3006,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         const val SHARE_RETRY_MAX_MS = 300_000L
         private const val CLASSIFY_PUBLISH_MS = 250L
         private const val FACTS_PUBLISH_MS = 250L
+
+        /** How often rows change as shares tell whether the items listed are there. */
+        private const val PRESENCE_PUBLISH_MS = 250L
 
         /** Subfolders of a share listed at once, to count their items. */
         private const val SUBFOLDER_LISTS = 4

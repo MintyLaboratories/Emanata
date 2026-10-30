@@ -124,7 +124,7 @@ class ListActivityConfirmTest {
     }
 
     /** Picks Clear history from the History tab's menu. */
-    private fun ListActivity.clearHistoryFromRow(): AlertDialog = menu(R.id.menu_clear_history)
+    private fun ListActivity.clearHistoryFromRow(): AlertDialog = menu(R.id.menu_clear_all)
 
     @Test
     fun clearHistoryFromTheHistoryTabWaitsForConfirmation() {

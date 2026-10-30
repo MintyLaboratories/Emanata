@@ -35,4 +35,11 @@ object DetailText {
         if (entry.size > 0) parts += sizeText(entry.size)
         return parts.joinToString(SEPARATOR)
     }
+
+    /** [details] after [note] when there is one (`Missing · Page 4`); [details] alone otherwise. */
+    fun withNote(note: String?, details: String): String = when {
+        note == null -> details
+        details.isEmpty() -> note
+        else -> note + SEPARATOR + details
+    }
 }

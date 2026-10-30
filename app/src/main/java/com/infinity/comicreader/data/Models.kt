@@ -46,7 +46,9 @@ data class BookEntry(
     /** For folders: how many of those books were opened or read (-1 = unknown). */
     val begunCount: Int = -1,
     /** For files: the [BookId] as known when listed; null until found. */
-    val id: BookId? = null
+    val id: BookId? = null,
+    /** In Favorites, History and Bookmarks: whether it is where it was last seen. */
+    val presence: Presence = Presence.PRESENT
 ) {
     val path: String get() = file.absolutePath
 }

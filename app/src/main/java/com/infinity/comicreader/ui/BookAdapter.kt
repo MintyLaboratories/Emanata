@@ -19,6 +19,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.DetailDisplay
+import com.infinity.comicreader.data.Presence
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
@@ -357,6 +358,10 @@ class BookAdapter(
         val title: TitleView = view.findViewById(R.id.title)
         val subtitle: TextView = view.findViewById(R.id.subtitle)
         val star: ImageView = view.findViewById(R.id.star)
+        val offline: ImageView = view.findViewById(R.id.offline)
+
+        /** All the card shows, faint for a missing item (the item animator owns the row's own alpha). */
+        val body: View = (view as ViewGroup).getChildAt(0)
 
         /** The card's own color, shown while not selected. */
         val cardColor: ColorStateList? = card?.cardBackgroundColor
@@ -489,16 +494,19 @@ class BookAdapter(
         holder.title.reserve = grid
         holder.title.clock = clock
         holder.title.text = item.label?.let { LibraryOrder.labelText(context, it) } ?: shortName(item)
+        val missing = item.presence == Presence.MISSING
+        val note = if (missing) context.getString(R.string.presence_missing) else null
         // Empty while unknown: grid cells still hold its line so covers stay even.
-        val dense = if (options.detail == DetailDisplay.DENSE) {
-            DetailText.dense(item) { FileUtils.formatSize(context, it) }.ifEmpty { if (grid) "" else null }
-        } else {
-            null
+        val dense = when {
+            options.detail == DetailDisplay.DENSE ->
+                DetailText.withNote(note, DetailText.dense(item) { FileUtils.formatSize(context, it) }).ifEmpty { if (grid) "" else null }
+            // Hidden details still say an item is missing.
+            else -> note.takeIf { options.detail == DetailDisplay.HIDDEN }
         }
         holder.title.detail = dense
         holder.title.visibility = if (mode == TitleDisplay.HIDDEN && dense == null) View.GONE else View.VISIBLE
         val comfortable = options.detail == DetailDisplay.COMFORTABLE
-        val subtitle = if (comfortable) item.subtitle ?: subtitleFor(context, item) else ""
+        val subtitle = if (comfortable) DetailText.withNote(note, item.subtitle ?: subtitleFor(context, item)) else ""
         holder.subtitle.text = subtitle
         holder.subtitle.visibility = when {
             subtitle.isNotEmpty() -> View.VISIBLE
@@ -509,6 +517,9 @@ class BookAdapter(
 
         holder.star.visibility = if (item.favorite) View.VISIBLE else View.GONE
         holder.star.setOnClickListener { onStarClick(item) }
+        holder.offline.visibility = if (item.presence == Presence.UNREACHABLE) View.VISIBLE else View.GONE
+        // A missing item shows faint; an unreachable one keeps its contrast.
+        holder.body.alpha = if (missing) MISSING_ALPHA else 1f
 
         bindBadge(holder.badge, item)
         applyHighlight(holder, item)
@@ -790,6 +801,9 @@ class BookAdapter(
 
         /** Re-tints a row as it is selected or let go. */
         const val SELECTION = "selection"
+
+        /** How opaque a missing item's row is. */
+        const val MISSING_ALPHA = 0.38f
 
         /** How much of the theme's primary color tints a selected row. */
         const val SELECTED_TINT = 0.3f

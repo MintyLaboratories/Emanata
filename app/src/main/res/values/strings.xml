@@ -272,7 +272,41 @@
         <item quantity="other">%1$d pages</item>
     </plurals>
     <string name="page_number">Page %1$d</string>
-    <string name="missing_file">Missing from storage</string>
+    <!-- Items in Favorites, History and Bookmarks not where they were last seen. -->
+    <string name="presence_missing">Missing</string>
+    <string name="missing_item_where">Not found in %1$s</string>
+    <string name="missing_item_remove">Remove from this list</string>
+    <string name="missing_item_forget">Forget missing books…</string>
+    <string name="menu_clear_all_history">Clear all history…</string>
+    <string name="menu_clear_missing_history">Clear missing from history…</string>
+    <string name="menu_clear_all_bookmarks">Clear all bookmarks…</string>
+    <string name="menu_clear_missing_bookmarks">Clear missing bookmarks…</string>
+    <string name="menu_clear_all_favorites">Clear all favorites…</string>
+    <string name="menu_clear_missing_favorites">Clear missing favorites…</string>
+    <string name="confirm_clear_missing_history_title">Clear missing from history?</string>
+    <string name="confirm_clear_missing_bookmarks_title">Clear missing bookmarks?</string>
+    <string name="confirm_clear_missing_favorites_title">Clear missing favorites?</string>
+    <plurals name="confirm_clear_missing_history_msg">
+        <item quantity="one">Removes %1$d book that is not where it was last seen.</item>
+        <item quantity="other">Removes %1$d books that are not where they were last seen.</item>
+    </plurals>
+    <plurals name="confirm_clear_missing_bookmarks_msg">
+        <item quantity="one">Removes %1$d bookmark of a book that is not where it was last seen.</item>
+        <item quantity="other">Removes %1$d bookmarks of books that are not where they were last seen.</item>
+    </plurals>
+    <plurals name="confirm_clear_missing_favorites_msg">
+        <item quantity="one">Removes %1$d favorite that is not where it was last seen.</item>
+        <item quantity="other">Removes %1$d favorites that are not where they were last seen.</item>
+    </plurals>
+    <string name="confirm_clear_missing_note">Items on a share or storage that cannot be reached now stay. A book moved outside the app looks missing until its folder is browsed again.</string>
+    <string name="find_moved_first">Find moved books first</string>
+    <plurals name="remove_history_title">
+        <item quantity="one">Remove %1$d book from history?</item>
+        <item quantity="other">Remove %1$d books from history?</item>
+    </plurals>
+    <string name="remove_history_msg">The books stay where they are, with their bookmarks and read marks.</string>
+    <string name="more_remove_history">Remove from history</string>
+    <string name="more_remove_bookmark">Remove bookmark</string>
     <plurals name="deleted_format">
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>
@@ -849,6 +883,7 @@
     <string name="restore_confirm">Replace your favorites, history, bookmarks and settings with this backup? Its network shares are added.</string>
     <string name="pref_clear_history">Clear reading history</string>
     <string name="pref_clear_bookmarks">Clear all bookmarks</string>
+    <string name="pref_clear_favorites">Clear all favorites</string>
     <string name="pref_clear_cache">Clear cache</string>
     <string name="pref_cache_used">%1$s, all made again as needed</string>
     <string name="pref_clear_library">Clear library data</string>
@@ -867,6 +902,8 @@
     <string name="confirm_clear_history_msg">Removes every book from History, with the page it was left on. Favorites, bookmarks and read marks stay.</string>
     <string name="confirm_clear_bookmarks_title">Clear all bookmarks?</string>
     <string name="confirm_clear_bookmarks_msg">Removes every bookmark in every book.</string>
+    <string name="confirm_clear_favorites_title">Clear all favorites?</string>
+    <string name="confirm_clear_favorites_msg">Removes every favorite book and folder. The files stay, as do history, bookmarks and read marks.</string>
     <string name="confirm_clear_cache_title">Clear cache?</string>
     <string name="confirm_clear_cache_msg">Deletes covers, page previews, page sizes and seams, book facts, the Book ID index, network copies, share listings and copies of nested archives (%1$s). Each is made again when next needed, reading books again for it, on shares too.</string>
     <string name="confirm_clear_library_title">Clear library data?</string>
@@ -883,7 +920,6 @@
     <string name="confirm_reset_adjust_msg">Returns brightness, contrast and saturation for this book to the defaults set in Settings.</string>
     <string name="confirm_mark_read_title">Mark all as read?</string>
     <string name="confirm_mark_read_msg">Marks every book directly in ^1 as read, replacing their current read marks. Reading progress is kept.</string>
-    <string name="pref_clear_favorites">Clear all favorites</string>
     <string name="confirm_mark_unread_title">Mark all as unread?</string>
     <string name="confirm_mark_unread_msg">Clears the read mark of every book directly in ^1. Reading progress is kept.</string>
     <plurals name="confirm_mark_read_many">
@@ -902,8 +938,6 @@
     <string name="menu_peek">Peek</string>
     <string name="sort_by">Sort by</string>
     <string name="sort_then">Then by</string>
-    <string name="confirm_clear_favorites_title">Clear all favorites?</string>
-    <string name="confirm_clear_favorites_msg">Removes every favorite book and folder. The files stay, as do history, bookmarks and read marks.</string>
     <string name="sort_none">None</string>
     <string name="sort_then_auto">Then by: Name (automatic)</string>
     <string name="sort_folders_first">Folders first</string>

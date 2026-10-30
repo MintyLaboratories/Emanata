@@ -15,6 +15,8 @@ import com.infinity.comicreader.data.MoreAction.MARK_READ
 import com.infinity.comicreader.data.MoreAction.MARK_UNREAD
 import com.infinity.comicreader.data.MoreAction.NAME_CHARSET
 import com.infinity.comicreader.data.MoreAction.PEEK
+import com.infinity.comicreader.data.MoreAction.REMOVE_BOOKMARK
+import com.infinity.comicreader.data.MoreAction.REMOVE_FROM_HISTORY
 import com.infinity.comicreader.data.MoreAction.SET_STARTUP
 import com.infinity.comicreader.data.MoreAction.SHOW_IN_FOLDER
 import org.junit.Assert.assertEquals
@@ -31,7 +33,7 @@ class MoreActionsTest {
     @Test
     fun defaultOffersEveryItemButPeekInTheAgreedOrder() {
         assertEquals(
-            listOf(CONTINUE_READING, MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE),
+            listOf(CONTINUE_READING, MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE, REMOVE_FROM_HISTORY, REMOVE_BOOKMARK),
             MoreActions.DEFAULT.visible
         )
         // Peek is listed, off.
@@ -42,7 +44,7 @@ class MoreActionsTest {
 
     @Test
     fun encodingRoundTripsOrderAndHiddenItems() {
-        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(11, 0)
+        val actions = MoreActions.DEFAULT.with(PEEK, true).with(MARK_READ, false).moved(MoreActions.DEFAULT.order.indexOf(PEEK), 0)
         assertEquals(PEEK, actions.visible.first())
         assertFalse(MARK_READ in actions.visible)
         assertEquals(actions, MoreActions.decode(actions.encode()))
@@ -50,8 +52,8 @@ class MoreActionsTest {
 
     @Test
     fun movingAnItemClosesUpTheOthers() {
-        val moved = MoreActions.DEFAULT.moved(8, 11)
-        assertEquals(listOf(COMPACT, MAKE_COMPATIBLE, PEEK, NAME_CHARSET), moved.offered.takeLast(4))
+        val moved = MoreActions.DEFAULT.moved(8, MoreActions.DEFAULT.order.lastIndex)
+        assertEquals(listOf(REMOVE_FROM_HISTORY, REMOVE_BOOKMARK, PEEK, NAME_CHARSET), moved.offered.takeLast(4))
         assertEquals(MoreActions.DEFAULT, MoreActions.DEFAULT.moved(0, 99))
     }
 

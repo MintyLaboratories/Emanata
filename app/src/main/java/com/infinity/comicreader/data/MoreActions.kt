@@ -13,6 +13,12 @@ enum class MoreAction(val key: String) {
     NAME_CHARSET("name_charset"),
     COMPACT("compact"),
     MAKE_COMPATIBLE("make_compatible"),
+
+    /** History only. */
+    REMOVE_FROM_HISTORY("remove_from_history"),
+
+    /** Bookmarks only. */
+    REMOVE_BOOKMARK("remove_bookmark"),
     PEEK("peek");
 
     companion object {

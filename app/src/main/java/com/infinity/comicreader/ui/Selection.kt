@@ -96,7 +96,11 @@ object SelectionActions {
         val charsetApplies: (BookEntry) -> Boolean,
         val canPeek: (BookEntry) -> Boolean,
         /** True when the item is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
-        val rebuildable: (BookEntry) -> Boolean = { false }
+        val rebuildable: (BookEntry) -> Boolean = { false },
+        /** The items are listed in History. */
+        val inHistory: Boolean = false,
+        /** The items are listed in Bookmarks. */
+        val inBookmarks: Boolean = false
     )
 
     /**
@@ -143,6 +147,8 @@ object SelectionActions {
                 MoreAction.NAME_CHARSET -> book != null && !facts.keepSimple && facts.charsetApplies(book)
                 MoreAction.PEEK -> one != null && facts.canPeek(one)
                 MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> entries.any(facts.rebuildable)
+                MoreAction.REMOVE_FROM_HISTORY -> facts.inHistory && entries.isNotEmpty()
+                MoreAction.REMOVE_BOOKMARK -> facts.inBookmarks && entries.isNotEmpty()
             }
         }
     }

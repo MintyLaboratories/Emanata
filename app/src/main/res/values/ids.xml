@@ -23,6 +23,9 @@
     <item name="menu_select_all" type="id" />
     <!-- The selection's ⋮ menu. -->
     <item name="more_menu" type="id" />
+    <item name="missing_remove" type="id" />
+    <item name="missing_show" type="id" />
+    <item name="missing_forget" type="id" />
     <!-- What an operation bubble was last bound to. -->
     <item name="op_bound" type="id" />
     <!-- The hint beside a Paste bubble. -->

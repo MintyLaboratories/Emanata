@@ -304,7 +304,7 @@
         <item quantity="one">Remove %1$d book from history?</item>
         <item quantity="other">Remove %1$d books from history?</item>
     </plurals>
-    <string name="remove_history_msg">The books stay where they are, with their bookmarks and read marks.</string>
+    <string name="remove_history_msg">The books stay where they are, with their bookmarks and read marks; the page each was left on is forgotten.</string>
     <string name="more_remove_history">Remove from history</string>
     <string name="more_remove_bookmark">Remove bookmark</string>
     <plurals name="deleted_format">

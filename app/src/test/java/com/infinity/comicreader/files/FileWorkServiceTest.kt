@@ -47,7 +47,7 @@ class FileWorkServiceTest {
             idle()
             if (done()) return
         }
-        throw AssertionError("not yet: ${FileWork.status.value}")
+        throw AssertionError("not yet: ${FileWork.operations.value}")
     }
 
     @Test
@@ -89,8 +89,8 @@ class FileWorkServiceTest {
         }
         val controller = Robolectric.buildService(FileWorkService::class.java, Intent(context, FileWorkService::class.java)).create().startCommand(0, 1)
         controller.withIntent(Intent(context, FileWorkService::class.java).setAction("cancel")).startCommand(0, 2)
-        waitFor { FileWork.status.value?.outcome != null }
-        assertEquals(FileWork.Outcome.Canceled(), FileWork.status.value?.outcome)
+        waitFor { FileWork.operations.value.firstOrNull()?.outcome != null }
+        assertEquals(FileWork.Outcome.Canceled(), FileWork.operations.value.firstOrNull()?.outcome)
     }
 
     @Test

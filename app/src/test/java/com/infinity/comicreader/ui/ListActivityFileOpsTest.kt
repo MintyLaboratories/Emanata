@@ -15,6 +15,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Bookmark
@@ -89,7 +90,7 @@ class ListActivityFileOpsTest {
         Prefs(context).lastPath = shelf.absolutePath
         // No covers: one being read would hold its file open, which some test hosts refuse to rename.
         Prefs(context).thumbnails = false
-        FileClipboard.clip = null
+        FileClipboard.clear()
         // Library screens other tests left open watch the old state, so only this test's show outcomes.
         FileWork.reset()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
@@ -99,7 +100,7 @@ class ListActivityFileOpsTest {
     fun tearDown() {
         settle()
         launched.forEach { if (!it.get().isDestroyed) it.pause().stop().destroy() }
-        FileClipboard.clip = null
+        FileClipboard.clear()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
@@ -112,9 +113,9 @@ class ListActivityFileOpsTest {
     private fun settle(done: () -> Boolean = { true }) {
         repeat(300) {
             idle()
-            if (done() && FileWork.status.value == null) return
+            if (done() && FileWork.operations.value.isEmpty()) return
         }
-        throw AssertionError("still running: ${FileWork.status.value}, toast ${ShadowToast.getTextOfLatestToast()}")
+        throw AssertionError("still running: ${FileWork.operations.value}, toast ${ShadowToast.getTextOfLatestToast()}")
     }
 
     private fun AlertDialog.title(): String = findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString()
@@ -185,7 +186,12 @@ class ListActivityFileOpsTest {
 
     private fun latest() = ShadowDialog.getLatestDialog() as AlertDialog
 
-    private fun ListActivity.paste(): View = findViewById(R.id.paste_fab)
+    /** The newest Paste bubble's button. */
+    private fun ListActivity.paste(): FloatingActionButton =
+        stack.buttons().lastOrNull { it.first is Bubble.Paste }?.second ?: throw AssertionError("no Paste")
+
+    /** True while a Paste bubble shows. */
+    private fun ListActivity.pasteShown(): Boolean = stack.buttons().any { it.first is Bubble.Paste }
 
     private fun ListActivity.open(dir: File) {
         row(dir.absolutePath).performClick()
@@ -300,13 +306,13 @@ class ListActivityFileOpsTest {
         assertEquals(color(com.google.android.material.R.attr.colorTertiaryContainer), fab.backgroundTintList!!.defaultColor)
         fab.performClick()
         idle()
-        assertEquals(listOf(book.absolutePath, other.absolutePath), FileClipboard.clip!!.items.map { it.path })
-        assertTrue(FileClipboard.clip!!.move)
+        assertEquals(listOf(book.absolutePath, other.absolutePath), FileClipboard.clips.value.single().items.map { it.path })
+        assertTrue(FileClipboard.clips.value.single().move)
         assertFalse(activity.selection.active)
 
-        // Paste never looks like the Move button beside it: its own fill, Move's colors only on its badge.
-        val paste = activity.paste() as com.google.android.material.floatingactionbutton.FloatingActionButton
-        val badge = activity.findViewById<android.widget.ImageView>(R.id.paste_badge)
+        // Paste never looks like the Move button above it: its own fill, Move's colors only on its badge.
+        val paste = activity.paste()
+        val badge = (paste.parent as View).findViewById<android.widget.ImageView>(R.id.op_badge)
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
         assertEquals(View.VISIBLE, paste.visibility)
@@ -314,11 +320,15 @@ class ListActivityFileOpsTest {
         assertEquals(color(com.google.android.material.R.attr.colorSurfaceInverse), paste.backgroundTintList!!.defaultColor)
         assertNotEquals(fab.backgroundTintList!!.defaultColor, paste.backgroundTintList!!.defaultColor)
         assertEquals(fab.backgroundTintList!!.defaultColor, badge.backgroundTintList!!.defaultColor)
-        // A copy's badge has Copy's colors.
+        // A copy's Paste joins under it, its badge in Copy's colors.
         activity.bar(R.id.selection_copy).performClick()
         idle()
-        assertEquals(color(com.google.android.material.R.attr.colorSecondary), badge.backgroundTintList!!.defaultColor)
-        assertEquals(color(com.google.android.material.R.attr.colorSurfaceInverse), paste.backgroundTintList!!.defaultColor)
+        val copy = activity.paste()
+        assertNotEquals(paste, copy)
+        assertEquals(2, activity.stack.buttons().size)
+        val copyBadge = (copy.parent as View).findViewById<android.widget.ImageView>(R.id.op_badge)
+        assertEquals(color(com.google.android.material.R.attr.colorSecondary), copyBadge.backgroundTintList!!.defaultColor)
+        assertEquals(color(com.google.android.material.R.attr.colorSurfaceInverse), copy.backgroundTintList!!.defaultColor)
 
         // Opening one: the book is read.
         activity.select(book.absolutePath)
@@ -551,8 +561,13 @@ class ListActivityFileOpsTest {
         activity.act(book.absolutePath, R.id.selection_move)
         idle()
         assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
-        assertEquals(View.GONE, activity.paste().visibility)
-        assertEquals(book.absolutePath, FileClipboard.clip?.items?.single()?.path)
+        assertEquals(book.absolutePath, FileClipboard.clips.value.single().items.single().path)
+        // Its bubble shows here too, and says where it pastes.
+        ShadowToast.reset()
+        activity.paste().performClick()
+        idle()
+        assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
+        assertTrue(book.exists())
 
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
         idle()
@@ -691,7 +706,7 @@ class ListActivityFileOpsTest {
     @Test
     fun movePicksUpAndPasteMovesIntoTheFolderBrowsed() {
         val activity = launch()
-        assertEquals(View.GONE, activity.paste().visibility)
+        assertFalse(activity.pasteShown())
         activity.act(book.absolutePath, R.id.selection_move)
         idle()
         assertEquals(View.VISIBLE, activity.paste().visibility)
@@ -704,8 +719,8 @@ class ListActivityFileOpsTest {
         assertTrue(library.isFavorite(bookId(moved)))
         assertEquals(3, library.historyFor(bookId(moved))?.page)
         // A move is pasted once.
-        assertNull(FileClipboard.clip)
-        assertEquals(View.GONE, activity.paste().visibility)
+        assertTrue(FileClipboard.clips.value.isEmpty())
+        assertFalse(activity.pasteShown())
     }
 
     @Test
@@ -721,25 +736,31 @@ class ListActivityFileOpsTest {
         ask.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
         assertEquals(listOf("one.cbz"), other.list()!!.sorted())
+        // Skipping the only one is the pick done with.
+        assertFalse(activity.pasteShown())
 
+        pickUp(book, move = false)
         activity.pasteAsking().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
         settle { File(other, "one (2).cbz").exists() }
         assertEquals(listOf("one (2).cbz", "one.cbz"), other.list()!!.sorted())
         assertArrayEquals(bytes, File(other, "one (2).cbz").readBytes())
+        // A copy is pasted once too.
+        assertTrue(FileClipboard.clips.value.isEmpty())
 
+        pickUp(book, move = false)
         activity.pasteAsking().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         settle { File(other, "one.cbz").length() == bytes.size.toLong() }
         assertArrayEquals(bytes, File(other, "one.cbz").readBytes())
-        // A copy stays picked up; the source stays.
         assertTrue(book.isFile)
-        assertNotNull(FileClipboard.clip)
 
         // A long press on Paste drops it.
+        pickUp(book, move = false)
+        idle()
         activity.paste().performLongClick()
         idle()
-        assertNull(FileClipboard.clip)
+        assertTrue(FileClipboard.clips.value.isEmpty())
         assertEquals(context.getString(R.string.paste_canceled), ShadowToast.getTextOfLatestToast())
-        assertEquals(View.GONE, activity.paste().visibility)
+        assertFalse(activity.pasteShown())
     }
 
     @Test
@@ -793,7 +814,7 @@ class ListActivityFileOpsTest {
 
     /** Picks up [files] together, as a selection of them does. */
     private fun pickUp(vararg files: File, move: Boolean) {
-        FileClipboard.clip = FileClipboard.Clip(files.map { FileClipboard.Item(it.absolutePath, it.isDirectory) }, move)
+        FileClipboard.add(FileClipboard.Clip(files.map { FileClipboard.Item(it.absolutePath, it.isDirectory) }, move))
     }
 
     @Test
@@ -812,7 +833,7 @@ class ListActivityFileOpsTest {
         assertTrue(library.isFavorite(bookId(File(other, "one.cbz"))))
         assertEquals(context.resources.getQuantityString(R.plurals.moved_count, 3, 3), ShadowToast.getTextOfLatestToast())
         // A move is pasted once.
-        assertNull(FileClipboard.clip)
+        assertTrue(FileClipboard.clips.value.isEmpty())
     }
 
     @Test
@@ -831,7 +852,9 @@ class ListActivityFileOpsTest {
         assertEquals(3L, File(other, "one.cbz").length())
         assertEquals(context.getString(R.string.file_copied), ShadowToast.getTextOfLatestToast())
 
-        // Keep both names each anew.
+        // Keep both names each anew, picked up again: a copy is pasted once.
+        pickUp(book, two, three, move = false)
+        idle()
         activity.pasteAsking().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
         settle { File(other, "one (2).cbz").exists() && File(other, "two (2).cbz").exists() && File(other, "three (2).cbz").exists() }
         assertArrayEquals(bytes, File(other, "one (2).cbz").readBytes())
@@ -878,41 +901,36 @@ class ListActivityFileOpsTest {
     @Test
     fun cancelShowsOnlyWhileItCanStopTheStepUnderWay() {
         val activity = launch()
-        val clock = FileWork.clock
-        var now = 1_000L
-        FileWork.clock = { now }
-        val go = java.util.concurrent.Semaphore(0)
-        val at = java.util.concurrent.Semaphore(0)
-        try {
-            FileWork.start(FileWork.Kind.COPY, "big.cbz") { p ->
-                at.release()
-                go.acquire()
-                p.report(5, 10)
-                at.release()
-                go.acquire()
-                p.stoppable(false)
-                at.release()
-                go.acquire()
-                FileWork.Outcome.Done(null)
-            }
-            at.acquire()
-            // Long enough under way for its progress to show.
-            now = 2_000L
-            go.release()
-            at.acquire()
-            idle()
-            val dialog = latest()
-            assertEquals(View.VISIBLE, dialog.getButton(DialogInterface.BUTTON_NEGATIVE).visibility)
-            go.release()
-            at.acquire()
-            idle()
-            assertEquals(View.GONE, dialog.getButton(DialogInterface.BUTTON_NEGATIVE).visibility)
-            go.release()
-            settle()
-        } finally {
-            FileWork.clock = clock
+        val go = Semaphore(0)
+        val at = Semaphore(0)
+        FileWork.start(FileWork.Kind.COPY, "big.cbz", into = "Other") { p ->
+            p.report(5, 10)
+            at.release()
+            go.acquire()
+            p.stoppable(false)
+            at.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
         }
-        assertNotNull(activity)
+        at.acquire()
+        idle()
+        activity.stack.buttons().single().second.performClick()
+        idle()
+        val card = activity.stack.cardView()!!
+        assertEquals(
+            context.getString(R.string.op_into, context.resources.getQuantityString(R.plurals.op_copying, 1, 1), "Other"),
+            card.findViewById<android.widget.TextView>(R.id.op_title).text.toString()
+        )
+        val cancel = card.findViewById<View>(R.id.op_cancel)
+        assertEquals(View.VISIBLE, cancel.visibility)
+        go.release()
+        at.acquire()
+        idle()
+        assertEquals(View.GONE, cancel.visibility)
+        go.release()
+        settle()
+        // The card goes with its operation.
+        assertNull(activity.stack.cardView())
     }
 
     /** Serves a share from a folder, returned. */
@@ -949,6 +967,7 @@ class ListActivityFileOpsTest {
         idle()
         Prefs(context).lastPath = "/net/s1"
         val share = launch()
+        idle()
         assertEquals(View.VISIBLE, share.paste().visibility)
         share.paste().performClick()
         settle { File(shareDir, "one.cbz").exists() }

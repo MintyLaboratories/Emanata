@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import com.google.android.material.R as M
 import com.infinity.comicreader.R
+import com.infinity.comicreader.files.FileWork
 
 /**
  * The floating button's icon, name and colors (theme attributes) for each thing it does:
@@ -19,7 +20,7 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             SelectionActions.Fab.OPEN -> FabLook(R.drawable.ic_auto_stories, R.string.fab_open, M.attr.colorPrimaryContainer, M.attr.colorOnPrimaryContainer)
             SelectionActions.Fab.MOVE -> MOVE
             SelectionActions.Fab.COPY -> COPY
-            SelectionActions.Fab.DELETE -> FabLook(R.drawable.ic_delete, R.string.delete, M.attr.colorErrorContainer, M.attr.colorOnErrorContainer)
+            SelectionActions.Fab.DELETE -> DELETE
             SelectionActions.Fab.SHARE -> FabLook(R.drawable.ic_share, R.string.file_op_share, M.attr.colorSurfaceContainerHighest, androidx.appcompat.R.attr.colorPrimary)
             SelectionActions.Fab.FAVORITE -> FabLook(
                 if (unfavorite) R.drawable.ic_star else R.drawable.ic_star_border,
@@ -34,7 +35,29 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
         /** The badge on Paste telling a move from a copy: that action's icon and colors. */
         fun pasteBadge(move: Boolean): FabLook = if (move) MOVE else COPY
 
+        /** The bubble of an operation of [kind]: Move and Copy as their buttons, Delete on the error container. */
+        fun of(kind: FileWork.Kind): FabLook = when (kind) {
+            FileWork.Kind.COPY -> COPY
+            FileWork.Kind.MOVE -> MOVE
+            FileWork.Kind.DELETE -> DELETE
+            FileWork.Kind.RENAME -> RENAME
+        }
+
+        /** The color of the progress ring around a running bubble of [kind]: the action's own, strong over the list. */
+        fun ringOf(kind: FileWork.Kind): Int = when (kind) {
+            FileWork.Kind.COPY -> M.attr.colorSecondary
+            FileWork.Kind.MOVE -> M.attr.colorTertiary
+            FileWork.Kind.DELETE -> androidx.appcompat.R.attr.colorError
+            FileWork.Kind.RENAME -> androidx.appcompat.R.attr.colorPrimary
+        }
+
+        /** A bubble waiting its turn: gray, whatever it will do. */
+        val WAITING_BACKGROUND = M.attr.colorSurfaceContainerHighest
+        val WAITING_FOREGROUND = M.attr.colorOutline
+
         private val MOVE = FabLook(R.drawable.ic_drive_file_move, R.string.file_op_move, M.attr.colorTertiaryContainer, M.attr.colorOnTertiaryContainer)
         private val COPY = FabLook(R.drawable.ic_content_copy, R.string.file_op_copy, M.attr.colorSecondary, M.attr.colorOnSecondary)
+        private val DELETE = FabLook(R.drawable.ic_delete, R.string.delete, M.attr.colorErrorContainer, M.attr.colorOnErrorContainer)
+        private val RENAME = FabLook(R.drawable.ic_edit, R.string.menu_rename, androidx.appcompat.R.attr.colorPrimary, M.attr.colorOnPrimary)
     }
 }

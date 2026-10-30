@@ -23,7 +23,7 @@
     <item name="menu_select_all" type="id" />
     <!-- The selection's ⋮ menu. -->
     <item name="more_menu" type="id" />
-    <!-- The hint beside the Paste button. -->
+    <!-- The hint beside a Paste bubble. -->
     <item name="paste_bubble" type="id" />
     <!-- Tags an activity's window whose system bars Immersive hid. -->
     <item name="immersive_bars" type="id" />

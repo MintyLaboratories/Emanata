@@ -64,7 +64,7 @@ class FileActionsManyTest {
     fun tearDown() {
         settle()
         controller.pause().stop().destroy()
-        FileClipboard.clip = null
+        FileClipboard.clear()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
@@ -98,10 +98,10 @@ class FileActionsManyTest {
     private fun settle() {
         repeat(300) {
             shadowOf(Looper.getMainLooper()).idle()
-            if (FileWork.status.value == null) return
+            if (FileWork.operations.value.isEmpty()) return
             Thread.sleep(10)
         }
-        throw AssertionError("still running: ${FileWork.status.value}")
+        throw AssertionError("still running: ${FileWork.operations.value}")
     }
 
     private fun AlertDialog.text(id: Int): String = findViewById<android.widget.TextView>(id)!!.text.toString()
@@ -151,8 +151,8 @@ class FileActionsManyTest {
         val folder = tmp.newFolder("Shelf")
         val inner = File(folder, "a.cbz").apply { writeBytes(ByteArray(10)) }
         actions.pickUp(listOf(FileClipboard.Item(inner.absolutePath, false), FileClipboard.Item(folder.absolutePath, true)), move = true)
-        assertEquals(listOf(folder.absolutePath), FileClipboard.clip!!.items.map { it.path })
-        FileClipboard.clip = null
+        assertEquals(listOf(folder.absolutePath), FileClipboard.clips.value.single().items.map { it.path })
+        FileClipboard.clear()
     }
 
     @Test
@@ -288,7 +288,7 @@ class FileActionsManyTest {
         actions.pickUp(listOf(item(a), item(b)), move = true)
         pasteInto(x)
         assertEquals(listOf("a.cbz", "b.cbz"), x.list()!!.sorted())
-        assertNull(FileClipboard.clip)
+        assertTrue(FileClipboard.clips.value.isEmpty())
     }
 
     @Test
@@ -301,7 +301,7 @@ class FileActionsManyTest {
         pasteInto(dest, DialogInterface.BUTTON_NEGATIVE)
         assertTrue(File(dest, "a.cbz").exists())
         assertTrue(b.exists())
-        assertNull(FileClipboard.clip)
+        assertTrue(FileClipboard.clips.value.isEmpty())
 
         // Skipping the only one: nothing moves, and the pick is done with.
         actions.pickUp(listOf(item(b)), move = true)
@@ -310,7 +310,7 @@ class FileActionsManyTest {
         answer(DialogInterface.BUTTON_NEGATIVE)
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(b.exists())
-        assertNull(FileClipboard.clip)
+        assertTrue(FileClipboard.clips.value.isEmpty())
     }
 
     @Test
@@ -333,7 +333,7 @@ class FileActionsManyTest {
         settle()
         assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/a.cbz")), finished.single())
         assertTrue(File(dest, "a.cbz").exists())
-        assertEquals(listOf("/net/s1/b.cbz"), FileClipboard.clip!!.items.map { it.path })
+        assertEquals(listOf("/net/s1/b.cbz"), FileClipboard.clips.value.single().items.map { it.path })
     }
 
     @Test
@@ -347,7 +347,7 @@ class FileActionsManyTest {
         actions.pickUp(listOf(item(a), FileClipboard.Item("/net/s1/s.cbz", false), item(b)), move = true)
         pasteInto(dest, DialogInterface.BUTTON_NEUTRAL) { fake.offline = true }
         assertEquals(listOf("a (2).cbz", "a.cbz", "b.cbz"), dest.list()!!.sorted())
-        assertEquals(listOf("/net/s1/s.cbz"), FileClipboard.clip!!.items.map { it.path })
+        assertEquals(listOf("/net/s1/s.cbz"), FileClipboard.clips.value.single().items.map { it.path })
     }
 
     @Test

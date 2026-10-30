@@ -335,7 +335,6 @@
     <string name="sharing_title">Sharing…</string>
     <string name="sharing_text">Other apps can read the books you shared</string>
     <string name="sharing_stop">Stop</string>
-    <string name="file_busy">Wait until the current file operation ends</string>
     <string name="file_copying">Copying</string>
     <string name="file_moving">Moving</string>
     <string name="file_deleting">Deleting</string>
@@ -406,6 +405,36 @@
         <item quantity="other">Paste %1$d items</item>
     </plurals>
     <string name="file_item_of">%1$s (%2$d of %3$d)</string>
+    <plurals name="file_more_waiting">
+        <item quantity="one">%1$d more waiting</item>
+        <item quantity="other">%1$d more waiting</item>
+    </plurals>
+    <!-- An operation bubble's card: what it does, as "Copying 3 items into Comics". -->
+    <plurals name="op_copying">
+        <item quantity="one">Copying %1$d item</item>
+        <item quantity="other">Copying %1$d items</item>
+    </plurals>
+    <plurals name="op_moving">
+        <item quantity="one">Moving %1$d item</item>
+        <item quantity="other">Moving %1$d items</item>
+    </plurals>
+    <plurals name="op_deleting">
+        <item quantity="one">Deleting %1$d item</item>
+        <item quantity="other">Deleting %1$d items</item>
+    </plurals>
+    <string name="op_renaming">Renaming %1$s</string>
+    <!-- %1$s: what it does, as "Copying 3 items"; %2$s: the folder. -->
+    <string name="op_into">%1$s into %2$s</string>
+    <string name="op_item_of">%1$d of %2$d</string>
+    <!-- %1$s: which of how many, as "2 of 3"; %2$s: the item's name. -->
+    <string name="op_item_named">%1$s · %2$s</string>
+    <!-- A bubble's description: what it does, then how far, as "Copying 3 items, 40%". -->
+    <string name="op_described">%1$s, %2$s</string>
+    <string name="op_percent">%1$d%%</string>
+    <string name="op_folded_badge">+%1$d</string>
+    <string name="op_waiting">Waiting for the operations before it</string>
+    <!-- On a bubble: older bubbles folded away. -->
+    <string name="op_folded">%1$d more</string>
     <string name="new_folder_hint">Folder name</string>
     <string name="folder_created">Folder created</string>
     <string name="startup_folder_set">Startup folder set</string>

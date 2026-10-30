@@ -60,10 +60,10 @@ class FileActionsNotificationsTest {
     private fun settle() {
         repeat(300) {
             shadowOf(Looper.getMainLooper()).idle()
-            if (FileWork.status.value == null) return
+            if (FileWork.operations.value.isEmpty()) return
             Thread.sleep(10)
         }
-        throw AssertionError("still running: ${FileWork.status.value}")
+        throw AssertionError("still running: ${FileWork.operations.value}")
     }
 
     /** Deletes a new file through the confirmation, and waits for it to go. */

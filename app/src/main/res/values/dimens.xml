@@ -38,7 +38,17 @@
     <!-- The rounding of the selection's floating bar. -->
     <dimen name="selection_bar_corner">16dp</dimen>
     <!-- The Move/Copy badge on Paste: its size, and its offset from the screen's corner, over the button's top end. -->
-    <dimen name="paste_badge_size">22dp</dimen>
-    <dimen name="paste_badge_inset">53dp</dimen>
     <dimen name="paste_badge_padding">4dp</dimen>
+    <!-- The operation stack: bubbles (ring outside, button inside) one under another, below the floating button. -->
+    <dimen name="op_bubble_size">56dp</dimen>
+    <dimen name="op_button_size">44dp</dimen>
+    <dimen name="op_icon_size">22dp</dimen>
+    <dimen name="op_ring_thickness">4dp</dimen>
+    <dimen name="op_bubble_gap">8dp</dimen>
+    <dimen name="op_badge_size">20dp</dimen>
+    <dimen name="op_card_width">280dp</dimen>
+    <!-- Room under the floating button for three bubbles: (gap + bubble) × 3. -->
+    <dimen name="op_stack_room">192dp</dimen>
+    <!-- The floating button's bottom margin: the usual 16dp plus the stack's room. -->
+    <dimen name="fab_bottom">208dp</dimen>
 </resources>

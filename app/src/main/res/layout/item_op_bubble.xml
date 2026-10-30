@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A bubble of the operation stack: a Paste waiting, or a queued operation. The ring shows
+  the progress of the one under way; the badges tell a Paste's Move from Copy, and how many
+  older bubbles are folded away. Colors and icons are set in code.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="@dimen/op_bubble_size"
+    android:layout_height="@dimen/op_bubble_size"
+    android:layout_marginTop="@dimen/op_bubble_gap"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/op_ring"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="invisible"
+        app:indicatorSize="@dimen/op_bubble_size"
+        app:trackColor="@android:color/transparent"
+        app:trackThickness="@dimen/op_ring_thickness" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/op_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        app:fabCustomSize="@dimen/op_button_size"
+        app:maxImageSize="@dimen/op_icon_size" />
+
+    <ImageView
+        android:id="@+id/op_badge"
+        android:layout_width="@dimen/op_badge_size"
+        android:layout_height="@dimen/op_badge_size"
+        android:layout_gravity="top|end"
+        android:background="@drawable/bg_badge"
+        android:elevation="13dp"
+        android:importantForAccessibility="no"
+        android:padding="@dimen/paste_badge_padding"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/op_folded"
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/op_badge_size"
+        android:layout_gravity="top|start"
+        android:background="@drawable/bg_count"
+        android:elevation="13dp"
+        android:gravity="center"
+        android:minWidth="@dimen/op_badge_size"
+        android:paddingHorizontal="@dimen/space_1"
+        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textColor="?attr/colorOnSurfaceInverse"
+        android:visibility="gone" />
+</FrameLayout>

@@ -12,12 +12,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The one file operation under way, run in the app's process rather than in a screen,
- * so turning the device does not stop it, and [onStart] keeps the app running meanwhile
- * ([FileWorkService]). Whichever library screen is there shows its [status], and
- * [acknowledge]s the outcome once it has shown it.
+ * The queue of file operations (copy, move, delete, rename): one at a time, never two
+ * at once, each in turn as it was started. They run in the app's process rather than in
+ * a screen, so turning the device does not stop them, and [onStart] keeps the app running
+ * meanwhile ([FileWorkService]). Whichever library screen is there shows their [operations],
+ * and [acknowledge]s each outcome once it has shown it.
  */
 object FileWork {
     enum class Kind { COPY, MOVE, DELETE, RENAME }
@@ -50,21 +52,43 @@ object FileWork {
     }
 
     /**
-     * An operation on [name], item [index] (from 0) of [count], [done] of [total] bytes of
-     * it (0 when it counts none), [started] by [clock]; [stoppable] while canceling can stop
-     * the step under way; finished once [outcome] is set.
+     * Operation [id], of [kind] on [count] items, now on [name], item [index] (from 0), [done]
+     * of [total] bytes of it (0 when it counts none); putting them [into] the folder so named,
+     * if anywhere. Waiting its turn until [started] by [clock]; [stoppable] while canceling can
+     * stop the step under way; finished once [outcome] is set. [order] places it among the
+     * operation bubbles: when it, or the Paste it came from, appeared ([nextOrder]).
      */
     data class Status(
         val kind: Kind,
         val name: String,
-        val started: Long,
+        val started: Long?,
         val done: Long = 0,
         val total: Long = 0,
         val stoppable: Boolean = true,
         val outcome: Outcome? = null,
         val index: Int = 0,
-        val count: Int = 1
-    )
+        val count: Int = 1,
+        val id: Long = 0,
+        val into: String? = null,
+        val order: Long = id
+    ) {
+        /** True until its turn comes. */
+        val waiting: Boolean get() = started == null && outcome == null
+
+        /** True while under way. */
+        val running: Boolean get() = started != null && outcome == null
+
+        /**
+         * How far along it is, from 0 to 1: the items before the current one whole, and of
+         * this one its bytes; null for a single item that counts none.
+         */
+        val fraction: Float?
+            get() {
+                val part = if (total > 0) done.coerceIn(0, total).toFloat() / total else null
+                if (count <= 1) return part
+                return ((index.coerceIn(0, count) + (part ?: 0f)) / count).coerceIn(0f, 1f)
+            }
+    }
 
     /** What an operation's work hears from and tells the runner. */
     interface Progress {
@@ -80,11 +104,15 @@ object FileWork {
         fun item(name: String, index: Int, count: Int)
     }
 
-    @Volatile
-    private var state = MutableStateFlow<Status?>(null)
+    private class Op(val id: Long, val count: Int, val work: (Progress) -> Outcome) {
+        var job: Job? = null
+    }
 
-    /** The operation under way, or finished and not yet acknowledged; null when there is none. */
-    val status: StateFlow<Status?> get() = state
+    @Volatile
+    private var state = MutableStateFlow<List<Status>>(emptyList())
+
+    /** Operations waiting, the one under way, and those finished and not yet acknowledged, in the order they were started. */
+    val operations: StateFlow<List<Status>> get() = state
 
     /** Where operations run; tests may stand in another. */
     @Volatile
@@ -98,21 +126,52 @@ object FileWork {
     @Volatile
     var clock: () -> Long = { System.nanoTime() / 1_000_000 }
 
-    private var job: Job? = null
+    private val waiting = ArrayDeque<Op>()
+    private var running: Op? = null
+    private val counter = AtomicLong()
 
-    /** True while an operation runs. */
-    val busy: Boolean get() = state.value?.let { it.outcome == null } == true
+    /** A number larger than any given before: ids of operations, and the order of bubbles. */
+    fun nextOrder(): Long = counter.incrementAndGet()
+
+    /** True while an operation waits or runs. */
+    val busy: Boolean get() = state.value.any { it.outcome == null }
+
+    /** The operation under way, if any. */
+    val current: Status? get() = state.value.firstOrNull { it.running }
 
     /**
-     * Starts [work] on [name]; false, starting nothing, while another runs. Work that throws
-     * ends [Outcome.Canceled] or [Outcome.Failed] with nothing counted.
+     * Queues [work] of [kind] on [count] items, the first [name], putting them [into] a folder
+     * so named if anywhere, placed among the bubbles at [order] (by default as the newest); it
+     * starts once those before it have ended. Work that throws ends [Outcome.Canceled] or
+     * [Outcome.Failed] with nothing counted. Returns the operation's id.
      */
     @Synchronized
-    fun start(kind: Kind, name: String, work: (Progress) -> Outcome): Boolean {
-        if (busy) return false
+    fun start(
+        kind: Kind,
+        name: String,
+        count: Int = 1,
+        into: String? = null,
+        order: Long? = null,
+        work: (Progress) -> Outcome
+    ): Long {
+        val id = nextOrder()
+        state.update { it + Status(kind, name, null, count = count, id = id, into = into, order = order ?: id) }
+        waiting.addLast(Op(id, count, work))
+        pump()
+        onStart()
+        return id
+    }
+
+    /** Starts the next operation waiting, unless one runs. */
+    @Synchronized
+    private fun pump() {
+        if (running != null) return
+        val op = waiting.removeFirstOrNull() ?: return
+        running = op
         val flow = state
-        flow.value = Status(kind, name, clock())
-        job = CoroutineScope(SupervisorJob() + dispatcher).launch {
+        edit(flow, op.id) { it.copy(started = clock()) }
+        var outcome: Outcome? = null
+        val job = CoroutineScope(SupervisorJob() + dispatcher).launch {
             val context = coroutineContext
             var reported = 0L
             val progress = object : Progress {
@@ -122,47 +181,74 @@ object FileWork {
                     val now = clock()
                     if (now - reported < REPORT_MS && done < total) return
                     reported = now
-                    flow.update { it?.copy(done = done, total = total) }
+                    edit(flow, op.id) { it.copy(done = done, total = total) }
                 }
 
                 override fun stoppable(can: Boolean) {
-                    flow.update { it?.copy(stoppable = can) }
+                    edit(flow, op.id) { it.copy(stoppable = can) }
                 }
 
                 override fun item(name: String, index: Int, count: Int) {
                     reported = 0L
-                    flow.update { it?.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true) }
+                    edit(flow, op.id) { it.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true) }
                 }
             }
-            val outcome = try {
-                work(progress)
+            outcome = try {
+                op.work(progress)
             } catch (e: CancellationException) {
-                Outcome.Canceled()
+                Outcome.Canceled(0, op.count)
             } catch (e: Exception) {
-                Outcome.Failed(e)
+                Outcome.Failed(e, 0, op.count)
             }
-            flow.update { it?.copy(outcome = outcome) }
         }
-        onStart()
-        return true
+        op.job = job
+        // Also when canceled before it ever ran.
+        job.invokeOnCompletion { finish(flow, op, outcome ?: Outcome.Canceled(0, op.count)) }
     }
 
-    /** Cancels the operation under way; its outcome follows once it has cleaned up. */
+    @Synchronized
+    private fun finish(flow: MutableStateFlow<List<Status>>, op: Op, outcome: Outcome) {
+        if (flow !== state || running !== op) return
+        edit(flow, op.id) { it.copy(outcome = outcome) }
+        running = null
+        pump()
+    }
+
+    private fun edit(flow: MutableStateFlow<List<Status>>, id: Long, change: (Status) -> Status) {
+        flow.update { list -> list.map { if (it.id == id) change(it) else it } }
+    }
+
+    /** Cancels operation [id]: one waiting ends at once, the one under way once it has cleaned up. */
+    @Synchronized
+    fun cancel(id: Long) {
+        val queued = waiting.firstOrNull { it.id == id }
+        if (queued != null) {
+            waiting.remove(queued)
+            edit(state, id) { it.copy(outcome = Outcome.Canceled(0, queued.count)) }
+            return
+        }
+        running?.takeIf { it.id == id }?.job?.cancel()
+    }
+
+    /** Cancels the operation under way; those waiting go on after it. */
+    @Synchronized
     fun cancel() {
-        job?.cancel()
+        running?.job?.cancel()
     }
 
-    /** Forgets a finished operation once its outcome was shown. */
-    fun acknowledge() {
-        state.update { if (it?.outcome != null) null else it }
+    /** Forgets operation [id] once its outcome was shown; one not finished stays. */
+    fun acknowledge(id: Long) {
+        state.update { list -> list.filterNot { it.id == id && it.outcome != null } }
     }
 
     /** Starts afresh, leaving screens of earlier tests watching the old state; for tests. */
     @Synchronized
     internal fun reset() {
+        val job = running?.job
+        running = null
+        waiting.clear()
+        state = MutableStateFlow(emptyList())
         job?.cancel()
-        job = null
-        state = MutableStateFlow(null)
     }
 
     /** Thrown when the name an item would take is taken. */

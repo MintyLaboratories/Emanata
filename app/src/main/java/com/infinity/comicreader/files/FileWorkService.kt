@@ -24,18 +24,20 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Keeps the app running while a file operation runs ([FileWork]), so a copy goes on with
- * the app in the background or the screen off: a foreground service (data sync) showing
- * the operation's progress, with Cancel while canceling can stop it, and a partial wake
- * lock that lapses after [WAKE_MS] without progress. Stops as the operation ends.
+ * Keeps the app running while file operations wait or run ([FileWork]), so a copy goes on
+ * with the app in the background or the screen off: a foreground service (data sync)
+ * showing the progress of the one under way and how many wait, with Cancel while canceling
+ * can stop it, and a partial wake lock that lapses after [WAKE_MS] without progress. Stops
+ * as the last one ends.
  */
 class FileWorkService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var watching: Job? = null
     private var wake: PowerManager.WakeLock? = null
 
-    /** When the notification was last updated, by [FileWork.clock]. */
+    /** When the notification was last updated, by [FileWork.clock], and the operation it showed. */
     private var shownAt = 0L
+    private var shownId: Long? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,31 +46,34 @@ class FileWorkService : Service() {
             FileWork.cancel()
             return START_NOT_STICKY
         }
-        val status = FileWork.status.value
+        val operations = FileWork.operations.value
         // Started as a foreground service: in the foreground at once, even to stop.
         try {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(status), TYPE)
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(operations), TYPE)
         } catch (e: IllegalStateException) {
-            // Refused (the app went to the background first): the operation runs unkept.
+            // Refused (the app went to the background first): the operations run unkept.
             stopSelf()
             return START_NOT_STICKY
         }
-        if (status == null || status.outcome != null) {
+        if (operations.none { it.outcome == null }) {
             finish()
             return START_NOT_STICKY
         }
         hold()
-        if (watching == null) watching = scope.launch { FileWork.status.collect(::follow) }
+        if (watching == null) watching = scope.launch { FileWork.operations.collect(::follow) }
         return START_NOT_STICKY
     }
 
-    private fun follow(status: FileWork.Status?) {
-        if (status == null || status.outcome != null) return finish()
+    private fun follow(operations: List<FileWork.Status>) {
+        if (operations.none { it.outcome == null }) return finish()
         hold()
         val now = FileWork.clock()
-        if (now - shownAt < UPDATE_MS) return
+        val current = operations.firstOrNull { it.running }?.id
+        // Another operation starting shows at once.
+        if (now - shownAt < UPDATE_MS && current == shownId) return
         shownAt = now
-        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(status))
+        shownId = current
+        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(operations))
     }
 
     /** Keeps the device awake for [WAKE_MS] more. */
@@ -99,7 +104,10 @@ class FileWorkService : Service() {
         super.onDestroy()
     }
 
-    private fun notification(status: FileWork.Status?): Notification {
+    /** The notification for the operation under way among [operations], saying how many more wait. */
+    private fun notification(operations: List<FileWork.Status>): Notification {
+        val status = operations.firstOrNull { it.running } ?: operations.firstOrNull { it.waiting }
+        val more = operations.count { it.waiting && it.id != status?.id }
         val manager = getSystemService(NotificationManager::class.java)
         if (manager?.getNotificationChannel(CHANNEL) == null) {
             manager?.createNotificationChannel(
@@ -114,20 +122,22 @@ class FileWorkService : Service() {
             .setSmallIcon(if (status?.kind == FileWork.Kind.MOVE) R.drawable.ic_drive_file_move else R.drawable.ic_content_copy)
             .setContentTitle(getString(titleOf(status?.kind)))
             .setContentText(status?.let { nameOf(this, it) })
+            .setSubText(if (more > 0) resources.getQuantityString(R.plurals.file_more_waiting, more, more) else null)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
-        if (status != null && status.total > 0) {
-            builder.setProgress(PROGRESS_STEPS, (status.done.coerceIn(0, status.total) * PROGRESS_STEPS / status.total).toInt(), false)
+        val fraction = status?.fraction
+        if (fraction != null) {
+            builder.setProgress(PROGRESS_STEPS, (fraction * PROGRESS_STEPS).toInt(), false)
         } else {
             builder.setProgress(0, 0, true)
         }
         val copying = status?.kind == FileWork.Kind.COPY || status?.kind == FileWork.Kind.MOVE
         // Several items stop between two.
-        if ((copying || (status?.count ?: 1) > 1) && status?.stoppable == true) {
+        if ((copying || (status?.count ?: 1) > 1) && status?.stoppable == true && status.running) {
             val cancel = PendingIntent.getService(
                 this, 0, Intent(this, FileWorkService::class.java).setAction(ACTION_CANCEL),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -137,14 +147,15 @@ class FileWorkService : Service() {
         return builder.build()
     }
 
-    private fun titleOf(kind: FileWork.Kind?): Int = when (kind) {
-        FileWork.Kind.MOVE -> R.string.file_moving
-        FileWork.Kind.DELETE -> R.string.file_deleting
-        FileWork.Kind.RENAME -> R.string.file_renaming
-        else -> R.string.file_copying
-    }
-
     companion object {
+        /** What an operation of [kind] is doing, as a title: "Copying". */
+        fun titleOf(kind: FileWork.Kind?): Int = when (kind) {
+            FileWork.Kind.MOVE -> R.string.file_moving
+            FileWork.Kind.DELETE -> R.string.file_deleting
+            FileWork.Kind.RENAME -> R.string.file_renaming
+            else -> R.string.file_copying
+        }
+
         private const val CHANNEL = "file_work"
         private const val NOTIFICATION_ID = 7301
         private const val ACTION_CANCEL = "cancel"
@@ -163,7 +174,7 @@ class FileWorkService : Service() {
         fun nameOf(context: Context, status: FileWork.Status): String =
             if (status.count > 1) context.getString(R.string.file_item_of, status.name, status.index + 1, status.count) else status.name
 
-        /** Starts the service for the operation that just started; ignored where Android refuses it. */
+        /** Starts the service for the operation just queued; ignored where Android refuses it. */
         fun start(context: Context) {
             runCatching { ContextCompat.startForegroundService(context, Intent(context, FileWorkService::class.java)) }
         }

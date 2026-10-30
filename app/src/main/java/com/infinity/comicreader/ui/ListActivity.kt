@@ -156,19 +156,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The selection's ⋮ menu while it shows. */
     private var morePopup: PopupWindow? = null
 
-    /** Pastes the item Move or Copy picked up ([FileClipboard]) into the folder browsed; a long press drops it. */
-    private lateinit var pasteFab: FloatingActionButton
-
-    /** On [pasteFab]: whether it moves or copies. */
-    private lateinit var pasteBadge: ImageView
+    /** Under [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
+    internal lateinit var stack: OperationStack
     private lateinit var fileActions: FileActions
     private lateinit var bookShare: BookShare
 
     /** Whether device items checked since the list was made are there, by path ([isThere]). */
     private val present = HashMap<String, Boolean>()
 
-    /** The hint shown beside [pasteFab] as an item is picked up. */
-    private var pasteBubble: PopupWindow? = null
     private lateinit var filterChip: Chip
     private lateinit var peek: PeekOverlay
     private lateinit var pinch: PinchPeek
@@ -308,8 +303,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         fab = findViewById(R.id.fab)
         selectionBar = findViewById(R.id.selection_bar)
         selectionActions = findViewById(R.id.selection_actions)
-        pasteFab = findViewById(R.id.paste_fab)
-        pasteBadge = findViewById(R.id.paste_badge)
+        stack = OperationStack(this, findViewById(R.id.operation_stack), fab, ::pasteInto) {
+            fileActions.drop(it)
+            toast(R.string.paste_canceled)
+        }
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
@@ -365,18 +362,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
         fab.setOnClickListener { onFabClick() }
         setUpSelection()
-        fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, ::updatePasteButton)
+        fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, {}, ::folderName)
         bookShare = BookShare(this, prefs) { adapter.shownCover(recycler, it.path) }
-        pasteFab.setOnClickListener {
-            hidePasteBubble()
-            currentDir?.let { fileActions.paste(it) }
-        }
-        pasteFab.setOnLongClickListener {
-            hidePasteBubble()
-            fileActions.drop()
-            toast(R.string.paste_canceled)
-            true
-        }
         updateFab()
         pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
         pathbar.onCrumbClick = { openCrumb(it) }
@@ -452,9 +439,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         super.onDestroy()
         historyWatch?.close()
         resumeOffer?.dismiss()
-        hidePasteBubble()
+        stack.release()
         hideMore()
-        fileActions.release()
         peek.hide()
         adapter.release()
     }
@@ -843,7 +829,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         applyLayoutManager()
         updateCellSize()
         updateFab()
-        updatePasteButton()
         invalidateOptionsMenu()
     }
 
@@ -892,7 +877,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         adapter.highlightPath = highlight
         selectTab(TAB_BROWSE)
 
-        updatePasteButton()
         val atRoot = roots.any { it.path == dir.absolutePath }
         supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
         showCrumbs(dir)
@@ -1737,10 +1721,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         fabShows = shows
         if (shows == null) {
             fab.visibility = View.GONE
+            stack.setFab(false)
             return
         }
         paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
         fab.visibility = View.VISIBLE
+        stack.setFab(true)
     }
 
     /** Gives [button] the icon, name and colors of [look]. */
@@ -1968,62 +1954,24 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         return isThere(entry)
     }
 
-    /** Puts [entries] on the clipboard together for Paste, saying how Paste works. */
+    /** Picks [entries] up together for a Paste bubble, saying how Paste works. */
     private fun pickUp(entries: List<BookEntry>, move: Boolean) {
-        fileActions.pickUp(itemsOf(entries), move)
-        if (pasteFab.visibility == View.VISIBLE) pasteFab.post { showPasteBubble() } else toast(R.string.paste_hint_browse)
+        val clip = fileActions.pickUp(itemsOf(entries), move) ?: return
+        if (mode == TAB_BROWSE && currentDir != null) stack.hint(clip.id) else toast(R.string.paste_hint_browse)
     }
 
-    /**
-     * Shows Paste while items are picked up and a folder is browsed: its own look, never an
-     * action's ([FabLook.PASTE]), with a badge in the colors and icon of Move or Copy.
-     */
-    private fun updatePasteButton() {
-        val clip = FileClipboard.clip
-        val shown = clip != null && mode == TAB_BROWSE && currentDir != null
-        pasteFab.visibility = if (shown) View.VISIBLE else View.GONE
-        pasteBadge.visibility = pasteFab.visibility
-        if (clip != null) {
-            paint(pasteFab, FabLook.PASTE)
-            val badge = FabLook.pasteBadge(clip.move)
-            pasteBadge.setImageResource(badge.icon)
-            pasteBadge.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(pasteBadge, badge.background))
-            pasteBadge.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(pasteBadge, badge.foreground))
-        }
-        pasteFab.contentDescription = when {
-            clip == null -> getString(R.string.paste)
-            clip.count == 1 -> getString(R.string.paste_named, clip.name)
-            else -> resources.getQuantityString(R.plurals.paste_count, clip.count, clip.count)
-        }
-        if (!shown) hidePasteBubble()
+    /** Pastes pick [id] into the folder Browse shows; elsewhere says where to paste. */
+    private fun pasteInto(id: Long) {
+        val dir = currentDir
+        if (mode != TAB_BROWSE || dir == null) return toast(R.string.paste_hint_browse)
+        fileActions.paste(dir, id)
     }
 
-    /** A short hint above Paste: tap pastes, a long press cancels. Goes by itself. */
-    private fun showPasteBubble() {
-        hidePasteBubble()
-        if (pasteFab.visibility != View.VISIBLE || !pasteFab.isAttachedToWindow) return
-        val text = TextView(this).apply {
-            id = R.id.paste_bubble
-            setText(R.string.paste_hint)
-            setBackgroundResource(R.drawable.bg_bubble)
-            setTextColor(MaterialColors.getColor(pasteFab, com.google.android.material.R.attr.colorOnSurfaceInverse))
-            val pad = resources.getDimensionPixelSize(R.dimen.space_3)
-            setPadding(pad, pad / 2, pad, pad / 2)
-        }
-        text.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        val bubble = PopupWindow(text, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        bubble.isOutsideTouchable = true
-        text.setOnClickListener { hidePasteBubble() }
-        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
-        bubble.showAsDropDown(pasteFab, 0, -(pasteFab.height + text.measuredHeight + gap))
-        pasteBubble = bubble
-        pasteFab.postDelayed({ if (pasteBubble === bubble) hidePasteBubble() }, PASTE_BUBBLE_MS)
-    }
-
-    private fun hidePasteBubble() {
-        pasteBubble?.dismiss()
-        pasteBubble = null
-    }
+    /** The name of the folder at [path] as its crumb shows it: a location's own name at its root. */
+    private fun folderName(path: String): String =
+        roots.firstOrNull { it.path == path }?.name
+            ?: locationName(path).takeIf { Remotes.isRemote(path) && Remotes.relOf(path).isEmpty() }
+            ?: File(path).name
 
     /** Lists again after a file operation, showing the item it ended on where it is listed. */
     private fun fileWorkDone(outcome: FileWork.Outcome) {
@@ -2749,8 +2697,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
         private const val DEEP_SEARCH_DELAY_MS = 300L
 
-        /** How long the hint beside Paste stays. */
-        private const val PASTE_BUBBLE_MS = 3_500L
 
         /** How long the startup folder's share goes unanswered before the user is asked to wait on or open the device. */
         const val SHARE_DIALOG_MS = 2_000L

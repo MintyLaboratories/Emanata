@@ -144,43 +144,33 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- The top of the operation stack, on the handed side: it never moves as bubbles come and go under it. -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/space_4"
+        android:layout_marginStart="@dimen/space_4"
+        android:layout_marginEnd="@dimen/space_4"
+        android:layout_marginBottom="@dimen/fab_bottom"
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
         app:backgroundTint="?attr/colorSecondaryContainer"
         app:tint="?attr/colorOnSecondaryContainer" />
 
-    <!-- Pastes the item Move or Copy picked up into the folder browsed; a long press drops it. -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/paste_fab"
+    <!-- Paste bubbles and operations under way or waiting, oldest on top; filled in code ([OperationStack]). -->
+    <LinearLayout
+        android:id="@+id/operation_stack"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="@dimen/space_4"
-        android:contentDescription="@string/paste"
-        android:src="@drawable/ic_content_paste"
-        android:visibility="gone"
-        app:backgroundTint="?attr/colorSurfaceInverse"
-        app:tint="?attr/colorOnSurfaceInverse" />
-
-    <!-- Tells on Paste whether it moves or copies: that action's icon and colors, over the button's top end. -->
-    <ImageView
-        android:id="@+id/paste_badge"
-        android:layout_width="@dimen/paste_badge_size"
-        android:layout_height="@dimen/paste_badge_size"
-        android:layout_gravity="bottom|start"
-        android:layout_marginStart="@dimen/paste_badge_inset"
-        android:layout_marginBottom="@dimen/paste_badge_inset"
-        android:background="@drawable/bg_badge"
-        android:elevation="13dp"
-        android:importantForAccessibility="no"
-        android:padding="@dimen/paste_badge_padding"
-        android:visibility="gone" />
+        android:layout_gravity="bottom|end"
+        android:layout_marginStart="@dimen/space_4"
+        android:layout_marginEnd="@dimen/space_4"
+        android:layout_marginBottom="@dimen/space_4"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:gravity="bottom|center_horizontal"
+        android:orientation="vertical" />
 
     <!-- What the selected items can do, floating at the bottom center; its rounded card and buttons are made in code. -->
     <LinearLayout

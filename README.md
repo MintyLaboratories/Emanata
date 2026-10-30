@@ -664,8 +664,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   data**: everything kept about your books and folders (favorites, read marks,
   history, bookmarks, hidden pages, books' and folders' own settings, tall-page
   answers) and shared-book links, but not reading statistics; it offers Export
-  first and clears only once "Delete them for good" is ticked. Also clear
-  history, clear bookmarks, reset all settings; every Clear or Reset asks first. Resetting settings keeps
+  first and clears only once "Delete them for good" is ticked. **Clear reading
+  statistics** (Settings → Your data). Also clear history, clear bookmarks, reset
+  all settings; every Clear or Reset asks first. Resetting settings keeps
   per-book adjustments and reading progress.
 - About: version, source, upstream credit, the license and third-party licenses.
 

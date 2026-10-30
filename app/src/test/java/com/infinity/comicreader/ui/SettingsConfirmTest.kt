@@ -164,6 +164,20 @@ class SettingsConfirmTest {
     }
 
     @Test
+    fun clearReadingStatisticsWaitsForConfirmationAndKeepsReadMarks() {
+        library.setRead(one, true)
+        library.addReading(60, 4)
+        val canceled = tap("pref_clear_stats")
+        assertEquals(context.getString(R.string.confirm_clear_stats_title), canceled.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString())
+        canceled.press(DialogInterface.BUTTON_NEGATIVE)
+        assertEquals(60, library.stats().seconds)
+        tap("pref_clear_stats").press(DialogInterface.BUTTON_POSITIVE)
+        assertEquals(0, library.stats().seconds)
+        assertEquals(0, library.stats().pages)
+        assertTrue(library.isRead(one.id))
+    }
+
+    @Test
     fun clearLibraryDataCanExportFirst() {
         library.setRead(one, true)
         val asked = tap("pref_clear_library")

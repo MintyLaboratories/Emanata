@@ -493,6 +493,10 @@
             app:key="pref_stats"
             app:title="@string/menu_stats" />
         <Preference
+            app:key="pref_clear_stats"
+            app:persistent="false"
+            app:title="@string/pref_clear_stats" />
+        <Preference
             app:key="pref_backup"
             app:summary="@string/pref_backup_desc"
             app:title="@string/pref_backup" />

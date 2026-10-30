@@ -779,6 +779,19 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 The debug build installs beside the release build (`minty.emanata.debug`).
 
+### Benchmarks
+
+`./gradlew assembleBench` builds release code (R8, not debuggable) with the debug
+build's checks and benchmarks, signed with the debug key: it installs over the debug
+build and keeps its data. Time with it, not the debug build, which is debuggable and
+runs the app's own code several times slower.
+
+`tools/bench/bench.py` (Python 3, standard library) makes synthetic books, pushes
+them, runs scripted reading sessions and library grids on the device through the
+debug-only `BenchActivity`, and tabulates the results: open and page turn to first
+visible and to sharp page, CPU time, memory, jank, and optionally a Perfetto trace
+and the battery statistics' estimate per session. See its `--help`.
+
 ## Permissions
 
 - `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+): browse and

@@ -108,7 +108,16 @@ class ZoomImageView @JvmOverloads constructor(
 
     /** True once a second finger joined the gesture before it locked vertically. */
     private var pinched = false
+
+    /**
+     * Double-tap zooms. Off, a tap acts as the finger lifts; on, only once no second tap
+     * can follow ([ViewConfiguration.getDoubleTapTimeout] after it went down).
+     */
     var doubleTapEnabled = true
+        set(value) {
+            field = value
+            gestureDetector.setOnDoubleTapListener(if (value) gestures else null)
+        }
 
     /** A pan flung by the finger glides on, with inertia, until it stops or meets an edge. */
     var flingEnabled = false
@@ -189,44 +198,54 @@ class ZoomImageView @JvmOverloads constructor(
         }
     )
 
-    private val gestureDetector = GestureDetector(
-        context,
-        object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean = true
+    private val gestures = object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent): Boolean = true
 
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (!flingEnabled || !panned || pinched || scaleDetector.isInProgress) return false
-                fling(velocityX, velocityY)
-                return true
-            }
-
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                performClick()
-                val x = if (width > 0) e.x / width.toFloat() else 0.5f
-                val y = if (height > 0) e.y / height.toFloat() else 0.5f
-                onTap?.invoke(x, y)
-                return true
-            }
-
-            override fun onLongPress(e: MotionEvent) {
-                val press = onLongPress ?: return
-                if (pinched || scaleDetector.isInProgress || axis != AxisLock.NONE) return
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                press()
-            }
-
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                if (!doubleTapEnabled) return false
-                if (currentScale > minScale * 1.1f) {
-                    fit(fitMode)
-                } else {
-                    detailSource?.prepare()
-                    zoomTo(minScale * 3f, e.x, e.y)
-                }
-                return true
-            }
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (!flingEnabled || !panned || pinched || scaleDetector.isInProgress) return false
+            fling(velocityX, velocityY)
+            return true
         }
-    )
+
+        // Without double-tap there is no second tap to wait for.
+        override fun onSingleTapUp(e: MotionEvent): Boolean {
+            if (doubleTapEnabled) return false
+            tapped(e)
+            return true
+        }
+
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            tapped(e)
+            return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            val press = onLongPress ?: return
+            if (pinched || scaleDetector.isInProgress || axis != AxisLock.NONE) return
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            press()
+        }
+
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            if (!doubleTapEnabled) return false
+            if (currentScale > minScale * 1.1f) {
+                fit(fitMode)
+            } else {
+                detailSource?.prepare()
+                zoomTo(minScale * 3f, e.x, e.y)
+            }
+            return true
+        }
+    }
+
+    private val gestureDetector = GestureDetector(context, gestures)
+
+    private fun tapped(e: MotionEvent) {
+        performClick()
+        val x = if (width > 0) e.x / width.toFloat() else 0.5f
+        val y = if (height > 0) e.y / height.toFloat() else 0.5f
+        onTap?.invoke(x, y)
+    }
 
     init {
         scaleType = ScaleType.MATRIX

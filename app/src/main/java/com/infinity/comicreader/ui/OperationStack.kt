@@ -33,12 +33,25 @@ internal sealed class Bubble {
     /** Its place in the stack: older above newer. */
     abstract val order: Long
 
+    /** Tells it apart from every other bubble, of either kind. */
+    abstract val key: Any
+
     data class Paste(val clip: FileClipboard.Clip) : Bubble() {
         override val order: Long get() = clip.id
+        override val key: Any get() = keyOf(clip.id)
+
+        companion object {
+            fun keyOf(id: Long): Any = "paste" to id
+        }
     }
 
     data class Work(val status: FileWork.Status) : Bubble() {
-        override val order: Long get() = status.order
+        override val order: Long get() = status.id
+        override val key: Any get() = keyOf(status.id)
+
+        companion object {
+            fun keyOf(id: Long): Any = "work" to id
+        }
     }
 }
 
@@ -79,8 +92,8 @@ internal class OperationStack(
     private var fabShown = false
     private var left = false
 
-    /** The bubbles showing, by [Bubble.order]. */
-    private val views = LinkedHashMap<Long, View>()
+    /** The bubbles showing, by [Bubble.key]. */
+    private val views = LinkedHashMap<Any, View>()
 
     /** What shows now. */
     var shown = StackLayout.Shown(emptyList(), 0)
@@ -127,7 +140,7 @@ internal class OperationStack(
 
     /** The button of each bubble shown, from top to bottom; for tests. */
     internal fun buttons(): List<Pair<Bubble, FloatingActionButton>> =
-        shown.bubbles.mapNotNull { b -> views[b.order]?.let { b to it.findViewById(R.id.op_button) } }
+        shown.bubbles.mapNotNull { b -> views[b.key]?.let { b to it.findViewById(R.id.op_button) } }
 
     /** The card's content while it shows; for tests. */
     internal fun cardView(): View? = card?.contentView
@@ -154,11 +167,11 @@ internal class OperationStack(
             column.layoutParams = lp
         }
         column.gravity = (if (fabShown) Gravity.TOP else Gravity.BOTTOM) or Gravity.CENTER_HORIZONTAL
-        val keep = now.bubbles.map { it.order }.toSet()
+        val keep = now.bubbles.map { it.key }.toSet()
         val gone = views.keys.filter { it !in keep }
-        for (order in gone) column.removeView(views.remove(order))
+        for (key in gone) column.removeView(views.remove(key))
         for ((i, bubble) in now.bubbles.withIndex()) {
-            val view = views[bubble.order] ?: make().also { views[bubble.order] = it }
+            val view = views[bubble.key] ?: make().also { views[bubble.key] = it }
             if (column.indexOfChild(view) != i) {
                 (view.parent as? ViewGroup)?.removeView(view)
                 column.addView(view, i)
@@ -166,7 +179,7 @@ internal class OperationStack(
             bind(view, bubble, if (i == 0) now.folded else 0)
         }
         updateCard()
-        hintFor?.let { id -> views[id]?.let { v -> hintFor = null; v.post { showHint(v) } } }
+        hintFor?.let { id -> views[Bubble.Paste.keyOf(id)]?.let { v -> hintFor = null; v.post { showHint(v) } } }
     }
 
     /** A new bubble, coming out from under the button above it. */
@@ -304,7 +317,7 @@ internal class OperationStack(
     private fun updateCard() {
         val id = cardId ?: return
         val status = operations.firstOrNull { it.id == id }
-        if (status == null || status.outcome != null || views[status.order] == null) return hideCard()
+        if (status == null || status.outcome != null || views[Bubble.Work.keyOf(status.id)] == null) return hideCard()
         fillCard()
     }
 

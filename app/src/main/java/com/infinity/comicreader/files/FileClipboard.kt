@@ -17,7 +17,7 @@ object FileClipboard {
     /**
      * [items] picked up together, from the device and shares alike: [move] deletes each from
      * where it was once pasted. [id] tells picks apart and places the bubble among the
-     * operations' ([FileWork.nextOrder]).
+     * operations' ([FileWork.nextOrder]): a pick made, or given back, later sits lower.
      */
     data class Clip(val items: List<Item>, val move: Boolean, val id: Long = FileWork.nextOrder()) {
         /** The name of the first item, the only one when [count] is 1. */
@@ -34,7 +34,7 @@ object FileClipboard {
     /** The pick [id], if still waiting. */
     operator fun get(id: Long): Clip? = state.value.firstOrNull { it.id == id }
 
-    /** Adds [clip], or puts it back in its place among the others when it was there before. */
+    /** Adds [clip], in place of a pick of its [FileClipboard.Clip.id] if there is one. */
     fun add(clip: Clip) {
         state.update { list -> (list.filterNot { it.id == clip.id } + clip).sortedBy { it.id } }
     }

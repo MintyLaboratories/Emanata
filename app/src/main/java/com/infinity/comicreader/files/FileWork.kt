@@ -55,8 +55,8 @@ object FileWork {
      * Operation [id], of [kind] on [count] items, now on [name], item [index] (from 0), [done]
      * of [total] bytes of it (0 when it counts none); putting them [into] the folder so named,
      * if anywhere. Waiting its turn until [started] by [clock]; [stoppable] while canceling can
-     * stop the step under way; finished once [outcome] is set. [order] places it among the
-     * operation bubbles: when it, or the Paste it came from, appeared ([nextOrder]).
+     * stop the step under way; finished once [outcome] is set. Its [id] is its place in the
+     * queue, and among the operation stack's bubbles ([nextOrder]).
      */
     data class Status(
         val kind: Kind,
@@ -69,8 +69,7 @@ object FileWork {
         val index: Int = 0,
         val count: Int = 1,
         val id: Long = 0,
-        val into: String? = null,
-        val order: Long = id
+        val into: String? = null
     ) {
         /** True until its turn comes. */
         val waiting: Boolean get() = started == null && outcome == null
@@ -141,8 +140,7 @@ object FileWork {
 
     /**
      * Queues [work] of [kind] on [count] items, the first [name], putting them [into] a folder
-     * so named if anywhere, placed among the bubbles at [order] (by default as the newest); it
-     * starts once those before it have ended. Work that throws ends [Outcome.Canceled] or
+     * so named if anywhere, as the newest; it starts once those before it have ended. Work that throws ends [Outcome.Canceled] or
      * [Outcome.Failed] with nothing counted. Returns the operation's id.
      */
     @Synchronized
@@ -151,11 +149,10 @@ object FileWork {
         name: String,
         count: Int = 1,
         into: String? = null,
-        order: Long? = null,
         work: (Progress) -> Outcome
     ): Long {
         val id = nextOrder()
-        state.update { it + Status(kind, name, null, count = count, id = id, into = into, order = order ?: id) }
+        state.update { it + Status(kind, name, null, count = count, id = id, into = into) }
         waiting.addLast(Op(id, count, work))
         pump()
         onStart()

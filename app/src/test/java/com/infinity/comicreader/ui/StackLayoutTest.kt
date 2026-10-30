@@ -10,8 +10,8 @@ class StackLayoutTest {
 
     private fun clip(id: Long) = FileClipboard.Clip(listOf(FileClipboard.Item("/s/$id.cbz", false)), move = id % 2 == 0L, id = id)
 
-    private fun op(id: Long, order: Long = id, outcome: FileWork.Outcome? = null) =
-        FileWork.Status(FileWork.Kind.COPY, "$id.cbz", null, id = id, order = order, outcome = outcome)
+    private fun op(id: Long, outcome: FileWork.Outcome? = null) =
+        FileWork.Status(FileWork.Kind.COPY, "$id.cbz", null, id = id, outcome = outcome)
 
     private fun orders(shown: StackLayout.Shown) = shown.bubbles.map { it.order }
 
@@ -43,11 +43,17 @@ class StackLayoutTest {
     }
 
     @Test
-    fun aPastedPickKeepsItsPlaceAndFinishedOnesGo() {
-        // Pick 1 was pasted as operation 7: it stays above pick 3.
-        val shown = StackLayout.of(listOf(clip(3)), listOf(op(7, order = 1), op(8, outcome = FileWork.Outcome.Done(null))), fab = false)
-        assertEquals(listOf(1L, 3L), orders(shown))
-        assertEquals(Bubble.Work::class, shown.bubbles[0]::class)
-        assertEquals(Bubble.Paste::class, shown.bubbles[1]::class)
+    fun aPastedPickTakesItsPlaceInTheQueueAndFinishedOnesGo() {
+        // Pick 1 was pasted as operation 7: it sits below pick 3, by its place in the queue.
+        val shown = StackLayout.of(listOf(clip(3)), listOf(op(7), op(8, outcome = FileWork.Outcome.Done(null))), fab = false)
+        assertEquals(listOf(3L, 7L), orders(shown))
+        assertEquals(Bubble.Paste::class, shown.bubbles[0]::class)
+        assertEquals(Bubble.Work::class, shown.bubbles[1]::class)
+    }
+
+    @Test
+    fun aPasteAndAnOperationOfOneIdAreTwoBubbles() {
+        val shown = StackLayout.of(listOf(clip(4)), listOf(op(4)), fab = true)
+        assertEquals(2, shown.bubbles.map { it.key }.toSet().size)
     }
 }

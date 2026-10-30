@@ -180,7 +180,8 @@ internal class FileActions(
      * queued operation, asking once for all whose names are taken there: Replace, Keep both,
      * or Skip them (the others are pasted all the same). A copy beside itself, or an item whose
      * name an earlier one takes, keeps both. A pick is pasted once: its Paste turns into the
-     * operation, and only what a move failed at or never reached comes back as a Paste.
+     * operation, newest in the stack, and only what a move failed at or never reached comes
+     * back, as a new Paste.
      */
     fun paste(dir: File, id: Long? = null) {
         val clip = (if (id == null) FileClipboard.clips.value.lastOrNull() else FileClipboard[id])
@@ -268,7 +269,7 @@ internal class FileActions(
         onClipChanged()
         val move = clip.move
         val kind = if (move) FileWork.Kind.MOVE else FileWork.Kind.COPY
-        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir), clip.id) { p ->
+        start(kind, plans.first().item.name, plans.size, folderNameOf(targetDir)) { p ->
             var sourceLeft = false
             val gone = ArrayList<String>()
             // Sources not pasted (yet).
@@ -277,7 +278,7 @@ internal class FileActions(
             var failure: Exception? = null
             fun ended(outcome: FileWork.Outcome): FileWork.Outcome {
                 val left = plans.map { it.item }.filter { it.path in unsettled }
-                if (move && left.isNotEmpty()) FileClipboard.add(clip.copy(items = left))
+                if (move && left.isNotEmpty()) FileClipboard.add(clip.copy(items = left, id = FileWork.nextOrder()))
                 return outcome
             }
             for ((i, plan) in plans.withIndex()) {
@@ -345,10 +346,9 @@ internal class FileActions(
         name: String,
         count: Int,
         into: String? = null,
-        order: Long? = null,
         work: (FileWork.Progress) -> FileWork.Outcome
     ) {
-        FileWork.start(kind, name, count, into, order, work)
+        FileWork.start(kind, name, count, into, work)
         // Asked once, as the first operation starts: operations show their progress there while the app is away.
         notificationAsk.once()
     }

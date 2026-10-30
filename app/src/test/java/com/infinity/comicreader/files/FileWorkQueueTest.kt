@@ -144,15 +144,6 @@ class FileWorkQueueTest {
     }
 
     @Test
-    fun aPasteKeepsThePlaceOfItsBubble() {
-        val pick = FileWork.nextOrder()
-        val later = FileWork.start(FileWork.Kind.DELETE, "x") { FileWork.Outcome.Done(null) }
-        val paste = FileWork.start(FileWork.Kind.COPY, "y", order = pick) { FileWork.Outcome.Done(null) }
-        assertTrue(status(paste).order < status(later).order)
-        assertEquals(status(later).id, status(later).order)
-    }
-
-    @Test
     fun howFarCountsItemsDoneAndTheBytesOfTheCurrentOne() {
         val one = FileWork.Status(FileWork.Kind.COPY, "a", 0)
         assertNull(one.fraction)

@@ -122,6 +122,56 @@ class ListActivityStackTest {
         assertEquals("+1", (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).text.toString())
     }
 
+    /** An operation that runs until [go] lets it end; returns its id once it runs. */
+    private fun held(go: Semaphore): Long {
+        val started = Semaphore(0)
+        val id = FileWork.start(FileWork.Kind.COPY, "held.cbz") {
+            started.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        started.acquire()
+        return id
+    }
+
+    @Test
+    fun aPasteAndAnOperationOfOneIdShowAsTwoBubbles() {
+        val activity = launch()
+        val go = Semaphore(0)
+        val id = held(go)
+        FileClipboard.add(FileClipboard.Clip(listOf(FileClipboard.Item(File(shelf, "one.cbz").absolutePath, false)), move = true, id = id))
+        idle()
+        assertEquals(setOf(Bubble.Work::class, Bubble.Paste::class), activity.stack.buttons().map { it.first::class }.toSet())
+        assertEquals(2, activity.findViewById<android.widget.LinearLayout>(R.id.operation_stack).childCount)
+        go.release()
+        waitFor { FileWork.operations.value.isEmpty() }
+    }
+
+    @Test
+    fun pastesQueueAndStackInTheOrderTapped() {
+        val activity = launch()
+        val go = Semaphore(0)
+        val first = held(go)
+        val from = File(shelf, "from").apply { mkdirs() }
+        for (name in listOf("a.cbz", "b.cbz")) File(from, name).writeBytes(ByteArray(10))
+        val a = FileClipboard.Clip(listOf(FileClipboard.Item(File(from, "a.cbz").absolutePath, false)), move = true)
+        val b = FileClipboard.Clip(listOf(FileClipboard.Item(File(from, "b.cbz").absolutePath, false)), move = false)
+        FileClipboard.add(a)
+        FileClipboard.add(b)
+        idle()
+        fun tapPaste(clip: FileClipboard.Clip) = activity.stack.buttons().first { (it.first as? Bubble.Paste)?.clip?.id == clip.id }.second.performClick()
+        tapPaste(b)
+        waitFor { FileWork.operations.value.size == 2 }
+        tapPaste(a)
+        waitFor { FileWork.operations.value.size == 3 }
+        val shown = activity.stack.buttons().map { (it.first as Bubble.Work).status }
+        assertEquals(FileWork.operations.value.map { it.id }, shown.map { it.id })
+        assertEquals(listOf(first), shown.filter { it.running }.map { it.id })
+        assertEquals(listOf(FileWork.Kind.COPY, FileWork.Kind.MOVE), shown.drop(1).map { it.kind })
+        go.release()
+        waitFor { FileWork.operations.value.isEmpty() }
+    }
+
     @Test
     fun theRunningBubbleDarkensWithARingWaitingOnesAreGrayAndALongPressCancels() {
         val activity = launch()

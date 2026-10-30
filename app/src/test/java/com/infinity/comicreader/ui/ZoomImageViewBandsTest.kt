@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.Activity
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
 import android.os.Looper
 import android.widget.FrameLayout
@@ -87,6 +88,18 @@ class ZoomImageViewBandsTest {
         // The page's last screen and half a screen above it: rows 6800..8000.
         assertEquals(setOf(6, 7), v.bandsShown.keys)
         assertTrue(v.bandsShown.getValue(7).height == 8000 - 7 * ZoomImageView.BAND_HEIGHT)
+    }
+
+    @Test
+    fun bandsDroppedAreFreedOnceAFrameWithoutThemIsDrawn() {
+        val detail = Bands()
+        val v = shown(detail)
+        val first = v.bandsShown.getValue(0)
+        while (v.scrollPage(PageAdapter.TALL_STEP)) pass(400)
+        assertFalse(0 in v.bandsShown)
+        v.draw(Canvas(Bitmap.createBitmap(400, 800, Bitmap.Config.ARGB_8888)))
+        assertTrue(first.isRecycled)
+        assertTrue(v.bandsShown.values.none { it.isRecycled })
     }
 
     @Test

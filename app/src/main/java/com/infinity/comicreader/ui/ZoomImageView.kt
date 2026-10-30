@@ -728,6 +728,7 @@ class ZoomImageView @JvmOverloads constructor(
         stopFling()
         dropDetail()
         dropBands()
+        freeRetired()
         clearShaders(pageShaders)
     }
 
@@ -844,6 +845,7 @@ class ZoomImageView @JvmOverloads constructor(
         if ((hole == null || !covers(hole)) && !bandsCover(canvas)) drawPage(canvas, hole)
         if (d != null) drawBands(canvas, d)
         if (tile != null && d != null && hole != null) drawDetail(canvas, tile, d, tileAtOneToOne)
+        freeRetired()
     }
 
     /**
@@ -930,6 +932,9 @@ class ZoomImageView @JvmOverloads constructor(
 
     /** Bands drawn, by number, the renders running for others, and those that failed. */
     private val bands = HashMap<Int, Bitmap>()
+
+    /** Bands no longer drawn: freed once a frame without them is drawn ([freeRetired]), not left to the collector. */
+    private val retired = ArrayList<Bitmap>()
     private val bandRenders = HashMap<Int, () -> Unit>()
     private val bandsFailed = HashSet<Int>()
 
@@ -1000,7 +1005,11 @@ class ZoomImageView @JvmOverloads constructor(
         val count = ceil(fh / step).toInt()
         val want = bandRange(shownTop - screen * WANT_BEFORE, shownBottom + screen * WANT_AFTER, step, count)
         val keep = bandRange(shownTop - screen * KEEP_BEFORE, shownBottom + screen * KEEP_AFTER, step, count)
-        if (bands.keys.removeAll { it !in keep }) invalidate()
+        val far = bands.keys.filter { it !in keep }
+        if (far.isNotEmpty()) {
+            far.forEach { retired += bands.remove(it)!! }
+            invalidate()
+        }
         bandRenders.keys.filter { it !in want }.forEach { bandRenders.remove(it)?.invoke() }
         val source = details ?: return
         for (k in want) {
@@ -1019,7 +1028,10 @@ class ZoomImageView @JvmOverloads constructor(
             }
             val cancel = source.renderBand(Region(0.0, y / fh, 1.0, h / fh), fw, h, dropped) { band ->
                 delivered = true
-                if (round != bandRound) return@renderBand
+                if (round != bandRound) {
+                    band?.recycle()
+                    return@renderBand
+                }
                 bandRenders.remove(k)
                 if (band == null) bandsFailed += k else bands[k] = band
                 invalidate()
@@ -1034,6 +1046,13 @@ class ZoomImageView @JvmOverloads constructor(
         return minOf(BAND_HEIGHT.toLong(), Target.MAX_OUTPUT_PIXELS / fw).toInt()
     }
 
+    /** Frees the [retired] bands, which nothing draws any more. */
+    private fun freeRetired() {
+        if (retired.isEmpty()) return
+        retired.forEach { it.recycle() }
+        retired.clear()
+    }
+
     /** Forgets every band and stops their renders. */
     private fun dropBands() {
         bandRound++
@@ -1045,6 +1064,7 @@ class ZoomImageView @JvmOverloads constructor(
         }
         clearShaders(bandShaders)
         if (bands.isNotEmpty()) {
+            retired += bands.values
             bands.clear()
             invalidate()
         }

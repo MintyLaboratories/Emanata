@@ -540,7 +540,13 @@ class PageAdapter(
             if (holder.images.size > 1) holder.images[slot].visibility = if (part == null) View.GONE else View.VISIBLE
             bindImage(holder, slot, part)
         }
-        prefetchAfter(position)
+        // The first pages shown go first: reading ahead waits until they are decoded.
+        if (!shownOnce && holder.decodes.any { it != null && it.deferred.isActive }) {
+            prefetchFrom = position
+            preloadWaits = true
+        } else {
+            prefetchAfter(position)
+        }
     }
 
     /**
@@ -1073,6 +1079,11 @@ class PageAdapter(
             scope.launch {
                 if (pending[key] === entry) pending.remove(key)
                 if (error == null) onLoaded?.invoke(pageIndex)
+                if (error == null && entry.waiters > 0) shownOnce = true
+                if (preloadWaits && !released && pending.values.none { it.waiters > 0 && it.deferred.isActive }) {
+                    preloadWaits = false
+                    prefetchAfter(prefetchFrom)
+                }
             }
         }
         return entry
@@ -1080,6 +1091,12 @@ class PageAdapter(
 
     /** The item [prefetchAfter] last preloaded after, or -1. */
     private var prefetchFrom = -1
+
+    /** True while reading ahead of [prefetchFrom] waits for the first pages shown to decode. */
+    private var preloadWaits = false
+
+    /** True once a page shown has decoded; from then on reading ahead runs beside the pages shown. */
+    private var shownOnce = false
 
     /** Decodes the [preload] parts on the items after [position] into the cache. */
     private fun prefetchAfter(position: Int) {

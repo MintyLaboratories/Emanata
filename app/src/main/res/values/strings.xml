@@ -607,6 +607,7 @@
     <string name="scope_folder">This folder</string>
     <string name="scope_all">All books</string>
     <string name="scope_folder_hint">Layout changes stay with this folder</string>
+    <string name="scope_book_hint">Layout changes stay with this book, as they did with the folder packed into it</string>
     <string name="scope_all_hint">Layout changes apply to every book; a chosen direction stays with its folder</string>
     <string name="sheet_layout">Layout</string>
     <string name="sheet_color">Color</string>

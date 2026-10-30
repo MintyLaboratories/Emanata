@@ -16,8 +16,8 @@ import java.time.LocalDate
 enum class LibraryList { FAVORITES, HISTORY, BOOKMARKS }
 
 /**
- * Favorites, read marks, reading history, bookmarks, per-folder layouts, per-book
- * color adjustments, hidden pages and file name charsets, and reading statistics, persisted
+ * Favorites, read marks, reading history, bookmarks, per-folder layouts (and books' own,
+ * from folders packed into them), per-book color adjustments, hidden pages and file name charsets, and reading statistics, persisted
  * as JSON documents in SharedPreferences.
  *
  * Everything kept for a book is kept by its [BookId], so it follows the book moved,
@@ -598,6 +598,20 @@ class Library(context: Context) {
         }
     }
 
+    /** The layout book [id] keeps as its own, as its folder would ([FolderLayout]); null when it has none. */
+    fun bookLayout(id: BookId): FolderLayout? =
+        readObject(KEY_BOOK_LAYOUTS).optJSONObject(id.hex)?.let { FolderLayout.decode(it) }
+
+    /** Keeps [layout] as [book]'s own, or forgets it when null. */
+    fun setBookLayout(book: BookRef, layout: FolderLayout?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_BOOK_LAYOUTS)
+            if (layout == null) all.remove(book.id.hex) else all.put(book.id.hex, layout.encode())
+            sp.edit().putString(KEY_BOOK_LAYOUTS, all.toString()).apply()
+            if (layout != null) keep(book)
+        }
+    }
+
     // ---------------- per-book color adjustments ----------------
     /** The adjustments set for book [id], or null when it uses the defaults. */
     fun adjustmentsFor(id: BookId): Adjustments? {
@@ -745,7 +759,7 @@ class Library(context: Context) {
         val marks = readArray(KEY_BOOKMARKS).ids()
         val hidden = hiddenCounts()
         val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) +
-            readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids()
+            readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
         return all.associateWith { id ->
             Kept(
@@ -1054,6 +1068,9 @@ class Library(context: Context) {
         private const val KEY_TALL = "tall_strip"
         private const val KEY_TALL_FOLDERS = "tall_folders"
 
+        /** Books' own layouts, from the folders packed into them ([bookLayout]). */
+        private const val KEY_BOOK_LAYOUTS = "book_layouts"
+
         /** Where each book with anything kept was last seen ([seenAt]). */
         private const val KEY_BOOKS = "books"
 
@@ -1070,7 +1087,7 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS)
+        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_BOOK_LAYOUTS)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
         private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS)
@@ -1079,12 +1096,12 @@ class Library(context: Context) {
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
 
         /** Documents kept by book ID. */
-        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL)
+        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS)
 
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS, KEY_TALL
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS
         )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */

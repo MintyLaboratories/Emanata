@@ -376,8 +376,11 @@ class ViewerActivity : AppCompatActivity() {
     private var autoCrop = false
     private var spreadDisplay = SpreadDisplay.MERGE
 
-    /** What the open book's folder keeps of the layout; null when it follows the defaults. */
+    /** What the open book's folder keeps of the layout, or the book itself ([layoutOwn]); null when it follows the defaults. */
     private var folderLayout: FolderLayout? = null
+
+    /** True while [folderLayout] is the open book's own, from a folder packed into it: kept for the book, not its folder. */
+    private var layoutOwn = false
 
     /** The direction the open book's contents suggest, when "Detect reading direction" looked. */
     private var detection: DirectionDetection.Detected? = null
@@ -979,7 +982,9 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun resolveLayout() {
-        folderLayout = layoutFolder()?.let { library.folderLayout(it) }
+        val own = if (layoutFolder() != null) bookId?.let { library.bookLayout(it) } else null
+        layoutOwn = own != null
+        folderLayout = own ?: layoutFolder()?.let { library.folderLayout(it) }
         val defaults = ReaderLayout.of(prefs)
         showLayout(folderLayout?.over(defaults) ?: defaults)
         applyDetection()
@@ -1102,7 +1107,8 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun setFolder(folder: String, layout: FolderLayout?) {
         folderLayout = layout
-        library.setFolderLayout(folder, layout)
+        val own = if (layoutOwn) book() else null
+        if (own != null) library.setBookLayout(own, layout) else library.setFolderLayout(folder, layout)
     }
 
     /** True while the folder keeps its whole layout ("Apply to: This folder"). */
@@ -1212,6 +1218,8 @@ class ViewerActivity : AppCompatActivity() {
                 bookId = found
                 refreshFavorites()
                 loadAdjustments()
+                // A book keeping its own layout shows it rather than its folder's.
+                if (layoutOwn || (layoutFolder() != null && found?.let { library.bookLayout(it) } != null)) resolveLayout()
             }
             book()?.let { library.seen(it) }
             chapters = siblings
@@ -3397,7 +3405,7 @@ class ViewerActivity : AppCompatActivity() {
             view.findViewById<View>(R.id.btn_dir_auto).visibility = if (scoped) View.VISIBLE else View.GONE
             view.findViewById<TextView>(R.id.sheet_dir_hint).text = directionInfo()
             view.findViewById<TextView>(R.id.sheet_scope_hint)
-                .setText(if (folderScope()) R.string.scope_folder_hint else R.string.scope_all_hint)
+                .setText(if (!folderScope()) R.string.scope_all_hint else if (layoutOwn) R.string.scope_book_hint else R.string.scope_folder_hint)
             // "Fit screen" reads as fit width in a column, which reads top to bottom only; two-page and
             // spreads in one file are paged left or right only, split or merged one page a screen.
             view.findViewById<View>(R.id.btn_fit_screen).isEnabled = mode == MODE_PAGED

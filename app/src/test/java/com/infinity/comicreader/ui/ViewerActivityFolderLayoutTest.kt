@@ -18,6 +18,7 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -125,6 +126,23 @@ class ViewerActivityFolderLayoutTest {
         ReaderSheet(viewer).tap(R.id.btn_scope_all)
         assertEquals(FolderLayout.Direction("ttb"), folder())
         assertEquals(true, viewer.paged())
+    }
+
+    @Test
+    fun aBooksOwnLayoutShowsAndKeepsItsChangesOverItsFolders() {
+        library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("ltr"))
+        val own = ref(book)
+        library.setBookLayout(own, FolderLayout.Direction("rtl"))
+        val viewer = launch()
+        assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.findViewById<View>(R.id.viewer_pager).layoutDirection)
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_scope_folder)
+        // "This folder" freezes the book's own layout, not its folder's.
+        assertEquals(FolderLayout.Frozen(ReaderLayout(dir = "rtl")), library.bookLayout(own.id))
+        assertEquals(FolderLayout.Direction("ltr"), folder())
+        assertEquals(viewer.getString(R.string.scope_book_hint), sheet.view<TextView>(R.id.sheet_scope_hint).text.toString())
+        sheet.tap(R.id.btn_dir_ttb)
+        assertEquals("ttb", library.bookLayout(own.id)!!.dir)
+        assertEquals(FolderLayout.Direction("ltr"), folder())
     }
 
     @Test

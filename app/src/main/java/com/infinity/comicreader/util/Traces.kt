@@ -14,11 +14,22 @@ object Traces {
     /** Longest section name the platform takes. */
     const val MAX_NAME = 127
 
+    /** False where [Trace] is a stub that throws (plain JVM unit tests): nothing is traced there. */
+    @PublishedApi
+    internal val usable: Boolean = try {
+        Trace.beginSection("Traces")
+        Trace.endSection()
+        true
+    } catch (e: RuntimeException) {
+        false
+    }
+
     /** True while a trace records the app; always true below Android 10, which cannot tell. */
-    fun recording(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Trace.isEnabled()
+    fun recording(): Boolean = usable && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Trace.isEnabled())
 
     /** Runs [block] inside the section [name]. */
     inline fun <T> section(name: String, block: () -> T): T {
+        if (!usable) return block()
         Trace.beginSection(name.take(MAX_NAME))
         try {
             return block()
@@ -36,10 +47,10 @@ object Traces {
 
     /** One async section ([queued]). */
     class Async internal constructor(private val name: String, private val cookie: Int) {
-        private val open = AtomicBoolean(true)
+        private val open = AtomicBoolean(usable)
 
         init {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.beginAsyncSection(name, cookie)
+            if (usable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.beginAsyncSection(name, cookie)
         }
 
         /** Ends the section; later calls do nothing. */

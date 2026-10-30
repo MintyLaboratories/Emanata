@@ -391,6 +391,8 @@ internal class FileJobs(
                     val (target, replace) = packTarget(plan, dir.parentFile ?: throw IOException("No folder"))
                     var removed = false
                     val placer = Compactor.Placer { result, part, swap ->
+                        // Images with copies elsewhere keep their favorites and bookmarks there.
+                        val shared = BookIds.elsewhere(ids.filterNotNull().toSet(), plan.folder).keys
                         // Neither an image nor the file replaced open meanwhile: the reader waits.
                         OpenBooks.unlessOpenIn(plan.folder) {
                             OpenBooks.unlessOpen(target.absolutePath) {
@@ -404,9 +406,12 @@ internal class FileJobs(
                                 }
                                 if (replace) BookCaches.deleted(app, library, target.absolutePath)
                                 val folderPages = Compactor.pagesOf(images.map { it.name to it.length() })
-                                val byPage = arrayOfNulls<BookId>(result.pageCount)
-                                folderPages.forEachIndexed { k, at -> result.moves.getOrNull(k)?.takeIf { it in byPage.indices }?.let { byPage[it] = ids[at] } }
-                                library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, target.absolutePath), result.pageCount)
+                                val byPage = arrayOfNulls<BookRef>(result.pageCount)
+                                folderPages.forEachIndexed { k, at ->
+                                    val ref = ids[at]?.let { BookRef(it, images[at].absolutePath) }
+                                    result.moves.getOrNull(k)?.takeIf { it in byPage.indices }?.let { byPage[it] = ref }
+                                }
+                                library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, target.absolutePath), result.pageCount, shared)
                                 removed = removeFolder(dir, images, stats)
                             }
                         }

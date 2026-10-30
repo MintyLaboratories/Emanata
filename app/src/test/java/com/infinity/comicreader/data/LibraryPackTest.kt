@@ -33,7 +33,7 @@ class LibraryPackTest {
     private val book = BookRef(BookId(0xb00), "/books/Loose.cbz")
     private val other = BookRef(BookId(0xc00), "/books/Other.cbz")
 
-    private fun carry() = library.carryFolder(folder, images.map { it.id }, book, images.size)
+    private fun carry(shared: Set<BookId> = emptySet()) = library.carryFolder(folder, images, book, images.size, shared)
 
     @Test
     fun theFoldersFavoriteBecomesTheBooksInItsPlace() {
@@ -119,6 +119,39 @@ class LibraryPackTest {
         library.addHistory(HistoryItem(images[2].path, "3.jpg", 0, 1, 100, images[2].id))
         carry()
         assertEquals(20, library.adjustmentsFor(book.id)!!.brightness)
+    }
+
+    @Test
+    fun imagesCopiedElsewhereKeepTheirFavoriteAndBookmarks() {
+        library.toggleFavorite(images[1])
+        library.toggleFavorite(images[2])
+        library.addBookmark(Bookmark(images[1].path, "2.jpg", 0, "kept", 10, images[1].id))
+        library.addBookmark(Bookmark(images[2].path, "3.jpg", 0, "moved", 20, images[2].id))
+        carry(shared = setOf(images[1].id))
+        assertTrue(library.isFavorite(book.id))
+        assertTrue(library.isFavorite(images[1].id))
+        assertFalse(library.isFavorite(images[2].id))
+        assertEquals(listOf("kept"), library.bookmarksFor(images[1].id).map { it.note })
+        assertTrue(library.bookmarksFor(images[2].id).isEmpty())
+        assertEquals(listOf(1 to "kept", 2 to "moved"), library.bookmarksFor(book.id).map { it.page to it.note })
+    }
+
+    @Test
+    fun identicalImagesAreToldApartByName() {
+        // Pages 1 and 3 are one image: what was kept under the third's name goes to page 3.
+        val same = images[0].id
+        val pages = listOf(images[0], images[1], BookRef(same, "$folder/3.jpg"), images[3])
+        library.addBookmark(Bookmark("$folder/3.jpg", "3.jpg", 0, "third", 10, same))
+        library.addHistory(HistoryItem("$folder/3.jpg", "3.jpg", 0, 1, 100, same))
+        library.setHiddenPages(images[1], setOf(0), 1)
+        library.carryFolder(folder, pages, book, pages.size)
+        // Counted as shown: page 2 is hidden.
+        assertEquals(listOf(1), library.bookmarksFor(book.id).map { it.page })
+        assertEquals(1, library.historyFor(book.id)!!.page)
+        // Hidden by ID: every copy of a hidden image is hidden.
+        library.setHiddenPages(BookRef(same, "$folder/1.jpg"), setOf(0), 1)
+        library.carryFolder(folder, pages, book, pages.size)
+        assertEquals(setOf(0, 1, 2), library.hiddenPages(book.id))
     }
 
     @Test

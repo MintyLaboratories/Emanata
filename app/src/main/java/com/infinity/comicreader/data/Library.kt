@@ -842,35 +842,47 @@ class Library(context: Context) {
 
     /**
      * Hands what was kept for [folder], a folder of loose images, and for its images to [to],
-     * the book they were packed into, of [pageCount] pages: page `p` was the image of ID
-     * [pages]`[p]` (null where none is known). The folder's favorite, layout and answer to
-     * reading tall pages as a strip become the book's, as does an image's favorite; the book
-     * is read when every image was; its history resumes at the image read last; bookmarks
-     * and hidden images move to their pages; its adjustments are the image's read last, else
-     * the first page's with its own. What [to] kept of these before is replaced; the images
-     * keep theirs, for copies elsewhere.
+     * the book they were packed into, of [pageCount] pages: page `p` was the image [pages]`[p]`
+     * (null where its ID is not known). The folder's favorite, layout and answer to reading
+     * tall pages as a strip become the book's, as does an image's favorite; the book is read
+     * when every image was; its history resumes at the image read last; bookmarks and hidden
+     * images move to their pages; its adjustments are the image's read last, else the first
+     * page's with its own. Identical images are told apart by the name a row was kept under.
+     * What [to] kept of these before is replaced. Images [shared] by copies elsewhere keep
+     * their favorites and bookmarks, the book taking copies of them; the images keep the
+     * rest, for copies elsewhere.
      */
-    fun carryFolder(folder: String, pages: List<BookId?>, to: BookRef, pageCount: Int) {
+    fun carryFolder(folder: String, pages: List<BookRef?>, to: BookRef, pageCount: Int, shared: Set<BookId> = emptySet()) {
         synchronized(LOCK) {
             val toHex = to.id.hex
-            val at = HashMap<BookId, Int>()
-            pages.forEachIndexed { p, id -> if (id != null && p < pageCount) at.putIfAbsent(id, p) }
+            val at = HashMap<BookId, MutableList<Int>>()
+            pages.forEachIndexed { p, ref -> if (ref != null && p < pageCount) at.getOrPut(ref.id) { ArrayList() } += p }
+            // The page of image [id] kept under [name]: of identical images, the one so named, else the first.
+            fun pageOf(id: BookId?, name: String): Int? {
+                val all = at[id ?: return null] ?: return null
+                return all.firstOrNull { File(pages[it]!!.path).name == name } ?: all.first()
+            }
             fun ofFolder(t: String) = t == folder || bookToken(t)?.let { it in at } == true
+            fun keeps(t: String) = bookToken(t)?.let { it in shared } == true
             val e = sp.edit()
             val favorites = readStringList(KEY_FAVORITES)
             val token = tokenOf(to.id)
             if (favorites.any(::ofFolder)) {
                 favorites.remove(token)
-                favorites[favorites.indexOfFirst(::ofFolder)] = token
-                favorites.remove(folder)
-                e.putString(KEY_FAVORITES, JSONArray(favorites).toString())
+                val place = favorites.indexOfFirst(::ofFolder)
+                val out = ArrayList<String>()
+                for ((i, t) in favorites.withIndex()) {
+                    if (i == place) out += token
+                    if (!ofFolder(t) || keeps(t)) out += t
+                }
+                e.putString(KEY_FAVORITES, JSONArray(out).toString())
             }
             val read = readIds(KEY_READ)
-            val allRead = pageCount > 0 && pages.size >= pageCount && pages.take(pageCount).all { it != null && it in read }
+            val allRead = pageCount > 0 && pages.size >= pageCount && pages.take(pageCount).all { it != null && it.id in read }
             if (allRead) read.add(to.id) else read.remove(to.id)
             e.putString(KEY_READ, JSONArray(read.map { it.hex }).toString())
             val hiddenAll = readObject(KEY_HIDDEN)
-            val hidden = at.filterKeys { id -> 0 in parseHidden(hiddenAll.optJSONArray(id.hex)) }.values.toSortedSet()
+            val hidden = at.filterKeys { id -> 0 in parseHidden(hiddenAll.optJSONArray(id.hex)) }.values.flatten().toSortedSet()
             if (hidden.isEmpty()) hiddenAll.remove(toHex) else hiddenAll.put(toHex, JSONArray(hidden.toList()))
             e.putString(KEY_HIDDEN, hiddenAll.toString())
             // Pages as shown, as history and bookmarks count them; every page when all are hidden.
@@ -886,7 +898,7 @@ class Library(context: Context) {
             for (i in 0 until history.length()) {
                 val o = history.optJSONObject(i) ?: continue
                 if (o.optString("id") == toHex) continue
-                val p = BookId.parse(o.optString("id"))?.let { at[it] }
+                val p = pageOf(BookId.parse(o.optString("id")), o.optString("name"))
                 if (p != null) {
                     if (place < 0) place = rows.size
                     if (o.optLong("time") > lastTime) {
@@ -907,12 +919,11 @@ class Library(context: Context) {
             for (i in 0 until marks.length()) {
                 val o = marks.optJSONObject(i) ?: continue
                 if (o.optString("id") == toHex) continue
-                val p = BookId.parse(o.optString("id"))?.let { at[it] }
-                if (p == null) {
-                    others += o
-                    continue
-                }
-                if (markPlace < 0) markPlace = others.size
+                val id = BookId.parse(o.optString("id"))
+                val p = pageOf(id, o.optString("name"))
+                if (p != null && markPlace < 0) markPlace = others.size
+                if (p == null || id in shared) others += o
+                if (p == null) continue
                 val page = shown(p)
                 val there = moved[page]
                 if (there == null) {
@@ -924,7 +935,7 @@ class Library(context: Context) {
             if (markPlace >= 0) others.addAll(markPlace, moved.values)
             e.putString(KEY_BOOKMARKS, JSONArray(others).toString())
             val adjust = readObject(KEY_ADJUST)
-            val own = (listOfNotNull(pages.getOrNull(lastPage)) + pages.filterNotNull()).firstOrNull { adjust.has(it.hex) }
+            val own = (listOfNotNull(pages.getOrNull(lastPage)) + pages.filterNotNull()).map { it.id }.firstOrNull { adjust.has(it.hex) }
             val adjustments = own?.let { adjust.get(it.hex) }
             adjust.remove(toHex)
             adjustments?.let { adjust.put(toHex, it) }

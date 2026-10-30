@@ -138,6 +138,41 @@ class FileJobsPackTest {
     }
 
     @Test
+    fun imagesCopiedElsewhereKeepTheirFavoriteAndBookmarks() {
+        val elsewhere = File(tmp.root, "Elsewhere").apply { mkdirs() }
+        val copy = ref(File(elsewhere, "2.jpg").apply { writeBytes(jpeg(2)) })
+        val dir = folder("Loose", 3)
+        val images = (1..3).map { ref(File(dir, "$it.jpg")) }
+        library.setFavorite(images[1], true)
+        library.setFavorite(images[2], true)
+        library.addBookmark(Bookmark(images[1].path, "2.jpg", 0, "kept", 10, images[1].id))
+        library.addBookmark(Bookmark(images[2].path, "3.jpg", 0, "moved", 20, images[2].id))
+        pack(plan(dir)) as FileWork.Outcome.Done
+        val book = bookId(File(tmp.root, "Loose.cbz"))
+        assertTrue(library.isFavorite(book))
+        // The copy's image is still a favorite, bookmarked, seen where it is; the other one's went to the book.
+        assertTrue(library.isFavorite(copy.id))
+        assertFalse(library.isFavorite(images[2].id))
+        assertEquals(listOf("kept"), library.bookmarksFor(copy.id).map { it.note })
+        assertEquals(copy.path, library.pathOf(copy.id))
+        assertEquals(listOf(1 to "kept", 2 to "moved"), library.bookmarksFor(book).map { it.page to it.note })
+    }
+
+    @Test
+    fun identicalImagesInTheFolderKeepTheirOwnPages() {
+        val dir = folder("Loose", 2)
+        // 3.jpg is 1.jpg again: its bookmark and history go to page 3.
+        val third = File(dir, "3.jpg").apply { writeBytes(jpeg(1)) }
+        val id = ref(third).id
+        library.addBookmark(Bookmark(third.absolutePath, "3.jpg", 0, "third", 10, id))
+        library.addHistory(HistoryItem(third.absolutePath, "3.jpg", 0, 1, 100, id))
+        pack(plan(dir)) as FileWork.Outcome.Done
+        val book = bookId(File(tmp.root, "Loose.cbz"))
+        assertEquals(listOf(2), library.bookmarksFor(book).map { it.page })
+        assertEquals(2, library.historyFor(book)!!.page)
+    }
+
+    @Test
     fun packCompactedMakesItsPagesSmaller() {
         val dir = folder("Loose", 2)
         val outcome = pack(plan(dir), compacted = true) as FileWork.Outcome.Done

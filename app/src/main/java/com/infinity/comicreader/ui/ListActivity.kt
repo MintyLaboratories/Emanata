@@ -1891,11 +1891,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The ⋮ menu's items while it shows; for tests. */
     internal val moreMenu: ViewGroup? get() = morePopup?.contentView as? ViewGroup
 
-    /** Runs ⋮ menu item [action] on the selection, which ends. */
+    /** Runs ⋮ menu item [action] on the selection, which ends; for one that asks first, once confirmed. */
     private fun onMoreAction(action: MoreAction) {
         val entries = selection.entries
         val one = entries.singleOrNull()
-        endSelection()
+        val asks = action == MoreAction.COMPACT || action == MoreAction.MAKE_COMPATIBLE
+        if (!asks) endSelection()
         when (action) {
             MoreAction.MARK_READ -> markBooks(entries, read = true)
             MoreAction.MARK_UNREAD -> markBooks(entries, read = false)
@@ -1910,7 +1911,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
             MoreAction.PEEK -> one?.let { peekFromMenu(it) }
             MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE ->
-                fileActions.rebuild(entries.filter(::canRebuild).map { it.path }, compatible = action == MoreAction.MAKE_COMPATIBLE)
+                fileActions.rebuild(entries.filter(::canRebuild).map { it.path }, compatible = action == MoreAction.MAKE_COMPATIBLE) { endSelection() }
         }
     }
 

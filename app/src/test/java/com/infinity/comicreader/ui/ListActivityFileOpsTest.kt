@@ -299,9 +299,23 @@ class ListActivityFileOpsTest {
         dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(Prefs(context).compactInPlace)
+        assertFalse(activity.selection.active)
         // Queued; with no libjxl on the JVM it fails, leaving the book as it was.
         settle()
         assertEquals(context.getString(R.string.file_failed, "JPEG XL is not available"), ShadowToast.getTextOfLatestToast())
+        assertArrayEquals(bytes, book.readBytes())
+    }
+
+    @Test
+    fun cancelingCompactKeepsTheSelection() {
+        val activity = launch()
+        activity.select(book.absolutePath)
+        activity.moreItems()
+        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        idle()
+        assertTrue(activity.selection.active)
         assertArrayEquals(bytes, book.readBytes())
     }
 

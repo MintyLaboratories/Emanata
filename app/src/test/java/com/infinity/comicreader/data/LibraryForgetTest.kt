@@ -91,13 +91,14 @@ class LibraryForgetTest {
     }
 
     @Test
-    fun clearingLibraryDataKeepsFolderLayoutsAndStatistics() {
+    fun clearingLibraryDataClearsFolderLayoutsAndKeepsStatistics() {
         fill()
+        assertTrue(library.folderLayout("/storage/emulated/0/Comics") != null)
         library.clearLibraryData()
         assertTrue(library.kept().isEmpty())
         assertTrue(library.favorites().isEmpty())
         assertTrue(library.seenAt().isEmpty())
-        assertTrue(library.folderLayout("/storage/emulated/0/Comics") != null)
+        assertNull(library.folderLayout("/storage/emulated/0/Comics"))
         assertEquals(60, library.stats().seconds)
     }
 

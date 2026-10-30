@@ -922,7 +922,7 @@
     <string name="pref_clear_cache">Clear cache</string>
     <string name="pref_cache_used">%1$s, all made again as needed</string>
     <string name="pref_clear_library">Clear library data</string>
-    <string name="pref_clear_library_desc">Favorites, read marks, history, bookmarks, hidden pages and books\' own settings</string>
+    <string name="pref_clear_library_desc">Everything kept about your books and folders: favorites, read marks, history, bookmarks, hidden pages and layouts</string>
     <string name="pref_forget_missing">Forget missing books</string>
     <string name="pref_forget_missing_desc">Find books kept in your library that no location holds any more, and choose which to forget</string>
     <string name="pref_reset">Reset all settings</string>
@@ -942,7 +942,7 @@
     <string name="confirm_clear_cache_title">Clear cache?</string>
     <string name="confirm_clear_cache_msg">Deletes covers, page previews, page sizes and seams, book facts, the Book ID index, network copies, share listings and copies of nested archives (%1$s). Each is made again when next needed, reading books again for it, on shares too.</string>
     <string name="confirm_clear_library_title">Clear library data?</string>
-    <string name="confirm_clear_library_msg">Deletes your favorites, read marks, history, bookmarks, hidden pages and every book\'s own settings, and the links of books you shared. This cannot be undone: export a backup first to keep them. Folder layouts, reading statistics, settings and network shares stay.</string>
+    <string name="confirm_clear_library_msg">Deletes everything kept about your books and folders: favorites, read marks, history, bookmarks, hidden pages, every book\'s and folder\'s own settings, and the links of books you shared. This cannot be undone: export a backup first to keep them. Reading statistics, settings and network shares stay.</string>
     <string name="confirm_clear_library_check">Delete them for good</string>
     <string name="confirm_clear_library_export">Export first</string>
     <string name="confirm_reset_title">Reset all settings?</string>

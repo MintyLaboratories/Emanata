@@ -54,6 +54,13 @@ class LibraryTallStripTest {
     }
 
     @Test
+    fun clearingLibraryDataForgetsFoldersAnswers() {
+        library.setFolderTallStrip("/books/strip", false)
+        library.clearLibraryData()
+        assertNull(library.folderTallStrip("/books/strip"))
+    }
+
+    @Test
     fun answersComeBackWithABackup() {
         library.setTallStrip(a, false)
         library.setFolderTallStrip("/books/strip", true)

@@ -661,10 +661,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Clear cache** (showing the space it takes): covers, page previews, page
   sizes, seams and pages seen, book facts, the Book ID index, network copies,
   share listings and nested archives, all made again as needed. **Clear library
-  data**: favorites, read marks, history, bookmarks, hidden pages, books' own
-  settings and shared-book links; it offers Export first and clears only once
-  "Delete them for good" is ticked. Also clear history, clear bookmarks, reset
-  all settings; every Clear or Reset asks first. Resetting settings keeps
+  data**: everything kept about your books and folders (favorites, read marks,
+  history, bookmarks, hidden pages, books' and folders' own settings, tall-page
+  answers) and shared-book links, but not reading statistics; it offers Export
+  first and clears only once "Delete them for good" is ticked. Also clear
+  history, clear bookmarks, reset all settings; every Clear or Reset asks first. Resetting settings keeps
   per-book adjustments and reading progress.
 - About: version, source, upstream credit, the license and third-party licenses.
 

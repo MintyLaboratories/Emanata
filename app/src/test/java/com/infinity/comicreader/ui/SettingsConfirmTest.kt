@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -139,12 +140,15 @@ class SettingsConfirmTest {
     }
 
     @Test
-    fun clearLibraryDataNeedsItsBoxTickedAndKeepsLayoutsAndSettings() {
+    fun clearLibraryDataNeedsItsBoxTickedAndKeepsStatisticsAndSettings() {
         prefs.filter = "sepia"
         library.setRead(one, true)
         library.addBookmark(Bookmark(one.path, "one.cbz", 3, "", 1L, one.id))
         library.setFolderLayout("/books/attic", com.infinity.comicreader.data.FolderLayout.Direction("rtl"))
+        library.setFolderTallStrip("/books/strip", true)
+        library.addReading(60, 4)
         val asked = tap("pref_clear_library")
+        assertTrue(asked.message().contains("everything kept about your books and folders"))
         val clear = asked.getButton(DialogInterface.BUTTON_POSITIVE)
         assertFalse(clear.isEnabled)
         asked.findViewById<android.widget.CheckBox>(R.id.dialog_check)!!.performClick()
@@ -153,7 +157,9 @@ class SettingsConfirmTest {
         awaitUntil { ShadowToast.getTextOfLatestToast() != null }
         assertFalse(library.isRead(one.id))
         assertTrue(library.bookmarks().isEmpty())
-        assertTrue(library.folderLayout("/books/attic") != null)
+        assertNull(library.folderLayout("/books/attic"))
+        assertNull(library.folderTallStrip("/books/strip"))
+        assertEquals(60, library.stats().seconds)
         assertEquals("sepia", prefs.filter)
     }
 

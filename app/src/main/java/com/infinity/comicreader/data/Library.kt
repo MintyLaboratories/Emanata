@@ -986,14 +986,14 @@ class Library(context: Context) {
 
     /**
      * Clears what cannot be made again: favorites, read marks, history, bookmarks, hidden
-     * pages, books' own settings and where books were seen. Folder layouts and reading
-     * statistics stay.
+     * pages, books' own settings, where books were seen, folder layouts and folders'
+     * tall-page answers. Reading statistics stay.
      */
     fun clearLibraryData() {
         synchronized(LOCK) {
             val e = sp.edit()
             for (k in listOf(KEY_FAVORITES, KEY_HISTORY, KEY_BOOKMARKS) + ID_LIST_KEYS) e.putString(k, "[]")
-            for (k in BOOK_OBJECT_KEYS) e.putString(k, "{}")
+            for (k in BOOK_OBJECT_KEYS + FOLDER_KEYS) e.putString(k, "{}")
             e.apply()
             publishNameCharsets()
         }

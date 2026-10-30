@@ -9,8 +9,9 @@ import com.infinity.comicreader.files.BookUris
  */
 object LibraryData {
     /**
-     * Clears the library data ([Library.clearLibraryData]), the books' likenesses and the
-     * links of books shared (but those open now). Blocking.
+     * Clears the library data ([Library.clearLibraryData]: books' and folders', not reading
+     * statistics), the books' likenesses and the links of books shared (but those open now).
+     * Blocking.
      */
     fun clear(context: Context, library: Library) {
         library.clearLibraryData()

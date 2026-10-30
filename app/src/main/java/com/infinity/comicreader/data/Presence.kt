@@ -22,10 +22,10 @@ enum class Presence {
  * Finds the [Presence] of items by path. [quick] never uses the network: a device item
  * by whether it exists, one on a volume not mounted as unreachable, one on a share removed
  * from the app as missing at once, one on a share failing now as unreachable, else from
- * what was last found there (a check made since nothing changed, the stat kept, the
- * listing of its folder kept). What [quick] cannot settle, [stat] asks the share for,
- * off the main thread; its answer stands until the app changes a share, its folder is
- * listed again or [MEMO_MS] pass.
+ * what was last found there (a check made since nothing changed, its folder listed from
+ * the share within [MEMO_MS], the stat kept, the listing of its folder kept). What
+ * [quick] cannot settle, [stat] asks the share for, off the main thread; its answer
+ * stands until the app changes a share, its folder is listed again or [MEMO_MS] pass.
  */
 class PresenceCheck(private val world: World, private val memo: Memo = Memo.shared) {
 
@@ -111,10 +111,16 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
             if (a.changes == world.changes() && world.now() - a.at in 0 until MEMO_MS && !listedSince) return a.found
         }
         if (world.shareUnreachable(id)) return Found(Presence.UNREACHABLE, settled = true)
+        val name = path.substringAfterLast('/')
+        fun names() = if (seen != null) seen.names.getOrPut(folder) { world.namesKept(folder) } else world.namesKept(folder)
+        // Its folder just listed from the share tells as much as asking it would.
+        val listed = world.listedAt(folder)
+        if (listed != null && world.now() - listed in 0 until MEMO_MS) {
+            names()?.let { return Found(if (name in it) Presence.PRESENT else Presence.MISSING, settled = true) }
+        }
         if (world.statKept(path)) return Found(Presence.PRESENT, settled = false)
-        val names = (if (seen != null) seen.names.getOrPut(folder) { world.namesKept(folder) } else world.namesKept(folder))
-            ?: return Found(Presence.UNKNOWN, settled = false)
-        return Found(if (path.substringAfterLast('/') in names) Presence.PRESENT else Presence.MISSING, settled = false)
+        val names = names() ?: return Found(Presence.UNKNOWN, settled = false)
+        return Found(if (name in names) Presence.PRESENT else Presence.MISSING, settled = false)
     }
 
     /** True when [found] for [path] is to be asked of its share ([stat]). */
@@ -142,7 +148,7 @@ class PresenceCheck(private val world: World, private val memo: Memo = Memo.shar
     }
 
     companion object {
-        /** How long an answer from a share stands while the app changes nothing there. */
+        /** How long an answer from a share, or a listing of a folder there, stands while the app changes nothing there. */
         const val MEMO_MS = 10 * 60_000L
 
         /** Answers kept at most; past it they are all dropped. */

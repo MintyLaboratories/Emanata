@@ -139,11 +139,24 @@ class PresenceCheckTest {
         world.listings["/net/s1/Comics"] = setOf("a.cbz")
         world.listedAt["/net/s1/Comics"] = world.clock
         val f = check.quick("/net/s1/Comics/a.cbz")
-        assertEquals(found(Presence.PRESENT, false), f)
-        assertTrue(check.asks("/net/s1/Comics/a.cbz", f))
+        assertEquals(found(Presence.PRESENT, true), f)
+        assertFalse(check.asks("/net/s1/Comics/a.cbz", f))
         // A folder listed before the answer leaves it standing.
         world.listedAt["/net/s1/Comics"] = world.clock - 2
         assertTrue(check.quick("/net/s1/Comics/a.cbz").missing)
+    }
+
+    @Test
+    fun aFolderJustListedSettlesItsItemsUntilTimePasses() {
+        world.statsKept += "/net/s1/Comics/gone.cbz"
+        world.listings["/net/s1/Comics"] = setOf("a.cbz")
+        world.listedAt["/net/s1/Comics"] = world.clock
+        assertEquals(found(Presence.PRESENT, true), check.quick("/net/s1/Comics/a.cbz"))
+        assertTrue(check.quick("/net/s1/Comics/gone.cbz").missing)
+        world.clock += PresenceCheck.MEMO_MS
+        assertEquals(found(Presence.PRESENT, false), check.quick("/net/s1/Comics/a.cbz"))
+        assertEquals(found(Presence.PRESENT, false), check.quick("/net/s1/Comics/gone.cbz"))
+        assertEquals(0, world.asked)
     }
 
     @Test

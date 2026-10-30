@@ -510,8 +510,8 @@
     <string name="unconverted_compact">These pages couldn\'t be converted and were kept as they were:</string>
     <!-- %1$s: what was done, as "Made 2 books compatible"; %2$d: pages re-encoded. -->
     <plurals name="rebuild_reencoded">
-        <item quantity="one">%1$s; %2$d page re-encoded as very-high-quality WebP</item>
-        <item quantity="other">%1$s; %2$d pages re-encoded as very-high-quality WebP</item>
+        <item quantity="one">%1$s; %2$d page re-encoded at very high quality</item>
+        <item quantity="other">%1$s; %2$d pages re-encoded at very high quality</item>
     </plurals>
     <!-- %1$s: a book; %2$s: its pages. -->
     <string name="reencoded_book">%1$s: %2$s</string>

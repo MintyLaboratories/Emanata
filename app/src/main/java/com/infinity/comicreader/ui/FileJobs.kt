@@ -412,9 +412,10 @@ internal class FileJobs(
                                     result.moves.getOrNull(k)?.takeIf { it in byPage.indices }?.let { byPage[it] = ref }
                                 }
                                 library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, target.absolutePath), result.pageCount, shared)
-                                removed = removeFolder(dir, images, stats)
                             }
                         }
+                        // Past the reader's wait: the folder holds nothing the library still needs.
+                        removed = removeFolder(dir, images, stats)
                     }
                     val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true)
                     val result = compactor.run(request, { FolderReader(images) }, progress) as? Compactor.Result.Rebuilt

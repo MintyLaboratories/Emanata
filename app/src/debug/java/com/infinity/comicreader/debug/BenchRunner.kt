@@ -116,10 +116,16 @@ internal class BenchRunner(private val app: Application) {
         var cached = 0
         val turnStart = ProcStats.now(app, memory = false)
         val turnsFrom = System.nanoTime()
+        var tapX = TAP_X
         for (i in 1..plan.turns) {
             delay(plan.pace)
-            val turn = turn(viewer, plan) ?: break
+            val turn = turn(viewer, plan, tapX) ?: break
             turns.put(turn)
+            if (turn.getBoolean("back")) {
+                // A right-to-left book: the other side turns forward; this turn back is left out.
+                tapX = 1f - tapX
+                continue
+            }
             visible += turn.getLong("visibleMs")
             sharp += turn.getLong("sharpMs")
             if (turn.has("movedMs")) moved += turn.getLong("movedMs")
@@ -151,14 +157,14 @@ internal class BenchRunner(private val app: Application) {
      * One turn forward in [viewer] as [plan] says, timed from the input's end (a drag's
      * start) until the pages then on screen are visible and sharp; null when nothing moved.
      */
-    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan): JSONObject? {
+    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float): JSONObject? {
         val before = probe.pages.pages(probe.pageViewsOnScreen())
         var movedAt = -1L
         probe.onMoved = { if (movedAt < 0) movedAt = it }
         val start = when (plan.input) {
             BenchPlan.DRAG -> drag(viewer).also { repeat(DRAGS - 1) { drag(viewer) } }
             BenchPlan.KEY -> key(viewer)
-            else -> tap(viewer, TAP_X, TAP_Y)
+            else -> tap(viewer, tapX, TAP_Y)
         }
         val m = Milestones(start)
         var first: PageWatch.Ready? = null
@@ -184,6 +190,7 @@ internal class BenchRunner(private val app: Application) {
             .put("visibleMs", Stats.ms(m.visible)).put("sharpMs", Stats.ms(m.sharp))
             .apply { if (m.moved >= 0) put("movedMs", Stats.ms(m.moved)) }
             .put("ready", first == PageWatch.Ready.SHARP)
+            .put("back", (shownPages.minOrNull() ?: 0) < (before.minOrNull() ?: 0))
             .put("timedOut", !ok)
     }
 

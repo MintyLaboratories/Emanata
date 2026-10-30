@@ -195,8 +195,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Handedness, right by default): the floating button on top, never moving, and
   under it a bubble for each pick waiting to be pasted and each file operation,
   the newest at the bottom (from the bottom edge when the button is hidden). At
-  most four buttons show, the button included; older bubbles fold into a count
-  on the top one. All file operations (copy, move, delete, rename) go through
+  most four buttons show, the button included, and always the operation under
+  way; older bubbles fold into a count on the top one, which lists them on a
+  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename) go through
   one queue, one at a time, never in parallel; several items are one operation,
   done one item at a time. A waiting bubble is gray; the running one darkens
   with a progress ring in its action's color. Tap it for a card (what it does,
@@ -211,9 +212,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   it `Book (2).cbz`; Skip pastes the others); two items of one name keep both.
   A folder is replaced whole, never merged, and the dialog says so. A folder
   picked up takes along what was selected inside it. A pick is pasted once: its
-  Paste becomes the operation, and only items a move failed at or that a Cancel
-  never reached come back as a Paste. An item that fails leaves the others going,
-  and the message says how many were done. A move
+  Paste becomes the operation, the newest in the stack, and only items a move
+  failed at or that a Cancel never reached (canceled while waiting too) come back
+  as a new Paste. Names are checked again as each item's turn comes: one taken
+  since, or a Replace that would now replace another item than the one chosen,
+  keeps both. A queued Delete or Rename acts only on what was chosen: an item gone,
+  changed or replaced by its turn is left alone, and the message says so. An item
+  that fails leaves the others going, and the message says how many were done. A move
   within one place is a rename; between places (device and share, two shares,
   internal storage and SD card) it copies, checks each file's size and reads it
   back to compare its CRC-32, then deletes what it copied from the source.

@@ -176,15 +176,74 @@ class FileActionsManyTest {
     }
 
     @Test
-    fun anItemAlreadyGoneCountsAsDeleted() {
+    fun anItemAlreadyGoneIsNotCountedAndSaid() {
         share()
         val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
         actions.delete(listOf(FileClipboard.Item("/net/s1/gone.cbz", false), item(a)))
         answer(DialogInterface.BUTTON_POSITIVE)
         settle()
         assertFalse(a.exists())
-        assertEquals(FileWork.Outcome.Done(null, gone = listOf("/net/s1/gone.cbz", a.absolutePath), count = 2), finished.single())
-        assertEquals(context.resources.getQuantityString(R.plurals.deleted_format, 2, 2), ShadowToast.getTextOfLatestToast())
+        val failed = finished.single() as FileWork.Outcome.Failed
+        assertEquals(FileWork.Outcome.Failed(failed.error, 1, 2, listOf(a.absolutePath)), failed)
+        assertEquals(
+            context.getString(R.string.file_failed_part, deleted(1, 2), context.getString(R.string.file_gone, "gone.cbz")),
+            ShadowToast.getTextOfLatestToast()
+        )
+    }
+
+    /** Holds the queue with an operation until the returned semaphore is released. */
+    private fun holdQueue(): java.util.concurrent.Semaphore {
+        val go = java.util.concurrent.Semaphore(0)
+        val started = java.util.concurrent.Semaphore(0)
+        FileWork.start(FileWork.Kind.COPY, "held.cbz") {
+            started.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        started.acquire()
+        return go
+    }
+
+    @Test
+    fun aQueuedDeleteLeavesAloneWhatChangedOrCameInItsPlace() {
+        val go = holdQueue()
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val b = File(tmp.root, "b.cbz").apply { writeBytes(ByteArray(10)) }
+        val c = File(tmp.root, "c.cbz").apply { writeBytes(ByteArray(10)) }
+        actions.delete(listOf(item(a), item(b), item(c)))
+        answer(DialogInterface.BUTTON_POSITIVE)
+        waitFor { FileWork.operations.value.size == 2 }
+        // Once looked up as chosen, before its turn: another file takes a's name, and b is moved away.
+        Thread.sleep(200)
+        a.delete()
+        a.writeBytes(ByteArray(30))
+        assertTrue(b.renameTo(File(tmp.root, "elsewhere.cbz")))
+        go.release()
+        settle()
+        assertTrue(a.exists())
+        assertEquals(30L, a.length())
+        assertTrue(File(tmp.root, "elsewhere.cbz").exists())
+        assertFalse(c.exists())
+        val failed = finished.last() as FileWork.Outcome.Failed
+        assertEquals(FileWork.Outcome.Failed(failed.error, 1, 3, listOf(c.absolutePath)), failed)
+        assertEquals(context.getString(R.string.file_altered, "a.cbz"), ShadowToast.getTextOfLatestToast().substringAfter("failed: "))
+    }
+
+    @Test
+    fun aQueuedRenameLeavesAloneWhatCameInItsPlace() {
+        val go = holdQueue()
+        val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
+        val method = FileActions::class.java.getDeclaredMethod("renameTo", String::class.java, String::class.java).apply { isAccessible = true }
+        method.invoke(actions, a.absolutePath, "b.cbz")
+        waitFor { FileWork.operations.value.size == 2 }
+        Thread.sleep(200)
+        a.delete()
+        a.writeBytes(ByteArray(30))
+        go.release()
+        settle()
+        assertTrue(a.exists())
+        assertFalse(File(tmp.root, "b.cbz").exists())
+        assertEquals(context.getString(R.string.file_failed, context.getString(R.string.file_altered, "a.cbz")), ShadowToast.getTextOfLatestToast())
     }
 
     @Test
@@ -192,16 +251,24 @@ class FileActionsManyTest {
         val (fake, dir) = share()
         File(dir, "s.cbz").writeBytes(ByteArray(10))
         val a = File(tmp.root, "a.cbz").apply { writeBytes(ByteArray(10)) }
-        val hold = CountDownLatch(1)
-        fake.slow = hold
+        // Held twice: as the items are looked up when chosen, then as the first is deleted.
+        val go = holdQueue()
+        val chosen = CountDownLatch(1)
+        fake.slow = chosen
         actions.delete(listOf(FileClipboard.Item("/net/s1/s.cbz", false), item(a)))
         answer(DialogInterface.BUTTON_POSITIVE)
+        waitFor { fake.held.get() > 0 }
+        val hold = CountDownLatch(1)
+        fake.slow = hold
+        chosen.countDown()
+        waitFor { fake.held.get() == 0 }
+        go.release()
         waitFor { fake.held.get() > 0 }
         FileWork.cancel()
         hold.countDown()
         settle()
         assertTrue(a.exists())
-        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/s.cbz")), finished.single())
+        assertEquals(FileWork.Outcome.Canceled(1, 2, listOf("/net/s1/s.cbz")), finished.last())
         assertEquals(context.getString(R.string.file_canceled_part, deleted(1, 2)), ShadowToast.getTextOfLatestToast())
     }
 
@@ -353,7 +420,7 @@ class FileActionsManyTest {
         waitFor { FileWork.operations.value.size == 2 }
         assertTrue(FileClipboard.clips.value.isEmpty())
         FileWork.cancel(FileWork.operations.value.last().id)
-        waitFor { finished.isNotEmpty() }
+        waitFor { finished.any { it is FileWork.Outcome.Canceled } }
         val back = FileClipboard.clips.value.single()
         assertEquals(listOf(a.absolutePath), back.items.map { it.path })
         assertTrue(back.move)

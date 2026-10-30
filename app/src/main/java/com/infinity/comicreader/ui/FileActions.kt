@@ -99,7 +99,8 @@ internal class FileActions(
 
     private fun renameTo(path: String, name: String) {
         val jobs = this.jobs
-        start(FileWork.Kind.RENAME, File(path).name, 1) { jobs.rename(path, name) }
+        val chosen = jobs.look(listOf(path))
+        start(FileWork.Kind.RENAME, File(path).name, 1) { jobs.rename(path, name, chosen) }
     }
 
     // ------------------------------------------------------------------ delete
@@ -126,7 +127,8 @@ internal class FileActions(
         confirm(activity, title, message, R.string.delete) {
             onConfirmed()
             val jobs = this.jobs
-            start(FileWork.Kind.DELETE, first.name, items.size) { p -> jobs.delete(items, p) }
+            val chosen = jobs.look(items.map { it.path })
+            start(FileWork.Kind.DELETE, first.name, items.size) { p -> jobs.delete(items, chosen, p) }
         }
     }
 
@@ -331,6 +333,8 @@ internal class FileActions(
                 FileProblem.Kind.CHANGED -> R.string.file_changed
                 FileProblem.Kind.DIFFERS -> R.string.file_differs
                 FileProblem.Kind.INCOMPLETE -> R.string.file_incomplete
+                FileProblem.Kind.GONE -> R.string.file_gone
+                FileProblem.Kind.ALTERED -> R.string.file_altered
             },
             error.name
         )

@@ -18,7 +18,13 @@ class FileProblem(val kind: Kind, val name: String) : IOException("$kind: $name"
         DIFFERS,
 
         /** Its copy is missing or shorter than the source. */
-        INCOMPLETE
+        INCOMPLETE,
+
+        /** Gone by the time its operation's turn came. */
+        GONE,
+
+        /** Changed, or another item in its place, by the time its operation's turn came. */
+        ALTERED
     }
 
     companion object {

@@ -507,6 +507,9 @@
             app:summary="@string/pref_clear_library_desc"
             app:title="@string/pref_clear_library" />
         <Preference
+            app:key="pref_clear_favorites"
+            app:title="@string/pref_clear_favorites" />
+        <Preference
             app:key="pref_clear_history"
             app:title="@string/pref_clear_history" />
         <Preference

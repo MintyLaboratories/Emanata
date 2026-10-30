@@ -89,6 +89,16 @@ class SettingsConfirmTest {
     }
 
     @Test
+    fun clearFavoritesWaitsForConfirmation() {
+        library.setFavorite(one, true)
+        library.toggleFavoriteFolder("/books/attic")
+        tap("pref_clear_favorites").press(DialogInterface.BUTTON_NEGATIVE)
+        assertEquals(2, library.favoriteItems().size)
+        tap("pref_clear_favorites").press(DialogInterface.BUTTON_POSITIVE)
+        assertTrue(library.favoriteItems().isEmpty())
+    }
+
+    @Test
     fun clearBookmarksWaitsForConfirmation() {
         library.addBookmark(Bookmark(one.path, "one.cbz", 3, "", 1L, one.id))
         tap("pref_clear_bookmarks").press(DialogInterface.BUTTON_NEGATIVE)

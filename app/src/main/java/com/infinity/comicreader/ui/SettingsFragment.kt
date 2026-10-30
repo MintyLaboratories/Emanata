@@ -275,6 +275,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<Preference>("pref_clear_favorites")?.setOnPreferenceClickListener {
+            confirm(requireContext(), R.string.confirm_clear_favorites_title, R.string.confirm_clear_favorites_msg, R.string.clear) {
+                library.clearFavorites()
+                toast(R.string.pref_cleared)
+            }
+            true
+        }
+
         findPreference<Preference>("pref_clear_history")?.setOnPreferenceClickListener {
             confirm(requireContext(), R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, R.string.clear) {
                 library.clearHistory()

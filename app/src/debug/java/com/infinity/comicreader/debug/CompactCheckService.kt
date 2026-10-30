@@ -18,6 +18,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.compact.AndroidImages
 import com.infinity.comicreader.compact.CompactWorkers
 import com.infinity.comicreader.compact.FlatNames
+import com.infinity.comicreader.compact.JxlVersion
 import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.compact.Png
@@ -78,6 +79,8 @@ class CompactCheckService : Service() {
 
     private fun selfTest() {
         log("libjxl ${LibJxl.version}, workers ${CompactWorkers.max()} of ${Runtime.getRuntime().availableProcessors()} cores")
+        check(JxlVersion.matches(LibJxl.version)) { "libjxl ${LibJxl.version} is not the ${JxlVersion.MAJOR}.${JxlVersion.MINOR} release the binding is compiled against" }
+        log("libjxl matches the binding's headers: ${LibJxl.available}")
         val pages = PageWork(LibJxl, AndroidImages)
         val color = picture(1200, 1700, gray = false, alpha = false)
         val gray = picture(1200, 1700, gray = true, alpha = false)

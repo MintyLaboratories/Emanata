@@ -140,7 +140,9 @@ dependencies {
     implementation("commons-io:commons-io:2.16.1")
     implementation("org.tukaani:xz:1.9")
     implementation("org.slf4j:slf4j-nop:2.0.18")              // silence junrar/slf4j on Android
-    implementation("io.github.awxkee:jxl-coder:2.6.1")         // JPEG XL decoding
+    // JPEG XL decoding, and the libjxl.so lossless compaction calls (jxl_jni.c): it must
+    // stay libjxl 0.12.x, the headers CMakeLists.txt pins, or compaction turns itself off.
+    implementation("io.github.awxkee:jxl-coder:2.6.1")
     implementation("com.google.zxing:core:3.5.3")             // barcodes on wraparound covers
     implementation("com.hierynomus:smbj:0.15.0")              // SMB 2/3 network shares
     implementation("com.squareup.okhttp3:okhttp:4.12.0")      // WebDAV network shares

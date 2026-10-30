@@ -46,8 +46,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(xxhash)
 
-# Only libjxl's public headers are used; jxl-coder's libjxl.so (the same release)
-# provides the code, so nothing of libjxl is built. jxl_headers stands in for the
+# Only libjxl's public headers are used; jxl-coder's libjxl.so (the same release,
+# checked at run time by JxlVersion) provides the code, so nothing of libjxl is built. jxl_headers stands in for the
 # two headers its build generates.
 FetchContent_Declare(
     libjxl

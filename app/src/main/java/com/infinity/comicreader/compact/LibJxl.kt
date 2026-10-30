@@ -88,7 +88,22 @@ interface JxlCodec {
     }
 }
 
-/** libjxl as jxl-coder ships it, through our JNI binding (`src/main/cpp/jxl_jni.c`). */
+/** The libjxl release jxl_jni.c is compiled against (its headers, pinned in CMakeLists.txt). */
+object JxlVersion {
+    const val MAJOR = 0
+    const val MINOR = 12
+
+    /**
+     * True when libjxl's [version] (major * 1000000 + minor * 1000 + patch) is of that
+     * release: jxl_jni.c passes its structs by their layout, which another may change.
+     */
+    fun matches(version: Int): Boolean = version / 1000 == MAJOR * 1000 + MINOR
+}
+
+/**
+ * libjxl as jxl-coder ships it, through our JNI binding (`src/main/cpp/jxl_jni.c`); used
+ * only when it is the release the binding was compiled against ([JxlVersion]).
+ */
 object LibJxl : JxlCodec {
     init {
         // jxl-coder's own library, which jxl_jni.c opens by name.
@@ -99,7 +114,7 @@ object LibJxl : JxlCodec {
     /** libjxl's version as major * 1000000 + minor * 1000 + patch; 0 when it is missing. */
     val version: Int by lazy { nVersion() }
 
-    override val available: Boolean get() = version > 0
+    override val available: Boolean get() = JxlVersion.matches(version)
 
     override fun transcode(jpeg: ByteArray, effort: Int): ByteArray? = nTranscode(jpeg, effort)
 

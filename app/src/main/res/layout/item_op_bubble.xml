@@ -19,7 +19,7 @@
         android:layout_gravity="center"
         android:visibility="invisible"
         app:indicatorSize="@dimen/op_bubble_size"
-        app:trackColor="@android:color/transparent"
+        app:trackColor="?attr/colorOutlineVariant"
         app:trackThickness="@dimen/op_ring_thickness" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -28,7 +28,8 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         app:fabCustomSize="@dimen/op_button_size"
-        app:maxImageSize="@dimen/op_icon_size" />
+        app:maxImageSize="@dimen/op_icon_size"
+        app:shapeAppearanceOverlay="@style/Shape.ComicReader.Circle" />
 
     <ImageView
         android:id="@+id/op_badge"

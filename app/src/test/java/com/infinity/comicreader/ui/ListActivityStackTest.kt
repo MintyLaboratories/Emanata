@@ -173,6 +173,41 @@ class ListActivityStackTest {
     }
 
     @Test
+    fun progressMovesOnlyTheRingOfARoundBubble() {
+        val activity = launch()
+        val step = Semaphore(0)
+        val reported = Semaphore(0)
+        FileWork.start(FileWork.Kind.MOVE, "a.cbz") { p ->
+            for (done in listOf(1L, 6L)) {
+                step.acquire()
+                p.report(done, 10)
+                reported.release()
+                Thread.sleep(120)
+            }
+            step.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        step.release()
+        reported.acquire()
+        idle()
+        val button = activity.stack.buttons().single().second
+        val ring = (button.parent as View).findViewById<CircularProgressIndicator>(R.id.op_ring)
+        val tint = button.backgroundTintList
+        val described = button.contentDescription
+        assertEquals(100, ring.progress)
+        assertNotEquals(android.graphics.Color.TRANSPARENT, ring.trackColor)
+        assertEquals(com.google.android.material.shape.RelativeCornerSize(0.5f), button.shapeAppearanceModel.topLeftCornerSize)
+        step.release()
+        reported.acquire()
+        idle()
+        assertEquals(600, ring.progress)
+        assertTrue(tint === button.backgroundTintList)
+        assertNotEquals(described, button.contentDescription)
+        step.release()
+        waitFor { FileWork.operations.value.isEmpty() }
+    }
+
+    @Test
     fun theRunningBubbleDarkensWithARingWaitingOnesAreGrayAndALongPressCancels() {
         val activity = launch()
         val started = Semaphore(0)

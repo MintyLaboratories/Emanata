@@ -193,7 +193,31 @@ internal class OperationStack(
 
     private fun color(view: View, attr: Int) = MaterialColors.getColor(view, attr)
 
+    /**
+     * What a bubble's view was last bound to: its [look] (colors, icon, actions, the count
+     * folded), what its description [said], and its [ring]'s progress; each is set again
+     * only once it changes, so progress reports redraw just the ring.
+     */
+    private data class Bound(val look: Any, val said: Any?, val ring: Int?)
+
     private fun bind(view: View, bubble: Bubble, folded: Int) {
+        val ring = view.findViewById<CircularProgressIndicator>(R.id.op_ring)
+        val was = view.getTag(R.id.op_bound) as? Bound
+        val status = (bubble as? Bubble.Work)?.status
+        val look: Any = if (status != null) listOf(status.id, status.kind, status.waiting, folded) else bubble to folded
+        if (was?.look != look) bindLook(view, bubble, folded)
+        val said: Any? = status?.let { listOf(it.waiting, it.count, it.into, it.name.takeIf { _ -> it.kind == FileWork.Kind.RENAME }, percent(it)) }
+        if (status != null && (was?.look != look || was.said != said)) view.findViewById<View>(R.id.op_button).contentDescription = describe(status)
+        val steps = status?.takeIf { it.running }?.fraction?.let { (it * STEPS).toInt() }
+        if (status != null && status.running && (was?.look != look || was.ring != steps)) show(ring, status.fraction)
+        view.setTag(R.id.op_bound, Bound(look, said, steps))
+    }
+
+    /** How far [status] is, in whole percent; null while waiting or when nothing tells. */
+    private fun percent(status: FileWork.Status): Int? = if (status.waiting) null else status.fraction?.let { (it * 100).toInt() }
+
+    /** Sets [view]'s colors, icon, actions and folded count for [bubble]. */
+    private fun bindLook(view: View, bubble: Bubble, folded: Int) {
         val button = view.findViewById<FloatingActionButton>(R.id.op_button)
         val ring = view.findViewById<CircularProgressIndicator>(R.id.op_ring)
         val badge = view.findViewById<ImageView>(R.id.op_badge)
@@ -233,13 +257,12 @@ internal class OperationStack(
                 } else {
                     paint(button, look.icon, ColorUtils.blendARGB(color(button, look.background), Color.BLACK, DARKEN), color(button, look.foreground))
                     ring.setIndicatorColor(color(ring, FabLook.ringOf(status.kind)))
-                    show(ring, status.fraction)
                 }
-                button.contentDescription = describe(status)
-                button.setOnClickListener { showCard(status.id, view) }
+                val id = status.id
+                button.setOnClickListener { showCard(id, view) }
                 button.setOnLongClickListener {
                     hideCard()
-                    FileWork.cancel(status.id)
+                    FileWork.cancel(id)
                     true
                 }
             }
@@ -283,7 +306,7 @@ internal class OperationStack(
     private fun describe(status: FileWork.Status): String {
         val what = what(status)
         if (status.waiting) return activity.getString(R.string.op_described, what, activity.getString(R.string.op_waiting))
-        val percent = status.fraction?.let { (it * 100).toInt() } ?: return what
+        val percent = percent(status) ?: return what
         return activity.getString(R.string.op_described, what, activity.getString(R.string.op_percent, percent))
     }
 

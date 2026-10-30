@@ -23,6 +23,8 @@
     <item name="menu_select_all" type="id" />
     <!-- The selection's ⋮ menu. -->
     <item name="more_menu" type="id" />
+    <!-- What an operation bubble was last bound to. -->
+    <item name="op_bound" type="id" />
     <!-- The hint beside a Paste bubble. -->
     <item name="paste_bubble" type="id" />
     <!-- Tags an activity's window whose system bars Immersive hid. -->

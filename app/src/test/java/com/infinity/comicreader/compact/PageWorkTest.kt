@@ -100,6 +100,14 @@ class PageWorkTest {
     }
 
     @Test
+    fun theMemoryAPageTakesCountsItsPixels() {
+        assertEquals(jpeg.size * 3L, work.memoryFor(jpeg))
+        val png = Png.encode(pixels(3))
+        assertEquals(png.size * 3L + 40 * 30 * PageWork.BYTES_PER_PIXEL, work.memoryFor(png))
+        assertEquals(Long.MAX_VALUE, work.memoryFor("GIF89a....".toByteArray()))
+    }
+
+    @Test
     fun makeCompatibleGivesBackTheJpegByteForByte() {
         val made = work.compatible(jxl.transcode(jpeg, 7))!!
         assertEquals("jpg", made.ext)

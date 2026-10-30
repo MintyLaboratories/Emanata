@@ -242,7 +242,7 @@ internal class FileJobs(
                     val id = BookIds.find(book)
                     val hidden = if (skipHidden && id != null) library.hiddenPages(id) else emptySet()
                     val request = Compactor.Request(
-                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible
+                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible, cost = pages::memoryFor
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {
@@ -265,6 +265,8 @@ internal class FileJobs(
                     return FileWork.Outcome.Canceled(done, paths.size, gone, summary())
                 } catch (e: Exception) {
                     if (failure == null) failure = e
+                } catch (e: OutOfMemoryError) {
+                    if (failure == null) failure = IOException("Out of memory", e)
                 }
             }
         } finally {

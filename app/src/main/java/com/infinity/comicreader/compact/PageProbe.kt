@@ -1,5 +1,6 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.reader.ImageHeaders
 import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.reader.Tiff
 
@@ -64,6 +65,29 @@ object PageProbe {
             at += 8 + length + (length and 1)
         }
         return false
+    }
+
+    /** Width and height of a page by its header: PNG, JPEG, JPEG XL, BMP, WebP or TIFF; null when unknown. */
+    fun sizeOf(bytes: ByteArray): IntArray? = when (ImageKind.sniff(bytes)) {
+        ImageKind.PNG -> ImageHeaders.pngSize(bytes)
+        ImageKind.JPEG -> ImageHeaders.jpegSize(bytes)
+        ImageKind.JXL -> ImageHeaders.jxlSize(bytes)
+        ImageKind.BMP -> if (bytes.size >= 26) intArrayOf(le32(bytes, 18), Math.abs(le32(bytes, 22))) else null
+        ImageKind.WEBP -> webpSize(bytes)
+        ImageKind.TIFF -> runCatching { Tiff.page(Tiff.ByteInput(bytes)).let { intArrayOf(it.width, it.height) } }.getOrNull()
+        else -> null
+    }?.takeIf { it[0] > 0 && it[1] > 0 }
+
+    /** A WebP's canvas (`VP8X`) or image size (`VP8L`, `VP8 `), from its first chunk. */
+    private fun webpSize(b: ByteArray): IntArray? {
+        if (b.size < 30 || type(b, 0) != "RIFF" || type(b, 8) != "WEBP") return null
+        fun u24(at: Int) = (b[at].toInt() and 0xFF) or ((b[at + 1].toInt() and 0xFF) shl 8) or ((b[at + 2].toInt() and 0xFF) shl 16)
+        return when (type(b, 12)) {
+            "VP8X" -> intArrayOf(u24(24) + 1, u24(27) + 1)
+            "VP8L" -> le32(b, 21).let { intArrayOf((it and 0x3FFF) + 1, ((it shr 14) and 0x3FFF) + 1) }
+            "VP8 " -> intArrayOf(u24(26) and 0x3FFF, u24(28) and 0x3FFF)
+            else -> null
+        }
     }
 
     /** True for a JPEG XL in a container holding the data to rebuild its JPEG (a `jbrd` box). */

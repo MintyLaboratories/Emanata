@@ -244,6 +244,27 @@ class CompactorTest {
         assertTrue("at most 2 at once, saw $most", most in 1..2)
     }
 
+    @Test
+    fun noMoreConvertAtOnceThanTheMemoryHolds() {
+        val inside = AtomicInteger()
+        var most = 0
+        val slow: (ByteArray) -> PageWork.Made? = {
+            val now = inside.incrementAndGet()
+            synchronized(this) { most = maxOf(most, now) }
+            Thread.sleep(20)
+            inside.decrementAndGet()
+            halve(it)
+        }
+        val source = zip("Big.cbz", (1..8).map { "$it.png" to page(PNG) })
+        val request = Compactor.Request(source, slow, inPlace = false, suffix = "compacted", cost = { 6000L })
+        val result = Compactor(scratch, 4, memory = 10_000).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive)
+        assertTrue(result is Compactor.Result.Rebuilt)
+        assertEquals(1, most)
+        // A page whose need is unknown, or beyond the memory, converts alone.
+        val alone = Compactor.Request(source, halve, inPlace = false, suffix = "compacted", cost = { Long.MAX_VALUE })
+        assertTrue(Compactor(scratch, 4, memory = 10_000).run(alone, { ArchiveReader.open(source, "UTF-8")!! }, alive) is Compactor.Result.Rebuilt)
+    }
+
     private companion object {
         const val PNG = 0x50
         const val JPG = 0x4A

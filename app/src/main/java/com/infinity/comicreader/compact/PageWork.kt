@@ -28,6 +28,18 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     /** A page that should have been made anew and could not: it stays as it is. */
     class Unconverted(why: String) : Exception(why)
 
+    /**
+     * About the memory (Java heap) making [page] anew takes at most: its bytes three times
+     * over (the page, what it becomes, what that gives back), and for decoded pixels
+     * [BYTES_PER_PIXEL] per pixel; [Long.MAX_VALUE] when its size is unknown.
+     */
+    fun memoryFor(page: ByteArray): Long {
+        val bytes = page.size * 3L
+        if (ImageKind.sniff(page) == ImageKind.JPEG) return bytes
+        val size = PageProbe.sizeOf(page) ?: return Long.MAX_VALUE
+        return bytes + size[0].toLong() * size[1] * BYTES_PER_PIXEL
+    }
+
     /** [page] made smaller without changing a pixel; null to keep it. */
     fun compact(page: ByteArray): Made? {
         val made = when (PageProbe.formOf(page)) {
@@ -146,6 +158,9 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
 
         /** Android's lossless WebP takes its effort as "quality": 100 is the smallest. */
         const val WEBP_LOSSLESS_EFFORT = 100
+
+        /** Bytes per pixel decoded pages hold at most: RGBA, its fewest channels and what decodes back, or RGBA and PNG's filtered rows. */
+        const val BYTES_PER_PIXEL = 16
 
         /** RGBA [rgba] in the fewest channels that hold it: gray when every pixel is, alpha only when any is not opaque. */
         fun reduced(rgba: Pixels): Pixels {

@@ -30,8 +30,9 @@ import java.util.zip.ZipOutputStream
  * Rebuilds a comic archive as a flat `.cbz` of stored (uncompressed) entries in natural
  * order: each page [convert]ed or kept as it is, names kept but for the extension of a
  * page made anew ([FlatNames]), every other file copied as it is, OS litter left out.
- * Pages convert on up to [maxWorkers] threads at once, fewer while [limit] says so; each
- * file passes through [scratch] on its way. The new archive is written beside the book,
+ * Pages convert on up to [maxWorkers] threads at once, fewer while [limit] says so, and
+ * only as many as [memory] bytes hold ([Request.cost]); each file passes through
+ * [scratch] on its way. The new archive is written beside the book,
  * every entry checked by its CRC, and only then put in place: as the book itself when
  * [Request.inPlace] (a non-ZIP book's file removed), else beside it.
  */
@@ -39,7 +40,8 @@ class Compactor(
     private val scratch: File,
     private val maxWorkers: Int,
     private val limit: () -> Int = { maxWorkers },
-    private val threads: ThreadFactory = ThreadFactory { r -> Thread(r, "compact").apply { isDaemon = true } }
+    private val threads: ThreadFactory = ThreadFactory { r -> Thread(r, "compact").apply { isDaemon = true } },
+    private val memory: Long = Runtime.getRuntime().maxMemory() / 2
 ) {
     /** What to make of a book. */
     class Request(
@@ -52,7 +54,9 @@ class Compactor(
         /** Pages to leave out, by their place in the book (from 0). */
         val skip: Set<Int> = emptySet(),
         /** True to keep the new file only when smaller than the book. */
-        val smallerOnly: Boolean = false
+        val smallerOnly: Boolean = false,
+        /** The memory making a page anew takes at most ([PageWork.memoryFor]). */
+        val cost: (ByteArray) -> Long = { it.size * 3L }
     )
 
     /** What an operation's work hears from and tells its runner. */
@@ -170,8 +174,9 @@ class Compactor(
     private fun convertAll(request: Request, reader: ArchiveReader, files: List<ArchiveEntry>, work: File, progress: Progress, total: Long): List<Piece> {
         val pieces = arrayOfNulls<Piece>(files.size)
         val pool = Executors.newFixedThreadPool(maxWorkers.coerceAtLeast(1), threads)
-        // Pages read and not yet converted: bounds the memory they hold.
+        // Pages read and not yet converted, and the memory they and their converting take.
         val room = Semaphore(maxWorkers.coerceAtLeast(1) * 2)
+        val budget = Budget(memory.coerceAtLeast(1))
         val gate = Gate(limit)
         val futures = ArrayList<Future<*>>()
         var done = 0L
@@ -191,12 +196,33 @@ class Compactor(
                     continue
                 }
                 while (!room.tryAcquire(WAIT_MS, TimeUnit.MILLISECONDS)) check(progress)
+                // The page's bytes first, then what converting it takes beyond them; a page larger than the budget converts alone.
+                var held = budget.take(entry.size, progress)
                 val bytes = try {
                     reader.read(entry) { it.readBytes() }
+                } catch (e: OutOfMemoryError) {
+                    null
                 } catch (t: Throwable) {
+                    budget.give(held)
                     room.release()
                     throw t
                 }
+                if (bytes == null) {
+                    budget.give(held)
+                    room.release()
+                    // Too large to hold now: copied as it is.
+                    pieces[i] = reader.read(entry) { copy(it, file) }.let { Piece(it.file, it.size, it.crc, null, failed = true) }
+                    advance(entry.size.coerceAtLeast(0))
+                    continue
+                }
+                try {
+                    held += budget.take(request.cost(bytes).coerceIn(held, budget.total) - held, progress)
+                } catch (t: Throwable) {
+                    budget.give(held)
+                    room.release()
+                    throw t
+                }
+                val taken = held
                 futures += pool.submit {
                     try {
                         var failed = false
@@ -216,6 +242,7 @@ class Compactor(
                         pieces[i] = Piece(file, keep.size.toLong(), crcOf(keep), made, failed)
                         advance(entry.size.coerceAtLeast(0))
                     } finally {
+                        budget.give(taken)
                         room.release()
                     }
                 }
@@ -337,6 +364,30 @@ class Compactor(
         return Piece(file, size, crc.value, null)
     }
 
+    /** [total] bytes of memory to share out; what one asks beyond them it is given as the whole. */
+    private inner class Budget(val total: Long) {
+        private val lock = Object()
+        private var used = 0L
+
+        /** Takes [bytes] (at most [total]) once they are free, waiting on what others hold; throws once [progress] is canceled. Returns what it took. */
+        fun take(bytes: Long, progress: Progress): Long {
+            val n = bytes.coerceIn(0, total)
+            synchronized(lock) {
+                while (used + n > total) {
+                    check(progress)
+                    lock.wait(WAIT_MS)
+                }
+                used += n
+            }
+            return n
+        }
+
+        fun give(bytes: Long) = synchronized(lock) {
+            used -= bytes
+            lock.notifyAll()
+        }
+    }
+
     /** Lets at most [limit] pass at once, the limit read anew as each one comes. */
     private class Gate(private val limit: () -> Int) {
         private val lock = Object()
@@ -360,7 +411,7 @@ class Compactor(
 
     companion object {
         /** Pages larger than this are copied as they are. */
-        const val MAX_PAGE_BYTES = 256L * 1024 * 1024
+        const val MAX_PAGE_BYTES = 64L * 1024 * 1024
 
         private const val COPY_BYTES = 256 * 1024
 

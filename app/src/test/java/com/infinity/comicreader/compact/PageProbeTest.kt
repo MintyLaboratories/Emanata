@@ -3,12 +3,15 @@ package com.infinity.comicreader.compact
 import com.infinity.comicreader.reader.Tiff
 import com.infinity.comicreader.testing.FakeImages
 import com.infinity.comicreader.testing.FakeJxl
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.zip.CRC32
 
 /** Pages are told apart by their bytes: what may be stored anew losslessly, and what is left alone. */
@@ -59,6 +62,20 @@ class PageProbeTest {
         assertEquals(PageForm.OTHER, PageProbe.formOf(tiff("gray16-lzw-msb.tif")))
         assertEquals(PageForm.OTHER, PageProbe.formOf(tiff("jpeg-rgb.tif")))
         assertEquals(PageForm.OTHER, PageProbe.formOf(tiff("two-pages.tif")))
+    }
+
+    @Test
+    fun pageSizesComeFromTheirHeaders() {
+        assertArrayEquals(intArrayOf(3, 2), PageProbe.sizeOf(Png.encode(pixels(3, 8))))
+        assertArrayEquals(intArrayOf(3, 2), PageProbe.sizeOf(FakeImages().webp(pixels(4, 8), lossless = true, quality = 100)!!))
+        assertArrayEquals(intArrayOf(3, 2), PageProbe.sizeOf(FakeImages().webp(pixels(4, 8), lossless = false, quality = 90)!!))
+        val bmp = ByteArray(54).also {
+            it[0] = 'B'.code.toByte()
+            it[1] = 'M'.code.toByte()
+            ByteBuffer.wrap(it, 18, 8).order(ByteOrder.LITTLE_ENDIAN).putInt(1200).putInt(-1700)
+        }
+        assertArrayEquals(intArrayOf(1200, 1700), PageProbe.sizeOf(bmp))
+        assertNull(PageProbe.sizeOf("GIF89a....".toByteArray()))
     }
 
     @Test

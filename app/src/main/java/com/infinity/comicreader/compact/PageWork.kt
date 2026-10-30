@@ -25,6 +25,9 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     /** A page made anew: its [bytes] and extension [ext]; [reencoded] when its pixels changed slightly. */
     class Made(val bytes: ByteArray, val ext: String, val reencoded: Boolean = false)
 
+    /** A page that should have been made anew and could not: it stays as it is. */
+    class Unconverted(why: String) : Exception(why)
+
     /** [page] made smaller without changing a pixel; null to keep it. */
     fun compact(page: ByteArray): Made? {
         val made = when (PageProbe.formOf(page)) {
@@ -38,15 +41,16 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
 
     /**
      * [page] as one every reader opens: a JPEG XL holding a JPEG as that JPEG, a lossless
-     * one as lossless WebP (PNG before Android 11, and for 16 bits), a lossy one as WebP
-     * at [LOSSY_QUALITY] ([Made.reencoded]); null for every other page.
+     * one as lossless WebP (PNG before Android 11, for 16 bits, and where the WebP does not
+     * decode back the same), a lossy one as WebP at [LOSSY_QUALITY] ([Made.reencoded]); null
+     * for every other page. Throws [Unconverted] for a JPEG XL it cannot make so.
      */
     fun compatible(page: ByteArray): Made? {
         if (ImageKind.sniff(page) != ImageKind.JXL) return null
         if (PageProbe.jxlHoldsJpeg(page)) jxl.reconstruct(page)?.let { return Made(it, "jpg") }
-        val info = jxl.info(page) ?: return null
-        if (info.animated) return null
-        return if (info.lossless) losslessOut(page, info) else lossyOut(page, info)
+        val info = jxl.info(page) ?: throw Unconverted("Unreadable JPEG XL")
+        if (info.animated) throw Unconverted("Animated JPEG XL")
+        return (if (info.lossless) losslessOut(page, info) else lossyOut(page, info)) ?: throw Unconverted("JPEG XL not converted")
     }
 
     /** The JPEG [jpeg] transcoded at [effort], kept once it rebuilds byte for byte. */
@@ -74,16 +78,19 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         return made.takeIf { jxl.iccOfPixels(it.bytes)?.contentEquals(icc) == true }
     }
 
-    /** A lossless JPEG XL as lossless WebP, or PNG; its profile embedded unless sRGB. */
+    /**
+     * A lossless JPEG XL as lossless WebP, else PNG (the WebP encoder may change the color
+     * of pixels fully transparent); its profile embedded unless sRGB.
+     */
     private fun losslessOut(page: ByteArray, info: JxlInfo): Made? {
         val icc = if (info.srgb) null else jxl.iccOfPixels(page) ?: return null
         val bits = info.sampleBits
         if (bits == 8) {
             val rgba = jxl.decode(page, 4, 8)?.let { Pixels(info.width, info.height, 4, 8, it) } ?: return null
             val webp = images.webp(rgba, lossless = true, quality = WEBP_LOSSLESS_EFFORT)
-            if (webp != null) {
-                if (!rgba.same(images.decode(webp))) return null
-                return Made(if (icc == null) webp else WebpIcc.embed(webp, icc) ?: return null, "webp")
+            if (webp != null && rgba.same(images.decode(webp))) {
+                val out = if (icc == null) webp else WebpIcc.embed(webp, icc)
+                if (out != null) return Made(out, "webp")
             }
         }
         val pixels = jxl.decode(page, info.channels, bits)?.let { Pixels(info.width, info.height, info.channels, bits, it) } ?: return null

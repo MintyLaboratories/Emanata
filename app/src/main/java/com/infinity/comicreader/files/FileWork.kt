@@ -26,9 +26,20 @@ object FileWork {
 
     /**
      * What rebuilding books did beyond their count: bytes [saved] (less than 0 when they
-     * grew), books left [unchanged], and the pages [reencoded] (their pixels changed slightly), by book.
+     * grew), books left [unchanged] ([nested] of them for holding other archives), and by
+     * book the pages [reencoded] (their pixels changed slightly) and those [failed] (kept
+     * as they were, as they could not be made anew).
      */
-    data class Summary(val saved: Long, val unchanged: Int = 0, val reencoded: Map<String, List<String>> = emptyMap())
+    data class Summary(
+        val saved: Long,
+        val unchanged: Int = 0,
+        val reencoded: Map<String, List<String>> = emptyMap(),
+        val failed: Map<String, List<String>> = emptyMap(),
+        val nested: Int = 0
+    ) {
+        /** How many pages [failed]. */
+        val failedPages: Int get() = failed.values.sumOf { it.size }
+    }
 
     sealed class Outcome {
         /** What is no longer where it was: deleted, or moved away. */

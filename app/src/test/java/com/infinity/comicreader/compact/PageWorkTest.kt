@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -115,8 +116,20 @@ class PageWorkTest {
         assertEquals("webp", made.ext)
         assertFalse(made.reencoded)
         assertTrue(source.same(images.decode(made.bytes)))
+    }
+
+    @Test
+    fun aWebpThatDoesNotDecodeBackTheSameGivesWayToPng() {
+        val source = rgba(gray = false, alpha = true)
         images.badWebp = true
-        assertNull(work.compatible(jxl.encode(source.data, 40, 30, 4, 8, null, 7)))
+        val made = work.compatible(jxl.encode(source.data, 40, 30, 4, 8, null, 7))!!
+        assertEquals("png", made.ext)
+        assertTrue(source.same(Png.decode(made.bytes)))
+    }
+
+    @Test
+    fun aJpegXlThatCannotBeMadeCompatibleSaysSo() {
+        assertThrows(PageWork.Unconverted::class.java) { work.compatible(FakeJxl.CONTAINER + ByteArray(20)) }
     }
 
     @Test

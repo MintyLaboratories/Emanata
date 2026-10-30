@@ -182,6 +182,22 @@ class CompactorTest {
     }
 
     @Test
+    fun pagesThatFailToConvertAreKeptAndNamed() {
+        val source = zip("Mixed.cbz", listOf("1.png" to page(PNG), "2.png" to page(PNG, 3000), "3.png" to page(PNG, 4000)))
+        val failing: (ByteArray) -> PageWork.Made? = { if (it.size == 3000) throw PageWork.Unconverted("no") else if (it.size == 4000) throw OutOfMemoryError() else halve(it) }
+        val request = Compactor.Request(source, failing, inPlace = false, suffix = "compacted")
+        val result = Compactor(scratch, 2).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive) as Compactor.Result.Rebuilt
+        assertEquals(listOf("2.png", "3.png"), result.failed)
+        val out = entries(result.file)
+        assertEquals(listOf("1.jxl", "2.png", "3.png"), out.map { it.first })
+        assertArrayEquals(page(PNG, 3000), out[1].second)
+        // Nothing made anew: left alone, the pages named all the same.
+        val none: (ByteArray) -> PageWork.Made? = { throw PageWork.Unconverted("no") }
+        val unchanged = Compactor(scratch, 2).run(Compactor.Request(source, none, inPlace = false, suffix = "compacted"), { ArchiveReader.open(source, "UTF-8")!! }, alive)
+        assertEquals(listOf("1.png", "2.png", "3.png"), (unchanged as Compactor.Result.Unchanged).failed)
+    }
+
+    @Test
     fun aBookHoldingArchivesIsLeftAlone() {
         val inner = zip("inner.cbz", listOf("1.png" to page(PNG))).readBytes()
         val source = zip("Outer.cbz", listOf("Issue 1.cbz" to inner, "cover.png" to page(PNG)))

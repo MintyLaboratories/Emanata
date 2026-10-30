@@ -353,31 +353,46 @@ internal class FileActions(
         }
         toast(text)
         // Also when other books failed or the run was canceled: these pages changed all the same.
-        val reencoded = outcome.rebuilt?.reencoded.orEmpty()
-        if (reencoded.isNotEmpty()) tellReencoded(reencoded)
+        outcome.rebuilt?.let { tellPages(status.kind, it) }
     }
 
-    /** What rebuilding books did: how many, the bytes Compact saved, and how many were left as they were. */
+    /**
+     * What rebuilding books did: how many, the bytes Compact saved, how many were left as
+     * they were, and how many pages could not be made anew; or why nothing was done.
+     */
     private fun rebuilt(kind: FileWork.Kind, outcome: FileWork.Outcome.Done): String {
         val res = activity.resources
         val compatible = kind == FileWork.Kind.COMPATIBLE
         val count = outcome.count
-        val saved = outcome.summary?.saved ?: 0L
-        val text = when {
+        val summary = outcome.summary ?: FileWork.Summary(0)
+        val failed = summary.failedPages
+        val unchanged = summary.unchanged
+        var text = when {
+            count == 0 && failed > 0 -> res.getQuantityString(R.plurals.rebuild_failed_only, failed, failed)
+            count == 0 && summary.nested > 0 && summary.nested == unchanged -> res.getQuantityString(R.plurals.rebuild_nested, unchanged, unchanged)
             count == 0 -> activity.getString(if (compatible) R.string.compatible_nothing else R.string.compact_nothing)
             compatible -> res.getQuantityString(R.plurals.compatible_count, count, count)
-            else -> res.getQuantityString(R.plurals.compacted_count, count, count, FileUtils.formatSize(activity, saved.coerceAtLeast(0)))
+            else -> res.getQuantityString(R.plurals.compacted_count, count, count, FileUtils.formatSize(activity, summary.saved.coerceAtLeast(0)))
         }
-        val unchanged = outcome.summary?.unchanged ?: 0
-        return if (count > 0 && unchanged > 0) res.getQuantityString(R.plurals.rebuild_unchanged, unchanged, text, unchanged) else text
+        if (count > 0 && unchanged > 0) text = res.getQuantityString(R.plurals.rebuild_unchanged, unchanged, text, unchanged)
+        if (count > 0 && failed > 0) text = res.getQuantityString(R.plurals.rebuild_failed_pages, failed, text, failed)
+        return text
     }
 
-    /** Lists the pages Make compatible re-encoded, by book: their pixels changed slightly. */
-    private fun tellReencoded(pages: Map<String, List<String>>) {
-        val list = pages.entries.joinToString("\n") { (book, names) -> activity.getString(R.string.reencoded_book, book, names.joinToString(", ")) }
+    /** Lists by book the pages a rebuild of [kind] re-encoded (their pixels changed slightly) and those it could not make anew, if any. */
+    private fun tellPages(kind: FileWork.Kind, summary: FileWork.Summary) {
+        fun list(pages: Map<String, List<String>>) =
+            pages.entries.joinToString("\n") { (book, names) -> activity.getString(R.string.reencoded_book, book, names.joinToString(", ")) }
+        val parts = ArrayList<String>()
+        if (summary.reencoded.isNotEmpty()) parts += activity.getString(R.string.reencoded_message) + "\n\n" + list(summary.reencoded)
+        if (summary.failed.isNotEmpty()) {
+            val intro = if (kind == FileWork.Kind.COMPATIBLE) R.string.unconverted_compatible else R.string.unconverted_compact
+            parts += activity.getString(intro) + "\n\n" + list(summary.failed)
+        }
+        if (parts.isEmpty()) return
         AlertDialog.Builder(activity)
-            .setTitle(R.string.reencoded_title)
-            .setMessage(activity.getString(R.string.reencoded_message) + "\n\n" + list)
+            .setTitle(if (summary.failed.isEmpty()) R.string.reencoded_title else R.string.unconverted_title)
+            .setMessage(parts.joinToString("\n\n"))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }

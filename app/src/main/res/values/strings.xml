@@ -454,7 +454,7 @@
     <string name="compact_in_place_hint">Replaces each book once its new file is written and checked; .cbr, .cb7 and .cbt books become .cbz. Off, the new file goes beside it.</string>
     <string name="compact_skip_hidden">Skip hidden pages</string>
     <string name="compact_skip_hidden_hint">Skipped pages are gone from the new file; this part can\'t be reversed.</string>
-    <!-- %1$s: how much smaller, as "120 MB". -->
+    <!-- %1$d: how many books; %2$s: how much smaller, as "120 MB". -->
     <plurals name="compacted_count">
         <item quantity="one">Compacted %1$d book, saved %2$s</item>
         <item quantity="other">Compacted %1$d books, saved %2$s</item>
@@ -480,6 +480,22 @@
         <item quantity="one">%1$s; %2$d book was left as it was</item>
         <item quantity="other">%1$s; %2$d books were left as they were</item>
     </plurals>
+    <plurals name="rebuild_nested">
+        <item quantity="one">Left %1$d book as it was: it holds other archives</item>
+        <item quantity="other">Left %1$d books as they were: they hold other archives</item>
+    </plurals>
+    <plurals name="rebuild_failed_only">
+        <item quantity="one">Couldn\'t convert %1$d page; nothing changed</item>
+        <item quantity="other">Couldn\'t convert %1$d pages; nothing changed</item>
+    </plurals>
+    <!-- %1$s: what was done, as "Made 2 books compatible". -->
+    <plurals name="rebuild_failed_pages">
+        <item quantity="one">%1$s; %2$d page couldn\'t be converted</item>
+        <item quantity="other">%1$s; %2$d pages couldn\'t be converted</item>
+    </plurals>
+    <string name="unconverted_title">Pages not converted</string>
+    <string name="unconverted_compact">These pages couldn\'t be converted and were kept as they were:</string>
+    <string name="unconverted_compatible">These pages couldn\'t be converted and are still JPEG XL:</string>
     <string name="reencoded_title">Pages changed slightly</string>
     <string name="reencoded_message">These pages were lossy JPEG XL and are now WebP at quality 90:</string>
     <!-- %1$s: a book; %2$s: its pages. -->

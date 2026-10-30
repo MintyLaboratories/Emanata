@@ -66,7 +66,8 @@ class Compactor(
         /**
          * The book rebuilt as [file], [before] and [after] bytes; book page `i` is now page
          * [moves]`[i]` of [pageCount] (-1: left out). [removed] is the book's file when it
-         * went (in place, under another name); [reencoded] names the pages whose pixels changed.
+         * went (in place, under another name); [reencoded] names the pages whose pixels
+         * changed, [failed] those kept as they were because they could not be made anew.
          */
         class Rebuilt(
             val file: File,
@@ -75,11 +76,12 @@ class Compactor(
             val moves: IntArray,
             val pageCount: Int,
             val removed: File?,
-            val reencoded: List<String>
+            val reencoded: List<String>,
+            val failed: List<String> = emptyList()
         ) : Result()
 
-        /** Left as it was, for [why]. */
-        class Unchanged(val why: Why) : Result()
+        /** Left as it was, for [why]; [failed] names the pages that could not be made anew. */
+        class Unchanged(val why: Why, val failed: List<String> = emptyList()) : Result()
     }
 
     enum class Why {
@@ -93,8 +95,8 @@ class Compactor(
         NOT_SMALLER
     }
 
-    /** A file of the new archive, waiting in [scratch]. */
-    private class Piece(val file: File, val size: Long, val crc: Long, val made: PageWork.Made?)
+    /** A file of the new archive, waiting in [scratch]; [failed] for a page kept because it could not be made anew. */
+    private class Piece(val file: File, val size: Long, val crc: Long, val made: PageWork.Made?, val failed: Boolean = false)
 
     /**
      * Rebuilds [request]'s book, read through the reader [open] gives, closed before the new
@@ -130,7 +132,8 @@ class Compactor(
         try {
             val pieces = convertAll(request, reader, files, work, progress, total)
             closeReader()
-            if (pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING)
+            val failedAt = files.indices.filter { pieces[it].failed }
+            if (pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
             val names = FlatNames.of(
                 files.map { it.path },
                 files.mapIndexed { i, e ->
@@ -144,7 +147,7 @@ class Compactor(
             verify(out, names, pieces)
             val before = book.length()
             val after = out.length()
-            if (request.smallerOnly && after >= before) return Result.Unchanged(Why.NOT_SMALLER)
+            if (request.smallerOnly && after >= before) return Result.Unchanged(Why.NOT_SMALLER, failedAt.map { FlatNames.baseName(files[it].path) })
             check(progress)
             val (target, removed) = place(out, book, request)
             part = null
@@ -153,7 +156,7 @@ class Compactor(
             val newPages = pagesOf(names.indices.map { names[it] to pieces[it].size }).map { names[it] }
             val moves = PageMoves.of(oldKeys.mapIndexed { i, n -> n ?: "\u0000$i" }, newPages)
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
-            return Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded)
+            return Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
         } finally {
             part?.delete()
             work.deleteRecursively()
@@ -196,10 +199,21 @@ class Compactor(
                 }
                 futures += pool.submit {
                     try {
-                        val made = if (progress.alive) gate.pass { runCatching { request.convert(bytes) }.getOrNull() } else null
+                        var failed = false
+                        val made = if (!progress.alive) null else gate.pass {
+                            try {
+                                request.convert(bytes)
+                            } catch (e: Exception) {
+                                failed = true
+                                null
+                            } catch (e: OutOfMemoryError) {
+                                failed = true
+                                null
+                            }
+                        }
                         val keep = made?.bytes ?: bytes
                         file.writeBytes(keep)
-                        pieces[i] = Piece(file, keep.size.toLong(), crcOf(keep), made)
+                        pieces[i] = Piece(file, keep.size.toLong(), crcOf(keep), made, failed)
                         advance(entry.size.coerceAtLeast(0))
                     } finally {
                         room.release()

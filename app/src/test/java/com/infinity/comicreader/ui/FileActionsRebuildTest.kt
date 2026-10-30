@@ -76,6 +76,25 @@ class FileActionsRebuildTest {
     }
 
     @Test
+    fun pagesNotConvertedAreCountedAndListed() {
+        val summary = FileWork.Summary(0, failed = mapOf("Book A.cbz" to listOf("4.jxl")))
+        FileWork.start(FileWork.Kind.COMPATIBLE, "Book A.cbz", 1) { FileWork.Outcome.Done("/x/Book A.cbz", count = 1, summary = summary) }
+        settle()
+        val made = context.resources.getQuantityString(R.plurals.compatible_count, 1, 1)
+        assertEquals(context.resources.getQuantityString(R.plurals.rebuild_failed_pages, 1, made, 1), ShadowToast.getTextOfLatestToast())
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(message(dialog).startsWith(context.getString(R.string.unconverted_compatible)))
+        assertTrue(message(dialog).contains(context.getString(R.string.reencoded_book, "Book A.cbz", "4.jxl")))
+    }
+
+    @Test
+    fun aBookHoldingArchivesIsSaidSo() {
+        FileWork.start(FileWork.Kind.COMPACT, "Box.cbz", 1) { FileWork.Outcome.Done(null, count = 0, summary = FileWork.Summary(0, unchanged = 1, nested = 1)) }
+        settle()
+        assertEquals(context.resources.getQuantityString(R.plurals.rebuild_nested, 1, 1), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
     fun bytesSavedAreToldWhenCompactIsCanceled() {
         val saved = 5L * 1024 * 1024
         FileWork.start(FileWork.Kind.COMPACT, "Book A.cbz", 3) { FileWork.Outcome.Canceled(2, 3, summary = FileWork.Summary(saved)) }

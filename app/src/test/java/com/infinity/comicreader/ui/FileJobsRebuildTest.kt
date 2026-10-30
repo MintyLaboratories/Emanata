@@ -177,6 +177,24 @@ class FileJobsRebuildTest {
     }
 
     @Test
+    fun pagesStillJpegXlAreNamedInTheSummary() {
+        val pixels = Pixels(4, 3, 4, 8, ByteArray(4 * 3 * 4) { (it * 5).toByte() })
+        val book = File(tmp.root, "Mixed.cbz")
+        ZipOutputStream(book.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("1.jxl"))
+            zip.write(jxl.lossy(pixels))
+            zip.closeEntry()
+            // A JPEG XL the codec cannot read.
+            zip.putNextEntry(ZipEntry("2.jxl"))
+            zip.write(FakeJxl.CONTAINER + ByteArray(20))
+            zip.closeEntry()
+        }
+        val outcome = rebuild(book, compatible = true) as FileWork.Outcome.Done
+        assertEquals(1, outcome.count)
+        assertEquals(mapOf("Mixed.cbz" to listOf("2.jxl")), outcome.summary!!.failed)
+    }
+
+    @Test
     fun withoutLibjxlNothingIsTouched() {
         val book = sevenZip("Book.cb7", 1)
         val none = FileJobs(context, library, prefs) { null }

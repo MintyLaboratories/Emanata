@@ -221,12 +221,14 @@ internal class FileJobs(
         }
         var done = 0
         var unchanged = 0
+        var nested = 0
         var saved = 0L
         var last: String? = null
         val gone = ArrayList<String>()
         val reencoded = LinkedHashMap<String, List<String>>()
+        val failedPages = LinkedHashMap<String, List<String>>()
         var failure: Exception? = null
-        fun summary() = FileWork.Summary(saved, unchanged, reencoded)
+        fun summary() = FileWork.Summary(saved, unchanged, reencoded, failedPages, nested)
         try {
             for ((i, path) in paths.withIndex()) {
                 if (!p.alive) return FileWork.Outcome.Canceled(done, paths.size, gone, summary())
@@ -244,7 +246,11 @@ internal class FileJobs(
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {
-                        is Compactor.Result.Unchanged -> unchanged++
+                        is Compactor.Result.Unchanged -> {
+                            unchanged++
+                            if (result.why == Compactor.Why.NESTED) nested++
+                            if (result.failed.isNotEmpty()) failedPages[book.name] = result.failed
+                        }
                         is Compactor.Result.Rebuilt -> {
                             follow(book, id, result)
                             done++
@@ -252,6 +258,7 @@ internal class FileJobs(
                             last = result.file.absolutePath
                             result.removed?.let { gone += it.absolutePath }
                             if (result.reencoded.isNotEmpty()) reencoded[result.file.name] = result.reencoded
+                            if (result.failed.isNotEmpty()) failedPages[result.file.name] = result.failed
                         }
                     }
                 } catch (e: CancellationException) {

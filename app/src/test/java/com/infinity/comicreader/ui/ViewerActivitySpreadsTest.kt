@@ -375,6 +375,21 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun withAutoRotateOffTheLockComesBackWithoutTheSensor() {
+        android.provider.Settings.System.putInt(context.contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0)
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertTrue(sensors.listeners.isEmpty())
+    }
+
+    @Test
     fun landscapeOnlyKeepsOnePageAScreenWhileTurnedForAWidePage() {
         prefs.twoPage = TwoPage.LANDSCAPE
         val viewer = launch(book(numbered(1, 8), setOf("Tale 001-003")))

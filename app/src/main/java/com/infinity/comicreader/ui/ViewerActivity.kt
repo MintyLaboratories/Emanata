@@ -2079,7 +2079,8 @@ class ViewerActivity : AppCompatActivity() {
 
     /** Turns the screen for the wide page on screen, or back, as [spreadRotation] says. */
     private fun updateSpreadRotation() {
-        val unsure = spreadRotation.held >= 0 && upright().unsure()
+        // With auto-rotate off, the system turns back to the reader's lock whatever the sensor.
+        val unsure = spreadRotation.held >= 0 && autoRotate() && upright().unsure()
         spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
         watchUpright()
     }
@@ -2089,11 +2090,21 @@ class ViewerActivity : AppCompatActivity() {
         watchUpright()
     }.also { uprightWatch = it }
 
-    /** Reads the sensor only while the reader shows and [spreadRotation] needs it. */
+    /**
+     * Reads the sensor only while the reader shows, [spreadRotation] needs it and auto-rotate
+     * is on; with auto-rotate off, a kept orientation is let go at once.
+     */
     private fun watchUpright() {
-        if (spreadRotation.watching && started) upright().enabled = true
+        val needed = spreadRotation.watching && started
+        val auto = needed && autoRotate()
+        if (needed && !auto && spreadRotation.keeping) spreadRotation.settled()?.let { requestedOrientation = it }
+        if (auto) upright().enabled = true
         else uprightWatch?.enabled = false
     }
+
+    /** True when the system turns the screen by the sensor: auto-rotate is on. */
+    private fun autoRotate() =
+        android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 1) != 0
 
     /** The fixed orientation the screen is in now, from the display's rotation. */
     private fun screenOrientation(): Int {

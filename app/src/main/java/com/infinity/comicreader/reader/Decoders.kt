@@ -73,18 +73,30 @@ object Decoders {
             sinks.set(null)
             sink.encoded(bytes)
         }
-        val source = if (measuresCrop(target)) runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() else null
+        val size = if (measuresCrop(target) || target.banded) runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() else null
+        val sampled = sampledFor(target, size)
         return reported(kind) {
             val full = when {
-                kind == ImageKind.JXL -> decodeJxl(bytes, target.capPixels)
-                kind == ImageKind.AVIF -> decodeAvif(bytes, target)
-                kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), target.capPixels)
+                kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels)
+                kind == ImageKind.AVIF -> decodeAvif(bytes, sampled)
+                kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), sampled.capPixels)
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
-                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), target.capPixels)
-                else -> decodeLegacy(bytes, target.capPixels)
+                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), sampled.capPixels)
+                else -> decodeLegacy(bytes, sampled.capPixels)
             }
-            fit(full, target, source)
+            fit(full, sampled, size.takeIf { measuresCrop(target) })
         }
+    }
+
+    /**
+     * [target] decoding a [size] source sampled down to at most [Target.BASE_DECODE_PIXELS]
+     * when it shows it in bands ([Target.bandsAt]), its bitmap only a stand-in; else itself.
+     */
+    internal fun sampledFor(target: Target, size: IntArray?): Target {
+        if (!target.banded || size == null || size[0] <= 0 || size[1] <= 0 || target.capPixels <= Target.BASE_DECODE_PIXELS) return target
+        val area = target.area(size[0], size[1])
+        if (!target.bandsAt((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble())) return target
+        return target.copy(capPixels = Target.BASE_DECODE_PIXELS)
     }
 
     fun decode(input: InputStream, target: Target): Bitmap = decode(BitmapUtils.readCapped(input), target)
@@ -96,15 +108,16 @@ object Decoders {
     fun decode(file: File, target: Target): Bitmap {
         if (file is RemoteFile) return decode(Remotes.readBytes(file.path), target)
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
+        val size = if (kind != ImageKind.JXL && kind != ImageKind.AVIF && (measuresCrop(target) || target.banded)) size(file) else null
+        val sampled = sampledFor(target, size)
+        val source = size.takeIf { measuresCrop(target) }
         if (kind == ImageKind.TIFF) {
-            val source = if (measuresCrop(target)) size(file) else null
-            return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), target.capPixels) }, target, source) }
+            return reported(kind) { fit(RandomAccessFile(file, "r").use { decodeTiff(Tiff.FileInput(it), sampled.capPixels) }, sampled, source) }
         }
         if (kind == ImageKind.JXL || kind == ImageKind.AVIF || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return file.inputStream().use { decode(it, target) }
         }
-        val source = if (measuresCrop(target)) size(file) else null
-        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), target.capPixels), target, source) }
+        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), sampled.capPixels), sampled, source) }
     }
 
     /** What a decode leaves its page preview with ([capturing]). */
@@ -216,9 +229,14 @@ object Decoders {
         val plan = target.plan((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble(), area[0].toDouble(), area[1].toDouble())
             .let { if (standIn) it.notEnlarged() else it }
         if (plan.isIdentity(src.width, src.height)) return src
+        // A stand-in for a page drawn in bands is only seen until they arrive: scaled the quick way.
+        val quick = !standIn && target.bandsAt((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble())
         try {
-            return if (plan.isCrop()) Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
-            else BitmapUtils.resample(src, plan, target.linear && plan.shrinks(), target.scaling)
+            return when {
+                plan.isCrop() -> Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
+                quick -> BitmapUtils.scaleQuick(src, plan)
+                else -> BitmapUtils.resample(src, plan, target.linear && plan.shrinks(), target.scaling)
+            }
         } finally {
             // Frees the full-resolution pixels before the caller keeps the result.
             src.recycle()
@@ -351,6 +369,56 @@ object Decoders {
         if (decoder.width == w && decoder.height == h) return decoder
         decoder.recycle()
         return null
+    }
+
+    /** Pixels above which a page's detail is read a rectangle at a time ([RegionDetail]) rather than decoded whole. */
+    private const val REGION_DETAIL_PIXELS = 16_000_000L
+
+    /**
+     * Detail of [bytes], a [REGION_KINDS] image, for [target], read a rectangle at a time
+     * ([RegionDetail]) when it is drawn in bands ([Target.bandsAt]) or holds more than
+     * [REGION_DETAIL_PIXELS]; null otherwise, or where it cannot be read so. Auto-crop is
+     * found as the page's own decode finds it, on the same sampling ([sampledFor]). Blocking.
+     */
+    fun regionDetail(bytes: ByteArray, target: Target): PageDetail? {
+        val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() ?: return null
+        val w = size[0]
+        val h = size[1]
+        if (w <= 0 || h <= 0) return null
+        val whole = target.area(w, h)
+        val large = w.toLong() * h > REGION_DETAIL_PIXELS || target.bandsAt((whole[2] - whole[0]).toDouble(), (whole[3] - whole[1]).toDouble())
+        if (!large) return null
+        val decoder = runCatching { regionDecoder(bytes, w, h) }.getOrNull() ?: return null
+        try {
+            val bounds = if (target.autoCrop && target.box == null) cropOf(bytes, target, size) else null
+            return RegionDetail(PlatformRegions(decoder), target.area(w, h, bounds), bytes.size.toLong())
+        } catch (t: Throwable) {
+            decoder.recycle()
+            throw t
+        }
+    }
+
+    /** What auto-crop finds on [bytes], a [size] image, decoded as a page for [target] decodes it; null when nothing. */
+    private fun cropOf(bytes: ByteArray, target: Target, size: IntArray): IntArray? {
+        var found: Box? = null
+        measuring({ box, _, _ -> found = box }) {
+            decode(bytes, Target(16, 16, autoCrop = true, capPixels = sampledFor(target, size).capPixels)).recycle()
+        }
+        return found?.takeIf { it != Box.FULL }?.pixels(size[0], size[1])
+    }
+
+    /** A [RegionReader] over a platform region decoder. */
+    private class PlatformRegions(private val decoder: BitmapRegionDecoder) : RegionReader {
+        override val width: Int get() = decoder.width
+        override val height: Int get() = decoder.height
+
+        override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap =
+            decoder.decodeRegion(Rect(left, top, right, bottom), BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }) ?: throw DecodeException("Could not decode part of this image")
+
+        override fun close() = decoder.recycle()
     }
 
     /** Pixels a whole decode for [edge] works on at most, sampled down by a power of two. */

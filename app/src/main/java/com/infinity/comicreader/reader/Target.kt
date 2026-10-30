@@ -69,6 +69,10 @@ enum class Fit {
  * image is first reduced by the decoder's own power-of-two sampling (see [Decoders]).
  * The result never exceeds [MAX_OUTPUT_PIXELS], nor [MAX_OUTPUT_SIDE] on either side.
  *
+ * [banded] marks a page drawn in bands at its full size where it is large ([bandsAt]):
+ * its bitmap is then a stand-in of at most [BASE_PIXELS], decoded from the source
+ * sampled down to at most [BASE_DECODE_PIXELS] ([Decoders]).
+ *
  * A data class, so a page's target can key a cache of decoded bitmaps.
  */
 data class Target(
@@ -81,7 +85,8 @@ data class Target(
     val anchorTop: Boolean = false,
     val half: Half = Half.WHOLE,
     val box: Box? = null,
-    val scaling: Scaling = Scaling.PLAIN
+    val scaling: Scaling = Scaling.PLAIN,
+    val banded: Boolean = false
 ) {
     /**
      * `[left, top, right, bottom]` of a [srcW] x [srcH] source that this target shows: its
@@ -104,6 +109,16 @@ data class Target(
 
     /** What to produce from a [srcW] x [srcH] source region at ([left], [top]), in source pixels. */
     fun plan(srcW: Double, srcH: Double, left: Double = 0.0, top: Double = 0.0): Plan {
+        val plan = fullPlan(srcW, srcH, left, top)
+        if (banded && bands(plan)) return plan.capped(BASE_PIXELS, MAX_OUTPUT_SIDE)
+        return plan.capped(MAX_OUTPUT_PIXELS, MAX_OUTPUT_SIDE)
+    }
+
+    /** True when this target shows a [srcW] x [srcH] source region in bands, its bitmap a stand-in ([banded]). */
+    fun bandsAt(srcW: Double, srcH: Double): Boolean = banded && srcW > 0 && srcH > 0 && bands(fullPlan(srcW, srcH))
+
+    /** [plan] before any cap on its size. */
+    private fun fullPlan(srcW: Double, srcH: Double, left: Double = 0.0, top: Double = 0.0): Plan {
         require(srcW > 0 && srcH > 0) { "Empty source" }
         val bw = width
         val bh = height
@@ -123,7 +138,7 @@ data class Target(
             }
             else -> inside(srcW, srcH, left, top)
         }
-        return plan.capped(MAX_OUTPUT_PIXELS, MAX_OUTPUT_SIDE)
+        return plan
     }
 
     /**
@@ -197,6 +212,22 @@ data class Target(
 
         /** The source as it is. */
         val NATIVE = Target()
+
+        /** Largest page a [banded] target makes in one bitmap: 48 MB of ARGB. */
+        const val BAND_ABOVE_PIXELS = 12_000_000L
+
+        /** Largest stand-in of a page drawn in bands: 16 MB of ARGB. */
+        const val BASE_PIXELS = 4_000_000L
+
+        /** Largest source a stand-in of a page drawn in bands is decoded from, sampled down by a power of two. */
+        const val BASE_DECODE_PIXELS = 4 * BASE_PIXELS
+
+        /**
+         * True when a page planned at [plan] is drawn in bands: larger than [BAND_ABOVE_PIXELS]
+         * or taller than [MAX_OUTPUT_SIDE], and no wider than a band can be.
+         */
+        fun bands(plan: Plan): Boolean =
+            plan.width <= MAX_OUTPUT_SIDE && (plan.width.toLong() * plan.height > BAND_ABOVE_PIXELS || plan.height > MAX_OUTPUT_SIDE)
     }
 }
 

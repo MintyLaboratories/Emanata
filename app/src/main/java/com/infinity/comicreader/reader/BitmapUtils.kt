@@ -1,7 +1,10 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.Rect
 import com.infinity.comicreader.util.Timing
 import java.io.ByteArrayOutputStream
@@ -102,6 +105,16 @@ object BitmapUtils {
     }
 
     // ------------------------------------------------------------------ resampling
+
+    /** [src] scaled as [plan] says by the platform's bilinear filter, into a new ARGB_8888 bitmap: quick, for a stand-in. */
+    fun scaleQuick(src: Bitmap, plan: Plan): Bitmap {
+        val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
+        val m = Matrix()
+        m.setTranslate(-plan.x.toFloat(), -plan.y.toFloat())
+        m.postScale((plan.width / plan.spanW).toFloat(), (plan.height / plan.spanH).toFloat())
+        Canvas(out).drawBitmap(src, m, Paint(Paint.FILTER_BITMAP_FLAG))
+        return out
+    }
 
     /**
      * [src] resampled through [Resampler] as [plan] and [scaling] say, into a new ARGB_8888 bitmap. Reads

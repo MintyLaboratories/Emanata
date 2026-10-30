@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.util.Formats
 import java.io.File
 
@@ -10,6 +11,16 @@ class ImageSource(private val file: File) : PageSource {
 
     override fun loadPage(index: Int, target: Target): Bitmap =
         Decoders.decode(file, target)
+
+    /** Read a rectangle at a time where the image is large ([Decoders.regionDetail]), else decoded whole. */
+    override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
+        if (file !is RemoteFile && Decoders.regionNamed(file.name)) {
+            val bytes = file.inputStream().use { BitmapUtils.readCapped(it) }
+            Decoders.regionDetail(bytes, target)?.let { return it }
+            return BitmapDetail(Decoders.decode(bytes, target.detail(Decoders.size(bytes), maxBytes)))
+        }
+        return super.loadDetail(index, target, maxBytes)
+    }
 
     override fun loadPreview(index: Int): Bitmap? {
         if (!QuickPreviews().worthReading(file.name)) return null

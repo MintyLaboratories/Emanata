@@ -8,6 +8,42 @@ import org.junit.Test
 class TargetTest {
 
     @Test
+    fun aBandedTargetMakesAStandInOfAPageTooLargeForOneBitmap() {
+        val banded = Target(1848, 0, banded = true)
+        // 1848 x 15708: past the band threshold, though under the bitmap cap.
+        assertTrue(banded.bandsAt(1000.0, 8500.0))
+        val plan = banded.plan(1000.0, 8500.0)
+        assertTrue(plan.width.toLong() * plan.height <= Target.BASE_PIXELS)
+        assertEquals(8.5, plan.height.toDouble() / plan.width, 0.02)
+        // Unbanded, the same page is as large as one bitmap may be.
+        val whole = Target(1848, 0).plan(1000.0, 8500.0)
+        assertTrue(whole.width.toLong() * whole.height > Target.BAND_ABOVE_PIXELS)
+        assertFalse(Target(1848, 0).bandsAt(1000.0, 8500.0))
+    }
+
+    @Test
+    fun aPageThatFitsOneBitmapIsNotBanded() {
+        val banded = Target(1848, 2960, banded = true)
+        assertFalse(banded.bandsAt(4000.0, 6000.0))
+        assertEquals(Target(1848, 2960).plan(4000.0, 6000.0), banded.plan(4000.0, 6000.0))
+    }
+
+    @Test
+    fun aPageWiderThanABandKeepsTheOneBitmapCap() {
+        // A panorama at fit height: no band could be that wide.
+        val banded = Target(0, 2960, banded = true)
+        assertFalse(banded.bandsAt(30000.0, 2960.0))
+        assertEquals(Target(0, 2960).plan(30000.0, 2960.0), banded.plan(30000.0, 2960.0))
+    }
+
+    @Test
+    fun theDetailOfABandedTargetIsWhole() {
+        val detail = Target(1848, 0, banded = true).detail(intArrayOf(1000, 16000), Long.MAX_VALUE)
+        assertFalse(detail.banded)
+        assertEquals(1000 to 16000, size(detail.plan(1000.0, 16000.0)))
+    }
+
+    @Test
     fun notEnlargedKeepsTheSpanAtItsOwnSize() {
         val enlarging = Target(1848, 2960).plan(620.0, 876.0)
         val kept = enlarging.notEnlarged()

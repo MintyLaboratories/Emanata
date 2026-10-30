@@ -46,7 +46,7 @@ class ChannelZipReader(channel: SeekableByteChannel, charsetName: String) : Arch
             val reread = nameCharset != Charsets.UTF_8
             entries = native.mapIndexed { i, e ->
                 val name = unicode[i] ?: if (reread && unmarked(e) && e.rawName != null) String(e.rawName, nameCharset) else e.name
-                ArchiveEntry(name, e.size, i)
+                ArchiveEntry(name, e.size, i, e.crc)
             }
         } catch (t: Throwable) {
             runCatching { zip.close() }

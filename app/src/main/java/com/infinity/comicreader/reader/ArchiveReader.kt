@@ -9,8 +9,12 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.Charset
 
-/** A file inside an archive: its [path] in the archive, its uncompressed [size] (-1 when unknown). */
-class ArchiveEntry(val path: String, val size: Long, internal val index: Int)
+/**
+ * A file inside an archive: its [path] in the archive, its uncompressed [size] (-1 when
+ * unknown), and the [crc] (CRC-32) its contents must have, where the format stores one
+ * its reader does not check itself (zip); -1 otherwise.
+ */
+class ArchiveEntry(val path: String, val size: Long, internal val index: Int, val crc: Long = -1)
 
 /** Lists the files of one archive and streams their contents. */
 interface ArchiveReader : Closeable {

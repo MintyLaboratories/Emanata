@@ -32,8 +32,8 @@ import java.util.zip.ZipOutputStream
  * page made anew ([FlatNames]), every other file copied as it is, OS litter left out.
  * Pages convert on up to [maxWorkers] threads at once, fewer while [limit] says so, and
  * only as many as [memory] bytes hold ([Request.cost]); each file passes through
- * [scratch] on its way. The new archive is written beside the book,
- * every entry checked by its CRC, and only then put in place: as the book itself when
+ * [scratch] on its way, checked by the CRC its archive stores, if any. The new archive is
+ * written beside the book, every entry checked by its CRC, and only then put in place: as the book itself when
  * [Request.inPlace] (a non-ZIP book's file removed), else beside it.
  */
 class Compactor(
@@ -191,7 +191,7 @@ class Compactor(
                 val entry = files[i]
                 val file = File(work, i.toString())
                 if (!isPage(entry)) {
-                    pieces[i] = reader.read(entry) { copy(it, file) }
+                    pieces[i] = reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
                     advance(entry.size.coerceAtLeast(0))
                     continue
                 }
@@ -211,11 +211,15 @@ class Compactor(
                     budget.give(held)
                     room.release()
                     // Too large to hold now: copied as it is.
-                    pieces[i] = reader.read(entry) { copy(it, file) }.let { Piece(it.file, it.size, it.crc, null, failed = true) }
+                    pieces[i] = reader.read(entry) { copy(it, file) }.let {
+                        checkRead(entry, it.size, it.crc)
+                        Piece(it.file, it.size, it.crc, null, failed = true)
+                    }
                     advance(entry.size.coerceAtLeast(0))
                     continue
                 }
                 try {
+                    checkRead(entry, bytes.size.toLong(), crcOf(bytes))
                     held += budget.take(request.cost(bytes).coerceIn(held, budget.total) - held, progress)
                 } catch (t: Throwable) {
                     budget.give(held)
@@ -343,6 +347,11 @@ class Compactor(
 
     private fun check(progress: Progress) {
         if (!progress.alive) throw CancellationException("Canceled")
+    }
+
+    /** Throws unless [entry] read as [size] bytes of [crc] is what its archive says it holds. */
+    private fun checkRead(entry: ArchiveEntry, size: Long, crc: Long) {
+        if ((entry.size >= 0 && size != entry.size) || (entry.crc >= 0 && crc != entry.crc)) throw IOException("${entry.path} is damaged")
     }
 
     /** True for a file read whole to be converted: named as an image, of a size held in memory. */

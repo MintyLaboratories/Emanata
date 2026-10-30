@@ -198,6 +198,32 @@ class CompactorTest {
     }
 
     @Test
+    fun aFileReadDamagedStopsTheRebuild() {
+        // Noise: deflating stores it as it is, so it can be found in the archive.
+        val random = java.util.Random(3)
+        val damaged = ByteArray(3000).also { random.nextBytes(it) }
+        val marker = String(damaged, 1000, 100, Charsets.ISO_8859_1)
+        for (deflated in listOf(false, true)) {
+            val source = zip(if (deflated) "Deflated.cbz" else "Stored.cbz", listOf("1.png" to page(PNG), "2.jpg" to damaged, "notes.txt" to "abc".repeat(500).toByteArray()), deflated)
+            // A byte of the page's data changed where the archive holds it, its CRC left as it was.
+            val bytes = source.readBytes()
+            val at = String(bytes, Charsets.ISO_8859_1).indexOf(marker) + 50
+            assertTrue(at > 50)
+            bytes[at] = (bytes[at] + 1).toByte()
+            source.writeBytes(bytes)
+            assertThrows(java.io.IOException::class.java) { run(source, inPlace = true) }
+            assertArrayEquals(bytes, source.readBytes())
+        }
+        // Text read whole and checked too.
+        val text = zip("Text.cbz", listOf("1.png" to page(PNG), "notes.txt" to "x".repeat(500).toByteArray()))
+        val bytes = text.readBytes()
+        val at = String(bytes, Charsets.ISO_8859_1).indexOf("x".repeat(100)) + 50
+        bytes[at] = 'y'.code.toByte()
+        text.writeBytes(bytes)
+        assertThrows(java.io.IOException::class.java) { run(text, inPlace = true) }
+    }
+
+    @Test
     fun aBookHoldingArchivesIsLeftAlone() {
         val inner = zip("inner.cbz", listOf("1.png" to page(PNG))).readBytes()
         val source = zip("Outer.cbz", listOf("Issue 1.cbz" to inner, "cover.png" to page(PNG)))

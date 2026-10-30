@@ -41,7 +41,7 @@ class ZipReader(file: File, charsetName: String) : ArchiveReader {
             native = files.map { list[it] }
             entries = files.mapIndexed { i, at ->
                 val name = if (byBytes == null) list[at].name else nameOf(stored[at])
-                ArchiveEntry(name, list[at].size, i)
+                ArchiveEntry(name, list[at].size, i, list[at].crc)
             }
         } catch (t: Throwable) {
             runCatching { zip.close() }

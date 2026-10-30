@@ -227,6 +227,32 @@ class CompactorTest {
     }
 
     @Test
+    fun cancelingWaitsForThePagesUnderWay() {
+        val inside = AtomicInteger()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val slow: (ByteArray) -> PageWork.Made? = {
+            inside.incrementAndGet()
+            started.countDown()
+            // As libjxl does, it goes on whatever happens.
+            val end = System.nanoTime() + 300_000_000
+            while (System.nanoTime() < end) Unit
+            inside.decrementAndGet()
+            halve(it)
+        }
+        val source = zip("Slow.cbz", (1..6).map { "$it.png" to page(PNG) })
+        val progress = object : Compactor.Progress {
+            override val alive: Boolean get() = started.count > 0
+
+            override fun report(done: Long, total: Long) = Unit
+        }
+        val request = Compactor.Request(source, slow, inPlace = true, suffix = "compacted")
+        assertThrows(CancellationException::class.java) {
+            Compactor(scratch, 2).run(request, { ArchiveReader.open(source, "UTF-8")!! }, progress)
+        }
+        assertEquals(0, inside.get())
+    }
+
+    @Test
     fun noMoreThanTheLimitConvertAtOnce() {
         val inside = AtomicInteger()
         var most = 0

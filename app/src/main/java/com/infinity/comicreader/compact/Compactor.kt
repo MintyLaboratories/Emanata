@@ -257,7 +257,8 @@ class Compactor(
             check(progress)
         } finally {
             pool.shutdownNow()
-            pool.awaitTermination(1, TimeUnit.MINUTES)
+            // libjxl cannot be stopped midway: the operation ends, and the next starts, once each page under way has.
+            while (!pool.awaitTermination(WAIT_MS, TimeUnit.MILLISECONDS)) Unit
         }
         return pieces.map { it ?: throw IOException("A file was not read") }
     }

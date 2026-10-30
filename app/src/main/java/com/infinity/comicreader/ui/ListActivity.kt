@@ -467,6 +467,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         super.onDestroy()
         historyWatch?.close()
         resumeOffer?.dismiss()
+        missingSheet?.dismiss()
         stack.release()
         hideMore()
         peek.hide()

@@ -36,6 +36,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
@@ -92,14 +93,25 @@ class ListActivityMissingTest {
     }
 
     private fun launch(tab: Int = 2): Pair<ListActivity, RecyclerView> {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        val activity = start(tab).get()
+        return activity to activity.laidOut()
+    }
+
+    /** The library started on [tab]. */
+    private fun start(tab: Int = 2): ActivityController<ListActivity> {
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
         idle()
-        activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
+        controller.get().findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
         idle()
-        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        return controller
+    }
+
+    /** The list, its rows laid out. */
+    private fun ListActivity.laidOut(): RecyclerView {
+        val recycler = findViewById<RecyclerView>(R.id.recycler)
         recycler.measure(0, 0)
         recycler.layout(0, 0, 1000, 4000)
-        return activity to recycler
+        return recycler
     }
 
     /** The row whose title is [name]. */
@@ -316,5 +328,18 @@ class ListActivityMissingTest {
         assertTrue(library.bookmarks().isEmpty())
         // The book itself stays.
         assertTrue(here.exists())
+    }
+
+    @Test
+    fun theMissingSheetClosesWithTheScreen() {
+        fillHistory()
+        val controller = start()
+        controller.get().laidOut().row("gone.cbz").performClick()
+        idle()
+        val sheet = controller.get().missingSheet!!
+        assertTrue(sheet.isShowing)
+        controller.pause().stop().destroy()
+        idle()
+        assertFalse(sheet.isShowing)
     }
 }

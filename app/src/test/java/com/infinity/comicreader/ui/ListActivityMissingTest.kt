@@ -311,6 +311,37 @@ class ListActivityMissingTest {
     }
 
     @Test
+    fun sharesAreAskedAboutTheFirstRowsFirst() {
+        val paths = (1..12).map { "/net/s1/Comics/far$it.cbz" }
+        for ((i, path) in paths.withIndex()) library.addHistory(HistoryItem(path, path.substringAfterLast('/'), 1, 10, 100L - i, BookId(0xf00L + i)))
+        val asked = ArrayList<String>()
+        val world = object : PresenceCheck.World {
+            override fun shareOf(path: String) = if (path.startsWith("/net/")) "s1" else null
+            override fun shareKnown(id: String) = true
+            override fun shareUnreachable(id: String) = false
+            override fun statKept(path: String) = true
+            override fun namesKept(path: String): Set<String>? = null
+            override fun listedAt(path: String): Long? = null
+            override fun stat(path: String): Boolean {
+                synchronized(asked) { asked += path }
+                return true
+            }
+            override fun exists(path: String) = File(path).exists()
+            override fun mounted(root: String) = false
+            override fun changes() = 0L
+            override fun now() = 0L
+        }
+        val (activity, recycler) = launch()
+        activity.presenceCheck = PresenceCheck(world, PresenceCheck.Memo())
+        shadowOf(activity).clickMenuItem(R.id.menu_refresh)
+        idle()
+        val rows = (recycler.adapter as BookAdapter).entries().map { it.path }
+        assertEquals(paths.toSet(), asked.toSet())
+        assertEquals(rows.take(PresenceCheck.LANES).toSet(), asked.take(PresenceCheck.LANES).toSet())
+        assertEquals(rows.drop(PresenceCheck.LANES).take(PresenceCheck.LANES).toSet(), asked.drop(PresenceCheck.LANES).take(PresenceCheck.LANES).toSet())
+    }
+
+    @Test
     fun theSelectionMenuRemovesFromHistoryAndBookmarks() {
         history(here)
         library.addBookmark(Bookmark(here.absolutePath, here.name, 2, "", 1L, bookId(here)))

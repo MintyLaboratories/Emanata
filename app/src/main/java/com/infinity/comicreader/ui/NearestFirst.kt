@@ -14,6 +14,16 @@ object NearestFirst {
         return best
     }
 
+    /**
+     * [items] by how far their [position] is from [center], of two as far the earlier first;
+     * those with no position last, in the order given.
+     */
+    fun <T> order(items: Collection<T>, center: Int, position: (T) -> Int?): List<T> {
+        val placed = items.map { it to position(it) }
+        return placed.filter { it.second != null }.sortedWith(compareBy({ abs(it.second!! - center) }, { it.second!! })).map { it.first } +
+            placed.filter { it.second == null }.map { it.first }
+    }
+
     /** The middle of the cells [first] to [last] in view; 0 when nothing is in view. */
     fun middle(first: Int, last: Int): Int = if (first < 0 || last < first) 0 else (first + last) / 2
 }

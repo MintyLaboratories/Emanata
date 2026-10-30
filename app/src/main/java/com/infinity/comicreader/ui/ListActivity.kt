@@ -1421,14 +1421,20 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /**
      * Asks shares, [PresenceCheck.LANES] at a time, whether the items listed whose presence
-     * could not be settled without the network are there; rows change as answers come, at
-     * most every [PRESENCE_PUBLISH_MS]. Like [scheduleFacts], it waits while the library is
-     * out of sight or battery saver pauses scans; a new listing stops it.
+     * could not be settled without the network are there, those nearest the rows in view
+     * first; rows change as answers come, at most every [PRESENCE_PUBLISH_MS]. Like
+     * [scheduleFacts], it waits while the library is out of sight or battery saver pauses
+     * scans; a new listing stops it.
      */
     private fun checkPresence() {
         presenceJob?.cancel()
-        val asking = presences.filter { (path, f) -> presenceCheck.asks(path, f) }.keys.toList()
-        if (mode == TAB_BROWSE || asking.isEmpty()) return
+        val open = presences.filter { (path, f) -> presenceCheck.asks(path, f) }.keys
+        if (mode == TAB_BROWSE || open.isEmpty()) return
+        val rows = HashMap<String, Int>()
+        for (p in 0 until adapter.itemCount) adapter.entryAt(p)?.let { rows.putIfAbsent(it.path, p) }
+        val lm = recycler.layoutManager as? LinearLayoutManager
+        val middle = lm?.let { NearestFirst.middle(it.findFirstVisibleItemPosition(), it.findLastVisibleItemPosition()) } ?: 0
+        val asking = NearestFirst.order(open, middle) { rows[it] }
         val check = presenceCheck
         presenceJob = lifecycleScope.launch {
             val answers = HashMap<String, PresenceCheck.Found>()

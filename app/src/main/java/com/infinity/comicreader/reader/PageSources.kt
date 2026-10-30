@@ -5,6 +5,7 @@ import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.Traces
 import java.io.File
 import java.io.IOException
 
@@ -44,7 +45,9 @@ object PageSources {
     ): PageSource {
         val charsetName = NameCharset.forBook(file, setting)
         val nested = NestedArchives(NestedArchives.dirIn(cacheDir), charsetName, canceled = canceled, copy = copyNested)
-        val raw = openRaw(file, charsetName, cacheDir, nested, pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchWhole = true)
+        val raw = Traces.section("book open") {
+            openRaw(file, charsetName, cacheDir, nested, pageLimit = Int.MAX_VALUE, fetch = fetch ?: Fetch(canceled), fetchWhole = true)
+        }
         return previewing(file, cacheDir, GuardedSource(raw))
     }
 

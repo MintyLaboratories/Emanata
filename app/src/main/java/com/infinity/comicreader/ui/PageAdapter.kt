@@ -32,6 +32,7 @@ import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
+import com.infinity.comicreader.util.Traces
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -1031,14 +1032,18 @@ class PageAdapter(
         seg.loads.incrementAndGet()
         val entry = Pending(key, CompletableDeferred())
         val standIn = entry.standIn
+        val queued = Traces.queued("page $pageIndex queued")
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
+                queued.end()
                 val job = coroutineContext.job
-                val bitmap = learning(key) {
-                    Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
-                        decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
-                    }
-                }?.let { frozen(it) }
+                val bitmap = Traces.section({ "page $pageIndex ${key.target.width}x${key.target.height}" }) {
+                    learning(key) {
+                        Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
+                            decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                        }
+                    }?.let { frozen(it) }
+                }
                 if (bitmap != null && bitmap.width > 0) {
                     cache.put(key, bitmap)
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
@@ -1047,6 +1052,7 @@ class PageAdapter(
             }
         }
         deferred.invokeOnCompletion {
+            queued.end()
             standIn.complete(null)
             releaseLoad(seg)
         }
@@ -1186,7 +1192,7 @@ class PageAdapter(
          */
         internal fun frozen(bitmap: Bitmap): Bitmap {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || !bitmap.isMutable) return bitmap
-            val copy = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false) ?: return bitmap
+            val copy = Traces.section("freeze copy") { bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false) } ?: return bitmap
             bitmap.recycle()
             return copy
         }

@@ -7,6 +7,7 @@ import android.graphics.Color
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.util.CacheFiles
+import com.infinity.comicreader.util.Traces
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -81,7 +82,7 @@ class PreviewStore(
 
     /** Writes [preview] to [file], trimming the store every [trimEvery] writes, so a long-running app stays under [maxBytes]. */
     private fun write(file: File, preview: Bitmap) {
-        store(file, preview)
+        Traces.section("preview write") { store(file, preview) }
         if (WRITES.incrementAndGet() % trimEvery == 0) trim(dir, maxBytes)
     }
 

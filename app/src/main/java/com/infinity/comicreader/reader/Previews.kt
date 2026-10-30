@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import com.infinity.comicreader.util.Traces
 
 /**
  * Page previews: whole pages shrunk to fit a [BOX] x [BOX] square, never enlarged.
@@ -67,7 +68,9 @@ object Previews {
      * platform's bilinear filter (an exact 2x2 average at that scale) while it stays
      * twice the preview size, then Lanczos3. Leaves [page] as it is; never returns it.
      */
-    fun make(page: Bitmap, size: IntArray = sizeOf(page.width, page.height)): Bitmap {
+    fun make(page: Bitmap, size: IntArray = sizeOf(page.width, page.height)): Bitmap = Traces.section("preview make") { made(page, size) }
+
+    private fun made(page: Bitmap, size: IntArray): Bitmap {
         var src = page
         try {
             repeat(halvings(page.width, page.height, size[0], size[1])) {

@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.util.CacheFiles
+import com.infinity.comicreader.util.Traces
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -88,7 +89,7 @@ class PageSizes(val dir: File) {
         fun scan(source: PageSource, sizes: Array<IntArray?>, from: Int = 0, canceled: () -> Boolean = { false }): Boolean {
             for (i in outward(sizes.size, from)) {
                 if (canceled()) return false
-                if (sizes[i] == null) sizes[i] = runCatching { source.pageSize(i) }.getOrNull()
+                if (sizes[i] == null) sizes[i] = Traces.section("page size") { runCatching { source.pageSize(i) }.getOrNull() }
             }
             return true
         }

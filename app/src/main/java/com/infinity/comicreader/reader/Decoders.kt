@@ -19,6 +19,7 @@ import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.Traces
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -78,13 +79,15 @@ object Decoders {
         val size = if (measuresCrop(target) || target.banded) runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() else null
         val sampled = sampledFor(target, size)
         return reported(kind) {
-            val full = when {
-                kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels, standIn = sampled != target)
-                kind == ImageKind.AVIF -> decodeAvif(bytes, sampled)
-                kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), sampled.capPixels)
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
-                    decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), sampled.capPixels)
-                else -> decodeLegacy(bytes, sampled.capPixels)
+            val full = Traces.section({ "decode ${kind?.name ?: "unknown"} ${bytes.size / 1024} KB" }) {
+                when {
+                    kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels, standIn = sampled != target)
+                    kind == ImageKind.AVIF -> decodeAvif(bytes, sampled)
+                    kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), sampled.capPixels)
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ->
+                        decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), sampled.capPixels)
+                    else -> decodeLegacy(bytes, sampled.capPixels)
+                }
             }
             fit(full, sampled, size.takeIf { measuresCrop(target) })
         }
@@ -119,7 +122,12 @@ object Decoders {
         if (kind == ImageKind.JXL || kind == ImageKind.AVIF || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return file.inputStream().use { decode(it, target) }
         }
-        return reported(kind) { fit(decodePlatform(ImageDecoder.createSource(file), sampled.capPixels), sampled, source) }
+        return reported(kind) {
+            val full = Traces.section({ "decode ${kind?.name ?: "unknown"} file ${file.length() / 1024} KB" }) {
+                decodePlatform(ImageDecoder.createSource(file), sampled.capPixels)
+            }
+            fit(full, sampled, source)
+        }
     }
 
     /** What a decode leaves its page preview with ([capturing]). */
@@ -218,7 +226,7 @@ object Decoders {
             sink.decoded(src)
         }
         val bounds = if (target.autoCrop && target.box == null) {
-            BitmapUtils.contentBounds(src)?.let { intArrayOf(it.left, it.top, it.right, it.bottom) }.also { found ->
+            Traces.section("auto-crop scan") { BitmapUtils.contentBounds(src) }?.let { intArrayOf(it.left, it.top, it.right, it.bottom) }.also { found ->
                 if (!standIn) {
                     val (box, size) = SampledCrop.of(found, src.width, src.height, source)
                     measured(box, size[0], size[1])
@@ -235,8 +243,8 @@ object Decoders {
         val quick = !standIn && target.bandsAt((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble())
         try {
             return when {
-                plan.isCrop() -> Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
-                quick -> BitmapUtils.scaleQuick(src, plan)
+                plan.isCrop() -> Traces.section("crop") { Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height) }
+                quick -> Traces.section("scale quick") { BitmapUtils.scaleQuick(src, plan) }
                 else -> BitmapUtils.resample(src, plan, target.linear && plan.shrinks(), target.scaling)
             }
         } finally {
@@ -698,7 +706,9 @@ object Decoders {
      * The preview ([Previews.TARGET]) of [bytes], decoded at reduced size, or null when
      * its format has no quick path. Throws [DecodeException] when it does not decode.
      */
-    fun preview(bytes: ByteArray): Bitmap? {
+    fun preview(bytes: ByteArray): Bitmap? = Traces.section("quick preview") { quick(bytes) }
+
+    private fun quick(bytes: ByteArray): Bitmap? {
         val kind = ImageKind.sniff(bytes)
         if (kind !in QUICK) return null
         if (kind == ImageKind.AVIF) return reported(kind) { quickAvif(bytes) }

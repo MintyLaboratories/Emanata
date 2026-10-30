@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.Traces
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -157,7 +158,7 @@ class ArchiveSource(
         val page = pages[index]
         try {
             // Buffered under the reader's lock, decoded outside it.
-            val bytes = readPage(index) { BitmapUtils.readCapped(it) }
+            val bytes = Traces.section({ "entry read ${page.entry.size / 1024} KB" }) { readPage(index) { BitmapUtils.readCapped(it) } }
             if (!loadedSizes.containsKey(index)) sizeOf(bytes)?.let { loadedSizes[index] = it }
             return Decoders.decode(bytes, target)
         } catch (t: Throwable) {

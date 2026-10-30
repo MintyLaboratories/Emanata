@@ -20,8 +20,14 @@ object Timing {
         if (enabled) runCatching { Log.d(TAG, "${SystemClock.uptimeMillis()} $what") }
     }
 
+    /**
+     * Runs [block], logging [what] with how long it took, and whether it failed; traced as
+     * the section [what] ([Traces]) in every build. [block] must not suspend.
+     */
+    inline fun <T> span(what: String, block: () -> T): T = Traces.section(what) { logged(what, block) }
+
     /** Runs [block], logging [what] with how long it took, and whether it failed. */
-    inline fun <T> span(what: String, block: () -> T): T {
+    inline fun <T> logged(what: String, block: () -> T): T {
         if (!enabled) return block()
         val start = SystemClock.uptimeMillis()
         var failure: Throwable? = null

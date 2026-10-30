@@ -117,6 +117,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.Traces
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -1192,7 +1193,7 @@ class ViewerActivity : AppCompatActivity() {
                 val fetch = PageSources.Fetch(canceled = { !job.isActive }) { done, total -> showFetched(done, total) }
                 // The ID first: on a share, the reads of the book's ends start opening it too.
                 // A share sending files only whole has it from the copy fetched to open the book.
-                found = BookIds.find(target)
+                found = Traces.section("open: book id") { BookIds.find(target) }
                 val s = runCatching {
                     val raw = PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)
                     hiding((found ?: BookIds.known(target)).also { found = it }, raw)
@@ -1206,12 +1207,18 @@ class ViewerActivity : AppCompatActivity() {
                     // A book or folder with its own direction keeps it: nothing to detect. The book's own layout, known by its ID, decides over its folder's.
                     val own = if (perFolder) id?.let { library.bookLayout(it) } else null
                     val detect = prefs.detectDirection && !(own?.dirChosen ?: folderDecides)
-                    val found = s.getOrNull()?.takeIf { detect }?.let { src -> runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
-                    known = s.getOrNull()?.let { src -> knownSizes(target, src).also { sizeOpening(src, it.sizes, startOf(src.pageCount, id).page) } }
+                    val found = s.getOrNull()?.takeIf { detect }?.let { src ->
+                        Traces.section("open: direction") { runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
+                    }
+                    known = s.getOrNull()?.let { src ->
+                        val kept = knownSizes(target, src)
+                        Traces.section("open: sizes of the first pages") { sizeOpening(src, kept.sizes, startOf(src.pageCount, id).page) }
+                        kept
+                    }
                     // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.
                     s.getOrNull()?.takeIf { slice }?.let { src ->
                         val checked = keptSlices(target) ?: run {
-                            sliceSizes = BookDirection.sliceSizes(src, known?.sizes, read = src.cheapSizes)
+                            sliceSizes = Traces.section("open: slice sizes") { BookDirection.sliceSizes(src, known?.sizes, read = src.cheapSizes) }
                             Slices.settled(sliceSizes)?.also { keepSlices(target, it) }
                         }
                         sliced = checked?.found
@@ -1966,7 +1973,7 @@ class ViewerActivity : AppCompatActivity() {
                 val next = pages.subList(at, minOf(pages.size, at + batch))
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
-                    PageSeams.check(src, next, found) { !job.isActive }.also { checked ->
+                    Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(src, next, found) { !job.isActive } }.also { checked ->
                         if (checked) store.writeSeams(found)
                     }
                 }

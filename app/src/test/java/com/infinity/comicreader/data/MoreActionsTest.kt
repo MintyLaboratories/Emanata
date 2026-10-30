@@ -56,11 +56,15 @@ class MoreActionsTest {
     }
 
     @Test
-    fun decodingDropsUnknownAndRepeatedNamesAndAppendsMissingOnesAsByDefault() {
+    fun decodingDropsUnknownAndRepeatedNamesAndPlacesMissingOnesAsByDefault() {
         val actions = MoreActions.decode("peek,bogus,-peek,-mark_read")
-        assertEquals(listOf(PEEK, MARK_READ, CONTINUE_READING), actions.order.take(3))
+        assertEquals(listOf(CONTINUE_READING, PEEK, MARK_READ, MARK_UNREAD), actions.order.take(4))
         assertEquals(MoreAction.entries.size, actions.order.size)
         assertEquals(MoreAction.SHOWN_BY_DEFAULT - MARK_READ + PEEK, actions.shown)
+        // An order saved before an item existed takes it where it goes by default.
+        val saved = MoreActions.DEFAULT.order - CONTINUE_READING - COMPACT
+        val decoded = MoreActions.decode(MoreActions.DEFAULT.copy(order = saved).encode())
+        assertEquals(MoreActions.DEFAULT, decoded)
     }
 
     @Test

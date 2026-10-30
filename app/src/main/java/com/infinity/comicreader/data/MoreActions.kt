@@ -49,7 +49,10 @@ data class MoreActions(val order: List<MoreAction>, val shown: Set<MoreAction>) 
     companion object {
         val DEFAULT = MoreActions(MoreAction.entries, MoreAction.SHOWN_BY_DEFAULT)
 
-        /** Reads [encode]'s text; unknown names and repeats are dropped, items it lacks follow as shown by default. */
+        /**
+         * Reads [encode]'s text; unknown names and repeats are dropped, and each item it
+         * lacks, shown by default, goes after the one before it by default (first when none).
+         */
         fun decode(text: String?): MoreActions {
             if (text.isNullOrBlank()) return DEFAULT
             val order = ArrayList<MoreAction>()
@@ -61,8 +64,9 @@ data class MoreActions(val order: List<MoreAction>, val shown: Set<MoreAction>) 
                 order.add(action)
                 if (!hidden) shown.add(action)
             }
-            for (action in MoreAction.entries) if (action !in order) {
-                order.add(action)
+            for ((i, action) in MoreAction.entries.withIndex()) if (action !in order) {
+                val before = MoreAction.entries.subList(0, i).lastOrNull { it in order }
+                order.add(if (before == null) 0 else order.indexOf(before) + 1, action)
                 if (action in MoreAction.SHOWN_BY_DEFAULT) shown.add(action)
             }
             return MoreActions(order, shown)

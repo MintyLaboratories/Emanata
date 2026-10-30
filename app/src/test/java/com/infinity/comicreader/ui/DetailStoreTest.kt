@@ -181,6 +181,27 @@ class DetailStoreTest {
     }
 
     @Test
+    fun pageDroppedBeforeItsRenderStartsCallsDroppedWhenGiven() {
+        val proceed = CountDownLatch(1)
+        var failed = 0
+        var dropped = 0
+        store.render("a", listOf("a"), {
+            proceed.await(5, TimeUnit.SECONDS)
+            FakeDetail("a")
+        }, { it }, failed = { failed++ }, dropped = { dropped++ }) { }
+        // Another page's render keeping only its own.
+        store.render("b", listOf("b"), loader("b"), { it }) { }
+        proceed.countDown()
+        idle { dropped == 1 }
+        assertEquals(1, dropped)
+        assertEquals(0, failed)
+        // A failed load still fails.
+        store.render("c", listOf("c"), { throw IllegalStateException("synthetic") }, { it }, failed = { failed++ }, dropped = { dropped++ }) { }
+        idle { failed == 1 }
+        assertEquals(1, dropped)
+    }
+
+    @Test
     fun canceledRenderCallsNeitherCallback() {
         val proceed = CountDownLatch(1)
         var calls = 0

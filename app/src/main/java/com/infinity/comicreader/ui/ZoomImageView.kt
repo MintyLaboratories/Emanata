@@ -566,10 +566,11 @@ class ZoomImageView @JvmOverloads constructor(
 
         /**
          * Starts rendering [region] at [width] x [height] as pages at rest are scaled, for a
-         * band; [done] receives it on the main thread, or null when it fails. Returns what
-         * cancels it.
+         * band; [done] receives it on the main thread, or null when it fails. [dropped] runs
+         * instead when the page's detail is let go of first: asked again, the band renders.
+         * Returns what cancels it.
          */
-        fun renderBand(region: Region, width: Int, height: Int, done: (Bitmap?) -> Unit): () -> Unit {
+        fun renderBand(region: Region, width: Int, height: Int, dropped: () -> Unit, done: (Bitmap?) -> Unit): () -> Unit {
             done(null)
             return {}
         }
@@ -966,7 +967,8 @@ class ZoomImageView @JvmOverloads constructor(
      * Renders the bands of the page around what shows ([viewport]) at the scale it fits at,
      * [BAND_HEIGHT] rows each, and drops those far from it: rendered from a quarter screen
      * above to a screen below, kept from half a screen above to a screen and a half below. A
-     * band that failed is not asked for again; the page's bitmap shows there.
+     * band that failed is not asked for again; the page's bitmap shows there. One whose
+     * detail was let go of first is asked for again.
      */
     internal fun updateBands() {
         val scale = bandScale()
@@ -1008,7 +1010,14 @@ class ZoomImageView @JvmOverloads constructor(
             if (h <= 0) continue
             val round = bandRound
             var delivered = false
-            val cancel = source.renderBand(Region(0.0, y / fh, 1.0, h / fh), fw, h) { band ->
+            val dropped = {
+                delivered = true
+                if (round == bandRound) {
+                    bandRenders.remove(k)
+                    post { updateBands() }
+                }
+            }
+            val cancel = source.renderBand(Region(0.0, y / fh, 1.0, h / fh), fw, h, dropped) { band ->
                 delivered = true
                 if (round != bandRound) return@renderBand
                 bandRenders.remove(k)

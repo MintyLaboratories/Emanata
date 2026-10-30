@@ -661,11 +661,11 @@ class PageAdapter(
             return { job.cancel() }
         }
 
-        override fun renderBand(region: Region, width: Int, height: Int, done: (Bitmap?) -> Unit): () -> Unit {
+        override fun renderBand(region: Region, width: Int, height: Int, dropped: () -> Unit, done: (Bitmap?) -> Unit): () -> Unit {
             if (released) return {}
             val job = details.render(
                 detailKey, keptKeys(holder), loader(), { frozen(it.render(region, width, height, linear, pageScaling)) },
-                failed = { done(null) }, done = done
+                failed = { done(null) }, dropped = dropped, done = done
             )
             return { job.cancel() }
         }
@@ -772,7 +772,7 @@ class PageAdapter(
         val detail = SlotDetail(holder, key, key.target.bandsAt(shown.width.toDouble(), shown.height.toDouble()))
         // [failed] can run before [DetailStore.render] returns, the decode then waited on.
         var decoding = false
-        val job = details.render(detail.detailKey, detailKeys(holder), detail.loader(), {
+        val job = details.render(detail.detailKey, keptKeys(holder), detail.loader(), {
             frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear, pageScaling))
         }, failed = {
             decoding = true

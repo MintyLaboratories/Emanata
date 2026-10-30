@@ -26,7 +26,7 @@ class ZoomImageViewBandsTest {
     /** Records band requests; delivers them at once when [immediate]. */
     private class Bands(override val bands: Boolean = true, var immediate: Boolean = true, var fails: Boolean = false) :
         ZoomImageView.DetailSource {
-        class Request(val region: Region, val width: Int, val height: Int, val done: (Bitmap?) -> Unit) {
+        class Request(val region: Region, val width: Int, val height: Int, val dropped: () -> Unit, val done: (Bitmap?) -> Unit) {
             var canceled = false
         }
 
@@ -36,8 +36,8 @@ class ZoomImageViewBandsTest {
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit = {}
 
-        override fun renderBand(region: Region, width: Int, height: Int, done: (Bitmap?) -> Unit): () -> Unit {
-            val request = Request(region, width, height, done)
+        override fun renderBand(region: Region, width: Int, height: Int, dropped: () -> Unit, done: (Bitmap?) -> Unit): () -> Unit {
+            val request = Request(region, width, height, dropped, done)
             requests += request
             if (immediate) deliver(request)
             return { request.canceled = true }
@@ -124,6 +124,19 @@ class ZoomImageViewBandsTest {
         v.updateBands()
         assertEquals(2, detail.requests.size)
         assertTrue(v.bandsShown.isEmpty())
+    }
+
+    @Test
+    fun aBandWhoseDetailWasDroppedIsAskedForAgain() {
+        val detail = Bands(immediate = false)
+        val v = shown(detail)
+        assertEquals(2, detail.requests.size)
+        // The page's detail let go of, as when another page's render keeps only its own.
+        detail.requests.toList().forEach { it.dropped() }
+        pass(0)
+        assertEquals(4, detail.requests.size)
+        detail.requests.drop(2).forEach { detail.deliver(it) }
+        assertEquals(setOf(0, 1), v.bandsShown.keys)
     }
 
     @Test

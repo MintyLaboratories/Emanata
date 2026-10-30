@@ -60,8 +60,9 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /**
      * Renders [request] from [key]'s detail, loading it with [load] first if needed,
      * and hands the result to [done] on the main thread unless the returned job is
-     * canceled first. Drops every page not in [keep]. A failed load or render (logged),
-     * or the page dropped before its render starts, calls [failed] instead.
+     * canceled first. Drops every page not in [keep]. A failed load or render (logged)
+     * calls [failed] instead; the page dropped before its render starts calls [dropped],
+     * as [failed] unless told otherwise: asked again, it loads anew.
      */
     fun <R> render(
         key: K,
@@ -69,6 +70,7 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
         load: () -> PageDetail,
         request: (PageDetail) -> R,
         failed: () -> Unit = {},
+        dropped: () -> Unit = failed,
         done: (R) -> Unit
     ): Job {
         val entry = entry(key, keep, load)
@@ -81,7 +83,11 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
                 job.ensureActive()
                 null
             }
-            if (detail == null || entry.dropped) {
+            if (entry.dropped) {
+                dropped()
+                return@launch
+            }
+            if (detail == null) {
                 failed()
                 return@launch
             }

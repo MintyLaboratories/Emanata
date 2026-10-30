@@ -31,6 +31,7 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
+import com.infinity.comicreader.util.ReadProbes
 import com.infinity.comicreader.util.Timing
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
@@ -582,6 +583,7 @@ class BookAdapter(
             holder.thumb.setImageBitmap(got.bitmap)
             holder.quick = id
             holder.placeholder.visibility = View.GONE
+            ReadProbes.current?.cover(holder.thumb, holder.bindingAdapterPosition, exact = false)
             finishCover(holder, item, id, w, h)
         }
         track(holder, job)
@@ -630,6 +632,7 @@ class BookAdapter(
         holder.drawn = id
         holder.quick = null
         holder.placeholder.visibility = View.GONE
+        ReadProbes.current?.cover(holder.thumb, holder.bindingAdapterPosition, exact = true)
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {

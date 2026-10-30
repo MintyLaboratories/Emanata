@@ -32,6 +32,7 @@ import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.util.AppDispatchers
+import com.infinity.comicreader.util.ReadProbes
 import com.infinity.comicreader.util.Traces
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -700,6 +701,7 @@ class PageAdapter(
         stopWaiting(holder, slot)
         val pageIndex = part?.page ?: NO_PAGE
         pageOf[image] = pageIndex
+        ReadProbes.current?.bound(image, if (part == null || pageIndex >= end) NO_PAGE else pageIndex)
         // A view used again starts a page from its top unless that page was turned back to.
         image.startAtBottom = pageIndex >= 0 && pageIndex == fromBottom
         if (part == null || pageIndex < 0 || pageIndex >= end) {
@@ -718,7 +720,7 @@ class PageAdapter(
             image.setFitGeometry(null, if (holder.joined) 0.5f else alignOf(slotType))
             if (holder.shown[slot] != code) {
                 val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
-                if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
+                if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value, exact = false) else clearImage(holder, slot)
             }
             return
         }
@@ -735,9 +737,10 @@ class PageAdapter(
         // The page at another size stands in, scaled to the new one, until that arrives.
         if (holder.shown[slot] == code) {
             image.setFitMode(fitOf(pageIndex))
+            ReadProbes.current?.shown(image, pageIndex, exact = false)
         } else {
             val standIn = cache.snapshot().entries.lastOrNull { it.key.code == code }
-            if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value) else clearImage(holder, slot)
+            if (standIn != null) applyBitmap(holder, slot, standIn.key, standIn.value, exact = false) else clearImage(holder, slot)
         }
         if (holder.shown[slot] == code) timing.standIn(image)
         if (holder.shown[slot] == code && details.loaded(detailKey(key))) {
@@ -756,7 +759,7 @@ class PageAdapter(
             // A smaller version of the page, when its decode yields one first, shows until it is done.
             launch {
                 val standIn = entry.standIn.await() ?: return@launch
-                if (entry.deferred.isActive && holder.shown[slot] != key.code) applyBitmap(holder, slot, key, standIn)
+                if (entry.deferred.isActive && holder.shown[slot] != key.code) applyBitmap(holder, slot, key, standIn, exact = false)
             }
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
@@ -943,7 +946,7 @@ class PageAdapter(
         val image = holder.images[slot]
         val fit = fitOf(key.page)
         when {
-            holder.shown[slot] != key.code -> applyBitmap(holder, slot, key, bitmap)
+            holder.shown[slot] != key.code -> applyBitmap(holder, slot, key, bitmap, exact = true)
             (image.drawable as? BitmapDrawable)?.bitmap === bitmap -> image.setFitMode(fit)
             else -> {
                 // A cached bitmap can arrive at once, before the stand-in took the new fit.
@@ -951,16 +954,21 @@ class PageAdapter(
                 image.swapBitmap(bitmap, slotDetail(holder, key, bitmap))
             }
         }
+        ReadProbes.current?.shown(image, key.page, exact = true)
         timing.done(image)
     }
 
-    /** Shows [bitmap], decoded for [key]; settled zooms re-render it from the page's full detail. */
-    private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
+    /**
+     * Shows [bitmap], decoded for [key], the page's final bitmap when [exact] rather than a
+     * stand-in; settled zooms re-render it from the page's full detail.
+     */
+    private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap, exact: Boolean) {
         val image = holder.images[slot]
         image.setImageBitmap(bitmap)
         image.setFitMode(fitOf(key.page))
         image.detailSource = slotDetail(holder, key, bitmap)
         holder.shown[slot] = key.code
+        if (!exact) ReadProbes.current?.shown(image, key.page, exact = false)
     }
 
     /** The detail of [key]'s page shown as [bitmap]: drawn in bands when [bitmap] stands in for a page larger than one bitmap. */
@@ -973,6 +981,7 @@ class PageAdapter(
         image.detailSource = null
         image.setImageDrawable(null)
         holder.shown[slot] = NO_PAGE
+        ReadProbes.current?.shown(image, NO_PAGE, exact = false)
     }
 
     private fun applyFailure(holder: PageHolder, slot: Int, failure: Failure) {
@@ -984,6 +993,7 @@ class PageAdapter(
         image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
         image.setFitMode(fitOf(pageOf[image] ?: NO_PAGE))
         holder.shown[slot] = NO_PAGE
+        ReadProbes.current?.shown(image, pageOf[image] ?: NO_PAGE, exact = true)
     }
 
     // ------------------------------------------------------------------ decoding

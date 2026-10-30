@@ -117,6 +117,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.ReadProbes
 import com.infinity.comicreader.util.Traces
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -1149,6 +1150,7 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
         val target = Remotes.file(path)
+        ReadProbes.current?.opening(path)
         persistAdjustments()
         file = target
         // Found as the book opens, off the main thread.
@@ -2551,6 +2553,7 @@ class ViewerActivity : AppCompatActivity() {
             backPage = currentIndex
         }
         timeShareWait(shownItem())
+        ReadProbes.current?.moved(shownItem())
         val count = source?.pageCount ?: 0
         pageText.text = if (itemNumbers()) getString(R.string.page_indicator, shownItem() + 1, layout.itemCount(count))
         else getString(R.string.page_indicator, currentIndex + 1, count)

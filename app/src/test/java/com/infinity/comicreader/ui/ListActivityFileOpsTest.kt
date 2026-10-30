@@ -339,10 +339,10 @@ class ListActivityFileOpsTest {
         val fab = activity.findViewById<com.google.android.material.floatingactionbutton.FloatingActionButton>(R.id.fab)
         fun color(attr: Int) = com.google.android.material.color.MaterialColors.getColor(fab, attr)
         val toggle = fab.backgroundTintList!!.defaultColor
-        assertEquals(color(com.google.android.material.R.attr.colorSecondaryContainer), toggle)
+        assertEquals(color(com.google.android.material.R.attr.colorPrimaryContainer), toggle)
         activity.select(book.absolutePath)
         assertEquals(context.getString(R.string.fab_open), fab.contentDescription)
-        assertEquals(color(com.google.android.material.R.attr.colorPrimaryContainer), fab.backgroundTintList!!.defaultColor)
+        assertEquals(color(com.google.android.material.R.attr.colorSecondaryContainer), fab.backgroundTintList!!.defaultColor)
         activity.select(other.absolutePath)
         assertEquals(context.getString(R.string.file_op_move), fab.contentDescription)
         assertEquals(color(com.google.android.material.R.attr.colorTertiaryContainer), fab.backgroundTintList!!.defaultColor)

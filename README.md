@@ -169,7 +169,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     shown), **Open** with one (continues a book, enters a folder), **Move** with
     several; Settings → **Button with one / several items selected** picks
     another action or none. Each action has its own icon and color from the
-    theme's roles: toggle secondary container, Open primary container, Move
+    theme's roles: toggle primary container, Open secondary container, Move
     tertiary container, Copy secondary, Delete error container.
   - Several items are one operation, one item at a time: Move and Copy pick
     them all up at once (from the device and shares alike), Delete asks once

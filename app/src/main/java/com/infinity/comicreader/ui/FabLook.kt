@@ -15,9 +15,9 @@ internal data class FabLook(val icon: Int, val label: Int, val background: Int, 
             SelectionActions.Fab.GRID_LIST -> FabLook(
                 if (grid) R.drawable.ic_view_list else R.drawable.ic_grid_view,
                 if (grid) R.string.menu_list_view else R.string.menu_grid,
-                M.attr.colorSecondaryContainer, M.attr.colorOnSecondaryContainer
+                M.attr.colorPrimaryContainer, M.attr.colorOnPrimaryContainer
             )
-            SelectionActions.Fab.OPEN -> FabLook(R.drawable.ic_auto_stories, R.string.fab_open, M.attr.colorPrimaryContainer, M.attr.colorOnPrimaryContainer)
+            SelectionActions.Fab.OPEN -> FabLook(R.drawable.ic_auto_stories, R.string.fab_open, M.attr.colorSecondaryContainer, M.attr.colorOnSecondaryContainer)
             SelectionActions.Fab.MOVE -> MOVE
             SelectionActions.Fab.COPY -> COPY
             SelectionActions.Fab.DELETE -> DELETE

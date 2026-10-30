@@ -155,9 +155,9 @@
         android:layout_marginBottom="@dimen/fab_bottom"
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
-        app:backgroundTint="?attr/colorSecondaryContainer"
+        app:backgroundTint="?attr/colorPrimaryContainer"
         app:layout_behavior="com.infinity.comicreader.ui.FixedBehavior"
-        app:tint="?attr/colorOnSecondaryContainer" />
+        app:tint="?attr/colorOnPrimaryContainer" />
 
     <!-- Paste bubbles and operations under way or waiting, above the floating button's place, newest nearest it; filled in code ([OperationStack]). -->
     <LinearLayout

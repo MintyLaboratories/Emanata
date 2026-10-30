@@ -50,8 +50,8 @@ class Compactor(
     /** What to make of a book. */
     class Request(
         val book: File,
-        /** Its page made anew, or null to keep it. */
-        val convert: (ByteArray) -> PageWork.Made?,
+        /** Its page made anew, or null to keep it; null to keep every page, each streamed for its CRC alone. */
+        val convert: ((ByteArray) -> PageWork.Made?)?,
         val inPlace: Boolean,
         /** The parenthesized word naming a new file beside the book whose name is taken: "compacted". */
         val suffix: String,
@@ -149,9 +149,15 @@ class Compactor(
         val total = files.sumOf { it.size.coerceAtLeast(0) }.coerceAtLeast(1)
         val dir = book.parentFile ?: throw IOException("No folder")
         sweep(dir)
-        // Room for the pieces and for the new file, each as large as the files unpacked when it must be smaller, else twice.
-        val room = total * (if (request.smallerOnly) 1 else GROWTH)
-        val enough = if (sameVolume(scratch, dir)) free(dir) >= 2 * room + SPARE_BYTES else free(scratch) >= room + SPARE_BYTES && free(dir) >= room + SPARE_BYTES
+        // Room for the pieces and for the new file, each as large as the files unpacked when kept or made smaller, else twice.
+        val room = total * (if (request.smallerOnly || request.convert == null) 1 else GROWTH)
+        // Every file kept and read from where it is: no pieces, only the new file.
+        val noPieces = request.convert == null && files.all { reader.looseFile(it) != null }
+        val enough = when {
+            noPieces -> free(dir) >= room + SPARE_BYTES
+            sameVolume(scratch, dir) -> free(dir) >= 2 * room + SPARE_BYTES
+            else -> free(scratch) >= room + SPARE_BYTES && free(dir) >= room + SPARE_BYTES
+        }
         if (!enough) throw ChangeRefused(ChangeRefused.Why.FULL)
         val work = File(scratch, "book-${System.nanoTime()}")
         if (!work.mkdirs()) throw IOException("Cannot make ${work.name}")
@@ -221,7 +227,7 @@ class Compactor(
                 check(progress)
                 val entry = files[i]
                 val file = File(work, i.toString())
-                if (!isPage(entry)) {
+                if (request.convert == null || !isPage(entry)) {
                     pieces[i] = asIs(reader, entry, file)
                     advance(entry.size.coerceAtLeast(0))
                     continue
@@ -260,7 +266,7 @@ class Compactor(
                         var failed = false
                         val made = if (!progress.alive) null else gate.pass {
                             try {
-                                request.convert(bytes)
+                                request.convert?.invoke(bytes)
                             } catch (e: Exception) {
                                 failed = true
                                 null
@@ -302,10 +308,10 @@ class Compactor(
 
     /**
      * [entry] as it is: a folder's file where it is, its size and CRC read; else copied to
-     * [file], checked by the CRC its archive stores.
+     * [file]; either checked by the size and CRC its archive lists.
      */
     private fun asIs(reader: ArchiveReader, entry: ArchiveEntry, file: File): Piece {
-        reader.looseFile(entry)?.let { own -> return reader.read(entry) { sum(it, own) } }
+        reader.looseFile(entry)?.let { own -> return reader.read(entry) { sum(it, own) }.also { checkRead(entry, it.size, it.crc) } }
         ensureRoom(file.parentFile!!, entry.size)
         return reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
     }

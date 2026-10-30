@@ -357,7 +357,8 @@ internal class FileJobs(
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
         val workers = CompactWorkers.max()
         val compactor = Compactor(scratch, workers, CompactWorkers.limit(app, workers), CompactWorkers.threads)
-        val convert: (ByteArray) -> PageWork.Made? = pages?.let { it::compact } ?: { null }
+        // Pages kept as they are stream from where they are, never read whole.
+        val convert: ((ByteArray) -> PageWork.Made?)? = pages?.let { it::compact }
         val cost: (ByteArray) -> Long = pages?.let { it::memoryFor } ?: { it.size.toLong() }
         val progress = object : Compactor.Progress {
             override val alive: Boolean get() = p.alive

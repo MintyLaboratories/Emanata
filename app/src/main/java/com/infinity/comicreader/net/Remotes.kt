@@ -107,6 +107,14 @@ object Remotes {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RemoteStat>) = size > MAX_STATS
     }
 
+    /**
+     * Counts the changes the app made to shares and their settings: what was found on a
+     * share before the count last moved may be out of date.
+     */
+    @Volatile
+    var changes = 0L
+        private set
+
     /** Folder listings as last found ([cachedList]); on disk once [init] names where. */
     @Volatile
     private var listings = Listings(null)
@@ -176,6 +184,7 @@ object Remotes {
         val closing = ArrayList<RemoteFs>()
         var forget = false
         synchronized(this) {
+            changes++
             val before = shares?.firstOrNull { it.id == id }
             shares = null
             if (id != null && before != null && sameWay(before, share(id))) {
@@ -262,6 +271,14 @@ object Remotes {
         val id = idOf(base) ?: return null
         if (share(id) == null) return null
         return listings.get(base)?.let { filesOf(base, it, fresh = false) }
+    }
+
+    /** The names in the folder at [path] as last listed ([cachedList]); null when it never was. Never asks the network. */
+    fun cachedNames(path: String): Set<String>? {
+        val base = path.trimEnd('/')
+        val id = idOf(base) ?: return null
+        if (share(id) == null) return null
+        return listings.get(base)?.mapTo(HashSet()) { it.name }
     }
 
     /** Forgets every folder listing kept ([cachedList]), on disk too. */
@@ -459,7 +476,10 @@ object Remotes {
     /** Forgets what was found at and below [path], and the kept listings of its folder and of itself. */
     private fun changedAt(path: String) {
         val base = path.trimEnd('/')
-        synchronized(this) { stats.keys.removeAll { it == base || it.startsWith("$base/") } }
+        synchronized(this) {
+            changes++
+            stats.keys.removeAll { it == base || it.startsWith("$base/") }
+        }
         listings.drop(base)
         base.substringBeforeLast('/', "").takeIf { isRemote(it) }?.let { listings.drop(it) }
     }

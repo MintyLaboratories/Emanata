@@ -18,12 +18,17 @@ object BookLocation {
 
     fun of(path: String): String {
         Remotes.idOf(path)?.let { return SHARE_PREFIX + it }
+        return volumeRoot(path)?.let { VOLUME_PREFIX + it.substringAfterLast('/') } ?: DEVICE
+    }
+
+    /** The top folder of the removable volume [path] lies on, as `/storage/1234-ABCD`; null off volumes. */
+    fun volumeRoot(path: String): String? {
+        if (Remotes.isRemote(path)) return null
         val parts = path.split('/').filter { it.isNotEmpty() }
-        val volume = when {
-            parts.size >= 2 && parts[0] == "storage" && parts[1] !in NOT_VOLUMES -> parts[1]
-            parts.size >= 3 && parts[0] == "mnt" && parts[1] == "media_rw" -> parts[2]
+        return when {
+            parts.size >= 2 && parts[0] == "storage" && parts[1] !in NOT_VOLUMES -> "/storage/${parts[1]}"
+            parts.size >= 3 && parts[0] == "mnt" && parts[1] == "media_rw" -> "/mnt/media_rw/${parts[2]}"
             else -> null
         }
-        return if (volume != null) VOLUME_PREFIX + volume else DEVICE
     }
 }

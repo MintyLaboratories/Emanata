@@ -2029,7 +2029,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 if (source !== src) return@launch
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
-                    Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(checked, next, found) { !job.isActive } }.also { ok ->
+                    // A page found to decode whole for its sides ends the batch: the rest wait for decodes.
+                    val dear = { strips && src.dearSides }
+                    Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(checked, next, found, dear) { !job.isActive } }.also { ok ->
                         if (ok) store.writeSeams(found)
                     }
                 }

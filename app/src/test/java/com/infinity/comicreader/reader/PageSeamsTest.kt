@@ -139,6 +139,18 @@ class PageSeamsTest {
     }
 
     @Test
+    fun enoughEndsTheCheckBeforeTheNextRead() {
+        val source = Sided(listOf(null, null, null, null, null))
+        val found = PageSeams.Found(5)
+        // Enough once page 1 was read: its seam with page 2 waits, as do the rest.
+        assertTrue(PageSeams.check(source, listOf(0, 1, 2, 3), found, enough = { source.reads[1] > 0 }))
+        assertEquals(listOf(1, 1, 0, 0, 0), source.reads.toList())
+        assertTrue(found.checked(0))
+        assertFalse(found.checked(1))
+        assertFalse(found.checked(2))
+    }
+
+    @Test
     fun checkingStopsWhenCanceled() {
         val found = PageSeams.Found(3)
         assertFalse(PageSeams.check(Sided(listOf(null, null, null)), listOf(0, 1), found) { true })

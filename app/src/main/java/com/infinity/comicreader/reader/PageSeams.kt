@@ -203,17 +203,27 @@ class PageSeams(val dir: File) {
         /**
          * Checks the seams after [pages] into [found], reading each page's sides from [source]
          * once for both of its seams, until [canceled]; a page whose sides cannot be read leaves
-         * its seams unknown. Returns false when canceled first. Blocking.
+         * its seams unknown. Returns false when canceled first. Once [enough] says so, before
+         * a page is read, it ends early as finished, the seams left unchecked for later. Blocking.
          */
-        fun check(source: PageSource, pages: List<Int>, found: Found, canceled: () -> Boolean = { false }): Boolean {
+        fun check(
+            source: PageSource,
+            pages: List<Int>,
+            found: Found,
+            enough: () -> Boolean = { false },
+            canceled: () -> Boolean = { false }
+        ): Boolean {
             val kept = object : LinkedHashMap<Int, SpreadSeams.Sides?>(8, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, SpreadSeams.Sides?>?) = size > KEPT_SIDES
             }
             fun sides(i: Int) = if (kept.containsKey(i)) kept[i] else runCatching { source.sides(i) }.getOrNull().also { kept[i] = it }
             for (i in pages) {
                 if (canceled()) return false
+                if (!kept.containsKey(i) && enough()) return true
                 val a = sides(i)
-                val b = if (canceled()) return false else sides(i + 1)
+                if (canceled()) return false
+                if (!kept.containsKey(i + 1) && enough()) return true
+                val b = sides(i + 1)
                 if (a == null || b == null) {
                     found.set(i, SpreadSeams.Verdict.UNKNOWN, SpreadSeams.Verdict.UNKNOWN)
                 } else {

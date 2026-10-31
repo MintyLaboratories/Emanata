@@ -769,6 +769,14 @@ libavif, dav1d and xxHash sources and libjxl's headers (checked against their SH
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`, the
 release APK to `app/build/outputs/apk/release/app-release.apk`.
 
+Tests: `./gradlew testDebugUnitTest` (JVM, Robolectric). Native logic that needs no
+Android (the JPEG XL thread pool) has host tests in `app/src/test/cpp`, built with CMake
+and a C compiler on Linux or WSL:
+
+```bash
+cmake -S app/src/test/cpp -B build/native-test && cmake --build build/native-test && ctest --test-dir build/native-test
+```
+
 On Windows, if JDK 21 is not on PATH:
 
 ```powershell

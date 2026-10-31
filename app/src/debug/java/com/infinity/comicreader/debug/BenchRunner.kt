@@ -72,8 +72,12 @@ internal class BenchRunner(private val app: Application) {
         val kept = KeptPrefs(Prefs(app), keptPrefs(app))
         val keptEngine = NativeResampler.engine
         val keptThreads = NativeResampler.threads
+        val keptLater = NativeResampler.laterThreads
+        val keptPinned = NativeResampler.pinned
         plan.engine?.let { NativeResampler.engine = it }
         plan.pixelThreads?.let { NativeResampler.threads = it }
+        plan.laterThreads?.let { NativeResampler.laterThreads = it }
+        plan.pinned?.let { NativeResampler.pinned = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -85,6 +89,8 @@ internal class BenchRunner(private val app: Application) {
         } finally {
             NativeResampler.engine = keptEngine
             NativeResampler.threads = keptThreads
+            NativeResampler.laterThreads = keptLater
+            NativeResampler.pinned = keptPinned
             kept.restore()
             ReadProbes.current = null
             probe.clear()

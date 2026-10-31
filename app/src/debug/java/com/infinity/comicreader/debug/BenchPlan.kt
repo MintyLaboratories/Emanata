@@ -58,7 +58,11 @@ internal data class BenchPlan(
     /** The engine pages are resampled with ([NativeResampler.engine]) for the run; null keeps it. */
     val engine: PixelEngine? = null,
     /** CPU workers of the native resampler ([NativeResampler.threads]) for the run; null keeps them. */
-    val pixelThreads: Int? = null
+    val pixelThreads: Int? = null,
+    /** Its workers for pages read ahead ([NativeResampler.laterThreads]); null keeps them. */
+    val laterThreads: Int? = null,
+    /** Whether its workers are pinned to large or little cores ([NativeResampler.pinned]); null keeps it. */
+    val pinned: Boolean? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -66,6 +70,7 @@ internal data class BenchPlan(
         .put("doubleTap", doubleTap ?: JSONObject.NULL).put("tapMs", tapMs)
         .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
         .put("engine", engine?.key ?: JSONObject.NULL).put("pixelThreads", pixelThreads ?: JSONObject.NULL)
+        .put("laterThreads", laterThreads ?: JSONObject.NULL).put("pinned", pinned ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -118,7 +123,9 @@ internal data class BenchPlan(
                 tapMs = intent.getIntExtra("tapms", 100).coerceIn(1, 1_000).toLong(),
                 orientation = orientation,
                 engine = engine,
-                pixelThreads = if (intent.hasExtra("pixelthreads")) intent.getIntExtra("pixelthreads", 4).coerceIn(1, 16) else null
+                pixelThreads = if (intent.hasExtra("pixelthreads")) intent.getIntExtra("pixelthreads", 4).coerceIn(1, 16) else null,
+                laterThreads = if (intent.hasExtra("laterthreads")) intent.getIntExtra("laterthreads", 1).coerceIn(1, 16) else null,
+                pinned = intent.getStringExtra("pinned")?.let { it == "on" }
             )
         }
     }

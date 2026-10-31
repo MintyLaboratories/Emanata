@@ -65,7 +65,13 @@ internal data class BenchPlan(
     /** Whether its workers are pinned to large or little cores ([NativeResampler.pinned]); null keeps it. */
     val pinned: Boolean? = null,
     /** JPEG XL pages decoded natively ([JxlPages.enabled]) or by jxl-coder; null keeps it. */
-    val jxlNative: Boolean? = null
+    val jxlNative: Boolean? = null,
+    /** Native JPEG XL decode threads for pages read ahead ([JxlPages.laterThreads]); null keeps them. */
+    val jxlLaterThreads: Int? = null,
+    /** Whether those threads are pinned to the little cores ([JxlPages.laterOnLittle]); null keeps it. */
+    val jxlLaterOnLittle: Boolean? = null,
+    /** Their Linux nice ([JxlPages.laterNice]); null keeps it. */
+    val jxlLaterNice: Int? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -75,6 +81,8 @@ internal data class BenchPlan(
         .put("engine", engine?.key ?: JSONObject.NULL).put("pixelThreads", pixelThreads ?: JSONObject.NULL)
         .put("laterThreads", laterThreads ?: JSONObject.NULL).put("pinned", pinned ?: JSONObject.NULL)
         .put("jxl", jxlNative?.let { if (it) "native" else "coder" } ?: JSONObject.NULL)
+        .put("jxlLaterThreads", jxlLaterThreads ?: JSONObject.NULL).put("jxlLaterOnLittle", jxlLaterOnLittle ?: JSONObject.NULL)
+        .put("jxlLaterNice", jxlLaterNice ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -131,7 +139,10 @@ internal data class BenchPlan(
                 pixelThreads = if (intent.hasExtra("pixelthreads")) intent.getIntExtra("pixelthreads", 4).coerceIn(1, 16) else null,
                 laterThreads = if (intent.hasExtra("laterthreads")) intent.getIntExtra("laterthreads", 1).coerceIn(1, 16) else null,
                 pinned = intent.getStringExtra("pinned")?.let { it == "on" },
-                jxlNative = jxl
+                jxlNative = jxl,
+                jxlLaterThreads = if (intent.hasExtra("jxllaterthreads")) intent.getIntExtra("jxllaterthreads", 4).coerceIn(1, 16) else null,
+                jxlLaterOnLittle = intent.getStringExtra("jxllater")?.let { if (it == "little" || it == "big") it == "little" else return null },
+                jxlLaterNice = if (intent.hasExtra("jxllaternice")) intent.getIntExtra("jxllaternice", 0).coerceIn(0, 19) else null
             )
         }
     }

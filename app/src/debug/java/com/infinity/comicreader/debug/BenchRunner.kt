@@ -76,11 +76,17 @@ internal class BenchRunner(private val app: Application) {
         val keptLater = NativeResampler.laterThreads
         val keptPinned = NativeResampler.pinned
         val keptJxl = JxlPages.enabled
+        val keptJxlLater = JxlPages.laterThreads
+        val keptJxlLittle = JxlPages.laterOnLittle
+        val keptJxlNice = JxlPages.laterNice
         plan.engine?.let { NativeResampler.engine = it }
         plan.pixelThreads?.let { NativeResampler.threads = it }
         plan.laterThreads?.let { NativeResampler.laterThreads = it }
         plan.pinned?.let { NativeResampler.pinned = it }
         plan.jxlNative?.let { JxlPages.enabled = it }
+        plan.jxlLaterThreads?.let { JxlPages.laterThreads = it }
+        plan.jxlLaterOnLittle?.let { JxlPages.laterOnLittle = it }
+        plan.jxlLaterNice?.let { JxlPages.laterNice = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -95,6 +101,9 @@ internal class BenchRunner(private val app: Application) {
             NativeResampler.laterThreads = keptLater
             NativeResampler.pinned = keptPinned
             JxlPages.enabled = keptJxl
+            JxlPages.laterThreads = keptJxlLater
+            JxlPages.laterOnLittle = keptJxlLittle
+            JxlPages.laterNice = keptJxlNice
             kept.restore()
             ReadProbes.current = null
             probe.clear()

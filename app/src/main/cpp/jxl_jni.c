@@ -672,56 +672,47 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-// Calls a Kotlin LibJxl.Preview's ready() from a page decode.
+// Calls a Kotlin LibJxl.Stop's stop() from a page decode, on the thread that started it.
 typedef struct {
     JNIEnv * env;
     jobject callback;
-    jmethodID ready;
-} PreviewCall;
+    jmethodID stop;
+} StopCall;
 
-static int previewReady(void * opaque)
+static int stopNow(void * opaque)
 {
-    PreviewCall * c = opaque;
-    const jboolean go = (*c->env)->CallBooleanMethod(c->env, c->callback, c->ready);
-    return !(*c->env)->ExceptionCheck(c->env) && go;
+    StopCall * c = opaque;
+    const jboolean stop = (*c->env)->CallBooleanMethod(c->env, c->callback, c->stop);
+    // An exception stops the decode too, and stays pending for Kotlin.
+    return (*c->env)->ExceptionCheck(c->env) || stop;
 }
 
 // Decodes the first frame of `jxl` in sRGB straight into `bitmap`, an RGBA_8888 bitmap of
 // the image's size as shown, on `threads` threads pinned to `cores` (bit n = core n; 0 =
-// any), with libjxl as built here (`own`, where the build has it) or as jxl-coder ships it. With `preview`, calls its
-// ready() once the DC pass is in the bitmap. A JP_* result (jxl_page.h).
+// any); with `stop`, asks its stop() between the decoder's parallel steps and stops once it
+// returns true. A JP_* result (jxl_page.h).
 EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
-    JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint threads, jlong cores, jboolean own, jobject preview)
+    JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint threads, jlong cores, jobject stop)
 {
     (void)clazz;
-    const jp_api * api = own && jp_own() != NULL ? jp_own() : jp_coder();
+    const jp_api * api = jp_coder();
     AndroidBitmapInfo info;
     if (api == NULL || AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
         return JP_UNSUPPORTED;
     }
-    PreviewCall call = { env, preview, NULL };
-    jp_preview hook = { previewReady, &call };
-    if (preview != NULL) {
-        jclass type = (*env)->GetObjectClass(env, preview);
-        call.ready = (*env)->GetMethodID(env, type, "ready", "()Z");
-        if (call.ready == NULL) return JP_FAILED;
+    StopCall call = { env, stop, NULL };
+    if (stop != NULL) {
+        call.stop = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, stop), "stop", "()Z");
+        if (call.stop == NULL) return JP_FAILED;
     }
     Input in = { 0 };
     void * pixels = NULL;
     int result = JP_FAILED;
     if (borrow(env, jxl, &in) && AndroidBitmap_lockPixels(env, bitmap, &pixels) == ANDROID_BITMAP_RESULT_SUCCESS) {
         result = jp_decode(api, (const uint8_t *)in.data, in.size, pixels, info.width, info.height, info.stride, threads, (uint64_t)cores,
-                           preview != NULL ? &hook : NULL);
+                           stop != NULL ? stopNow : NULL, &call);
         AndroidBitmap_unlockPixels(env, bitmap);
     }
     giveBack(env, &in);
     return result;
-}
-
-// True when this build has libjxl's decoder built from source (jp_own).
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nOwn(JNIEnv * env, jclass clazz)
-{
-    (void)env;
-    (void)clazz;
-    return jp_own() != NULL ? JNI_TRUE : JNI_FALSE;
 }

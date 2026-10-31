@@ -16,8 +16,13 @@ jr_pool * jr_create(int workers, uint64_t cores);
 // Stops and joins the threads; the pool must not be running.
 void jr_destroy(jr_pool * pool);
 
-// Makes the next and every later run fail at once, so a decode stops; any thread may call it.
-void jr_cancel(jr_pool * pool);
+// Asks `stop(opaque)` on the calling thread before each run and between the values it
+// hands itself; once it returns nonzero, the threads take no more values, and that run and
+// every later one fail, so the decode stops (jr_canceled).
+void jr_stop_when(jr_pool * pool, int (*stop)(void * opaque), void * opaque);
+
+// True once `stop` stopped a run.
+int jr_canceled(jr_pool * pool);
 
 // The JxlParallelRunner, with the pool as its runner_opaque.
 JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, JxlParallelRunFunction func, uint32_t start, uint32_t end);

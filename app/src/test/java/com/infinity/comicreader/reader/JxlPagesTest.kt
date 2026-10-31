@@ -16,6 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.concurrent.CancellationException
 
 /** [JxlPages] on a stand-in for native code. */
 @RunWith(RobolectricTestRunner::class)
@@ -25,15 +26,15 @@ class JxlPagesTest {
 
     /** Native code as the JVM can have it: returns [result], every call recorded, painting the bitmap red when it decodes. */
     private class FakeKernel(var result: Int = LibJxl.PAGE_OPAQUE, val fail: Throwable? = null) : JxlPageKernel {
-        class Call(val out: Bitmap, val threads: Int, val cores: Long, val own: Boolean, val preview: LibJxl.Preview?)
+        class Call(val out: Bitmap, val threads: Int, val cores: Long, val stop: LibJxl.Stop?)
 
         val calls = ArrayList<Call>()
 
-        override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: LibJxl.Preview?): Int {
-            calls += Call(out, threads, cores, own, preview)
+        override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int {
+            calls += Call(out, threads, cores, stop)
+            if (stop?.stop() == true) return LibJxl.PAGE_CANCELED
             fail?.let { throw it }
             if (result > 0) out.eraseColor(0xFFFF0000.toInt())
-            preview?.ready()
             return result
         }
     }
@@ -45,10 +46,9 @@ class JxlPagesTest {
 
     @Before
     fun keep() {
-        kept = listOf(JxlPages.enabled, JxlPages.own, JxlPages.threads, JxlPages.laterThreads, JxlPages.pinned, JxlPages.laterOnLittle)
+        kept = listOf(JxlPages.enabled, JxlPages.threads, JxlPages.laterThreads, JxlPages.pinned, JxlPages.laterOnLittle)
         JxlPages.cores = tablet
         JxlPages.enabled = true
-        JxlPages.own = true
         JxlPages.threads = 4
         JxlPages.laterThreads = 4
         JxlPages.pinned = true
@@ -58,11 +58,10 @@ class JxlPagesTest {
     @After
     fun restore() {
         JxlPages.enabled = kept[0] as Boolean
-        JxlPages.own = kept[1] as Boolean
-        JxlPages.threads = kept[2] as Int
-        JxlPages.laterThreads = kept[3] as Int
-        JxlPages.pinned = kept[4] as Boolean
-        JxlPages.laterOnLittle = kept[5] as Boolean
+        JxlPages.threads = kept[1] as Int
+        JxlPages.laterThreads = kept[2] as Int
+        JxlPages.pinned = kept[3] as Boolean
+        JxlPages.laterOnLittle = kept[4] as Boolean
         JxlPages.cores = null
         JxlPages.kernel = null
     }
@@ -82,7 +81,6 @@ class JxlPagesTest {
         assertSame(page, call.out)
         assertEquals(4, call.threads)
         assertEquals(0xF0L, call.cores)
-        assertTrue(call.own)
     }
 
     @Test
@@ -162,11 +160,13 @@ class JxlPagesTest {
     }
 
     @Test
-    fun thePreviewIsHandedOn() {
+    fun aCanceledDecodeThrowsAndFreesItsBitmap() {
         val k = FakeKernel().also { JxlPages.kernel = it }
-        var told = 0
-        JxlPages.decode(bytes, 4, 4, urgent = true) { told++; true }
-        assertEquals(1, told)
-        assertTrue(k.calls.single().preview != null)
+        assertThrows(CancellationException::class.java) {
+            Cancellation.during({ true }) { JxlPages.decode(bytes, 4, 4, urgent = true) }
+        }
+        assertTrue(k.calls.single().out.isRecycled)
+        // Not canceled: decodes.
+        assertFalse(Cancellation.during({ false }) { JxlPages.decode(bytes, 4, 4, urgent = true) }!!.isRecycled)
     }
 }

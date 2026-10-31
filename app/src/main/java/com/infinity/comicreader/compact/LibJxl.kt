@@ -142,9 +142,9 @@ object LibJxl : JxlCodec {
     fun region(jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int): Boolean =
         nRegion(jxl, out, width, height, left, top, right, bottom, sample)
 
-    /** Told when a page decode's DC pass (1:8, upsampled) is in its bitmap; false stops the decode. */
-    fun interface Preview {
-        fun ready(): Boolean
+    /** Asked between a page decode's parallel steps, on its thread; true stops it. */
+    fun interface Stop {
+        fun stop(): Boolean
     }
 
     /** What [page] returned (`JP_*` in jxl_page.h). */
@@ -152,26 +152,20 @@ object LibJxl : JxlCodec {
     const val PAGE_ALPHA = 2
     const val PAGE_UNSUPPORTED = -1
     const val PAGE_FAILED = 0
+    const val PAGE_CANCELED = -2
 
     /**
      * Decodes [jxl]'s first frame in sRGB straight into [out], ARGB_8888 of the image's size as
      * shown, premultiplied, on [threads] threads (the caller's among them) pinned to [cores]
-     * (bit n = core n; 0 = any), with libjxl as built here ([own], where [ownDecoder]) or as jxl-coder ships it.
-     * [preview] is told once the DC pass is in [out]. [PAGE_OPAQUE] or [PAGE_ALPHA] when done;
-     * [PAGE_UNSUPPORTED] when the image is another size, has no sRGB rendering without a color
-     * manager, or is HDR, or that libjxl is missing; [PAGE_FAILED] when it does not decode.
+     * (bit n = core n; 0 = any), asking [stop] between its parallel steps. [PAGE_OPAQUE] or
+     * [PAGE_ALPHA] when done; [PAGE_UNSUPPORTED] when the image is another size, has no sRGB
+     * rendering without a color manager, or is HDR, or that libjxl is missing; [PAGE_FAILED]
+     * when it does not decode; [PAGE_CANCELED] once [stop] said so.
      */
-    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: Preview? = null): Int =
-        nPage(jxl, out, threads, cores, own, preview)
-
-    /** True when this build has libjxl's decoder built from source, which [page] uses when asked. */
-    val ownDecoder: Boolean by lazy { nOwn() }
+    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: Stop? = null): Int = nPage(jxl, out, threads, cores, stop)
 
     @JvmStatic
-    private external fun nOwn(): Boolean
-
-    @JvmStatic
-    private external fun nPage(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: Preview?): Int
+    private external fun nPage(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: Stop?): Int
 
     @JvmStatic
     private external fun nVersion(): Int

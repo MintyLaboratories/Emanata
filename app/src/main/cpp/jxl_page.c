@@ -73,13 +73,12 @@ static void premultiply(uint8_t * out, uint32_t width, uint32_t height, uint32_t
 }
 
 int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * out, uint32_t width, uint32_t height, uint32_t stride,
-              int threads, uint64_t cores, const jp_preview * preview)
+              int threads, uint64_t cores, int (*stop)(void *), void * stop_opaque)
 {
     if (api == NULL || width == 0 || height == 0 || stride < width * 4) return JP_UNSUPPORTED;
     JxlDecoder * dec = api->JxlDecoderCreate(NULL);
     if (dec == NULL) return JP_FAILED;
-    int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
-    if (preview != NULL) events |= JXL_DEC_FRAME_PROGRESSION;
+    const int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
     jr_pool * pool = NULL;
     cpu_set_t kept;
     const int pinned = jr_pin(cores, &kept);
@@ -94,11 +93,10 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
         goto done;
     }
     api->JxlDecoderCloseInput(dec);
-    if (threads > 1) {
-        pool = jr_create(threads - 1, cores);
-        if (pool == NULL || api->JxlDecoderSetParallelRunner(dec, jr_run, pool) != JXL_DEC_SUCCESS) goto done;
-    }
-    if (preview != NULL && api->JxlDecoderSetProgressiveDetail(dec, kDC) != JXL_DEC_SUCCESS) goto done;
+    // A pool even for one thread: its runner asks `stop`.
+    pool = jr_create(threads > 1 ? threads - 1 : 0, cores);
+    if (pool == NULL || api->JxlDecoderSetParallelRunner(dec, jr_run, pool) != JXL_DEC_SUCCESS) goto done;
+    if (stop != NULL) jr_stop_when(pool, stop, stop_opaque);
     for (;;) {
         const JxlDecoderStatus status = api->JxlDecoderProcessInput(dec);
         if (status == JXL_DEC_BASIC_INFO) {
@@ -126,13 +124,6 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
             size_t need = 0;
             if (api->JxlDecoderImageOutBufferSize(dec, &format, &need) != JXL_DEC_SUCCESS || need > (size_t)stride * height) goto done;
             if (api->JxlDecoderSetImageOutBuffer(dec, &format, out, (size_t)stride * height) != JXL_DEC_SUCCESS) goto done;
-        } else if (status == JXL_DEC_FRAME_PROGRESSION) {
-            if (preview != NULL && api->JxlDecoderFlushImage(dec) == JXL_DEC_SUCCESS) {
-                if (alpha) premultiply(out, width, height, stride);
-                if (!preview->ready(preview->opaque)) goto done;
-                // Once: the DC pass only.
-                preview = NULL;
-            }
         } else if (status == JXL_DEC_FULL_IMAGE) {
             // The first frame only.
             if (alpha) premultiply(out, width, height, stride);
@@ -143,6 +134,7 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
         }
     }
 done:
+    if (pool != NULL && jr_canceled(pool)) result = JP_CANCELED;
     api->JxlDecoderDestroy(dec);
     jr_destroy(pool);
     if (pinned) sched_setaffinity(0, sizeof(kept), &kept);

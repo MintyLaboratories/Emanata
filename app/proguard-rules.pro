@@ -6,7 +6,7 @@
 # jxl-coder: its native code looks up these classes by name
 -keep class com.awxkee.jxlcoder.** { *; }
 # Called back by name from jxl_jni.c during a page decode
--keep interface com.infinity.comicreader.compact.LibJxl$Preview { *; }
+-keep interface com.infinity.comicreader.compact.LibJxl$Stop { *; }
 # SMBJ: its event bus (MBassador) finds handlers by annotation; Kerberos and GSS classes are absent on Android
 -keep class com.hierynomus.** { *; }
 -keep class net.engio.mbassy.** { *; }

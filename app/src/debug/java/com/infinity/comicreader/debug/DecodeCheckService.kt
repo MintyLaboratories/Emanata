@@ -44,8 +44,8 @@ import kotlin.math.max
  * native JPEG XL page decodes against jxl-coder's. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.DecodeCheckService
- *  [--es do check,time,preview|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
- *  [--es setups coder,page/4/big,own/4/big,own/8/any,platform] [--ei reps 5] [--ei gap 0]`
+ *  [--es do check,time,cancel|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
+ *  [--es setups coder,page/4/big,page/8/any,platform] [--ei reps 5] [--ei gap 0]`
  *
  * Pages: synthetic 2000x3000 and 4000x6000 pages (JPEG XL at quality 91, JPEG at 90, PNG),
  * made once into the app's cache, and the first `pages` images of each of `dirs`, read
@@ -57,7 +57,8 @@ import kotlin.math.max
  * - time: each page by each setup, 1 warm-up round and `reps` timed ones, the setups
  *   interleaved (A B, B A...), `gap` ms of rest before each decode (a reading pace lets the
  *   cores clock down): wall and process CPU per page.
- * - preview: when the DC pass of each JPEG XL page is ready, against the whole decode.
+ * - cancel: each JPEG XL page by the native setup, asked to stop 30 ms in: how long it
+ *   takes to return, and what it returned.
  *
  * Timings are valid only from a bench build with the app in front (see
  * ResampleCheckService). Results go to the log under "DecodeCheck", one JSON object per
@@ -79,7 +80,7 @@ class DecodeCheckService : Service() {
         val threads = JxlPages.threads
         val asked = intent?.getStringExtra("setups")?.split(',')
         val setups = asked?.mapNotNull { Setup.of(it, threads) } ?: listOf(
-            Setup(Engine.CODER, 1, Cores.ANY), Setup(Engine.PAGE, threads, Cores.BIG), Setup(Engine.OWN, threads, Cores.BIG),
+            Setup(Engine.CODER, 1, Cores.ANY), Setup(Engine.PAGE, threads, Cores.BIG), Setup(Engine.PAGE, 8, Cores.ANY),
             Setup(Engine.PLATFORM, 1, Cores.ANY)
         )
         val dirs = intent?.getStringExtra("dirs")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
@@ -94,7 +95,7 @@ class DecodeCheckService : Service() {
                 val cores = CpuCores.device
                 log(
                     JSONObject().put("big", java.lang.Long.toBinaryString(cores.big)).put("little", java.lang.Long.toBinaryString(cores.little))
-                        .put("threads", threads).put("ownDecoder", LibJxl.ownDecoder).put("conditions", conditions())
+                        .put("threads", threads).put("conditions", conditions())
                 )
                 val groups = ArrayList<Group>()
                 if (synthetic) groups += syntheticGroups()
@@ -102,7 +103,7 @@ class DecodeCheckService : Service() {
                 for (g in groups) log(JSONObject().put("group", g.name).put("pages", g.pages.size).put("bytes", g.pages.sumOf { it.bytes.size.toLong() }))
                 if ("check" in what || "all" in what) check(groups)
                 if ("time" in what || "all" in what) time(groups, setups, reps, gap)
-                if ("preview" in what || "all" in what) preview(groups, threads)
+                if ("cancel" in what || "all" in what) cancel(groups, threads)
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
@@ -168,9 +169,9 @@ class DecodeCheckService : Service() {
 
     // ------------------------------------------------------------------ decoders
 
-    private fun decode(setup: Setup, page: Page, preview: LibJxl.Preview? = null): Bitmap = when (setup.engine) {
+    private fun decode(setup: Setup, page: Page): Bitmap = when (setup.engine) {
         Engine.CODER -> JxlCoder.decode(page.bytes, PreferredColorConfig.RGBA_8888)
-        Engine.PAGE, Engine.OWN -> {
+        Engine.PAGE -> {
             val c = CpuCores.device
             val mask = when (setup.cores) {
                 Cores.BIG -> c.big
@@ -178,7 +179,7 @@ class DecodeCheckService : Service() {
                 Cores.ANY -> 0L
             }
             val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
-            val r = LibJxl.page(page.bytes, bitmap, setup.threads, mask, setup.engine == Engine.OWN, preview)
+            val r = LibJxl.page(page.bytes, bitmap, setup.threads, mask)
             if (r != LibJxl.PAGE_OPAQUE && r != LibJxl.PAGE_ALPHA) {
                 bitmap.recycle()
                 error("${setup.key} returned $r for ${page.name}")
@@ -196,7 +197,7 @@ class DecodeCheckService : Service() {
     // ------------------------------------------------------------------ check
 
     private fun check(groups: List<Group>) {
-        val natives = listOf(Setup(Engine.PAGE, JxlPages.threads, Cores.BIG), Setup(Engine.OWN, JxlPages.threads, Cores.BIG))
+        val natives = listOf(Setup(Engine.PAGE, JxlPages.threads, Cores.BIG))
         for (group in groups) {
             for (page in group.pages.filter { it.jxl }) {
                 val reference = decode(Setup(Engine.CODER, 1, Cores.ANY), page)
@@ -270,40 +271,26 @@ class DecodeCheckService : Service() {
         }
     }
 
-    // ------------------------------------------------------------------ preview
+    // ------------------------------------------------------------------ cancel
 
-    private fun preview(groups: List<Group>, threads: Int) {
-        val setup = Setup(if (LibJxl.ownDecoder) Engine.OWN else Engine.PAGE, threads, Cores.BIG)
+    private fun cancel(groups: List<Group>, threads: Int) {
+        val mask = CpuCores.device.big
         for (group in groups) {
-            val pages = group.pages.filter { it.jxl }
-            if (pages.isEmpty()) continue
-            val firsts = ArrayList<Double>()
-            val withs = ArrayList<Double>()
-            val withouts = ArrayList<Double>()
-            repeat(3) { rep ->
-                for (page in pages) {
-                    var first = -1.0
-                    val t0 = System.nanoTime()
-                    decode(setup, page) {
-                        first = (System.nanoTime() - t0) / 1e6
-                        true
-                    }.recycle()
-                    val with = (System.nanoTime() - t0) / 1e6
-                    val t1 = System.nanoTime()
-                    decode(setup, page).recycle()
-                    val without = (System.nanoTime() - t1) / 1e6
-                    if (rep > 0) {
-                        if (first >= 0) firsts += first
-                        withs += with
-                        withouts += without
-                    }
+            for (page in group.pages.filter { it.jxl }) {
+                val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                val t0 = System.nanoTime()
+                var asked = 0
+                val r = LibJxl.page(page.bytes, bitmap, threads, mask) {
+                    asked++
+                    System.nanoTime() - t0 > 30_000_000L
                 }
+                val ms = (System.nanoTime() - t0) / 1e6
+                bitmap.recycle()
+                log(
+                    JSONObject().put("cancel", group.name).put("page", page.name).put("result", r).put("returnedMs", Stats.round1(ms))
+                        .put("asked", asked).put("ok", r == LibJxl.PAGE_CANCELED && ms < 60)
+                )
             }
-            log(
-                JSONObject().put("preview", setup.key).put("group", group.name).put("pages", pages.size).put("previewed", firsts.size)
-                    .put("previewMs", if (firsts.isEmpty()) JSONObject.NULL else summary(firsts))
-                    .put("wholeWithPreviewMs", summary(withs)).put("wholeMs", summary(withouts))
-            )
         }
     }
 

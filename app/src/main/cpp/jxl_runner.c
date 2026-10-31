@@ -23,6 +23,8 @@ struct jr_pool {
     int busy;
     int stop;
     atomic_int canceled;
+    int (*should_stop)(void *);
+    void * stop_opaque;
     uint64_t cores;
     int workers;
     int started;
@@ -45,10 +47,20 @@ int jr_pin(uint64_t cores, cpu_set_t * kept)
     return sched_setaffinity(0, sizeof(want), &want) == 0;
 }
 
-// Hands out the run's values until none are left, as thread `id`.
+// True once `stop` said so; only the calling thread (id 0) asks it.
+static int stopped(jr_pool * p, size_t id)
+{
+    if (atomic_load_explicit(&p->canceled, memory_order_relaxed)) return 1;
+    if (id != 0 || p->should_stop == NULL || !p->should_stop(p->stop_opaque)) return 0;
+    atomic_store(&p->canceled, 1);
+    return 1;
+}
+
+// Hands out the run's values until none are left or the run is stopped, as thread `id`.
 static void drain(jr_pool * p, JxlParallelRunFunction func, void * opaque, uint32_t end, size_t id)
 {
     for (;;) {
+        if (stopped(p, id)) return;
         const uint32_t v = (uint32_t)atomic_fetch_add_explicit(&p->next, 1, memory_order_relaxed);
         if (v >= end) return;
         func(opaque, v, id);
@@ -126,21 +138,30 @@ void jr_destroy(jr_pool * p)
     free(p);
 }
 
-void jr_cancel(jr_pool * p)
+void jr_stop_when(jr_pool * p, int (*stop)(void *), void * opaque)
 {
-    atomic_store(&p->canceled, 1);
+    p->should_stop = stop;
+    p->stop_opaque = opaque;
+}
+
+int jr_canceled(jr_pool * p)
+{
+    return atomic_load(&p->canceled);
 }
 
 JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, JxlParallelRunFunction func, uint32_t start, uint32_t end)
 {
     jr_pool * p = pool;
-    if (atomic_load(&p->canceled)) return JXL_PARALLEL_RET_RUNNER_ERROR;
+    if (stopped(p, 0)) return JXL_PARALLEL_RET_RUNNER_ERROR;
     if (start >= end) return JXL_PARALLEL_RET_SUCCESS;
     // One value, or no workers: the caller alone, without waking anyone.
     if (end - start == 1 || p->started == 0) {
         const JxlParallelRetCode r = init(opaque, 1);
         if (r != JXL_PARALLEL_RET_SUCCESS) return r;
-        for (uint32_t v = start; v < end; v++) func(opaque, v, 0);
+        for (uint32_t v = start; v < end; v++) {
+            if (stopped(p, 0)) return JXL_PARALLEL_RET_RUNNER_ERROR;
+            func(opaque, v, 0);
+        }
         return JXL_PARALLEL_RET_SUCCESS;
     }
     const JxlParallelRetCode r = init(opaque, (size_t)p->started + 1);
@@ -158,5 +179,5 @@ JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, J
     pthread_mutex_lock(&p->lock);
     while (p->busy > 0) pthread_cond_wait(&p->idle, &p->lock);
     pthread_mutex_unlock(&p->lock);
-    return JXL_PARALLEL_RET_SUCCESS;
+    return atomic_load(&p->canceled) ? JXL_PARALLEL_RET_RUNNER_ERROR : JXL_PARALLEL_RET_SUCCESS;
 }

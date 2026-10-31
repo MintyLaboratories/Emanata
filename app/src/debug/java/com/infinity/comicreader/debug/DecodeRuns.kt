@@ -10,9 +10,6 @@ internal object DecodeRuns {
         /** Native decode into the bitmap ([com.infinity.comicreader.reader.JxlPages]) with jxl-coder's libjxl. */
         PAGE("page", true),
 
-        /** The same with libjxl built from source. */
-        OWN("own", true),
-
         /** [android.graphics.ImageDecoder] into software pixels, as other pages decode. */
         PLATFORM("platform", false),
 
@@ -26,20 +23,20 @@ internal object DecodeRuns {
 
     /** One setup: [engine] on [threads] threads pinned to [cores] (native page decodes only). */
     data class Setup(val engine: Engine, val threads: Int, val cores: ResampleRuns.Cores) {
-        val key: String get() = if (engine == Engine.PAGE || engine == Engine.OWN) "${engine.key}/$threads/${cores.key}" else engine.key
+        val key: String get() = if (engine == Engine.PAGE) "${engine.key}/$threads/${cores.key}" else engine.key
 
         /** True when it decodes files of [jxl] kind. */
         fun takes(jxl: Boolean): Boolean = engine.jxl == jxl
 
         companion object {
             /**
-             * `engine[/threads[/cores]]`, as `own/4/big`, `page/8/any`, `coder` or `platform`;
+             * `engine[/threads[/cores]]`, as `page/4/big`, `page/8/any`, `coder` or `platform`;
              * threads default to [threads], cores to any. Null when unreadable.
              */
             fun of(text: String, threads: Int): Setup? {
                 val parts = text.trim().split('/')
                 val engine = Engine.of(parts[0]) ?: return null
-                if (engine != Engine.PAGE && engine != Engine.OWN) return if (parts.size == 1) Setup(engine, 1, ResampleRuns.Cores.ANY) else null
+                if (engine != Engine.PAGE) return if (parts.size == 1) Setup(engine, 1, ResampleRuns.Cores.ANY) else null
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { ResampleRuns.Cores.of(it) ?: return null } ?: ResampleRuns.Cores.ANY
                 if (n !in 1..16) return null

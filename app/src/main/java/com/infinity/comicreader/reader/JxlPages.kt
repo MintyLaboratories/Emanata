@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import com.infinity.comicreader.compact.LibJxl
+import java.util.concurrent.CancellationException
 
 /**
  * What [JxlPages] needs of native code: a JPEG XL decoded straight into a bitmap
@@ -9,13 +10,13 @@ import com.infinity.comicreader.compact.LibJxl
  */
 internal interface JxlPageKernel {
     /** A `LibJxl.PAGE_*` result. */
-    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: LibJxl.Preview?): Int
+    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int
 }
 
 /** [LibJxl.page], where its library loads. */
 private object LibJxlPages : JxlPageKernel {
-    override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: LibJxl.Preview?): Int =
-        LibJxl.page(jxl, out, threads, cores, own, preview)
+    override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int =
+        LibJxl.page(jxl, out, threads, cores, stop)
 }
 
 /**
@@ -32,10 +33,6 @@ object JxlPages {
     /** Off leaves every JPEG XL to jxl-coder, for A/B runs. */
     @Volatile
     var enabled: Boolean = true
-
-    /** Decodes with libjxl as built here ([LibJxl.page]'s `own`) rather than jxl-coder's copy, where the build has it. */
-    @Volatile
-    var own: Boolean = true
 
     /** Threads for a page someone waits on: one per large core. */
     @Volatile
@@ -70,17 +67,18 @@ object JxlPages {
     }
 
     /**
-     * [bytes], a JPEG XL shown [width] x [height], decoded whole into a new ARGB_8888 bitmap;
-     * with [preview], told once its DC pass (1:8, upsampled) is in the bitmap. Null when this
-     * path does not take it or native code is missing, so the caller decodes it another way.
+     * [bytes], a JPEG XL shown [width] x [height], decoded whole into a new ARGB_8888 bitmap.
+     * Null when this path does not take it or native code is missing, so the caller decodes it
+     * another way. Throws [CancellationException] once [canceled] returns true, asked between
+     * the decoder's parallel steps.
      */
-    fun decode(bytes: ByteArray, width: Int, height: Int, urgent: Boolean = Urgency.current()(), preview: LibJxl.Preview? = null): Bitmap? {
+    fun decode(bytes: ByteArray, width: Int, height: Int, urgent: Boolean = Urgency.current()(), canceled: () -> Boolean = Cancellation.current()): Bitmap? {
         if (!enabled) return null
         val k = kernel ?: return null
         val (n, on) = placement(urgent)
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val result = try {
-            k.page(bytes, out, n, on, own, preview)
+            k.page(bytes, out, n, on) { canceled() }
         } catch (t: Throwable) {
             out.recycle()
             throw t
@@ -88,6 +86,10 @@ object JxlPages {
         return when (result) {
             LibJxl.PAGE_OPAQUE -> out.apply { setHasAlpha(false) }
             LibJxl.PAGE_ALPHA -> out
+            LibJxl.PAGE_CANCELED -> {
+                out.recycle()
+                throw CancellationException("JPEG XL decode canceled")
+            }
             else -> {
                 out.recycle()
                 null

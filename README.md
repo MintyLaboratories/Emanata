@@ -502,8 +502,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   numbers would pair it otherwise (the seams of that run decide; **Shift pairs
   by one page** still flips the result), and its gutter is never cropped. Seams
   are checked in the background at low priority, nearest the page on screen
-  first; beyond nearby pages only JPEG, PNG and WebP pages, whose strips decode
-  alone. They are kept per book. Once you turn a page, a seam found later never
+  first, from the reader's own decodes; beyond them only baseline JPEG pages,
+  whose strips decode alone (a progressive JPEG decodes every scan for any
+  strip, so such a book waits for the reader's decodes too). They are kept per
+  book. Once you turn a page, a seam found later never
   re-pairs the pages you are on. A single strong match re-pairs its run only
   within a few pages of one you have had on screen, in this or an earlier
   session (pages seen are kept beside the seams). **Join spreads by their

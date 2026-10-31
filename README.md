@@ -788,9 +788,12 @@ runs the app's own code several times slower.
 
 `tools/bench/bench.py` (Python 3, standard library) makes synthetic books, pushes
 them, runs scripted reading sessions and library grids on the device through the
-debug-only `BenchActivity`, and tabulates the results: open and page turn to first
-visible and to sharp page, CPU time, memory, jank, and optionally a Perfetto trace
-and the battery statistics' estimate per session. See its `--help`.
+debug-only `BenchActivity`, and tabulates the results: open and page turn to the
+completed frame showing the page visible and sharp, CPU time per session and per
+decoded page, memory, jank, thermal headroom, and optionally a Perfetto trace and the
+battery statistics' estimate per session. Each session starts with a warm-up that
+reports leave out; `ab` compares two builds installed in turn (A B B A). See its
+`--help`.
 
 ## Permissions
 

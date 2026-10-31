@@ -24,7 +24,10 @@ private object LibJxlPages : JxlPageKernel {
  * 8-bit RGBA from libjxl's own output stage, no float buffer, no copy. libjxl's work runs on
  * one thread per large core ([CpuCores]), the caller's among them, pinned there: the little
  * cores add almost nothing to a decode and stall its last groups. Work nobody waits on yet
- * ([Urgency]), pages read ahead and previews, runs on [laterThreads].
+ * ([Urgency]), pages read ahead and previews, runs on [laterThreads], [laterOnLittle] and
+ * [laterNice], read once when the decode starts: by default the same placement as a page
+ * shown, which fast page turns measured best, so a page read ahead that comes on screen
+ * mid-decode loses nothing.
  *
  * Images this path does not take (no sRGB rendering without a color manager, HDR) return
  * null, for jxl-coder to decode.

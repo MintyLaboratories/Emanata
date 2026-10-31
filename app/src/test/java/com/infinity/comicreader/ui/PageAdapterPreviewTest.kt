@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -145,5 +146,49 @@ class PageAdapterPreviewTest {
         assertEquals(100, boxed.height)
         assertTrue(PageAdapter.previewShows(Target(10, 10, autoCrop = true, box = Box(0.1, 0.0, 0.9, 0.5))))
         assertFalse(PageAdapter.previewShows(Target(10, 10, autoCrop = true)))
+    }
+
+    /** Pages read in any order, each with a quick preview read from the book; pages [held] wait for their latches. */
+    private class QuickSource : PageSource {
+        override val pageCount: Int get() = 4
+        val quick: MutableList<Int> = Collections.synchronizedList(ArrayList())
+        val started: MutableList<Int> = Collections.synchronizedList(ArrayList())
+        val held = (0 until 4).associateWith { CountDownLatch(if (it == 0) 0 else 1) }
+
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            started += index
+            held.getValue(index).await(5, TimeUnit.SECONDS)
+            return Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun loadPreview(index: Int): Bitmap {
+            quick += index
+            return Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+    }
+
+    @Test
+    fun aQuickPreviewIsReadOnOpeningOrWhileThePageWaitsForADecoder() {
+        val source = QuickSource()
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val first = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(first, 0)
+        idleUntil { shown(first)?.width == 40 && 0 in source.quick }
+        // Pages 1 and 2 decode at once, with both decoders: no quick preview races them.
+        for (page in 1..2) {
+            adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), page)
+            idleUntil { page in source.started }
+        }
+        // Page 3 waits for a decoder: its quick preview shows meanwhile.
+        val waiting = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(waiting, 3)
+        idleUntil { shown(waiting) != null }
+        assertEquals(4, shown(waiting)?.width)
+        assertEquals(listOf(0, 3), source.quick.toList())
+        source.held.values.forEach { it.countDown() }
+        idleUntil { shown(waiting)?.width == 40 }
+        adapter.release()
     }
 }

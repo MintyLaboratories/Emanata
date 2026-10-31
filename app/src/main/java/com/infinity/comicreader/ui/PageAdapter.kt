@@ -296,6 +296,10 @@ class PageAdapter(
         @Volatile
         var waiters = 0
         var prefetch = false
+
+        /** True once the decode has a decoder ([DECODE_THREADS]) and runs. */
+        @Volatile
+        var started = false
     }
 
     /** A page decoded for one exact [target]; the same page at another size is another entry. */
@@ -865,6 +869,9 @@ class PageAdapter(
 
     /** Decodes [key]'s page and shows it in [slot], or why it failed. */
     private fun decodeInto(holder: PageHolder, slot: Int, key: PageKey) {
+        // A quick preview read from the book races the page's own read and decode: worth it on
+        // opening, or while the decode waits for a decoder; never beside a decode under way.
+        val quick = !shownOnce || pending[key]?.let { !it.started } ?: (gate.availablePermits == 0)
         val entry = request(key)
         entry.waiters++
         holder.decodes[slot] = entry
@@ -873,7 +880,7 @@ class PageAdapter(
             if (holder.shown[slot] != key.code && previewShows(key.target)) launch {
                 val chapter = strip.chapterOf(key.page)
                 val preview = withContext(AppDispatchers.io) {
-                    previewOf(chapter.value.source, key.page - chapter.first)?.let { runCatching { previewPart(it, key.target) }.getOrNull() }
+                    previewOf(chapter.value.source, key.page - chapter.first, quick)?.let { runCatching { previewPart(it, key.target) }.getOrNull() }
                 } ?: return@launch
                 if (entry.deferred.isActive && holder.shown[slot] != key.code) {
                     applyBitmap(holder, slot, key, preview, exact = false)
@@ -1130,12 +1137,12 @@ class PageAdapter(
     // ------------------------------------------------------------------ decoding
 
     /**
-     * Page [index] of [source]'s small preview: the one kept from an earlier read, else, where
-     * pages are read in any order ([PageSource.cheapSizes]), a quick one ([PageSource.loadPreview]);
-     * null when none comes cheap. Blocking.
+     * Page [index] of [source]'s small preview: the one kept from an earlier read, else with
+     * [quick], where pages are read in any order ([PageSource.cheapSizes]), a quick one
+     * ([PageSource.loadPreview]); null when none comes cheap. Blocking.
      */
-    private fun previewOf(source: PageSource, index: Int): Bitmap? =
-        runCatching { source.keptPreview(index) ?: if (source.cheapSizes) source.loadPreview(index) else null }.getOrNull()
+    private fun previewOf(source: PageSource, index: Int, quick: Boolean): Bitmap? =
+        runCatching { source.keptPreview(index) ?: if (quick && source.cheapSizes) source.loadPreview(index) else null }.getOrNull()
 
     /** The cache's least size: a sixth of the heap limit. */
     private fun cacheBytes(): Int =
@@ -1185,6 +1192,7 @@ class PageAdapter(
         val queued = Traces.queued("page $pageIndex queued")
         val deferred = scope.async(AppDispatchers.io) {
             gate.withPermit {
+                entry.started = true
                 queued.end()
                 val job = coroutineContext.job
                 val bitmap = Traces.section({ "page $pageIndex ${key.target.width}x${key.target.height}" }) {

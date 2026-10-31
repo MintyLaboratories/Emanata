@@ -540,11 +540,12 @@ class PageAdapter(
             if (holder.images.size > 1) holder.images[slot].visibility = if (part == null) View.GONE else View.VISIBLE
             bindImage(holder, slot, part)
         }
-        // The first pages shown go first: reading ahead waits until they are decoded.
-        if (!shownOnce && holder.decodes.any { it != null && it.deferred.isActive }) {
+        // The first pages shown go first: reading ahead waits until they are measured and decoded.
+        if (!shownOnce && (holder.decodes.any { it != null && it.deferred.isActive } || parts.any { it != null && it.page in measuring })) {
             prefetchFrom = position
             preloadWaits = true
         } else {
+            preloadWaits = false
             prefetchAfter(position)
         }
     }
@@ -907,8 +908,9 @@ class PageAdapter(
             }
             if (bounds[page] == null) bounds[page] = PageBounds.Found(Box.FULL, 0, 0)
             notifyItemChanged(layout.itemOf(PageLayout.Part(page)), RESIZE)
-            // An item not bound yet waits for no bind: its pages are asked for here.
-            if (!released && prefetchFrom >= 0) prefetchAfter(prefetchFrom)
+            // An item not bound yet waits for no bind: its pages are asked for here, unless the
+            // first pages shown are still coming (their item binds again with this crop).
+            if (!released && prefetchFrom >= 0 && !preloadWaits) prefetchAfter(prefetchFrom)
         }
     }
 
@@ -1080,7 +1082,7 @@ class PageAdapter(
                 if (pending[key] === entry) pending.remove(key)
                 if (error == null) onLoaded?.invoke(pageIndex)
                 if (error == null && entry.waiters > 0) shownOnce = true
-                if (preloadWaits && !released && pending.values.none { it.waiters > 0 && it.deferred.isActive }) {
+                if (preloadWaits && !released && pending.values.none { it.waiters > 0 && it.deferred.isActive } && !firstMeasuring()) {
                     preloadWaits = false
                     prefetchAfter(prefetchFrom)
                 }
@@ -1097,6 +1099,10 @@ class PageAdapter(
 
     /** True once a page shown has decoded; from then on reading ahead runs beside the pages shown. */
     private var shownOnce = false
+
+    /** True while auto-crop measures a page of item [prefetchFrom], the one reading ahead waits behind. */
+    private fun firstMeasuring(): Boolean =
+        prefetchFrom in 0 until itemCount && strip.parts(prefetchFrom).any { it != null && it.page in measuring }
 
     /** Decodes the [preload] parts on the items after [position] into the cache. */
     private fun prefetchAfter(position: Int) {

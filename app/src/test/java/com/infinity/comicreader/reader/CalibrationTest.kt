@@ -45,7 +45,7 @@ class CalibrationTest {
     @Test
     fun theLeastCpuWinsAmongTheFast() {
         // 8 threads a little faster than 4 for far more CPU time; 2 too slow.
-        val t = listOf(Timing(jxl(8, false), 100.0, 1000.0), Timing(jxl(4, true), 106.0, 600.0), Timing(jxl(2, true), 160.0, 500.0))
+        val t = listOf(Timing(jxl(8, false), 100.0, 1000.0), Timing(jxl(4, true), 110.0, 600.0), Timing(jxl(2, true), 160.0, 500.0))
         assertEquals(jxl(4, true), Calibration.pick(t)!!.candidate)
         // Calibration's own page on the tablet: 8 any 74.6 ms / 368 CPU, 4 big 86.4 / 253.
         assertEquals(jxl(4, true), Calibration.pick(listOf(Timing(jxl(8, false), 74.6, 368.0), Timing(jxl(4, true), 86.4, 253.0)))!!.candidate)

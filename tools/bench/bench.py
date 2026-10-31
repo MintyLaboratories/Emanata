@@ -4,6 +4,7 @@ Run from the repository root with Python 3.10+ (standard library only):
 
     py tools/bench/bench.py make --out <dir>                 # synthetic books (magick; cjxl, avifenc, 7z where found)
     py tools/bench/bench.py push --src <dir>                 # to the device's Download/emanata-test
+    py tools/bench/bench.py fixtures --out <dir>             # JPEG XL decode fixtures (magick, cjxl, djxl)
     py tools/bench/bench.py run --plan <plan.json> --out <dir> [--trace] [--energy]
     py tools/bench/bench.py ab --a <a.apk> --b <b.apk> --plan <plan.json> --out <dir> [--rounds 6]
     py tools/bench/bench.py report <dir>/results.jsonl       # medians with spread
@@ -213,6 +214,73 @@ def make(args) -> None:
     else:
         print("skipped cb7 (no 7z)")
     print("CBR: no free RAR writer exists; use real RAR books for those sessions.")
+
+
+def fixtures(args) -> None:
+    """Small JPEG XL pages of each kind (gray, wide gamut, ICC, alpha straight and premultiplied,
+    animated, recompressed JPEG), each beside its reference `<name>.png` or `.jpg`, for
+    DecodeCheckService's `fixtures` check; pushed with `--push`."""
+    for tool in ("magick", "cjxl", "djxl"):
+        if not shutil.which(tool):
+            raise SystemExit(f"{tool} not found")
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    w, h = 600, 900
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        color, gray, alpha, second = t / "color.png", t / "gray.png", t / "alpha.png", t / "second.png"
+        render_page(w, h, 7, color)
+        run(["magick", str(color), "-colorspace", "Gray", "-type", "Grayscale", str(gray)])
+        # Alpha from opaque at the top to clear at the bottom, with a fully clear band.
+        run(["magick", str(color), "(", "-size", f"{w}x{h}", "gradient:white-black", "-fill", "black",
+             "-draw", f"rectangle 0,{h * 3 // 4} {w // 2},{h}", ")", "-alpha", "off", "-compose", "CopyOpacity",
+             "-composite", f"PNG32:{alpha}"])
+        run(["magick", str(color), "-rotate", "180", str(second)])
+        anim = t / "anim.png"
+        run(["magick", "-delay", "10", str(color), str(second), f"APNG:{anim}"])
+        photo = t / "photo.jpg"
+        run(["magick", str(color), "-quality", "90", "-sampling-factor", "4:2:0", str(photo)])
+
+        def jxl(name: str, src: Path, *opts: str) -> Path:
+            f = out / f"{name}.jxl"
+            run(["cjxl", str(src), str(f), "--quiet", *opts])
+            return f
+
+        jxl("color-lossy", color, "-q", "91")
+        shutil.copyfile(color, out / "color-lossy.png")
+        jxl("gray-lossy", gray, "-q", "91")
+        shutil.copyfile(gray, out / "gray-lossy.png")
+        jxl("gray-lossless", gray, "-d", "0")
+        shutil.copyfile(gray, out / "gray-lossless.png")
+        # Display P3 by enum; the reference is libjxl's own rendering in sRGB.
+        p3 = jxl("p3-lossy", color, "-q", "91", "-x", "color_space=DisplayP3")
+        run(["djxl", str(p3), str(out / "p3-lossy.png"), "--color_space=RGB_D65_SRG_Rel_SRG", "--quiet"])
+        icc = t / "p3.icc"
+        run(["djxl", str(p3), str(t / "p3.png"), "--icc_out", str(icc), "--quiet"])
+        # A profile as ICC bytes in the source file: --icc, else the P3 one (which cjxl may store as an enum).
+        tagged = t / "tagged.png"
+        run(["magick", str(color), "-profile", str(Path(args.icc) if args.icc else icc), str(tagged)])
+        p3icc = jxl("icc-lossy", tagged, "-q", "91")
+        run(["djxl", str(p3icc), str(out / "icc-lossy.png"), "--color_space=RGB_D65_SRG_Rel_SRG", "--quiet"])
+        # Lossless and not sRGB: the native path has no color manager and must hand it on.
+        p3ll = jxl("p3-lossless", color, "-d", "0", "-x", "color_space=DisplayP3")
+        run(["djxl", str(p3ll), str(out / "p3-lossless.png"), "--color_space=RGB_D65_SRG_Rel_SRG", "--quiet"])
+        jxl("alpha-lossless", alpha, "-d", "0")
+        shutil.copyfile(alpha, out / "alpha-lossless.png")
+        jxl("alpha-premultiplied", alpha, "-d", "0", "--premultiply=1")
+        shutil.copyfile(alpha, out / "alpha-premultiplied.png")
+        jxl("alpha-lossy", alpha, "-q", "91")
+        shutil.copyfile(alpha, out / "alpha-lossy.png")
+        jxl("animated", anim, "-d", "0")
+        shutil.copyfile(color, out / "animated.png")
+        jxl("jpeg", photo, "--lossless_jpeg=1")
+        shutil.copyfile(photo, out / "jpeg.jpg")
+    print("fixtures in", out)
+    if args.push:
+        dest = f"{DEVICE_DIR}/fixtures"
+        adb("shell", "mkdir", "-p", dest)
+        for f in sorted(out.iterdir()):
+            adb("push", str(f), f"{dest}/{f.name}")
 
 
 def push(args) -> None:
@@ -506,6 +574,11 @@ def main() -> None:
     p.add_argument("--pages-2k", type=int, default=16)
     p.add_argument("--pages-4k", type=int, default=8)
     p.set_defaults(func=make)
+    p = sub.add_parser("fixtures")
+    p.add_argument("--out", required=True)
+    p.add_argument("--push", action="store_true", help="also to the device's Download/emanata-test/fixtures")
+    p.add_argument("--icc", help="an RGB display profile no enum describes, for icc-lossy")
+    p.set_defaults(func=fixtures)
     p = sub.add_parser("push")
     p.add_argument("--src", required=True)
     p.set_defaults(func=push)

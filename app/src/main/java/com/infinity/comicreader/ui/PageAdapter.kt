@@ -869,10 +869,12 @@ class PageAdapter(
         entry.waiters++
         holder.decodes[slot] = entry
         holder.waiters[slot] = scope.launch {
-            // Its small preview, read beside the decodes, shows until anything better does.
-            if (holder.shown[slot] != key.code) launch {
+            // Its small preview, read beside the decodes and cut as the page shows, stands in until anything better does.
+            if (holder.shown[slot] != key.code && previewShows(key.target)) launch {
                 val chapter = strip.chapterOf(key.page)
-                val preview = withContext(AppDispatchers.io) { previewOf(chapter.value.source, key.page - chapter.first) } ?: return@launch
+                val preview = withContext(AppDispatchers.io) {
+                    previewOf(chapter.value.source, key.page - chapter.first)?.let { runCatching { previewPart(it, key.target) }.getOrNull() }
+                } ?: return@launch
                 if (entry.deferred.isActive && holder.shown[slot] != key.code) {
                     applyBitmap(holder, slot, key, preview, exact = false)
                     holder.rough[slot] = true
@@ -1402,6 +1404,16 @@ class PageAdapter(
 
         /** A decode that only measures a page's crop. */
         private val MEASURE = Target(16, 16, autoCrop = true, capPixels = MEASURE_PIXELS)
+
+        /** True when a whole page's preview can show as [target] shows the page: not while auto-crop is still to find its box. */
+        internal fun previewShows(target: Target): Boolean = !target.autoCrop || target.box != null
+
+        /** [preview], a whole page made small, cut to what [target] shows of it ([Target.area]): its box, then its half. */
+        internal fun previewPart(preview: Bitmap, target: Target): Bitmap {
+            if (target.box == null && target.half == Half.WHOLE) return preview
+            val a = target.area(preview.width, preview.height)
+            return Bitmap.createBitmap(preview, a[0], a[1], a[2] - a[0], a[3] - a[1])
+        }
 
         /** [part] as one number: its page and half. */
         internal fun codeOf(part: PageLayout.Part): Int = part.page * 3 + part.half.ordinal

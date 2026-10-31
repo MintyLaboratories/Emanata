@@ -16,15 +16,24 @@ object BitmapUtils {
     /** Largest single archive entry that will be buffered in memory (guards against zip bombs). */
     private const val MAX_ENTRY_BYTES = 96L * 1024 * 1024
 
+    /** The most allocated for a size an archive's header declares before its bytes arrive ([readCapped]). */
+    private const val UPFRONT_BYTES = 16 * 1024 * 1024
+
     /**
      * Reads [input] fully, but refuses to buffer more than [MAX_ENTRY_BYTES]. With its [size]
-     * known (-1 when not), it is read straight into one array of that size.
+     * known (-1 when not), it is read straight into one array of that size; past [upfront]
+     * bytes the array grows as bytes arrive, so a damaged header declaring more than the
+     * entry holds costs no more than [upfront].
      */
-    fun readCapped(input: InputStream, size: Long = -1): ByteArray {
+    fun readCapped(input: InputStream, size: Long = -1, upfront: Int = UPFRONT_BYTES): ByteArray {
         if (size in 0..MAX_ENTRY_BYTES) {
-            val known = ByteArray(size.toInt())
+            var known = ByteArray(minOf(size, upfront.toLong()).toInt())
             var at = 0
-            while (at < known.size) {
+            while (true) {
+                if (at == known.size) {
+                    if (at >= size) break
+                    known = known.copyOf(minOf(size, at * 2L).toInt())
+                }
                 val n = input.read(known, at, known.size - at)
                 if (n < 0) return known.copyOf(at)
                 at += n

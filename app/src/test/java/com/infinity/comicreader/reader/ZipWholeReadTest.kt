@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.Executors
 import java.util.zip.CRC32
@@ -117,5 +118,25 @@ class ZipWholeReadTest {
         assertArrayEquals(data, BitmapUtils.readCapped(ByteArrayInputStream(data), 40_000))
         assertArrayEquals(data, BitmapUtils.readCapped(ByteArrayInputStream(data), 150_000))
         assertArrayEquals(data, BitmapUtils.readCapped(ByteArrayInputStream(data)))
+        // Past the bytes allocated up front, the array grows as bytes arrive.
+        assertArrayEquals(data, BitmapUtils.readCapped(ByteArrayInputStream(data), data.size.toLong(), upfront = 7_000))
+        assertArrayEquals(data, BitmapUtils.readCapped(ByteArrayInputStream(data), 150_000, upfront = 7_000))
+    }
+
+    @Test
+    fun aSizeLargerThanTheEntryAllocatesOnlyAsItsBytesArrive() {
+        val data = bytes(10_000, 7)
+        var largest = 0
+        val input = object : InputStream() {
+            val inner = ByteArrayInputStream(data)
+            override fun read(): Int = inner.read()
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                largest = maxOf(largest, b.size)
+                return inner.read(b, off, len)
+            }
+        }
+        assertArrayEquals(data, BitmapUtils.readCapped(input, 90L * 1024 * 1024, upfront = 4_096))
+        // Doubled from 4 KB until the bytes ran out: never the 90 MB declared.
+        assertEquals(16_384, largest)
     }
 }

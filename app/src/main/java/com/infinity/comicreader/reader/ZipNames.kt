@@ -9,10 +9,19 @@ import java.util.zip.CRC32
  * The file names a zip's central directory lists, as stored ([NameCharset.Raw]), with the
  * names their Unicode Path extra fields give: read from its end record (ZIP64 too),
  * without touching any entry. Empty when the directory is not where the end record
- * says, as in a zip with data before it.
+ * says, as in a zip with data before it. [entries] also tells where each entry is.
  */
 object ZipNames {
-    fun read(channel: SeekableByteChannel): List<NameCharset.Raw> {
+    /**
+     * An entry as the central directory lists it: its [name], compression [method] (0 stored),
+     * [compressedSize] and [size], and the [offset] of its local header, ZIP64 values included.
+     */
+    class Entry(val name: NameCharset.Raw, val method: Int, val compressedSize: Long, val size: Long, val offset: Long)
+
+    fun read(channel: SeekableByteChannel): List<NameCharset.Raw> = entries(channel).map { it.name }
+
+    /** The entries in directory order, as [read] finds them. */
+    fun entries(channel: SeekableByteChannel): List<Entry> {
         val size = channel.size()
         val tailLength = minOf(size, (END_BYTES + MAX_COMMENT).toLong()).toInt()
         if (tailLength < END_BYTES) return emptyList()
@@ -32,10 +41,14 @@ object ZipNames {
         }
         if (dirSize <= 0 || dirSize > MAX_DIR_BYTES || dirOffset < 0 || dirOffset + dirSize > size) return emptyList()
         val dir = readAt(channel, dirOffset, dirSize.toInt()) ?: return emptyList()
-        val out = ArrayList<NameCharset.Raw>(count.coerceAtMost(MAX_DIR_BYTES / ENTRY_BYTES).toInt())
+        val out = ArrayList<Entry>(count.coerceAtMost(MAX_DIR_BYTES / ENTRY_BYTES).toInt())
         var at = 0
         while (at + ENTRY_BYTES <= dir.limit() && dir.getInt(at) == ENTRY_SIG) {
             val flags = dir.getShort(at + 8).toInt()
+            val method = dir.getShort(at + 10).toInt() and 0xFFFF
+            var compressed = dir.getInt(at + 20).toLong() and 0xFFFFFFFFL
+            var plain = dir.getInt(at + 24).toLong() and 0xFFFFFFFFL
+            var offset = dir.getInt(at + 42).toLong() and 0xFFFFFFFFL
             val nameLength = dir.getShort(at + 28).toInt() and 0xFFFF
             val extraLength = dir.getShort(at + 30).toInt() and 0xFFFF
             val commentLength = dir.getShort(at + 32).toInt() and 0xFFFF
@@ -45,8 +58,17 @@ object ZipNames {
             dir.get(name)
             val marked = flags and UTF8_FLAG != 0
             val extraAt = at + ENTRY_BYTES + nameLength
-            val unicode = if (marked) null else unicodePath(dir, extraAt, minOf(extraAt + extraLength, dir.limit()), name)
-            out += NameCharset.Raw(name, utf8 = marked || unicode != null, unicode = unicode)
+            val extraEnd = minOf(extraAt + extraLength, dir.limit())
+            val unicode = if (marked) null else unicodePath(dir, extraAt, extraEnd, name)
+            if (plain == MAX32 || compressed == MAX32 || offset == MAX32) {
+                zip64(dir, extraAt, extraEnd)?.let { values ->
+                    var k = 0
+                    if (plain == MAX32) plain = values.getOrElse(k++) { -1 }
+                    if (compressed == MAX32) compressed = values.getOrElse(k++) { -1 }
+                    if (offset == MAX32) offset = values.getOrElse(k) { -1 }
+                }
+            }
+            out += Entry(NameCharset.Raw(name, utf8 = marked || unicode != null, unicode = unicode), method, compressed, plain, offset)
             at += ENTRY_BYTES + nameLength + extraLength + commentLength
         }
         return out
@@ -77,6 +99,20 @@ object ZipNames {
         return null
     }
 
+    /** The 64-bit values of the ZIP64 extra field among [dir]'s bytes [from] to [until], in order; null when there is none. */
+    private fun zip64(dir: ByteBuffer, from: Int, until: Int): List<Long>? {
+        var at = from
+        while (at + 4 <= until) {
+            val id = dir.getShort(at).toInt() and 0xFFFF
+            val size = dir.getShort(at + 2).toInt() and 0xFFFF
+            val data = at + 4
+            if (data + size > until) return null
+            if (id == ZIP64_EXTRA_ID) return List(size / 8) { dir.getLong(data + it * 8) }
+            at = data + size
+        }
+        return null
+    }
+
     /** [length] bytes of [channel] from [position], little-endian; null when it ends before. */
     private fun readAt(channel: SeekableByteChannel, position: Long, length: Int): ByteBuffer? {
         if (position < 0) return null
@@ -96,6 +132,12 @@ object ZipNames {
     private const val ZIP64_END_BYTES = 56
     private const val ENTRY_SIG = 0x02014b50
     private const val ENTRY_BYTES = 46
+
+    /** A 32-bit size or offset that stands for one in the ZIP64 extra field. */
+    private const val MAX32 = 0xFFFFFFFFL
+
+    /** Header ID of the ZIP64 extended information extra field. */
+    private const val ZIP64_EXTRA_ID = 0x0001
 
     /** Header ID of the Info-ZIP Unicode Path extra field. */
     private const val UNICODE_PATH_ID = 0x7075

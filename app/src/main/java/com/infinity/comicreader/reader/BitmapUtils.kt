@@ -16,8 +16,26 @@ object BitmapUtils {
     /** Largest single archive entry that will be buffered in memory (guards against zip bombs). */
     private const val MAX_ENTRY_BYTES = 96L * 1024 * 1024
 
-    /** Reads [input] fully, but refuses to buffer more than [MAX_ENTRY_BYTES]. */
-    fun readCapped(input: InputStream): ByteArray {
+    /**
+     * Reads [input] fully, but refuses to buffer more than [MAX_ENTRY_BYTES]. With its [size]
+     * known (-1 when not), it is read straight into one array of that size.
+     */
+    fun readCapped(input: InputStream, size: Long = -1): ByteArray {
+        if (size in 0..MAX_ENTRY_BYTES) {
+            val known = ByteArray(size.toInt())
+            var at = 0
+            while (at < known.size) {
+                val n = input.read(known, at, known.size - at)
+                if (n < 0) return known.copyOf(at)
+                at += n
+            }
+            val next = input.read()
+            if (next < 0) return known
+            // Longer than it said: the rest as any stream.
+            val rest = readCapped(input)
+            if (known.size + 1L + rest.size > MAX_ENTRY_BYTES) throw DecodeException("Image entry is too large")
+            return known + byteArrayOf(next.toByte()) + rest
+        }
         val out = ByteArrayOutputStream()
         val buf = ByteArray(64 * 1024)
         var total = 0L

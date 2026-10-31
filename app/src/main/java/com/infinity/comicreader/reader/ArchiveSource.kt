@@ -156,12 +156,23 @@ class ArchiveSource(
         }
     }
 
+    /** The encoded bytes of page [index]: read whole where its reader can ([ArchiveReader.readWhole]), else streamed. */
+    fun pageBytes(index: Int): ByteArray {
+        val page = pages[index]
+        val reader = acquire(page.slot)
+        try {
+            return reader.readWhole(page.entry) ?: reader.read(page.entry) { BitmapUtils.readCapped(it, page.entry.size) }
+        } finally {
+            release(page.slot)
+        }
+    }
+
     override fun loadPage(index: Int, target: Target): Bitmap {
         if (pages.isEmpty()) throw IOException("Archive contains no images")
         val page = pages[index]
         try {
             // Buffered under the reader's lock, decoded outside it.
-            val bytes = Traces.section({ "entry read ${page.entry.size / 1024} KB" }) { readPage(index) { BitmapUtils.readCapped(it) } }
+            val bytes = Traces.section({ "entry read ${page.entry.size / 1024} KB" }) { pageBytes(index) }
             if (!loadedSizes.containsKey(index)) sizeOf(bytes)?.let { loadedSizes[index] = it }
             if (loadedSides.containsKey(index)) return Decoders.decode(bytes, target)
             return Decoders.findingSides({ loadedSides[index] = it }) { Decoders.decode(bytes, target) }
@@ -173,8 +184,7 @@ class ArchiveSource(
 
     /** Read a rectangle at a time where the page is large, else decoded whole ([Decoders.detail]). */
     override fun loadDetail(index: Int, target: Target, maxBytes: Long): PageDetail {
-        val bytes = readPage(index) { BitmapUtils.readCapped(it) }
-        return Decoders.detail(bytes, target, maxBytes)
+        return Decoders.detail(pageBytes(index), target, maxBytes)
     }
 
     /** Which pages are worth reading for a quick preview. */
@@ -204,7 +214,7 @@ class ArchiveSource(
         if (index !in pages.indices) return null
         runCatching { readPage(index) { Decoders.headerSize(it) } }.getOrNull()?.let { return it }
         return runCatching {
-            Decoders.size(readPage(index) { BitmapUtils.readCapped(it) })
+            Decoders.size(pageBytes(index))
         }.getOrNull()
     }
 
@@ -215,7 +225,7 @@ class ArchiveSource(
 
     override fun edge(index: Int, bottom: Boolean): Seams.Profile? {
         if (index !in pages.indices) return null
-        return runCatching { Decoders.edge(readPage(index) { BitmapUtils.readCapped(it) }, bottom) }.getOrNull()
+        return runCatching { Decoders.edge(pageBytes(index), bottom) }.getOrNull()
     }
 
     override fun decodedSides(index: Int): SpreadSeams.Sides? = loadedSides[index]
@@ -224,7 +234,7 @@ class ArchiveSource(
     override fun sides(index: Int): SpreadSeams.Sides? {
         if (index !in pages.indices) return null
         loadedSides[index]?.let { return it }
-        return runCatching { Decoders.sides(readPage(index) { BitmapUtils.readCapped(it) }) }.getOrNull()
+        return runCatching { Decoders.sides(pageBytes(index)) }.getOrNull()
     }
 
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path

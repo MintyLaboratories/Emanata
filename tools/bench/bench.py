@@ -400,7 +400,7 @@ def ab(args) -> None:
     for n, variant in enumerate(order):
         apk = args.a if variant == "a" else args.b
         print(f"== round {n // 2 + 1}, {variant}: installing {Path(apk).name}", flush=True)
-        adb("install", "-r", apk)
+        install(apk)
         adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
         if args.rest:
             time.sleep(args.rest)
@@ -427,9 +427,24 @@ def run(cmd: list[str], quiet: bool = False) -> None:
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL if quiet else None)
 
 
-def adb(*cmd: str, capture: bool = False, check: bool = True) -> str:
-    r = subprocess.run([ADB, *cmd], check=check, capture_output=capture, text=capture)
+def adb(*cmd: str, capture: bool = False, check: bool = True, timeout: float | None = None) -> str:
+    r = subprocess.run([ADB, *cmd], check=check, capture_output=capture, text=capture, timeout=timeout)
     return r.stdout if capture else ""
+
+
+def install(apk: str, tries: int = 2) -> None:
+    """
+    Installs [apk] over the app, trying again when an install stalls. Many installs in a row can
+    bring up a Play Protect prompt on the device, which holds the install until answered or until
+    it gives up by itself (about ten minutes).
+    """
+    for n in range(tries):
+        try:
+            adb("install", "-r", apk, timeout=900)
+            return
+        except subprocess.TimeoutExpired:
+            print(f"install stalled (try {n + 1} of {tries})", flush=True)
+    raise SystemExit(f"could not install {apk}")
 
 
 def main() -> None:

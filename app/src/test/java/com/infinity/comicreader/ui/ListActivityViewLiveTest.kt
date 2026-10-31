@@ -17,6 +17,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.slider.Slider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.DetailDisplay
@@ -28,7 +29,6 @@ import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
 import com.infinity.comicreader.data.TitleDisplay
-import com.infinity.comicreader.testing.bookId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -115,8 +115,8 @@ class ListActivityViewLiveTest {
         library.toggleFavoriteFolder(dir.absolutePath)
         for (i in 1..3) {
             val book = File(dir, "Book %02d.cbz".format(i))
-            library.addHistory(HistoryItem(book.absolutePath, book.name, 1, 10, i.toLong(), bookId(book)))
-            library.addBookmark(Bookmark(book.absolutePath, book.name, 1, "", i.toLong(), bookId(book)))
+            library.addHistory(HistoryItem(book.absolutePath, book.name, 1, 10, i.toLong(), BookId(0x1000L + i)))
+            library.addBookmark(Bookmark(book.absolutePath, book.name, 1, "", i.toLong(), BookId(0x1000L + i)))
         }
     }
 

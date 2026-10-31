@@ -30,6 +30,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         prefs.volumeKeys = plan.input == BenchPlan.KEY
         prefs.tapZones = TapZones.LEFT_RIGHT.value
         plan.doubleTap?.let { prefs.doubleTapZoom = it }
+        plan.preload?.let { prefs.preload = it }
     }
 
     /** Puts the kept settings back. */
@@ -49,6 +50,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
             .put("volumeKeys", prefs.volumeKeys)
             .put("doubleTap", prefs.doubleTapZoom)
             .put("tapZones", prefs.tapZones)
+            .put("preload", prefs.preload)
 
         /** Puts back the settings [file] keeps, if any, and forgets them; true when it held some. */
         fun restoreLeft(prefs: Prefs, file: File): Boolean {
@@ -64,6 +66,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
                 prefs.volumeKeys = kept.getBoolean("volumeKeys")
                 prefs.doubleTapZoom = kept.getBoolean("doubleTap")
                 prefs.tapZones = kept.getString("tapZones")
+                if (kept.has("preload")) prefs.preload = kept.getInt("preload")
             }
             file.delete()
             return kept != null

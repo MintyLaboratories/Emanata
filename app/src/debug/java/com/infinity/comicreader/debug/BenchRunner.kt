@@ -23,7 +23,9 @@ import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
+import com.infinity.comicreader.reader.PlatformPages
 import com.infinity.comicreader.ui.ListActivity
+import com.infinity.comicreader.ui.PageAdapter
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +81,8 @@ internal class BenchRunner(private val app: Application) {
         val keptJxlLater = JxlPages.laterThreads
         val keptJxlLittle = JxlPages.laterOnLittle
         val keptJxlNice = JxlPages.laterNice
+        val keptPlatform = PlatformPages.cores
+        val keptDecoders = PageAdapter.decodeThreads
         plan.engine?.let { NativeResampler.engine = it }
         plan.pixelThreads?.let { NativeResampler.threads = it }
         plan.laterThreads?.let { NativeResampler.laterThreads = it }
@@ -87,6 +91,8 @@ internal class BenchRunner(private val app: Application) {
         plan.jxlLaterThreads?.let { JxlPages.laterThreads = it }
         plan.jxlLaterOnLittle?.let { JxlPages.laterOnLittle = it }
         plan.jxlLaterNice?.let { JxlPages.laterNice = it }
+        plan.platformCores?.let { PlatformPages.cores = it }
+        plan.decodeThreads?.let { PageAdapter.decodeThreads = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -104,6 +110,8 @@ internal class BenchRunner(private val app: Application) {
             JxlPages.laterThreads = keptJxlLater
             JxlPages.laterOnLittle = keptJxlLittle
             JxlPages.laterNice = keptJxlNice
+            PlatformPages.cores = keptPlatform
+            PageAdapter.decodeThreads = keptDecoders
             kept.restore()
             ReadProbes.current = null
             probe.clear()

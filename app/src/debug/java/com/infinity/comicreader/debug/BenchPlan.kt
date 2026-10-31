@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import com.infinity.comicreader.reader.CoreSet
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
@@ -71,7 +72,13 @@ internal data class BenchPlan(
     /** Whether those threads are pinned to the little cores ([JxlPages.laterOnLittle]); null keeps it. */
     val jxlLaterOnLittle: Boolean? = null,
     /** Their Linux nice ([JxlPages.laterNice]); null keeps it. */
-    val jxlLaterNice: Int? = null
+    val jxlLaterNice: Int? = null,
+    /** The cores platform decodes run on ([com.infinity.comicreader.reader.PlatformPages.cores]); null keeps them. */
+    val platformCores: CoreSet? = null,
+    /** Pages decoded at once ([com.infinity.comicreader.ui.PageAdapter.decodeThreads]); null keeps it. */
+    val decodeThreads: Int? = null,
+    /** Pages read ahead, the setting (0-6); null keeps it. */
+    val preload: Int? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -83,6 +90,8 @@ internal data class BenchPlan(
         .put("jxl", jxlNative?.let { if (it) "native" else "coder" } ?: JSONObject.NULL)
         .put("jxlLaterThreads", jxlLaterThreads ?: JSONObject.NULL).put("jxlLaterOnLittle", jxlLaterOnLittle ?: JSONObject.NULL)
         .put("jxlLaterNice", jxlLaterNice ?: JSONObject.NULL)
+        .put("platformCores", platformCores?.key ?: JSONObject.NULL).put("decodeThreads", decodeThreads ?: JSONObject.NULL)
+        .put("preload", preload ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -117,6 +126,7 @@ internal data class BenchPlan(
             val fresh = intent.getBooleanExtra("fresh", false)
             val engine = intent.getStringExtra("engine")?.let { PixelEngine.of(it) ?: return null }
             val jxl = intent.getStringExtra("jxl")?.let { if (it == "native" || it == "coder") it == "native" else return null }
+            val platformCores = intent.getStringExtra("platformcores")?.let { CoreSet.of(it) ?: return null }
             return BenchPlan(
                 what = what,
                 path = path,
@@ -142,7 +152,10 @@ internal data class BenchPlan(
                 jxlNative = jxl,
                 jxlLaterThreads = if (intent.hasExtra("jxllaterthreads")) intent.getIntExtra("jxllaterthreads", 4).coerceIn(1, 16) else null,
                 jxlLaterOnLittle = intent.getStringExtra("jxllater")?.let { if (it == "little" || it == "big") it == "little" else return null },
-                jxlLaterNice = if (intent.hasExtra("jxllaternice")) intent.getIntExtra("jxllaternice", 0).coerceIn(0, 19) else null
+                jxlLaterNice = if (intent.hasExtra("jxllaternice")) intent.getIntExtra("jxllaternice", 0).coerceIn(0, 19) else null,
+                platformCores = platformCores,
+                decodeThreads = if (intent.hasExtra("decoders")) intent.getIntExtra("decoders", 2).coerceIn(1, 8) else null,
+                preload = if (intent.hasExtra("preload")) intent.getIntExtra("preload", 2).coerceIn(0, 6) else null
             )
         }
     }

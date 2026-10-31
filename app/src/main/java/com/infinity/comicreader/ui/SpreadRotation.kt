@@ -39,6 +39,9 @@ class SpreadRotation {
     /** The fixed orientation the screen was in when it was turned for [held]; unspecified when unknown. */
     private var heldFrom = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
+    /** True when [show] would turn the screen for wide page [page], with the setting [enabled]: none the reader declined. */
+    fun turnsFor(page: Int, enabled: Boolean): Boolean = enabled && page >= 0 && page != declined
+
     /** True while the sensor matters: the screen is held, or kept until the sensor settles. */
     val watching: Boolean get() = held >= 0 || keeping
 

@@ -2117,11 +2117,13 @@ class ViewerActivity : AppCompatActivity() {
      * The wide page on screen, shown whole and alone in paged reading, or the first page
      * of a spread in two files merged into one view; -1 for anything else.
      */
-    private fun widePageShown(): Int {
+    private fun widePageShown(): Int = widePageOf(shownItem())
+
+    /** The wide page item [item] shows whole, as [widePageShown] tells; -1 for none. */
+    private fun widePageOf(item: Int): Int {
         val a = analysis ?: return -1
         val count = source?.pageCount ?: return -1
         if (mode != MODE_PAGED) return -1
-        val item = shownItem()
         if (!spread && layout.joined(item)) return layout.firstPage(item)
         val part = layout.parts(item, count).filterNotNull().singleOrNull() ?: return -1
         return if (part.half == Half.WHOLE && a.wide(part.page)) part.page else -1
@@ -2132,6 +2134,7 @@ class ViewerActivity : AppCompatActivity() {
         // With auto-rotate off, the system turns back to the reader's lock whatever the sensor.
         val unsure = spreadRotation.held >= 0 && autoRotate() && upright().unsure()
         spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
+        adapter?.turned = spreadRotation.held >= 0
         watchUpright()
     }
 
@@ -2237,6 +2240,9 @@ class ViewerActivity : AppCompatActivity() {
         )
         a.fitMode = effectiveFit()
         a.tallPages = if (mode == MODE_PAGED) tallPages else emptySet()
+        // Each page is decoded at the size it shows at once the screen turned for a wide page, or back.
+        if (mode == MODE_PAGED) a.turnsFor = { item -> spreadRotation.turnsFor(widePageOf(item), prefs.rotateSpreads) }
+        a.turned = spreadRotation.held >= 0
         a.filter = filter
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
@@ -3367,6 +3373,11 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun setOrientationLock(value: Int) {
         requestedOrientation = spreadRotation.choose(value)
+        adapter?.let {
+            it.turned = false
+            // The page the screen was turned for is declined: it shows at the size the reader picked.
+            it.rekey()
+        }
         watchUpright()
         invalidateOptionsMenu()
     }

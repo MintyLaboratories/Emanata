@@ -154,6 +154,77 @@ class PageAdapter(
             if (changed) resize()
         }
 
+    /**
+     * Items the screen turns to landscape for while they show ("Rotate for spreads"), as the
+     * reader decides; null when it turns for none. In a portrait layout ([home]), each page is
+     * decoded at the size it shows at once the screen settled: those items at [home] turned a
+     * quarter, the others at [home], so turning the screen and back re-decodes neither.
+     */
+    var turnsFor: ((Int) -> Boolean)? = null
+        set(value) {
+            field = value
+            rekey()
+        }
+
+    /** The portrait item size the screen comes back to from a turn; null when none is known, or it is not portrait. */
+    private var home: IntArray? = null
+
+    /** True from when the screen turns for an item ([turned]) until it is laid out at its size again. */
+    private var away = false
+
+    /**
+     * True while the screen is turned for an item [turnsFor] names, or turning to it; false once
+     * it turns back, when [home] holds until the layout after, or [HOME_WAIT_MS] at most.
+     */
+    var turned = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) {
+                away = true
+                mainHandler.removeCallbacks(backHome)
+            } else {
+                mainHandler.removeCallbacks(backHome)
+                mainHandler.postDelayed(backHome, HOME_WAIT_MS)
+            }
+        }
+
+    /** Takes the size laid out now as the one to show at, should the screen stay as it was after a turn. */
+    private val backHome = Runnable {
+        if (released || turned || !away) return@Runnable
+        away = false
+        val (w, h) = itemSize()
+        val was = home
+        home = if (w < h) intArrayOf(w, h) else null
+        if (!was.contentEquals(home)) rekey()
+    }
+
+    /** Learns the item size [w] x [h] laid out: the [home] size unless the screen is away on a turn. */
+    private fun laidOut(w: Int, h: Int) {
+        if (turned) return
+        if (away) {
+            mainHandler.removeCallbacks(backHome)
+            away = false
+        }
+        home = if (w < h) intArrayOf(w, h) else null
+    }
+
+    /** The item size [part] is decoded for: as [turnsFor] says once the screen settles, else the size now. */
+    private fun sizeFor(part: PageLayout.Part): IntArray {
+        val now = itemSize()
+        val turns = turnsFor ?: return now
+        val h = home ?: return now
+        val across = intArrayOf(h[1], h[0])
+        // Laid out at neither size (split screen, bars shown): as it is.
+        if (!now.contentEquals(h) && !now.contentEquals(across)) return now
+        return if (turns(layout.itemOf(part))) across else h
+    }
+
+    /** Shows the pages at the sizes [sizeFor] now gives, when the adapter shows any: after [turnsFor] answers otherwise. */
+    fun rekey() {
+        if (recycler != null && !released) resize()
+    }
+
     /** A page of [tallPages] that shows from its bottom, as one turned back to; -1 for none. */
     private var fromBottom = NO_PAGE
 
@@ -363,6 +434,7 @@ class PageAdapter(
             if (w > 0 && h > 0 && (w != sizedW || h != sizedH)) {
                 sizedW = w
                 sizedH = h
+                laidOut(w, h)
                 // Pages are decoded for the item size: show them again at the new one,
                 // outside this layout pass.
                 mainHandler.post { if (!released) resize() }
@@ -854,9 +926,12 @@ class PageAdapter(
      * one height; null until both pages are measured ([measureItem]).
      */
     private fun keyFor(part: PageLayout.Part): PageKey? {
-        val (w, h) = itemSize()
-        sizedW = w
-        sizedH = h
+        itemSize().let { (w, h) ->
+            if (w != sizedW || h != sizedH) laidOut(w, h)
+            sizedW = w
+            sizedH = h
+        }
+        val (w, h) = sizeFor(part)
         val slot = slotOf(part)
         val view = PageTargets.viewSize(mode, spread && !merged, w, h, spacingPx, slot)
         val fit = fitOf(part.page)
@@ -1219,6 +1294,9 @@ class PageAdapter(
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
         private const val MAX_STRIP_PRELOAD = 2
+
+        /** How long [PageAdapter.home] holds after the screen turns back, should no layout at it follow. */
+        private const val HOME_WAIT_MS = 1_500L
 
         /** Share of a screen a tall page scrolls by at a time ([scrollTall]). */
         const val TALL_STEP = 0.9f

@@ -69,7 +69,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
  * the next [preload] pages are decoded ahead of time, and with [behind] the screen before the
- * one shown. A page whose decode yields a
+ * one shown, the cache sized to hold them all ([fitCache]). A page whose decode yields a
  * smaller version first (a layered AVIF's first layer, [Decoders.standingIn]) shows it
  * scaled until the page takes over in place. With [autoCrop] blank borders
  * are trimmed. A page
@@ -309,9 +309,14 @@ class PageAdapter(
 
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val gate = Semaphore(DECODE_THREADS)
+
+    /** The heap limit the page cache is sized by ([cacheBytes], [fitCache]); tests set it. */
+    internal var heapBytes: Long = Runtime.getRuntime().maxMemory()
+
     private val cache = object : LruCache<PageKey, Bitmap>(cacheBytes()) {
         override fun sizeOf(key: PageKey, value: Bitmap): Int = value.byteCount
     }
+
     /** True while no decode is under way ([pending] is empty). */
     private val idle = MutableStateFlow(true)
 
@@ -1130,8 +1135,9 @@ class PageAdapter(
     private fun previewOf(source: PageSource, index: Int): Bitmap? =
         runCatching { source.keptPreview(index) ?: if (source.cheapSizes) source.loadPreview(index) else null }.getOrNull()
 
+    /** The cache's least size: a sixth of the heap limit. */
     private fun cacheBytes(): Int =
-        (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)
+        (heapBytes / 6L).coerceIn(MIN_CACHE_BYTES.toLong(), Int.MAX_VALUE.toLong()).toInt()
 
     /**
      * Page [index] of [source], shown as [pageIndex]; null after recording why in [failures].
@@ -1231,12 +1237,33 @@ class PageAdapter(
     private fun firstMeasuring(): Boolean =
         prefetchFrom in 0 until itemCount && strip.parts(prefetchFrom).any { it != null && it.page in measuring }
 
+    /** True while the cache holds the screen behind beside those shown and ahead ([fitCache]). */
+    private var behindFits = false
+
+    /**
+     * Sizes the cache in paged reading for the pages read at once ([cacheFor]), so reading
+     * ahead and behind never evicts a page about to show; the screen behind is decoded only
+     * where the cache can grow to hold it too ([behindFits]).
+     */
+    private fun fitCache() {
+        if (mode != Mode.PAGED) return
+        val size = itemSize()
+        val screen = size[0].toLong() * size[1] * 4
+        val perScreen = if (twoPage) 2 else 1
+        val base = cacheBytes().toLong()
+        val cap = heapBytes / MAX_CACHE_SHARE
+        val bytes = cacheFor(base, cap, screen, perScreen, preload, behind)
+        if (bytes.toInt() != cache.maxSize()) cache.resize(bytes.toInt())
+        behindFits = behind && cacheFor(0, Long.MAX_VALUE, screen, perScreen, preload, behind = true) <= bytes
+    }
+
     /**
      * Decodes the [preload] parts on the items after [position] into the cache, then with
      * [behind] those of the item before it.
      */
     private fun prefetchAfter(position: Int) {
         prefetchFrom = position
+        fitCache()
         var ahead = if (mode == Mode.CONTINUOUS) minOf(preload, MAX_STRIP_PRELOAD) else preload
         var item = position + 1
         while (ahead > 0 && item < itemCount) {
@@ -1252,7 +1279,7 @@ class PageAdapter(
             }
             item++
         }
-        if (behind && mode == Mode.PAGED && position > 0) {
+        if (behindFits && position > 0) {
             for (part in strip.parts(position - 1)) {
                 if (part == null) continue
                 // A page not measured yet waits for a turn back: measuring decodes too.
@@ -1336,6 +1363,22 @@ class PageAdapter(
         private const val JOINED = 2
         private const val DECODE_THREADS = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
+
+        /** The page cache grows to at most this share of the heap limit: half ([fitCache]). */
+        private const val MAX_CACHE_SHARE = 2L
+
+        /**
+         * Cache bytes holding the pages read at once, [perScreen] pages to a screen of
+         * [screenBytes]: a screen shown, [preload] pages ahead, with [behind] a screen behind,
+         * and one page spare (a page at another size, a stand-in); never under [base], nor over
+         * [cap] unless [base] is.
+         */
+        internal fun cacheFor(base: Long, cap: Long, screenBytes: Long, perScreen: Int, preload: Int, behind: Boolean): Long {
+            val per = perScreen.coerceAtLeast(1)
+            val pages = per + preload.coerceAtLeast(0) + (if (behind) per else 0) + 1
+            val need = pages * (screenBytes / per)
+            return need.coerceAtMost(cap).coerceAtLeast(base).coerceAtMost(Int.MAX_VALUE.toLong())
+        }
         private const val MAX_STRIP_PRELOAD = 2
 
         /** How long [PageAdapter.home] holds after the screen turns back, should no layout at it follow. */

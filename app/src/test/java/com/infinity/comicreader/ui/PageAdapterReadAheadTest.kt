@@ -203,4 +203,67 @@ class PageAdapterReadAheadTest {
         waiting.cancel()
         adapter.release()
     }
+
+    /** Pages of the list's size, 1080 x 1920 until laid out: each counts its loads. */
+    private class ScreenSource(override val pageCount: Int) : PageSource {
+        val loads = IntArray(pageCount)
+
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            synchronized(loads) { loads[index]++ }
+            return Bitmap.createBitmap(target.width.coerceAtLeast(1), target.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+
+        fun total() = synchronized(loads) { loads.sum() }
+    }
+
+    private val screen = 1080L * 1920 * 4
+
+    /** Turns forward from [from] [turns] times, one holder per screen, as a pager binds them; idles until [decodes] in all. */
+    private fun turnForward(adapter: PageAdapter, source: ScreenSource, from: Int, turns: Int, decodes: (Int) -> Int) {
+        for (i in 0..turns) {
+            adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), from + i)
+            idleUntil { source.total() >= decodes(i) && !adapter.decoding }
+        }
+        stillAfterAWhile { !adapter.decoding }
+    }
+
+    @Test
+    fun theCacheGrowsToHoldThePagesAheadAndBehind() {
+        val source = ScreenSource(16)
+        // A sixth of it holds four screens: one shown, three ahead, none behind.
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 3, behind = true)
+        adapter.heapBytes = 24 * screen
+        // Opened at 5: 5, 6, 7 and 8, then 4 behind; each turn decodes one page more, nothing again.
+        turnForward(adapter, source, from = 5, turns = 4) { 5 + it }
+        assertEquals(9, source.total())
+        assertTrue(source.loads.all { it <= 1 })
+        adapter.release()
+    }
+
+    @Test
+    fun withoutRoomForTheScreenBehindItIsNotDecoded() {
+        val source = ScreenSource(16)
+        // Half of it holds five screens: one shown, three ahead and a spare, none behind.
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 3, behind = true)
+        adapter.heapBytes = 10 * screen
+        turnForward(adapter, source, from = 5, turns = 4) { 4 + it }
+        assertEquals(8, source.total())
+        assertEquals(0, source.loads[4])
+        assertTrue(source.loads.all { it <= 1 })
+        adapter.release()
+    }
+
+    @Test
+    fun theCacheHoldsAScreenShownTheReadAheadOneBehindAndASpare() {
+        val mb = 1_000_000L
+        // One page a screen: 1 + 2 + 1 + 1 pages; two a screen: 2 + 2 + 2 + 1 half pages.
+        assertEquals(5 * 20 * mb, PageAdapter.cacheFor(mb, 1000 * mb, 20 * mb, 1, 2, behind = true))
+        assertEquals(7 * 10 * mb, PageAdapter.cacheFor(mb, 1000 * mb, 20 * mb, 2, 2, behind = true))
+        assertEquals(4 * 20 * mb, PageAdapter.cacheFor(mb, 1000 * mb, 20 * mb, 1, 2, behind = false))
+        // Never under the base, nor over the cap above it.
+        assertEquals(500 * mb, PageAdapter.cacheFor(500 * mb, 1000 * mb, 20 * mb, 1, 2, behind = true))
+        assertEquals(90 * mb, PageAdapter.cacheFor(mb, 90 * mb, 20 * mb, 1, 2, behind = true))
+    }
 }

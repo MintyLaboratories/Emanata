@@ -45,7 +45,7 @@ import kotlin.random.Random
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
- *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite]`
+ *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]) or left to the system (`any`);
@@ -55,7 +55,8 @@ import kotlin.random.Random
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each.
  * - time: a 2000x3000 and a 4000x6000 page shrunk to 1848x2772 (the tablet's portrait page)
- *   by each setup and filter, `reps` rounds after 2 warm-up rounds, the setups interleaved
+ *   by each setup, filter and anti-ringing strength when shrinking (`rings`, default the
+ *   setting's default), `reps` rounds after 2 warm-up rounds, the setups interleaved
  *   (A B, B A...): wall and process CPU per page, thermal status and headroom.
  * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, a 5 s
  *   idle baseline of the battery current, then pages back to back for `seconds`, sampling
@@ -91,6 +92,8 @@ class ResampleCheckService : Service() {
             Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY)
         )
         val filters = intent?.getStringExtra("filters")?.split(',')?.map { ScaleFilter.of(it.trim()) } ?: listOf(ScaleFilter.LANCZOS3)
+        val rings = intent?.getStringExtra("rings")?.split(',')?.mapNotNull { it.trim().toIntOrNull()?.coerceIn(0, 100) }
+            ?.takeIf { it.isNotEmpty() } ?: listOf(Scaling.DEFAULT_DOWN_RING)
         val reps = intent?.getIntExtra("reps", 10)?.coerceIn(1, 100) ?: 10
         val seconds = intent?.getIntExtra("seconds", 20)?.coerceIn(3, 600) ?: 20
         val rounds = intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2
@@ -110,7 +113,7 @@ class ResampleCheckService : Service() {
                         .put("threads", now).put("laterThreads", later).put("conditions", conditions())
                 )
                 if (what == "check" || what == "all") check()
-                if (what == "time" || what == "all") time(timed, filters, reps)
+                if (what == "time" || what == "all") time(timed, filters, rings, reps)
                 if (what == "sustain" || what == "all") sustain(sustained, seconds, rounds, cooldown)
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -223,12 +226,12 @@ class ResampleCheckService : Service() {
 
     // ------------------------------------------------------------------ time
 
-    private fun time(setups: List<Setup>, filters: List<ScaleFilter>, reps: Int) {
+    private fun time(setups: List<Setup>, filters: List<ScaleFilter>, rings: List<Int>, reps: Int) {
         for ((w, h) in listOf(2000 to 3000, 4000 to 6000)) {
             val page = SyntheticPage.draw(w, h)
             try {
-                for (filter in filters) {
-                    val scaling = Scaling(filter, 0, Scaling.DEFAULT_DOWN_RING)
+                for (filter in filters) for (ring in rings) {
+                    val scaling = Scaling(filter, 0, ring)
                     val before = state()
                     val walls = setups.associateWith { ArrayList<Double>() }
                     val cpus = setups.associateWith { ArrayList<Double>() }
@@ -247,7 +250,7 @@ class ResampleCheckService : Service() {
                     val after = state()
                     for (s in setups) {
                         log(
-                            JSONObject().put("time", s.key).put("page", "${w}x$h").put("filter", filter.key)
+                            JSONObject().put("time", s.key).put("page", "${w}x$h").put("filter", filter.key).put("downRing", ring)
                                 .put("wallMs", summary(walls.getValue(s))).put("cpuMs", summary(cpus.getValue(s)))
                                 .put("before", before).put("after", after).put("conditions", conditions())
                         )

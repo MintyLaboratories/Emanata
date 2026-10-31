@@ -9,6 +9,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.os.IBinder
 import android.os.Process
@@ -44,8 +45,8 @@ import kotlin.math.max
  * native JPEG XL page decodes against jxl-coder's. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.DecodeCheckService
- *  [--es do check,time,cancel|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
- *  [--es setups coder,page/4/big,page/8/any,platform] [--ei reps 5] [--ei gap 0]`
+ *  [--es do check,time,cancel,fixtures,cold|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
+ *  [--es setups coder,coder/big,page/4/big,page/8/any,platform] [--ei reps 5] [--ei gap 0] [--es fixtures /path]`
  *
  * Pages: synthetic 2000x3000 and 4000x6000 pages (JPEG XL at quality 91, JPEG at 90, PNG),
  * made once into the app's cache, and the first `pages` images of each of `dirs`, read
@@ -59,6 +60,14 @@ import kotlin.math.max
  *   cores clock down): wall and process CPU per page.
  * - cancel: each JPEG XL page by the native setup, asked to stop 30 ms in: how long it
  *   takes to return, and what it returned.
+ * - fixtures (not in all): each `<name>.jxl` of the `fixtures` folder by the native page
+ *   decode and by jxl-coder, against `<name>.png` or `<name>.jpg` decoded by the platform in
+ *   sRGB (made by `tools/bench/bench.py fixtures`): the largest and mean difference of the
+ *   premultiplied channels, and how many pixels differ, for each pair.
+ * - cold (not in all; start the process anew for each run): after 2 s of rest, the first
+ *   decode this process runs (libraries loaded, no decode run yet), by the first setup, of
+ *   the first page it takes, then its other pages warm; and the process's peak resident
+ *   memory over what it held before the first decode.
  *
  * Timings are valid only from a bench build with the app in front (see
  * ResampleCheckService). Results go to the log under "DecodeCheck", one JSON object per
@@ -104,6 +113,8 @@ class DecodeCheckService : Service() {
                 if ("check" in what || "all" in what) check(groups)
                 if ("time" in what || "all" in what) time(groups, setups, reps, gap)
                 if ("cancel" in what || "all" in what) cancel(groups, threads)
+                intent?.getStringExtra("fixtures")?.takeIf { "fixtures" in what }?.let { fixtures(File(it)) }
+                if ("cold" in what) cold(groups, setups.first())
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
@@ -169,17 +180,17 @@ class DecodeCheckService : Service() {
 
     // ------------------------------------------------------------------ decoders
 
+    private fun mask(cores: Cores): Long = when (cores) {
+        Cores.BIG -> CpuCores.device.big
+        Cores.LITTLE -> CpuCores.device.little
+        Cores.ANY -> 0L
+    }
+
     private fun decode(setup: Setup, page: Page): Bitmap = when (setup.engine) {
-        Engine.CODER -> JxlCoder.decode(page.bytes, PreferredColorConfig.RGBA_8888)
+        Engine.CODER -> LibJxl.onCores(mask(setup.cores)) { JxlCoder.decode(page.bytes, PreferredColorConfig.RGBA_8888) }
         Engine.PAGE -> {
-            val c = CpuCores.device
-            val mask = when (setup.cores) {
-                Cores.BIG -> c.big
-                Cores.LITTLE -> c.little
-                Cores.ANY -> 0L
-            }
             val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
-            val r = LibJxl.page(page.bytes, bitmap, setup.threads, mask)
+            val r = LibJxl.page(page.bytes, bitmap, setup.threads, mask(setup.cores))
             if (r != LibJxl.PAGE_OPAQUE && r != LibJxl.PAGE_ALPHA) {
                 bitmap.recycle()
                 error("${setup.key} returned $r for ${page.name}")
@@ -293,6 +304,116 @@ class DecodeCheckService : Service() {
             }
         }
     }
+
+    // ------------------------------------------------------------------ fixtures
+
+    private fun fixtures(dir: File) {
+        val files = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".jxl") }?.sortedBy { it.name }.orEmpty()
+        if (files.isEmpty()) log(JSONObject().put("failed", "no fixtures in ${dir.name}"))
+        for (f in files) {
+            val base = f.name.removeSuffix(".jxl")
+            val bytes = f.readBytes()
+            val o = JSONObject().put("fixture", base)
+            val size = Decoders.size(bytes)
+            if (size == null) {
+                log(o.put("failed", "unsized"))
+                continue
+            }
+            val native = Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888)
+            val r = LibJxl.page(bytes, native, JxlPages.threads, CpuCores.device.big)
+            o.put("native", r)
+            val coder = runCatching { JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888) }
+                .onFailure { o.put("coderFailed", "${it.javaClass.simpleName}: ${it.message}") }.getOrNull()
+            coder?.let { o.put("coderConfig", it.config?.name).put("coderSpace", it.colorSpace?.name).put("coderAlpha", it.hasAlpha()) }
+            val ref = listOf("png", "jpg").map { File(dir, "$base.$it") }.firstOrNull { it.exists() }?.let { platformSrgb(it.readBytes()) }
+            val decoded = r == LibJxl.PAGE_OPAQUE || r == LibJxl.PAGE_ALPHA
+            if (decoded && coder != null) o.put("nativeVsCoder", diff(native, coder))
+            if (decoded && ref != null) o.put("nativeVsReference", diff(native, ref))
+            if (coder != null && ref != null) o.put("coderVsReference", diff(coder, ref))
+            native.recycle()
+            coder?.recycle()
+            ref?.recycle()
+            log(o)
+        }
+    }
+
+    /** [bytes] decoded by the platform into software ARGB_8888 pixels in sRGB. */
+    private fun platformSrgb(bytes: ByteArray): Bitmap =
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { d, _, _ ->
+            d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            d.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
+        }
+
+    /** The premultiplied RGBA bytes of [b], as ARGB_8888. */
+    private fun rawRgba(b: Bitmap): ByteArray {
+        val argb = if (b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, false)
+        val out = ByteBuffer.allocate(argb.byteCount)
+        argb.copyPixelsToBuffer(out)
+        if (argb !== b) argb.recycle()
+        return out.array()
+    }
+
+    /** How [a] and [b] differ, channel by channel, premultiplied as bitmaps hold them. */
+    private fun diff(a: Bitmap, b: Bitmap): JSONObject {
+        if (a.width != b.width || a.height != b.height) return JSONObject().put("sameSize", false)
+        val x = rawRgba(a)
+        val y = rawRgba(b)
+        var worst = 0
+        var sum = 0L
+        var off = 0L
+        var i = 0
+        while (i < x.size) {
+            var pixel = 0
+            for (c in 0 until 4) {
+                val d = abs((x[i + c].toInt() and 0xFF) - (y[i + c].toInt() and 0xFF))
+                sum += d
+                pixel = max(pixel, d)
+            }
+            if (pixel > 0) off++
+            worst = max(worst, pixel)
+            i += 4
+        }
+        return JSONObject().put("max", worst).put("mean", Math.round(sum * 1000.0 / x.size) / 1000.0).put("pixelsOff", off)
+            .put("pixels", x.size / 4)
+    }
+
+    // ------------------------------------------------------------------ cold
+
+    private fun cold(groups: List<Group>, setup: Setup) {
+        val group = groups.firstOrNull { g -> g.pages.firstOrNull()?.let { setup.takes(it.jxl) } == true } ?: return
+        val first = group.pages.first()
+        // Libraries loaded, no decode run.
+        LibJxl.version
+        runCatching { JxlCoder.getSize(first.bytes) }
+        Runtime.getRuntime().gc()
+        SystemClock.sleep(2000)
+        val reset = runCatching { File("/proc/self/clear_refs").writeText("5") }.isSuccess
+        val rssBefore = status("VmRSS")
+        val cpu0 = Process.getElapsedCpuTime()
+        val t0 = System.nanoTime()
+        decode(setup, first).recycle()
+        val coldMs = (System.nanoTime() - t0) / 1e6
+        val coldCpu = Process.getElapsedCpuTime() - cpu0
+        val peakFirst = status("VmHWM")
+        val warm = ArrayList<Double>()
+        for (page in group.pages.drop(1)) {
+            val t = System.nanoTime()
+            decode(setup, page).recycle()
+            warm += (System.nanoTime() - t) / 1e6
+        }
+        val peakAll = status("VmHWM")
+        log(
+            JSONObject().put("cold", setup.key).put("group", group.name).put("coldMs", Stats.round1(coldMs)).put("coldCpuMs", coldCpu)
+                .put("warmMs", summary(warm)).put("peakReset", reset).put("rssBeforeMb", rssBefore / 1024)
+                .put("peakFirstMb", peakFirst / 1024).put("peakAllMb", peakAll / 1024).put("peakOverBeforeMb", (peakAll - rssBefore) / 1024)
+                .put("conditions", conditions())
+        )
+    }
+
+    /** A kB figure of /proc/self/status, or -1. */
+    private fun status(key: String): Long = runCatching {
+        File("/proc/self/status").readLines().first { it.startsWith("$key:") }.substringAfter(':').trim().substringBefore(' ').toLong()
+    }.getOrDefault(-1L)
 
     private fun summary(values: List<Double>): JSONObject {
         val s = values.sorted()

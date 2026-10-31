@@ -19,7 +19,10 @@ class DecodeRunsTest {
         assertEquals(Setup(Engine.PLATFORM, 1, Cores.ANY), Setup.of("platform", 2))
         assertEquals("page/4/little", Setup.of("page/4/little", 2)!!.key)
         assertEquals("factory", Setup.of("factory", 2)!!.key)
-        for (bad in listOf("djxl", "page/x", "page/0", "page/17", "page/4/mid", "coder/4", "platform/1/big")) assertNull(bad, Setup.of(bad, 2))
+        assertEquals(Setup(Engine.CODER, 1, Cores.BIG), Setup.of("coder/big", 2))
+        assertEquals("coder/big", Setup.of("coder/big", 2)!!.key)
+        assertEquals("coder", Setup.of("coder/any", 2)!!.key)
+        for (bad in listOf("djxl", "page/x", "page/0", "page/17", "page/4/mid", "coder/4", "coder/1/big", "platform/1/big")) assertNull(bad, Setup.of(bad, 2))
     }
 
     @Test

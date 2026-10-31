@@ -375,11 +375,14 @@ object Decoders {
     /** Kinds [edge] decodes only a strip of. */
     private val REGION_KINDS = setOf(ImageKind.JPEG, ImageKind.PNG, ImageKind.WEBP)
 
-    /** File extensions of the [REGION_KINDS], for judging pages before reading them. */
-    private val REGION_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
+    /** File extensions of JPEG, whose side strips ([sides]) skip the transform of the columns between. */
+    private val CHEAP_SIDES_EXTENSIONS = setOf("jpg", "jpeg")
 
-    /** True when page [name] is named as a kind whose [edge] and [sides] decode only strips. */
-    fun regionNamed(name: String?): Boolean = Formats.ext(name.orEmpty()) in REGION_EXTENSIONS
+    /**
+     * True when page [name] is named as JPEG, whose [sides] cost a fraction of a decode. A PNG
+     * or WebP strip as tall as the page decodes every row whole; other formats decode whole.
+     */
+    fun cheapSidesNamed(name: String?): Boolean = Formats.ext(name.orEmpty()) in CHEAP_SIDES_EXTENSIONS
 
     /**
      * A region decoder of [bytes], a [REGION_KINDS] image shown [w] x [h], whose pixels are

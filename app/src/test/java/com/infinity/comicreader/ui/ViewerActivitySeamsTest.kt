@@ -63,16 +63,18 @@ class ViewerActivitySeamsTest {
         dir = tmp.newFolder("shelf")
     }
 
-    private fun png(pixels: IntArray): ByteArray {
+    private fun encoded(pixels: IntArray, png: Boolean): ByteArray {
         val bitmap = Bitmap.createBitmap(pixels, width, pixels.size / width, Bitmap.Config.ARGB_8888)
-        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val format = if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+        return ByteArrayOutputStream().also { bitmap.compress(format, 100, it) }.toByteArray()
     }
 
     /**
      * [count] pages `Tale 001-000`…, each its own picture, but pages [first] and the next the halves of one;
-     * a [solid] archive is read in order only, its page sizes learned as pages load.
+     * a [solid] archive is read in order only, its page sizes learned as pages load. JPEG pages, or [png]
+     * ones, whose sides are read only from the reader's decodes.
      */
-    private fun book(count: Int, first: Int, solid: Boolean = false): File {
+    private fun book(count: Int, first: Int, solid: Boolean = false, png: Boolean = solid): File {
         val art = SyntheticArt.art(width * 2, height, seed = 77)
         val pages = (0 until count).map { i ->
             when (i) {
@@ -81,7 +83,8 @@ class ViewerActivitySeamsTest {
                 else -> SyntheticArt.art(width, height, seed = i.toLong())
             }
         }
-        val entries = pages.mapIndexed { i, p -> Fixtures.entry("Tale 001-%03d.png".format(i), png(p)) }.toTypedArray()
+        val ext = if (png) "png" else "jpg"
+        val entries = pages.mapIndexed { i, p -> Fixtures.entry("Tale 001-%03d.$ext".format(i), encoded(p, png)) }.toTypedArray()
         if (solid) return File(dir, "Tale 001.cbr").apply { writeBytes(Fixtures.rar4Bytes(*entries, solid = true)) }
         return Fixtures.zip(File(dir, "Tale 001.cbz"), *entries)
     }
@@ -343,6 +346,21 @@ class ViewerActivitySeamsTest {
         await { viewer.items() == 30 }
         assertEquals(30, viewer.items())
         assertEquals("2 / 31", viewer.indicator())
+    }
+
+    @Test
+    fun pngPagesAreCheckedOnlyOnceTheReaderDecodesThem() {
+        val viewer = launch(book(count = 31, first = 20, png = true))
+        val seams = File(ApplicationProvider.getApplicationContext<Application>().cacheDir, "page-seams-by-id")
+        await { seams.listFiles()?.any { it.name.endsWith(".bin") } == true }
+        repeat(100) { Thread.sleep(10); idle() }
+        // Neither half is decoded yet: read for its sides alone, a PNG page would decode twice.
+        assertEquals(31, viewer.items())
+        // Two pages ahead, both halves are decoded for the reader: their seam is checked from those decodes.
+        repeat(19) { viewer.next() }
+        assertEquals("20 / 31", viewer.indicator())
+        await { viewer.items() == 30 }
+        assertEquals(30, viewer.items())
     }
 
     @Test

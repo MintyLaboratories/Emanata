@@ -101,13 +101,14 @@ class PageSeamsTest {
     }
 
     @Test
-    fun pagesNamedAsStripFormatsAreCheap() {
-        assertTrue(Decoders.regionNamed("a/p01.JPG"))
-        assertTrue(Decoders.regionNamed("p01.webp"))
-        assertTrue(Decoders.regionNamed("p01.png"))
-        assertFalse(Decoders.regionNamed("p01.avif"))
-        assertFalse(Decoders.regionNamed("p01.jxl"))
-        assertFalse(Decoders.regionNamed(null))
+    fun onlyPagesNamedAsJpegHaveCheapSides() {
+        assertTrue(Decoders.cheapSidesNamed("a/p01.JPG"))
+        assertTrue(Decoders.cheapSidesNamed("p01.jpeg"))
+        assertFalse(Decoders.cheapSidesNamed("p01.webp"))
+        assertFalse(Decoders.cheapSidesNamed("p01.png"))
+        assertFalse(Decoders.cheapSidesNamed("p01.avif"))
+        assertFalse(Decoders.cheapSidesNamed("p01.jxl"))
+        assertFalse(Decoders.cheapSidesNamed(null))
     }
 
     /** Pages whose sides are given, and a count of the sides read of each page. */

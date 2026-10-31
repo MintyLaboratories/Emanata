@@ -1980,13 +1980,14 @@ class ViewerActivity : AppCompatActivity() {
      * Checks the seams between the open book's pages that its layout may read, one at a
      * time in the background ([AppDispatchers.background]), nearest the page on screen
      * first: those within [SEAM_WINDOW] pages, again as the reader moves on, and beyond
-     * them those of pages read alone ([PageSource.cheapSizes]) in a format that decodes
-     * only strips ([Decoders.regionNamed]). They are kept for the book ([PageSeams]), and the book is laid out
-     * again whenever they change it. While battery saver pauses scans ([Thrift.pausedScans]), only those
-     * within [SEAM_WINDOW] pages are checked: the screens being read need them.
-     * Each round waits until no page decodes ([PageAdapter.decoding]), and pages decoded for the
-     * reader give their sides without a second decode ([PageSource.decodedSides]). A solid archive
-     * is never read for them: only the pages the reader decoded are checked, as it decodes them.
+     * them those of pages read alone ([PageSource.cheapSizes]) as JPEG ([Decoders.cheapSidesNamed]).
+     * They are kept for the book ([PageSeams]), and the book is laid out again whenever they
+     * change it. While battery saver pauses scans ([Thrift.pausedScans]), only those within
+     * [SEAM_WINDOW] pages are checked: the screens being read need them.
+     * A page's sides come from its decode for the reader ([PageSource.decodedSides]); only a JPEG
+     * page read alone is read for them before that, each round once no page decodes
+     * ([PageAdapter.decoding]). Other pages, and every page of a solid archive, wait for the
+     * reader to decode them ([onLoaded][PageAdapter]): never a second decode of a page.
      */
     private fun checkSeams() {
         val src = source ?: return
@@ -1996,17 +1997,15 @@ class ViewerActivity : AppCompatActivity() {
         if (!scansReleased || seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
         val far = !applied.thrift.pausedScans
-        val cheap = { i: Int -> far && src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
-        val solid = !src.cheapSizes
-        val decoded = { i: Int -> src.decodedSides(i) != null }
-        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap).let { all ->
-            if (solid) all.filter { decoded(it) && decoded(it + 1) } else all
-        }
+        val readable = { i: Int -> src.cheapSizes && Decoders.cheapSidesNamed(names.getOrNull(i)) }
+        val cheap = { i: Int -> far && readable(i) }
+        val ready = { i: Int -> readable(i) || src.decodedSides(i) != null }
+        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap).filter { ready(it) && ready(it + 1) }
         if (pages.isEmpty()) return
         val found = pageSeams.copy()
-        val checked = if (solid) object : PageSource by src {
-            override fun sides(index: Int) = src.decodedSides(index)
-        } else src
+        val checked = object : PageSource by src {
+            override fun sides(index: Int) = src.decodedSides(index) ?: if (readable(index)) src.sides(index) else null
+        }
         seamsJob = lifecycleScope.launch {
             var at = 0
             var batch = SEAM_FIRST
@@ -2232,8 +2231,8 @@ class ViewerActivity : AppCompatActivity() {
             onLoaded = {
                 learnSize(it)
                 if (!scansReleased) afterNextDraw(src) { startScans() }
-                // A solid archive's seams are checked as its pages decode.
-                else if (!src.cheapSizes) handler.post { checkSeams() }
+                // Seams waiting for this page's decode are checked now.
+                else handler.post { checkSeams() }
                 // After the slot waiting for the page shows it.
                 handler.post { shareAnswered() }
             }

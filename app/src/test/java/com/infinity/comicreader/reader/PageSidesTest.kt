@@ -7,6 +7,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -17,6 +18,8 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.util.zip.CRC32
 
 /** A page decoded for the reader gives its sides as a seam check would find them, with no second read or decode. */
 @RunWith(RobolectricTestRunner::class)
@@ -64,6 +67,35 @@ class PageSidesTest {
                 // Never the opposite of what the page's bytes tell, and right where those cannot tell.
                 if (fromBytes.seam != SpreadSeams.Seam.UNKNOWN) assertEquals("$i $j: $fromBytes vs $fromPages", fromBytes.match, fromPages.match)
                 assertEquals("$i $j: $fromPages", i == j, fromPages.match)
+            }
+        }
+    }
+
+    /**
+     * [png] with an empty eXIf chunk before its pixels: refused a region decode, its sides come
+     * from a whole decode, as those of formats with no region decode (JPEG XL, AVIF) do.
+     */
+    private fun withExif(png: ByteArray): ByteArray {
+        val data = byteArrayOf(0x4D, 0x4D, 0, 0x2A, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0)
+        val type = "eXIf".toByteArray(Charsets.US_ASCII)
+        val crc = CRC32().apply { update(type); update(data) }.value
+        val chunk = ByteBuffer.allocate(12 + data.size).putInt(data.size).put(type).put(data).putInt(crc.toInt()).array()
+        // After the signature and the IHDR chunk.
+        val at = 8 + 8 + 13 + 4
+        return png.copyOfRange(0, at) + chunk + png.copyOfRange(at, png.size)
+    }
+
+    @Test
+    fun sidesOfADecodedPageAgreeWithThoseOfAWholeDecode() {
+        val spreads = (1L..4L).map { spread(it) }
+        assertTrue(ImageHeaders.pngMayHaveExif(withExif(spreads[0].first)))
+        for ((i, a) in spreads.withIndex()) {
+            for ((j, b) in spreads.withIndex()) {
+                // One side from the reader's decode, the other read alone: a seam checked as the reader moves on.
+                val leftDecoded = SpreadSeams.verdict(decodedSides(a.first), Decoders.sides(withExif(b.second))!!, rtl = false)
+                val rightDecoded = SpreadSeams.verdict(Decoders.sides(withExif(a.first))!!, decodedSides(b.second), rtl = false)
+                assertEquals("$i $j: $leftDecoded", i == j, leftDecoded.match)
+                assertEquals("$i $j: $rightDecoded", i == j, rightDecoded.match)
             }
         }
     }

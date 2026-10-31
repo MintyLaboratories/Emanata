@@ -150,4 +150,31 @@ class PageAdapterReadAheadTest {
         assertEquals(setOf(0, 1), source.started.take(firstAhead).filter { it.second.box != null }.map { it.first }.toSet())
         adapter.release()
     }
+
+    @Test
+    fun withBehindTheScreenBeforeDecodesAfterThoseAhead() {
+        val source = HeldSource(8)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 2, behind = true)
+        val ahead = listOf(source.hold(5), source.hold(6))
+        val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(holder, 4)
+        // Both decoders busy with the pages ahead: the one behind waits its turn.
+        idleUntil { source.started.size >= 3 }
+        stillAfterAWhile { source.started.toList().sorted() == listOf(4, 5, 6) }
+        ahead.forEach { it.countDown() }
+        idleUntil { 3 in source.started }
+        stillAfterAWhile { source.started.toList().sorted() == listOf(3, 4, 5, 6) }
+        adapter.release()
+    }
+
+    @Test
+    fun withoutBehindNothingBeforeTheScreenDecodes() {
+        val source = HeldSource(8)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 2)
+        val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(holder, 4)
+        idleUntil { source.started.size >= 3 }
+        stillAfterAWhile { source.started.toList().sorted() == listOf(4, 5, 6) }
+        adapter.release()
+    }
 }

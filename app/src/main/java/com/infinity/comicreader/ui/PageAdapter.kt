@@ -66,7 +66,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * Decoding happens off the main thread, at most [DECODE_THREADS] pages at a time.
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
- * the next [preload] pages are decoded ahead of time. A page whose decode yields a
+ * the next [preload] pages are decoded ahead of time, and with [behind] the screen before the
+ * one shown. A page whose decode yields a
  * smaller version first (a layered AVIF's first layer, [Decoders.standingIn]) shows it
  * scaled until the page takes over in place. With [autoCrop] blank borders
  * are trimmed. A page
@@ -116,6 +117,8 @@ class PageAdapter(
     private val pageScaling: Scaling = Scaling.PLAIN,
     private val zoomScaling: Scaling = Scaling.PLAIN,
     private val preload: Int = 2,
+    /** In paged reading, also decode the screen before the one shown, after those ahead, so a back turn is ready. */
+    private val behind: Boolean = false,
     private val fling: Boolean = false,
     private val onLongPress: ((Int) -> Unit)? = null,
     pageLayout: PageLayout? = null,
@@ -1110,7 +1113,10 @@ class PageAdapter(
     private fun firstMeasuring(): Boolean =
         prefetchFrom in 0 until itemCount && strip.parts(prefetchFrom).any { it != null && it.page in measuring }
 
-    /** Decodes the [preload] parts on the items after [position] into the cache. */
+    /**
+     * Decodes the [preload] parts on the items after [position] into the cache, then with
+     * [behind] those of the item before it.
+     */
     private fun prefetchAfter(position: Int) {
         prefetchFrom = position
         var ahead = if (mode == Mode.CONTINUOUS) minOf(preload, MAX_STRIP_PRELOAD) else preload
@@ -1124,11 +1130,23 @@ class PageAdapter(
                     measureItem(part)
                     continue
                 }
-                if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) continue
-                request(key).prefetch = true
+                prefetch(key)
             }
             item++
         }
+        if (behind && mode == Mode.PAGED && position > 0) {
+            for (part in strip.parts(position - 1)) {
+                if (part == null) continue
+                // A page not measured yet waits for a turn back: measuring decodes too.
+                keyFor(part)?.let { prefetch(it) }
+            }
+        }
+    }
+
+    /** Decodes [key] into the cache unless it is there, on its way, or known to fail. */
+    private fun prefetch(key: PageKey) {
+        if (cache.get(key) != null || pending[key] != null || permanentFailure(key) != null) return
+        request(key).prefetch = true
     }
 
     // ------------------------------------------------------------------ continuous

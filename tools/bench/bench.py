@@ -175,6 +175,20 @@ def make(args) -> None:
                     for f in files:
                         z.write(f, f.name)
                 print("packed", book, flush=True)
+    wide = out / "synth-2k-jpeg-wide.cbz"
+    if not wide.exists() and pages["2k"] >= 12:
+        # A two-page spread as one wide page among single pages, for "Rotate for spreads".
+        enc = out / "enc-2k-jpeg"
+        spread = out / "spread-2k.jpg"
+        run(["magick", str(out / "pages-2k" / "page005.png"), str(out / "pages-2k" / "page006.png"), "+append",
+             "-quality", "90", "-sampling-factor", "4:2:0", str(spread)])
+        with zipfile.ZipFile(wide, "w", zipfile.ZIP_STORED) as z:
+            for i in (1, 2, 3, 4):
+                z.write(enc / f"page{i:03}.jpg", f"page{i:03}.jpg")
+            z.write(spread, "page005.jpg")
+            for i in range(7, 13):
+                z.write(enc / f"page{i:03}.jpg", f"page{i:03}.jpg")
+        print("packed", wide, flush=True)
     seven = shutil.which("7z")
     if seven:
         enc = out / "enc-2k-jpeg"

@@ -10,13 +10,13 @@ import java.util.concurrent.CancellationException
  */
 internal interface JxlPageKernel {
     /** A `LibJxl.PAGE_*` result. */
-    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int
+    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int, stop: LibJxl.Stop?): Int
 }
 
 /** [LibJxl.page], where its library loads. */
 private object LibJxlPages : JxlPageKernel {
-    override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int =
-        LibJxl.page(jxl, out, threads, cores, stop)
+    override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int, stop: LibJxl.Stop?): Int =
+        LibJxl.page(jxl, out, threads, cores, nice, stop)
 }
 
 /**
@@ -50,6 +50,10 @@ object JxlPages {
     @Volatile
     internal var laterOnLittle: Boolean = false
 
+    /** Linux nice (0..19) of work nobody waits on, so it yields to the page shown; 0 keeps the caller's. */
+    @Volatile
+    var laterNice: Int = 0
+
     internal var cores: CpuCores? = null
         get() = field ?: CpuCores.device
 
@@ -82,9 +86,10 @@ object JxlPages {
         if (!enabled) return null
         val k = kernel ?: return null
         val (n, on) = placement(urgent)
+        val nice = if (urgent) 0 else laterNice.coerceIn(0, 19)
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val result = try {
-            k.page(bytes, out, n, on) { canceled() }
+            k.page(bytes, out, n, on, nice) { canceled() }
         } catch (t: Throwable) {
             out.recycle()
             throw t

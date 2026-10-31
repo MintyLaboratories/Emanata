@@ -164,15 +164,17 @@ object LibJxl : JxlCodec {
     /**
      * Decodes [jxl]'s first frame in sRGB straight into [out], ARGB_8888 of the image's size as
      * shown, premultiplied, on [threads] threads (the caller's among them) pinned to [cores]
-     * (bit n = core n; 0 = any), asking [stop] between its parallel steps. [PAGE_OPAQUE] or
+     * (bit n = core n; 0 = any) at Linux nice [nice] (0 = the caller's; never raised above
+     * it), asking [stop] between its parallel steps. [PAGE_OPAQUE] or
      * [PAGE_ALPHA] when done; [PAGE_UNSUPPORTED] when the image is another size, has no sRGB
      * rendering without a color manager, or is HDR, or that libjxl is missing; [PAGE_FAILED]
      * when it does not decode; [PAGE_CANCELED] once [stop] said so.
      */
-    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: Stop? = null): Int = nPage(jxl, out, threads, cores, stop)
+    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int = 0, stop: Stop? = null): Int =
+        nPage(jxl, out, threads, cores, nice, stop)
 
     @JvmStatic
-    private external fun nPage(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: Stop?): Int
+    private external fun nPage(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int, stop: Stop?): Int
 
     @JvmStatic
     private external fun nVersion(): Int

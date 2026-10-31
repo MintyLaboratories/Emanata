@@ -4,8 +4,10 @@
 #include "jxl_page.h"
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <pthread.h>
 #include <string.h>
+#include <sys/resource.h>
 
 #include "jxl_runner.h"
 
@@ -65,8 +67,20 @@ static void premultiply(uint8_t * out, uint32_t width, uint32_t height, uint32_t
     }
 }
 
+// Lowers the calling thread's priority to nice `nice` when it runs higher; its old nice in
+// `kept`. False when it stays as it was.
+static int lower_priority(int nice, int * kept)
+{
+    if (nice <= 0) return 0;
+    errno = 0;
+    const int now = getpriority(PRIO_PROCESS, 0);
+    if (errno != 0 || now >= nice) return 0;
+    *kept = now;
+    return setpriority(PRIO_PROCESS, 0, nice) == 0;
+}
+
 int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * out, uint32_t width, uint32_t height, uint32_t stride,
-              int threads, uint64_t cores, int (*stop)(void *), void * stop_opaque)
+              int threads, uint64_t cores, int nice, int (*stop)(void *), void * stop_opaque)
 {
     if (api == NULL || width == 0 || height == 0 || stride < width * 4) return JP_UNSUPPORTED;
     JxlDecoder * dec = api->JxlDecoderCreate(NULL);
@@ -75,6 +89,8 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
     jr_pool * pool = NULL;
     cpu_set_t kept;
     const int pinned = jr_pin(cores, &kept);
+    int lowered = 0;
+    int kept_nice = 0;
     int result = JP_FAILED;
     int alpha = 0;
     JxlBasicInfo info;
@@ -86,6 +102,8 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
         goto done;
     }
     api->JxlDecoderCloseInput(dec);
+    // Before the pool: its threads take the caller's nice.
+    lowered = lower_priority(nice, &kept_nice);
     // A pool even for one thread: its runner asks `stop`.
     pool = jr_create(threads > 1 ? threads - 1 : 0, cores);
     if (pool == NULL || api->JxlDecoderSetParallelRunner(dec, jr_run, pool) != JXL_DEC_SUCCESS) goto done;
@@ -131,5 +149,6 @@ done:
     api->JxlDecoderDestroy(dec);
     jr_destroy(pool);
     if (pinned) sched_setaffinity(0, sizeof(kept), &kept);
+    if (lowered) setpriority(PRIO_PROCESS, 0, kept_nice);
     return result;
 }

@@ -41,8 +41,9 @@ enum {
 
 // Decodes the first frame of `data` in sRGB as RGBA, 8 bits a sample, into `out`: rows of
 // `stride` bytes for an image shown `width` x `height` (its orientation applied), on
-// `threads` threads (the caller and threads - 1 more) pinned to `cores` (0 = any). Asks
-// `stop(stop_opaque)` (when given) on the calling thread between the decoder's parallel
-// steps, and stops once it returns nonzero. A JP_* result.
+// `threads` threads (the caller and threads - 1 more) pinned to `cores` (0 = any), at nice
+// `nice` or the caller's, whichever is lower in priority. Asks `stop(stop_opaque)` (when
+// given) on the calling thread between the decoder's parallel steps, and stops once it
+// returns nonzero. A JP_* result.
 int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * out, uint32_t width, uint32_t height, uint32_t stride,
-              int threads, uint64_t cores, int (*stop)(void *), void * stop_opaque);
+              int threads, uint64_t cores, int nice, int (*stop)(void *), void * stop_opaque);

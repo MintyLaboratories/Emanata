@@ -700,10 +700,10 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
 
 // Decodes the first frame of `jxl` in sRGB straight into `bitmap`, an RGBA_8888 bitmap of
 // the image's size as shown, on `threads` threads pinned to `cores` (bit n = core n; 0 =
-// any); with `stop`, asks its stop() between the decoder's parallel steps and stops once it
+// any) at nice `nice` (0 = the caller's); with `stop`, asks its stop() between the decoder's parallel steps and stops once it
 // returns true. A JP_* result (jxl_page.h).
 EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
-    JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint threads, jlong cores, jobject stop)
+    JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint threads, jlong cores, jint nice, jobject stop)
 {
     (void)clazz;
     const jp_api * api = jp_coder();
@@ -718,7 +718,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
     int result = JP_FAILED;
     if (borrow(env, jxl, &in) && AndroidBitmap_lockPixels(env, bitmap, &pixels) == ANDROID_BITMAP_RESULT_SUCCESS) {
         result = jp_decode(api, (const uint8_t *)in.data, in.size, pixels, info.width, info.height, info.stride, threads, (uint64_t)cores,
-                           stop != NULL ? stopNow : NULL, &call);
+                           nice, stop != NULL ? stopNow : NULL, &call);
         AndroidBitmap_unlockPixels(env, bitmap);
     }
     giveBack(env, &in);

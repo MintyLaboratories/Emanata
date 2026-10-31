@@ -26,12 +26,12 @@ class JxlPagesTest {
 
     /** Native code as the JVM can have it: returns [result], every call recorded, painting the bitmap red when it decodes. */
     private class FakeKernel(var result: Int = LibJxl.PAGE_OPAQUE, val fail: Throwable? = null) : JxlPageKernel {
-        class Call(val out: Bitmap, val threads: Int, val cores: Long, val stop: LibJxl.Stop?)
+        class Call(val out: Bitmap, val threads: Int, val cores: Long, val nice: Int, val stop: LibJxl.Stop?)
 
         val calls = ArrayList<Call>()
 
-        override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, stop: LibJxl.Stop?): Int {
-            calls += Call(out, threads, cores, stop)
+        override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int, stop: LibJxl.Stop?): Int {
+            calls += Call(out, threads, cores, nice, stop)
             if (stop?.stop() == true) return LibJxl.PAGE_CANCELED
             fail?.let { throw it }
             if (result > 0) out.eraseColor(0xFFFF0000.toInt())
@@ -46,13 +46,14 @@ class JxlPagesTest {
 
     @Before
     fun keep() {
-        kept = listOf(JxlPages.enabled, JxlPages.threads, JxlPages.laterThreads, JxlPages.pinned, JxlPages.laterOnLittle)
+        kept = listOf(JxlPages.enabled, JxlPages.threads, JxlPages.laterThreads, JxlPages.pinned, JxlPages.laterOnLittle, JxlPages.laterNice)
         JxlPages.cores = tablet
         JxlPages.enabled = true
         JxlPages.threads = 4
         JxlPages.laterThreads = 4
         JxlPages.pinned = true
         JxlPages.laterOnLittle = false
+        JxlPages.laterNice = 0
     }
 
     @After
@@ -62,6 +63,7 @@ class JxlPagesTest {
         JxlPages.laterThreads = kept[2] as Int
         JxlPages.pinned = kept[3] as Boolean
         JxlPages.laterOnLittle = kept[4] as Boolean
+        JxlPages.laterNice = kept[5] as Int
         JxlPages.cores = null
         JxlPages.kernel = null
     }
@@ -103,6 +105,21 @@ class JxlPagesTest {
         JxlPages.decode(bytes, 4, 4, urgent = true)
         assertEquals(0xF0L, k.calls.last().cores)
         assertEquals(4, k.calls.last().threads)
+    }
+
+    @Test
+    fun onlyLaterWorkYields() {
+        val k = FakeKernel().also { JxlPages.kernel = it }
+        JxlPages.decode(bytes, 4, 4, urgent = false)
+        assertEquals(0, k.calls.last().nice)
+        JxlPages.laterNice = 10
+        JxlPages.decode(bytes, 4, 4, urgent = false)
+        assertEquals(10, k.calls.last().nice)
+        JxlPages.decode(bytes, 4, 4, urgent = true)
+        assertEquals(0, k.calls.last().nice)
+        JxlPages.laterNice = 40
+        JxlPages.decode(bytes, 4, 4, urgent = false)
+        assertEquals(19, k.calls.last().nice)
     }
 
     @Test

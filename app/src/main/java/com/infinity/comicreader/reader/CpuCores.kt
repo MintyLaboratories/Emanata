@@ -29,6 +29,11 @@ class CpuCores(speeds: IntArray, largeShare: Double = CAPACITY_SHARE) {
     /** The little cores, to pin work nobody waits on yet to; 0 when there are none. */
     val little: Long = littleBits
 
+    /** The fastest cores alone, for one thread someone waits on; 0 when every core is as fast. */
+    val prime: Long = (speeds.maxOrNull() ?: 0).let { top ->
+        maskOf(speeds) { it > 0 && it == top }.takeIf { it != maskOf(speeds) { s -> s > 0 } } ?: 0L
+    }
+
     companion object {
         /** Large by the scheduler's `cpu_capacity`, which counts work per clock too: at least half the fastest's. */
         const val CAPACITY_SHARE = 0.5

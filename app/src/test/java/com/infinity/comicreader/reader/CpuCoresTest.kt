@@ -21,6 +21,7 @@ class CpuCoresTest {
         assertEquals(4, c.littleCount)
         assertEquals(0b1111_0000L, c.big)
         assertEquals(0b0000_1111L, c.little)
+        assertEquals(0b1000_0000L, c.prime)
     }
 
     @Test
@@ -31,6 +32,14 @@ class CpuCoresTest {
         // Nothing to pin to: every core is large.
         assertEquals(0L, c.big)
         assertEquals(0L, c.little)
+        // The two fastest still stand apart.
+        assertEquals(0b1100_0000L, c.prime)
+    }
+
+    @Test
+    fun equalCoresHaveNoPrime() {
+        assertEquals(0L, CpuCores(intArrayOf(1024, 1024, 1024, 1024)).prime)
+        assertEquals(0L, CpuCores(IntArray(0)).prime)
     }
 
     @Test

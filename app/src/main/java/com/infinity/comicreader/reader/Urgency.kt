@@ -29,4 +29,7 @@ object Urgency {
 
     /** This thread's mark, for workers on its behalf to poll; waited on outside [during]. */
     fun current(): () -> Boolean = mark.get() ?: always
+
+    /** True only inside [during] while its work is waited on: a page on screen, not covers, previews or scans. */
+    fun waited(): Boolean = mark.get()?.invoke() == true
 }

@@ -158,6 +158,21 @@ static int pin(jlong cores, cpu_set_t * kept)
     return sched_setaffinity(0, sizeof(want), &want) == 0;
 }
 
+// Moves the calling thread onto `cores` (bit n = core n) until moved again; the cores it
+// could use before, 0 when it stays where it was.
+EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
+{
+    (void)env;
+    (void)clazz;
+    cpu_set_t kept;
+    if (!pin(cores, &kept)) return 0;
+    uint64_t mask = 0;
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
+        if (CPU_ISSET(n, &kept)) mask |= 1ull << n;
+    }
+    return (jlong)mask;
+}
+
 // Filters output rows y0 until y1 as `worker`, on `cores` (0 = any) while it runs; false
 // on a bad request, out of memory or a GPU error.
 EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(

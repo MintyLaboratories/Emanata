@@ -357,8 +357,8 @@ def report(args) -> None:
     groups: dict[tuple, list[dict]] = {}
     for r in reads:
         p = r["plan"]
-        key = (p["label"], r.get("variant", ""), p["layout"], p["input"], p.get("tapMs", ""), p["pace"], r.get("cache") or ("fresh" if p["fresh"] else ""),
-               p.get("crop"), p.get("doubleTap"))
+        key = (p["label"], r.get("variant", ""), p["layout"], p["input"] + (" back" if p.get("back") else ""), p.get("tapMs", ""), p["pace"],
+               r.get("cache") or ("fresh" if p["fresh"] else ""), p.get("crop"), p.get("doubleTap"))
         groups.setdefault(key, []).append(r)
     print("Medians over sessions, range in brackets; turn times are each session's median. Warm-up sessions left out.")
     print()
@@ -369,7 +369,7 @@ def report(args) -> None:
     for (label, variant, layout, inp, tap_ms, pace, cache, crop, double_tap), rs in groups.items():
         turns = sum(r["turnSharp"]["n"] for r in rs)
         print("| " + " | ".join(str(x) for x in [
-            label, variant, layout, inp, tap_ms if inp == "tap" else "", pace, cache, "on" if crop else "",
+            label, variant, layout, inp, tap_ms if inp.startswith("tap") else "", pace, cache, "on" if crop else "",
             {True: "on", False: "off"}.get(double_tap, ""), len(rs), turns,
             spread(r["openVisibleMs"] for r in rs), spread(r["openSharpMs"] for r in rs),
             spread(r["turnVisible"]["median"] for r in rs if r["turnVisible"]["n"]),

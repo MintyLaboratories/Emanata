@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
  * process, staying behind the reader or library it drives. Only the shell may start it:
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do read (--es path <book> | --es share first) [--es label <name>]
- * [--es layout paged|two|continuous] [--es input tap|key|drag] [--ei page <n>] [--ei turns <n>] [--ei pace <ms>] [--ei reps <n>]
+ * [--es layout paged|two|continuous] [--es input tap|key|drag] [--ei page <n>] [--ei turns <n>] [--ez back true] [--ei pace <ms>] [--ei reps <n>]
  * [--ei warmup <n>] [--ez fresh true] [--ez crop true] [--es doubletap on|off] [--ei tapms <ms>] [--es orientation portrait|landscape|any]`
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do grid --es path <folder> [--ez fresh true]`

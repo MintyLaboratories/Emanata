@@ -28,6 +28,8 @@ internal data class BenchPlan(
     val page: Int = 0,
     /** Page turns per session. */
     val turns: Int = 10,
+    /** Turns go back toward the first page, by tap only; a book opened at [page] has pages behind it. */
+    val back: Boolean = false,
     /** Milliseconds between a turn's pages showing sharp and the next turn: time to read ahead. */
     val pace: Long = 1500,
     /** Sessions in a row, each opening the book anew, after [warmup]. */
@@ -54,7 +56,7 @@ internal data class BenchPlan(
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
-        .put("turns", turns).put("pace", pace).put("warmup", warmup).put("fresh", fresh).put("crop", crop)
+        .put("turns", turns).put("back", back).put("pace", pace).put("warmup", warmup).put("fresh", fresh).put("crop", crop)
         .put("doubleTap", doubleTap ?: JSONObject.NULL).put("tapMs", tapMs)
         .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
 
@@ -98,6 +100,7 @@ internal data class BenchPlan(
                 input = input,
                 page = intent.getIntExtra("page", 0).coerceAtLeast(0),
                 turns = intent.getIntExtra("turns", 10).coerceIn(0, 500),
+                back = intent.getBooleanExtra("back", false),
                 pace = intent.getIntExtra("pace", 1500).coerceAtLeast(0).toLong(),
                 reps = intent.getIntExtra("reps", 1).coerceIn(1, 50),
                 warmup = if (fresh) 0 else intent.getIntExtra("warmup", 1).coerceIn(0, 10),

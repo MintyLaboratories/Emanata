@@ -100,6 +100,15 @@ class BenchStatsTest {
     }
 
     @Test
+    fun turnsGoForwardUnlessBackIsAsked() {
+        val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz")
+        assertEquals(false, BenchPlan.of(read)!!.back)
+        val back = BenchPlan.of(Intent(read).putExtra("back", true).putExtra("page", 8))!!
+        assertEquals(true, back.back)
+        assertEquals(true, back.toJson().getBoolean("back"))
+    }
+
+    @Test
     fun aContinuousTapTurnsByDrag() {
         val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz").putExtra("layout", "continuous")
         assertEquals(BenchPlan.DRAG, BenchPlan.of(read)!!.input)

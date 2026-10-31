@@ -128,13 +128,14 @@ internal class BenchRunner(private val app: Application) {
         var unsharpFrames = 0
         val turnStart = ProcStats.now(app, memory = false)
         val turnsFrom = System.nanoTime()
-        var tapX = TAP_X
+        // The side that turns forward, or back with [BenchPlan.back]; a right-to-left book swaps them.
+        var tapX = if (plan.back) 1f - TAP_X else TAP_X
         for (i in 1..plan.turns) {
             delay(plan.pace)
             val turn = turn(viewer, plan, tapX, plan.tapMs) ?: break
             turns.put(turn)
-            if (turn.getBoolean("back")) {
-                // A right-to-left book: the other side turns forward; this turn back is left out.
+            if (turn.getBoolean("back") != plan.back) {
+                // A right-to-left book: the other side turns the way asked; this turn is left out.
                 tapX = 1f - tapX
                 continue
             }

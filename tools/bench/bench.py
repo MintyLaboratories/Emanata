@@ -402,6 +402,7 @@ def run_plan(args) -> None:
         if args.energy:
             adb("shell", "dumpsys", "battery", "unplug")
             adb("shell", "dumpsys", "batterystats", "--reset")
+        lines: list[dict] = []
         try:
             lines = bench_once(session, args.timeout)
         finally:

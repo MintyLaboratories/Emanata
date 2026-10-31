@@ -63,6 +63,8 @@ class ZipReader(file: File, charsetName: String) : ArchiveReader {
             }
             // Read by bytes, the directory's entries are [ZipFile]'s, one for one.
             places = if (byBytes == null) null else files.map { at -> listed[at].takeIf { it.size == list[at].size } }
+            // Without places, nothing is read at one ([readWhole]): the file stays open in [zip] alone.
+            if (places == null) runCatching { channel.close() }
         } catch (t: Throwable) {
             runCatching { zip.close() }
             runCatching { channel.close() }
@@ -85,8 +87,10 @@ class ZipReader(file: File, charsetName: String) : ArchiveReader {
         readAt(head, place.offset)
         if (head.getInt(0) != LOCAL_SIG) throw IOException("No local header for ${entry.path}")
         val skip = (head.getShort(26).toInt() and 0xFFFF) + (head.getShort(28).toInt() and 0xFFFF)
-        val data = ByteArray(place.size.toInt())
         val from = place.offset + LOCAL_BYTES + skip
+        // A damaged directory may declare more than the file holds: nothing is allocated for it.
+        if (from + place.size > channel.size()) throw IOException("Zip ends inside ${entry.path}")
+        val data = ByteArray(place.size.toInt())
         // A chunk at a time: the channel copies through a direct buffer as large as each read, kept per thread.
         var done = 0
         while (done < data.size) {

@@ -7,11 +7,13 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.Executors
@@ -58,6 +60,19 @@ class ZipWholeReadTest {
                 assertArrayEquals(e.path, pages[i].second, whole)
                 assertArrayEquals(e.path, r.read(e) { it.readBytes() }, whole)
             }
+        }
+    }
+
+    @Test
+    fun anEntryRunningPastTheFileEndFailsBeforeAllocating() {
+        val pages = listOf("01.jpg" to bytes(1000, 8), "02.jpg" to bytes(1000, 9))
+        val file = zip("book.cbz", pages)
+        ZipReader(file, "UTF-8").use { r ->
+            // The file cut inside the second entry, the directory read before.
+            RandomAccessFile(file, "rw").use { it.setLength(1500) }
+            assertArrayEquals(pages[0].second, r.readWhole(r.entries[0]))
+            val failed = runCatching { r.readWhole(r.entries[1]) }.exceptionOrNull()
+            assertTrue(failed is IOException)
         }
     }
 

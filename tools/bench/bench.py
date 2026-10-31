@@ -587,9 +587,10 @@ def calibrate(timeout_s: int = 180) -> None:
     A build without calibration is left as it is.
     """
     adb("logcat", "-c")
-    out = adb("shell", "am", "start", "-n", f"{PACKAGE}/com.infinity.comicreader.debug.CalibrationActivity",
-              "--es", "do", "recalibrate", capture=True, check=False)
-    if "Error" in out:
+    started = subprocess.run([ADB, "shell", "am", "start", "-n", f"{PACKAGE}/com.infinity.comicreader.debug.CalibrationActivity",
+                              "--es", "do", "recalibrate"], capture_output=True, text=True)
+    if "Error" in started.stdout + started.stderr:
+        print("no calibration in this build", flush=True)
         return
     end = time.time() + timeout_s
     while time.time() < end:

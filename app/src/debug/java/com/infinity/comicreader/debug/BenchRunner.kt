@@ -41,8 +41,9 @@ import kotlin.coroutines.resume
  * Runs a [BenchPlan] in the app's own process, on the main thread, driving the real
  * reader or library as a person would (taps, volume keys, drags) and timing what shows,
  * frame by frame ([BenchProbe], [Milestones]). Times are from the start of an open or a
- * turn to the first frame that finds the pages on screen visible or sharp, so up to one
- * frame late. Each session is a JSON object ([run]).
+ * turn until the frame drawing the pages on screen visible or sharp completes, handed to
+ * the display ([FrameStats.drawnBy]); the display shows it a frame or so later. Each
+ * session is a JSON object ([run]).
  */
 internal class BenchRunner(private val app: Application) {
     private val probe = BenchProbe()
@@ -53,14 +54,19 @@ internal class BenchRunner(private val app: Application) {
     private var watched: Window? = null
 
     private val metrics = Window.OnFrameMetricsAvailableListener { window, m, _ ->
-        if (m.getMetric(FrameMetrics.FIRST_DRAW_FRAME) == 1L) return@OnFrameMetricsAvailableListener
         val deadline = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) m.getMetric(FrameMetrics.DEADLINE) else frameNs(window)
-        frames.add(m.getMetric(FrameMetrics.TOTAL_DURATION), deadline)
+        val vsync = m.getMetric(FrameMetrics.INTENDED_VSYNC_TIMESTAMP)
+        val total = m.getMetric(FrameMetrics.TOTAL_DURATION)
+        // Drawing starts after input, animations, layout and measure; both times from the frame's vsync.
+        val drawStart = vsync + m.getMetric(FrameMetrics.UNKNOWN_DELAY_DURATION) + m.getMetric(FrameMetrics.INPUT_HANDLING_DURATION) +
+            m.getMetric(FrameMetrics.ANIMATION_DURATION) + m.getMetric(FrameMetrics.LAYOUT_MEASURE_DURATION)
+        frames.add(total, deadline, drawStart, vsync + total, first = m.getMetric(FrameMetrics.FIRST_DRAW_FRAME) == 1L)
     }
 
     /** Runs [plan] from [host], the activity it was started in; one result per session. */
     suspend fun run(host: Activity, plan: BenchPlan): List<JSONObject> {
         tracker.orientation = plan.orientation
+        tracker.onCreated = { if (it !is BenchActivity) watch(it.window) }
         app.registerActivityLifecycleCallbacks(tracker)
         tracker.resumed = host
         ReadProbes.current = probe
@@ -101,9 +107,14 @@ internal class BenchRunner(private val app: Application) {
                 .putExtra(ViewerActivity.EXTRA_PAGE, plan.page)
         )
         val viewer = awaitResumed<ViewerActivity>(OPEN_TIMEOUT_MS)
-        watch(viewer.window)
         val open = Milestones(start)
-        val openOk = framesUntil(OPEN_TIMEOUT_MS) { now -> open.frame(now, probe.pages.ready(probe.pageViewsOnScreen())) }
+        val openOk = framesUntil(OPEN_TIMEOUT_MS) { now ->
+            val views = probe.pageViewsOnScreen()
+            open.frame(now, probe.pages.ready(views), probe.pages.changedAt(views))
+        }
+        awaitDrawn(open.sharpAt)
+        val openVisible = open.visible(frames::drawnBy)
+        val openSharp = open.sharp(frames::drawnBy)
         val openFrames = frames.toJson()
         val afterOpen = ProcStats.now(app)
         val cpuOpen = afterOpen.cpuMs - before.cpuMs
@@ -141,7 +152,7 @@ internal class BenchRunner(private val app: Application) {
 
         return JSONObject()
             .put("kind", "read").put("rep", rep).put("plan", plan.toJson()).put("screen", screen(viewer))
-            .put("openVisibleMs", Stats.ms(open.visible)).put("openSharpMs", Stats.ms(open.sharp)).put("openTimedOut", !openOk)
+            .put("openVisibleMs", Stats.ms(openVisible)).put("openSharpMs", Stats.ms(openSharp)).put("openTimedOut", !openOk)
             .put("openStartMs", if (probe.opening >= 0) Stats.ms(probe.opening - start) else -1)
             .put("openCpuMs", cpuOpen)
             .put("openFrames", openFrames)
@@ -155,7 +166,8 @@ internal class BenchRunner(private val app: Application) {
 
     /**
      * One turn forward in [viewer] as [plan] says, timed from the input's end (a drag's
-     * start) until the pages then on screen are visible and sharp; null when nothing moved.
+     * start) until a frame showing the pages then on screen visible and sharp completes;
+     * null when nothing moved.
      */
     private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float): JSONObject? {
         val before = probe.pages.pages(probe.pageViewsOnScreen())
@@ -179,15 +191,16 @@ internal class BenchRunner(private val app: Application) {
                 shownPages = pages
                 val ready = probe.pages.ready(views)
                 if (first == null) first = ready
-                m.frame(now, ready)
+                m.frame(now, ready, probe.pages.changedAt(views))
             }
         }
         probe.onMoved = null
+        awaitDrawn(m.sharpAt)
         if (movedAt >= 0) m.moved(movedAt)
         if (shownPages == before) return null
         return JSONObject()
             .put("pages", JSONArray(shownPages))
-            .put("visibleMs", Stats.ms(m.visible)).put("sharpMs", Stats.ms(m.sharp))
+            .put("visibleMs", Stats.ms(m.visible(frames::drawnBy))).put("sharpMs", Stats.ms(m.sharp(frames::drawnBy)))
             .apply { if (m.moved >= 0) put("movedMs", Stats.ms(m.moved)) }
             .put("ready", first == PageWatch.Ready.SHARP)
             .put("back", (shownPages.minOrNull() ?: 0) < (before.minOrNull() ?: 0))
@@ -264,7 +277,6 @@ internal class BenchRunner(private val app: Application) {
         val host = tracker.resumed ?: error("No activity to start the library from")
         host.startActivity(Intent(host, ListActivity::class.java).putExtra(ListActivity.EXTRA_START_PATH, plan.path ?: error("No folder")))
         val list = awaitResumed<ListActivity>(OPEN_TIMEOUT_MS)
-        watch(list.window)
         var lastEvents = -1
         var quietSince = System.nanoTime()
         val ok = framesUntil(GRID_TIMEOUT_MS) { now ->
@@ -301,7 +313,10 @@ internal class BenchRunner(private val app: Application) {
     /** Lets the last session's work settle: a second of nothing. */
     private suspend fun idle() = delay(IDLE_MS)
 
-    /** Calls [check] on each frame with its time until it returns true (true then) or [timeoutMs] pass (false). */
+    /**
+     * Calls [check] at the start of each frame, before it draws, with the time then, until it
+     * returns true (true then) or [timeoutMs] pass (false).
+     */
     private suspend fun framesUntil(timeoutMs: Long, check: (Long) -> Boolean): Boolean {
         val end = System.nanoTime() + timeoutMs * 1_000_000
         while (true) {
@@ -312,7 +327,14 @@ internal class BenchRunner(private val app: Application) {
     }
 
     private suspend fun nextFrame(): Long = suspendCancellableCoroutine { c ->
-        Choreographer.getInstance().postFrameCallback { c.resume(it) }
+        Choreographer.getInstance().postFrameCallback { c.resume(System.nanoTime()) }
+    }
+
+    /** Waits a while for the window's frames to tell when the first one drawn from [at] on completed. */
+    private suspend fun awaitDrawn(at: Long) {
+        if (at < 0) return
+        val end = SystemClock.uptimeMillis() + DRAWN_TIMEOUT_MS
+        while (frames.drawnBy(at) < 0 && SystemClock.uptimeMillis() < end) delay(POLL_MS)
     }
 
     private suspend inline fun <reified A : Activity> awaitResumed(timeoutMs: Long): A {
@@ -353,6 +375,9 @@ internal class BenchRunner(private val app: Application) {
 
         var orientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
+        /** Called with each activity created, its content set. */
+        var onCreated: (Activity) -> Unit = {}
+
         override fun onActivityResumed(activity: Activity) {
             resumed = activity
         }
@@ -363,6 +388,7 @@ internal class BenchRunner(private val app: Application) {
 
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
             activity.requestedOrientation = orientation
+            onCreated(activity)
         }
         override fun onActivityStarted(activity: Activity) = Unit
         override fun onActivityStopped(activity: Activity) = Unit
@@ -420,6 +446,7 @@ internal class BenchRunner(private val app: Application) {
         private const val NO_MOVE_MS = 3_000L
         private const val IDLE_MS = 1_000L
         private const val POLL_MS = 16L
+        private const val DRAWN_TIMEOUT_MS = 1_000L
 
         /** Folders down a share's root its first book is looked for. */
         private const val SHARE_DEPTH = 3

@@ -40,18 +40,34 @@ class BenchStatsTest {
     }
 
     @Test
-    fun framesPastTheirDeadlineAreJanky() {
+    fun framesPastTheirDeadlineAreLateAndPastTwiceItJanky() {
         val f = FrameStats()
         f.add(8_000_000, 8_333_333)
         f.add(12_000_000, 8_333_333)
         f.add(4_000_000, 8_333_333)
+        f.add(20_000_000, 8_333_333)
+        f.add(90_000_000, 8_333_333, first = true)
         val json = f.toJson()
-        assertEquals(3, json.getInt("frames"))
+        assertEquals(4, json.getInt("frames"))
+        assertEquals(2, json.getInt("late"))
         assertEquals(1, json.getInt("janky"))
         assertEquals(8.0, json.getDouble("p50Ms"), 0.0)
-        assertEquals(12.0, json.getDouble("maxMs"), 0.0)
+        assertEquals(20.0, json.getDouble("maxMs"), 0.0)
         f.reset()
         assertEquals(0, f.toJson().getInt("frames"))
+    }
+
+    @Test
+    fun aChangeIsDrawnByTheFirstFrameBeginningToDrawAfterIt() {
+        val f = FrameStats()
+        assertEquals(-1L, f.drawnBy(0))
+        f.add(30, 8, drawStartNs = 100, completedNs = 130, first = true)
+        f.add(12, 8, drawStartNs = 205, completedNs = 220)
+        assertEquals(130L, f.drawnBy(100))
+        assertEquals(220L, f.drawnBy(101))
+        assertEquals(-1L, f.drawnBy(206))
+        f.reset()
+        assertEquals(-1L, f.drawnBy(0))
     }
 
     @Test

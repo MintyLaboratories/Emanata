@@ -84,6 +84,25 @@ class PageWatchTest {
     }
 
     @Test
+    fun changedWhenTheLastViewOnScreenChanged() {
+        var now = 100L
+        val timed = PageWatch { now }
+        timed.bound(left, 1)
+        now = 200
+        timed.bound(right, 2)
+        now = 300
+        timed.shown(left, 1, exact = true)
+        // Bound again to the same page: no change.
+        now = 400
+        timed.bound(left, 1)
+        assertEquals(300L, timed.changedAt(listOf(left, right)))
+        assertEquals(200L, timed.changedAt(listOf(right)))
+        timed.bound(right, PageWatch.NONE)
+        assertEquals(300L, timed.changedAt(listOf(left, right)))
+        assertEquals(0L, timed.changedAt(emptyList()))
+    }
+
+    @Test
     fun forgottenViewsAreUnknown() {
         watch.bound(left, 3)
         watch.forget(left)

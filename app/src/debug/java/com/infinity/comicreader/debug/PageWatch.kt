@@ -4,10 +4,10 @@ package com.infinity.comicreader.debug
  * What each page view stands for and shows, as the reader reports it
  * ([com.infinity.comicreader.util.ReadProbe]), for telling when the pages on screen are
  * visible (each shows its page, a stand-in counting) and sharp (each shows its final
- * bitmap). Views are any keys. Main thread only.
+ * bitmap), and since when ([changedAt]). Views are any keys. Main thread only.
  */
-internal class PageWatch {
-    private class State(var bound: Int = NONE, var shown: Int = NONE, var exact: Boolean = false)
+internal class PageWatch(private val clock: () -> Long = System::nanoTime) {
+    private class State(var bound: Int = NONE, var shown: Int = NONE, var exact: Boolean = false, var changedAt: Long = 0)
 
     private val states = HashMap<Any, State>()
 
@@ -20,6 +20,7 @@ internal class PageWatch {
         if (state.bound != page) {
             state.bound = page
             if (state.shown != page) state.exact = false
+            state.changedAt = clock()
         }
     }
 
@@ -28,6 +29,7 @@ internal class PageWatch {
         val state = states.getOrPut(view) { State() }
         state.shown = page
         state.exact = exact && page != NONE
+        state.changedAt = clock()
     }
 
     /** The pages [onScreen] views stand for, in order, without repeats. */
@@ -55,6 +57,10 @@ internal class PageWatch {
             else -> Ready.VISIBLE
         }
     }
+
+    /** When the last of the [onScreen] views standing for a page last changed what it stands for or shows; 0 when none. */
+    fun changedAt(onScreen: Iterable<Any>): Long =
+        onScreen.maxOfOrNull { view -> states[view]?.takeIf { it.bound != NONE }?.changedAt ?: 0 } ?: 0
 
     /** The views heard of, for finding those on screen. */
     val views: Set<Any> get() = states.keys

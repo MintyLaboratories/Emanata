@@ -28,8 +28,11 @@ internal interface PixelKernels {
     /** Hands [job] the taps of its [vertical] axis or its horizontal one; false when they do not fit or the GPU is unusable. */
     fun axis(job: Long, vertical: Boolean, axis: Resampler.Axis): Boolean
 
-    /** Filters output rows [y0] until [y1] as [worker], below the job's workers; false on failure. */
-    fun band(job: Long, worker: Int, y0: Int, y1: Int): Boolean
+    /**
+     * Filters output rows [y0] until [y1] as [worker], below the job's workers, on the
+     * cores in [cores] (bit n = core n; 0 = any) for its length; false on failure.
+     */
+    fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean
 
     fun end(job: Long)
 }
@@ -45,7 +48,7 @@ internal object LibPixels : PixelKernels {
     override fun axis(job: Long, vertical: Boolean, axis: Resampler.Axis): Boolean =
         nAxis(job, vertical, axis.start, axis.count, axis.weights, axis.stride, axis.ring, axis.ringLo, axis.ringHi)
 
-    override fun band(job: Long, worker: Int, y0: Int, y1: Int): Boolean = nBand(job, worker, y0, y1)
+    override fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean = nBand(job, worker, y0, y1, cores)
 
     override fun end(job: Long) = nEnd(job)
 
@@ -59,7 +62,7 @@ internal object LibPixels : PixelKernels {
     ): Boolean
 
     @JvmStatic
-    private external fun nBand(job: Long, worker: Int, y0: Int, y1: Int): Boolean
+    private external fun nBand(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean
 
     @JvmStatic
     private external fun nEnd(job: Long)
@@ -70,6 +73,10 @@ internal object LibPixels : PixelKernels {
  * them: no row copies through Java arrays, no lock on the output. The taps are
  * [Resampler.axis]'s, the bands [Resampler.inBands]'s; the GPU takes the bands one at a
  * time on the calling thread.
+ *
+ * CPU workers are pinned to the large cores ([CpuCores]): work someone waits on
+ * ([Urgency]) runs on [threads] of them, other work (pages read ahead, previews) on
+ * [laterThreads], growing to [threads] once it is waited on.
  */
 object NativeResampler {
     /**
@@ -79,18 +86,39 @@ object NativeResampler {
     @Volatile
     var engine: PixelEngine = PixelEngine.NATIVE
 
-    /** CPU workers at most: the large cores' count on the reference tablet. */
+    /** CPU workers for work someone waits on: one per large core. */
     @Volatile
-    var threads: Int = minOf(4, Runtime.getRuntime().availableProcessors())
+    var threads: Int = defaultThreads(CpuCores.device, Runtime.getRuntime().availableProcessors())
+
+    /** CPU workers for work nobody waits on yet. */
+    @Volatile
+    var laterThreads: Int = threads
+
+    /** Whether workers are pinned to the large cores ([CpuCores]); off leaves placement to the system. */
+    @Volatile
+    var pinned: Boolean = true
+
+    /** Pins work nobody waits on to the little cores instead, for A/B runs (slower and, by the power model, costlier). */
+    @Volatile
+    internal var laterOnLittle: Boolean = false
+
+    /** The cores the workers are pinned to. */
+    internal var cores: CpuCores? = null
+        get() = field ?: CpuCores.device
 
     internal var kernels: PixelKernels? = null
         get() = field ?: LibPixels.takeIf { it.loaded }
+
+    /** One worker per large core; where speeds are unknown, at most 4. */
+    internal fun defaultThreads(cores: CpuCores, processors: Int): Int =
+        if (cores.known) cores.bigCount.coerceAtLeast(1) else minOf(4, processors).coerceAtLeast(1)
 
     /**
      * Resamples [window] of [src] into all of [dst] as [scaling] says, with [engine]; false
      * when it is [PixelEngine.KOTLIN] or native code cannot do it, so the caller uses
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
-     * Throws [CancellationException] once [canceled] returns true.
+     * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
+     * each band, whether someone waits on the result.
      */
     fun resample(
         src: Bitmap,
@@ -100,17 +128,18 @@ object NativeResampler {
         scaling: Scaling,
         canceled: () -> Boolean = { false },
         engine: PixelEngine = this.engine,
-        fallback: Boolean = true
+        fallback: Boolean = true,
+        urgent: () -> Boolean = Urgency.current()
     ): Boolean {
         if (engine == PixelEngine.KOTLIN || !fits(src) || !fits(dst)) return false
         val k = kernels ?: return false
         val ax = Resampler.axis(src.width, window.x, window.width, dst.width, scaling)
         val ay = Resampler.axis(src.height, window.y, window.height, dst.height, scaling)
         if (engine == PixelEngine.GPU) {
-            if (run(k, src, dst, ax, ay, linear, 1, gpu = true, canceled)) return true
+            if (run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent)) return true
             if (!fallback) return false
         }
-        return run(k, src, dst, ax, ay, linear, threads, gpu = false, canceled)
+        return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent)
     }
 
     /** True for ARGB_8888 pixels held premultiplied, as an opaque bitmap's are too (it reports them as not). */
@@ -118,17 +147,23 @@ object NativeResampler {
 
     /** One job on [k]; false when it could not start or a band failed. */
     private fun run(
-        k: PixelKernels, src: Bitmap, dst: Bitmap, ax: Resampler.Axis, ay: Resampler.Axis, linear: Boolean, threads: Int,
-        gpu: Boolean, canceled: () -> Boolean
+        k: PixelKernels, src: Bitmap, dst: Bitmap, ax: Resampler.Axis, ay: Resampler.Axis, linear: Boolean, gpu: Boolean,
+        canceled: () -> Boolean, urgent: () -> Boolean
     ): Boolean {
-        val job = k.begin(src, dst, linear, threads, gpu)
+        val now = threads.coerceAtLeast(1)
+        val later = laterThreads.coerceAtLeast(1)
+        val most = if (gpu) 1 else maxOf(now, later)
+        val c = cores!!
+        val pin = pinned && !gpu
+        val job = k.begin(src, dst, linear, most, gpu)
         if (job == 0L) return false
         try {
             if (!k.axis(job, false, ax) || !k.axis(job, true, ay)) return false
             val failed = AtomicBoolean()
             try {
-                Resampler.inBands(dst.height, threads, canceled) { worker, y0, y1 ->
-                    k.band(job, worker, y0, y1).also { if (!it) failed.set(true) }
+                Resampler.inBands(dst.height, most, canceled, { if (urgent()) now else later }) { worker, y0, y1 ->
+                    val on = if (!pin) 0L else if (laterOnLittle && !urgent()) c.little else c.big
+                    k.band(job, worker, y0, y1, on).also { if (!it) failed.set(true) }
                 }
             } catch (e: CancellationException) {
                 if (!failed.get()) throw e

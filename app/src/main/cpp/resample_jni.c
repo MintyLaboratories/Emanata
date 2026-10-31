@@ -1,10 +1,13 @@
 // JNI binding of resample.h for com.infinity.comicreader.reader.LibPixels: a job locks the
 // pixels of a source and a destination ARGB_8888 bitmap until it ends, takes each axis'
 // taps (checked to stay inside both bitmaps), then filters bands of output rows on the
-// CPU, from several threads at once with a worker index each, or on the GPU.
+// CPU, from several threads at once with a worker index each, or on the GPU. A CPU band
+// may run pinned to a set of cores.
 
+#define _GNU_SOURCE
 #include <android/bitmap.h>
 #include <jni.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -141,15 +144,35 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nAxis(
     return JNI_TRUE;
 }
 
-// Filters output rows y0 until y1 as `worker`; false on a bad request, out of memory or a GPU error.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(JNIEnv * env, jclass clazz, jlong job, jint worker, jint y0, jint y1)
+// Moves the calling thread onto the cores set in `cores` (bit n = core n), keeping the
+// cores it may use now in `kept`; false when it stays where it was (no cores asked, or the
+// system refuses them, as when none of them is in the process's cpuset).
+static int pin(jlong cores, cpu_set_t * kept)
+{
+    if (cores == 0 || sched_getaffinity(0, sizeof(*kept), kept) != 0) return 0;
+    cpu_set_t want;
+    CPU_ZERO(&want);
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
+        if (((uint64_t)cores >> n) & 1) CPU_SET(n, &want);
+    }
+    return sched_setaffinity(0, sizeof(want), &want) == 0;
+}
+
+// Filters output rows y0 until y1 as `worker`, on `cores` (0 = any) while it runs; false
+// on a bad request, out of memory or a GPU error.
+EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
+    JNIEnv * env, jclass clazz, jlong job, jint worker, jint y0, jint y1, jlong cores)
 {
     (void)env;
     (void)clazz;
     handle * h = (handle *)(intptr_t)job;
     if (h->axes != 3 || worker < 0 || worker >= h->worker_count || y0 < 0 || y1 > h->dst_h || y0 >= y1) return JNI_FALSE;
     if (h->gpu) return h->on_gpu != NULL && rs_gpu_band(h->on_gpu, y0, y1) == 0;
-    return rs_band(&h->job, &h->workers[worker], y0, y1) == 0;
+    cpu_set_t kept;
+    const int pinned = pin(cores, &kept);
+    const int r = rs_band(&h->job, &h->workers[worker], y0, y1);
+    if (pinned) sched_setaffinity(0, sizeof(kept), &kept);
+    return r == 0;
 }
 
 // Ends a job: unlocks both bitmaps and frees everything it holds.

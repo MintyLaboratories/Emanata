@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.app.Application
 import android.graphics.Bitmap
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +16,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.Collections
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
 /**
@@ -37,6 +39,8 @@ class NativeResamplerTest {
             var ended = false
             val bands: MutableList<Triple<Int, Int, Int>> = Collections.synchronizedList(ArrayList())
             val threads: MutableSet<String> = Collections.synchronizedSet(HashSet())
+            val cores: MutableList<Long> = Collections.synchronizedList(ArrayList())
+            val threadIds: MutableSet<Long> = Collections.synchronizedSet(HashSet())
             lateinit var result: IntArray
         }
 
@@ -59,12 +63,14 @@ class NativeResamplerTest {
             return true
         }
 
-        override fun band(job: Long, worker: Int, y0: Int, y1: Int): Boolean {
+        override fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean {
             val j = jobs[job.toInt() - 1]
             check(!j.ended && worker in 0 until j.workers)
             if (j.bands.size == failAt) return false
             j.bands += Triple(worker, y0, y1)
+            j.cores += cores
             j.threads += Thread.currentThread().name
+            j.threadIds += Thread.currentThread().id
             j.dst.setPixels(j.result, y0 * j.dst.width, j.dst.width, 0, y0, j.dst.width, y1 - y0)
             return true
         }
@@ -84,9 +90,20 @@ class NativeResamplerTest {
 
     private fun use(k: FakeKernels) = k.also { NativeResampler.kernels = it }
 
+    @Before
+    fun setUp() {
+        // The reference tablet's cores: four little, four large.
+        NativeResampler.cores = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
+        NativeResampler.threads = 4
+        NativeResampler.laterThreads = 1
+        NativeResampler.pinned = true
+        NativeResampler.laterOnLittle = false
+    }
+
     @After
     fun tearDown() {
         NativeResampler.kernels = null
+        NativeResampler.cores = null
         NativeResampler.engine = PixelEngine.NATIVE
         windows.clear()
     }
@@ -97,10 +114,76 @@ class NativeResamplerTest {
             .copy(Bitmap.Config.ARGB_8888, false)
     }
 
-    private fun resample(src: Bitmap, w: Int, h: Int, window: Resampler.Window, scaling: Scaling, engine: PixelEngine = PixelEngine.NATIVE, canceled: () -> Boolean = { false }): Pair<Boolean, Bitmap> {
+    private fun resample(
+        src: Bitmap, w: Int, h: Int, window: Resampler.Window, scaling: Scaling, engine: PixelEngine = PixelEngine.NATIVE,
+        canceled: () -> Boolean = { false }, urgent: () -> Boolean = { true }
+    ): Pair<Boolean, Bitmap> {
         windows[w to h] = window to scaling
         val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        return NativeResampler.resample(src, dst, window, false, scaling, canceled, engine) to dst
+        return NativeResampler.resample(src, dst, window, false, scaling, canceled, engine, urgent = urgent) to dst
+    }
+
+    @Test
+    fun waitedOnWorkRunsOnTheLargeCores() {
+        val k = use(FakeKernels())
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT).first)
+        val job = k.jobs.single()
+        assertEquals(4, job.workers)
+        assertEquals(setOf(0b1111_0000L), job.cores.toSet())
+        // The calling thread is one of them.
+        assertTrue(Thread.currentThread().id in job.threadIds)
+    }
+
+    @Test
+    fun laterWorkRunsOnItsOwnBudgetOnTheLargeCores() {
+        val k = use(FakeKernels())
+        NativeResampler.laterThreads = 1
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { false }).first)
+        val job = k.jobs.single()
+        assertEquals(setOf(0b1111_0000L), job.cores.toSet())
+        // One worker: the calling thread alone.
+        assertEquals(setOf(0), job.bands.map { it.first }.toSet())
+        assertEquals(setOf(Thread.currentThread().id), job.threadIds)
+    }
+
+    @Test
+    fun laterWorkCanBeSentToTheLittleCores() {
+        val k = use(FakeKernels())
+        NativeResampler.laterOnLittle = true
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { false }).first)
+        assertEquals(setOf(0b0000_1111L), k.jobs.single().cores.toSet())
+        // Waited-on work stays on the large cores.
+        assertTrue(resample(noise(64, 64), 40, 401, Resampler.Window.of(64, 64), Scaling.DEFAULT).first)
+        assertEquals(setOf(0b1111_0000L), k.jobs.last().cores.toSet())
+    }
+
+    @Test
+    fun workReadAheadThatComesOnScreenGrowsItsWorkers() {
+        val k = use(FakeKernels())
+        NativeResampler.laterThreads = 1
+        val polls = AtomicInteger()
+        // On screen after a few polls: the first bands ran on the calling thread alone.
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { polls.incrementAndGet() > 4 }).first)
+        val job = k.jobs.single()
+        assertEquals(0, job.bands.first().first)
+        assertTrue(job.bands.map { it.first }.toSet().size > 1)
+    }
+
+    @Test
+    fun unpinnedWorkersGoAnywhere() {
+        val k = use(FakeKernels())
+        NativeResampler.pinned = false
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT).first)
+        assertEquals(setOf(0L), k.jobs.single().cores.toSet())
+    }
+
+    @Test
+    fun oneKindOfCorePinsNothing() {
+        val k = use(FakeKernels())
+        NativeResampler.cores = CpuCores(IntArray(8) { 1024 })
+        NativeResampler.laterOnLittle = true
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { false }).first)
+        assertEquals(setOf(0L), k.jobs.single().cores.toSet())
     }
 
     @Test
@@ -134,6 +217,7 @@ class NativeResamplerTest {
         val job = k.jobs.single()
         assertTrue(job.gpu && job.ended && job.workers == 1)
         assertTrue(job.bands.all { it.first == 0 })
+        assertEquals(setOf(0L), job.cores.toSet())
         assertEquals(setOf(Thread.currentThread().name), job.threads)
     }
 

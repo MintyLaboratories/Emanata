@@ -66,9 +66,11 @@ object Previews {
     /**
      * The [size] preview of [page] (by default its own, [sizeOf]): halved by the
      * platform's bilinear filter (an exact 2x2 average at that scale) while it stays
-     * twice the preview size, then Lanczos3. Leaves [page] as it is; never returns it.
+     * twice the preview size, then Lanczos3, as work nobody waits on ([Urgency]). Leaves
+     * [page] as it is; never returns it.
      */
-    fun make(page: Bitmap, size: IntArray = sizeOf(page.width, page.height)): Bitmap = Traces.section("preview make") { made(page, size) }
+    fun make(page: Bitmap, size: IntArray = sizeOf(page.width, page.height)): Bitmap =
+        Traces.section("preview make") { Urgency.later { made(page, size) } }
 
     private fun made(page: Bitmap, size: IntArray): Bitmap {
         var src = page

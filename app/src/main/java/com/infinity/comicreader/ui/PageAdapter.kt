@@ -31,6 +31,7 @@ import com.infinity.comicreader.reader.PairCrop
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.reader.Urgency
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.ReadProbes
 import com.infinity.comicreader.util.Traces
@@ -1198,7 +1199,10 @@ class PageAdapter(
                 val bitmap = Traces.section({ "page $pageIndex ${key.target.width}x${key.target.height}" }) {
                     learning(key) {
                         Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
-                            decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                            // A page read ahead resamples on the later budget until it is shown.
+                            Urgency.during({ entry.waiters > 0 }) {
+                                decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                            }
                         }
                     }?.let { frozen(it) }
                 }

@@ -1,0 +1,66 @@
+package com.infinity.comicreader.debug
+
+import com.infinity.comicreader.reader.PixelEngine
+
+/** Pure parts of [ResampleCheckService]: what to run, in which order, and the energy it took. */
+internal object ResampleRuns {
+    /** Where CPU workers run: pinned to the large cores, to the little ones, or left to the system. */
+    enum class Cores(val key: String) {
+        ANY("any"),
+        BIG("big"),
+        LITTLE("little");
+
+        companion object {
+            fun of(key: String): Cores? = entries.firstOrNull { it.key == key }
+        }
+    }
+
+    /** One engine setup: [threads] CPU workers (Kotlin's, or native code's) on [cores]; the GPU has neither. */
+    data class Setup(val engine: PixelEngine, val threads: Int, val cores: Cores) {
+        val key: String get() = if (engine == PixelEngine.GPU) engine.key else "${engine.key}/$threads/${cores.key}"
+
+        companion object {
+            /**
+             * `engine[/threads[/cores]]`, as `native/4/big`, `native/1/little`, `kotlin/8` or
+             * `gpu`; threads default to [threads], cores to any. Null when unreadable.
+             */
+            fun of(text: String, threads: Int): Setup? {
+                val parts = text.trim().split('/')
+                val engine = PixelEngine.of(parts[0]) ?: return null
+                if (engine == PixelEngine.GPU) return Setup(engine, 1, Cores.ANY)
+                val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
+                val cores = parts.getOrNull(2)?.let { Cores.of(it) ?: return null } ?: Cores.ANY
+                if (n !in 1..16 || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null
+                return Setup(engine, n, cores)
+            }
+        }
+    }
+
+    /**
+     * The order of [setups] in each of [rounds]: forward, then backward, and so on (A B, B A,
+     * A B…), so heat from the earlier setups weighs on each about equally.
+     */
+    fun <T> interleaved(setups: List<T>, rounds: Int): List<List<T>> =
+        List(rounds) { if (it % 2 == 0) setups else setups.asReversed() }
+
+    /** Battery current samples in mA, negative while the battery drains. */
+    class Draw(val samples: List<Double>) {
+        val mean: Double get() = if (samples.isEmpty()) Double.NaN else samples.average()
+
+        /** True when every sample drains the battery: no charger covers any of the work. */
+        val draining: Boolean get() = samples.isNotEmpty() && samples.all { it < 0 }
+    }
+
+    /**
+     * The energy per page in mJ of [pages] made in [seconds] at [volts], from the draw while
+     * [busy] above the draw while [idle]; null while [charging] (the battery reports a
+     * charger, which can supply part of the work even while the battery drains), when
+     * either draw is not wholly draining (the current's sign flips), or nothing was made.
+     */
+    fun millijoulesPerPage(idle: Draw, busy: Draw, volts: Double, seconds: Double, pages: Int, charging: Boolean = false): Double? {
+        if (charging || !idle.draining || !busy.draining || pages <= 0 || volts <= 0 || seconds <= 0) return null
+        // Both negative: the extra drain is how much more negative the busy mean is.
+        val extraMa = idle.mean - busy.mean
+        return extraMa * volts * seconds / pages
+    }
+}

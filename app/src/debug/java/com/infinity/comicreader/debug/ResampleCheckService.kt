@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -23,6 +24,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
+import com.infinity.comicreader.debug.ResampleRuns.Cores
+import com.infinity.comicreader.debug.ResampleRuns.Setup
+import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
 import com.infinity.comicreader.reader.Resampler
@@ -38,23 +42,35 @@ import kotlin.math.max
 import kotlin.random.Random
 
 /**
- * Debug builds only: checks the native resampler against [Resampler]'s premultiplied model of
- * it ([check]), and times every engine on synthetic pages ([time], [sustain]). Only the shell
- * may start it:
+ * Debug and bench builds only: checks the native resampler against [Resampler]'s
+ * premultiplied model of it ([check]), and times engine setups on synthetic pages ([time],
+ * [sustain]). Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
- *  [--es do check|time|sustain|all] [--es engines kotlin,native,gpu] [--es threads 1,2,4,8] [--ei reps 10] [--ei seconds 20]
- *  [--es filters lanczos3,lanczos6,bicubic,hermite]`
+ *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
+ *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite]`
+ *
+ * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
+ * workers pinned to the large or little cores ([CpuCores]) or left to the system (`any`);
+ * a little setup runs as work nobody waits on (`Urgency`).
  *
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each.
- * - time: per engine, thread count and filter, a 2000x3000 and a 4000x6000 page shrunk to
- *   1848x2772 (the tablet's portrait page), `reps` times after 2 warm-ups: wall and process
- *   CPU per page, thermal status and headroom before and after.
- * - sustain: per engine, pages back to back for `seconds`, sampling the battery current every
- *   100 ms after a 5 s idle baseline: pages per second, mean draw above idle, and so energy per
- *   page (valid only unplugged: `dumpsys battery unplug`, reset after), thermal at the end.
+ * - time: a 2000x3000 and a 4000x6000 page shrunk to 1848x2772 (the tablet's portrait page)
+ *   by each setup and filter, `reps` rounds after 2 warm-up rounds, the setups interleaved
+ *   (A B, B A...): wall and process CPU per page, thermal status and headroom.
+ * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, a 5 s
+ *   idle baseline of the battery current, then pages back to back for `seconds`, sampling
+ *   every 100 ms: pages per second, and energy per page from the signed drain above idle.
+ *   Valid only on battery alone: unplug the cable (adb over Wi-Fi). A charger keeps
+ *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger, or
+ *   any sample not draining, refuses the estimate.
+ *
+ * Timings are valid only from a bench build (`assembleBench`: a debuggable build runs
+ * Kotlin many times slower) with the app in front (`am start` its list first; otherwise the
+ * process sits in a cpuset of little cores only). Every result carries the build's
+ * debuggability, the process's cpuset, and "valid" when both hold.
  *
  * Results go to the log under "ResampleCheck", one JSON object per line, ending with "done",
  * and to `files/bench/resample.jsonl` in the app's external files.
@@ -65,24 +81,48 @@ class ResampleCheckService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         val what = intent?.getStringExtra("do") ?: "all"
-        val engines = intent?.getStringExtra("engines")?.split(',')?.mapNotNull { PixelEngine.of(it.trim()) } ?: PixelEngine.entries
-        val threads = intent?.getStringExtra("threads")?.split(',')?.mapNotNull { it.trim().toIntOrNull() } ?: listOf(1, 2, 4, 8)
+        val processors = Runtime.getRuntime().availableProcessors()
+        val now = NativeResampler.threads
+        val later = NativeResampler.laterThreads
+        val asked = intent?.getStringExtra("setups")?.split(',')
+        val timed = asked?.mapNotNull { Setup.of(it, now) } ?: listOf(
+            Setup(PixelEngine.KOTLIN, processors, Cores.ANY), Setup(PixelEngine.NATIVE, now, Cores.BIG),
+            Setup(PixelEngine.NATIVE, now, Cores.ANY), Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY)
+        )
+        val sustained = if (asked != null) timed else listOf(
+            Setup(PixelEngine.KOTLIN, processors, Cores.ANY), Setup(PixelEngine.NATIVE, now, Cores.BIG),
+            Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY)
+        )
         val filters = intent?.getStringExtra("filters")?.split(',')?.map { ScaleFilter.of(it.trim()) } ?: listOf(ScaleFilter.LANCZOS3)
         val reps = intent?.getIntExtra("reps", 10)?.coerceIn(1, 100) ?: 10
         val seconds = intent?.getIntExtra("seconds", 20)?.coerceIn(3, 600) ?: 20
+        val rounds = intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2
+        val cooldown = intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30
         thread(name = "resample-check") {
             val keptEngine = NativeResampler.engine
             val keptThreads = NativeResampler.threads
+            val keptLater = NativeResampler.laterThreads
+            val keptPinned = NativeResampler.pinned
+            val keptLittle = NativeResampler.laterOnLittle
             try {
                 out.parentFile?.mkdirs()
+                if (asked != null && timed.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
+                val cores = CpuCores.device
+                log(
+                    JSONObject().put("big", java.lang.Long.toBinaryString(cores.big)).put("little", java.lang.Long.toBinaryString(cores.little))
+                        .put("threads", now).put("laterThreads", later).put("conditions", conditions())
+                )
                 if (what == "check" || what == "all") check()
-                if (what == "time" || what == "all") time(engines, threads, filters, reps)
-                if (what == "sustain" || what == "all") sustain(engines, seconds, keptThreads)
+                if (what == "time" || what == "all") time(timed, filters, reps)
+                if (what == "sustain" || what == "all") sustain(sustained, seconds, rounds, cooldown)
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
                 NativeResampler.engine = keptEngine
                 NativeResampler.threads = keptThreads
+                NativeResampler.laterThreads = keptLater
+                NativeResampler.pinned = keptPinned
+                NativeResampler.laterOnLittle = keptLittle
                 Log.i(TAG, "done")
                 stopSelfResult(startId)
             }
@@ -91,6 +131,13 @@ class ResampleCheckService : Service() {
     }
 
     private val out: File get() = File(getExternalFilesDir(null), "bench/resample.jsonl")
+
+    /** Whether timings taken now count: not debuggable, and the process in the foreground app's cpuset. */
+    private fun conditions(): JSONObject {
+        val cpuset = runCatching { File("/proc/self/cpuset").readText().trim() }.getOrDefault("?")
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        return JSONObject().put("cpuset", cpuset).put("debuggable", debuggable).put("valid", !debuggable && cpuset == "/top-app")
+    }
 
     // ------------------------------------------------------------------ check
 
@@ -120,22 +167,25 @@ class ResampleCheckService : Service() {
                 for (linear in listOf(false, true)) {
                     for (opaque in listOf(true, false)) {
                         val src = noise(c.srcW, c.srcH, i * 4 + (if (linear) 2 else 0) + (if (opaque) 1 else 0), opaque)
-                        val held = premultipliedPixels(src)
-                        val model = Resampler.resample(held, c.srcW, c.srcH, c.window, c.dstW, c.dstH, linear, c.scaling, premultiplied = true)
                         val dst = Bitmap.createBitmap(c.dstW, c.dstH, Bitmap.Config.ARGB_8888)
-                        if (!NativeResampler.resample(src, dst, c.window, linear, c.scaling, engine = engine, fallback = false)) {
-                            failed++
-                            continue
+                        try {
+                            val held = premultipliedPixels(src)
+                            val model = Resampler.resample(held, c.srcW, c.srcH, c.window, c.dstW, c.dstH, linear, c.scaling, premultiplied = true)
+                            if (!NativeResampler.resample(src, dst, c.window, linear, c.scaling, engine = engine, fallback = false)) {
+                                failed++
+                                continue
+                            }
+                            val got = premultipliedPixels(dst)
+                            for (k in got.indices) {
+                                val d = channelDiff(got[k], model[k])
+                                worst = max(worst, d)
+                                if (d > 0) off++
+                            }
+                            pixels += got.size
+                        } finally {
+                            src.recycle()
+                            dst.recycle()
                         }
-                        val got = premultipliedPixels(dst)
-                        for (k in got.indices) {
-                            val d = channelDiff(got[k], model[k])
-                            worst = max(worst, d)
-                            if (d > 0) off++
-                        }
-                        pixels += got.size
-                        src.recycle()
-                        dst.recycle()
                     }
                 }
             }
@@ -147,15 +197,28 @@ class ResampleCheckService : Service() {
         // The shipping Kotlin path reads and writes unpremultiplied: on an opaque page both agree.
         val page = page(2000, 3000)
         val window = Resampler.Window.of(2000, 3000)
-        for (scaling in listOf(Scaling.DEFAULT, Scaling(ScaleFilter.LANCZOS6, 0, 100))) {
-            val a = Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888)
-            NativeResampler.resample(page, a, window, false, scaling, engine = PixelEngine.NATIVE)
-            val b = kotlinResample(page, 1848, 2772, window, scaling)
-            val pa = IntArray(1848 * 2772).also { a.getPixels(it, 0, 1848, 0, 0, 1848, 2772) }
-            val pb = IntArray(1848 * 2772).also { b.getPixels(it, 0, 1848, 0, 0, 1848, 2772) }
-            var worst = 0
-            for (k in pa.indices) worst = max(worst, channelDiff(pa[k], pb[k]))
-            log(JSONObject().put("check", "native vs kotlin, 2000x3000 page").put("scaling", "$scaling").put("maxDiff", worst).put("ok", worst <= 1))
+        try {
+            for (scaling in listOf(Scaling.DEFAULT, Scaling(ScaleFilter.LANCZOS6, 0, 100))) {
+                val a = Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888)
+                var b: Bitmap? = null
+                try {
+                    val ran = NativeResampler.resample(page, a, window, false, scaling, engine = PixelEngine.NATIVE, fallback = false)
+                    b = kotlinResample(page, 1848, 2772, window, scaling)
+                    val pa = IntArray(1848 * 2772).also { a.getPixels(it, 0, 1848, 0, 0, 1848, 2772) }
+                    val pb = IntArray(1848 * 2772).also { b.getPixels(it, 0, 1848, 0, 0, 1848, 2772) }
+                    var worst = 0
+                    for (k in pa.indices) worst = max(worst, channelDiff(pa[k], pb[k]))
+                    log(
+                        JSONObject().put("check", "native vs kotlin, 2000x3000 page").put("scaling", "$scaling").put("native", ran)
+                            .put("maxDiff", worst).put("ok", ran && worst <= 1)
+                    )
+                } finally {
+                    a.recycle()
+                    b?.recycle()
+                }
+            }
+        } finally {
+            page.recycle()
         }
     }
 
@@ -163,85 +226,103 @@ class ResampleCheckService : Service() {
 
     // ------------------------------------------------------------------ time
 
-    private fun time(engines: List<PixelEngine>, threads: List<Int>, filters: List<ScaleFilter>, reps: Int) {
+    private fun time(setups: List<Setup>, filters: List<ScaleFilter>, reps: Int) {
         for ((w, h) in listOf(2000 to 3000, 4000 to 6000)) {
             val page = page(w, h)
-            for (filter in filters) {
-                val scaling = Scaling(filter, 0, Scaling.DEFAULT_DOWN_RING)
-                for (engine in engines) {
-                    for (n in if (engine == PixelEngine.GPU) listOf(1) else threads) {
-                        val before = state()
-                        val walls = ArrayList<Double>()
-                        val cpus = ArrayList<Double>()
-                        repeat(2 + reps) { rep ->
+            try {
+                for (filter in filters) {
+                    val scaling = Scaling(filter, 0, Scaling.DEFAULT_DOWN_RING)
+                    val before = state()
+                    val walls = setups.associateWith { ArrayList<Double>() }
+                    val cpus = setups.associateWith { ArrayList<Double>() }
+                    for ((round, order) in ResampleRuns.interleaved(setups, 2 + reps).withIndex()) {
+                        for (s in order) {
                             val cpu0 = Process.getElapsedCpuTime()
                             val t0 = SystemClock.elapsedRealtimeNanos()
-                            run(engine, n, page, 1848, 2772, scaling).recycle()
+                            run(s, page, 1848, 2772, scaling).recycle()
                             val wall = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6
-                            if (rep >= 2) {
-                                walls += wall
-                                cpus += (Process.getElapsedCpuTime() - cpu0).toDouble()
+                            if (round >= 2) {
+                                walls.getValue(s) += wall
+                                cpus.getValue(s) += (Process.getElapsedCpuTime() - cpu0).toDouble()
                             }
                         }
+                    }
+                    val after = state()
+                    for (s in setups) {
                         log(
-                            JSONObject().put("time", engine.key).put("threads", n).put("page", "${w}x$h").put("filter", filter.key)
-                                .put("wallMs", summary(walls)).put("cpuMs", summary(cpus)).put("before", before).put("after", state())
+                            JSONObject().put("time", s.key).put("page", "${w}x$h").put("filter", filter.key)
+                                .put("wallMs", summary(walls.getValue(s))).put("cpuMs", summary(cpus.getValue(s)))
+                                .put("before", before).put("after", after).put("conditions", conditions())
                         )
                     }
                 }
+            } finally {
+                page.recycle()
             }
-            page.recycle()
         }
     }
 
     // ------------------------------------------------------------------ sustain
 
-    /** As the app runs each engine: Kotlin on every core, native code on [threads] workers. */
-    private fun sustain(engines: List<PixelEngine>, seconds: Int, threads: Int) {
+    /** Each setup making pages back to back, in [rounds] interleaved rounds, each after a [cooldown] s pause and an idle baseline. */
+    private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int) {
         val page = page(2000, 3000)
-        for (engine in engines) {
-            val idle = sampleCurrent(5_000) {}
-            val n = if (engine == PixelEngine.KOTLIN) Runtime.getRuntime().availableProcessors() else threads
-            var pages = 0
-            val t0 = SystemClock.elapsedRealtime()
-            val cpu0 = Process.getElapsedCpuTime()
-            val busy = sampleCurrent(seconds * 1000L) { until ->
-                while (SystemClock.elapsedRealtime() < until) {
-                    run(engine, n, page, 1848, 2772, Scaling.DEFAULT).recycle()
-                    pages++
+        try {
+            for ((round, order) in ResampleRuns.interleaved(setups, rounds).withIndex()) {
+                for (s in order) {
+                    Thread.sleep(cooldown * 1000L)
+                    val charged = charging()
+                    val idle = sampleCurrent(5_000) {}
+                    var pages = 0
+                    val t0 = SystemClock.elapsedRealtime()
+                    val cpu0 = Process.getElapsedCpuTime()
+                    val busy = sampleCurrent(seconds * 1000L) { until ->
+                        while (SystemClock.elapsedRealtime() < until) {
+                            run(s, page, 1848, 2772, Scaling.DEFAULT).recycle()
+                            pages++
+                        }
+                    }
+                    val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
+                    val volts = voltage()
+                    val mj = ResampleRuns.millijoulesPerPage(idle, busy, volts, wall, pages, charged || charging())
+                    log(
+                        JSONObject().put("sustain", s.key).put("round", round).put("seconds", wall).put("pages", pages)
+                            .put("pagesPerS", pages / wall).put("cpuMsPerPage", (Process.getElapsedCpuTime() - cpu0).toDouble() / max(pages, 1))
+                            .put("idleMa", num(idle.mean)).put("busyMa", num(busy.mean)).put("volts", volts)
+                            .put("mJPerPage", mj ?: JSONObject.NULL)
+                            .put("refused", if (mj == null) "a charger was connected, or the battery did not drain throughout" else JSONObject.NULL)
+                            .put("after", state()).put("conditions", conditions())
+                    )
                 }
             }
-            val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
-            val volts = voltage()
-            // Draw above idle while working, times voltage and time, over the pages made.
-            val extraMa = abs(busy) - abs(idle)
-            val mjPerPage = if (pages > 0 && volts > 0) extraMa * volts * wall / pages else Double.NaN
-            log(
-                JSONObject().put("sustain", engine.key).put("threads", n).put("seconds", wall).put("pages", pages)
-                    .put("pagesPerS", pages / wall).put("cpuMsPerPage", (Process.getElapsedCpuTime() - cpu0).toDouble() / max(pages, 1))
-                    .put("idleMa", num(idle)).put("busyMa", num(busy)).put("volts", volts).put("mJPerPage", num(mjPerPage))
-                    .put("after", state())
-            )
+        } finally {
+            page.recycle()
         }
-        page.recycle()
     }
 
-    /** Mean battery current in mA over [ms] while [work] runs (given its deadline); negative while draining. */
-    private fun sampleCurrent(ms: Long, work: (until: Long) -> Unit): Double {
+    /** Battery current in mA every 100 ms over [ms] while [work] runs (given its deadline); negative while draining. */
+    private fun sampleCurrent(ms: Long, work: (until: Long) -> Unit): ResampleRuns.Draw {
         val battery = getSystemService(BatteryManager::class.java)
-        val samples = ArrayList<Int>()
+        val samples = ArrayList<Double>()
         val until = SystemClock.elapsedRealtime() + ms
         val sampler = thread(name = "current") {
             while (SystemClock.elapsedRealtime() < until) {
-                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).takeIf { it != Int.MIN_VALUE }?.let { synchronized(samples) { samples += it } }
+                // Microamperes, as on the reference tablet and most devices.
+                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).takeIf { it != Int.MIN_VALUE }
+                    ?.let { synchronized(samples) { samples += it / 1000.0 } }
                 Thread.sleep(100)
             }
         }
         work(until)
         sampler.join()
-        // Microamperes on most devices.
-        return synchronized(samples) { if (samples.isEmpty()) Double.NaN else samples.average() / 1000.0 }
+        return synchronized(samples) { ResampleRuns.Draw(samples.toList()) }
     }
+
+    /** True while the battery itself reports a charger (charging or full), whatever `dumpsys battery unplug` pretends. */
+    private fun charging(): Boolean =
+        getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS).let {
+            it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL
+        }
 
     private fun voltage(): Double {
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -257,17 +338,30 @@ class ResampleCheckService : Service() {
             .put("headroom", (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) power.getThermalHeadroom(0) else Float.NaN).let { if (it.isNaN()) JSONObject.NULL else it.toDouble() })
             .put("plugged", (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
             .put("batteryPct", getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
+            // From the battery itself, past `dumpsys battery unplug` (2 = charging).
+            .put("batteryStatus", getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS))
     }
 
     // ------------------------------------------------------------------ engines and pixels
 
-    /** [src] shrunk to [w] x [h] by [engine] on [threads] CPU workers; the engine must not fall back. */
-    private fun run(engine: PixelEngine, threads: Int, src: Bitmap, w: Int, h: Int, scaling: Scaling): Bitmap {
+    /** [src] shrunk to [w] x [h] by [setup]; the engine must not fall back. */
+    private fun run(setup: Setup, src: Bitmap, w: Int, h: Int, scaling: Scaling): Bitmap {
         val window = Resampler.Window.of(src.width, src.height)
-        if (engine == PixelEngine.KOTLIN) return kotlinResample(src, w, h, window, scaling, threads)
+        if (setup.engine == PixelEngine.KOTLIN) return kotlinResample(src, w, h, window, scaling, setup.threads)
         val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        NativeResampler.threads = threads
-        check(NativeResampler.resample(src, dst, window, false, scaling, engine = engine, fallback = false)) { "${engine.key} did not run" }
+        NativeResampler.threads = setup.threads
+        NativeResampler.laterThreads = setup.threads
+        NativeResampler.pinned = setup.cores != Cores.ANY
+        NativeResampler.laterOnLittle = setup.cores == Cores.LITTLE
+        val urgent = setup.cores != Cores.LITTLE
+        try {
+            check(NativeResampler.resample(src, dst, window, false, scaling, engine = setup.engine, fallback = false, urgent = { urgent })) {
+                "${setup.key} did not run"
+            }
+        } catch (t: Throwable) {
+            dst.recycle()
+            throw t
+        }
         return dst
     }
 

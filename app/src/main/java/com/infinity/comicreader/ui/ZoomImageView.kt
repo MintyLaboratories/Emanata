@@ -111,13 +111,27 @@ class ZoomImageView @JvmOverloads constructor(
 
     /**
      * Double-tap zooms. Off, a tap acts as the finger lifts; on, only once no second tap
-     * can follow ([ViewConfiguration.getDoubleTapTimeout] after it went down).
+     * can follow ([ViewConfiguration.getDoubleTapTimeout] after it went down), except where
+     * [tapsAtOnce] says otherwise.
      */
     var doubleTapEnabled = true
         set(value) {
             field = value
             gestureDetector.setOnDoubleTapListener(if (value) gestures else null)
         }
+
+    /**
+     * Whether a tap at (x, y), fractions of the view, acts as the finger lifts even with
+     * [doubleTapEnabled]: true where a tap turns the page, so double-tap zooms only
+     * elsewhere and a quick second tap there is one more tap. Null: none does.
+     */
+    var tapsAtOnce: ((Float, Float) -> Boolean)? = null
+
+    /** True once this tap acted as the finger lifted: its late confirmation is no tap. */
+    private var tappedAtUp = false
+
+    /** True while the second tap of a double tap that began where taps act at once is down. */
+    private var secondTapAtOnce = false
 
     /** A pan flung by the finger glides on, with inertia, until it stops or meets an edge. */
     var flingEnabled = false
@@ -199,7 +213,10 @@ class ZoomImageView @JvmOverloads constructor(
     )
 
     private val gestures = object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean = true
+        override fun onDown(e: MotionEvent): Boolean {
+            tappedAtUp = false
+            return true
+        }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
             if (!flingEnabled || !panned || pinched || scaleDetector.isInProgress) return false
@@ -207,14 +224,19 @@ class ZoomImageView @JvmOverloads constructor(
             return true
         }
 
-        // Without double-tap there is no second tap to wait for.
+        // Without double-tap, or where taps act at once, there is no second tap to wait for.
         override fun onSingleTapUp(e: MotionEvent): Boolean {
-            if (doubleTapEnabled) return false
+            if (doubleTapEnabled && !actsAtOnce(e)) return false
+            tappedAtUp = true
             tapped(e)
             return true
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (tappedAtUp) {
+                tappedAtUp = false
+                return true
+            }
             tapped(e)
             return true
         }
@@ -228,6 +250,10 @@ class ZoomImageView @JvmOverloads constructor(
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (!doubleTapEnabled) return false
+            if (actsAtOnce(e)) {
+                secondTapAtOnce = true
+                return true
+            }
             if (currentScale > minScale * 1.1f) {
                 fit(fitMode)
             } else {
@@ -236,6 +262,24 @@ class ZoomImageView @JvmOverloads constructor(
             }
             return true
         }
+
+        // The second tap of a quick pair where taps act at once: a tap of its own, as it lifts.
+        override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+            if (!secondTapAtOnce) return false
+            when (e.actionMasked) {
+                MotionEvent.ACTION_UP -> {
+                    secondTapAtOnce = false
+                    if (!pinched && abs(e.x - downX) <= touchSlop && abs(e.y - downY) <= touchSlop) tapped(e)
+                }
+                MotionEvent.ACTION_CANCEL -> secondTapAtOnce = false
+            }
+            return true
+        }
+    }
+
+    private fun actsAtOnce(e: MotionEvent): Boolean {
+        val at = tapsAtOnce ?: return false
+        return at(if (width > 0) e.x / width.toFloat() else 0.5f, if (height > 0) e.y / height.toFloat() else 0.5f)
     }
 
     private val gestureDetector = GestureDetector(context, gestures)

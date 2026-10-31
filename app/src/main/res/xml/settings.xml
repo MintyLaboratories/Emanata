@@ -343,6 +343,7 @@
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="pref_double_tap"
+            app:summary="@string/pref_double_tap_desc"
             app:title="@string/pref_double_tap" />
         <SwitchPreferenceCompat
             app:defaultValue="true"

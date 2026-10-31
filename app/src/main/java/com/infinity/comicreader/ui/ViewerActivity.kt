@@ -2171,6 +2171,7 @@ class ViewerActivity : AppCompatActivity() {
             mode = adapterMode(),
             onTap = { x, y -> onTap(x, y) },
             doubleTapZoom = prefs.doubleTapZoom,
+            tapsAtOnce = { x, y -> tapAction(x, y) != TapZones.Action.MENU },
             twoPage = spread,
             rtl = readingDir == "rtl",
             verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null,
@@ -2499,13 +2500,18 @@ class ViewerActivity : AppCompatActivity() {
      * unless the setting names others ([TapZones.forBook]).
      */
     private fun onTap(x: Float, y: Float) {
-        val zones = if (mode == MODE_CONTINUOUS) TapZones.DISABLED else prefs.tapZonesFor(topToBottom())
-        val rtl = readingDir == "rtl" && mode == MODE_PAGED
-        when (zones.action(x, y, rtl, prefs.mirrorTapZones)) {
+        when (tapAction(x, y)) {
             TapZones.Action.PREVIOUS -> turn(-1)
             TapZones.Action.NEXT -> turn(1)
             TapZones.Action.MENU -> toggleBars()
         }
+    }
+
+    /** What a tap at ([x], [y]), fractions of the page view, does ([onTap]). */
+    private fun tapAction(x: Float, y: Float): TapZones.Action {
+        val zones = if (mode == MODE_CONTINUOUS) TapZones.DISABLED else prefs.tapZonesFor(topToBottom())
+        val rtl = readingDir == "rtl" && mode == MODE_PAGED
+        return zones.action(x, y, rtl, prefs.mirrorTapZones)
     }
 
     /**

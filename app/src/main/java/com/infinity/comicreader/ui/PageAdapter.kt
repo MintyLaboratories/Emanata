@@ -106,6 +106,8 @@ class PageAdapter(
     private val mode: Mode,
     private val onTap: (Float, Float) -> Unit,
     private val doubleTapZoom: Boolean,
+    /** Where, as fractions of the list's area, a tap acts at once despite [doubleTapZoom] ([ZoomImageView.tapsAtOnce]). */
+    private val tapsAtOnce: ((Float, Float) -> Boolean)? = null,
     private val twoPage: Boolean = false,
     private val rtl: Boolean = false,
     private val verticalDrag: ZoomImageView.VerticalDrag? = null,
@@ -446,6 +448,7 @@ class PageAdapter(
         flingEnabled = fling
         zoomScaling = this@PageAdapter.zoomScaling
         onTap = { x, y -> tapped(this, x, y) }
+        this@PageAdapter.tapsAtOnce?.let { at -> tapsAtOnce = { x, y -> inList(this, x, y) { lx, ly -> at(lx, ly) } } }
         if (this@PageAdapter.onLongPress != null) onLongPress = { pressed(this) }
         verticalDrag = this@PageAdapter.verticalDrag
         look = this@PageAdapter.look
@@ -517,15 +520,15 @@ class PageAdapter(
      * Passes on a tap at ([x], [y]), fractions of [image], as fractions of the list's
      * area, so the zones span the screen even across a spread's two pages.
      */
-    private fun tapped(image: View, x: Float, y: Float) {
+    private fun tapped(image: View, x: Float, y: Float) = inList(image, x, y, onTap)
+
+    /** Calls [to] with ([x], [y]), fractions of [image], as fractions of the list's area. */
+    private inline fun <T> inList(image: View, x: Float, y: Float, to: (Float, Float) -> T): T {
         val list = recycler
-        if (list == null || list.width <= 0 || list.height <= 0) {
-            onTap(x, y)
-            return
-        }
+        if (list == null || list.width <= 0 || list.height <= 0) return to(x, y)
         image.getLocationOnScreen(tapAt)
         list.getLocationOnScreen(listAt)
-        onTap(
+        return to(
             (tapAt[0] - listAt[0] + x * image.width) / list.width,
             (tapAt[1] - listAt[1] + y * image.height) / list.height
         )

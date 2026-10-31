@@ -136,11 +136,13 @@ object LibJxl : JxlCodec {
     /**
      * Decodes [jxl], shown [width] x [height], in sRGB into [out]: its rectangle [left]..[right]
      * x [top]..[bottom], every [sample]th pixel each way, so [out] is that span divided by
-     * [sample], rounded up, ARGB_8888. The whole image decodes; only those pixels are kept.
-     * False when it fails, or the image is another size or has no sRGB rendering.
+     * [sample], rounded up, ARGB_8888, on [threads] threads pinned to [cores] (bit n = core n;
+     * 0 = any). The whole image decodes; only those pixels are kept. False when it fails, or
+     * the image is another size or has no sRGB rendering.
      */
-    fun region(jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int): Boolean =
-        nRegion(jxl, out, width, height, left, top, right, bottom, sample)
+    fun region(
+        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long
+    ): Boolean = nRegion(jxl, out, width, height, left, top, right, bottom, sample, threads, cores)
 
     /** Asked between a page decode's parallel steps, on its thread; true stops it. */
     fun interface Stop {
@@ -186,7 +188,9 @@ object LibJxl : JxlCodec {
     private external fun nDecode(jxl: ByteArray, channels: Int, bits: Int, srgb: Boolean): ByteArray?
 
     @JvmStatic
-    private external fun nRegion(jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int): Boolean
+    private external fun nRegion(
+        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long
+    ): Boolean
 
     @JvmStatic
     private external fun nEncode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray?

@@ -925,14 +925,18 @@ object Decoders {
         }
     }
 
-    /** Rectangles of a JPEG XL of pixels shown [width] x [height], each decoding it whole natively ([LibJxl.region]), sampled by point. */
+    /**
+     * Rectangles of a JPEG XL of pixels shown [width] x [height], each decoding it whole natively
+     * ([LibJxl.region]) on [JxlPages]' threads and cores, sampled by point.
+     */
     private class JxlRegions(private val bytes: ByteArray, override val width: Int, override val height: Int) : RegionReader {
         override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
             val out = Bitmap.createBitmap((right - left + sample - 1) / sample, (bottom - top + sample - 1) / sample, Bitmap.Config.ARGB_8888)
             val done = try {
                 jxlGate.acquireUninterruptibly()
                 try {
-                    LibJxl.region(bytes, out, width, height, left, top, right, bottom, sample)
+                    val (threads, cores) = JxlPages.placement(Urgency.current()())
+                    LibJxl.region(bytes, out, width, height, left, top, right, bottom, sample, threads, cores)
                 } finally {
                     jxlGate.release()
                 }

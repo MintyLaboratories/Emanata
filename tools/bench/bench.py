@@ -5,7 +5,8 @@ Run from the repository root with Python 3.10+ (standard library only):
     py tools/bench/bench.py make --out <dir>                 # synthetic books (magick; cjxl, avifenc, 7z where found)
     py tools/bench/bench.py push --src <dir>                 # to the device's Download/emanata-test
     py tools/bench/bench.py run --plan <plan.json> --out <dir> [--trace] [--energy]
-    py tools/bench/bench.py report <dir>/results.jsonl       # tables of medians
+    py tools/bench/bench.py ab --a <a.apk> --b <b.apk> --plan <plan.json> --out <dir> [--rounds 6]
+    py tools/bench/bench.py report <dir>/results.jsonl       # medians with spread
     py tools/bench/bench.py slices <trace.pftrace>           # app trace sections by total time (needs the perfetto package)
 
 A plan is a JSON list of sessions, each the extras of BenchActivity (see its KDoc), e.g.
@@ -13,6 +14,10 @@ A plan is a JSON list of sessions, each the extras of BenchActivity (see its KDo
       "label": "2k jpeg", "layout": "paged", "turns": 10, "reps": 3}]
 Results, traces and battery statistics go to --out; nothing is written to the device but the
 pushed books, the app's own results file, and traces under /data/misc/perfetto-traces.
+
+`ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
+temperature or background work falls on both alike; results carry "variant": "a" or "b".
+Sessions start with a warm-up (see BenchPlan.warmup) that reports leave out.
 
 Time a release build: `./gradlew assembleBench`, then install app-bench.apk over the debug build
 (same id and key, data kept). The debug build is debuggable, which slows the app's own code.
@@ -234,6 +239,9 @@ def bench_once(session: dict, timeout_s: int) -> list[dict]:
             break
     else:
         print("timed out", session.get("label"))
+        # A start with nothing to do puts back the reading settings a run that died left changed.
+        adb("shell", "am", "force-stop", PACKAGE, check=False)
+        adb("shell", "am", "start", "-W", "-n", BENCH, check=False)
     text = adb("exec-out", "cat", RESULTS, capture=True, check=False)
     return [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
 
@@ -298,6 +306,8 @@ def run_plan(args) -> None:
         with results.open("a") as f:
             for line in lines:
                 line["session"] = tag
+                if getattr(args, "variant", None):
+                    line["variant"] = args.variant
                 f.write(json.dumps(line) + "\n")
         print(tag, "->", ", ".join(summary(line) for line in lines), flush=True)
 
@@ -311,42 +321,91 @@ def summary(r: dict) -> str:
 
 # ---------------------------------------------------------------- reports
 
+def known(xs):
+    return [x for x in xs if x is not None and x >= 0]
+
+
 def median(xs):
-    xs = [x for x in xs if x is not None and x >= 0]
+    xs = known(xs)
     return round(statistics.median(xs)) if xs else -1
+
+
+def spread(xs) -> str:
+    """Median and range of [xs], e.g. "312 (290-401)"; "-" when none is known."""
+    xs = known(xs)
+    if not xs:
+        return "-"
+    m = round(statistics.median(xs))
+    return f"{m} ({round(min(xs))}-{round(max(xs))})" if len(xs) > 1 else str(m)
+
+
+def headroom(rs) -> str:
+    """The thermal headroom range over [rs] sessions (before each to after its turns), and the worst thermal status."""
+    states = [r[k] for r in rs for k in ("before", "afterTurns", "after") if k in r]
+    hs = [st.get("headroom") for st in states if st.get("headroom") is not None]
+    status = max((st.get("thermal", -1) for st in states), default=-1)
+    return (f"{min(hs):.2f}-{max(hs):.2f}" if hs else "-") + f" / {status}"
 
 
 def report(args) -> None:
     rows = [json.loads(line) for line in Path(args.results).read_text().splitlines() if line.strip()]
-    reads = [r for r in rows if r.get("kind") == "read"]
+    reads = [r for r in rows if r.get("kind") == "read" and not r.get("warmup")]
     groups: dict[tuple, list[dict]] = {}
     for r in reads:
         p = r["plan"]
-        groups.setdefault((p["label"], p["layout"], p["input"], p["pace"], p["fresh"], p.get("doubleTap")), []).append(r)
-    print("| book | layout | input | pace | fresh | double-tap | n | open visible | open sharp | turn visible | turn sharp | turn sharp p90 | tap to move | ready | CPU open | CPU/turn | PSS | graphics | jank | energy mAh |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-    for (label, layout, inp, pace, fresh, double_tap), rs in groups.items():
-        turns = sum(r["turnCount"] for r in rs) or 1
+        key = (p["label"], r.get("variant", ""), p["layout"], p["input"], p.get("tapMs", ""), p["pace"], r.get("cache") or ("fresh" if p["fresh"] else ""),
+               p.get("crop"), p.get("doubleTap"))
+        groups.setdefault(key, []).append(r)
+    print("Medians over sessions, range in brackets; turn times are each session's median. Warm-up sessions left out.")
+    print()
+    print("| book | variant | layout | input | tap ms | pace | cache | crop | double-tap | sessions | turns | open visible | open sharp "
+          "| turn visible | turn sharp | turn sharp p90 | tap to move | ready ahead | stand-in frames | CPU/session | decodes | CPU/decode "
+          "| PSS | graphics | janky (>2x) | late | headroom / thermal | energy mAh |")
+    print("|" + "---|" * 28)
+    for (label, variant, layout, inp, tap_ms, pace, cache, crop, double_tap), rs in groups.items():
+        turns = sum(r["turnSharp"]["n"] for r in rs)
         print("| " + " | ".join(str(x) for x in [
-            label, layout, inp, pace, "yes" if fresh else "", {True: "on", False: "off"}.get(double_tap, ""), len(rs),
-            median(r["openVisibleMs"] for r in rs), median(r["openSharpMs"] for r in rs),
-            median(r["turnVisible"]["median"] for r in rs), median(r["turnSharp"]["median"] for r in rs),
-            median(r["turnSharp"]["p90"] for r in rs), median(r["turnMoved"]["median"] for r in rs),
+            label, variant, layout, inp, tap_ms if inp == "tap" else "", pace, cache, "on" if crop else "",
+            {True: "on", False: "off"}.get(double_tap, ""), len(rs), turns,
+            spread(r["openVisibleMs"] for r in rs), spread(r["openSharpMs"] for r in rs),
+            spread(r["turnVisible"]["median"] for r in rs if r["turnVisible"]["n"]),
+            spread(r["turnSharp"]["median"] for r in rs if r["turnSharp"]["n"]),
+            median(r["turnSharp"]["p90"] for r in rs if r["turnSharp"]["n"]),
+            median(r["turnMoved"]["median"] for r in rs if r["turnMoved"]["n"]),
             f"{sum(r['turnsReady'] for r in rs)}/{turns}",
-            median(r["openCpuMs"] for r in rs), round(sum(r["turnCpuMs"] for r in rs) / turns),
+            sum(r.get("turnUnsharpFrames", 0) for r in rs),
+            spread(r.get("cpuMs") for r in rs), median(r.get("decodes") for r in rs), spread(r.get("cpuPerDecodeMs") for r in rs),
             median(r["afterTurns"]["pssMb"] for r in rs), median(r["afterTurns"]["graphicsMb"] for r in rs),
             f"{sum(r['turnFrames']['janky'] for r in rs)}/{sum(r['turnFrames']['frames'] for r in rs)}",
-            median((r.get("energyMah") or -1) * 1000 for r in rs) / 1000 if any(r.get("energyMah") for r in rs) else "",
+            sum(r["turnFrames"].get("late", 0) for r in rs),
+            headroom(rs),
+            spread([(r.get("energyMah") or -1) * 1000 for r in rs]) if any(r.get("energyMah") for r in rs) else "",
         ]) + " |")
     grids = [r for r in rows if r.get("kind") == "grid"]
     if grids:
         print()
-        print("| folder | fresh | first cover | first full | last full | full / on screen | CPU ms |")
-        print("|---|---|---|---|---|---|---|")
+        print("| folder | variant | fresh | first cover | first full | last full | full / on screen | CPU ms | headroom / thermal |")
+        print("|---|---|---|---|---|---|---|---|---|")
         for r in grids:
             p = r["plan"]
-            print(f"| {p['label']} | {'yes' if p['fresh'] else ''} | {r['firstCoverMs']} | {r['firstFullMs']} | {r['lastFullMs']} | "
-                  f"{r['onScreenFull']}/{r['onScreen']} | {r['cpuMs']} |")
+            print(f"| {p['label']} | {r.get('variant', '')} | {'yes' if p['fresh'] else ''} | {r['firstCoverMs']} | {r['firstFullMs']} | "
+                  f"{r['lastFullMs']} | {r['onScreenFull']}/{r['onScreen']} | {r['cpuMs']} | {headroom([r])} |")
+
+
+def ab(args) -> None:
+    """Runs [args.plan] on two builds in turn, A B B A per two rounds."""
+    order = []
+    for n in range(args.rounds):
+        order += ["a", "b"] if n % 2 == 0 else ["b", "a"]
+    for n, variant in enumerate(order):
+        apk = args.a if variant == "a" else args.b
+        print(f"== round {n // 2 + 1}, {variant}: installing {Path(apk).name}", flush=True)
+        adb("install", "-r", apk)
+        adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        if args.rest:
+            time.sleep(args.rest)
+        args.variant = variant
+        run_plan(args)
 
 
 def slices(args) -> None:
@@ -391,6 +450,17 @@ def main() -> None:
     p.add_argument("--energy", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
     p.set_defaults(func=run_plan)
+    p = sub.add_parser("ab")
+    p.add_argument("--a", required=True, help="the build A apk")
+    p.add_argument("--b", required=True, help="the build B apk")
+    p.add_argument("--plan", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--rounds", type=int, default=6, help="runs of each build")
+    p.add_argument("--rest", type=int, default=20, help="seconds to idle after each install")
+    p.add_argument("--trace", action="store_true")
+    p.add_argument("--energy", action="store_true")
+    p.add_argument("--timeout", type=int, default=600)
+    p.set_defaults(func=ab)
     p = sub.add_parser("report")
     p.add_argument("results")
     p.set_defaults(func=report)

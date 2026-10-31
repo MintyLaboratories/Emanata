@@ -27,7 +27,8 @@ private object LibJxlPages : JxlPageKernel {
  * ([Urgency]), pages read ahead and previews, runs on [laterThreads], [laterOnLittle] and
  * [laterNice], read once when the decode starts: by default the same placement as a page
  * shown, which fast page turns measured best, so a page read ahead that comes on screen
- * mid-decode loses nothing.
+ * mid-decode loses nothing; calibration ([Calibration.LATER_TOLERANCE]) may choose fewer
+ * threads for it where they cost clearly less CPU time.
  *
  * Images this path does not take (no sRGB rendering without a color manager, HDR) return
  * null, for jxl-coder to decode.

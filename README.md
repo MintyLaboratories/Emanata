@@ -713,18 +713,23 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   large core (`CpuCores`, from the cores' capacities at runtime), pinned to
   those cores; or, where it cannot load, `Resampler` in Kotlin, which also models
   the native code for JVM tests. OpenGL ES 3.1 compute shaders on the GPU
-  take over where calibration finds them as fast (not on the reference tablet,
-  where they are slower than the CPU path). All three filter in fp32
+  take over where calibration finds them clearly faster (not on the reference
+  tablet, where they are slower than the CPU path). All three filter in fp32
   and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
 - Per-device calibration (`Calibrator`, choices in `Calibration`): once per
-  install and system build, while the app is in front, charging, cool and
-  otherwise idle, it times the resampler on 1, 2, one-per-large-core and
-  one-per-core workers and on the GPU, and native JPEG XL decodes on 2,
-  one-per-large-core and one-per-core threads, on a synthetic 2000x3000 page.
-  Of the setups within 20% of the fastest, the one using the least CPU time
-  wins. Winners are kept in `noBackupFilesDir` (never restored onto another
+  install and system build, while the app is in front but not reading,
+  charging, cool and otherwise idle, it times the resampler on 1, 2,
+  one-per-large-core and one-per-core workers and on the GPU, and native JPEG
+  XL decodes on as many threads, on a synthetic 2000x3000 page. A timing the
+  app's own decodes overlapped is made again; CPU times leave out the UI
+  threads. Of the setups within 20% of the fastest, the one using the least
+  CPU time wins; for JPEG XL pages read ahead, within twice the fastest. The
+  GPU wins only when more than 20% faster than every CPU setup, since its own
+  power is not measured. Differences within the runs' spread count as none,
+  so the setup in effect stays. Winners are kept in `noBackupFilesDir`
+  (never restored onto another
   device); until the first calibration ends the one-per-large-core rule
   applies, and after an update the previous winners stay until new ones are
   established. Debug and bench builds show it and recalibrate in

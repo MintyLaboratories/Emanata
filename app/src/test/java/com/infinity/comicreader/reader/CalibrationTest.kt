@@ -27,11 +27,11 @@ class CalibrationTest {
         assertEquals(
             listOf(
                 pixels(1, true), pixels(2, true), pixels(4, true), pixels(8, false), gpu,
-                jxl(2, true), jxl(4, true), jxl(8, false)
+                jxl(1, true), jxl(2, true), jxl(4, true), jxl(8, false)
             ),
             c
         )
-        assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[7].key))
+        assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[8].key))
     }
 
     @Test
@@ -56,14 +56,23 @@ class CalibrationTest {
     }
 
     @Test
-    fun theGpuWinsOnlyWhenAsFast() {
+    fun theGpuWinsOnlyWhenClearlyFaster() {
         val before = Tuning.defaults(tablet, 8)
         // Tablet resampling, measured: native 4 big 34 ms / 101 CPU, GPU 95 / 38.
         val tablet = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 95.0, 38.0)), before)
         assertEquals(PixelEngine.NATIVE, tablet.engine)
         assertEquals(4, tablet.pixelThreads)
-        val other = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 35.0, 20.0)), before)
+        // As fast for less CPU time is not enough: its own power is not counted.
+        val asFast = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 33.0, 20.0)), before)
+        assertEquals(PixelEngine.NATIVE, asFast.engine)
+        val other = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), before)
         assertEquals(PixelEngine.GPU, other.engine)
+        // Not beyond the spread of the runs.
+        val noisy = listOf(Timing(pixels(4, true), 34.0, 101.0, wallSpreadMs = 12.0), Timing(gpu, 25.0, 20.0))
+        assertEquals(PixelEngine.NATIVE, Calibration.tuning(noisy, before).engine)
+        // A GPU in effect stays only on the same terms.
+        val onGpu = before.copy(engine = PixelEngine.GPU)
+        assertEquals(PixelEngine.NATIVE, Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 33.0, 20.0)), onGpu).engine)
         // JPEG XL untimed: kept as before.
         assertEquals(before.jxlThreads, other.jxlThreads)
         assertEquals(before.jxlPinned, other.jxlPinned)
@@ -86,7 +95,40 @@ class CalibrationTest {
     }
 
     @Test
+    fun theSetupInEffectStaysWithinNoise() {
+        val t = listOf(Timing(jxl(4, true), 110.0, 600.0, 10.0, 80.0), Timing(jxl(8, false), 100.0, 560.0, 10.0, 80.0))
+        assertEquals(jxl(4, true), Calibration.pick(t, incumbent = jxl(4, true))!!.candidate)
+        assertEquals(jxl(8, false), Calibration.pick(t)!!.candidate)
+        // Beyond the spread, the cheaper one wins.
+        val clear = listOf(Timing(jxl(4, true), 110.0, 700.0, 10.0, 20.0), Timing(jxl(8, false), 100.0, 560.0, 10.0, 20.0))
+        assertEquals(jxl(8, false), Calibration.pick(clear, incumbent = jxl(4, true))!!.candidate)
+    }
+
+    @Test
+    fun withinTheSpreadOfTheFastestCountsAsFast() {
+        // 25 % slower, but the fastest's runs spread over 30 ms.
+        val t = listOf(Timing(jxl(8, false), 100.0, 1000.0, wallSpreadMs = 30.0), Timing(jxl(4, true), 125.0, 600.0))
+        assertEquals(jxl(4, true), Calibration.pick(t)!!.candidate)
+    }
+
+    @Test
+    fun pagesReadAheadTakeTheCheapestWithinTwiceTheFastest() {
+        val before = Tuning.defaults(tablet, 8)
+        val t = listOf(
+            Timing(jxl(1, true), 300.0, 290.0), Timing(jxl(2, true), 160.0, 330.0),
+            Timing(jxl(4, true), 100.0, 400.0), Timing(jxl(8, false), 95.0, 600.0)
+        )
+        val chosen = Calibration.tuning(t, before)
+        assertEquals(4, chosen.jxlThreads)
+        assertTrue(chosen.jxlPinned)
+        assertEquals(2, chosen.jxlLaterThreads)
+    }
+
+    @Test
     fun tuningRoundTripsAndRejectsJunk() {
+        val old = org.json.JSONObject("{\"engine\":\"native\",\"pixelThreads\":4,\"pixelPinned\":true,\"jxlThreads\":3,\"jxlPinned\":true}")
+        assertEquals(3, Tuning.of(old)!!.jxlLaterThreads)
+        assertEquals(2, Tuning.of(org.json.JSONObject(Tuning(PixelEngine.NATIVE, 4, true, 4, true, 2).toJson().toString()))!!.jxlLaterThreads)
         val t = Tuning(PixelEngine.GPU, 6, false, 3, true)
         assertEquals(t, Tuning.of(org.json.JSONObject(t.toJson().toString())))
         assertNull(Tuning.of(null))
@@ -139,8 +181,8 @@ class CalibrationTest {
         val probe = FakeProbe(mapOf(a to listOf(1000.0, 10.0, 30.0, 20.0), b to listOf(1000.0, 5.0, 6.0, 7.0)))
         val t = CalibrationRun(probe, listOf(a, b), rounds = 3, warmup = 1).run()!!
         assertEquals(listOf(a.key, b.key, b.key, a.key, a.key, b.key, b.key, a.key), probe.order)
-        assertEquals(Timing(a, 20.0, 40.0), t[0])
-        assertEquals(Timing(b, 6.0, 12.0), t[1])
+        assertEquals(Timing(a, 20.0, 40.0, 20.0, 40.0), t[0])
+        assertEquals(Timing(b, 6.0, 12.0, 2.0, 4.0), t[1])
     }
 
     @Test

@@ -6,7 +6,9 @@ import android.view.Choreographer
  * One clock for every moving title of a list, so they move in sync. It ticks only
  * while some title moves and the list neither scrolls nor hides; [elapsed] holds
  * still in between, so titles pick up where they stopped. Only titles that moved
- * are redrawn, and while all rest it sleeps until the next one moves.
+ * are redrawn, and while all rest it sleeps until the next one moves. Titles redraw on
+ * every other frame of a 120 Hz screen (every frame at 90 Hz and below): their slow
+ * glide looks the same for half the drawing.
  */
 class TitleClock(
     /** Glide speed in px per ms. */
@@ -17,6 +19,9 @@ class TitleClock(
     private var elapsedNanos = 0L
     private var lastFrame = 0L
     private var posted = false
+
+    /** The frame titles last redrew on. */
+    private var lastTick = 0L
 
     /** The callback posted waits for the end of a rest. */
     private var delayed = false
@@ -88,7 +93,11 @@ class TitleClock(
             cycleStart = elapsed
             cycleTravel = views.maxOf { it.travelMs }
         }
-        views.forEach { it.tick() }
+        // Every frame counts toward [elapsed]; titles redraw on those at least [MIN_TICK_NS] apart.
+        if (frameTimeNanos - lastTick >= MIN_TICK_NS) {
+            lastTick = frameTimeNanos
+            views.forEach { it.tick() }
+        }
         val still = views.minOf { it.stillMs() }
         posted = true
         if (still > REST_MIN_MS) {
@@ -102,5 +111,8 @@ class TitleClock(
     private companion object {
         /** Rests shorter than about two frames are ticked through. */
         const val REST_MIN_MS = 32L
+
+        /** Between a 120 Hz frame and a 90 Hz one: every other frame at 120 Hz, every one at 90 or 60 Hz. */
+        const val MIN_TICK_NS = 10_000_000L
     }
 }

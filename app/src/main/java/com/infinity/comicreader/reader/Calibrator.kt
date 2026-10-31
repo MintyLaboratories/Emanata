@@ -119,6 +119,7 @@ object Calibrator {
                 Log.w(TAG, "Calibration failed", t)
             } finally {
                 running = false
+                Log.i(TAG, "ended $done")
                 onEnded?.invoke(done)
             }
         }

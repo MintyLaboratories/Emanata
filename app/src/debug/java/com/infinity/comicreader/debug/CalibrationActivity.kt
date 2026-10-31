@@ -1,8 +1,8 @@
 package com.infinity.comicreader.debug
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -21,7 +21,7 @@ import org.json.JSONObject
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]`
  *
- * Each run's end is logged under "Calibration" as "ended true" or "ended false".
+ * Each run's end is logged under "Calibration" as "ended true" or "ended false" ([Calibrator]).
  */
 class CalibrationActivity : Activity() {
     private lateinit var text: TextView
@@ -43,16 +43,23 @@ class CalibrationActivity : Activity() {
                 addView(text)
             })
         })
-        Calibrator.onEnded = { done ->
-            Log.i(TAG, "ended $done")
-            runOnUiThread { show() }
-        }
+        Calibrator.onEnded = refresh
         if (savedInstanceState == null && intent.getStringExtra("do") == "recalibrate") recalibrate()
         show()
     }
 
+    /** A start while this one is on top: recalibrate when asked. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra("do") == "recalibrate") recalibrate()
+    }
+
+    private val refresh: (Boolean) -> Unit = { runOnUiThread { show() } }
+
     override fun onDestroy() {
-        Calibrator.onEnded = null
+        // A newer instance may have taken over.
+        if (Calibrator.onEnded === refresh) Calibrator.onEnded = null
         super.onDestroy()
     }
 
@@ -82,9 +89,5 @@ class CalibrationActivity : Activity() {
                 }
             }
         }
-    }
-
-    private companion object {
-        const val TAG = "Calibration"
     }
 }

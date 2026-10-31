@@ -27,6 +27,9 @@ import kotlin.math.roundToInt
  * - Anti-ringing ([Scaling]) follows each pass, per axis, only on an axis whose strength
  *   is above 0.
  * - With `linear`, colors are filtered in linear light (sRGB decoded, then encoded).
+ * - With `premultiplied`, rows come and go as a bitmap holds them in memory, color
+ *   channels already multiplied by alpha: what [NativeResampler]'s native code reads and
+ *   writes, which this then models on the JVM.
  *
  * Output rows are split into bands, which one worker per thread on [Dispatchers.Default]
  * takes in turn. A worker filters its source rows horizontally once, into a ring buffer
@@ -113,12 +116,12 @@ object Resampler {
         return min(lo, base) to max(hi, base + 1)
     }
 
-    /** Reads source row [y] in full as non-premultiplied ARGB into [out]. Called from several threads. */
+    /** Reads source row [y] in full as ARGB into [out], premultiplied when the resample says so. Called from several threads. */
     fun interface RowReader {
         fun read(y: Int, out: IntArray)
     }
 
-    /** Takes output rows [y] until [y] + [rows], non-premultiplied ARGB, [pixels] row-major. Called from several threads. */
+    /** Takes output rows [y] until [y] + [rows], ARGB premultiplied when the resample says so, [pixels] row-major. Called from several threads. */
     fun interface RowWriter {
         fun write(y: Int, rows: Int, pixels: IntArray)
     }
@@ -147,38 +150,68 @@ object Resampler {
         linear: Boolean,
         writer: RowWriter,
         scaling: Scaling = Scaling.PLAIN,
+        premultiplied: Boolean = false,
         threads: Int = Runtime.getRuntime().availableProcessors(),
         canceled: () -> Boolean = { false }
     ) {
         val ax = axis(srcW, window.x, window.width, dstW, scaling)
         val ay = axis(srcH, window.y, window.height, dstH, scaling)
-        // A few bands per thread even out uneven progress; each band refilters only
-        // the kernel's few rows it shares with the next.
-        val bands = min(dstH, threads.coerceAtLeast(1) * BANDS_PER_THREAD)
-        val workers = min(threads, bands)
         val stopped = AtomicBoolean()
-        if (workers <= 1) {
-            withBand(srcW, ax, ay, linear, reader) { if (!it.run(0, dstH, writer, canceled)) stopped.set(true) }
+        if (workersFor(dstH, threads) <= 1) {
+            withBand(srcW, ax, ay, linear, premultiplied, reader) { if (!it.run(0, dstH, writer, canceled)) stopped.set(true) }
         } else {
-            val next = AtomicInteger()
-            runBlocking(Dispatchers.Default) {
-                repeat(workers) {
-                    launch {
-                        withBand(srcW, ax, ay, linear, reader) { band ->
-                            while (!stopped.get()) {
-                                val b = next.getAndIncrement()
-                                if (b >= bands) break
-                                val y0 = (dstH.toLong() * b / bands).toInt()
-                                val y1 = (dstH.toLong() * (b + 1) / bands).toInt()
-                                if (!band.run(y0, y1, writer, canceled)) stopped.set(true)
-                            }
-                        }
-                    }
+            // Each worker keeps its band's buffers while it takes band after band.
+            val bands = arrayOfNulls<Band>(threads)
+            val held = ArrayList<Buffers>()
+            try {
+                inBands(dstH, threads, { false }) { worker, y0, y1 ->
+                    val band = bands[worker] ?: synchronized(held) {
+                        Band(srcW, ax, ay, linear, premultiplied, reader, take().also { held += it })
+                    }.also { bands[worker] = it }
+                    band.run(y0, y1, writer, canceled).also { if (!it) stopped.set(true) }
                 }
+            } catch (_: CancellationException) {
+                stopped.set(true)
+            } finally {
+                held.forEach { give(it) }
             }
         }
         if (stopped.get()) throw CancellationException("Resampling canceled")
     }
+
+    /**
+     * Runs [work] over output rows 0 until [dstH] in bands, on up to [threads] workers at
+     * once (on [Dispatchers.Default] when more than one), each passing its own index below
+     * [threads]; [work] returns false to stop every worker. Polls [canceled] before each
+     * band and throws [CancellationException] once it returns true or [work] stopped.
+     */
+    fun inBands(dstH: Int, threads: Int, canceled: () -> Boolean, work: (worker: Int, y0: Int, y1: Int) -> Boolean) {
+        val bands = bandsFor(dstH, threads)
+        val stopped = AtomicBoolean()
+        val next = AtomicInteger()
+        val loop = { worker: Int ->
+            while (!stopped.get()) {
+                val b = next.getAndIncrement()
+                if (b >= bands) break
+                if (canceled() || !work(worker, bandStart(dstH, bands, b), bandStart(dstH, bands, b + 1))) stopped.set(true)
+            }
+        }
+        val workers = workersFor(dstH, threads)
+        if (workers <= 1) {
+            loop(0)
+        } else {
+            runBlocking(Dispatchers.Default) { repeat(workers) { launch { loop(it) } } }
+        }
+        if (stopped.get()) throw CancellationException("Resampling canceled")
+    }
+
+    // A few bands per thread even out uneven progress; each band refilters only the
+    // kernel's few rows it shares with the next.
+    private fun bandsFor(dstH: Int, threads: Int) = min(dstH, threads.coerceAtLeast(1) * BANDS_PER_THREAD)
+
+    private fun workersFor(dstH: Int, threads: Int) = min(threads, bandsFor(dstH, threads))
+
+    private fun bandStart(dstH: Int, bands: Int, b: Int) = (dstH.toLong() * b / bands).toInt()
 
     /** [resample] for pixels held in an array, row-major. */
     fun resample(
@@ -190,13 +223,14 @@ object Resampler {
         dstH: Int,
         linear: Boolean = false,
         scaling: Scaling = Scaling.PLAIN,
+        premultiplied: Boolean = false,
         threads: Int = Runtime.getRuntime().availableProcessors(),
         canceled: () -> Boolean = { false }
     ): IntArray {
         val out = IntArray(dstW * dstH)
         resample(
             srcW, srcH, { y, row -> System.arraycopy(src, y * srcW, row, 0, srcW) }, window, dstW, dstH, linear,
-            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, scaling, threads, canceled
+            { y, rows, pixels -> System.arraycopy(pixels, 0, out, y * dstW, rows * dstW) }, scaling, premultiplied, threads, canceled
         )
         return out
     }
@@ -217,17 +251,27 @@ object Resampler {
     private val maxPooled = Runtime.getRuntime().availableProcessors()
 
     /** Runs [block] with a [Band] on pooled buffers, returned to the pool after. */
-    private inline fun withBand(srcW: Int, ax: Axis, ay: Axis, linear: Boolean, reader: RowReader, block: (Band) -> Unit) {
-        val buffers = synchronized(pool) {
-            var found: Buffers? = null
-            while (found == null && pool.isNotEmpty()) found = pool.removeLast().get()
-            found
-        } ?: Buffers()
+    private inline fun withBand(
+        srcW: Int, ax: Axis, ay: Axis, linear: Boolean, premultiplied: Boolean, reader: RowReader, block: (Band) -> Unit
+    ) {
+        val buffers = take()
         try {
-            block(Band(srcW, ax, ay, linear, reader, buffers))
+            block(Band(srcW, ax, ay, linear, premultiplied, reader, buffers))
         } finally {
-            synchronized(pool) { if (pool.size < maxPooled) pool.addLast(SoftReference(buffers)) }
+            give(buffers)
         }
+    }
+
+    /** Buffers from the pool, or new ones. */
+    private fun take(): Buffers = synchronized(pool) {
+        var found: Buffers? = null
+        while (found == null && pool.isNotEmpty()) found = pool.removeLast().get()
+        found
+    } ?: Buffers()
+
+    /** Returns [buffers] to the pool. */
+    private fun give(buffers: Buffers) {
+        synchronized(pool) { if (pool.size < maxPooled) pool.addLast(SoftReference(buffers)) }
     }
 
     /**
@@ -240,6 +284,7 @@ object Resampler {
         private val ax: Axis,
         private val ay: Axis,
         private val linear: Boolean,
+        private val premultiplied: Boolean,
         private val reader: RowReader,
         buffers: Buffers
     ) {
@@ -270,7 +315,11 @@ object Resampler {
                 if (ay.ring > 0f) antiRingVertical(y)
                 var o = 0
                 for (x in 0 until dstW) {
-                    out[x] = pack(sum[o], sum[o + 1], sum[o + 2], sum[o + 3], linear)
+                    out[x] = if (premultiplied) {
+                        packPremultiplied(sum[o], sum[o + 1], sum[o + 2], sum[o + 3], linear)
+                    } else {
+                        pack(sum[o], sum[o + 1], sum[o + 2], sum[o + 3], linear)
+                    }
                     o += 4
                 }
                 writer.write(y, 1, out)
@@ -441,6 +490,7 @@ object Resampler {
 
         /** The columns the horizontal taps read, from the row in [raw], as premultiplied 0..1 floats. */
         private fun convert() {
+            if (premultiplied) return convertPremultiplied()
             val decode = if (linear) TO_LINEAR else TO_UNIT
             var o = 0
             var all = 255
@@ -464,7 +514,70 @@ object Resampler {
             }
             opaque = all == 255
         }
+
+        /**
+         * [convert] for premultiplied pixels: kept as they are or, in linear light, a
+         * translucent pixel's colors divided by its alpha (rounded to codes), decoded and
+         * multiplied again.
+         */
+        private fun convertPremultiplied() {
+            var o = 0
+            var all = 255
+            for (x in x0 until ax.end) {
+                val p = raw[x]
+                val a = p ushr 24
+                all = all and a
+                if (!linear) {
+                    converted[o] = TO_UNIT[(p shr 16) and 0xFF]
+                    converted[o + 1] = TO_UNIT[(p shr 8) and 0xFF]
+                    converted[o + 2] = TO_UNIT[p and 0xFF]
+                } else if (a == 255) {
+                    converted[o] = TO_LINEAR[(p shr 16) and 0xFF]
+                    converted[o + 1] = TO_LINEAR[(p shr 8) and 0xFF]
+                    converted[o + 2] = TO_LINEAR[p and 0xFF]
+                } else if (a == 0) {
+                    converted[o] = 0f
+                    converted[o + 1] = 0f
+                    converted[o + 2] = 0f
+                } else {
+                    val af = TO_UNIT[a]
+                    converted[o] = TO_LINEAR[unpremultiply((p shr 16) and 0xFF, a)] * af
+                    converted[o + 1] = TO_LINEAR[unpremultiply((p shr 8) and 0xFF, a)] * af
+                    converted[o + 2] = TO_LINEAR[unpremultiply(p and 0xFF, a)] * af
+                }
+                converted[o + 3] = TO_UNIT[a]
+                o += 4
+            }
+            opaque = all == 255
+        }
     }
+
+    /** Premultiplied code [c] of alpha [a] (1..254) as the color's own code, rounded. */
+    private fun unpremultiply(c: Int, a: Int): Int = min(255, (c * 255 + a / 2) / a)
+
+    /**
+     * Premultiplied 0..1 channels to one premultiplied ARGB pixel: alpha clamped to 0..1 and
+     * colors to 0..alpha, so no color code exceeds its alpha's. In linear light, colors are
+     * divided by alpha, encoded, and multiplied by it again.
+     */
+    private fun packPremultiplied(r: Float, g: Float, b: Float, a: Float, linear: Boolean): Int {
+        val alpha = min(max(a, 0f), 1f)
+        val ai = code(alpha)
+        if (ai <= 0) return 0
+        if (!linear) {
+            return (ai shl 24) or (code(min(max(r, 0f), alpha)) shl 16) or (code(min(max(g, 0f), alpha)) shl 8) or
+                code(min(max(b, 0f), alpha))
+        }
+        val inv = 1f / alpha
+        return (ai shl 24) or (premultiply(encode(r * inv), ai) shl 16) or (premultiply(encode(g * inv), ai) shl 8) or
+            premultiply(encode(b * inv), ai)
+    }
+
+    /** The code of [v], 0..1. */
+    private fun code(v: Float): Int = (v * 255f + 0.5f).toInt()
+
+    /** Code [c] multiplied by alpha [a], rounded; [c] itself when opaque. */
+    private fun premultiply(c: Int, a: Int): Int = if (a == 255) c else (c * a + 127) / 255
 
     private fun IntArray.atLeast(n: Int): IntArray = if (size >= n) this else IntArray(n)
 

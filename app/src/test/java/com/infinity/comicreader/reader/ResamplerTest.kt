@@ -81,14 +81,22 @@ class ResamplerTest {
      */
     private fun reference(
         src: IntArray, srcW: Int, srcH: Int, win: Resampler.Window, dstW: Int, dstH: Int, linear: Boolean,
-        scaling: Scaling = Scaling.PLAIN
+        scaling: Scaling = Scaling.PLAIN, premultiplied: Boolean = false
     ): IntArray {
         val premul = Array(srcH) { y ->
             Array(srcW) { x ->
                 val p = src[y * srcW + x]
                 val a = (p ushr 24) / 255.0
                 DoubleArray(4) { c ->
-                    if (c == 3) a else ((p shr (16 - 8 * c)) and 0xFF).let { code -> a * (if (linear) toLinear(code) else code / 255.0) }
+                    val code = (p shr (16 - 8 * c)) and 0xFF
+                    when {
+                        c == 3 -> a
+                        !premultiplied -> a * (if (linear) toLinear(code) else code / 255.0)
+                        !linear -> code / 255.0
+                        a == 0.0 -> 0.0
+                        // The color's own code, as near as its premultiplied one tells.
+                        else -> a * toLinear(min(255, (code / a).roundToInt()))
+                    }
                 }
             }
         }
@@ -113,15 +121,28 @@ class ResamplerTest {
             }
             val a = acc[3].coerceIn(0.0, 1.0)
             // A pixel too faint to keep any alpha keeps no color either.
-            if ((a * 255).roundToInt() <= 0) return@IntArray 0
-            var pixel = (a * 255).roundToInt() shl 24
+            val alpha = (a * 255).roundToInt()
+            if (alpha <= 0) return@IntArray 0
+            var pixel = alpha shl 24
             for (c in 0..2) {
                 val v = (acc[c] / a).coerceIn(0.0, 1.0)
-                val code = if (linear) Resampler.linearToSrgb(v) * 255 else v * 255
-                pixel = pixel or (code.roundToInt().coerceIn(0, 255) shl (16 - 8 * c))
+                val own = (if (linear) Resampler.linearToSrgb(v) * 255 else v * 255).roundToInt().coerceIn(0, 255)
+                val code = when {
+                    !premultiplied -> own
+                    linear -> (own * alpha / 255.0).roundToInt()
+                    else -> (acc[c].coerceIn(0.0, a) * 255).roundToInt()
+                }
+                pixel = pixel or (code shl (16 - 8 * c))
             }
             pixel
         }
+    }
+
+    /** [p], non-premultiplied, premultiplied as a bitmap holds it. */
+    private fun premultiplied(p: Int): Int {
+        val a = p ushr 24
+        fun mul(shift: Int) = ((((p shr shift) and 0xFF) * a + 127) / 255) shl shift
+        return (a shl 24) or mul(16) or mul(8) or mul(0)
     }
 
     private fun maxChannelDiff(a: IntArray, b: IntArray): Int {
@@ -150,6 +171,13 @@ class ResamplerTest {
         val ref = reference(src, srcW, srcH, win, dstW, dstH, linear, scaling)
         val diff = maxChannelDiff(ours, ref)
         assertTrue("max channel difference $diff for $srcW x $srcH -> $dstW x $dstH, $scaling", diff <= 1)
+        // As the native code reads and writes them: premultiplied, as bitmaps hold pixels.
+        val held = IntArray(src.size) { premultiplied(src[it]) }
+        val oursHeld = Resampler.resample(held, srcW, srcH, win, dstW, dstH, linear, scaling, premultiplied = true)
+        val refHeld = reference(held, srcW, srcH, win, dstW, dstH, linear, scaling, premultiplied = true)
+        val heldDiff = maxChannelDiff(oursHeld, refHeld)
+        assertTrue("premultiplied: max channel difference $heldDiff for $srcW x $srcH -> $dstW x $dstH, $scaling", heldDiff <= 1)
+        assertTrue("premultiplied output", oursHeld.all { p -> (0..16 step 8).all { ((p shr it) and 0xFF) <= p ushr 24 } })
     }
 
     // ------------------------------------------------------------------ against the reference
@@ -400,6 +428,64 @@ class ResamplerTest {
         val one = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, scaling = scaling, threads = 1)
         val many = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, scaling = scaling, threads = 8)
         assertArrayEquals(one, many)
+    }
+
+    @Test
+    fun premultipliedOpaquePixelsGiveThePlainResult() {
+        val src = noise(97, 89, 21, opaque = true)
+        for (scaling in listOf(Scaling.PLAIN, Scaling(ScaleFilter.LANCZOS6, 40, 60))) {
+            for (linear in listOf(false, true)) {
+                val plain = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, linear, scaling)
+                val held = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, linear, scaling, premultiplied = true)
+                assertArrayEquals(plain, held)
+            }
+        }
+    }
+
+    @Test
+    fun premultipliedBandsMatchOneThread() {
+        val src = noise(97, 89, 23, opaque = false).map { p ->
+            val a = p ushr 24
+            (a shl 24) or (0..16 step 8).sumOf { s -> min((p shr s) and 0xFF, a) shl s }
+        }.toIntArray()
+        val scaling = Scaling(ScaleFilter.LANCZOS3, 30, 50)
+        for (linear in listOf(false, true)) {
+            val one = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, linear, scaling, premultiplied = true, threads = 1)
+            val many = Resampler.resample(src, 97, 89, Resampler.Window.of(97, 89), 41, 153, linear, scaling, premultiplied = true, threads = 8)
+            assertArrayEquals(one, many)
+        }
+    }
+
+    @Test
+    fun bandsCoverEveryRowOnceOnTheirOwnWorkers() {
+        for ((rows, threads) in listOf(1 to 4, 7 to 4, 100 to 1, 1000 to 8)) {
+            val seen = IntArray(rows)
+            val workers = java.util.concurrent.ConcurrentHashMap.newKeySet<Pair<Int, String>>()
+            Resampler.inBands(rows, threads, { false }) { worker, y0, y1 ->
+                assertTrue(worker in 0 until threads && y0 < y1)
+                workers += worker to Thread.currentThread().name
+                synchronized(seen) { for (y in y0 until y1) seen[y]++ }
+                true
+            }
+            assertTrue("$rows rows on $threads", seen.all { it == 1 })
+            // A worker index belongs to one thread.
+            assertEquals(workers.map { it.first }.toSet().size, workers.size)
+        }
+    }
+
+    @Test
+    fun bandsStopOnceCanceledOrRefused() {
+        val done = AtomicInteger()
+        assertThrows(CancellationException::class.java) {
+            Resampler.inBands(1000, 4, { done.get() >= 3 }) { _, _, _ -> done.incrementAndGet(); true }
+        }
+        // Three bands done, then at most one more each on the other workers that had begun.
+        assertTrue("${done.get()}", done.get() <= 6)
+        val refused = AtomicInteger()
+        assertThrows(CancellationException::class.java) {
+            Resampler.inBands(1000, 1, { false }) { _, _, _ -> refused.incrementAndGet() < 2 }
+        }
+        assertEquals(2, refused.get())
     }
 
     @Test

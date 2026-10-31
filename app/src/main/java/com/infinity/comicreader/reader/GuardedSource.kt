@@ -42,6 +42,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         }
     }
 
+    override fun keptPreview(index: Int): Bitmap? {
+        if (!enter()) return null
+        try {
+            return inner.keptPreview(index)
+        } finally {
+            exit()
+        }
+    }
+
     override fun loadFirstLayer(index: Int): Bitmap? {
         if (!enter()) return null
         try {

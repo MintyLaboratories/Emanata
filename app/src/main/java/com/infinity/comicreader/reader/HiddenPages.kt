@@ -80,6 +80,8 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
 
     override fun loadPreview(index: Int): Bitmap? = shown.getOrNull(index)?.let { inner.loadPreview(it) }
 
+    override fun keptPreview(index: Int): Bitmap? = shown.getOrNull(index)?.let { inner.keptPreview(it) }
+
     override fun decodedSides(index: Int): SpreadSeams.Sides? = shown.getOrNull(index)?.let { inner.decodedSides(it) }
 
     override fun loadFirstLayer(index: Int): Bitmap? = shown.getOrNull(index)?.let { inner.loadFirstLayer(it) }

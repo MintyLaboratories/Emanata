@@ -410,6 +410,9 @@ class PageAdapter(
 
         /** The part each image shows ([codeOf]), at whatever size, or [NO_PAGE]. */
         val shown = IntArray(images.size) { NO_PAGE }
+
+        /** True where an image shows its page's small preview ([previewOf]), until anything better. */
+        val rough = BooleanArray(images.size)
     }
 
     override fun getItemCount(): Int = strip.itemCount
@@ -841,10 +844,19 @@ class PageAdapter(
         entry.waiters++
         holder.decodes[slot] = entry
         holder.waiters[slot] = scope.launch {
+            // Its small preview, read beside the decodes, shows until anything better does.
+            if (holder.shown[slot] != key.code) launch {
+                val chapter = strip.chapterOf(key.page)
+                val preview = withContext(AppDispatchers.io) { previewOf(chapter.value.source, key.page - chapter.first) } ?: return@launch
+                if (entry.deferred.isActive && holder.shown[slot] != key.code) {
+                    applyBitmap(holder, slot, key, preview, exact = false)
+                    holder.rough[slot] = true
+                }
+            }
             // A smaller version of the page, when its decode yields one first, shows until it is done.
             launch {
                 val standIn = entry.standIn.await() ?: return@launch
-                if (entry.deferred.isActive && holder.shown[slot] != key.code) applyBitmap(holder, slot, key, standIn, exact = false)
+                if (entry.deferred.isActive && (holder.shown[slot] != key.code || holder.rough[slot])) applyBitmap(holder, slot, key, standIn, exact = false)
             }
             val bitmap = entry.deferred.await()
             if (bitmap == null) {
@@ -1057,6 +1069,7 @@ class PageAdapter(
         image.setFitMode(fitOf(key.page))
         image.detailSource = slotDetail(holder, key, bitmap)
         holder.shown[slot] = key.code
+        holder.rough[slot] = false
         if (!exact) ReadProbes.current?.shown(image, key.page, exact = false)
     }
 
@@ -1070,6 +1083,7 @@ class PageAdapter(
         image.detailSource = null
         image.setImageDrawable(null)
         holder.shown[slot] = NO_PAGE
+        holder.rough[slot] = false
         ReadProbes.current?.shown(image, NO_PAGE, exact = false)
     }
 
@@ -1082,10 +1096,19 @@ class PageAdapter(
         image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, failure.reason))
         image.setFitMode(fitOf(pageOf[image] ?: NO_PAGE))
         holder.shown[slot] = NO_PAGE
+        holder.rough[slot] = false
         ReadProbes.current?.shown(image, pageOf[image] ?: NO_PAGE, exact = true)
     }
 
     // ------------------------------------------------------------------ decoding
+
+    /**
+     * Page [index] of [source]'s small preview: the one kept from an earlier read, else, where
+     * pages are read in any order ([PageSource.cheapSizes]), a quick one ([PageSource.loadPreview]);
+     * null when none comes cheap. Blocking.
+     */
+    private fun previewOf(source: PageSource, index: Int): Bitmap? =
+        runCatching { source.keptPreview(index) ?: if (source.cheapSizes) source.loadPreview(index) else null }.getOrNull()
 
     private fun cacheBytes(): Int =
         (Runtime.getRuntime().maxMemory() / 6L).toInt().coerceAtLeast(MIN_CACHE_BYTES)

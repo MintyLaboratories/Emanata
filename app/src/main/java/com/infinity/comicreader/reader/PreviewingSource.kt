@@ -51,6 +51,8 @@ class PreviewingSource(
         return page
     }
 
+    override fun keptPreview(index: Int): Bitmap? = store.get(keyOf(index))
+
     /** The stored preview of page [index], else a quick one from [inner], which is stored. */
     override fun loadPreview(index: Int): Bitmap? {
         val key = keyOf(index)

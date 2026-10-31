@@ -49,6 +49,9 @@ interface PageSource : Closeable {
     /** The sides of page [index] as its decode for the reader found them ([sides]), without a read; null until it is decoded. */
     fun decodedSides(index: Int): SpreadSeams.Sides? = null
 
+    /** Page [index]'s small preview as kept from an earlier read ([PreviewingSource]), without reading the book; null when none is. Blocking. */
+    fun keptPreview(index: Int): Bitmap? = null
+
     /**
      * The first layer of page [index] at its own size, when the page is a layered image
      * whose first layer decodes on its own, from the start of the page alone (a layered

@@ -566,7 +566,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   when one screen height would have scrolled past, a thin bar along the bottom
   edge filling meanwhile. Touching the screen takes over.
 - **Auto-crop** trims blank page borders; pages ahead are **preloaded**, and the
-  screen before the one shown, so a turn back is ready too. Two
+  screen before the one shown, so a turn back is ready too; a page not ready
+  yet shows its small preview until it is. Two
   pages side by side share one top and bottom crop and show at one height,
   meeting at the gutter; a spread in one file is cropped whole before it is split.
 - **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in

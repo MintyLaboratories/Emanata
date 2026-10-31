@@ -6,16 +6,16 @@ import org.json.JSONObject
 /**
  * How this device decodes and resamples pages: the resampling [engine] with [pixelThreads]
  * CPU workers, pinned to the large cores or not, and native JPEG XL decodes on
- * [jxlThreads], pinned or not, those nobody waits on yet on [jxlLaterThreads]. Read-ahead
- * resampling gets the same budget as pages on screen.
+ * [jxlThreads], pinned or not. Pages read ahead get the same budget as pages on screen: one
+ * often comes on screen mid-decode, and fewer JPEG XL threads for them measured slower fast
+ * page turns for little less CPU time at reading pace.
  */
 data class Tuning(
     val engine: PixelEngine,
     val pixelThreads: Int,
     val pixelPinned: Boolean,
     val jxlThreads: Int,
-    val jxlPinned: Boolean,
-    val jxlLaterThreads: Int = jxlThreads
+    val jxlPinned: Boolean
 ) {
     /** Makes this the tuning pages are decoded and resampled with from now on. */
     fun apply() {
@@ -24,12 +24,12 @@ data class Tuning(
         NativeResampler.laterThreads = pixelThreads
         NativeResampler.pinned = pixelPinned
         JxlPages.threads = jxlThreads
-        JxlPages.laterThreads = jxlLaterThreads
+        JxlPages.laterThreads = jxlThreads
         JxlPages.pinned = jxlPinned
     }
 
     fun toJson(): JSONObject = JSONObject().put("engine", engine.key).put("pixelThreads", pixelThreads).put("pixelPinned", pixelPinned)
-        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned).put("jxlLaterThreads", jxlLaterThreads)
+        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned)
 
     companion object {
         /** Before any calibration: native CPU code, one worker and one JPEG XL thread per large core ([CpuCores]), pinned there. */
@@ -38,14 +38,13 @@ data class Tuning(
             return Tuning(PixelEngine.NATIVE, n, true, n, true)
         }
 
-        /** The tuning [json] holds; null when it holds none. One kept before [jxlLaterThreads] existed reads them as [jxlThreads]. */
+        /** The tuning [json] holds; null when it holds none. */
         fun of(json: JSONObject?): Tuning? = json?.let { j ->
             runCatching {
-                val jxl = j.getInt("jxlThreads").coerceIn(1, MAX_THREADS)
                 Tuning(
                     PixelEngine.of(j.getString("engine")) ?: return null,
                     j.getInt("pixelThreads").coerceIn(1, MAX_THREADS), j.getBoolean("pixelPinned"),
-                    jxl, j.getBoolean("jxlPinned"), j.optInt("jxlLaterThreads", jxl).coerceIn(1, MAX_THREADS)
+                    j.getInt("jxlThreads").coerceIn(1, MAX_THREADS), j.getBoolean("jxlPinned")
                 )
             }.getOrNull()
         }
@@ -91,15 +90,9 @@ object Calibration {
     const val TOLERANCE = 0.20
 
     /**
-     * The same for JPEG XL decodes nobody waits on yet (pages read ahead): they may take up
-     * to twice the fastest time, as reading leaves them seconds.
-     */
-    const val LATER_TOLERANCE = 1.0
-
-    /**
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large
-     * core and one per core for resampling (with the GPU when [gpu]), and the same for JPEG
-     * XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
+     * core and one per core for resampling (with the GPU when [gpu]), 2, one per large core
+     * and one per core for JPEG XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
      * left to the system.
      */
     fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean): List<Candidate> {
@@ -109,7 +102,7 @@ object Calibration {
             .map { Candidate(kind, it, pinned = cores.big != 0L && it <= cores.bigCount) }
         val out = ArrayList(of(Candidate.Kind.PIXELS, listOf(1, 2, big, all)))
         if (gpu) out += Candidate(Candidate.Kind.PIXELS, 1, pinned = false, gpu = true)
-        if (jxl) out += of(Candidate.Kind.JXL, listOf(1, 2, big, all))
+        if (jxl) out += of(Candidate.Kind.JXL, listOf(2, big, all))
         return out
     }
 
@@ -151,12 +144,8 @@ object Calibration {
             }
         }
         val jxl = timings.filter { it.candidate.kind == Candidate.Kind.JXL }
-        pick(jxl, Candidate(Candidate.Kind.JXL, before.jxlThreads, before.jxlPinned))?.let { now ->
-            val c = now.candidate
-            // Placed alike, as pages read ahead and shown share one pinning.
-            val alike = jxl.filter { it.candidate.pinned == c.pinned }
-            val later = pick(alike, Candidate(Candidate.Kind.JXL, before.jxlLaterThreads, c.pinned), LATER_TOLERANCE)?.candidate ?: c
-            t = t.copy(jxlThreads = c.threads, jxlPinned = c.pinned, jxlLaterThreads = later.threads)
+        pick(jxl, Candidate(Candidate.Kind.JXL, before.jxlThreads, before.jxlPinned))?.candidate?.let { c ->
+            t = t.copy(jxlThreads = c.threads, jxlPinned = c.pinned)
         }
         return t
     }

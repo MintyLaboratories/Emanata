@@ -723,10 +723,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   install and system build, while the app is in front but not reading,
   charging, cool and otherwise idle, it times the resampler on 1, 2,
   one-per-large-core and one-per-core workers and on the GPU, and native JPEG
-  XL decodes on as many threads, on a synthetic 2000x3000 page. A timing the
+  XL decodes on 2, one-per-large-core and one-per-core threads, on a synthetic
+  2000x3000 page. Pages read ahead get the same setup. A timing the
   app's own decodes overlapped is made again; CPU times leave out the UI
   threads. Of the setups within 20% of the fastest, the one using the least
-  CPU time wins; for JPEG XL pages read ahead, within twice the fastest. The
+  CPU time wins. The
   GPU wins only when more than 20% faster than every CPU setup, since its own
   power is not measured. Differences within the runs' spread count as none,
   so the setup in effect stays. Winners are kept in `noBackupFilesDir`

@@ -27,11 +27,11 @@ class CalibrationTest {
         assertEquals(
             listOf(
                 pixels(1, true), pixels(2, true), pixels(4, true), pixels(8, false), gpu,
-                jxl(1, true), jxl(2, true), jxl(4, true), jxl(8, false)
+                jxl(2, true), jxl(4, true), jxl(8, false)
             ),
             c
         )
-        assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[8].key))
+        assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[7].key))
     }
 
     @Test
@@ -112,23 +112,28 @@ class CalibrationTest {
     }
 
     @Test
-    fun pagesReadAheadTakeTheCheapestWithinTwiceTheFastest() {
-        val before = Tuning.defaults(tablet, 8)
-        val t = listOf(
-            Timing(jxl(1, true), 300.0, 290.0), Timing(jxl(2, true), 160.0, 330.0),
-            Timing(jxl(4, true), 100.0, 400.0), Timing(jxl(8, false), 95.0, 600.0)
-        )
-        val chosen = Calibration.tuning(t, before)
+    fun pagesReadAheadDecodeOnAsManyThreadsAsPagesShown() {
+        val chosen = Calibration.tuning(listOf(Timing(jxl(2, true), 160.0, 330.0), Timing(jxl(4, true), 100.0, 400.0)), Tuning.defaults(tablet, 8))
         assertEquals(4, chosen.jxlThreads)
         assertTrue(chosen.jxlPinned)
-        assertEquals(2, chosen.jxlLaterThreads)
+        val kept = listOf(NativeResampler.engine, NativeResampler.threads, NativeResampler.laterThreads, NativeResampler.pinned, JxlPages.threads, JxlPages.laterThreads, JxlPages.pinned)
+        try {
+            JxlPages.laterThreads = 1
+            chosen.apply()
+            assertEquals(4, JxlPages.laterThreads)
+        } finally {
+            NativeResampler.engine = kept[0] as PixelEngine
+            NativeResampler.threads = kept[1] as Int
+            NativeResampler.laterThreads = kept[2] as Int
+            NativeResampler.pinned = kept[3] as Boolean
+            JxlPages.threads = kept[4] as Int
+            JxlPages.laterThreads = kept[5] as Int
+            JxlPages.pinned = kept[6] as Boolean
+        }
     }
 
     @Test
     fun tuningRoundTripsAndRejectsJunk() {
-        val old = org.json.JSONObject("{\"engine\":\"native\",\"pixelThreads\":4,\"pixelPinned\":true,\"jxlThreads\":3,\"jxlPinned\":true}")
-        assertEquals(3, Tuning.of(old)!!.jxlLaterThreads)
-        assertEquals(2, Tuning.of(org.json.JSONObject(Tuning(PixelEngine.NATIVE, 4, true, 4, true, 2).toJson().toString()))!!.jxlLaterThreads)
         val t = Tuning(PixelEngine.GPU, 6, false, 3, true)
         assertEquals(t, Tuning.of(org.json.JSONObject(t.toJson().toString())))
         assertNull(Tuning.of(null))

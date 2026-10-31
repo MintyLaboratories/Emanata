@@ -9,11 +9,6 @@ import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Shader
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
@@ -195,7 +190,7 @@ class ResampleCheckService : Service() {
             )
         }
         // The shipping Kotlin path reads and writes unpremultiplied: on an opaque page both agree.
-        val page = page(2000, 3000)
+        val page = SyntheticPage.draw(2000, 3000)
         val window = Resampler.Window.of(2000, 3000)
         try {
             for (scaling in listOf(Scaling.DEFAULT, Scaling(ScaleFilter.LANCZOS6, 0, 100))) {
@@ -228,7 +223,7 @@ class ResampleCheckService : Service() {
 
     private fun time(setups: List<Setup>, filters: List<ScaleFilter>, reps: Int) {
         for ((w, h) in listOf(2000 to 3000, 4000 to 6000)) {
-            val page = page(w, h)
+            val page = SyntheticPage.draw(w, h)
             try {
                 for (filter in filters) {
                     val scaling = Scaling(filter, 0, Scaling.DEFAULT_DOWN_RING)
@@ -266,7 +261,7 @@ class ResampleCheckService : Service() {
 
     /** Each setup making pages back to back, in [rounds] interleaved rounds, each after a [cooldown] s pause and an idle baseline. */
     private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int) {
-        val page = page(2000, 3000)
+        val page = SyntheticPage.draw(2000, 3000)
         try {
             for ((round, order) in ResampleRuns.interleaved(setups, rounds).withIndex()) {
                 for (s in order) {
@@ -373,44 +368,6 @@ class ResampleCheckService : Service() {
             { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, w, 0, y, w, rows) } }, scaling, threads = threads
         )
         return out
-    }
-
-    /** A synthetic comic page: white paper, ink lines and hatching, flat and graded color, a noisy panel. */
-    private fun page(w: Int, h: Int): Bitmap {
-        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        c.drawColor(Color.WHITE)
-        val r = Random(w)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val panelH = h / 3f
-        for (i in 0 until 3) {
-            val top = i * panelH + w * 0.02f
-            val bottom = (i + 1) * panelH - w * 0.02f
-            paint.shader = LinearGradient(0f, top, 0f, bottom, Color.rgb(250, 220, 160), Color.rgb(60, 110, 190), Shader.TileMode.CLAMP)
-            paint.style = Paint.Style.FILL
-            c.drawRect(w * 0.04f, top, w * 0.96f, bottom, paint)
-            paint.shader = null
-            paint.color = Color.BLACK
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = w / 400f
-            c.drawRect(w * 0.04f, top, w * 0.96f, bottom, paint)
-            repeat(60) {
-                paint.strokeWidth = w / (300f + r.nextInt(900))
-                c.drawLine(w * (0.05f + 0.9f * r.nextFloat()), top + (bottom - top) * r.nextFloat(), w * (0.05f + 0.9f * r.nextFloat()), top + (bottom - top) * r.nextFloat(), paint)
-            }
-        }
-        // Fine hatching, the hardest case for ringing.
-        paint.strokeWidth = 1f
-        var x = w * 0.1f
-        while (x < w * 0.4f) {
-            c.drawLine(x, h * 0.4f, x, h * 0.55f, paint)
-            x += 3f
-        }
-        val noisy = IntArray(w / 4 * (h / 8)) { 0xFF000000.toInt() or r.nextInt(1 shl 24) }
-        b.setPixels(noisy, 0, w / 4, w / 2, h / 2, w / 4, h / 8)
-        // Opaque, as a decoded JPEG page is.
-        b.setHasAlpha(false)
-        return b
     }
 
     private fun noise(w: Int, h: Int, seed: Int, opaque: Boolean): Bitmap {

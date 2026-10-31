@@ -4,7 +4,8 @@ import android.view.View
 
 /**
  * Hears what the reader and the library show, for benchmarks in debug builds; nothing
- * listens in a release build ([ReadProbes.current] stays null). Main thread only.
+ * listens in a release build ([ReadProbes.current] stays null). Main thread only, but for
+ * [decodedAside].
  */
 interface ReadProbe {
     /** The reader starts opening the book at [path]. */
@@ -12,6 +13,9 @@ interface ReadProbe {
 
     /** The reader decoded [page] for showing or reading ahead. */
     fun decoded(page: Int) = Unit
+
+    /** A page was read and decoded besides the reader's own decodes, for [what] ("sides", "preview"...); any thread. */
+    fun decodedAside(what: String) = Unit
 
     /** The reader moved to [item] (a page, or two pages side by side). */
     fun moved(item: Int) = Unit

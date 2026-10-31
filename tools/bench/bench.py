@@ -24,7 +24,11 @@ Time a release build: `./gradlew assembleBench`, then install app-bench.apk over
 
 --energy fakes unplugged power (dumpsys battery unplug) and resets the battery statistics before
 each session, then reads the app's estimated drain; the battery state is always reset after.
-Estimates come from the device's power profile, not a meter.
+Estimates come from the device's power profile, not a meter: compare at least 5 sessions a side.
+
+A session's CPU time runs until the reader's background work (page size and seam scans,
+decodes) is done after its last turn ("settle"), so work a build defers still counts; decodes
+besides the reader's own ("aside": seam sides, quick previews, sizes) are counted apart.
 """
 from __future__ import annotations
 
@@ -377,9 +381,9 @@ def report(args) -> None:
     print("Medians over sessions, range in brackets; turn times are each session's median. Warm-up sessions left out.")
     print()
     print("| book | variant | layout | input | tap ms | pace | cache | crop | double-tap | sessions | turns | open visible | open sharp "
-          "| turn visible | turn sharp | turn sharp p90 | tap to move | ready ahead | stand-in frames | CPU/session | decodes | CPU/decode "
-          "| PSS | graphics | janky (>2x) | late | headroom / thermal | energy mAh |")
-    print("|" + "---|" * 28)
+          "| turn visible | turn sharp | turn sharp p90 | tap to move | ready ahead | stand-in frames | CPU/session | settle ms | decodes "
+          "| aside decodes | CPU/decode | PSS | graphics | janky (>2x) | late | headroom / thermal | energy mAh |")
+    print("|" + "---|" * 30)
     for (label, variant, layout, inp, tap_ms, pace, cache, crop, double_tap), rs in groups.items():
         turns = sum(r["turnSharp"]["n"] for r in rs)
         print("| " + " | ".join(str(x) for x in [
@@ -392,7 +396,8 @@ def report(args) -> None:
             median(r["turnMoved"]["median"] for r in rs if r["turnMoved"]["n"]),
             f"{sum(r['turnsReady'] for r in rs)}/{turns}",
             sum(r.get("turnUnsharpFrames", 0) for r in rs),
-            spread(r.get("cpuMs") for r in rs), median(r.get("decodes") for r in rs), spread(r.get("cpuPerDecodeMs") for r in rs),
+            spread(r.get("cpuMs") for r in rs), median(r.get("settleMs") for r in rs), median(r.get("decodes") for r in rs),
+            median(sum(r["asideDecodes"].values()) for r in rs if "asideDecodes" in r), spread(r.get("cpuPerDecodeMs") for r in rs),
             median(r["afterTurns"]["pssMb"] for r in rs), median(r["afterTurns"]["graphicsMb"] for r in rs),
             f"{sum(r['turnFrames']['janky'] for r in rs)}/{sum(r['turnFrames']['frames'] for r in rs)}",
             sum(r["turnFrames"].get("late", 0) for r in rs),

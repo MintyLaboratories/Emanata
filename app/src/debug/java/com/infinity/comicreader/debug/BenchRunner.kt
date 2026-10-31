@@ -149,25 +149,35 @@ internal class BenchRunner(private val app: Application) {
         val turnsWall = System.nanoTime() - turnsFrom
         val turnEnd = ProcStats.now(app)
         val turnFrames = frames.toJson()
+        // Work the session left running (scans, decodes) is its own: it counts until done.
+        val settleFrom = System.nanoTime()
+        val settled = settle(viewer)
+        val settleWall = System.nanoTime() - settleFrom
+        val after = ProcStats.now(app)
         unwatch()
         viewer.finish()
         awaitDestroyed(viewer)
 
-        val cpu = turnEnd.cpuMs - before.cpuMs
+        val cpu = after.cpuMs - before.cpuMs
+        val aside = probe.asideCounts()
+        val allDecodes = probe.decodes + aside.values.sum()
         return JSONObject()
             .put("kind", "read").put("rep", rep).put("warmup", rep < 1).put("cache", cacheState(plan, rep))
             .put("plan", plan.toJson()).put("screen", screen(viewer))
             .put("openVisibleMs", Stats.ms(openVisible)).put("openSharpMs", Stats.ms(openSharp)).put("openTimedOut", !openOk)
             .put("openStartMs", if (probe.opening >= 0) Stats.ms(probe.opening - start) else -1)
             .put("openCpuMs", cpuOpen).put("openDecodes", openDecodes)
-            .put("cpuMs", cpu).put("decodes", probe.decodes)
-            .put("cpuPerDecodeMs", if (probe.decodes > 0) cpu / probe.decodes else -1)
+            .put("cpuMs", cpu).put("cpuTurnsMs", turnEnd.cpuMs - before.cpuMs)
+            .put("settleMs", Stats.ms(settleWall)).put("settled", settled)
+            .put("decodes", probe.decodes).put("asideDecodes", JSONObject(aside))
+            .put("cpuPerDecodeMs", if (allDecodes > 0) cpu / allDecodes else -1)
             .put("openFrames", openFrames)
             .put("turnVisible", Stats.summary(visible)).put("turnSharp", Stats.summary(sharp)).put("turnMoved", Stats.summary(moved))
             .put("turnsReady", cached).put("turnCount", turns.length()).put("turnUnsharpFrames", unsharpFrames)
             .put("turnCpuMs", turnEnd.cpuMs - turnStart.cpuMs).put("turnWallMs", Stats.ms(turnsWall))
             .put("turnFrames", turnFrames)
             .put("before", before.toJson()).put("afterOpen", afterOpen.toJson()).put("afterTurns", turnEnd.toJson())
+            .put("after", after.toJson())
             .put("turns", turns)
     }
 
@@ -348,6 +358,21 @@ internal class BenchRunner(private val app: Application) {
     private suspend fun idle() = delay(IDLE_MS)
 
     /**
+     * Waits until [viewer]'s background work ([ViewerActivity.busy]) has stopped for [SETTLE_QUIET_MS],
+     * looking every [SETTLE_POLL_MS]; false when it still runs after [SETTLE_TIMEOUT_MS].
+     */
+    private suspend fun settle(viewer: ViewerActivity): Boolean {
+        val end = SystemClock.uptimeMillis() + SETTLE_TIMEOUT_MS
+        var quietSince = -1L
+        while (true) {
+            val now = SystemClock.uptimeMillis()
+            if (viewer.busy) quietSince = -1 else if (quietSince < 0) quietSince = now else if (now - quietSince >= SETTLE_QUIET_MS) return true
+            if (now > end) return false
+            delay(SETTLE_POLL_MS)
+        }
+    }
+
+    /**
      * Calls [check] at the start of each frame, before it draws, with the time then, until it
      * returns true (true then) or [timeoutMs] pass (false).
      */
@@ -440,6 +465,11 @@ internal class BenchRunner(private val app: Application) {
         private const val GRID_GIVE_UP_MS = 15_000L
         private const val NO_MOVE_MS = 3_000L
         private const val IDLE_MS = 1_000L
+
+        /** How long background work must have stopped to count as done, how often that is looked at, and the longest wait ([settle]). */
+        private const val SETTLE_QUIET_MS = 500L
+        private const val SETTLE_POLL_MS = 100L
+        private const val SETTLE_TIMEOUT_MS = 60_000L
         private const val POLL_MS = 16L
         private const val DRAWN_TIMEOUT_MS = 1_000L
 

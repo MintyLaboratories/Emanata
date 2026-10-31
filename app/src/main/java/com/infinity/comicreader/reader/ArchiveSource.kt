@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.ReadProbes
 import com.infinity.comicreader.util.Traces
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -199,6 +200,7 @@ class ArchiveSource(
         if (!quick.worthReading(path)) return null
         val bytes = readPage(index) { Decoders.quickBytes(it) }
         quick.found(path, bytes != null)
+        if (bytes != null) ReadProbes.current?.decodedAside("preview")
         return bytes?.let { Decoders.preview(it) }
     }
 
@@ -206,6 +208,7 @@ class ArchiveSource(
     override fun loadFirstLayer(index: Int): Bitmap? {
         val path = pages.getOrNull(index)?.path ?: return null
         if (!Formats.ext(path).equals("avif", ignoreCase = true)) return null
+        ReadProbes.current?.decodedAside("layer")
         return readPage(index) { Decoders.firstLayer(it) }
     }
 
@@ -213,6 +216,7 @@ class ArchiveSource(
     override fun pageSize(index: Int): IntArray? {
         if (index !in pages.indices) return null
         runCatching { readPage(index) { Decoders.headerSize(it) } }.getOrNull()?.let { return it }
+        ReadProbes.current?.decodedAside("size")
         return runCatching {
             Decoders.size(pageBytes(index))
         }.getOrNull()
@@ -225,6 +229,7 @@ class ArchiveSource(
 
     override fun edge(index: Int, bottom: Boolean): Seams.Profile? {
         if (index !in pages.indices) return null
+        ReadProbes.current?.decodedAside("edge")
         return runCatching { Decoders.edge(pageBytes(index), bottom) }.getOrNull()
     }
 
@@ -234,6 +239,7 @@ class ArchiveSource(
     override fun sides(index: Int): SpreadSeams.Sides? {
         if (index !in pages.indices) return null
         loadedSides[index]?.let { return it }
+        ReadProbes.current?.decodedAside("sides")
         return runCatching { Decoders.sides(pageBytes(index)) }.getOrNull()
     }
 

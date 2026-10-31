@@ -457,6 +457,10 @@ class ViewerActivity : AppCompatActivity() {
     /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
     private var slicesJob: Job? = null
 
+    /** True while the open book's scans (sizes, seams, slices) or a page decode run; for benchmarks. */
+    internal val busy: Boolean
+        get() = sizesJob?.isActive == true || seamsJob?.isActive == true || slicesJob?.isActive == true || adapter?.decoding == true
+
     /**
      * True once a page of the open book showed: scans of its sizes and seams wait until then
      * ([startScans]), so they never compete with the first page's read and decode.

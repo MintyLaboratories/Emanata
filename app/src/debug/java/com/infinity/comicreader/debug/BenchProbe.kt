@@ -3,6 +3,8 @@ package com.infinity.comicreader.debug
 import android.graphics.Rect
 import android.view.View
 import com.infinity.comicreader.util.ReadProbe
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Hears the reader and the library for [BenchRunner]: which page each page view stands
@@ -29,9 +31,19 @@ internal class BenchProbe : ReadProbe {
     /** Pages decoded, for showing or reading ahead. */
     var decodes = 0
 
+    /** Pages decoded besides, by what for ([ReadProbe.decodedAside]); written from any thread. */
+    val aside = ConcurrentHashMap<String, AtomicInteger>()
+
     override fun decoded(page: Int) {
         decodes++
     }
+
+    override fun decodedAside(what: String) {
+        aside.getOrPut(what) { AtomicInteger() }.incrementAndGet()
+    }
+
+    /** [aside] as counts. */
+    fun asideCounts(): Map<String, Int> = aside.mapValues { it.value.get() }
 
     override fun opening(path: String) {
         opening = System.nanoTime()
@@ -72,6 +84,7 @@ internal class BenchProbe : ReadProbe {
         onMoved = null
         opening = -1
         decodes = 0
+        aside.clear()
     }
 
     private companion object {

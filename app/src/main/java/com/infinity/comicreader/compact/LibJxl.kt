@@ -173,6 +173,22 @@ object LibJxl : JxlCodec {
     fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int = 0, stop: Stop? = null): Int =
         nPage(jxl, out, threads, cores, nice, stop)
 
+    /**
+     * Runs [block] with the calling thread pinned to [cores] (bit n = core n), so threads it
+     * starts, as jxl-coder's decoder does, start there too; where the system refuses, unpinned.
+     */
+    fun <T> onCores(cores: Long, block: () -> T): T {
+        val kept = if (cores != 0L) nPin(cores) else 0L
+        try {
+            return block()
+        } finally {
+            if (kept != 0L) nPin(kept)
+        }
+    }
+
+    @JvmStatic
+    private external fun nPin(cores: Long): Long
+
     @JvmStatic
     private external fun nPage(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, nice: Int, stop: Stop?): Int
 

@@ -725,3 +725,18 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
     if (call.thrown != NULL) (*env)->Throw(env, call.thrown);
     return result;
 }
+
+// Moves the calling thread onto `cores` (bit n = core n); its old set of the first 64 cores,
+// or 0 when it stays where it was.
+EXPORT jlong JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPin(JNIEnv * env, jclass clazz, jlong cores)
+{
+    (void)env;
+    (void)clazz;
+    cpu_set_t kept;
+    if (!jr_pin((uint64_t)cores, &kept)) return 0;
+    uint64_t mask = 0;
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
+        if (CPU_ISSET(n, &kept)) mask |= 1ull << n;
+    }
+    return (jlong)mask;
+}

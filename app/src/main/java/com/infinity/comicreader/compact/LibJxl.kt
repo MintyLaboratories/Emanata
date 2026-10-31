@@ -178,13 +178,16 @@ object LibJxl : JxlCodec {
      * starts, as jxl-coder's decoder does, start there too; where the system refuses, unpinned.
      */
     fun <T> onCores(cores: Long, block: () -> T): T {
-        val kept = if (cores != 0L) nPin(cores) else 0L
+        val kept = if (cores != 0L) pin(cores) else 0L
         try {
             return block()
         } finally {
-            if (kept != 0L) nPin(kept)
+            if (kept != 0L) pin(kept)
         }
     }
+
+    /** Pins the calling thread to [cores] (bit n = core n); the mask it had, or 0 where the system refuses. */
+    fun pin(cores: Long): Long = nPin(cores)
 
     @JvmStatic
     private external fun nPin(cores: Long): Long

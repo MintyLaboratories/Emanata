@@ -66,7 +66,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - [Mode.CONTINUOUS] one column read top to bottom, each item sized from its page's
  *                      aspect ratio with the page gap below it (none for webtoons).
  *
- * Decoding happens off the main thread, at most [DECODE_THREADS] pages at a time.
+ * Decoding happens off the main thread, at most [decodeThreads] pages at a time.
  * Results live in a byte-budgeted cache, a page that is requested twice shares one
  * decode, a decode nobody is waiting for any more is dropped before it starts, and
  * the next [preload] pages are decoded ahead of time, and with [behind] the screen before the
@@ -298,7 +298,7 @@ class PageAdapter(
         var waiters = 0
         var prefetch = false
 
-        /** True once the decode has a decoder ([DECODE_THREADS]) and runs. */
+        /** True once the decode has a decoder ([decodeThreads]) and runs. */
         @Volatile
         var started = false
     }
@@ -313,7 +313,7 @@ class PageAdapter(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
-    private val gate = Semaphore(DECODE_THREADS)
+    private val gate = Semaphore(decodeThreads.coerceIn(1, MAX_DECODE_THREADS))
 
     /** The heap limit the page cache is sized by ([cacheBytes], [fitCache]); tests set it. */
     internal var heapBytes: Long = Runtime.getRuntime().maxMemory()
@@ -1375,7 +1375,11 @@ class PageAdapter(
         private const val SINGLE = 0
         private const val ROW = 1
         private const val JOINED = 2
-        private const val DECODE_THREADS = 2
+        private const val MAX_DECODE_THREADS = 8
+
+        /** Pages decoded at once by an adapter made from now on. */
+        @Volatile
+        var decodeThreads: Int = 2
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
 
         /** The page cache grows to at most this share of the heap limit: half ([fitCache]). */

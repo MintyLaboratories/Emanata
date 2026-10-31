@@ -22,12 +22,14 @@ enum class CoreSet(val key: String) {
 
 /**
  * Where pages the platform decodes (JPEG, PNG, WebP, HEIF: one thread each) run: the
- * decoding thread is pinned to [cores] for the decode, then put back.
+ * decoding thread is pinned to [cores] for the decode, then put back. Left to the system,
+ * such a decode often starts on a little core and stays there long enough to be slower
+ * and cost more CPU time than on a large one.
  */
 object PlatformPages {
-    /** The cores platform decodes run on. */
+    /** The cores platform decodes run on: the large ones ([CpuCores.big]; none to pin to where every core is large). */
     @Volatile
-    var cores: CoreSet = CoreSet.ANY
+    var cores: CoreSet = CoreSet.BIG
 
     internal var device: CpuCores? = null
         get() = field ?: CpuCores.device

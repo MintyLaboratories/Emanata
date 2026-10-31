@@ -530,6 +530,7 @@ typedef struct {
     size_t right;
     size_t bottom;
     size_t sample;
+    // Alpha to premultiply; alpha the image stores premultiplied is copied as is.
     int alpha;
 } Region;
 
@@ -562,7 +563,7 @@ static void regionRun(void * opaque, size_t x, size_t y, size_t n, const void * 
             d[0] = p[0];
             d[1] = p[1];
             d[2] = p[2];
-            d[3] = 255;
+            d[3] = p[3];
         }
     }
 }
@@ -618,7 +619,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
             if ((jint)(turned ? basic.ysize : basic.xsize) != width || (jint)(turned ? basic.xsize : basic.ysize) != height) {
                 break;
             }
-            region.alpha = basic.alpha_bits > 0;
+            region.alpha = basic.alpha_bits > 0 && !basic.alpha_premultiplied;
         } else if (status == JXL_DEC_COLOR_ENCODING) {
             JxlColorEncoding color;
             const int srgb = J(JxlDecoderGetColorAsEncodedProfile)(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color) == JXL_DEC_SUCCESS && isSrgb(&color);

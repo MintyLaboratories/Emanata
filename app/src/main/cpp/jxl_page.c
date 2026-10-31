@@ -125,8 +125,8 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
             if (api->JxlDecoderImageOutBufferSize(dec, &format, &need) != JXL_DEC_SUCCESS || need > (size_t)stride * height) goto done;
             if (api->JxlDecoderSetImageOutBuffer(dec, &format, out, (size_t)stride * height) != JXL_DEC_SUCCESS) goto done;
         } else if (status == JXL_DEC_FULL_IMAGE) {
-            // The first frame only.
-            if (alpha) premultiply(out, width, height, stride);
+            // The first frame only; alpha stored premultiplied comes out as stored.
+            if (alpha && !info.alpha_premultiplied) premultiply(out, width, height, stride);
             result = alpha ? JP_ALPHA : JP_OPAQUE;
             goto done;
         } else {

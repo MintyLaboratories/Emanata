@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
+import com.infinity.comicreader.data.Prefs
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -21,7 +22,9 @@ import kotlinx.coroutines.launch
  *
  * Each session is one JSON line, logged under "Bench" and appended to `bench/results.jsonl` in the
  * app's external files ([BenchRunner.results]); "Bench done" ends a run. One run at a time; a start
- * while one runs is ignored. In the bench build (release code, not debuggable) timings are a release build's.
+ * while one runs is ignored. Any start puts back the reading settings a run that died left changed
+ * ([KeptPrefs]); one with nothing to do only does that. In the bench build (release code, not
+ * debuggable) timings are a release build's.
  */
 class BenchActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,6 +35,9 @@ class BenchActivity : Activity() {
             gravity = Gravity.CENTER
         })
         if (savedInstanceState != null) return
+        if (!running && KeptPrefs.restoreLeft(Prefs(application), BenchRunner.keptPrefs(application))) {
+            Log.i(BenchRunner.TAG, "Put back the reading settings a run left changed")
+        }
         val plan = BenchPlan.of(intent)
         if (plan == null) {
             Log.w(BenchRunner.TAG, "Nothing to do: give --es do read|grid and --es path")

@@ -1,0 +1,72 @@
+package com.infinity.comicreader.debug
+
+import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReaderLayout
+import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.reader.TapZones
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * The reading settings a benchmark session changes ([apply]), kept in [file] first so they
+ * are put back ([restore]) even when the process dies mid-run: the next benchmark start
+ * restores what [file] still holds ([restoreLeft]).
+ */
+internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
+    /** Keeps the settings as they are, then sets the layout and input [plan] reads in, without a folder's own layout. */
+    fun apply(plan: BenchPlan) {
+        restoreLeft(prefs, file)
+        file.parentFile?.mkdirs()
+        val tmp = File(file.path + ".tmp")
+        tmp.writeText(snapshot(prefs).toString())
+        check(tmp.renameTo(file)) { "Could not keep the settings" }
+        val continuous = plan.layout == BenchPlan.CONTINUOUS
+        prefs.pageMode = if (continuous) ReaderLayout.MODE_CONTINUOUS else ReaderLayout.MODE_PAGED
+        prefs.readingDir = if (continuous) ReaderLayout.DIR_TTB else ReaderLayout.DIR_LTR
+        prefs.fit = if (continuous) "width" else "screen"
+        prefs.twoPage = if (plan.layout == BenchPlan.TWO) TwoPage.ON else TwoPage.OFF
+        prefs.autoCrop = plan.crop
+        prefs.perSeries = false
+        prefs.volumeKeys = plan.input == BenchPlan.KEY
+        prefs.tapZones = TapZones.LEFT_RIGHT.value
+        plan.doubleTap?.let { prefs.doubleTapZoom = it }
+    }
+
+    /** Puts the kept settings back. */
+    fun restore() {
+        restoreLeft(prefs, file)
+    }
+
+    companion object {
+        /** The settings a session changes, as they are now. */
+        fun snapshot(prefs: Prefs): JSONObject = JSONObject()
+            .put("pageMode", prefs.pageMode)
+            .put("readingDir", prefs.readingDir)
+            .put("fit", prefs.fit)
+            .put("twoPage", prefs.twoPage.key)
+            .put("autoCrop", prefs.autoCrop)
+            .put("perSeries", prefs.perSeries)
+            .put("volumeKeys", prefs.volumeKeys)
+            .put("doubleTap", prefs.doubleTapZoom)
+            .put("tapZones", prefs.tapZones)
+
+        /** Puts back the settings [file] keeps, if any, and forgets them; true when it held some. */
+        fun restoreLeft(prefs: Prefs, file: File): Boolean {
+            if (!file.exists()) return false
+            val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
+            if (kept != null) {
+                prefs.pageMode = kept.getString("pageMode")
+                prefs.readingDir = kept.getString("readingDir")
+                prefs.fit = kept.getString("fit")
+                prefs.twoPage = TwoPage.of(kept.getString("twoPage"))
+                prefs.autoCrop = kept.getBoolean("autoCrop")
+                prefs.perSeries = kept.getBoolean("perSeries")
+                prefs.volumeKeys = kept.getBoolean("volumeKeys")
+                prefs.doubleTapZoom = kept.getBoolean("doubleTap")
+                prefs.tapZones = kept.getString("tapZones")
+            }
+            file.delete()
+            return kept != null
+        }
+    }
+}

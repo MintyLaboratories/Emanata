@@ -17,14 +17,11 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
 import com.infinity.comicreader.data.Prefs
-import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.Thumbs
-import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PreviewStore
-import com.infinity.comicreader.reader.TapZones
 import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
@@ -72,7 +69,7 @@ internal class BenchRunner(private val app: Application) {
         app.registerActivityLifecycleCallbacks(tracker)
         tracker.resumed = host
         ReadProbes.current = probe
-        val kept = PrefsKept(Prefs(app))
+        val kept = KeptPrefs(Prefs(app), keptPrefs(app))
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -413,45 +410,6 @@ internal class BenchRunner(private val app: Application) {
         override fun onActivityDestroyed(activity: Activity) = Unit
     }
 
-    /** The settings a session changes, put back as they were afterwards. */
-    private class PrefsKept(private val prefs: Prefs) {
-        private val pageMode = prefs.pageMode
-        private val readingDir = prefs.readingDir
-        private val fit = prefs.fit
-        private val twoPage = prefs.twoPage
-        private val autoCrop = prefs.autoCrop
-        private val perSeries = prefs.perSeries
-        private val volumeKeys = prefs.volumeKeys
-        private val doubleTap = prefs.doubleTapZoom
-        private val tapZones = prefs.tapZones
-
-        /** The layout and input [plan] reads in, without a folder's own layout. */
-        fun apply(plan: BenchPlan) {
-            val continuous = plan.layout == BenchPlan.CONTINUOUS
-            prefs.pageMode = if (continuous) ReaderLayout.MODE_CONTINUOUS else ReaderLayout.MODE_PAGED
-            prefs.readingDir = if (continuous) ReaderLayout.DIR_TTB else ReaderLayout.DIR_LTR
-            prefs.fit = if (continuous) "width" else "screen"
-            prefs.twoPage = if (plan.layout == BenchPlan.TWO) TwoPage.ON else TwoPage.OFF
-            prefs.autoCrop = plan.crop
-            prefs.perSeries = false
-            prefs.volumeKeys = plan.input == BenchPlan.KEY
-            prefs.tapZones = TapZones.LEFT_RIGHT.value
-            plan.doubleTap?.let { prefs.doubleTapZoom = it }
-        }
-
-        fun restore() {
-            prefs.pageMode = pageMode
-            prefs.readingDir = readingDir
-            prefs.fit = fit
-            prefs.twoPage = twoPage
-            prefs.autoCrop = autoCrop
-            prefs.perSeries = perSeries
-            prefs.volumeKeys = volumeKeys
-            prefs.doubleTapZoom = doubleTap
-            prefs.tapZones = tapZones
-        }
-    }
-
     companion object {
         const val TAG = "Bench"
 
@@ -468,7 +426,7 @@ internal class BenchRunner(private val app: Application) {
         /** Folders down a share's root its first book is looked for. */
         private const val SHARE_DEPTH = 3
 
-        /** Where taps land: the right edge, halfway down, which turns forward in the left / right zones ([PrefsKept.apply]). */
+        /** Where taps land: the right edge, halfway down, which turns forward in the left / right zones ([KeptPrefs.apply]). */
         private const val TAP_X = 0.92f
         private const val TAP_Y = 0.5f
 
@@ -485,6 +443,9 @@ internal class BenchRunner(private val app: Application) {
         private const val DRAG_STEPS = 20
         private const val DRAG_STEP_MS = 12L
         private const val DRAG_HOLD_MS = 120L
+
+        /** Where the settings a run changes are kept until it puts them back ([KeptPrefs]). */
+        fun keptPrefs(app: Application): File = File(app.filesDir, "bench/kept-prefs.json")
 
         /** The results file, in [app]'s external files, which the shell reads in any build. */
         fun results(app: Application): File = File(app.getExternalFilesDir(null), "bench/results.jsonl")

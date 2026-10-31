@@ -23,7 +23,8 @@ setups per book). "jxl" ("native"/"coder") picks how JPEG XL pages decode (plans
 "jxllaterthreads", "jxllater" ("big"/"little") and "jxllaternice" (0-19) place native JPEG XL
 decodes of pages read ahead (plans/jxl-later.json). "platformcores" ("any", "big", "prime") pins
 the platform's one-thread decodes (JPEG, PNG, WebP), "decoders" sets how many pages decode at
-once, and "preload" the pages read ahead (the setting, put back after the run).
+once, "preload" the pages read ahead and "seams" ("on"/"off") joining spreads by their seams,
+which runs the seam scans (both settings, put back after the run).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b". After

@@ -31,6 +31,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         prefs.tapZones = TapZones.LEFT_RIGHT.value
         plan.doubleTap?.let { prefs.doubleTapZoom = it }
         plan.preload?.let { prefs.preload = it }
+        plan.seams?.let { prefs.joinSpreads = it }
     }
 
     /** Puts the kept settings back. */
@@ -51,6 +52,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
             .put("doubleTap", prefs.doubleTapZoom)
             .put("tapZones", prefs.tapZones)
             .put("preload", prefs.preload)
+            .put("joinSpreads", prefs.joinSpreads)
 
         /** Puts back the settings [file] keeps, if any, and forgets them; true when it held some. */
         fun restoreLeft(prefs: Prefs, file: File): Boolean {
@@ -67,6 +69,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
                 prefs.doubleTapZoom = kept.getBoolean("doubleTap")
                 prefs.tapZones = kept.getString("tapZones")
                 if (kept.has("preload")) prefs.preload = kept.getInt("preload")
+                if (kept.has("joinSpreads")) prefs.joinSpreads = kept.getBoolean("joinSpreads")
             }
             file.delete()
             return kept != null

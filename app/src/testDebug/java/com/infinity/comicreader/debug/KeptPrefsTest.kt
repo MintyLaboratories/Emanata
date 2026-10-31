@@ -26,6 +26,7 @@ class KeptPrefsTest {
     private val twoPagesByKey = BenchPlan.of(
         Intent().putExtra("do", "read").putExtra("path", "/books/a.cbz").putExtra("layout", "two")
             .putExtra("input", "key").putExtra("crop", true).putExtra("doubletap", "off")
+            .putExtra("preload", 4).putExtra("seams", "off")
     )!!
 
     private fun mine() = prefs.apply {
@@ -38,6 +39,8 @@ class KeptPrefsTest {
         volumeKeys = false
         doubleTapZoom = true
         tapZones = TapZones.entries.first { it != TapZones.LEFT_RIGHT }.value
+        preload = 1
+        joinSpreads = true
     }
 
     @Test
@@ -49,6 +52,8 @@ class KeptPrefsTest {
         assertTrue(prefs.autoCrop)
         assertTrue(prefs.volumeKeys)
         assertFalse(prefs.doubleTapZoom)
+        assertEquals(4, prefs.preload)
+        assertFalse(prefs.joinSpreads)
         assertTrue(file.exists())
         kept.restore()
         assertEquals(before, KeptPrefs.snapshot(prefs).toString())
@@ -63,6 +68,18 @@ class KeptPrefsTest {
         assertTrue(KeptPrefs.restoreLeft(prefs, file))
         assertEquals(before, KeptPrefs.snapshot(prefs).toString())
         assertFalse(KeptPrefs.restoreLeft(prefs, file))
+    }
+
+    @Test
+    fun keptSettingsFromBeforeReadAheadWasKeptStillPutBack() {
+        mine()
+        file.parentFile?.mkdirs()
+        // Kept by a build that did not keep read-ahead or seams yet.
+        file.writeText(KeptPrefs.snapshot(prefs).apply { remove("preload"); remove("joinSpreads") }.toString())
+        prefs.preload = 5
+        assertTrue(KeptPrefs.restoreLeft(prefs, file))
+        assertEquals(ReaderLayout.MODE_CONTINUOUS, prefs.pageMode)
+        assertEquals(5, prefs.preload)
     }
 
     @Test

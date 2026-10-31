@@ -262,9 +262,14 @@ def run_plan(args) -> None:
     for n, session in enumerate(plan):
         tag = f"{n:02}-" + re.sub(r"[^A-Za-z0-9]+", "-", session.get("label", "s"))
         trace = f"{TRACE_DIR}/emanata-{tag}.pftrace"
+        tracer = None
         if args.trace:
-            subprocess.run([ADB, "shell", "perfetto", "--txt", "-c", "-", "-o", trace, "--background"],
-                           input=TRACE_CONFIG.encode(), check=True, stdout=subprocess.DEVNULL)
+            # --background prints the tracing process's id: only that one is stopped.
+            started = subprocess.run([ADB, "shell", "perfetto", "--txt", "-c", "-", "-o", trace, "--background"],
+                                     input=TRACE_CONFIG.encode(), check=True, capture_output=True)
+            tracer = started.stdout.decode().strip().splitlines()[-1].strip()
+            if not tracer.isdigit():
+                raise SystemExit(f"perfetto gave no process id: {tracer!r}")
             time.sleep(2)
         if args.energy:
             adb("shell", "dumpsys", "battery", "unplug")
@@ -282,9 +287,12 @@ def run_plan(args) -> None:
                 mah = estimated_mah(stats, uid)
                 for line in lines:
                     line["energyMah"] = mah
-            if args.trace:
-                adb("shell", "pkill", "-INT", "perfetto", check=False)
-                time.sleep(3)
+            if tracer:
+                adb("shell", "kill", "-INT", tracer, check=False)
+                for _ in range(30):
+                    time.sleep(1)
+                    if adb("shell", f"kill -0 {tracer} 2>/dev/null && echo up", capture=True, check=False).strip() != "up":
+                        break
                 adb("pull", trace, str(out / f"{tag}.pftrace"), check=False)
                 adb("shell", "rm", "-f", trace, check=False)
         with results.open("a") as f:

@@ -202,6 +202,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Cells in each Favorites section shown, 0 for a collapsed one; empty when not grouped. */
     private var sectionItems: List<Int> = emptyList()
+
+    /** The tab and view the list is laid out for ([applyView]); null before the first layout. */
+    private var shownTab: Int? = null
+    private var shownView: TabView? = null
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -465,6 +469,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onStart() {
         super.onStart()
+        // A view changed elsewhere shows before the first frame, whatever the settings feed brings.
+        showCurrentView()
         adapter.stopped = false
         storageWatcher.start()
     }
@@ -519,14 +525,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** Re-applies whatever changed since the settings last shown. */
     private fun applySettings(s: ListSettings) {
+        // Checked against the screen, not the settings last heard: the list follows whatever it missed.
+        showCurrentView()
         val old = applied
         if (old == s) return
         applied = s
-        if (s.views[tabName()] != old.views[tabName()]) applyView()
         adapter.firstLayerOnly = s.thrift.firstLayerCovers
-        if (s.coverShape != old.coverShape || s.titleDisplay != old.titleDisplay || s.coverSpacing != old.coverSpacing) {
-            adapter.options = rowOptions()
-        }
         if (s.shortenPrefixes != old.shortenPrefixes && mode == TAB_BROWSE) refreshCurrent()
         if (s.showHidden != old.showHidden) {
             invalidateOptionsMenu()
@@ -864,14 +868,27 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The current tab's view settings. */
     private val view: TabView get() = prefs.view(tabName())
 
-    /** Lays the list out as the current tab's view says. */
+    /**
+     * Lays the list out as the current tab's view says. What did not change stays: rows
+     * rebind only for a new look, the layout is swapped only between grid and list.
+     */
     private fun applyView() {
-        adapter.grid = view.grid
+        val v = view
+        val tabChanged = shownTab != mode
+        adapter.grid = v.grid
         adapter.options = rowOptions()
         applyLayoutManager()
         updateCellSize()
         updateFab()
-        invalidateOptionsMenu()
+        // A new tab has other menu items; a new view only other view items, changed in place to keep a search open.
+        if (tabChanged) invalidateOptionsMenu() else if (shownView?.grid != v.grid) menu?.let { updateViewItems(it) }
+        shownTab = mode
+        shownView = v
+    }
+
+    /** Applies the current tab's view when the list shows anything else; cheap when it does not. */
+    private fun showCurrentView() {
+        if (shownTab != mode || shownView != view || adapter.options != rowOptions()) applyView()
     }
 
     private fun onTabChanged(index: Int) {
@@ -2340,9 +2357,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         pinch.open(entry, tile)
     }
 
-    /** Only writes the setting: [applySettings] re-lays the list, as for any other change. */
+    /** Writes the setting and shows it at once, without waiting for the settings feed. */
     private fun toggleGrid() {
         prefs.setGrid(tabName(), !view.grid)
+        showCurrentView()
     }
 
     private fun applyLayoutManager() {
@@ -2817,10 +2835,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         val browsing = mode == TAB_BROWSE
-        val grid = view.grid
-        menu.findItem(R.id.menu_grid)?.title = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
-        menu.findItem(R.id.menu_grid_size)?.isVisible = grid
-        menu.findItem(R.id.menu_density)?.isVisible = !grid
+        updateViewItems(menu)
         menu.findItem(R.id.menu_show_hidden)?.apply {
             isChecked = prefs.showHidden
             title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
@@ -2850,6 +2865,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         }
         updateToolbarButtons()
         return super.onPrepareOptionsMenu(menu)
+    }
+
+    /** The menu's grid/list item, and Grid dimensions or List density, as the tab's view is. */
+    private fun updateViewItems(menu: Menu) {
+        val grid = view.grid
+        menu.findItem(R.id.menu_grid)?.title = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
+        menu.findItem(R.id.menu_grid_size)?.isVisible = grid
+        menu.findItem(R.id.menu_density)?.isVisible = !grid
     }
 
     /**
@@ -2888,9 +2911,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             R.id.menu_grid -> toggleGrid()
             R.id.menu_sort, R.id.menu_bar_sort -> showSortDialog()
             R.id.menu_filter, R.id.menu_bar_filter -> TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName())
-            R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName())
-            R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName())
-            R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName())
+            R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName(), ::showCurrentView)
+            R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName(), ::showCurrentView)
+            R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName(), ::showCurrentView)
             R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }

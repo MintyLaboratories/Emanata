@@ -51,21 +51,22 @@ object TabViewDialogs {
         }
     )
 
-    /** The "Detail display" choice for [tab]; a pick is written and closes it. */
-    fun showDetail(context: Context, prefs: Prefs, tab: String): AlertDialog {
+    /** The "Detail display" choice for [tab]; a pick is written, [onChange] hears it, and it closes. */
+    fun showDetail(context: Context, prefs: Prefs, tab: String, onChange: () -> Unit = {}): AlertDialog {
         val values = DETAIL_BUTTONS.map { it.first }
         val labels = values.map { detailLabel(context, it) }.toTypedArray()
         return AlertDialog.Builder(context)
             .setTitle(R.string.detail_display)
             .setSingleChoiceItems(labels, values.indexOf(prefs.view(tab).detail)) { dialog, which ->
                 prefs.setDetail(tab, values[which])
+                onChange()
                 dialog.dismiss()
             }
             .show()
     }
 
-    /** The "Grid dimensions" picker for [tab]; a pick is written and closes it. */
-    fun showGridSize(context: Context, prefs: Prefs, tab: String): AlertDialog {
+    /** The "Grid dimensions" picker for [tab]; a pick is written, [onChange] hears it, and it closes. */
+    fun showGridSize(context: Context, prefs: Prefs, tab: String, onChange: () -> Unit = {}): AlertDialog {
         val picker = GridPicker(context).apply { id = R.id.grid_size }
         val pad = (context.resources.displayMetrics.density * 16).toInt()
         picker.setPadding(pad, pad, pad, 0)
@@ -78,6 +79,7 @@ object TabViewDialogs {
             .show()
         picker.onPick = { columns, rows ->
             prefs.setGridSize(tab, columns, rows)
+            onChange()
             dialog.dismiss()
         }
         return dialog
@@ -94,8 +96,8 @@ object TabViewDialogs {
         }
     )
 
-    /** Sets up the density slider in [root] for [tab]: each step is written at once, so the list follows live. */
-    private fun bindDensity(root: View, prefs: Prefs, tab: String) {
+    /** Sets up the density slider in [root] for [tab]: each step is written at once and [onChange] hears it, so the list follows live. */
+    private fun bindDensity(root: View, prefs: Prefs, tab: String, onChange: () -> Unit = {}) {
         val slider = root.findViewById<Slider>(R.id.density_slider)
         val label = root.findViewById<TextView>(R.id.density_value)
         val context = root.context
@@ -107,16 +109,19 @@ object TabViewDialogs {
         slider.addOnChangeListener { _, value, _ ->
             val density = ListDensity.ofStep(value.roundToInt())
             label.text = densityLabel(context, density)
-            if (prefs.view(tab).density != density) prefs.setDensity(tab, density)
+            if (prefs.view(tab).density != density) {
+                prefs.setDensity(tab, density)
+                onChange()
+            }
         }
     }
 
-    /** The "List density" slider for [tab]; the list follows as it moves. */
-    fun showDensity(context: Context, prefs: Prefs, tab: String): AlertDialog {
+    /** The "List density" slider for [tab]; the list follows as it moves ([onChange]). */
+    fun showDensity(context: Context, prefs: Prefs, tab: String, onChange: () -> Unit = {}): AlertDialog {
         val root = LayoutInflater.from(context).inflate(R.layout.view_density, null)
         val pad = (context.resources.displayMetrics.density * 24).toInt()
         root.setPadding(pad, pad / 2, pad, 0)
-        bindDensity(root, prefs, tab)
+        bindDensity(root, prefs, tab, onChange)
         return AlertDialog.Builder(context)
             .setTitle(R.string.list_density)
             .setView(root)

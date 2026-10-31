@@ -18,7 +18,7 @@ pushed books, the app's own results file, and traces under /data/misc/perfetto-t
 A session's "engine" (kotlin, native, gpu), "pixelthreads" (workers for pages shown),
 "laterthreads" (for pages read ahead) and "pinned" ("on"/"off": workers on the large or little
 cores) pick how pages are resampled, so one build A/Bs them (plans/engines.json interleaves the
-setups per book).
+setups per book). "jxl" ("native"/"coder") picks how JPEG XL pages decode (plans/jxl.json).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b".

@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
@@ -74,10 +75,12 @@ internal class BenchRunner(private val app: Application) {
         val keptThreads = NativeResampler.threads
         val keptLater = NativeResampler.laterThreads
         val keptPinned = NativeResampler.pinned
+        val keptJxl = JxlPages.enabled
         plan.engine?.let { NativeResampler.engine = it }
         plan.pixelThreads?.let { NativeResampler.threads = it }
         plan.laterThreads?.let { NativeResampler.laterThreads = it }
         plan.pinned?.let { NativeResampler.pinned = it }
+        plan.jxlNative?.let { JxlPages.enabled = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -91,6 +94,7 @@ internal class BenchRunner(private val app: Application) {
             NativeResampler.threads = keptThreads
             NativeResampler.laterThreads = keptLater
             NativeResampler.pinned = keptPinned
+            JxlPages.enabled = keptJxl
             kept.restore()
             ReadProbes.current = null
             probe.clear()

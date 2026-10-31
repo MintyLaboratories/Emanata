@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
 import org.json.JSONObject
@@ -62,7 +63,9 @@ internal data class BenchPlan(
     /** Its workers for pages read ahead ([NativeResampler.laterThreads]); null keeps them. */
     val laterThreads: Int? = null,
     /** Whether its workers are pinned to large or little cores ([NativeResampler.pinned]); null keeps it. */
-    val pinned: Boolean? = null
+    val pinned: Boolean? = null,
+    /** JPEG XL pages decoded natively ([JxlPages.enabled]) or by jxl-coder; null keeps it. */
+    val jxlNative: Boolean? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -71,6 +74,7 @@ internal data class BenchPlan(
         .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
         .put("engine", engine?.key ?: JSONObject.NULL).put("pixelThreads", pixelThreads ?: JSONObject.NULL)
         .put("laterThreads", laterThreads ?: JSONObject.NULL).put("pinned", pinned ?: JSONObject.NULL)
+        .put("jxl", jxlNative?.let { if (it) "native" else "coder" } ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -104,6 +108,7 @@ internal data class BenchPlan(
             val orientation = ORIENTATIONS[intent.getStringExtra("orientation") ?: "portrait"] ?: return null
             val fresh = intent.getBooleanExtra("fresh", false)
             val engine = intent.getStringExtra("engine")?.let { PixelEngine.of(it) ?: return null }
+            val jxl = intent.getStringExtra("jxl")?.let { if (it == "native" || it == "coder") it == "native" else return null }
             return BenchPlan(
                 what = what,
                 path = path,
@@ -125,7 +130,8 @@ internal data class BenchPlan(
                 engine = engine,
                 pixelThreads = if (intent.hasExtra("pixelthreads")) intent.getIntExtra("pixelthreads", 4).coerceIn(1, 16) else null,
                 laterThreads = if (intent.hasExtra("laterthreads")) intent.getIntExtra("laterthreads", 1).coerceIn(1, 16) else null,
-                pinned = intent.getStringExtra("pinned")?.let { it == "on" }
+                pinned = intent.getStringExtra("pinned")?.let { it == "on" },
+                jxlNative = jxl
             )
         }
     }

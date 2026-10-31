@@ -1,0 +1,74 @@
+[
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "label": "2k jxl coder",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "coder"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "label": "2k jxl native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "native"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "label": "2k jxl native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "native"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "label": "2k jxl coder",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "coder"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl coder",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "coder"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "native"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "native"
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl coder",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1,
+  "jxl": "coder"
+ }
+]

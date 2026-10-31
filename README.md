@@ -796,9 +796,11 @@ debug-only `BenchActivity`, and tabulates the results: open and page turn to the
 completed frame showing the page visible and sharp, CPU time per session (until the
 reader's background scans and decodes end after the last turn) and per decoded page,
 decodes besides the reader's own (seam sides, quick previews), memory, jank, thermal
-headroom, and optionally a Perfetto trace and the battery statistics' estimate per
-session. Each session starts with a warm-up that reports leave out; `ab` compares two
-builds installed in turn (A B B A). See its `--help`.
+headroom, battery level and current, and optionally a Perfetto trace and the battery
+statistics' estimate per session. Each session starts with a warm-up that reports leave
+out; `ab` compares two builds installed in turn (A B B A); no session starts below 30%
+battery. `tools/bench/plans` holds plans for the synthetic books, read fast and slowly.
+See its `--help`.
 
 ## Permissions
 

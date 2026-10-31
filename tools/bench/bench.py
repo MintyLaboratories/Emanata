@@ -29,6 +29,8 @@ Estimates come from the device's power profile, not a meter: compare at least 5 
 A session's CPU time runs until the reader's background work (page size and seam scans,
 decodes) is done after its last turn ("settle"), so work a build defers still counts; decodes
 besides the reader's own ("aside": seam sides, quick previews, sizes) are counted apart.
+Each session records the battery level and current; `run` and `ab` stop below --min-battery
+percent (default 30), where a device may slow down to save power.
 """
 from __future__ import annotations
 
@@ -268,6 +270,12 @@ def bench_once(session: dict, timeout_s: int) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
 
 
+def battery_level() -> int | None:
+    """The device's battery level in percent, as `dumpsys battery` reports it; None when not found."""
+    m = re.search(r"^\s*level: (\d+)", adb("shell", "dumpsys", "battery", capture=True, check=False), re.M)
+    return int(m.group(1)) if m else None
+
+
 def app_uid() -> int | None:
     m = re.search(r"uid:(\d+)", adb("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, capture=True))
     return int(m.group(1)) if m else None
@@ -290,6 +298,9 @@ def run_plan(args) -> None:
     uid = app_uid()
     adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
     for n, session in enumerate(plan):
+        level = battery_level()
+        if level is not None and level < args.min_battery:
+            raise SystemExit(f"battery at {level}%, below --min-battery {args.min_battery}%: charge the device first")
         tag = f"{n:02}-" + re.sub(r"[^A-Za-z0-9]+", "-", session.get("label", "s"))
         trace = f"{TRACE_DIR}/emanata-{tag}.pftrace"
         tracer = None
@@ -369,6 +380,16 @@ def headroom(rs) -> str:
     return (f"{min(hs):.2f}-{max(hs):.2f}" if hs else "-") + f" / {status}"
 
 
+def battery(rs) -> str:
+    """The battery level range over [rs] sessions, from before each to after it, and whether it was plugged in throughout."""
+    states = [r[k] for r in rs for k in ("before", "after") if k in r]
+    levels = [st["batteryPct"] for st in states if st.get("batteryPct", -1) >= 0]
+    if not levels:
+        return "-"
+    plugged = "" if all(st.get("plugged") for st in states) else " unplugged"
+    return f"{min(levels)}-{max(levels)}{plugged}"
+
+
 def report(args) -> None:
     rows = [json.loads(line) for line in Path(args.results).read_text().splitlines() if line.strip()]
     reads = [r for r in rows if r.get("kind") == "read" and not r.get("warmup")]
@@ -382,8 +403,8 @@ def report(args) -> None:
     print()
     print("| book | variant | layout | input | tap ms | pace | cache | crop | double-tap | sessions | turns | open visible | open sharp "
           "| turn visible | turn sharp | turn sharp p90 | tap to move | ready ahead | stand-in frames | CPU/session | settle ms | decodes "
-          "| aside decodes | CPU/decode | PSS | graphics | janky (>2x) | late | headroom / thermal | energy mAh |")
-    print("|" + "---|" * 30)
+          "| aside decodes | CPU/decode | PSS | graphics | janky (>2x) | late | headroom / thermal | battery % | current mA | energy mAh |")
+    print("|" + "---|" * 32)
     for (label, variant, layout, inp, tap_ms, pace, cache, crop, double_tap), rs in groups.items():
         turns = sum(r["turnSharp"]["n"] for r in rs)
         print("| " + " | ".join(str(x) for x in [
@@ -401,7 +422,7 @@ def report(args) -> None:
             median(r["afterTurns"]["pssMb"] for r in rs), median(r["afterTurns"]["graphicsMb"] for r in rs),
             f"{sum(r['turnFrames']['janky'] for r in rs)}/{sum(r['turnFrames']['frames'] for r in rs)}",
             sum(r["turnFrames"].get("late", 0) for r in rs),
-            headroom(rs),
+            headroom(rs), battery(rs), median(r["before"].get("currentMa") for r in rs if "before" in r),
             spread([(r.get("energyMah") or -1) * 1000 for r in rs]) if any(r.get("energyMah") for r in rs) else "",
         ]) + " |")
     grids = [r for r in rows if r.get("kind") == "grid"]
@@ -487,6 +508,7 @@ def main() -> None:
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--min-battery", type=int, default=30, help="percent below which no session starts")
     p.set_defaults(func=run_plan)
     p = sub.add_parser("ab")
     p.add_argument("--a", required=True, help="the build A apk")
@@ -498,6 +520,7 @@ def main() -> None:
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--min-battery", type=int, default=30, help="percent below which no session starts")
     p.set_defaults(func=ab)
     p = sub.add_parser("report")
     p.add_argument("results")

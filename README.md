@@ -683,7 +683,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 |---|---|---|
 | jpg/jpeg/png/gif/bmp/webp/heic/heif | `ImageSource` | platform `ImageDecoder` (`BitmapFactory` below API 28) |
 | avif | `ImageSource` | libavif with dav1d, built from source (`app/src/main/cpp`) |
-| jxl | `ImageSource` | jxl-coder (libjxl) |
+| jxl | `ImageSource` | libjxl as jxl-coder ships it, through our JNI binding (`jxl_page.c`); jxl-coder itself for images without an sRGB rendering |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
 | rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
@@ -696,6 +696,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
   from the header alone (`ImageHeaders`, `Tiff`).
+- JPEG XL pages decode straight into the bitmap that shows them, 8-bit RGBA from
+  libjxl's own output stage (`JxlPages`, `src/main/cpp/jxl_page.c`), on one
+  thread per large core pinned to those cores (`jxl_runner.c`), and stop
+  between steps once the page is no longer wanted. Images libjxl cannot give
+  in sRGB without a color manager (lossless with an ICC profile) and HDR ones
+  go to jxl-coder.
 - Images decode at full resolution, then Lanczos3 scales them to the exact size
   they are shown at: native code (`NativeResampler`, `src/main/cpp/resample*.c`),
   NEON on arm64, reading and writing the bitmaps' own pixels, on one thread per

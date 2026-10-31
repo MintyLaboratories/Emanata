@@ -541,10 +541,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   still shows slices in one column). **Auto** hands it back to detection and the
   default. "Apply to: This folder" keeps its layout as it is.
 - **Tap zones:** left/right, right/left, top/bottom, bottom/top or off; the outer
-  thirds turn the page (a whole spread in two-page mode), the middle third
-  toggles the UI. Books read top to bottom take top/bottom in place of the
-  default left/right.
-- **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset.
+  thirds turn the page (a whole spread in two-page mode) as the finger lifts,
+  the middle third toggles the UI. Books read top to bottom take top/bottom in
+  place of the default left/right.
+- **Zoom / pan:** pinch-to-zoom, drag to pan, double-tap to zoom or reset (in
+  the middle third where tap zones turn pages, so turning never waits for a
+  second tap).
   While moving, the page is drawn through a Lanczos3 GPU shader with an
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
   the visible part is re-rendered with Lanczos3 from the full-resolution page
@@ -563,7 +565,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (0.25 to 45): strips scroll that far each minute; paged mode turns the page
   when one screen height would have scrolled past, a thin bar along the bottom
   edge filling meanwhile. Touching the screen takes over.
-- **Auto-crop** trims blank page borders; pages ahead are **preloaded**. Two
+- **Auto-crop** trims blank page borders; pages ahead are **preloaded**, and the
+  screen before the one shown, so a turn back is ready too. Two
   pages side by side share one top and bottom crop and show at one height,
   meeting at the gutter; a spread in one file is cropped whole before it is split.
 - **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in

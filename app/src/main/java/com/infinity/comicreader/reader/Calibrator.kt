@@ -128,7 +128,9 @@ object Calibrator {
     private fun calibrate(force: Boolean): Boolean {
         val probe = DeviceProbe(app, force)
         try {
+            // Nothing is drawn or encoded before the app is first found idle.
             if (!probe.awaitFair()) return false
+            probe.prepare()
             val candidates = Calibration.candidates(
                 CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl()
             )
@@ -171,17 +173,19 @@ object Calibrator {
 
     /** Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's portrait size. */
     private class DeviceProbe(private val context: Context, private val force: Boolean) : CalibrationProbe {
-        private val src: Bitmap = SyntheticPage.draw(PAGE_W, PAGE_H)
-        private val dst: Bitmap
+        private var src: Bitmap? = null
+        private var dst: Bitmap? = null
         private var jxl: ByteArray? = null
         private var jxlOut: Bitmap? = null
         private val started = SystemClock.elapsedRealtime()
 
-        init {
+        /** Draws the page and makes its target, the page shrunk to fit the screen held upright. */
+        fun prepare() {
             val m = context.resources.displayMetrics
             val shortSide = minOf(m.widthPixels, m.heightPixels).coerceAtLeast(1)
             val longSide = maxOf(m.widthPixels, m.heightPixels).coerceAtLeast(1)
             val scale = minOf(1.0, shortSide.toDouble() / PAGE_W, longSide.toDouble() / PAGE_H)
+            src = SyntheticPage.draw(PAGE_W, PAGE_H)
             dst = Bitmap.createBitmap((PAGE_W * scale).toInt().coerceAtLeast(1), (PAGE_H * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         }
 
@@ -192,7 +196,7 @@ object Calibrator {
             jxl = runCatching {
                 if (!f.exists()) {
                     f.parentFile?.mkdirs()
-                    val bytes = JxlCoder.encode(src, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
+                    val bytes = JxlCoder.encode(src ?: return false, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
                     File(f.path + ".tmp").apply { writeBytes(bytes) }.renameTo(f)
                 }
                 f.readBytes()
@@ -206,7 +210,7 @@ object Calibrator {
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
                 Candidate.Kind.PIXELS -> NativeResampler.resample(
-                    src, dst, Resampler.Window.of(PAGE_W, PAGE_H), false, Scaling.DEFAULT,
+                    src ?: return null, dst ?: return null, Resampler.Window.of(PAGE_W, PAGE_H), false, Scaling.DEFAULT,
                     engine = if (candidate.gpu) PixelEngine.GPU else PixelEngine.NATIVE, fallback = false, urgent = { true },
                     workers = candidate.threads, pin = candidate.pinned
                 )
@@ -248,8 +252,8 @@ object Calibrator {
         }
 
         fun release() {
-            src.recycle()
-            dst.recycle()
+            src?.recycle()
+            dst?.recycle()
             jxlOut?.recycle()
         }
     }

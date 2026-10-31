@@ -109,6 +109,8 @@ class ResampleCheckService : Service() {
                 cases += Case(997, 1301, Resampler.Window.of(997, 1301), 461, 600, s)
             }
         }
+        // A cover from a large page: many source rows per output row, in several GPU chunks.
+        cases += Case(3000, 4000, Resampler.Window.of(3000, 4000), 128, 171, Scaling.DEFAULT)
         for (engine in listOf(PixelEngine.NATIVE, PixelEngine.GPU)) {
             var worst = 0
             var failed = 0

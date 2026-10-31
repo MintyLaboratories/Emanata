@@ -85,6 +85,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
         override fun release() = detail.release()
     }
 
+    override fun decodedSides(index: Int): SpreadSeams.Sides? = inner.decodedSides(index)
+
     override fun edge(index: Int, bottom: Boolean): Seams.Profile? {
         if (!enter()) return null
         try {

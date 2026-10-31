@@ -18,6 +18,7 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -456,6 +457,15 @@ class ViewerActivity : AppCompatActivity() {
     /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
     private var slicesJob: Job? = null
 
+    /**
+     * True once a page of the open book showed: scans of its sizes and seams wait until then
+     * ([startScans]), so they never compete with the first page's read and decode.
+     */
+    private var scansReleased = false
+
+    /** Starts the open book's scans should no page show within [SCAN_HOLD_MS]. */
+    private val releaseScans = Runnable { startScans() }
+
     /** Counts the reader's own direction choices, so a late cover finding never undoes one. */
     private var directionChoices = 0
 
@@ -774,6 +784,7 @@ class ViewerActivity : AppCompatActivity() {
         brightnessPill.animate().cancel()
         handler.removeCallbacks(seekHoldUp)
         handler.removeCallbacks(checkShareWait)
+        handler.removeCallbacks(releaseScans)
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -1615,8 +1626,10 @@ class ViewerActivity : AppCompatActivity() {
         }
         bookChapters = chaptersOf(src)
         seenPages.clear()
+        scansReleased = false
+        handler.removeCallbacks(releaseScans)
+        handler.postDelayed(releaseScans, SCAN_HOLD_MS)
         attach()
-        scanSizes(file!!, src)
         prepareStripAhead()
         judgeTall()
 
@@ -1759,6 +1772,22 @@ class ViewerActivity : AppCompatActivity() {
             relayout()
             judgeTall()
         }
+    }
+
+    /** Scans the open book's page sizes and seams once, after its first page shows ([scansReleased]). */
+    private fun startScans() {
+        if (scansReleased) return
+        scansReleased = true
+        handler.removeCallbacks(releaseScans)
+        val src = source ?: return
+        val book = file ?: return
+        scanSizes(book, src)
+        checkSeams()
+    }
+
+    /** Runs [block] once the next frame is drawn, should [src] still be the book open. */
+    private fun afterNextDraw(src: PageSource, block: () -> Unit) {
+        Choreographer.getInstance().postFrameCallback { handler.post { if (source === src) block() } }
     }
 
     /**
@@ -1955,28 +1984,40 @@ class ViewerActivity : AppCompatActivity() {
      * only strips ([Decoders.regionNamed]). They are kept for the book ([PageSeams]), and the book is laid out
      * again whenever they change it. While battery saver pauses scans ([Thrift.pausedScans]), only those
      * within [SEAM_WINDOW] pages are checked: the screens being read need them.
+     * Each round waits until no page decodes ([PageAdapter.decoding]), and pages decoded for the
+     * reader give their sides without a second decode ([PageSource.decodedSides]). A solid archive
+     * is never read for them: only the pages the reader decoded are checked, as it decodes them.
      */
     private fun checkSeams() {
         val src = source ?: return
         val book = file ?: return
         val a = analysis ?: return
         val store = pageStore ?: return
-        if (seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
+        if (!scansReleased || seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
         val far = !applied.thrift.pausedScans
         val cheap = { i: Int -> far && src.cheapSizes && Decoders.regionNamed(names.getOrNull(i)) }
-        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap)
+        val solid = !src.cheapSizes
+        val decoded = { i: Int -> src.decodedSides(i) != null }
+        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap).let { all ->
+            if (solid) all.filter { decoded(it) && decoded(it + 1) } else all
+        }
         if (pages.isEmpty()) return
         val found = pageSeams.copy()
+        val checked = if (solid) object : PageSource by src {
+            override fun sides(index: Int) = src.decodedSides(index)
+        } else src
         seamsJob = lifecycleScope.launch {
             var at = 0
             var batch = SEAM_FIRST
             while (at < pages.size) {
+                while (adapter?.decoding == true) delay(SCAN_YIELD_MS)
+                if (source !== src) return@launch
                 val next = pages.subList(at, minOf(pages.size, at + batch))
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
-                    Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(src, next, found) { !job.isActive } }.also { checked ->
-                        if (checked) store.writeSeams(found)
+                    Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(checked, next, found) { !job.isActive } }.also { ok ->
+                        if (ok) store.writeSeams(found)
                     }
                 }
                 if (!done || source !== src || file != book) return@launch
@@ -2187,6 +2228,9 @@ class ViewerActivity : AppCompatActivity() {
             bounds = pageBounds,
             onLoaded = {
                 learnSize(it)
+                if (!scansReleased) afterNextDraw(src) { startScans() }
+                // A solid archive's seams are checked as its pages decode.
+                else if (!src.cheapSizes) handler.post { checkSeams() }
                 // After the slot waiting for the page shows it.
                 handler.post { shareAnswered() }
             }
@@ -4157,6 +4201,12 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L
+
+        /** How long the open book's scans wait at most for its first page to show ([startScans]). */
+        private const val SCAN_HOLD_MS = 2_000L
+
+        /** How often a seam check waiting for the reader's decodes to end looks again ([checkSeams]). */
+        private const val SCAN_YIELD_MS = 50L
 
         /** [timeShareWait]'s item while a book opens. */
         private const val OPENING = -2

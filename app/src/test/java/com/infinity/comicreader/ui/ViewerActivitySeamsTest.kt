@@ -97,11 +97,12 @@ class ViewerActivitySeamsTest {
         return viewer
     }
 
+    /** Idles until [done], a frame's time passing each round: scans start once the first page is drawn. */
     private fun await(ms: Long = 10_000, done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + ms
         while (!done() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
-            idle()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
         }
     }
 
@@ -226,7 +227,8 @@ class ViewerActivitySeamsTest {
         viewer.finish()
         // Opened again at the start, the pages seen keep the run settled.
         val again = launch(book)
-        repeat(50) { Thread.sleep(10); idle() }
+        // Laid out again once the first page shows and the sizes scan.
+        await { again.items() == 17 }
         assertEquals(17, again.items())
         assertEquals("1 / 31", again.indicator())
     }

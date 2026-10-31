@@ -128,6 +128,9 @@ class ArchiveSource(
     /** Sizes of the pages loaded so far, by index ([loadedSize]). */
     private val loadedSizes = ConcurrentHashMap<Int, IntArray>()
 
+    /** The sides of the pages loaded so far, by index: [sides] needs neither read nor decode for them. */
+    private val loadedSides = ConcurrentHashMap<Int, SpreadSeams.Sides>()
+
     override fun loadedSize(index: Int): IntArray? = loadedSizes[index]
 
     /** Path of each page, inner archives included as folders, in page order. */
@@ -160,7 +163,8 @@ class ArchiveSource(
             // Buffered under the reader's lock, decoded outside it.
             val bytes = Traces.section({ "entry read ${page.entry.size / 1024} KB" }) { readPage(index) { BitmapUtils.readCapped(it) } }
             if (!loadedSizes.containsKey(index)) sizeOf(bytes)?.let { loadedSizes[index] = it }
-            return Decoders.decode(bytes, target)
+            if (loadedSides.containsKey(index)) return Decoders.decode(bytes, target)
+            return Decoders.findingSides({ loadedSides[index] = it }) { Decoders.decode(bytes, target) }
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load archive entry ${page.path} (index $index)", t)
             throw t
@@ -214,8 +218,12 @@ class ArchiveSource(
         return runCatching { Decoders.edge(readPage(index) { BitmapUtils.readCapped(it) }, bottom) }.getOrNull()
     }
 
+    override fun decodedSides(index: Int): SpreadSeams.Sides? = loadedSides[index]
+
+    /** From the page's decode when it was loaded ([loadedSides]), else read and decoded for them alone. */
     override fun sides(index: Int): SpreadSeams.Sides? {
         if (index !in pages.indices) return null
+        loadedSides[index]?.let { return it }
         return runCatching { Decoders.sides(readPage(index) { BitmapUtils.readCapped(it) }) }.getOrNull()
     }
 

@@ -89,7 +89,28 @@ object Decoders {
                     else -> decodeLegacy(bytes, sampled.capPixels)
                 }
             }
+            sidesSinks.get()?.let { sink ->
+                sidesSinks.set(null)
+                runCatching { sidesOf(full) }.getOrNull()?.let(sink)
+            }
             fit(full, sampled, size.takeIf { measuresCrop(target) })
+        }
+    }
+
+    /** Where this thread's next decode leaves its page's sides ([findingSides]). */
+    private val sidesSinks = ThreadLocal<((SpreadSeams.Sides) -> Unit)?>()
+
+    /**
+     * Runs [block], handing the [SpreadSeams.Sides] of the first image decoded from bytes in it
+     * on this thread to [sink] ([sidesOf]), so a seam check need not decode that page again.
+     */
+    fun <T> findingSides(sink: (SpreadSeams.Sides) -> Unit, block: () -> T): T {
+        val outer = sidesSinks.get()
+        sidesSinks.set(sink)
+        try {
+            return block()
+        } finally {
+            if (outer == null) sidesSinks.remove() else sidesSinks.set(outer)
         }
     }
 
@@ -573,6 +594,59 @@ object Decoders {
         if (w <= 0 || h <= 0) return null
         runCatching { regionSides(bytes, w, h) }.getOrNull()?.let { return it }
         return runCatching { wholeSides(bytes) }.getOrNull()
+    }
+
+    /**
+     * Both sides of a decoded [page], as [sides] finds them in its encoded image: the
+     * strips of its outer columns, box-averaged down by [edgeSample] of its height.
+     */
+    internal fun sidesOf(page: Bitmap): SpreadSeams.Sides? {
+        val w = page.width
+        val h = page.height
+        if (w <= 0 || h <= 0) return null
+        val sample = edgeSample(h)
+        val columns = (SpreadSeams.COLUMNS * sample).coerceAtMost(w)
+        val strip = IntArray(columns * h)
+        fun side(right: Boolean): SpreadSeams.Edge? {
+            page.getPixels(strip, 0, columns, if (right) w - columns else 0, 0, columns, h)
+            val sw = (columns / sample).coerceAtLeast(1)
+            val sh = (h / sample).coerceAtLeast(1)
+            return SpreadSeams.edge(boxDown(strip, columns, h, sample), sw, sh, right)
+        }
+        val left = side(right = false) ?: return null
+        val right = side(right = true) ?: return null
+        return SpreadSeams.Sides(left, right)
+    }
+
+    /**
+     * [w] x [h] ARGB [pixels] shrunk by [sample] each way, each pixel the mean of its block
+     * (opaque), as a decoder's sampled output: (w / [sample]) x (h / [sample]), at least 1 x 1.
+     */
+    internal fun boxDown(pixels: IntArray, w: Int, h: Int, sample: Int): IntArray {
+        if (sample <= 1) return pixels
+        val ow = (w / sample).coerceAtLeast(1)
+        val oh = (h / sample).coerceAtLeast(1)
+        val out = IntArray(ow * oh)
+        for (oy in 0 until oh) {
+            val y0 = oy * sample
+            val y1 = minOf(h, y0 + sample)
+            for (ox in 0 until ow) {
+                val x0 = ox * sample
+                val x1 = minOf(w, x0 + sample)
+                var r = 0
+                var g = 0
+                var b = 0
+                for (y in y0 until y1) for (x in x0 until x1) {
+                    val p = pixels[y * w + x]
+                    r += (p shr 16) and 0xFF
+                    g += (p shr 8) and 0xFF
+                    b += p and 0xFF
+                }
+                val n = (y1 - y0) * (x1 - x0)
+                out[oy * ow + ox] = (0xFF shl 24) or ((r / n) shl 16) or ((g / n) shl 8) or (b / n)
+            }
+        }
+        return out
     }
 
     /** The side strips of a [w] x [h] image, sampled down ([edgeSample] of its height), decoded alone. */

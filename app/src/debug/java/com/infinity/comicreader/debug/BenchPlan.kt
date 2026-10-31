@@ -32,7 +32,11 @@ internal data class BenchPlan(
     val pace: Long = 1500,
     /** Sessions in a row, each opening the book anew. */
     val reps: Int = 1,
-    /** Clear the kept page previews, sizes and seams (or covers, for a grid) first: a book never opened. */
+    /**
+     * First forget what the app keeps of the book (its facts, page previews, sizes, seams, network
+     * copy) or, for a grid, every cover: no app caches, but the system's file cache and the
+     * process's memory stay warm, so not a cold start.
+     */
     val fresh: Boolean = false,
     /** Auto-crop on. */
     val crop: Boolean = false,

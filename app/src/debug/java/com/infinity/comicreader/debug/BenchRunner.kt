@@ -16,12 +16,11 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
+import com.infinity.comicreader.data.BookCaches
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
-import com.infinity.comicreader.reader.PageSeams
-import com.infinity.comicreader.reader.PageSizes
-import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
@@ -94,7 +93,7 @@ internal class BenchRunner(private val app: Application) {
         val path = plan.path ?: withContext(Dispatchers.IO) {
             DebugBooks.shareId(plan.share)?.let { DebugBooks.firstBook(Remotes.rootOf(it), SHARE_DEPTH, largest = false) }
         } ?: error("No book found on the share")
-        if (plan.fresh) forgetBook()
+        if (plan.fresh) forgetBook(path)
         probe.clear()
         idle()
         val before = ProcStats.now(app)
@@ -272,11 +271,15 @@ internal class BenchRunner(private val app: Application) {
         e.recycle()
     }
 
-    /** Forgets what was kept of books read: page previews, sizes and seams. */
-    private fun forgetBook() {
-        for (dir in listOf(PreviewStore.dirIn(app.cacheDir), PageSizes.dirIn(app.cacheDir), PageSeams.dirIn(app.cacheDir))) {
-            dir.deleteRecursively()
-        }
+    /**
+     * Forgets what the app keeps of the book at [path] alone, by its Book ID: its facts, page
+     * sizes, seams, previews and network copy ([BookCaches.forget]). The system's file cache
+     * and the process's memory stay warm.
+     */
+    private suspend fun forgetBook(path: String) = withContext(Dispatchers.IO) {
+        val file = Remotes.file(path)
+        val id = BookIds.known(file) ?: BookIds.find(file)
+        if (id != null) BookCaches.forget(app, id) else Log.w(TAG, "No Book ID for the book: nothing forgotten")
     }
 
     // ------------------------------------------------------------------ library grid

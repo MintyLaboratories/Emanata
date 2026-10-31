@@ -697,11 +697,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
   from the header alone (`ImageHeaders`, `Tiff`).
 - Images decode at full resolution, then Lanczos3 scales them to the exact size
-  they are shown at: native code (`NativeResampler`, `src/main/cpp/resample*.c`)
-  on up to 4 CPU threads, NEON on arm64, reading and writing the bitmaps' own
-  pixels; or OpenGL ES 3.1 compute shaders on the GPU; or, where neither runs,
-  `Resampler` in Kotlin, which also models the native code for JVM tests. All
-  three filter in fp32 and agree within one code. Only a source over
+  they are shown at: native code (`NativeResampler`, `src/main/cpp/resample*.c`),
+  NEON on arm64, reading and writing the bitmaps' own pixels, on one thread per
+  large core (`CpuCores`, from the cores' capacities at runtime), pinned to
+  those cores; or, where it cannot load, `Resampler` in Kotlin, which also models
+  the native code for JVM tests. Debug and bench builds can switch to OpenGL ES
+  3.1 compute shaders on the GPU instead (opt-in only: slower than the CPU path
+  on the reference tablet, energy not yet measured). All three filter in fp32
+  and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <

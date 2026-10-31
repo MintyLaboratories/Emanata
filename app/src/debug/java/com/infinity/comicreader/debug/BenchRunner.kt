@@ -29,7 +29,9 @@ import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -125,6 +127,7 @@ internal class BenchRunner(private val app: Application) {
         val sharp = ArrayList<Long>()
         val moved = ArrayList<Long>()
         var cached = 0
+        var unsharpFrames = 0
         val turnStart = ProcStats.now(app, memory = false)
         val turnsFrom = System.nanoTime()
         var tapX = TAP_X
@@ -141,6 +144,7 @@ internal class BenchRunner(private val app: Application) {
             sharp += turn.getLong("sharpMs")
             if (turn.has("movedMs")) moved += turn.getLong("movedMs")
             if (turn.getBoolean("ready")) cached++
+            unsharpFrames += turn.getInt("unsharpFrames")
             if (turn.getBoolean("timedOut")) break
         }
         val turnsWall = System.nanoTime() - turnsFrom
@@ -157,7 +161,7 @@ internal class BenchRunner(private val app: Application) {
             .put("openCpuMs", cpuOpen)
             .put("openFrames", openFrames)
             .put("turnVisible", Stats.summary(visible)).put("turnSharp", Stats.summary(sharp)).put("turnMoved", Stats.summary(moved))
-            .put("turnsReady", cached).put("turnCount", turns.length())
+            .put("turnsReady", cached).put("turnCount", turns.length()).put("turnUnsharpFrames", unsharpFrames)
             .put("turnCpuMs", turnEnd.cpuMs - turnStart.cpuMs).put("turnWallMs", Stats.ms(turnsWall))
             .put("turnFrames", turnFrames)
             .put("before", before.toJson()).put("afterOpen", afterOpen.toJson()).put("afterTurns", turnEnd.toJson())
@@ -165,16 +169,27 @@ internal class BenchRunner(private val app: Application) {
     }
 
     /**
-     * One turn forward in [viewer] as [plan] says, timed from the input's end (a drag's
-     * start) until a frame showing the pages then on screen visible and sharp completes;
-     * null when nothing moved.
+     * One turn forward in [viewer] as [plan] says, timed from the input's end (a tap's or
+     * the last drag's lift, a key's press) until a frame showing the pages then on screen
+     * visible and sharp completes; null when nothing moved. Frames from the input's start
+     * on in which a page on screen is blank or a stand-in are counted too: a drag scrolls
+     * pages in before it lifts.
      */
-    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float): JSONObject? {
+    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float): JSONObject? = coroutineScope {
         val before = probe.pages.pages(probe.pageViewsOnScreen())
         var movedAt = -1L
         probe.onMoved = { if (movedAt < 0) movedAt = it }
+        var frameCount = 0
+        var unsharp = 0
+        val counting = launch {
+            while (true) {
+                nextFrame()
+                frameCount++
+                if (probe.pages.ready(probe.pageViewsOnScreen()) != PageWatch.Ready.SHARP) unsharp++
+            }
+        }
         val start = when (plan.input) {
-            BenchPlan.DRAG -> drag(viewer).also { repeat(DRAGS - 1) { drag(viewer) } }
+            BenchPlan.DRAG -> (1..DRAGS).map { drag(viewer) }.last()
             BenchPlan.KEY -> key(viewer)
             else -> tap(viewer, tapX, TAP_Y)
         }
@@ -194,15 +209,17 @@ internal class BenchRunner(private val app: Application) {
                 m.frame(now, ready, probe.pages.changedAt(views))
             }
         }
+        counting.cancel()
         probe.onMoved = null
         awaitDrawn(m.sharpAt)
         if (movedAt >= 0) m.moved(movedAt)
-        if (shownPages == before) return null
-        return JSONObject()
+        if (shownPages == before) return@coroutineScope null
+        JSONObject()
             .put("pages", JSONArray(shownPages))
             .put("visibleMs", Stats.ms(m.visible(frames::drawnBy))).put("sharpMs", Stats.ms(m.sharp(frames::drawnBy)))
             .apply { if (m.moved >= 0) put("movedMs", Stats.ms(m.moved)) }
             .put("ready", first == PageWatch.Ready.SHARP)
+            .put("frames", frameCount).put("unsharpFrames", unsharp)
             .put("back", (shownPages.minOrNull() ?: 0) < (before.minOrNull() ?: 0))
             .put("timedOut", !ok)
     }
@@ -220,14 +237,13 @@ internal class BenchRunner(private val app: Application) {
         return at
     }
 
-    /** A slow drag up most of [activity]'s window, held still before lifting so it does not fling; the time it starts. */
+    /** A slow drag up most of [activity]'s window, held still before lifting so it does not fling; the time it lifts. */
     private suspend fun drag(activity: Activity): Long {
         val root = activity.window.decorView
         val x = root.width * 0.5f
         val from = root.height * DRAG_FROM
         val to = root.height * DRAG_TO
         val down = SystemClock.uptimeMillis()
-        val at = System.nanoTime()
         touch(activity, down, down, MotionEvent.ACTION_DOWN, x, from)
         for (step in 1..DRAG_STEPS) {
             delay(DRAG_STEP_MS)
@@ -238,6 +254,7 @@ internal class BenchRunner(private val app: Application) {
             delay(DRAG_STEP_MS)
             touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, x, to)
         }
+        val at = System.nanoTime()
         touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, to)
         return at
     }

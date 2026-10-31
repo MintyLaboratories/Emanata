@@ -22,15 +22,18 @@ import com.infinity.comicreader.compact.LibJxl
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 /**
  * Per-device calibration on the device ([Calibration] chooses): once per app version and
- * system build, while the app is in front, charging, cool and otherwise idle, it times
- * resampling and JPEG XL decoding setups on a synthetic page and keeps the winners
- * ([Tuning]) in a file that is not backed up. Until the first calibration ends, the
- * [Tuning.defaults] apply; after an update the previous winners apply until new ones are
- * established. Benchmarks and checks [hold] it off. Never shown to the user.
+ * system build, while the app is in front but not reading ([Reading]), charging, cool and
+ * otherwise idle, it times resampling and JPEG XL decoding setups on a synthetic page and
+ * keeps the winners ([Tuning]) in a file that is not backed up. A timing during which the
+ * app decoded anything ([working]) is made again; the app's drawing ([UiCpu]) is left out
+ * of CPU times. Until the first calibration ends, the [Tuning.defaults] apply; after an
+ * update the previous winners apply until new ones are established. Benchmarks and checks
+ * [hold] it off. Never shown to the user.
  */
 object Calibrator {
     private const val TAG = "Calibration"
@@ -54,30 +57,53 @@ object Calibrator {
     @Volatile
     var onEnded: ((Boolean) -> Unit)? = null
 
+    /** An activity calibration never runs under: the reader, whose page turns it would slow and skew. */
+    interface Reading
+
     @PublishedApi
     internal val holds = AtomicInteger()
 
+    /** App work in progress ([working]). */
+    @PublishedApi
+    internal val busy = AtomicInteger()
+
+    /** App work started so far ([working]). */
+    @PublishedApi
+    internal val worked = AtomicLong()
+
     private val resumed = AtomicInteger()
+
+    private val reading = AtomicInteger()
 
     private lateinit var app: Application
 
-    private var fingerprint = ""
+    @Volatile
+    private var fingerprint: String? = null
 
-    /** Applies the kept tuning, if any, and calibrates when due as activities come to the front. */
+    /** The run in progress (0: none); -1 once a forced run drops it. */
+    @Volatile
+    private var current = 0
+
+    private var runs = 0
+
+    /** A forced run waits for the one it dropped to end. */
+    private var again = false
+
+    /**
+     * Applies the kept tuning, if any, and calibrates when due as activities come to the
+     * front. What is kept is read off the main thread; until then nothing is due.
+     */
     fun start(app: Application) {
         this.app = app
-        fingerprint = Calibration.fingerprint(appVersion(app), Build.FINGERPRINT)
-        kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
-        tuning = Tuning.of(kept?.optJSONObject("tuning"))?.also { it.apply() }
-            ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 resumed.incrementAndGet()
-                if (due()) begin(force = false)
+                if (activity is Reading) reading.incrementAndGet() else if (due()) begin(force = false)
             }
 
             override fun onActivityPaused(activity: Activity) {
                 resumed.decrementAndGet()
+                if (activity is Reading) reading.decrementAndGet()
             }
 
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
@@ -86,10 +112,28 @@ object Calibrator {
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
         })
+        thread(name = "calibration-load", isDaemon = true) {
+            kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
+            tuning = Tuning.of(kept?.optJSONObject("tuning"))?.also { it.apply() }
+                ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
+            fingerprint = Calibration.fingerprint(appVersion(app), Build.FINGERPRINT)
+            if (resumed.get() > reading.get() && due()) begin(force = false)
+        }
     }
 
-    /** True when this app version and system build have no calibration yet. */
-    fun due(): Boolean = kept?.optString("fingerprint") != fingerprint
+    /** True when this app version and system build have no calibration yet; false until what is kept is read. */
+    fun due(): Boolean = fingerprint.let { it != null && kept?.optString("fingerprint") != it }
+
+    /** Runs [block] as app work no calibration timing may overlap: one it overlaps is made again. */
+    inline fun <T> working(block: () -> T): T {
+        busy.incrementAndGet()
+        worked.incrementAndGet()
+        try {
+            return block()
+        } finally {
+            busy.decrementAndGet()
+        }
+    }
 
     /** Runs [block] with calibration held off, as benchmarks and checks that set their own setups do. */
     inline fun <T> hold(block: () -> T): T {
@@ -101,33 +145,60 @@ object Calibrator {
         }
     }
 
-    /** Calibrates now, charging or not (debug builds' Recalibrate); still only in front and idle. */
+    /**
+     * Calibrates now, charging or not (debug builds' Recalibrate); still only in front, not
+     * reading and idle. A run already waiting or timing is dropped for this one.
+     */
     fun recalibrate() = begin(force = true)
 
     @Synchronized
     private fun begin(force: Boolean) {
-        if (running || !::app.isInitialized) return
+        if (!::app.isInitialized) return
+        if (running) {
+            if (force) {
+                current = -1
+                again = true
+            }
+            return
+        }
         if (!force && !charging(app)) return
         running = true
+        val id = ++runs
+        current = id
+        val dropped = { current != id }
         thread(name = "calibration", isDaemon = true) {
             var done = false
             try {
                 // Let what brought the app to the front settle first.
-                SystemClock.sleep(if (force) FORCED_START_MS else START_MS)
-                done = calibrate(force)
+                val until = SystemClock.elapsedRealtime() + if (force) FORCED_START_MS else START_MS
+                while (!dropped() && SystemClock.elapsedRealtime() < until) SystemClock.sleep(STEP_MS)
+                if (!dropped()) done = calibrate(force, dropped)
             } catch (t: Throwable) {
                 Log.w(TAG, "Calibration failed", t)
             } finally {
-                running = false
-                Log.i(TAG, "ended $done")
-                onEnded?.invoke(done)
+                ended(dropped(), done)
             }
         }
     }
 
+    /** A run ended: a dropped one without reporting it, then the forced run that dropped it starts. */
+    @Synchronized
+    private fun ended(dropped: Boolean, done: Boolean) {
+        running = false
+        current = 0
+        if (dropped) Log.i(TAG, "dropped for a new run") else {
+            Log.i(TAG, "ended $done")
+            onEnded?.invoke(done)
+        }
+        if (again) {
+            again = false
+            begin(force = true)
+        }
+    }
+
     /** One calibration; true when it finished and its winners apply. */
-    private fun calibrate(force: Boolean): Boolean {
-        val probe = DeviceProbe(app, force)
+    private fun calibrate(force: Boolean, dropped: () -> Boolean): Boolean {
+        val probe = DeviceProbe(app, force, dropped)
         try {
             // Nothing is drawn or encoded before the app is first found idle.
             if (!probe.awaitFair()) return false
@@ -136,13 +207,13 @@ object Calibrator {
                 CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl()
             )
             val t0 = SystemClock.elapsedRealtime()
-            val timings = CalibrationRun(probe, candidates).run() ?: return false
+            val timings = CalibrationRun(probe, candidates).run(dropped) ?: return false
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return false
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
             val chosen = Calibration.tuning(timings, before)
             chosen.apply()
             tuning = chosen
-            val record = JSONObject().put("fingerprint", fingerprint).put("at", System.currentTimeMillis())
+            val record = JSONObject().put("fingerprint", fingerprint ?: return false).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force)
             kept = record
@@ -173,12 +244,19 @@ object Calibrator {
     }
 
     /** Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's portrait size. */
-    private class DeviceProbe(private val context: Context, private val force: Boolean) : CalibrationProbe {
+    private class DeviceProbe(private val context: Context, private val force: Boolean, private val dropped: () -> Boolean) : CalibrationProbe {
         private var src: Bitmap? = null
         private var dst: Bitmap? = null
         private var jxl: ByteArray? = null
         private var jxlOut: Bitmap? = null
         private val started = SystemClock.elapsedRealtime()
+        private val ui = UiCpu.self().also { it.scan() }
+
+        /** App work started before the timing in progress. */
+        private var workedBefore = 0L
+
+        /** CPU time in ms of all but the UI threads ([UiCpu]). */
+        private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
 
         /** Draws the page and makes its target, the page shrunk to fit the screen held upright. */
         fun prepare() {
@@ -207,7 +285,8 @@ object Calibrator {
         }
 
         override fun time(candidate: Candidate): Pair<Double, Double>? {
-            val cpu0 = Process.getElapsedCpuTime()
+            workedBefore = worked.get()
+            val cpu0 = cpuMs()
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
                 Candidate.Kind.PIXELS -> NativeResampler.resample(
@@ -224,26 +303,31 @@ object Calibrator {
                 }
             }
             if (!ok) return null
-            return (System.nanoTime() - t0) / 1e6 to (Process.getElapsedCpuTime() - cpu0).toDouble()
+            return (System.nanoTime() - t0) / 1e6 to (cpuMs() - cpu0).coerceAtLeast(0.0)
         }
 
         override fun awaitFair(): Boolean {
             while (true) {
-                if (holds.get() > 0 || resumed.get() <= 0) return false
+                if (dropped() || holds.get() > 0 || !inFront()) return false
                 if (!force && !charging(context)) return false
                 if (SystemClock.elapsedRealtime() - started > GIVE_UP_MS) return false
-                if (cool() && idle()) return true
+                if (busy.get() == 0 && cool() && idle()) return true
                 SystemClock.sleep(WAIT_MS)
             }
         }
 
-        override fun stillFair(): Boolean = holds.get() == 0 && resumed.get() > 0 && cool()
+        /** Nothing held, left, read or decoded meanwhile, and not hot. */
+        override fun stillFair(): Boolean =
+            holds.get() == 0 && inFront() && busy.get() == 0 && worked.get() == workedBefore && cool()
 
-        /** True when the process used under a tenth of a core over a short while: nothing else of the app is busy. */
+        /** In front and not reading. */
+        private fun inFront() = resumed.get() > 0 && reading.get() == 0
+
+        /** True when all but the UI threads used under a tenth of a core over a short while: nothing else of the app is busy. */
         private fun idle(): Boolean {
-            val cpu0 = Process.getElapsedCpuTime()
+            val cpu0 = cpuMs()
             SystemClock.sleep(IDLE_WINDOW_MS)
-            return Process.getElapsedCpuTime() - cpu0 < IDLE_WINDOW_MS / 10
+            return cpuMs() - cpu0 < IDLE_WINDOW_MS / 10
         }
 
         private fun cool(): Boolean {
@@ -263,6 +347,7 @@ object Calibrator {
     private const val PAGE_H = 3000
     private const val START_MS = 10_000L
     private const val FORCED_START_MS = 1_000L
+    private const val STEP_MS = 250L
     private const val WAIT_MS = 1_000L
     private const val IDLE_WINDOW_MS = 300L
     private const val GIVE_UP_MS = 120_000L

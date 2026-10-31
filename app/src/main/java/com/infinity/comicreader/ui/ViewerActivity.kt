@@ -92,6 +92,7 @@ import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.AutoScrollClock
 import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.BookFactsReader
+import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.Chapter
 import com.infinity.comicreader.reader.Chapters
 import com.infinity.comicreader.reader.ComicInfo
@@ -147,7 +148,7 @@ import kotlin.math.abs
  * [Library], falling back to the defaults in [Prefs]. Changes made elsewhere,
  * such as in the settings screen, apply live through [SettingsRepository].
  */
-class ViewerActivity : AppCompatActivity() {
+class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library

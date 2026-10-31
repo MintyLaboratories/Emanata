@@ -71,7 +71,10 @@ class DecodeException(
 object Decoders {
     private const val TAG = "Decoders"
 
-    fun decode(bytes: ByteArray, target: Target): Bitmap {
+    /** [bytes] decoded for [target], as app work calibration waits out ([Calibrator.working]). */
+    fun decode(bytes: ByteArray, target: Target): Bitmap = Calibrator.working { decodeBytes(bytes, target) }
+
+    private fun decodeBytes(bytes: ByteArray, target: Target): Bitmap {
         val kind = ImageKind.sniff(bytes)
         if (kind in QUICK_ENCODED) sinks.get()?.let { sink ->
             sinks.set(null)
@@ -133,7 +136,9 @@ object Decoders {
      * Streams [file] to the platform decoder; JPEG XL, AVIF, and any image below API 28,
      * is read whole first, as is one on a share.
      */
-    fun decode(file: File, target: Target): Bitmap {
+    fun decode(file: File, target: Target): Bitmap = Calibrator.working { decodeFile(file, target) }
+
+    private fun decodeFile(file: File, target: Target): Bitmap {
         if (file is RemoteFile) return decode(Remotes.readBytes(file.path), target)
         val kind = ImageKind.sniff(readPrefix(file, ImageKind.HEADER_BYTES))
         val size = if (kind != ImageKind.JXL && kind != ImageKind.AVIF && (measuresCrop(target) || target.banded)) size(file) else null
@@ -536,7 +541,9 @@ object Decoders {
      * at [EDGE_CAP_PIXELS], keeping only a thin band. For analysis only, never shown.
      * Blocking.
      */
-    fun edge(bytes: ByteArray, bottom: Boolean): Seams.Profile? {
+    fun edge(bytes: ByteArray, bottom: Boolean): Seams.Profile? = Calibrator.working { edgeOf(bytes, bottom) }
+
+    private fun edgeOf(bytes: ByteArray, bottom: Boolean): Seams.Profile? {
         val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() ?: return null
         val w = size[0]
         val h = size[1]
@@ -592,7 +599,9 @@ object Decoders {
      * down toward [Seams.LENGTH] tall ([BitmapRegionDecoder]); other formats decode whole,
      * [SIDES_HEIGHT] tall. For analysis only, never shown. Blocking.
      */
-    fun sides(bytes: ByteArray): SpreadSeams.Sides? {
+    fun sides(bytes: ByteArray): SpreadSeams.Sides? = Calibrator.working { sidesFrom(bytes) }
+
+    private fun sidesFrom(bytes: ByteArray): SpreadSeams.Sides? {
         val size = runCatching { headerSize(bytes.inputStream()) ?: size(bytes) }.getOrNull() ?: return null
         val w = size[0]
         val h = size[1]
@@ -785,7 +794,7 @@ object Decoders {
      * The preview ([Previews.TARGET]) of [bytes], decoded at reduced size, or null when
      * its format has no quick path. Throws [DecodeException] when it does not decode.
      */
-    fun preview(bytes: ByteArray): Bitmap? = Traces.section("quick preview") { quick(bytes) }
+    fun preview(bytes: ByteArray): Bitmap? = Calibrator.working { Traces.section("quick preview") { quick(bytes) } }
 
     private fun quick(bytes: ByteArray): Bitmap? {
         val kind = ImageKind.sniff(bytes)

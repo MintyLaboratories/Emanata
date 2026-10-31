@@ -26,7 +26,8 @@ the platform's one-thread decodes (JPEG, PNG, WebP), "decoders" sets how many pa
 once, and "preload" the pages read ahead (the setting, put back after the run).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
-temperature or background work falls on both alike; results carry "variant": "a" or "b".
+temperature or background work falls on both alike; results carry "variant": "a" or "b". After
+each install the build calibrates (per-device winners, CalibrationActivity) before its sessions.
 Sessions start with a warm-up (see BenchPlan.warmup) that reports leave out.
 
 Time a release build: `./gradlew assembleBench`, then install app-bench.apk over the debug build
@@ -527,6 +528,7 @@ def ab(args) -> None:
         print(f"== round {n // 2 + 1}, {variant}: installing {Path(apk).name}", flush=True)
         install(apk)
         adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        calibrate()
         if args.rest:
             time.sleep(args.rest)
         args.variant = variant
@@ -570,6 +572,30 @@ def install(apk: str, tries: int = 2) -> None:
         except subprocess.TimeoutExpired:
             print(f"install stalled (try {n + 1} of {tries})", flush=True)
     raise SystemExit(f"could not install {apk}")
+
+
+def calibrate(timeout_s: int = 180) -> None:
+    """
+    Calibrates a freshly installed build now (CalibrationActivity) and waits for it to end, so
+    no calibration runs between sessions and both builds of an A/B read with their own winners.
+    A build without calibration is left as it is.
+    """
+    adb("logcat", "-c")
+    out = adb("shell", "am", "start", "-n", f"{PACKAGE}/com.infinity.comicreader.debug.CalibrationActivity",
+              "--es", "do", "recalibrate", capture=True, check=False)
+    if "Error" in out:
+        return
+    end = time.time() + timeout_s
+    while time.time() < end:
+        time.sleep(3)
+        log = adb("logcat", "-d", "-s", "Calibration:I", capture=True, check=False)
+        m = re.search(r"ended (true|false)", log)
+        if m:
+            print(f"calibrated: {m.group(1)}", flush=True)
+            break
+    else:
+        print("calibration did not end", flush=True)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
 
 
 def main() -> None:

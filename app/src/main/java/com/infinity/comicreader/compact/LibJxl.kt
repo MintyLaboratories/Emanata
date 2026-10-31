@@ -137,14 +137,19 @@ object LibJxl : JxlCodec {
      * Decodes [jxl], shown [width] x [height], in sRGB into [out]: its rectangle [left]..[right]
      * x [top]..[bottom], every [sample]th pixel each way, so [out] is that span divided by
      * [sample], rounded up, ARGB_8888, on [threads] threads pinned to [cores] (bit n = core n;
-     * 0 = any). The whole image decodes; only those pixels are kept. False when it fails, or
-     * the image is another size or has no sRGB rendering.
+     * 0 = any), asking [stop] between its parallel steps. The whole image decodes; only those
+     * pixels are kept. [REGION_DONE]; [PAGE_CANCELED] once [stop] said so; else 0: it failed,
+     * or the image is another size or has no sRGB rendering.
      */
     fun region(
-        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long
-    ): Boolean = nRegion(jxl, out, width, height, left, top, right, bottom, sample, threads, cores)
+        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long,
+        stop: Stop? = null
+    ): Int = nRegion(jxl, out, width, height, left, top, right, bottom, sample, threads, cores, stop)
 
-    /** Asked between a page decode's parallel steps, on its thread; true stops it. */
+    /** What [region] returns once done. */
+    const val REGION_DONE = 1
+
+    /** Asked between a page or region decode's parallel steps, on its thread; true stops it. */
     fun interface Stop {
         fun stop(): Boolean
     }
@@ -189,8 +194,9 @@ object LibJxl : JxlCodec {
 
     @JvmStatic
     private external fun nRegion(
-        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long
-    ): Boolean
+        jxl: ByteArray, out: Bitmap, width: Int, height: Int, left: Int, top: Int, right: Int, bottom: Int, sample: Int, threads: Int, cores: Long,
+        stop: Stop?
+    ): Int
 
     @JvmStatic
     private external fun nEncode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray?

@@ -927,16 +927,18 @@ object Decoders {
 
     /**
      * Rectangles of a JPEG XL of pixels shown [width] x [height], each decoding it whole natively
-     * ([LibJxl.region]) on [JxlPages]' threads and cores, sampled by point.
+     * ([LibJxl.region]) on [JxlPages.regionPlacement]'s threads and cores, sampled by point.
+     * Throws [CancellationException] once the thread's [Cancellation] says so.
      */
     private class JxlRegions(private val bytes: ByteArray, override val width: Int, override val height: Int) : RegionReader {
         override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
             val out = Bitmap.createBitmap((right - left + sample - 1) / sample, (bottom - top + sample - 1) / sample, Bitmap.Config.ARGB_8888)
-            val done = try {
+            val result = try {
                 jxlGate.acquireUninterruptibly()
                 try {
-                    val (threads, cores) = JxlPages.placement(Urgency.current()())
-                    LibJxl.region(bytes, out, width, height, left, top, right, bottom, sample, threads, cores)
+                    val (threads, cores) = JxlPages.regionPlacement(Urgency.current()())
+                    val canceled = Cancellation.current()
+                    LibJxl.region(bytes, out, width, height, left, top, right, bottom, sample, threads, cores) { canceled() }
                 } finally {
                     jxlGate.release()
                 }
@@ -944,8 +946,9 @@ object Decoders {
                 out.recycle()
                 throw t
             }
-            if (done) return out
+            if (result == LibJxl.REGION_DONE) return out
             out.recycle()
+            if (result == LibJxl.PAGE_CANCELED) throw CancellationException("JPEG XL region decode canceled")
             throw DecodeException("Could not decode part of this JXL image")
         }
 

@@ -67,6 +67,12 @@ object JxlPages {
     }
 
     /**
+     * [placement] for a region decode ([LibJxl.region]); off ([enabled]), one unpinned thread,
+     * as region decodes ran before this path.
+     */
+    internal fun regionPlacement(urgent: Boolean): Pair<Int, Long> = if (enabled) placement(urgent) else 1 to 0L
+
+    /**
      * [bytes], a JPEG XL shown [width] x [height], decoded whole into a new ARGB_8888 bitmap.
      * Null when this path does not take it or native code is missing, so the caller decodes it
      * another way. Throws [CancellationException] once [canceled] returns true, asked between

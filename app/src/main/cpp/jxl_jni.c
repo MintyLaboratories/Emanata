@@ -520,6 +520,28 @@ EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nEncode(
     return result;
 }
 
+// Calls a Kotlin LibJxl.Stop's stop() from a page or region decode, on the thread that started it.
+typedef struct {
+    JNIEnv * env;
+    jobject callback;
+    jmethodID stop;
+    // What stop() threw, cleared so the call can unlock and release before rethrowing it.
+    jthrowable thrown;
+} StopCall;
+
+static int stopNow(void * opaque)
+{
+    StopCall * c = opaque;
+    const jboolean stop = (*c->env)->CallBooleanMethod(c->env, c->callback, c->stop);
+    if ((*c->env)->ExceptionCheck(c->env)) {
+        // An exception stops the decode too.
+        c->thrown = (*c->env)->ExceptionOccurred(c->env);
+        (*c->env)->ExceptionClear(c->env);
+        return 1;
+    }
+    return stop;
+}
+
 // Where the pixels of a decode go: the rectangle `left`..`right` x `top`..`bottom` of the
 // image as shown, every `sample`th pixel each way, premultiplied into an RGBA_8888 bitmap.
 typedef struct {
@@ -568,25 +590,41 @@ static void regionRun(void * opaque, size_t x, size_t y, size_t n, const void * 
     }
 }
 
+// Readies `call` to ask `stop`'s stop(); false (an exception pending) when it has none.
+static int stopCall(JNIEnv * env, jobject stop, StopCall * call)
+{
+    call->env = env;
+    call->callback = stop;
+    call->stop = NULL;
+    call->thrown = NULL;
+    if (stop == NULL) return 1;
+    call->stop = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, stop), "stop", "()Z");
+    return call->stop != NULL;
+}
+
 // Decodes the first frame of `jxl`, shown `width` x `height` (its orientation applied), in
 // sRGB into `bitmap`, an RGBA_8888 bitmap ceil((right - left) / sample) x
 // ceil((bottom - top) / sample): the rectangle `left`..`right` x `top`..`bottom`, every
 // `sample`th pixel each way, on `threads` threads pinned to `cores` (bit n = core n; 0 =
-// any). The whole image is decoded; only those pixels are kept. False when it fails, or the
-// image is another size or cannot be given in sRGB.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
+// any); with `stop`, asks its stop() between the decoder's parallel steps and stops once it
+// returns true. The whole image is decoded; only those pixels are kept. 1 when done,
+// JP_CANCELED once stopped, else 0: it failed, or the image is another size or cannot be
+// given in sRGB.
+EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
     JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint width, jint height, jint left, jint top, jint right, jint bottom, jint sample,
-    jint threads, jlong cores)
+    jint threads, jlong cores, jobject stop)
 {
     (void)clazz;
     if (!ready() || left < 0 || top < 0 || right <= left || bottom <= top || right > width || bottom > height || sample < 1) {
-        return JNI_FALSE;
+        return 0;
     }
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 ||
         info.width != (uint32_t)((right - left + sample - 1) / sample) || info.height != (uint32_t)((bottom - top + sample - 1) / sample)) {
-        return JNI_FALSE;
+        return 0;
     }
+    StopCall call;
+    if (!stopCall(env, stop, &call)) return 0;
     Input in = { 0 };
     void * pixels = NULL;
     jr_pool * pool = NULL;
@@ -602,11 +640,14 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
         region.out = pixels;
         dec = decoder(&in, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE);
     }
-    if (dec != NULL && threads > 1) {
-        pool = jr_create(threads - 1, (uint64_t)cores);
+    if (dec != NULL) {
+        // A pool even for one thread: its runner asks `stop`.
+        pool = jr_create(threads > 1 ? threads - 1 : 0, (uint64_t)cores);
         if (pool == NULL || J(JxlDecoderSetParallelRunner)(dec, jr_run, pool) != JXL_DEC_SUCCESS) {
             J(JxlDecoderDestroy)(dec);
             dec = NULL;
+        } else if (stop != NULL) {
+            jr_stop_when(pool, stopNow, &call);
         }
     }
     while (dec != NULL) {
@@ -644,6 +685,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
     if (dec != NULL) {
         J(JxlDecoderDestroy)(dec);
     }
+    const int canceled = pool != NULL && jr_canceled(pool);
     jr_destroy(pool);
     if (pinned) {
         sched_setaffinity(0, sizeof(kept), &kept);
@@ -652,29 +694,8 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
         AndroidBitmap_unlockPixels(env, bitmap);
     }
     giveBack(env, &in);
-    return ok ? JNI_TRUE : JNI_FALSE;
-}
-
-// Calls a Kotlin LibJxl.Stop's stop() from a page decode, on the thread that started it.
-typedef struct {
-    JNIEnv * env;
-    jobject callback;
-    jmethodID stop;
-    // What stop() threw, cleared so the call can unlock and release before rethrowing it.
-    jthrowable thrown;
-} StopCall;
-
-static int stopNow(void * opaque)
-{
-    StopCall * c = opaque;
-    const jboolean stop = (*c->env)->CallBooleanMethod(c->env, c->callback, c->stop);
-    if ((*c->env)->ExceptionCheck(c->env)) {
-        // An exception stops the decode too.
-        c->thrown = (*c->env)->ExceptionOccurred(c->env);
-        (*c->env)->ExceptionClear(c->env);
-        return 1;
-    }
-    return stop;
+    if (call.thrown != NULL) (*env)->Throw(env, call.thrown);
+    return canceled ? JP_CANCELED : ok;
 }
 
 // Decodes the first frame of `jxl` in sRGB straight into `bitmap`, an RGBA_8888 bitmap of
@@ -690,11 +711,8 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
     if (api == NULL || AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
         return JP_UNSUPPORTED;
     }
-    StopCall call = { env, stop, NULL, NULL };
-    if (stop != NULL) {
-        call.stop = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, stop), "stop", "()Z");
-        if (call.stop == NULL) return JP_FAILED;
-    }
+    StopCall call;
+    if (!stopCall(env, stop, &call)) return JP_FAILED;
     Input in = { 0 };
     void * pixels = NULL;
     int result = JP_FAILED;

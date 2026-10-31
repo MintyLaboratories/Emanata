@@ -122,6 +122,13 @@ class JxlPagesTest {
     }
 
     @Test
+    fun regionDecodesFollowTheSwitch() {
+        assertEquals(4 to tablet.big, JxlPages.regionPlacement(urgent = true))
+        JxlPages.enabled = false
+        assertEquals(1 to 0L, JxlPages.regionPlacement(urgent = true))
+    }
+
+    @Test
     fun urgencyComesFromTheThreadByDefault() {
         val k = FakeKernel().also { JxlPages.kernel = it }
         JxlPages.laterThreads = 1

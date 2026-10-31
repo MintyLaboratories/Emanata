@@ -31,13 +31,6 @@ const jp_api * jp_coder(void)
     return coder_ready;
 }
 
-#ifndef JP_OWN
-const jp_api * jp_own(void)
-{
-    return NULL;
-}
-#endif
-
 // True for sRGB (gray or color): D65 white, sRGB primaries and transfer.
 static int is_srgb(const JxlColorEncoding * c)
 {

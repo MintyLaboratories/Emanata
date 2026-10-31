@@ -144,24 +144,29 @@ object BitmapUtils {
     }
 
     /**
-     * [src] resampled through [Resampler] as [plan] and [scaling] say, into a new ARGB_8888 bitmap. Reads
-     * and writes rows in place, so no second full-size copy of [src] is ever made.
-     * Stops early, throwing, once this thread's [Cancellation] mark is set. Timed ([Timing]).
+     * [src] resampled as [plan] and [scaling] say, into a new ARGB_8888 bitmap: by native code
+     * ([NativeResampler]) where it can, else through [Resampler], reading and writing rows in
+     * place. Either way no second full-size copy of [src] is ever made. Stops early,
+     * throwing, once this thread's [Cancellation] mark is set. Timed ([Timing]).
      */
     fun resample(src: Bitmap, plan: Plan, linear: Boolean, scaling: Scaling = Scaling.PLAIN): Bitmap {
         val w = src.width
         val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
+        val window = Resampler.Window(plan.x, plan.y, plan.spanW, plan.spanH)
         try {
             Timing.span("resample ${w}x${src.height} to ${plan.width}x${plan.height} ${scaling.filter.key} ${scaling.upRing}/${scaling.downRing}") {
-                Resampler.resample(
-                    w, src.height,
-                    { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
-                    Resampler.Window(plan.x, plan.y, plan.spanW, plan.spanH),
-                    plan.width, plan.height, linear,
-                    { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
-                    scaling,
-                    canceled = Cancellation.current()
-                )
+                val canceled = Cancellation.current()
+                if (!NativeResampler.resample(src, out, window, linear, scaling, canceled)) {
+                    Resampler.resample(
+                        w, src.height,
+                        { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
+                        window,
+                        plan.width, plan.height, linear,
+                        { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
+                        scaling,
+                        canceled = canceled
+                    )
+                }
             }
         } catch (t: Throwable) {
             out.recycle()

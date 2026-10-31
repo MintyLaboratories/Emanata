@@ -2,7 +2,8 @@
 # sources, behind a small JNI binding (avif_jni.c); Book IDs: xxHash's XXH3-64,
 # header-only from its pinned release (book_id_jni.c); lossless compaction: libjxl
 # as jxl-coder ships it, opened at run time and compiled against the headers of
-# the same pinned release (jxl_jni.c).
+# the same pinned release (jxl_jni.c); resampling of page bitmaps, on the CPU (NEON on
+# arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c).
 cmake_minimum_required(VERSION 3.22)
 
 # Optimized native code in every app build type: an unoptimized AV1 decoder takes
@@ -58,9 +59,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libjxl)
 
-add_library(avifjni SHARED avif_jni.c book_id_jni.c jxl_jni.c)
+add_library(avifjni SHARED avif_jni.c book_id_jni.c jxl_jni.c resample.c resample_gpu.c resample_jni.c)
 target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}" "${CMAKE_CURRENT_LIST_DIR}/jxl_headers" "${libjxl_SOURCE_DIR}/lib/include")
-target_link_libraries(avifjni PRIVATE avif jnigraphics log dl)
+target_link_libraries(avifjni PRIVATE avif jnigraphics log dl EGL GLESv3 m)
 target_compile_options(avifjni PRIVATE -Wall -Wextra)
 # Only the JNI entry points are exported; unused code is dropped.
 set_target_properties(avifjni PROPERTIES C_VISIBILITY_PRESET hidden)

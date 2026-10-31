@@ -696,8 +696,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
   from the header alone (`ImageHeaders`, `Tiff`).
-- Images decode at full resolution, then Lanczos3 (`Lanczos`, pure Kotlin,
-  parallel) scales them to the exact size they are shown at. Only a source over
+- Images decode at full resolution, then Lanczos3 scales them to the exact size
+  they are shown at: native code (`NativeResampler`, `src/main/cpp/resample*.c`)
+  on up to 4 CPU threads, NEON on arm64, reading and writing the bitmaps' own
+  pixels; or OpenGL ES 3.1 compute shaders on the GPU; or, where neither runs,
+  `Resampler` in Kotlin, which also models the native code for JVM tests. All
+  three filter in fp32 and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <

@@ -10,6 +10,9 @@ interface ReadProbe {
     /** The reader starts opening the book at [path]. */
     fun opening(path: String) = Unit
 
+    /** The reader decoded [page] for showing or reading ahead. */
+    fun decoded(page: Int) = Unit
+
     /** The reader moved to [item] (a page, or two pages side by side). */
     fun moved(item: Int) = Unit
 

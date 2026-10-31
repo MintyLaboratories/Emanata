@@ -26,6 +26,13 @@ internal class BenchProbe : ReadProbe {
     /** Nanosecond time the reader last started opening a book; -1 until then. */
     var opening = -1L
 
+    /** Pages decoded, for showing or reading ahead. */
+    var decodes = 0
+
+    override fun decoded(page: Int) {
+        decodes++
+    }
+
     override fun opening(path: String) {
         opening = System.nanoTime()
     }
@@ -64,6 +71,7 @@ internal class BenchProbe : ReadProbe {
         coverEvents = 0
         onMoved = null
         opening = -1
+        decodes = 0
     }
 
     private companion object {

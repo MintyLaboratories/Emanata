@@ -30,8 +30,13 @@ internal data class BenchPlan(
     val turns: Int = 10,
     /** Milliseconds between a turn's pages showing sharp and the next turn: time to read ahead. */
     val pace: Long = 1500,
-    /** Sessions in a row, each opening the book anew. */
+    /** Sessions in a row, each opening the book anew, after [warmup]. */
     val reps: Int = 1,
+    /**
+     * Sessions run first and marked as warm-up, so those measured find the app's caches of the
+     * book warm (sizes, seams, previews); none when [fresh], which forgets them each time.
+     */
+    val warmup: Int = 1,
     /**
      * First forget what the app keeps of the book (its facts, page previews, sizes, seams, network
      * copy) or, for a grid, every cover: no app caches, but the system's file cache and the
@@ -42,13 +47,15 @@ internal data class BenchPlan(
     val crop: Boolean = false,
     /** Double-tap to zoom: on, off, or null to keep the setting. */
     val doubleTap: Boolean? = null,
+    /** How long a tap is held, in ms: about as long as a person's. */
+    val tapMs: Long = 100,
     /** The orientation every activity of the run is turned to ([ORIENTATIONS]): portrait unless asked, so sizes repeat. */
     val orientation: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
-        .put("turns", turns).put("pace", pace).put("fresh", fresh).put("crop", crop)
-        .put("doubleTap", doubleTap ?: JSONObject.NULL)
+        .put("turns", turns).put("pace", pace).put("warmup", warmup).put("fresh", fresh).put("crop", crop)
+        .put("doubleTap", doubleTap ?: JSONObject.NULL).put("tapMs", tapMs)
         .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
 
     companion object {
@@ -81,6 +88,7 @@ internal data class BenchPlan(
             if (asked !in setOf(TAP, KEY, DRAG)) return null
             val input = if (asked == TAP && layout == CONTINUOUS) DRAG else asked
             val orientation = ORIENTATIONS[intent.getStringExtra("orientation") ?: "portrait"] ?: return null
+            val fresh = intent.getBooleanExtra("fresh", false)
             return BenchPlan(
                 what = what,
                 path = path,
@@ -92,9 +100,11 @@ internal data class BenchPlan(
                 turns = intent.getIntExtra("turns", 10).coerceIn(0, 500),
                 pace = intent.getIntExtra("pace", 1500).coerceAtLeast(0).toLong(),
                 reps = intent.getIntExtra("reps", 1).coerceIn(1, 50),
-                fresh = intent.getBooleanExtra("fresh", false),
+                warmup = if (fresh) 0 else intent.getIntExtra("warmup", 1).coerceIn(0, 10),
+                fresh = fresh,
                 crop = intent.getBooleanExtra("crop", false),
                 doubleTap = intent.getStringExtra("doubletap")?.let { it == "on" },
+                tapMs = intent.getIntExtra("tapms", 100).coerceIn(1, 1_000).toLong(),
                 orientation = orientation
             )
         }

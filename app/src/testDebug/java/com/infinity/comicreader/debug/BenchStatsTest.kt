@@ -88,6 +88,18 @@ class BenchStatsTest {
     }
 
     @Test
+    fun aWarmUpFirstUnlessFreshAndAPersonsTap() {
+        val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz")
+        val plain = BenchPlan.of(read)!!
+        assertEquals(1, plain.warmup)
+        assertEquals(100L, plain.tapMs)
+        assertEquals(0, BenchPlan.of(Intent(read).putExtra("fresh", true).putExtra("warmup", 2))!!.warmup)
+        assertEquals(3, BenchPlan.of(Intent(read).putExtra("warmup", 3))!!.warmup)
+        assertEquals(180L, BenchPlan.of(Intent(read).putExtra("tapms", 180))!!.tapMs)
+        assertEquals(180L, BenchPlan.of(Intent(read).putExtra("tapms", 180))!!.toJson().getLong("tapMs"))
+    }
+
+    @Test
     fun aContinuousTapTurnsByDrag() {
         val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz").putExtra("layout", "continuous")
         assertEquals(BenchPlan.DRAG, BenchPlan.of(read)!!.input)

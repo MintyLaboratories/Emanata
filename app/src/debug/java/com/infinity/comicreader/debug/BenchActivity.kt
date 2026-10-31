@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do read (--es path <book> | --es share first) [--es label <name>]
  * [--es layout paged|two|continuous] [--es input tap|key|drag] [--ei page <n>] [--ei turns <n>] [--ei pace <ms>] [--ei reps <n>]
- * [--ez fresh true] [--ez crop true] [--es doubletap on|off] [--es orientation portrait|landscape|any]`
+ * [--ei warmup <n>] [--ez fresh true] [--ez crop true] [--es doubletap on|off] [--ei tapms <ms>] [--es orientation portrait|landscape|any]`
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.BenchActivity --es do grid --es path <folder> [--ez fresh true]`
  *

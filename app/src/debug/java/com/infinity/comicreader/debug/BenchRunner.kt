@@ -74,7 +74,7 @@ internal class BenchRunner(private val app: Application) {
                 BenchPlan.GRID -> listOf(grid(plan))
                 else -> {
                     kept.apply(plan)
-                    (1..plan.reps).map { read(plan, it) }
+                    (1..plan.warmup + plan.reps).map { read(plan, it - plan.warmup) }
                 }
             }
         } finally {
@@ -89,6 +89,7 @@ internal class BenchRunner(private val app: Application) {
 
     // ------------------------------------------------------------------ reading
 
+    /** Session [rep] of [plan]: a warm-up from 0 down, measured from 1 up. */
     private suspend fun read(plan: BenchPlan, rep: Int): JSONObject {
         val path = plan.path ?: withContext(Dispatchers.IO) {
             DebugBooks.shareId(plan.share)?.let { DebugBooks.firstBook(Remotes.rootOf(it), SHARE_DEPTH, largest = false) }
@@ -116,6 +117,7 @@ internal class BenchRunner(private val app: Application) {
         val openFrames = frames.toJson()
         val afterOpen = ProcStats.now(app)
         val cpuOpen = afterOpen.cpuMs - before.cpuMs
+        val openDecodes = probe.decodes
 
         frames.reset()
         val turns = JSONArray()
@@ -129,7 +131,7 @@ internal class BenchRunner(private val app: Application) {
         var tapX = TAP_X
         for (i in 1..plan.turns) {
             delay(plan.pace)
-            val turn = turn(viewer, plan, tapX) ?: break
+            val turn = turn(viewer, plan, tapX, plan.tapMs) ?: break
             turns.put(turn)
             if (turn.getBoolean("back")) {
                 // A right-to-left book: the other side turns forward; this turn back is left out.
@@ -150,11 +152,15 @@ internal class BenchRunner(private val app: Application) {
         viewer.finish()
         awaitDestroyed(viewer)
 
+        val cpu = turnEnd.cpuMs - before.cpuMs
         return JSONObject()
-            .put("kind", "read").put("rep", rep).put("plan", plan.toJson()).put("screen", screen(viewer))
+            .put("kind", "read").put("rep", rep).put("warmup", rep < 1).put("cache", cacheState(plan, rep))
+            .put("plan", plan.toJson()).put("screen", screen(viewer))
             .put("openVisibleMs", Stats.ms(openVisible)).put("openSharpMs", Stats.ms(openSharp)).put("openTimedOut", !openOk)
             .put("openStartMs", if (probe.opening >= 0) Stats.ms(probe.opening - start) else -1)
-            .put("openCpuMs", cpuOpen)
+            .put("openCpuMs", cpuOpen).put("openDecodes", openDecodes)
+            .put("cpuMs", cpu).put("decodes", probe.decodes)
+            .put("cpuPerDecodeMs", if (probe.decodes > 0) cpu / probe.decodes else -1)
             .put("openFrames", openFrames)
             .put("turnVisible", Stats.summary(visible)).put("turnSharp", Stats.summary(sharp)).put("turnMoved", Stats.summary(moved))
             .put("turnsReady", cached).put("turnCount", turns.length()).put("turnUnsharpFrames", unsharpFrames)
@@ -171,7 +177,7 @@ internal class BenchRunner(private val app: Application) {
      * on in which a page on screen is blank or a stand-in are counted too: a drag scrolls
      * pages in before it lifts.
      */
-    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float): JSONObject? = coroutineScope {
+    private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float, tapMs: Long): JSONObject? = coroutineScope {
         val before = probe.pages.pages(probe.pageViewsOnScreen())
         var movedAt = -1L
         probe.onMoved = { if (movedAt < 0) movedAt = it }
@@ -187,7 +193,7 @@ internal class BenchRunner(private val app: Application) {
         val start = when (plan.input) {
             BenchPlan.DRAG -> (1..DRAGS).map { drag(viewer) }.last()
             BenchPlan.KEY -> key(viewer)
-            else -> tap(viewer, tapX, TAP_Y)
+            else -> tap(viewer, tapX, TAP_Y, tapMs)
         }
         val m = Milestones(start)
         var first: PageWatch.Ready? = null
@@ -220,14 +226,24 @@ internal class BenchRunner(private val app: Application) {
             .put("timedOut", !ok)
     }
 
-    /** A tap at [fx], [fy] of [activity]'s window; the time it lifts. */
-    private suspend fun tap(activity: Activity, fx: Float, fy: Float): Long {
+    /**
+     * What the app keeps of the book at session [rep] of [plan]: "fresh" (forgotten first),
+     * "warm" (read in this run before), or "as found".
+     */
+    private fun cacheState(plan: BenchPlan, rep: Int): String = when {
+        plan.fresh -> "fresh"
+        rep + plan.warmup > 1 -> "warm"
+        else -> "as found"
+    }
+
+    /** A tap at [fx], [fy] of [activity]'s window, held [ms]; the time it lifts. */
+    private suspend fun tap(activity: Activity, fx: Float, fy: Float, ms: Long): Long {
         val root = activity.window.decorView
         val x = root.width * fx
         val y = root.height * fy
         val down = SystemClock.uptimeMillis()
         touch(activity, down, down, MotionEvent.ACTION_DOWN, x, y)
-        delay(TAP_MS)
+        delay(ms)
         val at = System.nanoTime()
         touch(activity, down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y)
         return at
@@ -432,9 +448,6 @@ internal class BenchRunner(private val app: Application) {
         /** Where taps land: the right edge, halfway down, which turns forward in the left / right zones ([KeptPrefs.apply]). */
         private const val TAP_X = 0.92f
         private const val TAP_Y = 0.5f
-
-        /** How long a tap is held. */
-        private const val TAP_MS = 60L
 
         /**
          * A drag between the bars (the bottom one holds the seek bar), [DRAGS] in a row: about a page

@@ -1080,7 +1080,10 @@ class PageAdapter(
             // Runs on the decoder thread; hop back before touching [pending].
             scope.launch {
                 if (pending[key] === entry) pending.remove(key)
-                if (error == null) onLoaded?.invoke(pageIndex)
+                if (error == null) {
+                    onLoaded?.invoke(pageIndex)
+                    ReadProbes.current?.decoded(pageIndex)
+                }
                 if (error == null && entry.waiters > 0) shownOnce = true
                 if (preloadWaits && !released && pending.values.none { it.waiters > 0 && it.deferred.isActive } && !firstMeasuring()) {
                     preloadWaits = false

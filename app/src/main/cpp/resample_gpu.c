@@ -2,8 +2,8 @@
 // shaders on an offscreen context of our own, in fp32.
 // - Output rows go in chunks: the source rows a chunk's taps read are copied into a
 //   buffer, filtered across into an fp32 buffer as wide as the output, then down into
-//   packed bytes, which are copied into the destination. Chunks are sized so the fp32
-//   buffer stays under MID_BYTES, whatever the scale.
+//   packed bytes, which are copied into the destination. Chunks are sized so the source
+//   rows and the fp32 ones together stay under CHUNK_BYTES, whatever the scale.
 // - Each axis' taps go up once per job: four ints per output (start, count, anti-ringing
 //   range) followed by its weights.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MID_BYTES (24u << 20)
+#define CHUNK_BYTES (32u << 20)
 #define GROUP 64
 
 static pthread_mutex_t gl_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -265,9 +265,9 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->job = job;
     const rs_axis * ax = &job->ax;
     const rs_axis * ay = &job->ay;
-    // Output rows per chunk: as many as keep the fp32 rows under MID_BYTES.
+    // Output rows per chunk: as many as keep their source and fp32 rows under CHUNK_BYTES.
     const double per_row = (double)(ay->end - ay->first) / ay->len;
-    const double budget = (double)MID_BYTES / ((double)ax->len * 16);
+    const double budget = (double)CHUNK_BYTES / ((double)ax->len * 16 + (double)(ax->end - ax->first) * 4);
     int chunk = (int)((budget - ay->stride) / (per_row > 1 ? per_row : 1));
     g->chunk = chunk < 8 ? 8 : chunk > 1024 ? 1024 : chunk;
     for (int y = 0; y < ay->len; y += g->chunk) {

@@ -721,7 +721,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   otherwise idle, it times the resampler on 1, 2, one-per-large-core and
   one-per-core workers and on the GPU, and native JPEG XL decodes on 2,
   one-per-large-core and one-per-core threads, on a synthetic 2000x3000 page.
-  Of the setups within 10% of the fastest, the one using the least CPU time
+  Of the setups within 20% of the fastest, the one using the least CPU time
   wins. Winners are kept in `noBackupFilesDir` (never restored onto another
   device); until the first calibration ends the one-per-large-core rule
   applies, and after an update the previous winners stay until new ones are

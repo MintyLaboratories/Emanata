@@ -75,7 +75,7 @@ object Calibration {
      * decode about 10 % faster than 4 on the large ones, for 40-60 % more CPU time; the
      * large ones win.
      */
-    const val TOLERANCE = 0.10
+    const val TOLERANCE = 0.20
 
     /**
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large

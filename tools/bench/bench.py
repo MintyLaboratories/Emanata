@@ -408,7 +408,7 @@ def report(args) -> None:
     print()
     print("| book | variant | layout | input | tap ms | pace | cache | crop | double-tap | sessions | turns | open visible | open sharp "
           "| turn visible | turn sharp | turn sharp p90 | tap to move | ready ahead | stand-in frames | CPU/session | settle ms | decodes "
-          "| aside decodes | CPU/decode | PSS | graphics | janky (>2x) | late | headroom / thermal | battery % | current mA | energy mAh |")
+          "| aside decodes | CPU/decode | PSS | graphics | janky (>2x) | late | headroom / thermal | battery % | current mA | energy µAh |")
     print("|" + "---|" * 32)
     for (label, variant, layout, inp, tap_ms, pace, cache, crop, double_tap), rs in groups.items():
         turns = sum(r["turnSharp"]["n"] for r in rs)

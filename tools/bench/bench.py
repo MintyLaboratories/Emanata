@@ -235,7 +235,11 @@ def bench_once(session: dict, timeout_s: int) -> list[dict]:
     end = time.time() + timeout_s
     while time.time() < end:
         time.sleep(2)
-        if "Bench done" in adb("logcat", "-d", "-s", "Bench:I", capture=True):
+        log = adb("logcat", "-d", "-s", "Bench:*", capture=True)
+        if "A run is going on" in log:
+            # Another run (say a second copy of this script) holds the device: results would mix.
+            raise SystemExit("another benchmark run is going on; stop it first")
+        if "Bench done" in log:
             break
     else:
         print("timed out", session.get("label"))

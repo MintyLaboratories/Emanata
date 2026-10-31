@@ -62,7 +62,8 @@ class DecodeException(
  * file, to stand in until the exact page is ready. A layered AVIF's first layer also
  * stands in while its page decodes ([standingIn]).
  *
- * JPEG XL decodes with jxl-coder and AVIF with libavif ([Avif]) on every API level,
+ * JPEG XL decodes natively into the bitmap ([JxlPages]), else with jxl-coder, and AVIF
+ * with libavif ([Avif]) on every API level,
  * TIFF with the built-in [Tiff] (its cap reduction is point sampling, DCT scaling for
  * JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+, with
  * [BitmapFactory] below that.
@@ -894,7 +895,8 @@ object Decoders {
     private val jxlGate = Semaphore(2)
 
     /**
-     * Full decode; only past [capPixels] does jxl-coder's sampled decode do the coarse
+     * Full decode, straight into the bitmap where native code takes the image ([JxlPages]),
+     * else by jxl-coder; only past [capPixels] does jxl-coder's sampled decode do the coarse
      * reduction. A [standIn] for a page drawn in bands is point-sampled natively instead
      * ([openJxlRegions]), so the whole image is never held.
      */
@@ -909,7 +911,7 @@ object Decoders {
         }
         jxlGate.acquireUninterruptibly()
         try {
-            if (sample == 1) return JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
+            if (sample == 1) return JxlPages.decode(bytes, size[0], size[1]) ?: JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888)
             return JxlCoder.decodeSampled(
                 bytes,
                 (size[0] / sample).coerceAtLeast(1),

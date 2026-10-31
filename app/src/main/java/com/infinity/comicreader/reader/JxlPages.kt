@@ -1,0 +1,100 @@
+package com.infinity.comicreader.reader
+
+import android.graphics.Bitmap
+import com.infinity.comicreader.compact.LibJxl
+
+/**
+ * What [JxlPages] needs of native code: a JPEG XL decoded straight into a bitmap
+ * ([LibJxl.page]). On the device this is [LibJxl]; JVM tests stand in their own.
+ */
+internal interface JxlPageKernel {
+    /** A `LibJxl.PAGE_*` result. */
+    fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: LibJxl.Preview?): Int
+}
+
+/** [LibJxl.page], where its library loads. */
+private object LibJxlPages : JxlPageKernel {
+    override fun page(jxl: ByteArray, out: Bitmap, threads: Int, cores: Long, own: Boolean, preview: LibJxl.Preview?): Int =
+        LibJxl.page(jxl, out, threads, cores, own, preview)
+}
+
+/**
+ * JPEG XL pages decoded natively, whole, in sRGB, straight into the bitmap that holds them:
+ * 8-bit RGBA from libjxl's own output stage, no float buffer, no copy. libjxl's work runs on
+ * one thread per large core ([CpuCores]), the caller's among them, pinned there: the little
+ * cores add almost nothing to a decode and stall its last groups. Work nobody waits on yet
+ * ([Urgency]), pages read ahead and previews, runs on [laterThreads].
+ *
+ * Images this path does not take (no sRGB rendering without a color manager, HDR) return
+ * null, for jxl-coder to decode.
+ */
+object JxlPages {
+    /** Off leaves every JPEG XL to jxl-coder, for A/B runs. */
+    @Volatile
+    var enabled: Boolean = true
+
+    /** Decodes with libjxl as built here ([LibJxl.page]'s `own`) rather than jxl-coder's copy, where the build has it. */
+    @Volatile
+    var own: Boolean = true
+
+    /** Threads for a page someone waits on: one per large core. */
+    @Volatile
+    var threads: Int = NativeResampler.defaultThreads(CpuCores.device, Runtime.getRuntime().availableProcessors())
+
+    /** Threads for a page nobody waits on yet. */
+    @Volatile
+    var laterThreads: Int = threads
+
+    /** Whether threads are pinned to the large cores; off leaves placement to the system. */
+    @Volatile
+    var pinned: Boolean = true
+
+    /** Pins work nobody waits on to the little cores instead, for A/B runs. */
+    @Volatile
+    internal var laterOnLittle: Boolean = false
+
+    internal var cores: CpuCores? = null
+        get() = field ?: CpuCores.device
+
+    internal var kernel: JxlPageKernel? = null
+        get() = field ?: loaded
+
+    private val loaded: JxlPageKernel? by lazy { runCatching { LibJxl.version; LibJxlPages }.getOrNull() }
+
+    /** The threads and cores (bit n = core n; 0 = any) a decode runs on, as [urgent] says. */
+    internal fun placement(urgent: Boolean): Pair<Int, Long> {
+        val c = cores!!
+        val n = (if (urgent) threads else laterThreads).coerceIn(1, MAX_THREADS)
+        val on = if (!pinned) 0L else if (laterOnLittle && !urgent) c.little else c.big
+        return n to on
+    }
+
+    /**
+     * [bytes], a JPEG XL shown [width] x [height], decoded whole into a new ARGB_8888 bitmap;
+     * with [preview], told once its DC pass (1:8, upsampled) is in the bitmap. Null when this
+     * path does not take it or native code is missing, so the caller decodes it another way.
+     */
+    fun decode(bytes: ByteArray, width: Int, height: Int, urgent: Boolean = Urgency.current()(), preview: LibJxl.Preview? = null): Bitmap? {
+        if (!enabled) return null
+        val k = kernel ?: return null
+        val (n, on) = placement(urgent)
+        val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val result = try {
+            k.page(bytes, out, n, on, own, preview)
+        } catch (t: Throwable) {
+            out.recycle()
+            throw t
+        }
+        return when (result) {
+            LibJxl.PAGE_OPAQUE -> out.apply { setHasAlpha(false) }
+            LibJxl.PAGE_ALPHA -> out
+            else -> {
+                out.recycle()
+                null
+            }
+        }
+    }
+
+    /** At most this many threads, whatever is asked. */
+    private const val MAX_THREADS = 16
+}

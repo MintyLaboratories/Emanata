@@ -383,7 +383,7 @@ def run_plan(args) -> None:
     adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
     if not getattr(args, "variant", None):
         # `ab` calibrates after each install.
-        calibrate()
+        calibrate(out)
     for n, session in enumerate(plan):
         level = battery_level()
         if level is not None and level < args.min_battery:
@@ -534,7 +534,7 @@ def ab(args) -> None:
         print(f"== round {n // 2 + 1}, {variant}: installing {Path(apk).name}", flush=True)
         install(apk)
         adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
-        calibrate()
+        calibrate(Path(args.out), variant)
         if args.rest:
             time.sleep(args.rest)
         args.variant = variant
@@ -580,11 +580,12 @@ def install(apk: str, tries: int = 2) -> None:
     raise SystemExit(f"could not install {apk}")
 
 
-def calibrate(timeout_s: int = 180) -> None:
+def calibrate(out: Path | None = None, variant: str = "", timeout_s: int = 180) -> None:
     """
     Calibrates a freshly installed build now (CalibrationActivity) and waits for it to end, so
     no calibration runs between sessions and both builds of an A/B read with their own winners.
-    A build without calibration is left as it is.
+    A run already pending is dropped for this one. Appends what it kept (timings, winners) and
+    its log lines to [out]/calibration.jsonl. A build without calibration is left as it is.
     """
     adb("logcat", "-c")
     started = subprocess.run([ADB, "shell", "am", "start", "-n", f"{PACKAGE}/com.infinity.comicreader.debug.CalibrationActivity",
@@ -599,6 +600,13 @@ def calibrate(timeout_s: int = 180) -> None:
         m = re.search(r"ended (true|false)", log)
         if m:
             print(f"calibrated: {m.group(1)}", flush=True)
+            if out is not None:
+                out.mkdir(parents=True, exist_ok=True)
+                kept = [json.loads(s) for s in re.findall(r"^.*?Calibration\s*:\s*(\{.*\})\s*$", log, re.M)]
+                lines = [s.split(": ", 1)[-1] for s in log.splitlines() if "Calibration" in s and "{" not in s]
+                with (out / "calibration.jsonl").open("a") as f:
+                    f.write(json.dumps({"variant": variant, "ended": m.group(1) == "true", "kept": kept[-1] if kept else None,
+                                        "log": lines}) + "\n")
             break
     else:
         print("calibration did not end", flush=True)

@@ -1,0 +1,407 @@
+[
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "label": "2k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jpeg.cbz",
+  "label": "4k jpeg gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 kotlin",
+  "engine": "kotlin",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 native",
+  "engine": "native",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ },
+ {
+  "do": "read",
+  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "label": "4k jxl q91 gpu",
+  "engine": "gpu",
+  "turns": 8,
+  "pace": 1500,
+  "reps": 1
+ }
+]

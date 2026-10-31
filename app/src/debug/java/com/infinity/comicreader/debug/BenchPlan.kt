@@ -2,6 +2,8 @@ package com.infinity.comicreader.debug
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import com.infinity.comicreader.reader.NativeResampler
+import com.infinity.comicreader.reader.PixelEngine
 import org.json.JSONObject
 
 /**
@@ -52,13 +54,18 @@ internal data class BenchPlan(
     /** How long a tap is held, in ms: about as long as a person's. */
     val tapMs: Long = 100,
     /** The orientation every activity of the run is turned to ([ORIENTATIONS]): portrait unless asked, so sizes repeat. */
-    val orientation: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    val orientation: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+    /** The engine pages are resampled with ([NativeResampler.engine]) for the run; null keeps it. */
+    val engine: PixelEngine? = null,
+    /** CPU workers of the native resampler ([NativeResampler.threads]) for the run; null keeps them. */
+    val pixelThreads: Int? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
         .put("turns", turns).put("back", back).put("pace", pace).put("warmup", warmup).put("fresh", fresh).put("crop", crop)
         .put("doubleTap", doubleTap ?: JSONObject.NULL).put("tapMs", tapMs)
         .put("orientation", ORIENTATIONS.entries.first { it.value == orientation }.key)
+        .put("engine", engine?.key ?: JSONObject.NULL).put("pixelThreads", pixelThreads ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -91,6 +98,7 @@ internal data class BenchPlan(
             val input = if (asked == TAP && layout == CONTINUOUS) DRAG else asked
             val orientation = ORIENTATIONS[intent.getStringExtra("orientation") ?: "portrait"] ?: return null
             val fresh = intent.getBooleanExtra("fresh", false)
+            val engine = intent.getStringExtra("engine")?.let { PixelEngine.of(it) ?: return null }
             return BenchPlan(
                 what = what,
                 path = path,
@@ -108,7 +116,9 @@ internal data class BenchPlan(
                 crop = intent.getBooleanExtra("crop", false),
                 doubleTap = intent.getStringExtra("doubletap")?.let { it == "on" },
                 tapMs = intent.getIntExtra("tapms", 100).coerceIn(1, 1_000).toLong(),
-                orientation = orientation
+                orientation = orientation,
+                engine = engine,
+                pixelThreads = if (intent.hasExtra("pixelthreads")) intent.getIntExtra("pixelthreads", 4).coerceIn(1, 16) else null
             )
         }
     }

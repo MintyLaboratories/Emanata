@@ -15,6 +15,9 @@ A plan is a JSON list of sessions, each the extras of BenchActivity (see its KDo
 Results, traces and battery statistics go to --out; nothing is written to the device but the
 pushed books, the app's own results file, and traces under /data/misc/perfetto-traces.
 
+A session's "engine" (kotlin, native, gpu) and "pixelthreads" pick how pages are resampled, so one
+build A/Bs them (plans/engines.json interleaves the engines per book).
+
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b".
 Sessions start with a warm-up (see BenchPlan.warmup) that reports leave out.

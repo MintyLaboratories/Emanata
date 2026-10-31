@@ -3,6 +3,7 @@ package com.infinity.comicreader.debug
 import android.app.Application
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import com.infinity.comicreader.reader.PixelEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -123,6 +124,18 @@ class BenchStatsTest {
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, BenchPlan.of(Intent(read).putExtra("orientation", "landscape"))!!.orientation)
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, BenchPlan.of(Intent(read).putExtra("orientation", "any"))!!.orientation)
         assertNull(BenchPlan.of(Intent(read).putExtra("orientation", "diagonal")))
+    }
+
+    @Test
+    fun theResampleEngineAndItsThreadsOnlyWhenAsked() {
+        val read = Intent().putExtra("do", "read").putExtra("path", "/a.cbz")
+        assertNull(BenchPlan.of(read)!!.engine)
+        assertNull(BenchPlan.of(read)!!.pixelThreads)
+        val gpu = BenchPlan.of(Intent(read).putExtra("engine", "gpu").putExtra("pixelthreads", 2))!!
+        assertEquals(PixelEngine.GPU, gpu.engine)
+        assertEquals(2, gpu.pixelThreads)
+        assertEquals("gpu", gpu.toJson().getString("engine"))
+        assertNull(BenchPlan.of(Intent(read).putExtra("engine", "abacus")))
     }
 
     @Test

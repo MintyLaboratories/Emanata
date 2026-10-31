@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.ui.ListActivity
 import com.infinity.comicreader.ui.ViewerActivity
 import com.infinity.comicreader.util.ReadProbes
@@ -69,6 +70,10 @@ internal class BenchRunner(private val app: Application) {
         tracker.resumed = host
         ReadProbes.current = probe
         val kept = KeptPrefs(Prefs(app), keptPrefs(app))
+        val keptEngine = NativeResampler.engine
+        val keptThreads = NativeResampler.threads
+        plan.engine?.let { NativeResampler.engine = it }
+        plan.pixelThreads?.let { NativeResampler.threads = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -78,6 +83,8 @@ internal class BenchRunner(private val app: Application) {
                 }
             }
         } finally {
+            NativeResampler.engine = keptEngine
+            NativeResampler.threads = keptThreads
             kept.restore()
             ReadProbes.current = null
             probe.clear()

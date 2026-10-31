@@ -489,6 +489,53 @@ class ResamplerTest {
     }
 
     @Test
+    fun theCallerIsWorkerZero() {
+        val caller = Thread.currentThread().id
+        val names = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+        Resampler.inBands(1000, 4, { false }) { worker, _, _ ->
+            names.putIfAbsent(worker, Thread.currentThread().id)
+            Thread.sleep(1)
+            true
+        }
+        assertEquals(caller, names[0])
+        assertTrue(names.filterKeys { it != 0 }.values.none { it == caller })
+    }
+
+    @Test
+    fun workersGrowWhenMoreAreWanted() {
+        val wanted = AtomicInteger(1)
+        val workers = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+        val firstBands = ArrayList<Int>()
+        val bands = AtomicInteger()
+        Resampler.inBands(1000, 4, { false }, { wanted.get() }) { worker, _, _ ->
+            workers += worker
+            val n = bands.incrementAndGet()
+            if (n <= 4) synchronized(firstBands) { firstBands += worker }
+            // Waited on from the fourth band: the other workers join.
+            if (n == 4) wanted.set(4)
+            Thread.sleep(2)
+            true
+        }
+        // The calling thread alone until more were wanted.
+        assertEquals(listOf(0, 0, 0, 0), firstBands)
+        assertEquals(setOf(0, 1, 2, 3), workers)
+    }
+
+    @Test
+    fun aFailingBandStopsEveryWorkerAndThrows() {
+        val done = AtomicInteger()
+        assertThrows(IllegalStateException::class.java) {
+            Resampler.inBands(1000, 4, { false }) { _, _, _ ->
+                check(done.incrementAndGet() != 3) { "band failed" }
+                Thread.sleep(1)
+                true
+            }
+        }
+        // Each other worker ends its band and at most one it had begun: not all 16.
+        assertTrue("${done.get()}", done.get() <= 9)
+    }
+
+    @Test
     fun shrinkingWidensTheKernel() {
         val enlarge = Resampler.axis(100, 0.0, 100.0, 300)
         val shrink = Resampler.axis(1000, 0.0, 1000.0, 100)

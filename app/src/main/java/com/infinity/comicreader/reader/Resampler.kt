@@ -181,26 +181,49 @@ object Resampler {
 
     /**
      * Runs [work] over output rows 0 until [dstH] in bands, on up to [threads] workers at
-     * once (on [Dispatchers.Default] when more than one), each passing its own index below
-     * [threads]; [work] returns false to stop every worker. Polls [canceled] before each
-     * band and throws [CancellationException] once it returns true or [work] stopped.
+     * once, each passing its own index below [threads]; [work] returns false to stop every
+     * worker. The calling thread is worker 0; before each of its bands it starts more
+     * workers on [Dispatchers.Default] until [wanted] of them run, so their count can grow
+     * mid-job but never shrinks. Polls [canceled] before each band and throws
+     * [CancellationException] once it returns true or [work] stopped.
      */
-    fun inBands(dstH: Int, threads: Int, canceled: () -> Boolean, work: (worker: Int, y0: Int, y1: Int) -> Boolean) {
+    fun inBands(
+        dstH: Int,
+        threads: Int,
+        canceled: () -> Boolean,
+        wanted: () -> Int = { threads },
+        work: (worker: Int, y0: Int, y1: Int) -> Boolean
+    ) {
         val bands = bandsFor(dstH, threads)
         val stopped = AtomicBoolean()
         val next = AtomicInteger()
-        val loop = { worker: Int ->
-            while (!stopped.get()) {
-                val b = next.getAndIncrement()
-                if (b >= bands) break
-                if (canceled() || !work(worker, bandStart(dstH, bands, b), bandStart(dstH, bands, b + 1))) stopped.set(true)
+        val loop = { worker: Int, before: () -> Unit ->
+            try {
+                while (!stopped.get()) {
+                    before()
+                    val b = next.getAndIncrement()
+                    if (b >= bands) break
+                    if (canceled() || !work(worker, bandStart(dstH, bands, b), bandStart(dstH, bands, b + 1))) stopped.set(true)
+                }
+            } catch (t: Throwable) {
+                stopped.set(true)
+                throw t
             }
         }
-        val workers = workersFor(dstH, threads)
-        if (workers <= 1) {
-            loop(0)
+        val most = workersFor(dstH, threads)
+        if (most <= 1) {
+            loop(0) {}
         } else {
-            runBlocking(Dispatchers.Default) { repeat(workers) { launch { loop(it) } } }
+            runBlocking {
+                var running = 1
+                loop(0) {
+                    val want = min(most, wanted())
+                    while (running < want) {
+                        val worker = running++
+                        launch(Dispatchers.Default) { loop(worker) {} }
+                    }
+                }
+            }
         }
         if (stopped.get()) throw CancellationException("Resampling canceled")
     }

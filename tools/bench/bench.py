@@ -267,12 +267,16 @@ def fixtures(args) -> None:
         run(["djxl", str(p3ll), str(out / "p3-lossless.png"), "--color_space=RGB_D65_SRG_Rel_SRG", "--quiet"])
         jxl("alpha-lossless", alpha, "-d", "0")
         shutil.copyfile(alpha, out / "alpha-lossless.png")
-        jxl("alpha-premultiplied", alpha, "-d", "0", "--premultiply=1")
+        # cjxl only flags alpha as premultiplied, so the pixels it gets are premultiplied first.
+        premultiplied = t / "premultiplied.png"
+        run(["magick", str(alpha), "-channel", "RGB", "-fx", "u*u.a", "+channel", f"PNG32:{premultiplied}"])
+        jxl("alpha-premultiplied", premultiplied, "-d", "0", "--premultiply=1")
         shutil.copyfile(alpha, out / "alpha-premultiplied.png")
         jxl("alpha-lossy", alpha, "-q", "91")
         shutil.copyfile(alpha, out / "alpha-lossy.png")
-        jxl("animated", anim, "-d", "0")
-        shutil.copyfile(color, out / "animated.png")
+        # The reference is libjxl's own APNG, whose default image is the first frame.
+        animated = jxl("animated", anim, "-d", "0")
+        run(["djxl", str(animated), str(out / "animated.png"), "--quiet"])
         jxl("jpeg", photo, "--lossless_jpeg=1")
         shutil.copyfile(photo, out / "jpeg.jpg")
     print("fixtures in", out)

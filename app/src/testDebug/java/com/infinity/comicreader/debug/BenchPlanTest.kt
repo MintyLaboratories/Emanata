@@ -17,18 +17,21 @@ class BenchPlanTest {
 
     @Test
     fun decodeKnobsAreReadAndBounded() {
-        val p = BenchPlan.of(read().putExtra("platformcores", "big").putExtra("decoders", 12).putExtra("preload", 3).putExtra("seams", "on"))!!
+        val p = BenchPlan.of(read().putExtra("platformcores", "big").putExtra("decoders", 12).putExtra("preload", 3).putExtra("seams", "on").putExtra("platformahead", "off"))!!
         assertEquals(CoreSet.BIG, p.platformCores)
+        assertEquals(false, p.platformAhead)
         assertEquals(8, p.decodeThreads)
         assertEquals(3, p.preload)
         assertEquals(true, p.seams)
         assertEquals("big", p.toJson().getString("platformCores"))
+        assertEquals(false, p.toJson().getBoolean("platformAhead"))
     }
 
     @Test
     fun absentKnobsKeepTheSettings() {
         val p = BenchPlan.of(read())!!
         assertNull(p.platformCores)
+        assertNull(p.platformAhead)
         assertNull(p.decodeThreads)
         assertNull(p.preload)
         assertNull(p.seams)
@@ -38,5 +41,6 @@ class BenchPlanTest {
     fun unknownValuesRefuseThePlan() {
         assertNull(BenchPlan.of(read().putExtra("platformcores", "little")))
         assertNull(BenchPlan.of(read().putExtra("seams", "maybe")))
+        assertNull(BenchPlan.of(read().putExtra("platformahead", "maybe")))
     }
 }

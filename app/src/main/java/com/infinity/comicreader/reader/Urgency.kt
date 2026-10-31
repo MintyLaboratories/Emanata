@@ -32,4 +32,7 @@ object Urgency {
 
     /** True only inside [during] while its work is waited on: a page on screen, not covers, previews or scans. */
     fun waited(): Boolean = mark.get()?.invoke() == true
+
+    /** True inside [during] for a page, shown or read ahead; not for [later] work (previews) or work outside [during] (covers, scans). */
+    fun page(): Boolean = mark.get().let { it != null && it !== never }
 }

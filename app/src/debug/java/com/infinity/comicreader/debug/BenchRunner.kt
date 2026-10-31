@@ -85,6 +85,7 @@ internal class BenchRunner(private val app: Application) {
         val keptJxlLittle = JxlPages.laterOnLittle
         val keptJxlNice = JxlPages.laterNice
         val keptPlatform = PlatformPages.cores
+        val keptAhead = PlatformPages.readAhead
         val keptDecoders = PageAdapter.decodeThreads
         plan.engine?.let { NativeResampler.engine = it }
         plan.pixelThreads?.let { NativeResampler.threads = it }
@@ -95,6 +96,7 @@ internal class BenchRunner(private val app: Application) {
         plan.jxlLaterOnLittle?.let { JxlPages.laterOnLittle = it }
         plan.jxlLaterNice?.let { JxlPages.laterNice = it }
         plan.platformCores?.let { PlatformPages.cores = it }
+        plan.platformAhead?.let { PlatformPages.readAhead = it }
         plan.decodeThreads?.let { PageAdapter.decodeThreads = it }
         try {
             return when (plan.what) {
@@ -114,6 +116,7 @@ internal class BenchRunner(private val app: Application) {
             JxlPages.laterOnLittle = keptJxlLittle
             JxlPages.laterNice = keptJxlNice
             PlatformPages.cores = keptPlatform
+            PlatformPages.readAhead = keptAhead
             PageAdapter.decodeThreads = keptDecoders
             kept.restore()
             ReadProbes.current = null

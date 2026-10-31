@@ -22,7 +22,8 @@ cores) pick how pages are resampled, so one build A/Bs them (plans/engines.json 
 setups per book). "jxl" ("native"/"coder") picks how JPEG XL pages decode (plans/jxl.json);
 "jxllaterthreads", "jxllater" ("big"/"little") and "jxllaternice" (0-19) place native JPEG XL
 decodes of pages read ahead (plans/jxl-later.json). "platformcores" ("any", "big", "prime") pins
-the platform's one-thread decodes (JPEG, PNG, WebP), "decoders" sets how many pages decode at
+the platform's one-thread decodes (JPEG, PNG, WebP), "platformahead" ("on"/"off") pins those of
+pages read ahead too, "decoders" sets how many pages decode at
 once, "preload" the pages read ahead and "seams" ("on"/"off") joining spreads by their seams,
 which runs the seam scans (both settings, put back after the run).
 

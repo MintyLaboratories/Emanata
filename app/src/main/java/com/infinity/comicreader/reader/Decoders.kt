@@ -66,7 +66,7 @@ class DecodeException(
  * with libavif ([Avif]) on every API level,
  * TIFF with the built-in [Tiff] (its cap reduction is point sampling, DCT scaling for
  * JPEG strips and tiles). Other formats use [ImageDecoder] on API 28+, with
- * [BitmapFactory] below that, on [PlatformPages]' cores when the reader waits on them.
+ * [BitmapFactory] below that, the reader's pages on [PlatformPages]' cores.
  */
 object Decoders {
     private const val TAG = "Decoders"

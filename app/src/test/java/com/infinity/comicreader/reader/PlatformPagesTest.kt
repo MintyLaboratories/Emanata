@@ -21,46 +21,56 @@ class PlatformPagesTest {
         PlatformPages.device = null
         PlatformPages.pin = null
         PlatformPages.cores = CoreSet.BIG
+        PlatformPages.readAhead = true
     }
 
     @Test
     fun decodesRunPinnedThenPutBack() {
         use(tablet, CoreSet.BIG)
-        assertEquals(7, PlatformPages.placed(waited = true) { 7 })
+        assertEquals(7, PlatformPages.placed(pinned = true) { 7 })
         assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
         calls.clear()
         use(tablet, CoreSet.PRIME)
-        PlatformPages.placed(waited = true) { }
+        PlatformPages.placed(pinned = true) { }
         assertEquals(listOf(0b1000_0000L, 0xFFL), calls)
     }
 
     @Test
     fun putBackEvenWhenTheDecodeThrows() {
         use(tablet, CoreSet.BIG)
-        runCatching { PlatformPages.placed(waited = true) { error("bad page") } }
+        runCatching { PlatformPages.placed(pinned = true) { error("bad page") } }
         assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
     }
 
     @Test
     fun nothingToPinLeavesTheThreadAlone() {
         use(tablet, CoreSet.ANY)
-        PlatformPages.placed(waited = true) { }
+        PlatformPages.placed(pinned = true) { }
         // Every core large: no mask.
         use(CpuCores(intArrayOf(800, 800, 800, 800)), CoreSet.BIG)
-        PlatformPages.placed(waited = true) { }
+        PlatformPages.placed(pinned = true) { }
         assertTrue(calls.isEmpty())
         // Refused: nothing to put back.
         use(tablet, CoreSet.BIG, refuse = true)
-        PlatformPages.placed(waited = true) { }
+        PlatformPages.placed(pinned = true) { }
         assertEquals(listOf(0b1111_0000L), calls)
     }
 
     @Test
-    fun onlyDecodesTheReaderWaitsOnArePinned() {
+    fun theReadersPagesArePinnedShownOrReadAhead() {
         use(tablet, CoreSet.BIG)
-        // Outside the reader (covers, scans): left to the system.
+        // Outside the reader (covers, scans) and previews: left to the system.
         PlatformPages.placed { }
         Urgency.later { PlatformPages.placed { } }
+        assertTrue(calls.isEmpty())
+        Urgency.during({ false }) { PlatformPages.placed { } }
+        assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
+    }
+
+    @Test
+    fun withoutReadAheadOnlyPagesWaitedOnArePinned() {
+        use(tablet, CoreSet.BIG)
+        PlatformPages.readAhead = false
         var shown = false
         Urgency.during({ shown }) { PlatformPages.placed { } }
         assertTrue(calls.isEmpty())
@@ -70,10 +80,13 @@ class PlatformPagesTest {
     }
 
     @Test
-    fun waitedOnlyInsideAMarkThatSaysSo() {
+    fun waitedAndPageOnlyInsideAMarkThatSaysSo() {
         assertFalse(Urgency.waited())
         assertTrue(Urgency.during({ true }) { Urgency.waited() })
         assertFalse(Urgency.later { Urgency.waited() })
+        assertFalse(Urgency.page())
+        assertTrue(Urgency.during({ false }) { Urgency.page() })
+        assertFalse(Urgency.later { Urgency.page() })
         // Unmarked work still counts as waited on for resampling.
         assertTrue(Urgency.current()())
     }

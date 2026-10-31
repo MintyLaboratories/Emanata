@@ -698,11 +698,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
   from the header alone (`ImageHeaders`, `Tiff`).
-- Pages the platform decodes (JPEG, PNG, WebP, HEIF; one thread each) while
-  the reader waits on them run with their thread pinned to the large cores
+- The reader's pages the platform decodes (JPEG, PNG, WebP, HEIF; one thread
+  each), shown or read ahead, run with their thread pinned to the large cores
   (`PlatformPages`): left to the system, such a decode often starts on a little
-  core and stays slower there. Pages read ahead, covers, previews and scans
-  stay with the system.
+  core and stays slower there. Covers, previews and scans stay with the system.
 - JPEG XL pages decode straight into the bitmap that shows them, 8-bit RGBA from
   libjxl's own output stage (`JxlPages`, `src/main/cpp/jxl_page.c`), on one
   thread per large core pinned to those cores (`jxl_runner.c`), and stop

@@ -10,7 +10,10 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -175,6 +178,29 @@ class PageAdapterReadAheadTest {
         adapter.onBindViewHolder(holder, 4)
         idleUntil { source.started.size >= 3 }
         stillAfterAWhile { source.started.toList().sorted() == listOf(4, 5, 6) }
+        adapter.release()
+    }
+
+    @Test
+    fun awaitingIdleReturnsOnceTheDecodesEnd() {
+        val source = HeldSource(4)
+        val first = source.hold(0)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
+        adapter.onBindViewHolder(holder, 0)
+        idleUntil { source.started.isNotEmpty() }
+        assertTrue(adapter.decoding)
+        var idle = false
+        val waiting = MainScope().launch {
+            adapter.awaitIdle()
+            idle = true
+        }
+        stillAfterAWhile { !idle }
+        first.countDown()
+        idleUntil { idle }
+        assertTrue(idle)
+        assertFalse(adapter.decoding)
+        waiting.cancel()
         adapter.release()
     }
 }

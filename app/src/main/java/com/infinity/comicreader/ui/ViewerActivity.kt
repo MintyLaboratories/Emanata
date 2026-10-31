@@ -1984,10 +1984,11 @@ class ViewerActivity : AppCompatActivity() {
      * They are kept for the book ([PageSeams]), and the book is laid out again whenever they
      * change it. While battery saver pauses scans ([Thrift.pausedScans]), only those within
      * [SEAM_WINDOW] pages are checked: the screens being read need them.
-     * A page's sides come from its decode for the reader ([PageSource.decodedSides]); only a JPEG
-     * page read alone is read for them before that, each round once no page decodes
-     * ([PageAdapter.decoding]). Other pages, and every page of a solid archive, wait for the
-     * reader to decode them ([onLoaded][PageAdapter]): never a second decode of a page.
+     * A page's sides come from its decode for the reader ([PageSource.decodedSides]), checked at
+     * once and first; only a JPEG page read alone is read for them before that, in rounds that
+     * start once no page decodes for the reader ([PageAdapter.awaitIdle]). Other pages, and every
+     * page of a solid archive, wait for the reader to decode them ([onLoaded][PageAdapter]): never
+     * a second decode of a page.
      */
     private fun checkSeams() {
         val src = source ?: return
@@ -2000,7 +2001,9 @@ class ViewerActivity : AppCompatActivity() {
         val readable = { i: Int -> src.cheapSizes && Decoders.cheapSidesNamed(names.getOrNull(i)) }
         val cheap = { i: Int -> far && readable(i) }
         val ready = { i: Int -> readable(i) || src.decodedSides(i) != null }
-        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap).filter { ready(it) && ready(it + 1) }
+        val read = { i: Int -> src.decodedSides(i) == null || src.decodedSides(i + 1) == null }
+        // Those with both sides decoded first (the sort keeps the order within each).
+        val pages = PageSeams.unchecked(a, pageSeams, currentIndex, SEAM_WINDOW, cheap).filter { ready(it) && ready(it + 1) }.sortedBy(read)
         if (pages.isEmpty()) return
         val found = pageSeams.copy()
         val checked = object : PageSource by src {
@@ -2010,9 +2013,12 @@ class ViewerActivity : AppCompatActivity() {
             var at = 0
             var batch = SEAM_FIRST
             while (at < pages.size) {
-                while (adapter?.decoding == true) delay(SCAN_YIELD_MS)
-                if (source !== src) return@launch
                 val next = pages.subList(at, minOf(pages.size, at + batch))
+                if (next.any(read)) {
+                    // A replaced adapter, released, no longer waits: the one after it is asked too.
+                    while (true) adapter?.takeIf { it.decoding }?.awaitIdle() ?: break
+                }
+                if (source !== src) return@launch
                 val done = withContext(AppDispatchers.background) {
                     val job = coroutineContext.job
                     Traces.section({ "seam check ${next.size} pages" }) { PageSeams.check(checked, next, found) { !job.isActive } }.also { ok ->
@@ -4214,9 +4220,6 @@ class ViewerActivity : AppCompatActivity() {
 
         /** How long the open book's scans wait at most for its first page to show ([startScans]). */
         private const val SCAN_HOLD_MS = 2_000L
-
-        /** How often a seam check waiting for the reader's decodes to end looks again ([checkSeams]). */
-        private const val SCAN_YIELD_MS = 50L
 
         /** [timeShareWait]'s item while a book opens. */
         private const val OPENING = -2

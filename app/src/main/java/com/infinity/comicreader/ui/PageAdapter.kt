@@ -40,6 +40,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -310,10 +312,28 @@ class PageAdapter(
     private val cache = object : LruCache<PageKey, Bitmap>(cacheBytes()) {
         override fun sizeOf(key: PageKey, value: Bitmap): Int = value.byteCount
     }
-    private val pending = HashMap<PageKey, Pending>()
+    /** True while no decode is under way ([pending] is empty). */
+    private val idle = MutableStateFlow(true)
 
-    /** True while any decode has not finished and been put away; for tests. */
+    /** The decodes under way, by page and size; [idle] follows whether there are any. */
+    private val pending = object : HashMap<PageKey, Pending>() {
+        override fun put(key: PageKey, value: Pending): Pending? = super.put(key, value).also { idle.value = false }
+
+        override fun remove(key: PageKey): Pending? = super.remove(key).also { if (isEmpty()) idle.value = true }
+
+        override fun clear() {
+            super.clear()
+            idle.value = true
+        }
+    }
+
+    /** True while any decode has not finished and been put away. */
     internal val decoding: Boolean get() = pending.isNotEmpty()
+
+    /** Returns once no decode is under way ([decoding]): at once when none is, and once released. */
+    internal suspend fun awaitIdle() {
+        idle.first { it }
+    }
 
     /**
      * The pages decoded from [source] this adapter holds, for one that replaces it ([adopt]);

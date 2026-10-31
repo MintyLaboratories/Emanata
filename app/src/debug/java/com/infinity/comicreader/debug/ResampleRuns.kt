@@ -4,11 +4,12 @@ import com.infinity.comicreader.reader.PixelEngine
 
 /** Pure parts of [ResampleCheckService]: what to run, in which order, and the energy it took. */
 internal object ResampleRuns {
-    /** Where CPU workers run: pinned to the large cores, to the little ones, or left to the system. */
+    /** Where CPU workers run: pinned to the large cores, to the little ones, to the fastest alone, or left to the system. */
     enum class Cores(val key: String) {
         ANY("any"),
         BIG("big"),
-        LITTLE("little");
+        LITTLE("little"),
+        PRIME("prime");
 
         companion object {
             fun of(key: String): Cores? = entries.firstOrNull { it.key == key }
@@ -30,7 +31,7 @@ internal object ResampleRuns {
                 if (engine == PixelEngine.GPU) return Setup(engine, 1, Cores.ANY)
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { Cores.of(it) ?: return null } ?: Cores.ANY
-                if (n !in 1..16 || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null
+                if (n !in 1..16 || cores == Cores.PRIME || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null
                 return Setup(engine, n, cores)
             }
         }

@@ -21,11 +21,11 @@ internal object DecodeRuns {
         }
     }
 
-    /** One setup: [engine] on [threads] threads pinned to [cores] (native page decodes; jxl-coder's cores only). */
+    /** One setup: [engine] on [threads] threads (native page decodes only) pinned to [cores]. */
     data class Setup(val engine: Engine, val threads: Int, val cores: ResampleRuns.Cores) {
         val key: String get() = when {
             engine == Engine.PAGE -> "${engine.key}/$threads/${cores.key}"
-            engine == Engine.CODER && cores != ResampleRuns.Cores.ANY -> "${engine.key}/${cores.key}"
+            cores != ResampleRuns.Cores.ANY -> "${engine.key}/${cores.key}"
             else -> engine.key
         }
 
@@ -35,13 +35,13 @@ internal object DecodeRuns {
         companion object {
             /**
              * `engine[/threads[/cores]]`, as `page/4/big`, `page/8/any`, `coder` or `platform`, or
-             * `coder/cores`, as `coder/big`; threads default to [threads], cores to any. Null when
-             * unreadable.
+             * `engine/cores` for the others, as `coder/big` or `platform/prime`; threads default to
+             * [threads], cores to any. Null when unreadable.
              */
             fun of(text: String, threads: Int): Setup? {
                 val parts = text.trim().split('/')
                 val engine = Engine.of(parts[0]) ?: return null
-                if (engine == Engine.CODER && parts.size == 2) return ResampleRuns.Cores.of(parts[1])?.let { Setup(engine, 1, it) }
+                if (engine != Engine.PAGE && parts.size == 2) return ResampleRuns.Cores.of(parts[1])?.let { Setup(engine, 1, it) }
                 if (engine != Engine.PAGE) return if (parts.size == 1) Setup(engine, 1, ResampleRuns.Cores.ANY) else null
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { ResampleRuns.Cores.of(it) ?: return null } ?: ResampleRuns.Cores.ANY

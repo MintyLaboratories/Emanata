@@ -18,7 +18,7 @@ class ResampleRunsTest {
         assertEquals(Setup(PixelEngine.GPU, 1, Cores.ANY), Setup.of("gpu/4/big", 2))
         assertEquals("native/4/big", Setup.of("native/4/big", 2)!!.key)
         assertEquals("gpu", Setup.of("gpu", 2)!!.key)
-        for (bad in listOf("cuda", "native/x", "native/0", "native/4/mid", "kotlin/4/big")) assertNull(bad, Setup.of(bad, 2))
+        for (bad in listOf("cuda", "native/x", "native/0", "native/4/mid", "native/1/prime", "kotlin/4/big")) assertNull(bad, Setup.of(bad, 2))
     }
 
     @Test

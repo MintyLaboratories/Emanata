@@ -46,7 +46,7 @@ import kotlin.math.max
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.DecodeCheckService
  *  [--es do check,time,cancel,fixtures,cold|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
- *  [--es setups coder,coder/big,page/4/big,page/8/any,platform] [--ei reps 5] [--ei gap 0] [--es fixtures /path]`
+ *  [--es setups coder,coder/big,page/4/big,page/8/any,platform,platform/prime] [--ei reps 5] [--ei gap 0] [--es fixtures /path]`
  *
  * Pages: synthetic 2000x3000 and 4000x6000 pages (JPEG XL at quality 91, JPEG at 90, PNG),
  * made once into the app's cache, and the first `pages` images of each of `dirs`, read
@@ -183,6 +183,7 @@ class DecodeCheckService : Service() {
     private fun mask(cores: Cores): Long = when (cores) {
         Cores.BIG -> CpuCores.device.big
         Cores.LITTLE -> CpuCores.device.little
+        Cores.PRIME -> CpuCores.device.prime
         Cores.ANY -> 0L
     }
 
@@ -197,12 +198,16 @@ class DecodeCheckService : Service() {
             }
             bitmap.apply { if (r == LibJxl.PAGE_OPAQUE) setHasAlpha(false) }
         }
-        Engine.PLATFORM -> ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(page.bytes))) { d, _, _ ->
-            d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        Engine.PLATFORM -> LibJxl.onCores(mask(setup.cores)) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(page.bytes))) { d, _, _ ->
+                d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
         }
-        Engine.FACTORY -> BitmapFactory.decodeByteArray(page.bytes, 0, page.bytes.size, BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }) ?: error("BitmapFactory failed on ${page.name}")
+        Engine.FACTORY -> LibJxl.onCores(mask(setup.cores)) {
+            BitmapFactory.decodeByteArray(page.bytes, 0, page.bytes.size, BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            })
+        } ?: error("BitmapFactory failed on ${page.name}")
     }
 
     // ------------------------------------------------------------------ check

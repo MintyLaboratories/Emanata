@@ -1992,7 +1992,8 @@ class ViewerActivity : AppCompatActivity() {
      * once and first; only a JPEG page read alone is read for them before that, in rounds that
      * start once no page decodes for the reader ([PageAdapter.awaitIdle]). Other pages, and every
      * page of a solid archive, wait for the reader to decode them ([onLoaded][PageAdapter]): never
-     * a second decode of a page.
+     * a second decode of a page. A book whose JPEG pages decode whole for their sides
+     * ([PageSource.dearSides]: progressive) stops being read for them after the first round.
      */
     private fun checkSeams() {
         val src = source ?: return
@@ -2002,7 +2003,9 @@ class ViewerActivity : AppCompatActivity() {
         if (!scansReleased || seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
         val far = !applied.thrift.pausedScans
-        val readable = { i: Int -> src.cheapSizes && Decoders.cheapSidesNamed(names.getOrNull(i)) }
+        // Pages are read for their sides until one decodes whole for them: the job then ends and the next waits for decodes.
+        val strips = !src.dearSides
+        val readable = { i: Int -> strips && src.cheapSizes && Decoders.cheapSidesNamed(names.getOrNull(i)) }
         val cheap = { i: Int -> far && readable(i) }
         val ready = { i: Int -> readable(i) || src.decodedSides(i) != null }
         val read = { i: Int -> src.decodedSides(i) == null || src.decodedSides(i + 1) == null }
@@ -2034,6 +2037,7 @@ class ViewerActivity : AppCompatActivity() {
                 relayout()
                 at += next.size
                 batch = SEAM_BATCH
+                if (strips && src.dearSides) break
             }
             seamsJob = null
             // Where only nearby seams are checked, the reader may have moved on meanwhile.

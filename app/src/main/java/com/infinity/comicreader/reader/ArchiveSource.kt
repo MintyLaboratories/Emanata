@@ -235,12 +235,20 @@ class ArchiveSource(
 
     override fun decodedSides(index: Int): SpreadSeams.Sides? = loadedSides[index]
 
+    @Volatile
+    override var dearSides: Boolean = false
+        private set
+
     /** From the page's decode when it was loaded ([loadedSides]), else read and decoded for them alone. */
     override fun sides(index: Int): SpreadSeams.Sides? {
         if (index !in pages.indices) return null
         loadedSides[index]?.let { return it }
         ReadProbes.current?.decodedAside("sides")
-        return runCatching { Decoders.sides(pageBytes(index)) }.getOrNull()
+        return runCatching {
+            val bytes = pageBytes(index)
+            if (ImageHeaders.jpegProgressive(bytes)) dearSides = true
+            Decoders.sides(bytes)
+        }.getOrNull()
     }
 
     override fun pageName(index: Int): String? = pages.getOrNull(index)?.path

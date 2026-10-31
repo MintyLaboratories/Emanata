@@ -22,6 +22,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override val cheapSizes: Boolean get() = inner.cheapSizes
 
+    override val dearSides: Boolean get() = inner.dearSides
+
     override fun loadedSize(index: Int): IntArray? = inner.loadedSize(index)
 
     override fun loadPage(index: Int, target: Target): Bitmap {

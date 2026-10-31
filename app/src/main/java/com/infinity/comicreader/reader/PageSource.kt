@@ -28,6 +28,12 @@ interface PageSource : Closeable {
     val cheapSizes: Boolean get() = true
 
     /**
+     * True once a page read for its [sides] alone turned out to decode whole for them (a
+     * progressive JPEG: any strip of it decodes every scan), so reading more costs a decode each.
+     */
+    val dearSides: Boolean get() = false
+
+    /**
      * `[width, height]` of page [index] as found when it was last loaded ([loadPage]),
      * or null: how a source whose sizes are not [cheapSizes] still makes them known.
      */

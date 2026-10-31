@@ -70,6 +70,8 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
 
     override val cheapSizes: Boolean get() = inner.cheapSizes
 
+    override val dearSides: Boolean get() = inner.dearSides
+
     override fun loadPage(index: Int, target: Target): Bitmap = inner.loadPage(shown[index], target)
 
     override fun pageSize(index: Int): IntArray? = shown.getOrNull(index)?.let { inner.pageSize(it) }

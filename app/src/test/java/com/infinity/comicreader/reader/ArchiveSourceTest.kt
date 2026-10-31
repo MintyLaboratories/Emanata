@@ -21,6 +21,22 @@ class ArchiveSourceTest {
     private fun ArchiveSource.text(index: Int) = readPage(index) { String(it.readBytes()) }
 
     @Test
+    fun aProgressiveJpegReadForItsSidesMakesThemDear() {
+        val f = Fixtures.zip(
+            File(tmp.root, "book.cbz"),
+            entry("p1.jpg", TestImages.jpegHead(600, 900)), entry("p2.jpg", TestImages.jpegHead(600, 900, sof = 0xC2))
+        )
+        open(f).use { src ->
+            assertFalse(src.dearSides)
+            src.sides(0)
+            assertFalse(src.dearSides)
+            src.sides(1)
+            assertTrue(src.dearSides)
+            assertTrue(GuardedSource(src).dearSides)
+        }
+    }
+
+    @Test
     fun imagesOnlyInNaturalOrder() {
         val f = Fixtures.zip(
             File(tmp.root, "book.cbz"),

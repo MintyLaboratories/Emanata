@@ -28,10 +28,12 @@ import com.infinity.comicreader.compact.LibJxl
 import com.infinity.comicreader.debug.DecodeRuns.Engine
 import com.infinity.comicreader.debug.DecodeRuns.Setup
 import com.infinity.comicreader.debug.ResampleRuns.Cores
+import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.reader.JxlPages
+import com.infinity.comicreader.reader.SyntheticPage
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -97,7 +99,7 @@ class DecodeCheckService : Service() {
         val synthetic = intent?.getBooleanExtra("synthetic", true) ?: true
         val reps = intent?.getIntExtra("reps", 5)?.coerceIn(1, 100) ?: 5
         val gap = intent?.getIntExtra("gap", 0)?.coerceIn(0, 10_000) ?: 0
-        thread(name = "decode-check") {
+        thread(name = "decode-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
                 if (asked != null && setups.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
@@ -121,7 +123,7 @@ class DecodeCheckService : Service() {
                 Log.i(TAG, "done")
                 stopSelfResult(startId)
             }
-        }
+        } }
         return START_NOT_STICKY
     }
 

@@ -16,6 +16,7 @@ import com.infinity.comicreader.net.Listings
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSizes
@@ -44,6 +45,7 @@ class App : Application() {
         Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
+        Calibrator.start(this)
         // Off the main thread: lookups by ID never wait on the database.
         thread(name = "book-index", isDaemon = true) {
             runCatching { BookIds.load() }

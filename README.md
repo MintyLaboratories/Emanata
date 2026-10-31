@@ -707,12 +707,23 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   NEON on arm64, reading and writing the bitmaps' own pixels, on one thread per
   large core (`CpuCores`, from the cores' capacities at runtime), pinned to
   those cores; or, where it cannot load, `Resampler` in Kotlin, which also models
-  the native code for JVM tests. Debug and bench builds can switch to OpenGL ES
-  3.1 compute shaders on the GPU instead (opt-in only: slower than the CPU path
-  on the reference tablet, energy not yet measured). All three filter in fp32
+  the native code for JVM tests. OpenGL ES 3.1 compute shaders on the GPU
+  take over where calibration finds them as fast (not on the reference tablet,
+  where they are slower than the CPU path). All three filter in fp32
   and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
+- Per-device calibration (`Calibrator`, choices in `Calibration`): once per
+  install and system build, while the app is in front, charging, cool and
+  otherwise idle, it times the resampler on 1, 2, one-per-large-core and
+  one-per-core workers and on the GPU, and native JPEG XL decodes on 2,
+  one-per-large-core and one-per-core threads, on a synthetic 2000x3000 page.
+  Of the setups within 10% of the fastest, the one using the least CPU time
+  wins. Winners are kept in `noBackupFilesDir` (never restored onto another
+  device); until the first calibration ends the one-per-large-core rule
+  applies, and after an update the previous winners stay until new ones are
+  established. Debug and bench builds show it and recalibrate in
+  `CalibrationActivity` (shell only).
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named

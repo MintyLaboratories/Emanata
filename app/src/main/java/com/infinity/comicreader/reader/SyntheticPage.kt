@@ -1,4 +1,4 @@
-package com.infinity.comicreader.debug
+package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -8,7 +8,7 @@ import android.graphics.Paint
 import android.graphics.Shader
 import kotlin.random.Random
 
-/** Synthetic pages for the check services. */
+/** Synthetic pages for calibration ([Calibration]) and the debug check services. */
 internal object SyntheticPage {
     /** A synthetic comic page: white paper, ink lines and hatching, flat and graded color, a noisy panel. */
     fun draw(w: Int, h: Int): Bitmap {

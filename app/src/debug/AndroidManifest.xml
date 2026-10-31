@@ -47,6 +47,11 @@
             android:exported="true"
             android:permission="android.permission.DUMP"
             android:theme="@android:style/Theme.Material.NoActionBar" />
+        <!-- Shows per-device calibration and runs it again; only the shell may start it. -->
+        <activity
+            android:name="com.infinity.comicreader.debug.CalibrationActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
         <!-- Opens a book in the reader for checks on a device; only the shell may start it. -->
         <activity
             android:name="com.infinity.comicreader.debug.ReaderOpenActivity"

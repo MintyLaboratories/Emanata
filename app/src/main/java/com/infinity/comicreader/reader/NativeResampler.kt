@@ -118,7 +118,8 @@ object NativeResampler {
      * when it is [PixelEngine.KOTLIN] or native code cannot do it, so the caller uses
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
      * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
-     * each band, whether someone waits on the result.
+     * each band, whether someone waits on the result. [workers] above 0 sets the CPU
+     * workers whatever the urgency, [pin] whether they are pinned, for timing a setup.
      */
     fun resample(
         src: Bitmap,
@@ -129,17 +130,19 @@ object NativeResampler {
         canceled: () -> Boolean = { false },
         engine: PixelEngine = this.engine,
         fallback: Boolean = true,
-        urgent: () -> Boolean = Urgency.current()
+        urgent: () -> Boolean = Urgency.current(),
+        workers: Int = 0,
+        pin: Boolean = pinned
     ): Boolean {
         if (engine == PixelEngine.KOTLIN || !fits(src) || !fits(dst)) return false
         val k = kernels ?: return false
         val ax = Resampler.axis(src.width, window.x, window.width, dst.width, scaling)
         val ay = Resampler.axis(src.height, window.y, window.height, dst.height, scaling)
         if (engine == PixelEngine.GPU) {
-            if (run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent)) return true
+            if (run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin)) return true
             if (!fallback) return false
         }
-        return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent)
+        return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent, workers, pin)
     }
 
     /** True for ARGB_8888 pixels held premultiplied, as an opaque bitmap's are too (it reports them as not). */
@@ -148,13 +151,13 @@ object NativeResampler {
     /** One job on [k]; false when it could not start or a band failed. */
     private fun run(
         k: PixelKernels, src: Bitmap, dst: Bitmap, ax: Resampler.Axis, ay: Resampler.Axis, linear: Boolean, gpu: Boolean,
-        canceled: () -> Boolean, urgent: () -> Boolean
+        canceled: () -> Boolean, urgent: () -> Boolean, workers: Int, pinning: Boolean
     ): Boolean {
-        val now = threads.coerceAtLeast(1)
-        val later = laterThreads.coerceAtLeast(1)
+        val now = (if (workers > 0) workers else threads).coerceAtLeast(1)
+        val later = (if (workers > 0) workers else laterThreads).coerceAtLeast(1)
         val most = if (gpu) 1 else maxOf(now, later)
         val c = cores!!
-        val pin = pinned && !gpu
+        val pin = pinning && !gpu
         val job = k.begin(src, dst, linear, most, gpu)
         if (job == 0L) return false
         try {

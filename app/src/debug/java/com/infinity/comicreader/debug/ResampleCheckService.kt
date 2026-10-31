@@ -21,12 +21,14 @@ import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.debug.ResampleRuns.Cores
 import com.infinity.comicreader.debug.ResampleRuns.Setup
+import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
 import com.infinity.comicreader.reader.Resampler
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
+import com.infinity.comicreader.reader.SyntheticPage
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
@@ -93,7 +95,7 @@ class ResampleCheckService : Service() {
         val seconds = intent?.getIntExtra("seconds", 20)?.coerceIn(3, 600) ?: 20
         val rounds = intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2
         val cooldown = intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30
-        thread(name = "resample-check") {
+        thread(name = "resample-check") { Calibrator.hold {
             val keptEngine = NativeResampler.engine
             val keptThreads = NativeResampler.threads
             val keptLater = NativeResampler.laterThreads
@@ -121,7 +123,7 @@ class ResampleCheckService : Service() {
                 Log.i(TAG, "done")
                 stopSelfResult(startId)
             }
-        }
+        } }
         return START_NOT_STICKY
     }
 

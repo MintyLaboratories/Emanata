@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PlatformPages
@@ -66,7 +67,9 @@ internal class BenchRunner(private val app: Application) {
     }
 
     /** Runs [plan] from [host], the activity it was started in; one result per session. */
-    suspend fun run(host: Activity, plan: BenchPlan): List<JSONObject> {
+    suspend fun run(host: Activity, plan: BenchPlan): List<JSONObject> = Calibrator.hold { runHeld(host, plan) }
+
+    private suspend fun runHeld(host: Activity, plan: BenchPlan): List<JSONObject> {
         tracker.orientation = plan.orientation
         tracker.onCreated = { if (it !is BenchActivity) watch(it.window) }
         app.registerActivityLifecycleCallbacks(tracker)

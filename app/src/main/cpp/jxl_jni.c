@@ -660,14 +660,21 @@ typedef struct {
     JNIEnv * env;
     jobject callback;
     jmethodID stop;
+    // What stop() threw, cleared so the call can unlock and release before rethrowing it.
+    jthrowable thrown;
 } StopCall;
 
 static int stopNow(void * opaque)
 {
     StopCall * c = opaque;
     const jboolean stop = (*c->env)->CallBooleanMethod(c->env, c->callback, c->stop);
-    // An exception stops the decode too, and stays pending for Kotlin.
-    return (*c->env)->ExceptionCheck(c->env) || stop;
+    if ((*c->env)->ExceptionCheck(c->env)) {
+        // An exception stops the decode too.
+        c->thrown = (*c->env)->ExceptionOccurred(c->env);
+        (*c->env)->ExceptionClear(c->env);
+        return 1;
+    }
+    return stop;
 }
 
 // Decodes the first frame of `jxl` in sRGB straight into `bitmap`, an RGBA_8888 bitmap of
@@ -683,7 +690,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
     if (api == NULL || AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
         return JP_UNSUPPORTED;
     }
-    StopCall call = { env, stop, NULL };
+    StopCall call = { env, stop, NULL, NULL };
     if (stop != NULL) {
         call.stop = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, stop), "stop", "()Z");
         if (call.stop == NULL) return JP_FAILED;
@@ -697,5 +704,6 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
         AndroidBitmap_unlockPixels(env, bitmap);
     }
     giveBack(env, &in);
+    if (call.thrown != NULL) (*env)->Throw(env, call.thrown);
     return result;
 }

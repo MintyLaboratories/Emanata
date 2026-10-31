@@ -28,7 +28,8 @@ which runs the seam scans (both settings, put back after the run).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b". After
-each install the build calibrates (per-device winners, CalibrationActivity) before its sessions.
+each install the build calibrates (per-device winners, CalibrationActivity) before its sessions;
+`run` calibrates once before its first.
 Sessions start with a warm-up (see BenchPlan.warmup) that reports leave out.
 
 Time a release build: `./gradlew assembleBench`, then install app-bench.apk over the debug build
@@ -380,6 +381,9 @@ def run_plan(args) -> None:
     results = out / "results.jsonl"
     uid = app_uid()
     adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+    if not getattr(args, "variant", None):
+        # `ab` calibrates after each install.
+        calibrate()
     for n, session in enumerate(plan):
         level = battery_level()
         if level is not None and level < args.min_battery:

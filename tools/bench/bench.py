@@ -123,7 +123,8 @@ def encode(png: Path, fmt: str, out: Path) -> bool:
     elif fmt == "jxl":
         if not shutil.which("cjxl"):
             return False
-        run(["cjxl", str(png), str(out), "-d", "1.0", "-e", "7", "--quiet"])
+        # Quality 91, as JXL comics are commonly published.
+        run(["cjxl", str(png), str(out), "-q", "91", "-e", "7", "--quiet"])
     elif fmt in ("avif", "avifl"):
         if not shutil.which("avifenc"):
             return False

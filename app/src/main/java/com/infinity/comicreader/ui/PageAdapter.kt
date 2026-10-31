@@ -40,9 +40,9 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -1389,6 +1389,7 @@ class PageAdapter(
             val need = pages * (screenBytes / per)
             return need.coerceAtMost(cap).coerceAtLeast(base).coerceAtMost(Int.MAX_VALUE.toLong())
         }
+
         private const val MAX_STRIP_PRELOAD = 2
 
         /** How long [PageAdapter.home] holds after the screen turns back, should no layout at it follow. */

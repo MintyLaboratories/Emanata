@@ -243,6 +243,9 @@ class CalibrationTest {
         assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = 2, powerSave = false, forced = true))
         assertEquals("app busy", Calibration.waitReason(busy = true, thermalStatus = 0, powerSave = true, forced = true))
         assertNull(Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, forced = false))
+        // After a wait for heat, light throttling is waited out too.
+        assertEquals("too warm (thermal status 1)", Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, forced = false, cooling = true))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = false, forced = false, cooling = true))
         var asked = false
         assertNull(Calibration.stopReason(held = false, reading = false, inFront = true, forced = true) { asked = true; false })
         assertFalse(asked)
@@ -250,6 +253,17 @@ class CalibrationTest {
         assertEquals("reading", Calibration.stopReason(held = false, reading = true, inFront = true, forced = true) { true })
         assertEquals("app not in front", Calibration.stopReason(held = false, reading = false, inFront = false, forced = true) { true })
         assertEquals("held off by a check", Calibration.stopReason(held = true, reading = false, inFront = true, forced = true) { true })
+    }
+
+    @Test
+    fun heatWhileTimingEndsTheRunAndWaitsAreBudgetedInAll() {
+        val warm = "too warm (thermal status 2)"
+        // Before timing, heat is waited out, within the budget.
+        assertNull(Calibration.giveUp(warm, hot = true, timing = false, waitedMs = 60_000))
+        assertEquals("too warm (thermal status 2) while timing", Calibration.giveUp(warm, hot = true, timing = true, waitedMs = 0))
+        // Other waits, before or during timing, share one budget for the whole run.
+        assertNull(Calibration.giveUp("app busy", hot = false, timing = true, waitedMs = Calibration.GIVE_UP_MS))
+        assertEquals("waited over 120 s in all: app busy", Calibration.giveUp("app busy", hot = false, timing = true, waitedMs = Calibration.GIVE_UP_MS + 1))
     }
 
     @Test

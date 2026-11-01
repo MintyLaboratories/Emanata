@@ -249,17 +249,39 @@ object Calibration {
 
     /**
      * What a calibration run waits out before timing, or null: app work, heat (thermal
-     * status [HOT] or above), or, unless [forced], battery saver, whose clock caps skew timings.
+     * status [HOT] or above; [LIGHT] or above while [cooling], after a wait for heat, as some
+     * chips throttle there already), or, unless [forced], battery saver, whose clock caps skew
+     * timings.
      */
-    fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, forced: Boolean): String? = when {
+    fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, forced: Boolean, cooling: Boolean = false): String? = when {
         busy -> "app busy"
-        thermalStatus >= HOT -> "too warm (thermal status $thermalStatus)"
+        thermalStatus >= if (cooling) LIGHT else HOT -> "$TOO_WARM (thermal status $thermalStatus)"
         powerSave && !forced -> "battery saver on"
         else -> null
     }
 
+    /**
+     * Why a run that must wait ([wait], for heat when [hot]) gives up, or null to wait on:
+     * at once for heat once it has begun timing ([timing]), as its own work heats the device
+     * and what it timed next would be throttled; else once its waits add up to over [GIVE_UP_MS].
+     */
+    fun giveUp(wait: String, hot: Boolean, timing: Boolean, waitedMs: Long): String? = when {
+        hot && timing -> "$wait while timing"
+        waitedMs > GIVE_UP_MS -> "waited over ${GIVE_UP_MS / 1000} s in all: $wait"
+        else -> null
+    }
+
+    /** How [waitReason] begins when the wait is for heat. */
+    const val TOO_WARM = "too warm"
+
+    /** PowerManager.THERMAL_STATUS_LIGHT: some devices throttle a little. */
+    const val LIGHT = 1
+
     /** PowerManager.THERMAL_STATUS_MODERATE: the device has begun to throttle. */
     const val HOT = 2
+
+    /** The longest a calibration run waits for fair moments in all before it tries another time. */
+    const val GIVE_UP_MS = 120_000L
 
     /** The median of [xs]; NaN when empty. */
     internal fun median(xs: List<Double>): Double {

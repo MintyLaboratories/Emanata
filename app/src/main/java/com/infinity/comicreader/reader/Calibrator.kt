@@ -235,7 +235,7 @@ object Calibrator {
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", probe.sawPowerSave)
-                .put("page", probe.page).put("target", probe.target)
+                .put("thermal", probe.thermal).put("page", probe.page).put("target", probe.target)
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -295,6 +295,19 @@ object Calibrator {
         var sawPowerSave = false
             private set
 
+        /** The highest thermal status seen during the run. */
+        var thermal = 0
+            private set
+
+        /** Time spent waiting for fair moments so far. */
+        private var waitedMs = 0L
+
+        /** True once a run of a setup began: heat then ends the run ([Calibration.giveUp]). */
+        private var timing = false
+
+        /** True once the run waited for heat: it waits for light throttling to end too. */
+        private var cooling = false
+
         /** CPU time in ms of all but the UI threads ([UiCpu]). */
         private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
 
@@ -353,6 +366,7 @@ object Calibrator {
         }
 
         override fun time(candidate: Candidate): Pair<Double, Double>? {
+            timing = true
             val cpu0 = cpuMs()
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
@@ -377,9 +391,8 @@ object Calibrator {
             return (System.nanoTime() - t0) / 1e6 to (cpuMs() - cpu0).coerceAtLeast(0.0)
         }
 
-        /** Waits up to [GIVE_UP_MS] for a fair moment; says [why] when there is none. */
+        /** Waits for a fair moment while [Calibration.giveUp] allows; says [why] when there is none. */
         override fun awaitFair(): Boolean {
-            val since = SystemClock.elapsedRealtime()
             while (true) {
                 if (dropped()) return no("dropped")
                 Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging(context) })
@@ -389,8 +402,12 @@ object Calibrator {
                     workedBefore = worked.get()
                     return true
                 }
-                if (SystemClock.elapsedRealtime() - since > GIVE_UP_MS) return no("waited ${GIVE_UP_MS / 1000} s: $wait")
+                val hot = wait.startsWith(Calibration.TOO_WARM)
+                Calibration.giveUp(wait, hot, timing, waitedMs)?.let { return no(it) }
+                if (hot) cooling = true
+                val since = SystemClock.elapsedRealtime()
                 SystemClock.sleep(WAIT_MS)
+                waitedMs += SystemClock.elapsedRealtime() - since
             }
         }
 
@@ -411,8 +428,9 @@ object Calibrator {
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
             val saver = pm?.isPowerSaveMode == true
             if (saver) sawPowerSave = true
-            val thermal = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else 0
-            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = thermal, powerSave = saver, forced = force)
+            val status = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else 0
+            thermal = maxOf(thermal, status)
+            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, forced = force, cooling = cooling)
         }
 
         /** True when all but the UI threads used under a tenth of a core over a short while: nothing else of the app is busy. */
@@ -436,5 +454,4 @@ object Calibrator {
     private const val STEP_MS = 250L
     private const val WAIT_MS = 1_000L
     private const val IDLE_WINDOW_MS = 300L
-    private const val GIVE_UP_MS = 120_000L
 }

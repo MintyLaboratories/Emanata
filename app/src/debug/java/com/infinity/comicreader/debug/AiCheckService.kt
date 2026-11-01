@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelFiles
@@ -46,16 +47,21 @@ import kotlin.math.max
  * Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.AiCheckService
- *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|all] [--es engines gpu,cpu]
- *  [--es tiles 128,192,256,384] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ez fp16 true] [--ei threads 4]`
+ *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|sustain|all] [--es engines gpu,cpu]
+ *  [--es tiles 128,192,256,384] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ez fp16 true]
+ *  [--ei threads 4] [--ei seconds 300]`
  *
- * - open: per engine, the time to open and measure the model, its geometry and tile size.
- * - check: tiled output against one tile covering the whole of a `small` page (seams), and
- *   the GPU's against the CPU's (fp16 against fp32 arithmetic).
+ * - open: per engine, the time to open, measure and check the model, its geometry, tile size
+ *   and precision (the checks themselves go to the log under "AiSessions").
+ * - check: tiled output at each size against one tile covering the whole of a `small` page on
+ *   the CPU in fp32 (seams, plus fp16 rounding on the GPU), and the GPU's against the CPU's.
  * - time: per engine and tile size, `reps` pages of `size` after one warm-up: time per tile
  *   and per page, peak resident and graphics memory, thermal status and headroom.
  * - limits: a page whose time runs out falls back to exactly the Lanczos3 page; a page
  *   canceled after three tiles stops within one; a sample of each output saved as PNG.
+ * - sustain (not part of all): pages of `size` back to back for `seconds`, through the gate
+ *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
+ *   headroom, until the time is up or the gate stops a page.
  *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
@@ -75,6 +81,7 @@ class AiCheckService : Service() {
         val cooldown = intent?.getIntExtra("cooldown", 10)?.coerceIn(0, 600) ?: 10
         val fp16 = intent?.getBooleanExtra("fp16", true) ?: true
         val threads = intent?.getIntExtra("threads", NativeResampler.threads)?.coerceIn(1, 16) ?: NativeResampler.threads
+        val seconds = intent?.getIntExtra("seconds", 300)?.coerceIn(10, 3600) ?: 300
         thread(name = "ai-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
@@ -102,9 +109,10 @@ class AiCheckService : Service() {
                             JSONObject().put("open", if (gpu) "gpu" else "cpu").put("onGpu", s.model.onGpu).put("ms", openMs)
                                 .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size).put("fp16", s.fp16)
                         )
-                        if (what == "check" || what == "all") seams(s, small[0], small[1])
+                        if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
                         if (what == "time" || what == "all") time(s, tiles, size[0], size[1], reps, cooldown)
                         if (what == "limits" || what == "all") limits(s, size[0], size[1])
+                        if (what == "sustain") sustain(s, size[0], size[1], seconds)
                     }
                     log(JSONObject().put("closed", if (gpu) "gpu" else "cpu").put("graphicsMb", graphicsKb() / 1024).put("rssMb", rssKb() / 1024))
                 }
@@ -123,18 +131,21 @@ class AiCheckService : Service() {
 
     // ------------------------------------------------------------------ check
 
-    /** Tiled output at each size against one tile covering the whole page: the seams' largest and mean difference. */
-    private fun seams(s: Session, w: Int, h: Int) {
+    /**
+     * Tiled output at each size against one tile covering the whole page on the CPU in fp32
+     * (no GPU buffer limit, no fp16 rounding): the largest and mean difference.
+     */
+    private fun seams(s: Session, files: ModelFiles, threads: Int, w: Int, h: Int) {
         val page = SyntheticPage.draw(w, h)
-        val whole = Session(s.model, s.geometry, max(page.width, page.height) + 2 * s.geometry.margin)
-        val reference = TileEngine.run(whole, page).bitmap ?: return log(JSONObject().put("seams", "reference failed"))
-        val ref = pixels(reference)
-        reference.recycle()
+        val ref = Sessions.open(LibNcnn, files, threads, gpu = false)?.use { cpu ->
+            val whole = Session(cpu.model, cpu.geometry, max(page.width, page.height) + 2 * cpu.geometry.margin)
+            TileEngine.run(whole, page, UNLIMITED).bitmap?.let { b -> pixels(b).also { b.recycle() } }
+        } ?: return log(JSONObject().put("seams", "reference failed"))
         for (size in listOf(64, 96, 128, 192, 256).filter { TilePlan.fits(it, s.geometry) }) {
             val got = TileEngine.run(Session(s.model, s.geometry, size), page).bitmap ?: continue
             val d = diff(ref, pixels(got))
             got.recycle()
-            log(JSONObject().put("seams", if (s.model.onGpu) "gpu" else "cpu").put("tile", size).put("maxDiff", d.max).put("meanDiff", Stats.round1(d.mean * 100) / 100).put("over2", d.over2))
+            log(JSONObject().put("seams", if (s.model.onGpu) "gpu" else "cpu").put("fp16", s.fp16).put("tile", size).put("maxDiff", d.max).put("meanDiff", Stats.round1(d.mean * 100) / 100).put("over2", d.over2))
         }
         page.recycle()
     }
@@ -241,6 +252,31 @@ class AiCheckService : Service() {
         page.recycle()
     }
 
+    // ------------------------------------------------------------------ sustain
+
+    private fun sustain(s: Session, w: Int, h: Int, seconds: Int) {
+        val page = SyntheticPage.draw(w, h)
+        val gate = AiConditions.gate(this)
+        val end = SystemClock.elapsedRealtime() + seconds * 1000L
+        val t0 = SystemClock.elapsedRealtime()
+        var pages = 0
+        log(JSONObject().put("sustain", if (s.model.onGpu) "gpu" else "cpu").put("start", state()))
+        while (SystemClock.elapsedRealtime() < end) {
+            val p0 = SystemClock.elapsedRealtime()
+            val run = TileEngine.run(s, page, UNLIMITED, gate = gate)
+            run.bitmap?.recycle()
+            pages++
+            log(
+                JSONObject().put("page", pages).put("atS", (SystemClock.elapsedRealtime() - t0) / 1000)
+                    .put("ms", SystemClock.elapsedRealtime() - p0).put("tiles", run.stats.tiles)
+                    .put("fallback", run.fallback?.name ?: JSONObject.NULL).put("state", state())
+            )
+            if (run.fallback != null) break
+        }
+        log(JSONObject().put("sustained", pages).put("seconds", (SystemClock.elapsedRealtime() - t0) / 1000).put("end", state()))
+        page.recycle()
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private class Diff(val max: Int, val mean: Double, val over2: Int)
@@ -288,8 +324,10 @@ class AiCheckService : Service() {
         return JSONObject()
             .put("thermal", if (Build.VERSION.SDK_INT >= 29) power.currentThermalStatus else -1)
             .put("headroom", (if (Build.VERSION.SDK_INT >= 30) power.getThermalHeadroom(0) else Float.NaN).let { if (it.isNaN()) JSONObject.NULL else Stats.round1(it * 100.0) / 100 })
-            .put("batteryTempC", (sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10.0)
             .put("plugged", (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+            // Charging (2), discharging (3), not charging (4) or full (5). No temperature: the
+            // sticky broadcast carries the one from its last level or status change.
+            .put("batteryStatus", sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1)
     }
 
     private fun notification(): Notification {

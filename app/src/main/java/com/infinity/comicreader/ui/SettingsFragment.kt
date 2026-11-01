@@ -159,6 +159,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.settings, rootKey)
+        // No settings has an icon: titles start at the list's small start padding, on a phone as on a tablet.
+        noIconSpace(preferenceScreen)
         val prefs = Prefs(requireContext())
         val library = Library(requireContext())
         setUpSections(prefs)
@@ -341,6 +343,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             true
         }
+    }
+
+    /** Keeps no room for an icon beside [pref] and every setting under it. */
+    private fun noIconSpace(pref: Preference) {
+        pref.isIconSpaceReserved = false
+        if (pref is PreferenceGroup) for (i in 0 until pref.preferenceCount) noIconSpace(pref.getPreference(i))
     }
 
     /**

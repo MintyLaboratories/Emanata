@@ -13,11 +13,6 @@
     android:paddingEnd="?android:attr/listPreferredItemPaddingEnd"
     android:paddingBottom="@dimen/space_2">
 
-    <!-- Where other settings keep room for an icon: titles line up. -->
-    <Space
-        android:layout_width="56dp"
-        android:layout_height="0dp" />
-
     <TextView
         android:id="@android:id/title"
         android:layout_width="0dp"

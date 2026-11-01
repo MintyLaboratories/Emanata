@@ -53,6 +53,32 @@ class SettingsSectionsTest {
 
     private fun PreferenceFragmentCompat.pref(key: String) = findPreference<Preference>(key)!!
 
+    /** Every setting under [group], at any depth. */
+    private fun all(group: androidx.preference.PreferenceGroup): List<Preference> =
+        (0 until group.preferenceCount).map { group.getPreference(it) }.flatMap { listOf(it) + if (it is androidx.preference.PreferenceGroup) all(it) else emptyList() }
+
+    @Test
+    fun noSettingKeepsRoomForAnIconSoTitlesStartNearTheEdge() {
+        val (controller, fragment) = open()
+        assertTrue(all(fragment.preferenceScreen).none { it.isIconSpaceReserved })
+        val list = fragment.listView
+        list.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1200, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(4000, android.view.View.MeasureSpec.EXACTLY)
+        )
+        list.layout(0, 0, 1200, 4000)
+        val density = context.resources.displayMetrics.density
+        val titles = (0 until list.childCount).mapNotNull { list.getChildAt(it).findViewById<android.widget.TextView>(android.R.id.title) }
+        assertTrue(titles.size > 3)
+        for (title in titles) {
+            val at = IntArray(2).also { title.getLocationInWindow(it) }
+            val listAt = IntArray(2).also { list.getLocationInWindow(it) }
+            // The list's start padding (16 dp) and the window's own margin at most: no icon column.
+            assertTrue("${title.text} at ${(at[0] - listAt[0]) / density} dp", at[0] - listAt[0] <= 24 * density)
+        }
+        controller.pause()
+    }
+
     @Test
     fun keepItSimpleComesFirstAndHidesAdvancedSettings() {
         val (_, fragment) = open()

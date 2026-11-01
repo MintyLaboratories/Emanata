@@ -139,6 +139,23 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun aDeviceStartFolderNowGoneSaysSoRatherThanEmpty() {
+        prefs.setLocationStart(device.absolutePath, comics.absolutePath)
+        prefs.lastPath = null
+        comics.delete()
+        val activity = launch()
+        assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
+        assertEquals(listOf("Device"), activity.crumbs())
+        assertEquals(listOf("attic"), activity.titles())
+        // Picked again from the locations: said again.
+        ShadowToast.reset()
+        location(activity, "Device").performClick()
+        idle()
+        assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
+        assertEquals(listOf("Device"), activity.crumbs())
+    }
+
+    @Test
     fun aShareOpensAtItsStartFolder() {
         prefs.setLocationStart("/net/s1", "/net/s1/Series")
         val activity = launch()

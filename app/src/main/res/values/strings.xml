@@ -1019,7 +1019,6 @@
     <string name="sort_two_levels">%1$s, then %2$s</string>
 
     <!-- ===================== About ===================== -->
-    <string name="about_desc">A comic &amp; PDF reader focused on image quality, features and customizability. Opens CBZ, CBR, CB7, CBT and PDF, folders of images, and WebP, JPEG XL, AVIF, TIFF and more. No ads, no tracking; works offline.</string>
     <string name="about_tagline">Read without the noise.</string>
     <string name="about_source">Source code</string>
     <string name="about_upstream">Based on ComicReader by infinity6901 (MIT)</string>

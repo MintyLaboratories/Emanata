@@ -33,6 +33,17 @@ class AboutActivityTest {
     }
 
     @Test
+    fun noBlurbBetweenTheVersionAndTheLinks() {
+        val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        fun texts(v: android.view.View): List<String> = when (v) {
+            is android.view.ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
+            is TextView -> listOf(v.text.toString())
+            else -> emptyList()
+        }
+        assertTrue(texts(about.window.decorView).none { it.contains("works offline") || it.startsWith("A comic & PDF reader") })
+    }
+
+    @Test
     fun versionChipShowsOnlyTheVersion() {
         val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
         val chip = about.findViewById<TextView>(R.id.about_version).text.toString()

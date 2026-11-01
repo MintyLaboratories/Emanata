@@ -187,7 +187,8 @@ class CalibrationTest {
     private class FakeProbe(
         val walls: Map<Candidate, List<Double>>,
         val fair: () -> Boolean = { true },
-        val still: () -> Boolean = { true }
+        val still: () -> Boolean = { true },
+        override val why: String? = null
     ) : CalibrationProbe {
         val order = ArrayList<String>()
         private val runs = HashMap<Candidate, Int>()
@@ -208,44 +209,102 @@ class CalibrationTest {
     fun runInterleavesLeavesOutWarmupAndTakesMedians() {
         val a = pixels(1, true)
         val b = pixels(4, true)
-        // First run of each is the warm-up: 1000 ms, left out.
+        // One run per sample, unwarmed; the first round is the warm-up: 1000 ms, left out.
         val probe = FakeProbe(mapOf(a to listOf(1000.0, 10.0, 30.0, 20.0), b to listOf(1000.0, 5.0, 6.0, 7.0)))
-        val t = CalibrationRun(probe, listOf(a, b), rounds = 3, warmup = 1).run()!!
+        val t = CalibrationRun(probe, listOf(a, b), rounds = 3, warmup = 1, burst = 1, warm = false).run()!!
         assertEquals(listOf(a.key, b.key, b.key, a.key, a.key, b.key, b.key, a.key), probe.order)
         assertEquals(Timing(a, 20.0, 40.0, 30.0, 60.0), t[0])
         assertEquals(Timing(b, 6.0, 12.0, 3.0, 6.0), t[1])
     }
 
     @Test
+    fun eachSampleIsTheMedianOfAWarmedBurst() {
+        val a = pixels(1, true)
+        // Per sample: a cold run (left out), then 3 back to back, one an outlier.
+        val probe = FakeProbe(mapOf(a to listOf(500.0, 10.0, 90.0, 12.0, 500.0, 14.0, 11.0, 70.0)))
+        val t = CalibrationRun(probe, listOf(a), rounds = 2).run()!!
+        assertEquals(8, probe.order.size)
+        // Samples 12 and 14.
+        assertEquals(13.0, t[0].wallMs, 0.0)
+    }
+
+    @Test
     fun aSetupThatCannotRunIsLeftOut() {
         val a = pixels(1, true)
         val probe = FakeProbe(mapOf(a to listOf(10.0)))
-        val t = CalibrationRun(probe, listOf(a, gpu), rounds = 2, warmup = 0).run()!!
+        val t = CalibrationRun(probe, listOf(a, gpu), rounds = 2, burst = 1, warm = false).run()!!
         assertEquals(listOf(a), t.map { it.candidate })
         // The one that runs ran in both rounds.
         assertEquals(listOf(a.key, a.key), probe.order)
     }
 
     @Test
-    fun disturbedRunsAreMadeAgainUpToALimit() {
+    fun disturbedSamplesAreMadeAgainUpToALimit() {
         val a = pixels(1, true)
         var n = 0
-        // Every other run is disturbed.
+        // Every other sample is disturbed.
         val probe = FakeProbe(mapOf(a to listOf(10.0)), still = { n++ % 2 == 1 })
-        val t = CalibrationRun(probe, listOf(a), rounds = 2, warmup = 0, retries = 5).run()
+        val t = CalibrationRun(probe, listOf(a), rounds = 2, retries = 5).run()
         assertNotNull(t)
-        assertEquals(4, probe.order.size)
+        // 4 samples of a warm run and 3 timed.
+        assertEquals(16, probe.order.size)
         val never = FakeProbe(mapOf(a to listOf(10.0)), still = { false })
-        assertNull(CalibrationRun(never, listOf(a), rounds = 2, warmup = 0, retries = 3).run())
+        val run = CalibrationRun(never, listOf(a), rounds = 2, burst = 1, warm = false, retries = 3)
+        assertNull(run.run())
         assertEquals(4, never.order.size)
+        assertEquals("disturbed 4 times", run.why)
     }
 
     @Test
-    fun anUnfairDeviceOrAStopEndsTheRun() {
+    fun anUnfairDeviceOrAStopEndsTheRunSayingWhy() {
         val a = pixels(1, true)
-        assertNull(CalibrationRun(FakeProbe(mapOf(a to listOf(10.0)), fair = { false }), listOf(a)).run())
+        val unfair = CalibrationRun(FakeProbe(mapOf(a to listOf(10.0)), fair = { false }, why = "battery saver on"), listOf(a))
+        assertNull(unfair.run())
+        assertEquals("battery saver on", unfair.why)
         var asked = 0
-        assertNull(CalibrationRun(FakeProbe(mapOf(a to listOf(10.0))), listOf(a)).run { asked++ > 2 })
+        val stopped = CalibrationRun(FakeProbe(mapOf(a to listOf(10.0))), listOf(a))
+        assertNull(stopped.run { asked++ > 2 })
         assertFalse(asked < 3)
+        assertEquals("stopped", stopped.why)
+    }
+
+    /**
+     * A device whose cores clock down while calibration checks it is idle: the first run
+     * after each check is slower, threads spread wider the more (one data point: 8 threads
+     * 1.5x, 2 on the large cores 1.2x), and runs jitter by [jitter] either way with an
+     * outlier 60 % slower one run in [outlierEvery] (0: none).
+     */
+    private class ClockingProbe(val steady: Map<Candidate, Double>, val cold: Map<Candidate, Double>, val cpuPerWall: Map<Candidate, Double>, seed: Int, val jitter: Double, val outlierEvery: Int) : CalibrationProbe {
+        private val random = java.util.Random(seed.toLong())
+        private var idle = false
+
+        override fun awaitFair(): Boolean = true.also { idle = true }
+        override fun stillFair(): Boolean = true
+        override fun time(candidate: Candidate): Pair<Double, Double> {
+            val factor = if (idle) cold.getValue(candidate) else 1.0
+            idle = false
+            val noise = 1 + (random.nextDouble() * 2 - 1) * jitter + if (outlierEvery > 0 && random.nextInt(outlierEvery) == 0) 0.6 else 0.0
+            val wall = steady.getValue(candidate) * factor * noise
+            return wall to wall * cpuPerWall.getValue(candidate)
+        }
+    }
+
+    @Test
+    fun warmedBurstsFindASteadyWinThatColdStartsHide() {
+        val two = jxl(2, true)
+        val eight = jxl(8, false)
+        // Steady: 8 threads on any core 142 ms / 828 CPU, 2 on the large cores 187 / 361: 8 is 24 % faster.
+        val steady = mapOf(two to 187.0, eight to 142.0)
+        val cold = mapOf(two to 1.2, eight to 1.5)
+        val ratio = mapOf(two to 361.0 / 187, eight to 828.0 / 142)
+        val before = Tuning(PixelEngine.NATIVE, 2, true, 2, true)
+        for (seed in 0 until 50) {
+            val probe = ClockingProbe(steady, cold, ratio, seed, jitter = 0.08, outlierEvery = 10)
+            val t = CalibrationRun(probe, listOf(two, eight)).run()!!
+            assertEquals("seed $seed", Tuning(PixelEngine.NATIVE, 2, true, 8, false), Calibration.tuning(t, before))
+        }
+        // Timed straight after each idle check, as before: 8 threads look only 5 % faster, and 2 win on CPU.
+        val coldOnly = CalibrationRun(ClockingProbe(steady, cold, ratio, 0, jitter = 0.0, outlierEvery = 0), listOf(two, eight), warmup = 1, burst = 1, warm = false).run()!!
+        assertEquals(2, Calibration.tuning(coldOnly, before).jxlThreads)
     }
 }

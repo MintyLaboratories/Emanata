@@ -194,24 +194,36 @@ internal interface CalibrationProbe {
      */
     fun awaitFair(): Boolean
 
-    /** True when nothing disturbed the run just made. */
+    /** True when nothing disturbed the sample made since [awaitFair] last said fair. */
     fun stillFair(): Boolean
+
+    /** Why [awaitFair] last said no; null when unknown. */
+    val why: String? get() = null
 }
 
 /**
- * Times [candidates] on [probe]: [warmup] rounds left out, then [rounds] counted, the order
- * reversed every other round (A B, B A…) so heat weighs on each alike. A run something
- * disturbed is made again, up to [retries] times in all.
+ * Times [candidates] on [probe] in [rounds], the order reversed every other round (A B,
+ * B A…) so heat weighs on each alike, [warmup] rounds left out. Each sample waits for the
+ * device to be fair, runs the candidate once untimed when [warm] (the wait lets the cores
+ * clock down, which the first run after it pays for), then takes the median of [burst]
+ * runs back to back. A sample something disturbed is made again, up to [retries] times in all.
  */
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
     private val candidates: List<Candidate>,
     private val rounds: Int = 5,
-    private val warmup: Int = 1,
+    private val warmup: Int = 0,
+    private val burst: Int = 3,
+    private val warm: Boolean = true,
     private val retries: Int = 10
 ) {
-    /** The median timing of each candidate that ran, with its spread; null when the run stopped first. */
+    /** Why the last [run] stopped first; null when it finished. */
+    var why: String? = null
+        private set
+
+    /** The median timing of each candidate that ran, with its spread over the samples; null when the run stopped first ([why]). */
     fun run(stopped: () -> Boolean = { false }): List<Timing>? {
+        why = null
         val walls = candidates.associateWith { ArrayList<Double>() }
         val cpus = candidates.associateWith { ArrayList<Double>() }
         val missing = HashSet<Candidate>()
@@ -221,8 +233,9 @@ internal class CalibrationRun(
             for (c in order) {
                 if (c in missing) continue
                 while (true) {
-                    if (stopped() || !probe.awaitFair()) return null
-                    val t = probe.time(c)
+                    if (stopped()) return stop("stopped")
+                    if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
+                    val t = sample(c)
                     if (t == null) {
                         missing += c
                         break
@@ -234,7 +247,7 @@ internal class CalibrationRun(
                         }
                         break
                     }
-                    if (++redone > retries) return null
+                    if (++redone > retries) return stop("disturbed $redone times")
                 }
             }
         }
@@ -243,5 +256,23 @@ internal class CalibrationRun(
             val c = cpus.getValue(it)
             Timing(it, Calibration.median(w), Calibration.median(c), Calibration.spread(w), Calibration.spread(c))
         }
+    }
+
+    private fun stop(reason: String): List<Timing>? {
+        why = reason
+        return null
+    }
+
+    /** One sample of [c]: the medians of a warmed burst; null when it cannot run. */
+    private fun sample(c: Candidate): Pair<Double, Double>? {
+        if (warm && probe.time(c) == null) return null
+        val w = ArrayList<Double>(burst)
+        val u = ArrayList<Double>(burst)
+        repeat(burst.coerceAtLeast(1)) {
+            val t = probe.time(c) ?: return null
+            w += t.first
+            u += t.second
+        }
+        return Calibration.median(w) to Calibration.median(u)
     }
 }

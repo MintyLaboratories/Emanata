@@ -581,7 +581,7 @@ def install(apk: str, tries: int = 2) -> None:
     raise SystemExit(f"could not install {apk}")
 
 
-def calibrate(out: Path | None = None, variant: str = "", timeout_s: int = 180) -> None:
+def calibrate(out: Path | None = None, variant: str = "", timeout_s: int = 300) -> None:
     """
     Calibrates a freshly installed build now (CalibrationActivity) and waits for it to end, so
     no calibration runs between sessions and both builds of an A/B read with their own winners.

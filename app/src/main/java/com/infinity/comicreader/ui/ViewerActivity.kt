@@ -553,12 +553,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     // A swipe lands on a tall page as taps and keys do, back at its bottom: set before it slides in.
                     if (mode == MODE_PAGED) adapter?.swipingFrom(pager.currentItem)
                 }
-                // Seams held back while the reader was on their pages may show now.
-                if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) pager.post { relayout() }
+                if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) {
+                    adapter?.settled()
+                    // Seams held back while the reader was on their pages may show now.
+                    pager.post { relayout() }
+                }
             }
 
             override fun onPageSelected(position: Int) {
                 if (mode != MODE_PAGED) return
+                adapter?.turnedTo(position, back = position < currentItem)
                 currentItem = position
                 currentIndex = itemToPage(position)
                 seek.progress = position

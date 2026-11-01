@@ -605,13 +605,27 @@ class PageAdapter(
 
     /**
      * Readies the items beside [position] as a swipe starts, as turning to them does: a page
-     * of [tallPages] before it shows from its bottom, one after it from its top.
+     * of [tallPages] before it shows from its bottom, one after it from its top. Where the
+     * swipe ends says which shows bound again ([turnedTo]).
      */
     fun swipingFrom(position: Int) {
         if (mode != Mode.PAGED) return
         land(position + 1, atBottom = false)
-        if (position > 0) landTall(position - 1, atBottom = true)
+        land(position - 1, atBottom = true)
     }
+
+    /**
+     * The pager shows item [position] now, turned [back] to or on: its page of [tallPages],
+     * bound again, shows from its bottom or its top, as it landed.
+     */
+    fun turnedTo(position: Int, back: Boolean) {
+        if (mode != Mode.PAGED) return
+        val part = strip.parts(position).filterNotNull().singleOrNull()
+        fromBottom = if (back && part != null && part.page in tallPages) part.page else NO_PAGE
+    }
+
+    /** The pager came to rest: landings readied for a swipe that went elsewhere are dropped. */
+    fun settled() = landings.clear()
 
     /** Shows the page of [tallPages] item [position] shows alone from its top or [atBottom]: now if it is attached, else once it is ([landings]). */
     private fun land(position: Int, atBottom: Boolean) {

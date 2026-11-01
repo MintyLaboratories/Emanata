@@ -234,6 +234,30 @@ class ViewerActivityTallTest {
     }
 
     @Test
+    fun aSwipeLetGoBeforeItTurnsLeavesATallPageTurnedBackToAtItsBottom() {
+        prefs.volumeKeys = true
+        val viewer = launch(book("Mixed 05.cbz", listOf(140, 1000, 140)), page = 2)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        await { asked() == null && pager.currentItem == 2 }
+        viewer.onKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+        assertEquals(1, pager.currentItem)
+        await { viewer.shownImage().drawable != null }
+        // A short drag on, let go: the pager springs back.
+        pager.beginFakeDrag()
+        pager.fakeDragBy(-pager.width * 0.05f)
+        pager.endFakeDrag()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(800))
+        assertEquals(1, pager.currentItem)
+        // Bound again where it is, it stays at its bottom.
+        pager.adapter!!.notifyItemChanged(1)
+        idle()
+        await { viewer.shownImage().drawable != null }
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+    }
+
+    @Test
     fun aTallPageKeptAsideLandsAtItsBottomSwipedBackAndItsTopSwipedOn() {
         // Opened on the tall page, which stays bound off screen while the next one shows.
         val viewer = launch(book("Mixed 04.cbz", listOf(140, 1000, 140, 140)), page = 1)

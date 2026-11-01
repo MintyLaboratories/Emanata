@@ -30,7 +30,7 @@ interface PlatformImages {
 /**
  * Each page made anew, or left alone (null). [compact]: the smallest page without a
  * pixel changed, kept only when smaller. [compatible]: a page in a format few readers
- * open (JPEG XL, AVIF, HEIF) as one every reader opens. Every page made losslessly is
+ * open (JPEG XL, AVIF, HEIF, TIFF) as one every reader opens. Every page made losslessly is
  * checked before it is kept: a JPEG rebuilt byte for byte, or the pixels decoded back the same.
  */
 class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
@@ -68,12 +68,13 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
      * one, and an AVIF stored lossless ([PageProbe.avifLossless]), as lossless WebP (PNG
      * before Android 11, for 16 bits, for a side too long, and where the WebP does not
      * decode back the same); a lossy JPEG XL, any other AVIF or a HEIF as very-high-quality
-     * WebP ([lossy]); null for every other page. Throws [Unconverted]
-     * for one it cannot make so, an animation among them.
+     * WebP ([lossy]); a TIFF as lossless WebP or PNG ([tiffOut]); null for every other
+     * page. Throws [Unconverted] for one it cannot make so, an animation among them.
      */
     fun compatible(page: ByteArray): Made? {
         when (ImageKind.sniff(page)) {
             ImageKind.JXL -> Unit
+            ImageKind.TIFF -> return tiffOut(page)
             ImageKind.AVIF -> return if (PageProbe.avifLossless(page)) losslessIso(page) else reencoded(page)
             ImageKind.HEIF -> return reencoded(page)
             else -> return null
@@ -194,6 +195,47 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         return made.takeIf { jxl.iccOfPixels(it.bytes)?.contentEquals(icc) == true }
     }
 
+    /**
+     * A TIFF as lossless WebP, else PNG (a gray profile, a side too long, a WebP that does
+     * not decode back the same), checked pixel for pixel: 16-bit samples as a 16-bit PNG;
+     * samples that decode as stored ([Tiff.samplesExact]) as they are; any other (CMYK,
+     * premultiplied alpha, palette colors finer than 8 bits) as the reader shows them,
+     * [Made.reencoded]. Its profile is kept when it suits the samples (gray or RGB). Throws
+     * [Unconverted] for a JPEG-compressed one and one that does not decode.
+     */
+    private fun tiffOut(page: ByteArray): Made {
+        val input = Tiff.ByteInput(page)
+        val p = try {
+            Tiff.page(input)
+        } catch (e: Exception) {
+            throw Unconverted("TIFF not decoded")
+        }
+        if (p.jpegCompressed) throw Unconverted("JPEG-compressed TIFF")
+        val icc = Tiff.icc(input)?.takeIf { iccSpace(it) == if (p.isGray) ICC_GRAY else ICC_RGB }
+        if (p.sixteenBit) return tiff16(input, p)?.let { png(it, icc) } ?: throw Unconverted("TIFF not converted")
+        val rgba = tiff(page) ?: throw Unconverted("TIFF not decoded")
+        val webp = if (icc == null || !p.isGray) losslessWebp(rgba, icc) else null
+        val made = webp ?: png(reduced(rgba, allowGray = icc == null || p.isGray), icc) ?: throw Unconverted("TIFF not converted")
+        return if (Tiff.samplesExact(input)) made else Made(made.bytes, made.ext, reencoded = true)
+    }
+
+    /** The samples of a [Tiff.Page.sixteenBit] page, as stored; null unless decoded whole. */
+    private fun tiff16(input: Tiff.Input, p: Tiff.Page): Pixels? = try {
+        val n = p.channels
+        val out = ByteArray(p.width * p.height * n * 2)
+        Tiff.decodeSamples(input, p) { x, y, samples, count ->
+            var o = (y * p.width + x) * n * 2
+            for (i in 0 until count * n) {
+                val v = samples[i]
+                out[o++] = v.toByte()
+                out[o++] = (v shr 8).toByte()
+            }
+        }
+        Pixels(p.width, p.height, n, 16, out)
+    } catch (e: Exception) {
+        null
+    }
+
     /** A lossless page's pixels as stored; null unless decoded exactly. */
     private fun exactPixels(page: ByteArray): Pixels? =
         if (ImageKind.sniff(page) == ImageKind.TIFF) tiff(page) else images.decode(page)
@@ -243,6 +285,13 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         /** Bytes per pixel decoded pages hold at most: RGBA, its fewest channels and what decodes back, or RGBA and PNG's filtered rows. */
         const val BYTES_PER_PIXEL = 16
 
+        /** Color spaces of ICC profiles ([iccSpace]). */
+        const val ICC_GRAY = "GRAY"
+        const val ICC_RGB = "RGB "
+
+        /** The color space an ICC profile's header names, as `RGB `, `GRAY`, `CMYK`. */
+        fun iccSpace(icc: ByteArray): String = if (icc.size < 20) "" else String(icc, 16, 4, Charsets.ISO_8859_1)
+
         /** True when any pixel of RGBA [rgba] (8 bits) is not opaque. */
         fun hasAlpha(rgba: Pixels): Boolean {
             require(rgba.channels == 4 && rgba.bits == 8)
@@ -255,11 +304,14 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
             return false
         }
 
-        /** RGBA [rgba] in the fewest channels that hold it: gray when every pixel is, alpha only when any is not opaque. */
-        fun reduced(rgba: Pixels): Pixels {
+        /**
+         * RGBA [rgba] in the fewest channels that hold it: gray when every pixel is and
+         * [allowGray] lets it, alpha only when any is not opaque.
+         */
+        fun reduced(rgba: Pixels, allowGray: Boolean = true): Pixels {
             require(rgba.channels == 4 && rgba.bits == 8)
             val d = rgba.data
-            var gray = true
+            var gray = allowGray
             var alpha = false
             var i = 0
             while (i < d.size && (gray || !alpha)) {

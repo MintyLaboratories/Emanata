@@ -78,10 +78,32 @@ object Tiff {
         internal val counts: LongArray?,
         internal val colorMap: IntArray?,
         internal val jpegTables: ByteArray?,
-        internal val bigEndian: Boolean
+        internal val bigEndian: Boolean,
+        internal val colorMap8: Boolean = false
     ) {
         /** True when the page has an alpha channel. */
         val hasAlpha: Boolean get() = alpha != 0
+
+        /** True when the page is stored JPEG-compressed. */
+        val jpegCompressed: Boolean get() = compression == COMPRESSION_JPEG
+
+        /** True when the page is gray (bilevel or gray samples), with or without alpha. */
+        val isGray: Boolean get() = photometric == PHOTO_WHITE_IS_ZERO || photometric == PHOTO_BLACK_IS_ZERO
+
+        /**
+         * True when [decodeSamples] reads the page: 16-bit gray or RGB samples, alpha
+         * unassociated or none, not JPEG-compressed.
+         */
+        val sixteenBit: Boolean
+            get() = bits == 16 && compression != COMPRESSION_JPEG && (isGray || photometric == PHOTO_RGB) && alpha != ALPHA_ASSOCIATED
+
+        /** Samples per pixel [decodeSamples] gives: gray or RGB, then alpha when there is one. */
+        val channels: Int get() = (if (isGray) 1 else 3) + (if (hasAlpha) 1 else 0)
+    }
+
+    /** Raw samples of a run of [count] pixels starting at ([x], [y]): [Page.channels] per pixel in [samples]. */
+    fun interface SampleSink {
+        fun row(x: Int, y: Int, samples: IntArray, count: Int)
     }
 
     /** `[width, height]` of the page a decode shows, from the headers alone; null when not a readable TIFF. */
@@ -147,17 +169,20 @@ object Tiff {
         val needed = across.toLong() * down * (if (planar) samples else 1)
         if (offsets.size < needed || (counts != null && counts.size < needed)) throw DecodeException("TIFF lists too few strips or tiles")
         if (counts == null && compression != 1) throw DecodeException("TIFF has no strip sizes")
+        // Palette colors of 8 bits: each 16-bit value a multiple of 257.
+        var colorMap8 = false
         val colorMap = if (photometric == PHOTO_PALETTE) {
             val map = ifd.longs(COLOR_MAP) ?: throw DecodeException("Palette TIFF has no palette")
             val n = 1 shl bits
             if (map.size < 3 * n) throw DecodeException("TIFF palette is too short")
+            colorMap8 = (0 until 3 * n).all { map[it] % 257 == 0L }
             IntArray(n) { i -> argb(to8(map[i].toInt()), to8(map[n + i].toInt()), to8(map[2 * n + i].toInt())) }
         } else {
             null
         }
         return Page(
             width, height, compression, photometric, bits, samples, planar, predictor, alpha,
-            chunkWidth, chunkHeight, offsets, counts, colorMap, ifd.bytes(JPEG_TABLES), ifd.bigEndian
+            chunkWidth, chunkHeight, offsets, counts, colorMap, ifd.bytes(JPEG_TABLES), ifd.bigEndian, colorMap8
         )
     }
 
@@ -181,7 +206,11 @@ object Tiff {
                     if (page.compression == COMPRESSION_JPEG) {
                         jpegChunk(input, page, index, cx, cy, sample, jpeg, out, sink)
                     } else {
-                        chunk(input, page, index, cx, cy, sample, out, sink)
+                        chunk(input, page, index, cx, cy, sample) { buffers, y, firstOut, count ->
+                            val x0 = cx * page.chunkWidth
+                            for (i in 0 until count) out[i] = pixel(page, buffers, (firstOut + i) * sample - x0)
+                            sink.row(firstOut, y / sample, out, count)
+                        }
                     }
                     decoded = true
                 } catch (e: EOFException) {
@@ -203,7 +232,40 @@ object Tiff {
         return first to (end - first)
     }
 
-    private fun chunk(input: Input, page: Page, index: Int, cx: Int, cy: Int, sample: Int, out: IntArray, sink: Sink) {
+    /**
+     * The stored samples of a [Page.sixteenBit] page, every pixel, into [sink]: gray
+     * inverted where white is zero, nothing else changed. Throws on any failure, a file
+     * that ends early too.
+     */
+    fun decodeSamples(input: Input, page: Page, sink: SampleSink) {
+        require(page.sixteenBit)
+        val across = (page.width + page.chunkWidth - 1) / page.chunkWidth
+        val down = (page.height + page.chunkHeight - 1) / page.chunkHeight
+        val n = page.channels
+        val max = (1 shl page.bits) - 1
+        val out = IntArray(minOf(page.width, page.chunkWidth) * n)
+        for (cy in 0 until down) {
+            for (cx in 0 until across) {
+                chunk(input, page, cy * across + cx, cx, cy, 1) { buffers, y, firstOut, count ->
+                    val x0 = cx * page.chunkWidth
+                    var o = 0
+                    for (i in 0 until count) {
+                        for (s in 0 until n) {
+                            val v = raw(page, buffers, firstOut + i - x0, s)
+                            out[o++] = if (s == 0 && page.photometric == PHOTO_WHITE_IS_ZERO) max - v else v
+                        }
+                    }
+                    sink.row(firstOut, y, out, count)
+                }
+            }
+        }
+    }
+
+    /** Decodes chunk [index] (column [cx], row [cy]) row by row, giving [row] the rows kept at [sample]: buffers, y, first output column, columns. */
+    private inline fun chunk(
+        input: Input, page: Page, index: Int, cx: Int, cy: Int, sample: Int,
+        row: (Array<ByteArray>, Int, Int, Int) -> Unit
+    ) {
         val planes = if (page.planar) page.samples else 1
         val perPlane = if (page.planar) 1 else page.samples
         val rowBytes = (page.chunkWidth.toLong() * perPlane * page.bits + 7) / 8
@@ -223,9 +285,7 @@ object Tiff {
                 }
                 val y = y0 + r
                 if (y % sample != 0 || count <= 0) continue
-                val x0 = cx * page.chunkWidth
-                for (i in 0 until count) out[i] = pixel(page, buffers, (firstOut + i) * sample - x0)
-                sink.row(firstOut, y / sample, out, count)
+                row(buffers, y, firstOut, count)
             }
         } finally {
             for (s in streams) runCatching { s.close() }
@@ -454,16 +514,38 @@ object Tiff {
      * unassociated; not JPEG-compressed.
      */
     fun exact(input: Input): Boolean = try {
-        val page = page(input)
         val (ifd, next) = firstIfd(input)
-        next == 0L && ifd.int(ORIENTATION, 1) == 1 && !ifd.has(ICC_PROFILE) &&
-            page.compression != COMPRESSION_JPEG && page.photometric != PHOTO_CMYK && page.photometric != PHOTO_YCBCR &&
-            page.bits <= 8 && page.alpha != ALPHA_ASSOCIATED &&
-            (page.photometric != PHOTO_PALETTE || ifd.longs(COLOR_MAP)?.all { it % 257 == 0L } == true)
+        next == 0L && ifd.int(ORIENTATION, 1) == 1 && !ifd.has(ICC_PROFILE) && samplesExact(input)
     } catch (e: IOException) {
         false
     } catch (e: RuntimeException) {
         false
+    }
+
+    /**
+     * True when [decode] gives [input]'s page exactly as its samples are stored, none
+     * reduced or converted: gray or RGB of at most 8 bits, or a palette of 8-bit colors;
+     * alpha unassociated; not JPEG-compressed. Its profile, orientation and other pages
+     * are not looked at.
+     */
+    fun samplesExact(input: Input): Boolean = try {
+        val page = page(input)
+        page.compression != COMPRESSION_JPEG && page.photometric != PHOTO_CMYK && page.photometric != PHOTO_YCBCR &&
+            page.bits <= 8 && page.alpha != ALPHA_ASSOCIATED &&
+            (page.photometric != PHOTO_PALETTE || page.colorMap8)
+    } catch (e: IOException) {
+        false
+    } catch (e: RuntimeException) {
+        false
+    }
+
+    /** The ICC color profile stored with [input]'s page; null when none or unreadable. */
+    fun icc(input: Input): ByteArray? = try {
+        pageIfd(input).bytes(ICC_PROFILE)?.takeIf { it.size >= ICC_HEADER }
+    } catch (e: IOException) {
+        null
+    } catch (e: RuntimeException) {
+        null
     }
 
     /** The first directory of [input] and where the next one is (0: none). */
@@ -799,6 +881,9 @@ object Tiff {
         TYPE_BYTE to 1, 2 to 1, TYPE_SHORT to 2, TYPE_LONG to 4, 5 to 8, 6 to 1, TYPE_UNDEFINED to 1,
         8 to 2, 9 to 4, 10 to 8, 11 to 4, 12 to 8, TYPE_IFD to 4, TYPE_LONG8 to 8, 17 to 8, TYPE_IFD8 to 8
     )
+
+    /** Bytes of an ICC profile's header. */
+    private const val ICC_HEADER = 128
 
     private const val MAX_ENTRIES = 4096L
     private const val MAX_VALUES = 16L * 1024 * 1024

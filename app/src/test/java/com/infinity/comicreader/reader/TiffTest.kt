@@ -277,4 +277,17 @@ class TiffTest {
         val image = decode(bytes)
         for (i in 0 until 6) assertEquals(argb(10 + i, 20 + i, 30 + i), image[i % 3, i / 3])
     }
+
+    @Test
+    fun samplesExactLooksOnlyAtHowSamplesDecode() {
+        fun input(name: String) = Tiff.ByteInput(fixture(name))
+        assertTrue(Tiff.samplesExact(input("two-pages.tif")))
+        assertTrue(!Tiff.exact(input("two-pages.tif")))
+        assertTrue(Tiff.samplesExact(input("palette-lzw.tif")))
+        assertTrue(!Tiff.samplesExact(input("gray16-lzw-msb.tif")))
+        assertTrue(!Tiff.samplesExact(input("jpeg-rgb.tif")))
+        assertNull(Tiff.icc(input("rgb-none-strips.tif")))
+        assertTrue(Tiff.page(input("gray16-lzw-msb.tif")).sixteenBit)
+        assertTrue(!Tiff.page(input("rgb-none-strips.tif")).sixteenBit)
+    }
 }

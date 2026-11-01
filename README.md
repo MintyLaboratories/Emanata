@@ -283,7 +283,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   which Compact never makes; other AVIF, layered ones too, as their full image;
   HEIF) become very-high-quality WebP (JPEG where a side is over 16,383 px; PNG
   of the decoded pixels when such a page is transparent or too long for JPEG
-  too), the one step that changes pixels: the dialog says so ("Converts the
+  too). A TIFF page becomes lossless WebP, checked pixel for pixel (PNG for
+  16-bit samples, a gray color profile, a side over 16,383 px, and where the
+  WebP does not decode back the same), keeping a gray or RGB color profile;
+  one whose colors the reader converts (CMYK, premultiplied alpha) is stored as
+  the reader shows it and counted as re-encoded; a JPEG-compressed TIFF stays.
+  Lossy re-encoding is the one step that changes pixels: the dialog says so ("Converts the
   comic into legacy formats every reader opens. This may be lossy if no better
   way is found, but aims for minimal visible loss. Comics compacted by Emanata
   convert losslessly."), and the message counts those pages. Other pages are left as

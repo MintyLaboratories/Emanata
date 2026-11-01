@@ -23,7 +23,7 @@ enum class ModelSource(val title: String, val author: String, val license: Strin
         listOf("opencomic-ai-models.txt", "cc-by-4.0.txt")
     ),
     REAL_ESRGAN(
-        "Real-ESRGAN", "Xintao Wang", "BSD 3-Clause License", "https://github.com/xinntao/Real-ESRGAN",
+        "Real-ESRGAN", "Xintao Wang; ncnn conversion by Xintao Wang and nihui", "BSD 3-Clause License", "https://github.com/xinntao/Real-ESRGAN",
         listOf("real-esrgan.txt")
     ),
     WAIFU2X(

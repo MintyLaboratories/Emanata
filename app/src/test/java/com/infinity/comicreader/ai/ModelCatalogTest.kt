@@ -88,4 +88,12 @@ class ModelCatalogTest {
         val readme = File("../README.md").readText()
         for (s in ModelSource.entries) assertTrue("${s.title} not in README", readme.contains("| [${s.title}](${s.url}) |"))
     }
+
+    @Test
+    fun ncnnConversionsKeepTheirNotices() {
+        for (t in listOf("real-esrgan.txt", "waifu2x.txt")) {
+            val text = File(assetDir, t).readText()
+            assertTrue(t, text.contains("The MIT License") && text.contains("Copyright (c) 2019 nihui"))
+        }
+    }
 }

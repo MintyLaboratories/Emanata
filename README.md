@@ -1111,7 +1111,7 @@ and lists their authors and licenses under Settings → About.
 | Models | Author | License |
 |---|---|---|
 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | Oleguer Llopart Mora | CC BY 4.0 |
-| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Xintao Wang | BSD-3-Clause |
+| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Xintao Wang; ncnn conversion by Xintao Wang and nihui | BSD-3-Clause; ncnn conversion MIT |
 | [waifu2x](https://github.com/nagadomi/waifu2x) | nagadomi; ncnn conversion by nihui | MIT |
 | [Helaman's models](https://github.com/Phhofm/models) | Philip Hofmann (Helaman) | CC BY 4.0 |
 

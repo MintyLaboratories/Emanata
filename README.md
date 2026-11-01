@@ -761,22 +761,38 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - AI processing (`ai/`, so far the runtime only): ncnn with Vulkan, built from
   source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own
   (`libaincnn.so`) loaded on first use. A model (`.param`/`.bin`) runs over a
-  page in fixed-size square tiles (`TilePlan`), one page at a time in the
-  process (`TileEngine`). Each model is measured when opened (`ModelProbe`): its
-  scale and edge trim from two input sizes, and its context by running a busy
-  tile whole and cut and finding how far from the cut the output changes by more
-  than 2 codes; tiles keep only pixels that saw all their context, so they join
-  without seams. Tiles are the largest size up to 192 whose estimated working
-  memory fits a quarter of the GPU's memory budget (256 MB on the CPU). Between
-  tiles a run stops when canceled, when battery saver is on or the device
-  reaches thermal status moderate (`AiConditions`), and when its time (30 s by
-  default) is up or the pace so far says it will be; the page then gets its
-  plain Lanczos3 rendering (`AiPages`). Output is capped at 32 MP, and the
-  model's buffers are freed after every page. Without a usable Vulkan device, or
-  when the GPU cannot open or measure a model, it runs on the CPU: one thread per
-  large core, in fp32 (the CPU's fp16 kernels differ by tile shape enough to
-  show as seams). Every ncnn call runs on one thread that lives as long as the
-  process: its OpenMP runtime aborts when started again.
+  page in fixed-size square tiles (`TilePlan`), one page or model check at a
+  time in the process (`TileEngine`). Tile cores are whole 8-pixel steps
+  starting at multiples of 8, so GPU kernels working on pixel blocks round each
+  pixel alike in every tile. Each model is first opened on the CPU, in fp32, and
+  measured (`ModelProbe`): its scale and edge trim from two input sizes, and its
+  context by running a busy tile whole and cut and finding how far from the cut
+  the output changes by more than 2 codes; tiles keep only pixels that saw all
+  their context. A model whose output still changes 64 pixels from the cut, or
+  whose `.param` has layers mixing the whole tile (global pooling as in
+  Real-CUGAN's squeeze-excitation, reductions, per-image normalization), is
+  refused. Tiles are the largest size up to 192 (larger when the margins would
+  keep less than half of a tile) whose estimated working memory fits a quarter
+  of the GPU's memory budget (256 MB on the CPU) and whose largest feature map
+  fits one GPU buffer (`maxStorageBufferRange`; past it the output comes back
+  wrong without an error). On the GPU the model is then checked at that size: a
+  page tiled two ways must agree within 2 codes, and must match the CPU's fp32
+  output apart from rounding noise. Seams from fp16 rounding widen the margin by
+  8 pixels (at most 3 times, while fp16 stays the cheaper per pixel), then fp32
+  is tried; other failures try the next smaller size. A model no GPU setup
+  passes, or every model without a usable Vulkan device, runs on the CPU: one
+  thread per large core, in fp32 (the CPU's fp16 kernels differ by tile shape
+  enough to show as seams). Opening is cancelable between runs. Between tiles a
+  run stops when canceled, when battery saver is on, the device reaches thermal
+  status moderate or its thermal headroom forecast 10 s ahead reaches 0.9
+  (`AiConditions`), and when its time (30 s by default) is up or the pace so far
+  says it will be; the page then gets its plain Lanczos3 rendering (`AiPages`).
+  An upscaling model does not run for a page shown no larger than it is.
+  Output is capped at 32 MP, pages must be readable ARGB_8888 and opaque (pixels
+  read when the bitmap says it has alpha), and the model's buffers are freed
+  after every page. Every ncnn call runs on one thread that lives as long as the
+  process: its OpenMP runtime aborts when started again. ncnn's threads are
+  placed on the large cores before each CPU run and let go before each GPU run.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named
@@ -892,26 +908,39 @@ battery. `tools/bench/plans` holds plans for the synthetic books, read fast and 
 See its `--help`.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
-on synthetic pages: its measured geometry, seams against one tile covering a whole
-page, GPU against CPU, time per tile and page with memory and thermal state, and
-the timeout and cancel paths. See its KDoc for the extras. On a Snapdragon 8 Gen 1
-(Adreno 730, Android 16, debug build, charging), a 2x compact upscaler (OpenComic
-AI upscale 2x compact v2) took a synthetic 1000x1500 page to 2000x3000:
+on synthetic pages: how it opens (measuring, checks, tile size, precision), seams
+against one tile covering a whole page on the CPU in fp32, GPU against CPU, time per
+tile and page with memory and thermal state, the timeout and cancel paths, and pages
+back to back until the heat gate stops them. See its KDoc for the extras. On a
+Snapdragon 8 Gen 1 (Adreno 730, Android 16, debug build in the foreground, plugged
+in but not charging), a 2x compact upscaler (OpenComic AI upscale 2x compact v2)
+took a synthetic 1000x1500 page to 2000x3000 (medians of 5 pages):
 
-| Setup | Tiles | Per tile | Per page | Memory during the page |
-|---|---|---|---|---|
-| GPU fp16, 128 px tiles | 216 | 40 ms | 8.7 s | +17 MB graphics |
-| GPU fp16, 192 px tiles (default) | 77 | 76 ms | 5.9 s | +48 MB graphics |
-| GPU fp16, 256 px tiles | 40 | 162 ms | 6.5 s | +84 MB graphics |
-| GPU fp16, 384 px tiles | 15 | 401 ms | 6.1 s | +152 MB graphics |
-| GPU fp32, 192 px tiles | 54 | 148 ms | 8.1 s | +90 MB graphics |
-| CPU fp32, 4 large cores, 192 px tiles | 54 | 227 ms | 12.5 s | +111 MB resident |
+| Setup | Margin | Tiles | Per tile | Per page | Memory during the page |
+|---|---|---|---|---|---|
+| GPU fp16, 128 px tiles | 20 px | 216 | 54 ms | 11.8 s | +17 MB graphics |
+| GPU fp16, 192 px tiles (chosen) | 20 px | 70 | 77 ms | 5.4 s | +49 MB graphics |
+| GPU fp16, 256 px tiles | 20 px | 35 | 164 ms | 5.8 s | +85 MB graphics |
+| GPU fp16, 384 px tiles | 20 px | 15 | 396 ms | 6.0 s | +153 MB graphics |
+| GPU fp32, 192 px tiles | 12 px | 54 | 196 ms | 10.7 s | +90 MB graphics |
+| CPU fp32, 4 large cores, 192 px tiles | 12 px | 54 | 249 ms | 13.5 s | +88 MB resident |
 
-Seams stayed within 2 codes of one tile covering the page on both GPU and CPU, and
-fp16 on the GPU within 5 codes (mean 0.25) of fp32 on the CPU. A page given 40% of
-its time fell back to the Lanczos3 page after 2 of 77 tiles, in 0.2 s; a canceled
-page stopped within 5 ms. Opening the model (Vulkan start, shader compilation,
-measuring) took 1.1 s on the GPU, 0.15 s on the CPU.
+The measured margin (12 px, in fp32) left fp16 seams of up to 4 codes, so the GPU
+widened it to 20 px (2 codes at most). Run alternately (A B B A, 3 pages each),
+fp16 took 105 and 77 ms per tile against fp32's 201 and 151 ms: 1.9 to 2 times
+faster per tile, 30% more tiles for its wider margin, 1.5 times faster per page
+(7.4 and 5.4 s against 10.9 and 8.1 s). Speeds drift between runs by up to a third,
+so compare only runs made together. fp16 differs from the CPU's fp32 by up to 6
+codes (mean 0.26) at every tile size: rounding, not seams. A waifu2x upconv_7 2x
+model also passed in fp16 once its margin was widened from 7 to 15 px (seams 3
+codes, then 0); in fp32 one 434 px tile came out wrong (its 182 MB widest feature
+map is past the GPU's 128 MB buffer range), which tiles are now kept under. A page
+given 40% of its time fell back to the Lanczos3 page after 2 of 70 tiles, in 0.3 s
+(CPU: 2 of 54, 0.5 s); a canceled page stopped within 2 ms. Opening (CPU
+measuring, Vulkan start, shader compilation, two checks) took 2.3 to 2.8 s on the
+GPU, 0.15 s on the CPU. Back to back, pages took 6.1 to 7.1 s each until the
+forecast headroom reached 0.9 after 17 pages (112 s); the thermal status stayed
+none throughout.
 
 ## Permissions
 

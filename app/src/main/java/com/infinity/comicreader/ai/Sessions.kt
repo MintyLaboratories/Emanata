@@ -57,8 +57,8 @@ object TileSizing {
 
     /**
      * The cap by default: on the reference tablet's GPU (Adreno 730), a 2x compact model ran a
-     * 1000 x 1500 page fastest in 192-pixel tiles (5.9 s; 128: 8.9 s, 256: 6.5 s, 384: 6.1 s),
-     * with the least GPU memory of the fast sizes and 76 ms between chances to stop.
+     * 1000 x 1500 page fastest in 192-pixel tiles (5.4 s in fp16; 128: 11.8 s, 256: 5.8 s, 384: 6.0 s),
+     * with the least GPU memory of the fast sizes and 77 ms between chances to stop.
      */
     const val DEFAULT_MAX = 192
 

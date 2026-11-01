@@ -1,0 +1,110 @@
+package com.infinity.comicreader.ai
+
+import android.os.SystemClock
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import java.util.concurrent.CancellationException
+
+/** A model's download as shown: running or waiting ([Running]), or stopped by a failure ([Failed]). */
+sealed interface DownloadState {
+    data class Running(val done: Long, val total: Long) : DownloadState {
+        /** Percent done, 0..100. */
+        val percent: Int get() = if (total <= 0) 0 else (done * 100 / total).toInt().coerceIn(0, 100)
+    }
+
+    data class Failed(val failure: DownloadFailure) : DownloadState
+}
+
+/**
+ * What [ModelDownloads] is doing: the [states] of downloads running, waiting or failed, by
+ * model id, and a [generation] that grows whenever a model is installed or deleted.
+ */
+data class Downloads(val states: Map<String, DownloadState> = emptyMap(), val generation: Int = 0)
+
+/**
+ * Model downloads asked for in the app, one at a time in the order asked, in the app's own
+ * process: they go on when the screen that asked is left. A download cut short keeps its parts
+ * and resumes when asked again. A finished one leaves [state], its model installed.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+object ModelDownloads {
+    private const val TAG = "ModelDownloads"
+
+    /** Least time between progress updates. */
+    private const val PROGRESS_EVERY_MS = 250L
+
+    private val _state = MutableStateFlow(Downloads())
+    val state: StateFlow<Downloads> = _state
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val jobs = HashMap<String, Job>()
+
+    /** Downloads [model] into [store] unless it is installed or already on its way. */
+    fun start(store: ModelStore, model: CatalogModel, client: OkHttpClient = ModelDownloader.defaultClient) {
+        if (store.installed(model)) return
+        synchronized(jobs) {
+            if (jobs[model.id]?.isActive == true) return
+            set(model.id, DownloadState.Running(store.bytesHeld(model), model.bytes))
+            jobs[model.id] = scope.launch {
+                val job = coroutineContext[Job]
+                var last = 0L
+                try {
+                    ModelDownloader(store, client).download(model, canceled = { job?.isActive == false }) { done, total ->
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - last >= PROGRESS_EVERY_MS || done == total) {
+                            last = now
+                            set(model.id, DownloadState.Running(done, total))
+                        }
+                    }
+                    finish(model.id, null)
+                } catch (e: CancellationException) {
+                    finish(model.id, null, changed = false)
+                } catch (e: DownloadException) {
+                    Log.w(TAG, "${model.id}: ${e.message}")
+                    finish(model.id, DownloadState.Failed(e.failure), changed = false)
+                } catch (e: Exception) {
+                    Log.w(TAG, "${model.id}: ${e.message}", e)
+                    finish(model.id, DownloadState.Failed(DownloadFailure.NETWORK), changed = false)
+                }
+            }
+        }
+    }
+
+    /** Stops [id]'s download, keeping what arrived. */
+    fun cancel(id: String) {
+        synchronized(jobs) { jobs.remove(id) }?.cancel()
+        _state.update { it.copy(states = it.states - id) }
+    }
+
+    /** Stops [model]'s download and deletes it from [store]. */
+    fun delete(store: ModelStore, model: CatalogModel) {
+        val job = synchronized(jobs) { jobs.remove(model.id) }
+        scope.launch {
+            job?.cancel()
+            job?.join()
+            store.delete(model)
+            _state.update { it.copy(states = it.states - model.id, generation = it.generation + 1) }
+        }
+    }
+
+    private fun set(id: String, s: DownloadState) = _state.update { it.copy(states = it.states + (id to s)) }
+
+    private fun finish(id: String, failed: DownloadState?, changed: Boolean = true) {
+        synchronized(jobs) { jobs.remove(id) }
+        _state.update {
+            Downloads(
+                if (failed == null) it.states - id else it.states + (id to failed),
+                if (changed) it.generation + 1 else it.generation
+            )
+        }
+    }
+}

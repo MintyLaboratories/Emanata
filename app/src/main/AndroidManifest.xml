@@ -88,6 +88,10 @@
             android:label="@string/about" />
 
         <activity
+            android:name=".ui.ModelsActivity"
+            android:label="@string/ai_models_title" />
+
+        <activity
             android:name=".ui.CropActivity"
             android:label="@string/crop_title"
             android:theme="@style/Theme.ComicReader.Viewer"

@@ -841,10 +841,12 @@ app/src/main/java/com/infinity/comicreader/
                              with checks), FileWork, FileClipboard
   ai/                        AI page processing: LibNcnn (JNI), TilePlan,
                              ModelProbe, TileEngine, Sessions, AiPages; models:
-                             ModelCatalog, ModelStore + ModelDownloader
+                             ModelCatalog, ModelStore + ModelDownloader,
+                             ModelDownloads
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,
+                             ModelsActivity (AI models),
                              CropActivity + CropView, PagesActivity + ThumbAdapter,
                              ZoomImageView, PageAdapter, BookAdapter
   util/                      Formats, NaturalOrder, FileUtils/Locales

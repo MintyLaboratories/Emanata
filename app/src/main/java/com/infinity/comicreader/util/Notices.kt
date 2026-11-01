@@ -159,7 +159,7 @@ object Notices {
         Notice(
             "ncnn", BSD_3, "https://github.com/Tencent/ncnn", listOf("ncnn.txt"),
             note = "Built from source; runs AI models on the GPU (Vulkan) or the CPU. Parts under the zlib and " +
-                "BSD 2-Clause licenses, in the same text."
+                "BSD 2-Clause licenses, and its CPU feature check (ruapu) under the MIT License, in the same text."
         ),
         Notice(
             "glslang", GLSLANG, "https://github.com/KhronosGroup/glslang", listOf("glslang.txt"),

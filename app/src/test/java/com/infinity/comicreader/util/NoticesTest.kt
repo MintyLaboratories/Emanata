@@ -97,6 +97,16 @@ class NoticesTest {
     }
 
     @Test
+    fun ncnnNoticeCarriesRuapusMitLicense() {
+        val text = File(assetDir, "ncnn.txt").readText()
+        assertTrue(text.contains("1. ruapu.h\nCopyright (c) 2024 nihui"))
+        assertTrue(text.contains("Copyright (c) 2024 kernelbin"))
+        assertTrue(text.contains("Permission is hereby granted, free of charge"))
+        assertTrue(Notices.all.single { it.name == "ncnn" }.note!!.contains("ruapu"))
+        assertTrue(File("../README.md").readText().contains("and ruapu (MIT)"))
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

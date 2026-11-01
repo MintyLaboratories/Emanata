@@ -20,6 +20,9 @@ enum class Fallback {
     /** Its pixels are not readable: recycled, or not ARGB_8888 (a hardware or 16-bit bitmap). */
     UNREADABLE,
 
+    /** It is shown no larger than it is, so an upscale would be resampled away ([AiPages]). */
+    UNNEEDED,
+
     /** Conditions say stop: the device is hot, or battery saver is on ([AiConditions]). */
     PAUSED,
 

@@ -32,7 +32,9 @@ class AiRendered(val bitmap: Bitmap, val run: PageRun)
 
 /**
  * Pages through a model, then to their display size by Lanczos3; a run that falls back
- * leaves the page as it would be without AI: the page itself by Lanczos3.
+ * leaves the page as it would be without AI: the page itself by Lanczos3. An upscaling model
+ * does not run for a page shown no larger than it is ([Fallback.UNNEEDED]): the resampling
+ * after it would throw its added pixels away.
  */
 internal object AiPages {
     /**
@@ -50,7 +52,11 @@ internal object AiPages {
         canceled: () -> Boolean = { false },
         gate: () -> Fallback? = { null }
     ): AiRendered {
-        val run = TileEngine.run(session, src, limits, canceled, gate)
+        val run = if (session.geometry.scale > 1 && plan.shrinks()) {
+            PageRun(null, Fallback.UNNEEDED, RunStats.NONE)
+        } else {
+            TileEngine.run(session, src, limits, canceled, gate)
+        }
         val big = run.bitmap
         return Cancellation.during(canceled) {
             if (big == null) {

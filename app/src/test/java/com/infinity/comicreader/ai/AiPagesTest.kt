@@ -78,6 +78,30 @@ class AiPagesTest {
     }
 
     @Test
+    fun anUpscaleShownNoLargerThanThePageDoesNotRun() {
+        val model = FakeModel(scale = 2, reach = 1)
+        val session = Session(model, ModelProbe.measure(model), 48)
+        val before = model.runs.get()
+        val src = page(60, 90)
+        val shrink = Plan(50, 75, 0.0, 0.0, 60.0, 90.0)
+        val got = AiPages.render(session, src, shrink)
+        assertEquals(Fallback.UNNEEDED, got.run.fallback)
+        assertEquals(before, model.runs.get())
+        assertArrayEquals(pixels(BitmapUtils.resample(src, shrink, false, Scaling.DEFAULT)), pixels(got.bitmap))
+        // Enlarged along one axis only: it runs.
+        assertNull(AiPages.render(session, src, Plan(50, 100, 0.0, 0.0, 60.0, 90.0)).run.fallback)
+    }
+
+    @Test
+    fun aSameSizeModelRunsForAShrunkPage() {
+        val model = FakeModel(scale = 1, reach = 1)
+        val session = Session(model, ModelProbe.measure(model), 48)
+        val got = AiPages.render(session, page(60, 90), Plan(30, 45, 0.0, 0.0, 60.0, 90.0))
+        assertNull(got.run.fallback)
+        assertTrue(got.run.stats.tiles > 0)
+    }
+
+    @Test
     fun runsStopWithBatterySaverOrOnceHot() {
         assertNull(AiConditions.stop(false, PowerManager.THERMAL_STATUS_NONE))
         assertNull(AiConditions.stop(false, PowerManager.THERMAL_STATUS_LIGHT))

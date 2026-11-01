@@ -203,7 +203,8 @@ class AiCheckService : Service() {
 
     private fun limits(s: Session, w: Int, h: Int) {
         val page = SyntheticPage.draw(w, h)
-        val plan = Plan(w * 4 / 5, h * 4 / 5, 0.0, 0.0, w.toDouble(), h.toDouble())
+        // Shown 1.5 times larger, as a low-resolution page on a large screen: the model runs.
+        val plan = Plan(w * 3 / 2, h * 3 / 2, 0.0, 0.0, w.toDouble(), h.toDouble())
         // A whole run's time, to set a limit it cannot meet.
         val t0 = SystemClock.elapsedRealtime()
         val full = AiPages.render(s, page, plan, Scaling.DEFAULT)

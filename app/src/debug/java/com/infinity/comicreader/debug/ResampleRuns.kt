@@ -1,9 +1,26 @@
 package com.infinity.comicreader.debug
 
+import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.PixelEngine
 
-/** Pure parts of [ResampleCheckService]: what to run, in which order, and the energy it took. */
+/** Pure parts of [ResampleCheckService]: what to run, in which order, to what size, and the energy it took. */
 internal object ResampleRuns {
+    /**
+     * The size `time` shrinks pages to: [text] as `WxH`, or when absent the 2000x3000 page fit
+     * to a [screenW] x [screenH] screen held upright, as calibration does ([Calibration.target]).
+     * Null when unreadable.
+     */
+    fun size(text: String?, screenW: Int, screenH: Int): Pair<Int, Int>? {
+        if (text.isNullOrBlank()) return Calibration.target(screenW, screenH, 2000, 3000)
+        val parts = text.trim().lowercase().split('x')
+        if (parts.size != 2) return null
+        val w = parts[0].trim().toIntOrNull() ?: return null
+        val h = parts[1].trim().toIntOrNull() ?: return null
+        return (w to h).takeIf { w in 1..MAX_SIDE && h in 1..MAX_SIDE }
+    }
+
+    private const val MAX_SIDE = 16_000
+
     /** Where CPU workers run: pinned to the large cores, to the little ones, to the fastest alone, or left to the system. */
     enum class Cores(val key: String) {
         ANY("any"),

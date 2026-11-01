@@ -10,6 +10,15 @@ import org.junit.Test
 
 class ResampleRunsTest {
     @Test
+    fun timingSizeIsAskedOrThePageFitToTheScreen() {
+        assertEquals(1200 to 1800, ResampleRuns.size("1200x1800", 1848, 2960))
+        assertEquals(1848 to 2772, ResampleRuns.size(" 1848X2772 ", 1200, 2000))
+        assertEquals(1848 to 2772, ResampleRuns.size(null, 1848, 2960))
+        assertEquals(1200 to 1800, ResampleRuns.size("", 2000, 1200))
+        for (bad in listOf("1848", "x2772", "1848x", "0x100", "-5x100", "axb", "1x2x3", "99999x10")) assertNull(bad, ResampleRuns.size(bad, 1848, 2960))
+    }
+
+    @Test
     fun setupsReadAsEngineThreadsCores() {
         assertEquals(Setup(PixelEngine.NATIVE, 4, Cores.BIG), Setup.of("native/4/big", 2))
         assertEquals(Setup(PixelEngine.NATIVE, 1, Cores.LITTLE), Setup.of(" native/1/little ", 2))

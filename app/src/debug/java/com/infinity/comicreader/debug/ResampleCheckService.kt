@@ -45,7 +45,8 @@ import kotlin.random.Random
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
- *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]`
+ *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
+ *  [--es size 1848x2772]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]) or left to the system (`any`);
@@ -54,7 +55,8 @@ import kotlin.random.Random
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each.
- * - time: a 2000x3000 and a 4000x6000 page shrunk to 1848x2772 (the tablet's portrait page)
+ * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default the 2000x3000 page
+ *   fit to this screen held upright, as calibration does; 1848x2772 on a 1848x2960 screen)
  *   by each setup, filter and anti-ringing strength when shrinking (`rings`, default the
  *   setting's default), `reps` rounds after 2 warm-up rounds, the setups interleaved
  *   (A B, B A...): wall and process CPU per page, thermal status and headroom.
@@ -98,6 +100,9 @@ class ResampleCheckService : Service() {
         val seconds = intent?.getIntExtra("seconds", 20)?.coerceIn(3, 600) ?: 20
         val rounds = intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2
         val cooldown = intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30
+        val asSized = intent?.getStringExtra("size")
+        val screen = Calibrator.screenSize(this)
+        val size = ResampleRuns.size(asSized, screen.first, screen.second)
         thread(name = "resample-check") { Calibrator.hold {
             val keptEngine = NativeResampler.engine
             val keptThreads = NativeResampler.threads
@@ -107,13 +112,14 @@ class ResampleCheckService : Service() {
             try {
                 out.parentFile?.mkdirs()
                 if (asked != null && timed.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
+                if (size == null) log(JSONObject().put("failed", "unreadable size: $asSized"))
                 val cores = CpuCores.device
                 log(
                     JSONObject().put("big", java.lang.Long.toBinaryString(cores.big)).put("little", java.lang.Long.toBinaryString(cores.little))
                         .put("threads", now).put("laterThreads", later).put("conditions", conditions())
                 )
                 if (what == "check" || what == "all") check()
-                if (what == "time" || what == "all") time(timed, filters, rings, reps)
+                if ((what == "time" || what == "all") && size != null) time(timed, filters, rings, reps, size)
                 if (what == "sustain" || what == "all") sustain(sustained, seconds, rounds, cooldown)
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -226,7 +232,8 @@ class ResampleCheckService : Service() {
 
     // ------------------------------------------------------------------ time
 
-    private fun time(setups: List<Setup>, filters: List<ScaleFilter>, rings: List<Int>, reps: Int) {
+    /** Each setup shrinking the pages to [size], width by height. */
+    private fun time(setups: List<Setup>, filters: List<ScaleFilter>, rings: List<Int>, reps: Int, size: Pair<Int, Int>) {
         for ((w, h) in listOf(2000 to 3000, 4000 to 6000)) {
             val page = SyntheticPage.draw(w, h)
             try {
@@ -239,7 +246,7 @@ class ResampleCheckService : Service() {
                         for (s in order) {
                             val cpu0 = Process.getElapsedCpuTime()
                             val t0 = SystemClock.elapsedRealtimeNanos()
-                            run(s, page, 1848, 2772, scaling).recycle()
+                            run(s, page, size.first, size.second, scaling).recycle()
                             val wall = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6
                             if (round >= 2) {
                                 walls.getValue(s) += wall
@@ -250,7 +257,7 @@ class ResampleCheckService : Service() {
                     val after = state()
                     for (s in setups) {
                         log(
-                            JSONObject().put("time", s.key).put("page", "${w}x$h").put("filter", filter.key).put("downRing", ring)
+                            JSONObject().put("time", s.key).put("page", "${w}x$h").put("to", "${size.first}x${size.second}").put("filter", filter.key).put("downRing", ring)
                                 .put("wallMs", summary(walls.getValue(s))).put("cpuMs", summary(cpus.getValue(s)))
                                 .put("before", before).put("after", after).put("conditions", conditions())
                         )

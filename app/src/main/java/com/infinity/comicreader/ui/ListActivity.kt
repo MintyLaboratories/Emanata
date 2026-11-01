@@ -38,6 +38,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -207,8 +208,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private var shownTab: Int? = null
     private var shownView: TabView? = null
 
-    /** The item shown first when the list last switched between grid and list ([applyLayoutManager]). */
-    private var switchAnchor = RecyclerView.NO_POSITION
+    /** Where the list was in the layout it last switched away from ([applyLayoutManager]), to switch back to; null when none. */
+    private var switchBack: Place? = null
+
+    /** True while a switch between grid and list scrolls the new layout into place. */
+    private var placing = false
+
+    /** A row shown first: its first item, where the row starts ([offset], negative above the list's top) and its height. */
+    private data class Place(val position: Int, val offset: Int, val height: Int)
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -2374,17 +2381,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             return
         }
         if (!grid && current != null && current !is GridLayoutManager) return
-        // Keep the reader's place when switching between list and grid: the first row shown stays where it was.
-        val old = current as? LinearLayoutManager
-        val shownFirst = old?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
-        val firstView = old?.findViewByPosition(shownFirst)
-        // Back from a grid, the item the list showed first, if still in the grid's first row, not that row's first cell.
-        val kept = switchAnchor.takeIf { old is GridLayoutManager && firstView != null && old.findViewByPosition(it)?.top == firstView.top }
-        val first = kept ?: shownFirst
-        switchAnchor = first
-        val offset = if (old == null || firstView == null) 0 else {
-            old.getDecoratedTop(firstView) - (firstView.layoutParams as ViewGroup.MarginLayoutParams).topMargin - recycler.paddingTop
-        }
+        // Keep the reader's place switching between list and grid: the place left in the other layout, else the
+        // first row shown, as far scrolled into.
+        val left = (current as? LinearLayoutManager)?.let { placeOf(it) }
+        val back = switchBack?.takeIf { it.position < adapter.itemCount }
+        val target = back ?: left
+        switchBack = left
         val next = if (grid) {
             GridLayoutManager(this, columnCount()).apply {
                 // The "Recent" row and section headers are not grid cells: they span the whole width.
@@ -2397,8 +2399,39 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             LinearLayoutManager(this)
         }
         recycler.layoutManager = next
-        if (first != RecyclerView.NO_POSITION) next.scrollToPositionWithOffset(first, offset)
+        if (target == null) return
+        if (target === back || target.offset >= 0) {
+            next.scrollToPositionWithOffset(target.position, target.offset)
+            return
+        }
+        // Rows differ in height between grid and list: the same share of the row stays above the top, never all of it.
+        next.scrollToPositionWithOffset(target.position, 0)
+        placing = true
+        recycler.doOnPreDraw {
+            val v = next.findViewByPosition(target.position)
+            if (recycler.layoutManager === next && v != null) {
+                val height = outerHeight(next, v)
+                val offset = (target.offset.toLong() * height / target.height).toInt().coerceAtLeast(1 - height)
+                recycler.scrollBy(0, outerTop(next, v) - offset)
+            }
+            placing = false
+        }
     }
+
+    /** The row [lm] shows first: its first item and how far above the list's top the row starts, out of its height. */
+    private fun placeOf(lm: LinearLayoutManager): Place? {
+        val first = lm.findFirstVisibleItemPosition()
+        val v = lm.findViewByPosition(first) ?: return null
+        return Place(first, outerTop(lm, v), outerHeight(lm, v).coerceAtLeast(1))
+    }
+
+    /** Where [v]'s row starts below the list's top padding, its margin included. */
+    private fun outerTop(lm: RecyclerView.LayoutManager, v: View): Int =
+        lm.getDecoratedTop(v) - (v.layoutParams as ViewGroup.MarginLayoutParams).topMargin - recycler.paddingTop
+
+    /** [v]'s row height, margins included. */
+    private fun outerHeight(lm: RecyclerView.LayoutManager, v: View): Int =
+        (v.layoutParams as ViewGroup.MarginLayoutParams).let { lm.getDecoratedMeasuredHeight(v) + it.topMargin + it.bottomMargin }
 
     private fun columnCount(): Int {
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density

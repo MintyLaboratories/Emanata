@@ -157,26 +157,43 @@ class ListActivityViewLiveTest {
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
     }
 
-    @Test
-    fun switchingKeepsTheFirstRowShownInPlace() {
-        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
-        val list = launch()
-        val r = list.recycler()
-        r.scrollBy(0, 900)
-        settle()
+    /** The row shown first: its first item, where it starts below the list's top and its height, margins included. */
+    private fun ListActivity.firstRow(): Triple<Int, Int, Int> {
+        val r = recycler()
         val lm = r.layoutManager as LinearLayoutManager
         val first = lm.findFirstVisibleItemPosition()
-        val top = outerTop(lm.findViewByPosition(first)!!)
-        assertTrue(first > 4)
-        assertTrue(top < 0)
+        val v = lm.findViewByPosition(first)!!
+        return Triple(first, outerTop(v) - r.paddingTop, outerHeight(v))
+    }
+
+    /** Scrolls the grid with [rows] rows per screen so most of its second row is above the top. */
+    private fun ListActivity.scrollMostOfARowOff(rows: Int): Triple<Int, Int, Int> {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, rows)
+        settle()
+        val r = recycler()
+        (r.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(5, 0)
+        settle()
+        r.scrollBy(0, firstRow().third * 4 / 5)
+        settle()
+        return firstRow()
+    }
+
+    @Test
+    fun switchingKeepsTheShareOfTheFirstRowAboveTheTop() {
+        val list = launch()
+        // Two grid rows per screen: a cell is far taller than a list row.
+        val (first, top, height) = list.scrollMostOfARowOff(rows = 2)
+        assertTrue(first > 0)
+        assertTrue(-top > height / 2)
         list.tapFab()
-        val listed = r.layoutManager as LinearLayoutManager
-        assertEquals(first, listed.findFirstVisibleItemPosition())
-        assertEquals(top, outerTop(listed.findViewByPosition(first)!!))
+        val (listed, listTop, rowHeight) = list.firstRow()
+        assertEquals(first, listed)
+        assertTrue("$rowHeight vs $height", rowHeight < height)
+        // Some of the row still shows, as much of it above the top as before.
+        assertTrue(listTop > -rowHeight)
+        assertEquals(top.toFloat() / height, listTop.toFloat() / rowHeight, 1.5f / rowHeight)
         list.tapFab()
-        val gridded = r.layoutManager as LinearLayoutManager
-        assertEquals(first, gridded.findFirstVisibleItemPosition())
-        assertEquals(top, outerTop(gridded.findViewByPosition(first)!!))
+        assertEquals(Triple(first, top, height), list.firstRow())
     }
 
     @Test

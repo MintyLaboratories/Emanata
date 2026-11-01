@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.graphics.Point
+import android.hardware.display.DisplayManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -15,6 +17,7 @@ import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import android.view.Display
 import com.awxkee.jxlcoder.JxlChannelsConfiguration
 import com.awxkee.jxlcoder.JxlCoder
 import com.awxkee.jxlcoder.JxlCompressionOption
@@ -260,6 +263,16 @@ object Calibrator {
         return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
     }
 
+    /** The whole screen's size in pixels, system bars included: what the reader's pages fill. */
+    fun screenSize(context: Context): Pair<Int, Int> {
+        val display = context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
+            ?: return context.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
+        val size = Point()
+        @Suppress("DEPRECATION")
+        display.getRealSize(size)
+        return size.x to size.y
+    }
+
     private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
     /** Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's portrait size. */
@@ -285,10 +298,10 @@ object Calibrator {
         /** CPU time in ms of all but the UI threads ([UiCpu]). */
         private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
 
-        /** Draws the page and makes its target, the page shrunk to fit the screen held upright ([Calibration.target]). */
+        /** Draws the page and makes its target, the page shrunk to fit the whole screen held upright ([Calibration.target]), as the reader shows it. */
         fun prepare() {
-            val m = context.resources.displayMetrics
-            val (w, h) = Calibration.target(m.widthPixels, m.heightPixels, PAGE_W, PAGE_H)
+            val (sw, sh) = screenSize(context)
+            val (w, h) = Calibration.target(sw, sh, PAGE_W, PAGE_H)
             src = SyntheticPage.draw(PAGE_W, PAGE_H)
             dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         }

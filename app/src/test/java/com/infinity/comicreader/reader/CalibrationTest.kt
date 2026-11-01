@@ -161,6 +161,22 @@ class CalibrationTest {
     }
 
     @Test
+    fun aSlowSetupsOwnOutlierDoesNotMakeItFast() {
+        // 2 threads 23.4 ms with one 37 ms run, 8 threads 14.2 steady: 2 is 65 % slower, its own spread no excuse.
+        val t = listOf(Timing(pixels(2, false), 23.4, 45.0, wallSpreadMs = 14.0), Timing(pixels(8, false), 14.2, 77.0, wallSpreadMs = 1.0))
+        assertEquals(pixels(8, false), Calibration.pick(t)!!.candidate)
+    }
+
+    @Test
+    fun spreadIgnoresAnOutlier() {
+        // Max-min would say 14 ms.
+        assertEquals(0.3, Calibration.spread(listOf(23.2, 23.3, 23.4, 23.5, 37.2)), 1e-9)
+        // Steady runs: three median absolute deviations.
+        assertEquals(6.0, Calibration.spread(listOf(98.0, 100.0, 102.0, 104.0, 96.0)), 1e-9)
+        assertEquals(0.0, Calibration.spread(emptyList()), 0.0)
+    }
+
+    @Test
     fun medianOfOddAndEven() {
         assertEquals(2.0, Calibration.median(listOf(3.0, 1.0, 2.0)), 0.0)
         assertEquals(2.5, Calibration.median(listOf(4.0, 1.0, 2.0, 3.0)), 0.0)
@@ -196,8 +212,8 @@ class CalibrationTest {
         val probe = FakeProbe(mapOf(a to listOf(1000.0, 10.0, 30.0, 20.0), b to listOf(1000.0, 5.0, 6.0, 7.0)))
         val t = CalibrationRun(probe, listOf(a, b), rounds = 3, warmup = 1).run()!!
         assertEquals(listOf(a.key, b.key, b.key, a.key, a.key, b.key, b.key, a.key), probe.order)
-        assertEquals(Timing(a, 20.0, 40.0, 20.0, 40.0), t[0])
-        assertEquals(Timing(b, 6.0, 12.0, 2.0, 4.0), t[1])
+        assertEquals(Timing(a, 20.0, 40.0, 30.0, 60.0), t[0])
+        assertEquals(Timing(b, 6.0, 12.0, 3.0, 6.0), t[1])
     }
 
     @Test

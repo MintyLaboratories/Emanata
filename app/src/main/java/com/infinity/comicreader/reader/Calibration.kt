@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
 
 /**
  * How this device decodes and resamples pages: the resampling [engine] with [pixelThreads]
@@ -65,7 +66,7 @@ data class Candidate(val kind: Kind, val threads: Int, val pinned: Boolean, val 
     val key: String get() = if (gpu) "${kind.key}/gpu" else "${kind.key}/$threads/${if (pinned) "big" else "any"}"
 }
 
-/** The median wall and CPU time of [candidate] over its runs, and how far its runs spread (largest less smallest). */
+/** The median wall and CPU time of [candidate] over its runs, and how far its runs stray ([Calibration.spread]). */
 data class Timing(
     val candidate: Candidate,
     val wallMs: Double,
@@ -113,13 +114,14 @@ object Calibration {
 
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
-     * runs' spread of it), the one using the least CPU time; [incumbent], the setup in
-     * effect, unless the winner uses less CPU time by more than the spread.
+     * fastest's own spread of it), the one using the least CPU time; [incumbent], the setup
+     * in effect, unless the winner uses less CPU time by more than the spread. A slow setup's
+     * own spread never counts, so its outliers cannot make it fast.
      */
     fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE): Timing? {
         val fastest = timings.minByOrNull { it.wallMs } ?: return null
         val fast = timings.filter {
-            it.wallMs <= fastest.wallMs * (1 + tolerance) || it.wallMs - fastest.wallMs <= maxOf(it.wallSpreadMs, fastest.wallSpreadMs)
+            it.wallMs <= fastest.wallMs * (1 + tolerance) || it.wallMs - fastest.wallMs <= fastest.wallSpreadMs
         }
         val winner = fast.minWith(compareBy({ it.cpuMs }, { it.wallMs }))
         val kept = fast.firstOrNull { it.candidate == incumbent } ?: return winner
@@ -165,8 +167,18 @@ object Calibration {
         return if (s.size % 2 == 1) s[s.size / 2] else (s[s.size / 2 - 1] + s[s.size / 2]) / 2
     }
 
-    /** The largest of [xs] less the smallest; 0 when empty. */
-    internal fun spread(xs: List<Double>): Double = if (xs.isEmpty()) 0.0 else xs.max() - xs.min()
+    /**
+     * How far [xs] stray: [SPREAD_MADS] times their median absolute deviation, about two
+     * standard deviations of steady runs, which one or two outliers among five do not move;
+     * 0 when empty.
+     */
+    internal fun spread(xs: List<Double>): Double {
+        if (xs.isEmpty()) return 0.0
+        val m = median(xs)
+        return SPREAD_MADS * median(xs.map { abs(it - m) })
+    }
+
+    private const val SPREAD_MADS = 3.0
 
     fun timingsJson(timings: List<Timing>): JSONArray = JSONArray().apply { timings.forEach { put(it.toJson()) } }
 }

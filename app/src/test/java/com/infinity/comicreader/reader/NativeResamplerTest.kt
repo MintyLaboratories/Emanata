@@ -42,6 +42,9 @@ class NativeResamplerTest {
             val cores: MutableList<Long> = Collections.synchronizedList(ArrayList())
             val threadIds: MutableSet<Long> = Collections.synchronizedSet(HashSet())
             lateinit var result: IntArray
+
+            /** Bands asked for so far, counted as each call starts: workers race to append [bands]. */
+            val calls = AtomicInteger()
         }
 
         val jobs = ArrayList<Job>()
@@ -66,7 +69,7 @@ class NativeResamplerTest {
         override fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean {
             val j = jobs[job.toInt() - 1]
             check(!j.ended && worker in 0 until j.workers)
-            if (j.bands.size == failAt) return false
+            if (j.calls.getAndIncrement() == failAt) return false
             j.bands += Triple(worker, y0, y1)
             j.cores += cores
             j.threads += Thread.currentThread().name

@@ -28,6 +28,15 @@ class DecodeRunsTest {
     }
 
     @Test
+    fun aFolderIsHeldOnlyAsFarAsTheBudget() {
+        assertEquals(3, DecodeRuns.fitting(listOf(10L, 10L, 10L), 30))
+        assertEquals(2, DecodeRuns.fitting(listOf(10L, 10L, 11L, 1L), 30))
+        // One page always, however large.
+        assertEquals(1, DecodeRuns.fitting(listOf(50L, 1L), 30))
+        assertEquals(0, DecodeRuns.fitting(emptyList(), 30))
+    }
+
+    @Test
     fun jpegXlSetupsTakeOnlyJpegXl() {
         assertTrue(Setup.of("page", 4)!!.takes(jxl = true))
         assertFalse(Setup.of("coder", 4)!!.takes(jxl = false))

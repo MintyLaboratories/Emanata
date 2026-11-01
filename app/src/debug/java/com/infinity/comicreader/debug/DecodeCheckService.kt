@@ -52,7 +52,9 @@ import kotlin.math.max
  *
  * Pages: synthetic 2000x3000 and 4000x6000 pages (JPEG XL at quality 91, JPEG at 90, PNG),
  * made once into the app's cache, and the first `pages` images of each of `dirs`, read
- * whole into memory first: file reads are not timed. A setup is `engine[/threads[/cores]]`
+ * whole into memory first: file reads are not timed. One folder is held at a time, each
+ * checked and timed before the next is read, and of it no more than half the heap: pages
+ * past that are left out, logged as "cut". A setup is `engine[/threads[/cores]]`
  * ([DecodeRuns.Setup]); JPEG XL setups take JPEG XL pages, the others the rest.
  *
  * - check: each JPEG XL page by the native setups against jxl-coder: the largest channel
@@ -108,15 +110,13 @@ class DecodeCheckService : Service() {
                     JSONObject().put("big", java.lang.Long.toBinaryString(cores.big)).put("little", java.lang.Long.toBinaryString(cores.little))
                         .put("threads", threads).put("conditions", conditions())
                 )
-                val groups = ArrayList<Group>()
-                if (synthetic) groups += syntheticGroups()
-                for (dir in dirs) groups += read(File(dir), most)
-                for (g in groups) log(JSONObject().put("group", g.name).put("pages", g.pages.size).put("bytes", g.pages.sumOf { it.bytes.size.toLong() }))
-                if ("check" in what || "all" in what) check(groups)
-                if ("time" in what || "all" in what) time(groups, setups, reps, gap)
-                if ("cancel" in what || "all" in what) cancel(groups, threads)
+                val sources = ArrayList<() -> List<Group>>()
+                if (synthetic) sources += { syntheticGroups() }
+                for (dir in dirs) sources += { listOf(read(File(dir), most)) }
+                var coldDone = "cold" !in what
+                // Each source's pages are dropped before the next is read.
+                for (source in sources) coldDone = checkAndTime(source(), what, setups, reps, gap, threads, coldDone)
                 intent?.getStringExtra("fixtures")?.takeIf { "fixtures" in what }?.let { fixtures(File(it)) }
-                if ("cold" in what) cold(groups, setups.first())
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
@@ -129,6 +129,15 @@ class DecodeCheckService : Service() {
 
     private val out: File get() = File(getExternalFilesDir(null), "bench/decode.jsonl")
 
+    /** Checks and times [groups] as [what] asks, and the cold decode unless [coldDone]; true once that has run. */
+    private fun checkAndTime(groups: List<Group>, what: Set<String>, setups: List<Setup>, reps: Int, gap: Int, threads: Int, coldDone: Boolean): Boolean {
+        for (g in groups) log(JSONObject().put("group", g.name).put("pages", g.pages.size).put("bytes", g.pages.sumOf { it.bytes.size.toLong() }))
+        if ("check" in what || "all" in what) check(groups)
+        if ("time" in what || "all" in what) time(groups, setups, reps, gap)
+        if ("cancel" in what || "all" in what) cancel(groups, threads)
+        return coldDone || cold(groups, setups.first())
+    }
+
     private fun conditions(): JSONObject {
         val cpuset = runCatching { File("/proc/self/cpuset").readText().trim() }.getOrDefault("?")
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -138,11 +147,16 @@ class DecodeCheckService : Service() {
 
     // ------------------------------------------------------------------ pages
 
-    /** The first [most] images of [dir] by name, read whole. */
+    /** The first [most] images of [dir] by name, read whole, as many as fit in half the heap. */
     private fun read(dir: File, most: Int): Group {
         val listed = dir.listFiles()
         if (listed.isNullOrEmpty()) log(JSONObject().put("unlisted", dir.name).put("exists", dir.exists()).put("listed", listed?.size ?: -1))
-        val files = listed?.filter { it.isFile }?.sortedBy { it.name }.orEmpty().take(most)
+        val listedFiles = listed?.filter { it.isFile }?.sortedBy { it.name }.orEmpty().take(most)
+        val budget = Runtime.getRuntime().maxMemory() / 2
+        val files = listedFiles.take(DecodeRuns.fitting(listedFiles.map { it.length() }, budget))
+        if (files.size < listedFiles.size) {
+            log(JSONObject().put("cut", dir.name).put("pages", files.size).put("of", listedFiles.size).put("budgetMb", budget shr 20))
+        }
         val pages = files.mapNotNull { f ->
             val bytes = f.readBytes()
             val size = Decoders.size(bytes)
@@ -386,8 +400,9 @@ class DecodeCheckService : Service() {
 
     // ------------------------------------------------------------------ cold
 
-    private fun cold(groups: List<Group>, setup: Setup) {
-        val group = groups.firstOrNull { g -> g.pages.firstOrNull()?.let { setup.takes(it.jxl) } == true } ?: return
+    /** False when no page of [groups] is [setup]'s to take. */
+    private fun cold(groups: List<Group>, setup: Setup): Boolean {
+        val group = groups.firstOrNull { g -> g.pages.firstOrNull()?.let { setup.takes(it.jxl) } == true } ?: return false
         val first = group.pages.first()
         // Libraries loaded, no decode run.
         LibJxl.version
@@ -415,6 +430,7 @@ class DecodeCheckService : Service() {
                 .put("peakFirstMb", peakFirst / 1024).put("peakAllMb", peakAll / 1024).put("peakOverBeforeMb", (peakAll - rssBefore) / 1024)
                 .put("conditions", conditions())
         )
+        return true
     }
 
     /** A kB figure of /proc/self/status, or -1. */

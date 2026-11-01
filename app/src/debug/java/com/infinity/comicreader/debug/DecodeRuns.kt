@@ -1,7 +1,17 @@
 package com.infinity.comicreader.debug
 
-/** Pure parts of [DecodeCheckService]: its decoder setups and which files each takes. */
+/** Pure parts of [DecodeCheckService]: its decoder setups, which files each takes, and how many it holds. */
 internal object DecodeRuns {
+    /** How many of files [sizes] long, taken in order, fit in [budget] bytes; at least one. */
+    fun fitting(sizes: List<Long>, budget: Long): Int {
+        var held = 0L
+        for ((i, n) in sizes.withIndex()) {
+            if (i > 0 && held + n > budget) return i
+            held += n
+        }
+        return sizes.size
+    }
+
     /** A page decoder under test. */
     enum class Engine(val key: String, val jxl: Boolean) {
         /** jxl-coder's own decode, as JPEG XL pages decoded before; on cores, its threads start pinned there. */

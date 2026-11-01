@@ -804,7 +804,9 @@ screenshots/                 README screenshots
 
 Requirements: JDK 17+ (JDK 21 verified) and the Android SDK (platform 34, build-tools 34),
 with NDK 30.0.16248370 and CMake 4.1.2. The first build downloads the pinned
-libavif, dav1d and xxHash sources and libjxl's headers (checked against their SHA-256).
+libavif, dav1d, xxHash and ncnn (with glslang) sources and libjxl's headers (checked
+against their SHA-256). ncnn adds 9.3 MB to the APK for arm64-v8a and 7.9 MB for
+x86_64 (native libraries are stored uncompressed).
 
 ```bash
 ./gradlew assembleDebug
@@ -935,9 +937,11 @@ license and NOTICE text under Settings → About (files in
 | [libavif](https://github.com/AOMediaCodec/libavif), with parts of libyuv | BSD-2-Clause (libyuv: BSD-3-Clause) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | BSD-2-Clause |
 | [xxHash](https://github.com/Cyan4973/xxHash) | BSD-2-Clause |
+| [ncnn](https://github.com/Tencent/ncnn), with parts under zlib and BSD-2-Clause | BSD-3-Clause |
+| [glslang](https://github.com/KhronosGroup/glslang) (in the ncnn library) | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0; parser GPL-3.0 with the Bison exception; preprocessor also NVIDIA's license |
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
 | Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
-| LLVM libc++abi, libunwind (in jxl-coder) | Apache-2.0 with LLVM Exceptions |
+| LLVM libc++abi, libunwind (in jxl-coder); libc++, libc++abi, OpenMP runtime (in the ncnn library) | Apache-2.0 with LLVM Exceptions |
 | [ZXing](https://github.com/zxing/zxing) (`core`) | Apache-2.0 |
 | [SMBJ](https://github.com/hierynomus/smbj), ASN-One | Apache-2.0 |
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |

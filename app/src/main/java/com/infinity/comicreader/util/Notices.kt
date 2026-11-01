@@ -36,6 +36,7 @@ object Notices {
     const val BSD_2 = "BSD 2-Clause License"
     const val BSD_3 = "BSD 3-Clause License"
     const val DUAL_APACHE = "$APACHE_2 (dual-licensed; used under Apache-2.0)"
+    const val GLSLANG = "$BSD_3 and others"
 
     const val UPSTREAM_URL = "https://github.com/infinity6901/ComicReader"
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
@@ -139,8 +140,9 @@ object Notices {
                 "(MIT or Apache-2.0); novtb, pic-scale, pxfm (BSD-3-Clause or Apache-2.0)."
         ),
         Notice(
-            "LLVM C++ runtime", "$APACHE_2 with LLVM Exceptions", "https://llvm.org/",
-            listOf(APACHE_TEXT, "llvm-exception.txt"), note = "libc++abi and libunwind, bundled in jxl-coder."
+            "LLVM C++ and OpenMP runtimes", "$APACHE_2 with LLVM Exceptions", "https://llvm.org/",
+            listOf(APACHE_TEXT, "llvm-exception.txt"),
+            note = "libc++abi and libunwind, bundled in jxl-coder; libc++, libc++abi and the OpenMP runtime, linked into the app's ncnn library."
         ),
         Notice(
             "libavif", BSD_2, "https://github.com/AOMediaCodec/libavif", listOf("libavif.txt"),
@@ -153,6 +155,17 @@ object Notices {
         Notice(
             "xxHash", BSD_2, "https://github.com/Cyan4973/xxHash", listOf("xxhash.txt"),
             note = "Built from source; its XXH3-64 hash makes Book IDs."
+        ),
+        Notice(
+            "ncnn", BSD_3, "https://github.com/Tencent/ncnn", listOf("ncnn.txt"),
+            note = "Built from source; runs AI models on the GPU (Vulkan) or the CPU. Parts under the zlib and " +
+                "BSD 2-Clause licenses, in the same text."
+        ),
+        Notice(
+            "glslang", GLSLANG, "https://github.com/KhronosGroup/glslang", listOf("glslang.txt"),
+            note = "Built from source with ncnn, which compiles its GPU programs with it. Parts under the BSD 2-Clause, " +
+                "MIT and Apache 2.0 licenses; its generated parser under GPL 3.0 with the Bison exception, which lets " +
+                "it be used under any terms; its preprocessor also under an NVIDIA license. All in the same text."
         ),
         Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
         Notice(

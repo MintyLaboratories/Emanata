@@ -3,17 +3,20 @@
 # header-only from its pinned release (book_id_jni.c); lossless compaction: libjxl
 # as jxl-coder ships it, opened at run time and compiled against the headers of
 # the same pinned release (jxl_jni.c); resampling of page bitmaps, on the CPU (NEON on
-# arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c).
+# arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c); AI page processing: ncnn
+# with Vulkan, built from its pinned release, in a library of its own loaded only when
+# used (ai_ncnn.cpp).
 cmake_minimum_required(VERSION 3.22)
 
 # Optimized native code in every app build type: an unoptimized AV1 decoder takes
 # seconds per page.
 set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 
-project(avifjni C ASM)
+project(avifjni C CXX ASM)
 
 include(FetchContent)
 include(Dav1d.cmake)
+include(Ncnn.cmake)
 
 FetchContent_Declare(
     libavif
@@ -66,3 +69,9 @@ target_compile_options(avifjni PRIVATE -Wall -Wextra)
 # Only the JNI entry points are exported; unused code is dropped.
 set_target_properties(avifjni PROPERTIES C_VISIBILITY_PRESET hidden)
 target_link_options(avifjni PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL)
+
+add_library(aincnn SHARED ai_ncnn.cpp)
+set_target_properties(aincnn PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_VISIBILITY_PRESET hidden)
+target_link_libraries(aincnn PRIVATE ncnn jnigraphics log)
+target_compile_options(aincnn PRIVATE -Wall -Wextra)
+target_link_options(aincnn PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL)

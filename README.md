@@ -965,6 +965,64 @@ GPU, 0.15 s on the CPU. Back to back, pages took 6.1 to 7.1 s each until the
 forecast headroom reached 0.9 after 17 pages (112 s); the thermal status stayed
 none throughout.
 
+`--es do survey` opens every model in a folder and runs one page through it,
+and `--es do download` fetches catalog models through the app's own downloader
+(stopping once partway, then resuming), checks their SHA-256, opens them and
+runs a page. The models OpenComic AI's desktop app offers whose licenses let a
+free app download them went through the survey on the same tablet; the catalog
+keeps those that run and take a synthetic 1000x1500 page through in at most two
+thirds of the 30 s page time. Medians of 3 pages after a warm-up, at each
+model's own scale, run one model after another (the tablet warmed from a thermal
+headroom of 0.79 to 0.93 over the catalog's models; the first, run again at
+0.85, took 8.3 s instead of 5.4 s):
+
+| Model | Step | Setup | Margin | Tiles | Per page |
+|---|---|---|---|---|---|
+| OpenComic AI Artifact Removal Fast v2 | artifacts, 1x | GPU fp16, 192 px | 16 px | 70 | 7.1 s |
+| OpenComic AI Descreen Hard Fast v2 | descreen, 1x | GPU fp16, 192 px | 15 px | 70 | 7.1 s |
+| OpenComic AI Descreen Hard Fast v3 | descreen, 1x | GPU fp16, 192 px | 21 px | 77 | 17.8 s |
+| OpenComic AI Upscale Fast v2 2x | upscale | GPU fp16, 192 px | 20 px | 70 | 5.4 s |
+| OpenComic AI Upscale Fast v2 3x | upscale | GPU fp16, 256 px | 29 px | 48 | 11.1 s |
+| OpenComic AI Upscale Fast v2 4x | upscale | GPU fp16, 256 px | 30 px | 48 | 11.7 s |
+| Real-ESRGAN AnimeVideo v3 2x | upscale | GPU fp32, 192 px | 15 px | 70 | 14.6 s |
+| Real-ESRGAN AnimeVideo v3 3x | upscale | GPU fp32, 192 px | 15 px | 70 | 14.9 s |
+| Real-ESRGAN AnimeVideo v3 4x | upscale | GPU fp32, 128 px | 15 px | 176 | 19.5 s |
+| LSDIR Compact C3 4x | upscale | GPU fp32, 128 px | 13 px | 176 | 19.6 s |
+| waifu2x UpConv7 2x | upscale | GPU fp16, 192 px | 15 px | 70 | 3.6 s |
+| waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 4.0 s |
+| waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 3.1 s |
+
+Real-ESRGAN AnimeVideo v3 and LSDIR Compact C3 differ from the CPU by a mean of
+1.6 to 1.9 codes in fp16 (more than rounding), so they run in fp32. All 15 downloaded
+from the repository, stopped after 0.5 MB and resumed, matched their SHA-256
+and finished a page within the page time. Under battery saver a page pauses at
+once; with Pause AI processing off it runs, at about half speed.
+
+Left out of the catalog:
+
+- too slow: OpenComic AI Upscale Fast v3 2x (27.5 s; 3x and 4x ran only on the
+  CPU, their GPU tiles showing seams in both precisions: 56 and 79 s for the
+  survey's single page),
+  Real-ESRGAN General v3 4x (50.6 s) and its WDN variant (60.0 s); ESRGAN-type
+  models, from one survey page each (or estimated from the tiles run in 60 or
+  120 s): NMKD Jaywreck3 Lite and Soft Lite (61 and 77 s), OpenComic AI
+  Descreen Hard Balanced v3 (84 s), Upscale Balanced v3 2x (about 97 s), and the
+  Balanced and Quality v2 models (2 to 14 minutes; the 2x upscalers ran only on
+  the CPU). Opening the 4x ones (WTP ColorDS, Real-ESRGAN x4plus Anime) took the
+  app past 1.8 GB resident while it checked them on the GPU, and the system
+  ended it; the other 4x models of that size (Real-ESRGAN x4plus, RealESRNet
+  x4plus, AI-Forever x4plus, HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo,
+  NMKD Siax) and the 3x and 4x versions of the OpenComic models above were not
+  run;
+- refused by the engine: Real-CUGAN SE and Pro and waifu2x CUnet (global
+  pooling in squeeze-excitation blocks: tiles would show), OpenComic AI
+  Artifact Removal Balanced and Quality v3 (output still changes 64 px from a
+  cut), Real-CUGAN NoSE (fails to run at the probe's 32 and 48 px inputs);
+- by license: CC BY-NC-SA 4.0 (Remacri, UltraSharp, UniScale Restore,
+  Int-RemAnime, AnimeSharp V4, SaiyaJin DeJpeg, and UltraMix, merged from such
+  models), GPL-3.0 (JPEG Destroyer V2), none stated (WTP DescreenTon Compact,
+  Halftone Patch 060000 G, Unknown 2.0.1).
+
 ## Permissions
 
 - `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+): browse and

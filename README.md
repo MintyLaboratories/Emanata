@@ -165,7 +165,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     book, without opening it), Filename charset (one book, advanced),
     **Compact** and **Make compatible** (books on the device; a folder gives
     every book inside it and its subfolders), **Pack** and **Pack compacted**
-    (folders on the device; off, saying why, unless each holds images only)
+    (folders on the device; off, saying why, unless each holds images only, or
+    when books are selected too)
     and Peek (off by default). Settings → **Selection menu (⋮)** shows, hides and
     reorders them like the toolbar buttons.
   - The floating button: the list/grid toggle with nothing selected (if
@@ -329,13 +330,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   books: each becomes `<folder name>.cbz` beside it, stored entries in natural
   order, its images as they are (**Pack**) or each made smaller losslessly by
   the Compact rules, extensions changed and nothing else (**Pack compacted**,
-  which warns as Compact does). A folder holding anything but images (OS litter
-  aside: `Thumbs.db`, `desktop.ini`, `.DS_Store`, `._*`, `.nomedia`) or another
-  folder can't be packed: the items show off, saying why. A `.cbz` of that name
-  already there asks, as Paste does: Replace, Keep both or Skip. Every entry is
-  read back and checked against its CRC-32 before the new file takes its name;
-  only then does the folder take its data along and go (its images, still as
-  they were, and its litter). One queued operation, a folder at a time;
+  which warns as Compact does). A `ComicInfo.xml` beside the images goes into
+  the book too. A folder holding anything else (OS litter aside: `Thumbs.db`,
+  `desktop.ini`, `.DS_Store`, `._*`, `.nomedia`, `__MACOSX/`) or another folder
+  can't be packed: the items show off, saying why. Unusual files (dot-files,
+  dot-folders, empty files) are never packed silently: one question for all
+  the folders, listing them, "Pack these unusual files too?": Yes packs them
+  as files (dot-folders under their own paths), never as pages; No leaves them
+  out, and they are deleted with the folder; Cancel packs nothing. A `.cbz` of
+  that name already there asks, as Paste does: Replace, Keep both or Skip; one
+  that turns up while packing makes it keep both, as the message then says.
+  Every entry is read back and checked against its CRC-32 before the new file
+  takes its name; only then does the folder take its data along and go (its
+  files, still as they were, its unusual files and its litter). One queued operation, a folder at a time;
   canceled, the folder stays as it was. The new book takes over the folder's
   favorite (or an image's), its layout (kept as the book's own: "This folder"
   in the reader then keeps it for the book) and its answer to reading tall

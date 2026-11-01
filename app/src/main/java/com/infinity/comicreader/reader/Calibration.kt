@@ -32,10 +32,15 @@ data class Tuning(
         .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned)
 
     companion object {
-        /** Before any calibration: native CPU code, one worker and one JPEG XL thread per large core ([CpuCores]), pinned there. */
+        /**
+         * Before any calibration: native CPU code, one worker and one JPEG XL thread per large
+         * core ([CpuCores]), pinned there; nothing pinned where there are no large cores to pin
+         * to ([CpuCores.big] 0), so these match the setups calibration times there.
+         */
         fun defaults(cores: CpuCores, processors: Int): Tuning {
             val n = NativeResampler.defaultThreads(cores, processors)
-            return Tuning(PixelEngine.NATIVE, n, true, n, true)
+            val pinned = cores.big != 0L
+            return Tuning(PixelEngine.NATIVE, n, pinned, n, pinned)
         }
 
         /** The tuning [json] holds; null when it holds none. */

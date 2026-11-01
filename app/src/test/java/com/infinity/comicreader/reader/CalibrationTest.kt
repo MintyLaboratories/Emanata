@@ -91,7 +91,17 @@ class CalibrationTest {
     @Test
     fun defaultsAreOnePerLargeCorePinned() {
         assertEquals(Tuning(PixelEngine.NATIVE, 4, true, 4, true), Tuning.defaults(tablet, 8))
-        assertEquals(Tuning(PixelEngine.NATIVE, 8, true, 8, true), Tuning.defaults(allBig, 8))
+        // No large cores to pin to: unpinned, as every setup calibration times there.
+        assertEquals(Tuning(PixelEngine.NATIVE, 8, false, 8, false), Tuning.defaults(allBig, 8))
+    }
+
+    @Test
+    fun withoutLargeCoresTheDefaultsAreAnIncumbent() {
+        val before = Tuning.defaults(allBig, 8)
+        // 2 threads within the tolerance of 8 for less CPU, but not by more than the noise: 8 stays.
+        val t = listOf(Timing(pixels(2, false), 16.0, 70.0, 2.0, 10.0), Timing(pixels(8, false), 14.0, 77.0, 2.0, 10.0))
+        assertEquals(8, Calibration.tuning(t, before).pixelThreads)
+        assertFalse(Calibration.tuning(t, before).pixelPinned)
     }
 
     @Test

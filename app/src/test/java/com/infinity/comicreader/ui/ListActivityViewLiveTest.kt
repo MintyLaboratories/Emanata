@@ -45,6 +45,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowLog
 import java.io.File
 import java.time.Duration
 import kotlin.math.abs
@@ -425,6 +426,26 @@ class ListActivityViewLiveTest {
     }
 
     private fun latestDialogRoot(): View = ShadowDialog.getLatestDialog().window!!.decorView
+
+    private fun feedWarnings() = ShadowLog.getLogsForTag("ListActivity").count { it.msg.startsWith("Settings feed behind") }
+
+    @Test
+    fun theFeedKeepsUpWithChangesMadeOnScreen() {
+        val list = launch()
+        list.tapFab()
+        list.tapFab()
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
+        settle()
+        assertEquals(0, feedWarnings())
+    }
+
+    @Test
+    fun aFeedFallenBehindIsLogged() {
+        val list = launch()
+        muteFeed()
+        list.tapFab()
+        assertTrue(feedWarnings() > 0)
+    }
 
     @Test
     fun theButtonSwitchesWithoutTheFeedInEveryTab() {

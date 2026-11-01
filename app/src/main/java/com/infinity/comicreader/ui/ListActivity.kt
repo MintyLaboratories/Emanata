@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.SystemClock
+import android.util.Log
 import android.util.LruCache
 import android.provider.Settings
 import android.text.InputType
@@ -743,7 +744,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private fun openStartDirectory() {
         showProgress(true)
         // Debug builds can start elsewhere and stand in a share slow to answer, to try the wait on a device.
-        val debug = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val debug = debuggable
         val startPath = intent.getStringExtra(EXTRA_START_PATH)?.takeIf { debug }
         val slowMs = if (debug) intent.getLongExtra(EXTRA_SLOW_SHARE_MS, 0) else 0
         val wait = startupWait
@@ -936,10 +937,28 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     }
 
     /** A sort or filter popup wrote a change: the rows show it at once. */
-    override fun onTabSettingsChanged() = showCurrentContent()
+    override fun onTabSettingsChanged() {
+        checkFeed()
+        showCurrentContent()
+    }
+
+    /** True in debuggable builds, the only ones that check the settings feed ([checkFeed]). */
+    private val debuggable by lazy { applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 }
+
+    /**
+     * Debuggable builds log when the settings feed differs from the stored settings: the list then
+     * shows a change only through its checks against the screen ([showCurrentView], [showCurrentContent]).
+     */
+    private fun checkFeed() {
+        if (!debuggable) return
+        val feed = settings.list.value
+        val stored = ListSettings.from(prefs).copy(thrift = feed.thrift)
+        if (feed != stored) Log.w(TAG, "Settings feed behind the stored settings: $feed, stored $stored", Throwable())
+    }
 
     /** Applies the current tab's view when the list shows anything else; cheap when it does not. */
     private fun showCurrentView() {
+        checkFeed()
         if (shownTab != mode || shownView != view || adapter.options != rowOptions()) applyView()
     }
 
@@ -3009,6 +3028,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             R.id.menu_show_hidden -> {
                 prefs.showHidden = !prefs.showHidden
                 invalidateOptionsMenu()
+                checkFeed()
                 showCurrentContent()
             }
             R.id.menu_new_folder -> newFolder()
@@ -3168,6 +3188,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         /** Lists share folder [dir]. Blocking; holds no screen, so a wait kept across a recreate ([StartupWait]) leaks none. */
         private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
 
+        private const val TAG = "ListActivity"
         private const val TAB_BROWSE = 0
         private const val TAB_FAVORITES = 1
         private const val TAB_HISTORY = 2

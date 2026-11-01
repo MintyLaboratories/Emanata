@@ -599,6 +599,13 @@ class PageAdapter(
         image.fit()
     }
 
+    /** Readies item [position], about to be swiped back to, to show from its bottom when it is a page of [tallPages] shown alone. */
+    fun swipingBackTo(position: Int) {
+        if (mode != Mode.PAGED || position < 0 || position >= itemCount) return
+        val part = strip.parts(position).filterNotNull().singleOrNull() ?: return
+        if (part.page in tallPages) landTall(position, atBottom = true)
+    }
+
     /** The image of the page of [tallPages] item [position] shows alone, when it is bound. */
     private fun tallImage(position: Int): ZoomImageView? {
         if (mode != Mode.PAGED) return null

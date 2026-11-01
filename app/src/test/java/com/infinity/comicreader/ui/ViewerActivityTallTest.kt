@@ -75,9 +75,10 @@ class ViewerActivityTallTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun launch(book: File): ViewerActivity {
+    private fun launch(book: File, page: Int = 0): ViewerActivity {
         val intent = Intent(ApplicationProvider.getApplicationContext(), ViewerActivity::class.java)
             .putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+        if (page > 0) intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
         await { progress.visibility != View.VISIBLE }
@@ -200,5 +201,25 @@ class ViewerActivityTallTest {
         assertEquals(2, pager.currentItem)
         // Scrolled most of a screen at a time to its bottom before turning.
         assertTrue("$presses presses", presses > 3)
+    }
+
+    @Test
+    fun swipingBackOntoATallPageLandsAtItsBottom() {
+        val viewer = launch(book("Mixed 03.cbz", listOf(140, 1000, 140)), page = 2)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        await { asked() == null && pager.currentItem == 2 }
+        assertEquals(2, pager.currentItem)
+        // A finger dragging the page toward the next one's side, as far as most of the screen.
+        pager.beginFakeDrag()
+        for (i in 1..10) pager.fakeDragBy(pager.width * 0.08f)
+        pager.endFakeDrag()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(800))
+        assertEquals(1, pager.currentItem)
+        await { viewer.shownImage().drawable != null }
+        val image = viewer.shownImage()
+        val values = FloatArray(9).also { image.imageMatrix.getValues(it) }
+        val shownHeight = image.drawable.intrinsicHeight * values[Matrix.MSCALE_Y]
+        assertTrue("taller than the screen", shownHeight > image.height)
+        assertEquals(image.height - shownHeight, values[Matrix.MTRANS_Y], 1f)
     }
 }

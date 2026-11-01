@@ -758,6 +758,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   applies, and after an update the previous winners stay until new ones are
   established. Debug and bench builds show it and recalibrate in
   `CalibrationActivity` (shell only).
+- AI processing (`ai/`, so far the runtime only): ncnn with Vulkan, built from
+  source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own
+  (`libaincnn.so`) loaded on first use. A model (`.param`/`.bin`) runs over a
+  page in fixed-size square tiles (`TilePlan`), one page at a time in the
+  process (`TileEngine`). Each model is measured when opened (`ModelProbe`): its
+  scale and edge trim from two input sizes, and its context by running a busy
+  tile whole and cut and finding how far from the cut the output changes by more
+  than 2 codes; tiles keep only pixels that saw all their context, so they join
+  without seams. Tiles are the largest size up to 192 whose estimated working
+  memory fits a quarter of the GPU's memory budget (256 MB on the CPU). Between
+  tiles a run stops when canceled, when battery saver is on or the device
+  reaches thermal status moderate (`AiConditions`), and when its time (30 s by
+  default) is up or the pace so far says it will be; the page then gets its
+  plain Lanczos3 rendering (`AiPages`). Output is capped at 32 MP, and the
+  model's buffers are freed after every page. Without a usable Vulkan device, or
+  when the GPU cannot open or measure a model, it runs on the CPU: one thread per
+  large core, in fp32 (the CPU's fp16 kernels differ by tile shape enough to
+  show as seams). Every ncnn call runs on one thread that lives as long as the
+  process: its OpenMP runtime aborts when started again.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named
@@ -791,6 +810,8 @@ app/src/main/java/com/infinity/comicreader/
                              Thumbs, models
   files/                     FileSpace (device and shares), Transfer (copy/move
                              with checks), FileWork, FileClipboard
+  ai/                        AI page processing: LibNcnn (JNI), TilePlan,
+                             ModelProbe, TileEngine, Sessions, AiPages
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,

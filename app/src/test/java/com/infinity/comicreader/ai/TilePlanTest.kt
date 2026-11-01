@@ -27,24 +27,44 @@ class TilePlanTest {
 
     @Test
     fun startsCoverTheAxisWithTheLastAtItsEnd() {
-        assertArrayEquals(intArrayOf(0), TilePlan.starts(50, 100))
-        assertArrayEquals(intArrayOf(0), TilePlan.starts(100, 100))
-        assertArrayEquals(intArrayOf(0, 100), TilePlan.starts(200, 100))
-        assertArrayEquals(intArrayOf(0, 100, 150), TilePlan.starts(250, 100))
-        assertArrayEquals(intArrayOf(0, 1), TilePlan.starts(101, 100))
+        assertArrayEquals(intArrayOf(0), TilePlan.starts(50, 100, align = 1))
+        assertArrayEquals(intArrayOf(0), TilePlan.starts(100, 100, align = 1))
+        assertArrayEquals(intArrayOf(0, 100), TilePlan.starts(200, 100, align = 1))
+        assertArrayEquals(intArrayOf(0, 100, 150), TilePlan.starts(250, 100, align = 1))
+        assertArrayEquals(intArrayOf(0, 1), TilePlan.starts(101, 100, align = 1))
     }
 
     @Test
-    fun everyCoreStaysInsideAndTheyCoverEveryPixel() {
-        for (length in 1..400 step 7) for (core in listOf(16, 50, 100, 128)) {
+    fun alignedStartsEndTheLastCoreUpToAPeriodPastTheAxis() {
+        assertArrayEquals(intArrayOf(0, 96, 160), TilePlan.starts(250, 96))
+        assertArrayEquals(intArrayOf(0, 8), TilePlan.starts(97, 96))
+        assertArrayEquals(intArrayOf(0, 96), TilePlan.starts(192, 96))
+        assertThrows(IllegalArgumentException::class.java) { TilePlan.starts(250, 100) }
+    }
+
+    @Test
+    fun everyCoreStartsInsideAndTheyCoverEveryPixel() {
+        for (length in 1..400 step 7) for (core in listOf(16, 48, 96, 128)) {
             val starts = TilePlan.starts(length, core)
             val seen = BooleanArray(length)
             for (s in starts) {
-                assertTrue(s >= 0)
+                assertTrue(s in 0 until length)
+                assertEquals(0, s % TilePlan.ALIGN)
                 for (p in s until minOf(length, s + core)) seen[p] = true
             }
             assertTrue("gap at length $length core $core", seen.all { it })
-            if (length >= core) assertEquals(length, starts.last() + core)
+            if (length >= core) assertTrue(starts.last() + core - length in 0 until TilePlan.ALIGN)
+        }
+    }
+
+    @Test
+    fun coresAreWholePeriodsAndEveryInputStartsInStep() {
+        val g = Geometry(2, 0, 7)
+        assertEquals(176, TilePlan.core(192, g))
+        assertEquals(-2, TilePlan.core(12, g))
+        for (t in TilePlan.tiles(1000, 700, 192, g)) {
+            assertEquals(Math.floorMod(-g.margin, TilePlan.ALIGN), Math.floorMod(t.input.x, TilePlan.ALIGN))
+            assertEquals(Math.floorMod(-g.margin, TilePlan.ALIGN), Math.floorMod(t.input.y, TilePlan.ALIGN))
         }
     }
 

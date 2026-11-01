@@ -95,6 +95,7 @@ import com.infinity.comicreader.data.SortValues
 import com.infinity.comicreader.data.StartupLocation
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.data.TabSort
 import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
 import com.infinity.comicreader.data.Years
@@ -132,7 +133,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
-class ListActivity : AppCompatActivity(), LocationSheet.Host {
+class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.Host {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
@@ -219,6 +220,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     /** A row shown first: its first item, where the row starts ([offset], negative above the list's top) and its height. */
     private data class Place(val position: Int, val offset: Int, val height: Int)
+
+    /** What the rows shown were listed with ([launchListing]) and ordered by ([applyFilterAndSort]); null before. */
+    private var listedWith: Listing? = null
+    private var sortedWith: Sorting? = null
+
+    /** The settings a listing of tab [mode] depends on. */
+    private data class Listing(val mode: Int, val showHidden: Boolean, val shortenPrefixes: Boolean)
+
+    /** The settings the order and sections of tab [mode] depend on. */
+    private data class Sorting(val mode: Int, val sort: TabSort, val filter: LibraryFilter, val grouped: Boolean, val detectDirection: Boolean)
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -362,7 +373,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         stack.setLeftHanded(prefs.leftHanded)
         filterChip = findViewById(R.id.filter_chip)
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
-        filterChip.setOnCloseIconClickListener { prefs.setFilter(tabName(), LibraryFilter.NONE) }
+        filterChip.setOnCloseIconClickListener {
+            prefs.setFilter(tabName(), LibraryFilter.NONE)
+            showCurrentContent()
+        }
         filterChip.closeIconContentDescription = getString(R.string.filter_clear)
         progress = findViewById(R.id.progress)
         emptyView = findViewById(R.id.empty_view)
@@ -490,8 +504,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
 
     override fun onStart() {
         super.onStart()
-        // A view changed elsewhere shows before the first frame, whatever the settings feed brings.
+        // What changed elsewhere shows before the first frame, whatever the settings feed brings.
         showCurrentView()
+        showCurrentContent()
         adapter.stopped = false
         storageWatcher.start()
     }
@@ -548,29 +563,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private fun applySettings(s: ListSettings) {
         // Checked against the screen, not the settings last heard: the list follows whatever it missed.
         showCurrentView()
+        showCurrentContent()
         val old = applied
         if (old == s) return
         applied = s
         adapter.firstLayerOnly = s.thrift.firstLayerCovers
-        if (s.shortenPrefixes != old.shortenPrefixes && mode == TAB_BROWSE) refreshCurrent()
-        if (s.showHidden != old.showHidden) {
-            invalidateOptionsMenu()
-            // Coming back to the browse tab, onResume reloads the folder anyway.
-            if (mode != TAB_BROWSE || lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
-        }
-        if (s.sorts[tabName()] != old.sorts[tabName()] || s.filters[tabName()] != old.filters[tabName()] ||
-            s.detectDirection != old.detectDirection
-        ) {
-            applyFilterAndSort()
-        } else if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
+        if (s.showHidden != old.showHidden) invalidateOptionsMenu()
+        if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
             s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor ||
             s.thumbScaling.shrinkKey != old.thumbScaling.shrinkKey
         ) {
             adapter.notifyDataSetChanged()
-        }
-        if (s.groupFavorites != old.groupFavorites && mode == TAB_FAVORITES) {
-            applyFilterAndSort()
-            classifyPending(allEntries.toList())
         }
         if (s.pathView != old.pathView && mode == TAB_BROWSE) {
             pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
@@ -907,6 +910,34 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         shownView = v
     }
 
+    private fun listingNow() = Listing(mode, prefs.showHidden, mode == TAB_BROWSE && prefs.shortenPrefixes)
+
+    private fun sortingNow() =
+        Sorting(mode, prefs.sort(tabName()), prefs.filter(tabName()), mode == TAB_FAVORITES && prefs.groupFavorites, prefs.detectDirection)
+
+    /**
+     * Lists or orders the rows again when they were listed or ordered by other settings than the
+     * stored ones; cheap when they were not. A tab still being listed is left to its listing.
+     */
+    private fun showCurrentContent() {
+        val listed = listedWith ?: return
+        if (listed.mode != mode) return
+        if (listed != listingNow()) {
+            // Out of sight, Browse lists again on resume anyway; the other tabs are told to.
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
+            else if (mode != TAB_BROWSE) relistOnResume = true
+            return
+        }
+        val sorted = sortedWith ?: return
+        val now = sortingNow()
+        if (sorted.mode != mode || sorted == now) return
+        applyFilterAndSort()
+        if (now.grouped && !sorted.grouped) classifyPending(allEntries.toList())
+    }
+
+    /** A sort or filter popup wrote a change: the rows show it at once. */
+    override fun onTabSettingsChanged() = showCurrentContent()
+
     /** Applies the current tab's view when the list shows anything else; cheap when it does not. */
     private fun showCurrentView() {
         if (shownTab != mode || shownView != view || adapter.options != rowOptions()) applyView()
@@ -1178,6 +1209,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         classifyJob?.cancel()
         factsJob?.cancel()
         presenceJob?.cancel()
+        listedWith = listingNow()
         listJob = lifecycleScope.launch(block = load)
     }
 
@@ -1536,8 +1568,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
         }
 
-        val sort = prefs.sort(tabName())
-        val filter = prefs.filter(tabName())
+        val sorting = sortingNow()
+        sortedWith = sorting
+        val sort = sorting.sort
+        val filter = sorting.filter
         val hidden = library.hiddenCounts()
         val live = values(hidden)
         val order = sortValues.takeIf { !resort } ?: live.frozen(searched, sort.keys).also { sortValues = it }
@@ -1552,7 +1586,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
         if (resort) scheduleFacts(sort.keys + filter.keys)
         adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
-        if (mode == TAB_FAVORITES && prefs.groupFavorites) {
+        if (sorting.grouped) {
             val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
             val collapsed = prefs.collapsedSections
             sectionItems = groups.map { if (it.kind in collapsed) 0 else it.entries.size }
@@ -2972,7 +3006,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName(), ::showCurrentView)
             R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName(), ::showCurrentView)
             R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName(), ::showCurrentView)
-            R.id.menu_show_hidden -> prefs.showHidden = !prefs.showHidden
+            R.id.menu_show_hidden -> {
+                prefs.showHidden = !prefs.showHidden
+                invalidateOptionsMenu()
+                showCurrentContent()
+            }
             R.id.menu_new_folder -> newFolder()
             R.id.menu_continue -> currentDir?.let { continueReading(it) }
             R.id.menu_mark_all_read -> currentDir?.let { markFolder(it, true) }

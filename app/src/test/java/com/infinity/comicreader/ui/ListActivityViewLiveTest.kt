@@ -2,6 +2,7 @@ package com.infinity.comicreader.ui
 
 import android.Manifest
 import android.app.Application
+import android.content.SharedPreferences
 import android.os.Environment
 import android.os.Looper
 import android.view.View
@@ -27,6 +28,7 @@ import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
@@ -398,5 +400,132 @@ class ListActivityViewLiveTest {
         list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
         repeat(5) { settle(); Thread.sleep(20) }
         assertTrue(list.titles().any { it.startsWith(".") })
+    }
+
+    // ------------------------------------------------------------------ without the settings feed
+
+    /** Stops the settings feed from hearing changes, as if it fell behind the stored settings. */
+    private fun muteFeed() {
+        val repo = SettingsRepository.get(context)
+        val listener = SettingsRepository::class.java.getDeclaredField("listener").apply { isAccessible = true }.get(repo)
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .unregisterOnSharedPreferenceChangeListener(listener as SharedPreferences.OnSharedPreferenceChangeListener)
+    }
+
+    /** Taps the row or chip labeled [text] in [root]. */
+    private fun tapText(root: View, text: String) {
+        fun find(v: View): View? = when {
+            v is TextView && v.text.toString() == text -> v
+            v is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
+            else -> null
+        }
+        var v: View? = find(root) ?: throw AssertionError("no \"$text\"")
+        while (v != null && !v.isClickable) v = v.parent as? View
+        v!!.performClick()
+    }
+
+    private fun latestDialogRoot(): View = ShadowDialog.getLatestDialog().window!!.decorView
+
+    @Test
+    fun theButtonSwitchesWithoutTheFeedInEveryTab() {
+        addToEveryList()
+        for (tab in 0..3) {
+            val list = launch(tab)
+            muteFeed()
+            val before = list.showsGrid()
+            list.tapFab()
+            assertEquals("tab $tab", !before, list.showsGrid())
+            list.tapFab()
+            assertEquals("tab $tab", before, list.showsGrid())
+        }
+    }
+
+    @Test
+    fun viewItemsApplyWithoutTheFeed() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 3, 0)
+        val list = launch()
+        muteFeed()
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_grid_size))
+        (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<GridPicker>(R.id.grid_size)!!.onPick!!.invoke(5, 2)
+        settle()
+        assertEquals(5, (list.recycler().layoutManager as GridLayoutManager).spanCount)
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_grid))
+        settle()
+        assertFalse(list.showsGrid())
+        val heightBefore = list.rows().first().findViewById<View>(R.id.box).height
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_density))
+        (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<Slider>(R.id.density_slider)!!.value = ListDensity.HUGE.step.toFloat()
+        settle()
+        assertTrue(list.rows().first().findViewById<View>(R.id.box).height > heightBefore)
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_detail))
+        (ShadowDialog.getLatestDialog() as AlertDialog).listView.performItemClick(null, DetailDisplay.HIDDEN.ordinal, 0)
+        settle()
+        assertTrue(list.rows().all { it.findViewById<TextView>(R.id.subtitle).visibility == View.GONE })
+    }
+
+    @Test
+    fun theSortPopupAppliesWithoutTheFeed() {
+        val list = launch()
+        muteFeed()
+        assertTrue(list.titles().first().endsWith("01.cbz"))
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_sort))
+        settle()
+        // Name is picked: tapping it flips the order.
+        tapText(latestDialogRoot(), context.getString(R.string.sort_name))
+        settle()
+        assertTrue(list.titles().first().endsWith("40.cbz"))
+    }
+
+    @Test
+    fun theFilterPopupAppliesWithoutTheFeed() {
+        File(dir, "Box").mkdirs()
+        val list = launch()
+        muteFeed()
+        awaitUntil("the folder") { list.titles().contains("Box") }
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_filter))
+        settle()
+        tapText(latestDialogRoot(), context.getString(R.string.filter_folders))
+        settle()
+        assertEquals(listOf("Box"), list.titles())
+    }
+
+    @Test
+    fun hiddenFilesShowWithoutTheFeed() {
+        File(dir, ".Book 00.cbz").createNewFile()
+        val list = launch()
+        muteFeed()
+        awaitUntil("the listing") { list.titles().isNotEmpty() }
+        assertFalse(list.titles().any { it.startsWith(".") })
+        list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
+        awaitUntil("hidden files") { list.titles().any { it.startsWith(".") } }
+    }
+
+    @Test
+    fun changesMadeElsewhereShowOnReturnWithoutTheFeed() {
+        val library = Library(context)
+        for (name in listOf("Alpha", "Beta")) {
+            val folder = File(dir.parentFile, name).apply { mkdirs() }
+            File(folder, "one.cbz").createNewFile()
+            library.toggleFavoriteFolder(folder.absolutePath)
+        }
+        library.toggleFavoriteFolder(File(dir, "Book 01.cbz").absolutePath)
+        val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        val list = controller.get()
+        settle()
+        list.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
+        val r = list.recycler()
+        fun sections() = (0 until r.childCount).count { r.getChildAt(it).findViewById<View>(R.id.title) !is TitleView }
+        awaitUntil("sections") { sections() > 0 }
+        muteFeed()
+        // As if changed in Settings: the screen is out of sight meanwhile.
+        controller.pause().stop()
+        prefs.groupFavorites = false
+        prefs.coverShape = CoverShape.WIDE
+        prefs.setGrid(Prefs.TAB_FAVORITES, !prefs.view(Prefs.TAB_FAVORITES).grid)
+        val grid = prefs.view(Prefs.TAB_FAVORITES).grid
+        controller.start().resume()
+        awaitUntil("no sections") { sections() == 0 && list.rows().isNotEmpty() }
+        assertEquals(grid, list.showsGrid())
+        assertEquals(CoverShape.WIDE, (r.adapter as BookAdapter).options.shape)
     }
 }

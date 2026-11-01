@@ -14,13 +14,19 @@ import com.infinity.comicreader.data.Prefs
 class TabDialogFragment : DialogFragment() {
     enum class Kind { SORT, FILTER }
 
+    /** The screen that shows each change at once. */
+    interface Host {
+        fun onTabSettingsChanged()
+    }
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val args = requireArguments()
         val tab = args.getString(ARG_TAB) ?: Prefs.TAB_BROWSE
         val prefs = Prefs(requireContext())
+        val onChange = { (activity as? Host)?.onTabSettingsChanged() ?: Unit }
         return when (Kind.valueOf(args.getString(ARG_KIND) ?: Kind.SORT.name)) {
-            Kind.SORT -> SortDialog.create(requireContext(), prefs, tab)
-            Kind.FILTER -> FilterDialog.create(requireContext(), prefs, tab)
+            Kind.SORT -> SortDialog.create(requireContext(), prefs, tab, onChange)
+            Kind.FILTER -> FilterDialog.create(requireContext(), prefs, tab, onChange)
         }
     }
 

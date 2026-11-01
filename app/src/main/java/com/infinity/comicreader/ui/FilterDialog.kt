@@ -41,18 +41,21 @@ object FilterDialog {
         ReadStatus.FINISHED to R.string.filter_finished
     )
 
-    /** [tab]'s filter, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. */
-    fun create(context: Context, prefs: Prefs, tab: String): AlertDialog {
-        val content = Content(context, prefs, tab)
+    /** [tab]'s filter, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. Each change is written and [onChange] hears it. */
+    fun create(context: Context, prefs: Prefs, tab: String, onChange: () -> Unit = {}): AlertDialog {
+        val content = Content(context, prefs, tab, onChange)
         return AlertDialog.Builder(context)
             .setTitle(R.string.menu_filter)
             .setView(ScrollView(context).apply { addView(content.root) })
             .setPositiveButton(R.string.done, null)
-            .setNeutralButton(R.string.filter_clear) { _, _ -> prefs.setFilter(tab, LibraryFilter.NONE) }
+            .setNeutralButton(R.string.filter_clear) { _, _ ->
+                prefs.setFilter(tab, LibraryFilter.NONE)
+                onChange()
+            }
             .create()
     }
 
-    private class Content(val context: Context, val prefs: Prefs, val tab: String) {
+    private class Content(val context: Context, val prefs: Prefs, val tab: String, val onChange: () -> Unit) {
         private val density = context.resources.displayMetrics.density
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -102,6 +105,7 @@ object FilterDialog {
         private fun update(next: LibraryFilter) {
             filter = next
             prefs.setFilter(tab, next)
+            onChange()
         }
 
         private fun section(@StringRes title: Int) {

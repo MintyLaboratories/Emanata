@@ -63,9 +63,9 @@ object SortDialog {
         return context.getString(R.string.sort_two_levels, first, levelText(context, then))
     }
 
-    /** [tab]'s sort popup, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. */
-    fun create(context: Context, prefs: Prefs, tab: String): AlertDialog {
-        val content = Content(context, prefs, tab)
+    /** [tab]'s sort popup, not shown yet; [TabDialogFragment] shows it and keeps it across rotation. Each change is written and [onChange] hears it. */
+    fun create(context: Context, prefs: Prefs, tab: String, onChange: () -> Unit = {}): AlertDialog {
+        val content = Content(context, prefs, tab, onChange)
         return AlertDialog.Builder(context)
             .setTitle(R.string.menu_sort)
             .setView(ScrollView(context).apply { addView(content.root) })
@@ -73,7 +73,7 @@ object SortDialog {
             .apply { setCanceledOnTouchOutside(true) }
     }
 
-    private class Content(val context: Context, val prefs: Prefs, val tab: String) {
+    private class Content(val context: Context, val prefs: Prefs, val tab: String, val onChange: () -> Unit) {
         private val density = context.resources.displayMetrics.density
         private val wide = context.resources.configuration.smallestScreenWidthDp >= WIDE_DP
         private val byColumn = column()
@@ -111,6 +111,7 @@ object SortDialog {
 
         private fun write(sort: TabSort) {
             prefs.setSort(tab, sort)
+            onChange()
             render(sort)
         }
 

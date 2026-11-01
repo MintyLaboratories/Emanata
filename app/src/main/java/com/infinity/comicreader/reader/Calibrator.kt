@@ -103,8 +103,8 @@ object Calibrator {
     private var again = false
 
     /**
-     * Applies the kept tuning, if any, and calibrates when due as activities come to the
-     * front. What is kept is read off the main thread; until then nothing is due.
+     * Applies the kept tuning, or else the [Tuning.defaults], and calibrates when due as
+     * activities come to the front. What is kept is read off the main thread; until then nothing is due.
      */
     fun start(app: Application) {
         this.app = app
@@ -127,8 +127,8 @@ object Calibrator {
         })
         thread(name = "calibration-load", isDaemon = true) {
             kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
-            tuning = Tuning.of(kept?.optJSONObject("tuning"))?.also { it.apply() }
-                ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
+            tuning = (Tuning.of(kept?.optJSONObject("tuning")) ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors()))
+                .also { it.apply() }
             fingerprint = Calibration.fingerprint(appVersion(app), Build.FINGERPRINT)
             if (resumed.get() > reading.get() && due()) begin(force = false)
         }

@@ -43,13 +43,26 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
     /**
      * About the memory (Java heap) making [page] anew takes at most: its bytes three times
      * over (the page, what it becomes, what that gives back), and for decoded pixels
-     * [BYTES_PER_PIXEL] per pixel; [Long.MAX_VALUE] when its size is unknown.
+     * [BYTES_PER_PIXEL] per pixel, more for a TIFF kept in 16 bits ([tiff16Bytes]);
+     * [Long.MAX_VALUE] when its size is unknown.
      */
     fun memoryFor(page: ByteArray): Long {
         val bytes = page.size * 3L
-        if (ImageKind.sniff(page) == ImageKind.JPEG) return bytes
+        val kind = ImageKind.sniff(page)
+        if (kind == ImageKind.JPEG) return bytes
         val size = PageProbe.sizeOf(page) ?: return Long.MAX_VALUE
-        return bytes + size[0].toLong() * size[1] * BYTES_PER_PIXEL
+        val perPixel = if (kind == ImageKind.TIFF) maxOf(BYTES_PER_PIXEL, tiff16Bytes(page)) else BYTES_PER_PIXEL
+        return bytes + size[0].toLong() * size[1] * perPixel
+    }
+
+    /**
+     * Bytes per pixel a TIFF page kept in 16 bits ([Tiff.Page.sixteenBit]) holds at most:
+     * its samples, PNG's filtered rows of them, and what decodes back, 2 bytes a channel
+     * each; 0 for any other page.
+     */
+    private fun tiff16Bytes(page: ByteArray): Int {
+        val p = runCatching { Tiff.page(Tiff.ByteInput(page)) }.getOrNull()?.takeIf { it.sixteenBit } ?: return 0
+        return 3 * p.channels * 2
     }
 
     /** [page] made smaller without changing a pixel; null to keep it. */

@@ -197,6 +197,19 @@ class PageWorkTiffTest {
     }
 
     @Test
+    fun aTiffKeptIn16BitsCountsThreeCopiesOfItsSamples() {
+        val rgb16 = fixture("rgb16-none-tiles-msb.tif")
+        assertEquals(rgb16.size * 3L + 37 * 23 * 18, work.memoryFor(rgb16))
+        val rgba16 = tiff(1, 1, 2, 4, 16, ByteArray(8), extra = 2)
+        assertEquals(rgba16.size * 3L + 24, work.memoryFor(rgba16))
+        // Fewer channels than RGBA of 8 bits takes: that.
+        val gray16 = fixture("gray16-lzw-msb.tif")
+        assertEquals(gray16.size * 3L + 37 * 23 * PageWork.BYTES_PER_PIXEL, work.memoryFor(gray16))
+        val rgb8 = fixture("rgb-none-strips.tif")
+        assertEquals(rgb8.size * 3L + 37 * 23 * PageWork.BYTES_PER_PIXEL, work.memoryFor(rgb8))
+    }
+
+    @Test
     fun anRgbProfileIsKeptInTheWebpAndAGrayOneInAGrayPng() {
         val rgb = work.compatible(tiff(2, 2, 2, 3, 8, ByteArray(12) { (it * 20).toByte() }, icc = profile("RGB ")))!!
         assertEquals("webp", rgb.ext)

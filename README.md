@@ -619,6 +619,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Brightness drag:** paging left or right, drag up for brighter, down for darker.
   Crossing 0 holds there for 15% of the screen height. A drag locks to its first
   direction: vertical never turns the page, horizontal never changes brightness.
+  It starts only with the finger down on the page image itself (not its margins
+  or letterbox) and outside the system's gesture areas (the home strip at the
+  bottom, the back edges at the sides), so system swipes never change it.
   A pill near the top shows the value (`Brightness +12`) over a -100..+100 bar,
   ticks and highlights 0 on snapping there, and fades a second after release.
 - **Seek bar previews:** hold the seek bar still for 0.4 s and a strip of

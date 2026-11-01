@@ -20,6 +20,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.OverScroller
 import androidx.appcompat.widget.AppCompatImageView
@@ -48,7 +49,8 @@ import kotlin.math.roundToInt
  *
  * [onTap] receives the tap position as fractions of the view's width and height, for
  * tap zones. [verticalDrag] receives drags locked to the vertical axis while the
- * image cannot pan (the brightness gesture); a drag locked horizontally goes to the
+ * image cannot pan (the brightness gesture), started on the image itself outside the
+ * system's gesture areas ([BrightnessStart]); a drag locked horizontally goes to the
  * parent, to turn the page. With [flingEnabled] a pan keeps gliding after the finger
  * lifts, slowing down, and stops at the page's edges.
  *
@@ -97,6 +99,13 @@ class ZoomImageView @JvmOverloads constructor(
 
         fun end()
     }
+
+    /** The system's gesture areas in the window; the window's insets unless set (tests). */
+    internal var gestureEdges: () -> BrightnessStart.Edges = ::windowGestureEdges
+
+    /** True while the finger down may start a [verticalDrag] ([BrightnessStart]). */
+    private var dragsHere = false
+    private val windowAt = IntArray(2)
 
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var downX = 0f
@@ -1294,9 +1303,10 @@ class ZoomImageView @JvmOverloads constructor(
                 downY = event.y
                 axis = AxisLock.NONE
                 pinched = false
+                dragsHere = verticalDrag != null && startsDrag(event.x, event.y)
                 // Until the drag picks its direction, keep it from a parent that would turn the
                 // page: a pannable page may pan, and a vertical drag must not turn it.
-                parent?.requestDisallowInterceptTouchEvent(canPan() || verticalDrag != null)
+                parent?.requestDisallowInterceptTouchEvent(canPan() || dragsHere)
             }
             MotionEvent.ACTION_POINTER_DOWN -> if (axis != AxisLock.VERTICAL) pinched = true
             MotionEvent.ACTION_POINTER_UP -> {
@@ -1347,7 +1357,7 @@ class ZoomImageView @JvmOverloads constructor(
                     clamp()
                     applyMatrix()
                 }
-            } else if (verticalDrag != null && axis == AxisLock.NONE && !pinched) {
+            } else if (dragsHere && verticalDrag != null && axis == AxisLock.NONE && !pinched) {
                 axis = AxisLock.decide(x - downX, y - downY, touchSlop)
                 when (axis) {
                     AxisLock.VERTICAL -> verticalDrag?.start()
@@ -1358,6 +1368,41 @@ class ZoomImageView @JvmOverloads constructor(
         }
         lastX = x
         lastY = y
+    }
+
+    /** True when a finger down at ([x], [y]) may start a [verticalDrag]: on the image shown, outside the system's gesture areas. */
+    private fun startsDrag(x: Float, y: Float): Boolean {
+        val w = contentW()
+        val h = contentH()
+        if (w <= 0f || h <= 0f) return false
+        matrix.getValues(values)
+        val left = values[Matrix.MTRANS_X]
+        val top = values[Matrix.MTRANS_Y]
+        getLocationInWindow(windowAt)
+        val root = rootView
+        return BrightnessStart.allowed(
+            x, y, left, top, left + w * values[Matrix.MSCALE_X], top + h * values[Matrix.MSCALE_Y],
+            windowAt[0], windowAt[1], root.width, root.height, gestureEdges()
+        )
+    }
+
+    /** The system's gesture areas (back edges, home strip) of the window, each as far in as the system or its mandatory areas reach. */
+    private fun windowGestureEdges(): BrightnessStart.Edges {
+        val insets = rootWindowInsets ?: return BrightnessStart.Edges.NONE
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                val g = insets.getInsets(WindowInsets.Type.systemGestures() or WindowInsets.Type.mandatorySystemGestures())
+                BrightnessStart.Edges(g.left, g.top, g.right, g.bottom)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+                @Suppress("DEPRECATION")
+                val a = insets.systemGestureInsets
+                @Suppress("DEPRECATION")
+                val b = insets.mandatorySystemGestureInsets
+                BrightnessStart.Edges(maxOf(a.left, b.left), maxOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
+            }
+            else -> BrightnessStart.Edges.NONE
+        }
     }
 
     internal companion object {

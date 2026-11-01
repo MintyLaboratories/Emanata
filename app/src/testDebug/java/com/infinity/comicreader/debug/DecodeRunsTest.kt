@@ -37,6 +37,13 @@ class DecodeRunsTest {
     }
 
     @Test
+    fun jpegXlChecksRunWhereTheReadersThreadsRun() {
+        assertEquals(Cores.BIG, DecodeRuns.jxlCores(pinned = true))
+        assertEquals(Cores.ANY, DecodeRuns.jxlCores(pinned = false))
+        assertEquals("page/8/any", Setup(Engine.PAGE, 8, DecodeRuns.jxlCores(pinned = false)).key)
+    }
+
+    @Test
     fun jpegXlSetupsTakeOnlyJpegXl() {
         assertTrue(Setup.of("page", 4)!!.takes(jxl = true))
         assertFalse(Setup.of("coder", 4)!!.takes(jxl = false))

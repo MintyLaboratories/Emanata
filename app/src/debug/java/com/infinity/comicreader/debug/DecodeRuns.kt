@@ -12,6 +12,9 @@ internal object DecodeRuns {
         return sizes.size
     }
 
+    /** Where the reader's JPEG XL threads run: the large cores when [pinned], else anywhere. */
+    fun jxlCores(pinned: Boolean): ResampleRuns.Cores = if (pinned) ResampleRuns.Cores.BIG else ResampleRuns.Cores.ANY
+
     /** A page decoder under test. */
     enum class Engine(val key: String, val jxl: Boolean) {
         /** jxl-coder's own decode, as JPEG XL pages decoded before; on cores, its threads start pinned there. */

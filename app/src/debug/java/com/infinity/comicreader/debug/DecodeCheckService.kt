@@ -93,7 +93,7 @@ class DecodeCheckService : Service() {
         val threads = JxlPages.threads
         val asked = intent?.getStringExtra("setups")?.split(',')
         val setups = asked?.mapNotNull { Setup.of(it, threads) } ?: listOf(
-            Setup(Engine.CODER, 1, Cores.ANY), Setup(Engine.PAGE, threads, Cores.BIG), Setup(Engine.PAGE, 8, Cores.ANY),
+            Setup(Engine.CODER, 1, Cores.ANY), Setup(Engine.PAGE, threads, jxlCores), Setup(Engine.PAGE, 8, Cores.ANY),
             Setup(Engine.PLATFORM, 1, Cores.ANY)
         )
         val dirs = intent?.getStringExtra("dirs")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
@@ -196,6 +196,9 @@ class DecodeCheckService : Service() {
 
     // ------------------------------------------------------------------ decoders
 
+    /** Where the reader's JPEG XL threads run: the large cores when pinned ([JxlPages.pinned]), else anywhere. */
+    private val jxlCores: Cores get() = DecodeRuns.jxlCores(JxlPages.pinned)
+
     private fun mask(cores: Cores): Long = when (cores) {
         Cores.BIG -> CpuCores.device.big
         Cores.LITTLE -> CpuCores.device.little
@@ -229,7 +232,7 @@ class DecodeCheckService : Service() {
     // ------------------------------------------------------------------ check
 
     private fun check(groups: List<Group>) {
-        val natives = listOf(Setup(Engine.PAGE, JxlPages.threads, Cores.BIG))
+        val natives = listOf(Setup(Engine.PAGE, JxlPages.threads, jxlCores))
         for (group in groups) {
             for (page in group.pages.filter { it.jxl }) {
                 val reference = decode(Setup(Engine.CODER, 1, Cores.ANY), page)
@@ -306,7 +309,7 @@ class DecodeCheckService : Service() {
     // ------------------------------------------------------------------ cancel
 
     private fun cancel(groups: List<Group>, threads: Int) {
-        val mask = CpuCores.device.big
+        val mask = mask(jxlCores)
         for (group in groups) {
             for (page in group.pages.filter { it.jxl }) {
                 val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
@@ -341,7 +344,7 @@ class DecodeCheckService : Service() {
                 continue
             }
             val native = Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888)
-            val r = LibJxl.page(bytes, native, JxlPages.threads, CpuCores.device.big)
+            val r = LibJxl.page(bytes, native, JxlPages.threads, mask(jxlCores))
             o.put("native", r)
             val coder = runCatching { JxlCoder.decode(bytes, PreferredColorConfig.RGBA_8888) }
                 .onFailure { o.put("coderFailed", "${it.javaClass.simpleName}: ${it.message}") }.getOrNull()

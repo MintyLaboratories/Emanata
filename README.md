@@ -699,7 +699,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   read marks stay. Also clear history, clear bookmarks, reset
   all settings; every Clear or Reset asks first. Resetting settings keeps
   per-book adjustments and reading progress.
-- About: version, source, upstream credit, the license and third-party licenses.
+- **AI processing** (off by default; pages do not go through it yet): a model
+  per step, or none, for artifact removal, then descreening, then upscaling
+  (Fast v2 2× by default). Artifact removal and descreen are advanced settings.
+  A chosen model downloads at once (Models shows each with its size, license
+  and progress, and deletes them). Battery: battery saver pauses AI processing
+  unless **Pause AI processing** is off.
+- About: version, source, upstream credit, the license, third-party licenses,
+  and the AI models' authors and licenses.
 
 ## Format support mapping
 
@@ -966,7 +973,7 @@ none throughout.
 - `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
-  add; the app sends nothing on its own.
+  add and AI models you download; the app sends nothing on its own.
 - `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
   move or delete goes on with the app in the background or the screen off,
   shown in a notification with its progress (and Cancel). The device is kept

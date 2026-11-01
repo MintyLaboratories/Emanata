@@ -319,6 +319,44 @@
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory
+        app:key="section_ai"
+        app:title="@string/pref_cat_ai">
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_ai"
+            app:summary="@string/pref_ai_desc"
+            app:title="@string/pref_ai" />
+        <!-- Entries come from the model catalog (SettingsFragment). -->
+        <ListPreference
+            app:defaultValue="none"
+            app:dependency="pref_ai"
+            app:key="pref_ai_artifacts"
+            app:title="@string/pref_ai_artifacts">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <ListPreference
+            app:defaultValue="none"
+            app:dependency="pref_ai"
+            app:key="pref_ai_descreen"
+            app:title="@string/pref_ai_descreen">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <ListPreference
+            app:defaultValue="opencomic-ai-upscale-2x-compact-v2"
+            app:dependency="pref_ai"
+            app:key="pref_ai_upscale"
+            app:title="@string/pref_ai_upscale" />
+        <Preference
+            app:key="ai_models"
+            app:persistent="false"
+            app:title="@string/pref_ai_models" />
+    </com.infinity.comicreader.ui.CollapsibleCategory>
+
+    <com.infinity.comicreader.ui.CollapsibleCategory
         app:key="section_gestures"
         app:title="@string/pref_cat_gestures">
         <ListPreference

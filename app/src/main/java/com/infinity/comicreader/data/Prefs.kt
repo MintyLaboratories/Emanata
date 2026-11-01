@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.AutoScroll
@@ -474,6 +476,21 @@ class Prefs(context: Context) {
         get() = bool(KEY_SAVER_AI, true)
         set(v) = put(KEY_SAVER_AI, v)
 
+    // ---------------------------------------------------------------- AI processing
+
+    /** Pages go through the models chosen per step ([aiModel]); off by default. */
+    var aiEnabled: Boolean
+        get() = bool(KEY_AI, false)
+        set(v) = put(KEY_AI, v)
+
+    /** The catalog id of [step]'s model; null for none. Upscale starts with [ModelCatalog.DEFAULT_UPSCALE], the others with none. */
+    fun aiModel(step: AiStep): String? =
+        sp.getString(aiKey(step), null).let { it ?: if (step == AiStep.UPSCALE) ModelCatalog.DEFAULT_UPSCALE else null }
+            ?.takeIf { it != AI_NONE && it.isNotEmpty() }
+
+    /** Sets [step]'s model to catalog id [id], or none for null. */
+    fun setAiModel(step: AiStep, id: String?) = put(aiKey(step), id ?: AI_NONE)
+
     // ---------------------------------------------------------------- ui state
 
     var lastPath: String?
@@ -715,6 +732,13 @@ class Prefs(context: Context) {
         private const val KEY_SAVER_READ_AHEAD = "pref_saver_read_ahead"
         private const val KEY_SAVER_SCANS = "pref_saver_scans"
         private const val KEY_SAVER_AI = "pref_saver_ai"
+        const val KEY_AI = "pref_ai"
+
+        /** The stored value of a step without a model. */
+        const val AI_NONE = "none"
+
+        /** The key of [step]'s model. */
+        fun aiKey(step: AiStep) = "pref_ai_${step.key}"
 
         private val KNOWN_KEYS = setOf(
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -727,8 +751,8 @@ class Prefs(context: Context) {
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
-            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE
-        ) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_AI
+        ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */
         private const val OLD_SORT = "pref_sort"

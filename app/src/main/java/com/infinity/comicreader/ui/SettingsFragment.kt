@@ -18,6 +18,12 @@ import androidx.preference.PreferenceGroup
 import androidx.preference.SeekBarPreference
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.CatalogModel
+import com.infinity.comicreader.ai.Downloads
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloads
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryData
@@ -42,6 +48,9 @@ import java.util.Locale
 import kotlin.concurrent.thread
 
 class SettingsFragment : PreferenceFragmentCompat() {
+
+    /** Shows the AI choices again ([setUpAi]). */
+    private var refreshAi: () -> Unit = {}
 
     /** False when the backup being exported leaves share passwords out. */
     private var exportPasswords = true
@@ -165,6 +174,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         val library = Library(requireContext())
         setUpSections(prefs)
         setUpBattery()
+        setUpAi(prefs)
 
         findPreference<Preference>("pref_theme")?.setOnPreferenceChangeListener { _, value ->
             val mode = when (value as String) {
@@ -450,6 +460,58 @@ class SettingsFragment : PreferenceFragmentCompat() {
         show()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { settings.reader.collect { show() } }
+        }
+    }
+
+    /**
+     * Fills each AI step's choices from the catalog (none, then its models with their sizes),
+     * starts downloading a model as it is chosen or as AI processing is turned on, and shows
+     * each choice's download state and the space models take, as they change.
+     */
+    private fun setUpAi(prefs: Prefs) {
+        val context = requireContext()
+        val store = ModelStore.of(context)
+        val pickers = AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step))?.let { step to it } }
+        fun chosen(step: AiStep, value: Any?): CatalogModel? =
+            (value as? String)?.let(ModelCatalog::byId)?.takeIf { it.step == step }
+        for ((step, pref) in pickers) {
+            val models = ModelCatalog.forStep(step)
+            pref.entries = (listOf(getString(R.string.ai_none)) +
+                models.map { getString(R.string.ai_model_entry, it.name, ModelText.size(context, it.bytes)) }).toTypedArray()
+            pref.entryValues = (listOf(Prefs.AI_NONE) + models.map { it.id }).toTypedArray()
+            // A model the catalog no longer has reads as none.
+            if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
+            pref.setOnPreferenceChangeListener { _, value ->
+                if (prefs.aiEnabled) chosen(step, value)?.let { ModelDownloads.start(store, it) }
+                refreshAi()
+                true
+            }
+        }
+        findPreference<Preference>(Prefs.KEY_AI)?.setOnPreferenceChangeListener { _, value ->
+            if (value == true) for (step in AiStep.entries) chosen(step, prefs.aiModel(step))?.let { ModelDownloads.start(store, it) }
+            true
+        }
+        val manager = findPreference<Preference>("ai_models")
+        manager?.setOnPreferenceClickListener {
+            startActivity(android.content.Intent(context, ModelsActivity::class.java))
+            true
+        }
+        suspend fun show(d: Downloads) {
+            val installed = withContext(AppDispatchers.io) { ModelCatalog.all.filter { store.installed(it) } }
+            val used = withContext(AppDispatchers.io) { store.bytesUsed() }
+            if (!isAdded) return
+            manager?.summary = getString(R.string.ai_models_summary, installed.size, ModelText.size(context, used))
+            for ((step, pref) in pickers) {
+                val m = chosen(step, pref.value)
+                val text = ModelText.choice(context, m, m != null && m in installed, m?.let { d.states[it.id] })
+                // A provider, not a summary: ListPreference formats a summary, and "40%" is no format.
+                pref.summaryProvider = Preference.SummaryProvider<ListPreference> { text }
+            }
+        }
+        // A choice shows once stored, after its listener: the refresh waits for the disk first.
+        refreshAi = { lifecycleScope.launch { show(ModelDownloads.state.value) } }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { ModelDownloads.state.collect { show(it) } }
         }
     }
 

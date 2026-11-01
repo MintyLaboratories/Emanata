@@ -41,7 +41,7 @@ internal interface TileModel : AutoCloseable {
     /**
      * Runs the model on [input] of [src] (an RGB tile; pixels outside [src] repeat its nearest
      * edge); with [dst], writes the output's [crop] to [dst] at ([dx], [dy]), opaque. The
-     * output's size, or null on failure.
+     * output's size, or null on failure or once closed.
      */
     fun run(src: Bitmap, input: Box, dst: Bitmap? = null, crop: Box? = null, dx: Int = 0, dy: Int = 0): Dims?
 
@@ -67,7 +67,9 @@ internal interface InferenceRuntime {
 
 /**
  * Runs blocks on one thread of its own, which lives as long as the process; a block run from
- * that thread runs at once. Exceptions reach the caller.
+ * that thread runs at once. Exceptions reach the caller. A caller interrupted while its block
+ * runs still waits for the block to end (it may be using the caller's bitmaps), then keeps
+ * its interrupt.
  */
 internal class OneThread(name: String) {
     @Volatile
@@ -77,10 +79,20 @@ internal class OneThread(name: String) {
 
     fun <T> run(block: () -> T): T {
         if (Thread.currentThread() === thread) return block()
+        val future = executor.submit(Callable(block))
+        var interrupted = false
         try {
-            return executor.submit(Callable(block)).get()
-        } catch (e: ExecutionException) {
-            throw e.cause ?: e
+            while (true) {
+                try {
+                    return future.get()
+                } catch (e: InterruptedException) {
+                    interrupted = true
+                } catch (e: ExecutionException) {
+                    throw e.cause ?: e
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 }
@@ -113,7 +125,10 @@ internal object LibNcnn : InferenceRuntime {
         private val size = IntArray(2)
 
         override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? = worker.run {
-            check(handle != 0L) { "Model closed" }
+            if (handle == 0L) {
+                Log.w(TAG, "tile $input: model closed")
+                return@run null
+            }
             val c = crop ?: Box(0, 0, 0, 0)
             val code = nRun(
                 handle, src, input.x, input.y, input.width, input.height, files.inScale,

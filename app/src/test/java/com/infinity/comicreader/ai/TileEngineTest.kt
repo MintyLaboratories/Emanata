@@ -161,6 +161,18 @@ class TileEngineTest {
     }
 
     @Test
+    fun closingTheSessionMidRunFallsBack() {
+        lateinit var s: Session
+        var done = 0
+        val model = FakeModel(onRun = { if (done == 2) s.close() })
+        s = session(model)
+        val run = TileEngine.run(s, page(200, 200), onTile = { d, _, _ -> done = d })
+        // The tile running when it closed still ends; the next finds it closed.
+        assertEquals(Fallback.FAILED, run.fallback)
+        assertEquals(3, run.stats.tiles)
+    }
+
+    @Test
     fun aFailedTileFallsBack() {
         // Measuring takes two runs for the scale and two per pattern for the reach.
         val probeRuns = 6

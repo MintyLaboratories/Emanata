@@ -32,7 +32,7 @@ internal class FakeModel(
     val inputs = ArrayList<Box>()
 
     override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
-        check(!closed) { "Model closed" }
+        if (closed) return null
         val now = inside.incrementAndGet()
         synchronized(this) { mostInside = maxOf(mostInside, now) }
         try {

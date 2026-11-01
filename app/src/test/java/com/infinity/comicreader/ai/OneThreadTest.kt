@@ -4,7 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 class OneThreadTest {
@@ -27,6 +31,34 @@ class OneThreadTest {
     fun aCallFromItsOwnThreadRunsAtOnce() {
         val one = OneThread("test-nested")
         assertEquals(42, one.run { one.run { 42 } })
+    }
+
+    @Test
+    fun anInterruptedCallerWaitsForItsBlockThenKeepsTheInterrupt() {
+        val one = OneThread("test-interrupt")
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val ended = AtomicBoolean(false)
+        var result = 0
+        var interrupted = false
+        val caller = thread {
+            result = one.run {
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+                ended.set(true)
+                7
+            }
+            interrupted = Thread.currentThread().isInterrupted
+        }
+        assertTrue(started.await(5, TimeUnit.SECONDS))
+        caller.interrupt()
+        Thread.sleep(50)
+        assertTrue("the caller left while its block ran", caller.isAlive)
+        release.countDown()
+        caller.join(5_000)
+        assertTrue(ended.get())
+        assertEquals(7, result)
+        assertTrue(interrupted)
     }
 
     @Test

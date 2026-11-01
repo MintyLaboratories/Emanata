@@ -20,7 +20,7 @@ enum class Fallback {
     /** Conditions say stop: the device is hot, or battery saver is on ([AiConditions]). */
     PAUSED,
 
-    /** The model failed on a tile. */
+    /** The model failed on a tile, or was closed. */
     FAILED
 }
 

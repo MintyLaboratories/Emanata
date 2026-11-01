@@ -229,6 +229,7 @@ object Calibrator {
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", probe.sawPowerSave)
+                .put("page", probe.page).put("target", probe.target)
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -280,15 +281,17 @@ object Calibrator {
         /** CPU time in ms of all but the UI threads ([UiCpu]). */
         private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
 
-        /** Draws the page and makes its target, the page shrunk to fit the screen held upright. */
+        /** Draws the page and makes its target, the page shrunk to fit the screen held upright ([Calibration.target]). */
         fun prepare() {
             val m = context.resources.displayMetrics
-            val shortSide = minOf(m.widthPixels, m.heightPixels).coerceAtLeast(1)
-            val longSide = maxOf(m.widthPixels, m.heightPixels).coerceAtLeast(1)
-            val scale = minOf(1.0, shortSide.toDouble() / PAGE_W, longSide.toDouble() / PAGE_H)
+            val (w, h) = Calibration.target(m.widthPixels, m.heightPixels, PAGE_W, PAGE_H)
             src = SyntheticPage.draw(PAGE_W, PAGE_H)
-            dst = Bitmap.createBitmap((PAGE_W * scale).toInt().coerceAtLeast(1), (PAGE_H * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+            dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         }
+
+        /** The page and its target, as `WxH`. */
+        val page: String get() = "${PAGE_W}x$PAGE_H"
+        val target: String get() = dst?.let { "${it.width}x${it.height}" } ?: "?"
 
         /** Makes the JPEG XL page (quality 91, once, kept in the cache); false where native decodes are missing. */
         fun prepareJxl(): Boolean {

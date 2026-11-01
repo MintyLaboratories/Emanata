@@ -84,7 +84,10 @@ class CalibrationActivity : Activity() {
             appendLine("Cores: large ${java.lang.Long.toBinaryString(cores.big)} little ${java.lang.Long.toBinaryString(cores.little)} prime ${java.lang.Long.toBinaryString(cores.prime)}")
             appendLine()
             if (kept == null) appendLine("No calibration kept") else {
-                appendLine("Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms, forced ${kept.optBoolean("forced")}")
+                appendLine(
+                    "Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms, forced ${kept.optBoolean("forced")}, " +
+                        "battery saver ${kept.optBoolean("powerSave")}, page ${kept.optString("page", "?")} to ${kept.optString("target", "?")}"
+                )
                 val timings = kept.optJSONArray("timings")
                 for (i in 0 until (timings?.length() ?: 0)) {
                     val t: JSONObject = timings!!.getJSONObject(i)

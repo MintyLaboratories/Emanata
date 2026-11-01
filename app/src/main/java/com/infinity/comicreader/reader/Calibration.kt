@@ -157,6 +157,18 @@ object Calibration {
         return t
     }
 
+    /**
+     * The size a [width] x [height] page is shrunk to on a [screenW] x [screenH] screen held
+     * upright, as calibration times it: whole, never enlarged. It differs between devices, so
+     * each calibration keeps it with its timings.
+     */
+    fun target(screenW: Int, screenH: Int, width: Int, height: Int): Pair<Int, Int> {
+        val shortSide = minOf(screenW, screenH).coerceAtLeast(1)
+        val longSide = maxOf(screenW, screenH).coerceAtLeast(1)
+        val scale = minOf(1.0, shortSide.toDouble() / width, longSide.toDouble() / height)
+        return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
+    }
+
     /** What a calibration is kept for: this install of the app on this system build. */
     fun fingerprint(app: String, system: String): String = "$app|$system"
 

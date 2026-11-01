@@ -204,6 +204,16 @@ class CalibrationTest {
     }
 
     @Test
+    fun theTargetIsThePageFitToTheScreenHeldUpright() {
+        assertEquals(1848 to 2772, Calibration.target(1848, 2960, 2000, 3000))
+        assertEquals(1848 to 2772, Calibration.target(2960, 1848, 2000, 3000))
+        assertEquals(1200 to 1800, Calibration.target(1200, 2000, 2000, 3000))
+        assertEquals(1440 to 2160, Calibration.target(1440, 3120, 2000, 3000))
+        // Never enlarged.
+        assertEquals(2000 to 3000, Calibration.target(2560, 4000, 2000, 3000))
+    }
+
+    @Test
     fun medianOfOddAndEven() {
         assertEquals(2.0, Calibration.median(listOf(3.0, 1.0, 2.0)), 0.0)
         assertEquals(2.5, Calibration.median(listOf(4.0, 1.0, 2.0, 3.0)), 0.0)

@@ -215,6 +215,14 @@ class CompactorTest {
     }
 
     @Test
+    fun hiddenImagesAreNeverPagesAndStayAsTheyAre() {
+        val source = zip("Hidden.cbz", listOf("1.png" to page(PNG), ".cover.png" to page(PNG, 1000)))
+        val out = entries((run(source) as Compactor.Result.Rebuilt).file).toMap()
+        assertEquals(setOf(".cover.png", "1.jxl"), out.keys)
+        assertArrayEquals(page(PNG, 1000), out[".cover.png"])
+    }
+
+    @Test
     fun aFileReadDamagedStopsTheRebuild() {
         // Noise: deflating stores it as it is, so it can be found in the archive.
         val random = java.util.Random(3)

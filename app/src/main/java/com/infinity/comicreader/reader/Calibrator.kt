@@ -27,13 +27,15 @@ import kotlin.concurrent.thread
 
 /**
  * Per-device calibration on the device ([Calibration] chooses): once per app version and
- * system build, while the app is in front but not reading ([Reading]), charging, cool and
- * otherwise idle, it times resampling and JPEG XL decoding setups on a synthetic page and
- * keeps the winners ([Tuning]) in a file that is not backed up. A timing during which the
- * app decoded anything ([working]) is made again; the app's drawing ([UiCpu]) is left out
- * of CPU times. Until the first calibration ends, the [Tuning.defaults] apply; after an
- * update the previous winners apply until new ones are established. Benchmarks and checks
- * [hold] it off. Never shown to the user.
+ * system build, while the app is in front but not reading ([Reading]), charging, cool, out
+ * of battery saver and otherwise idle, it times resampling and JPEG XL decoding setups on a
+ * synthetic page and keeps the winners ([Tuning]) in a file that is not backed up. A timing
+ * during which the app decoded anything ([working]) is made again; the app's drawing
+ * ([UiCpu]) is left out of CPU times. Until the first calibration ends, the
+ * [Tuning.defaults] apply; after an update the previous winners apply until new ones are
+ * established. A forced run ([recalibrate]) goes on under battery saver, whose clock caps
+ * may skew it: it is kept marked so, and the next automatic run out of saver replaces it.
+ * Benchmarks and checks [hold] it off. Never shown to the user.
  */
 object Calibrator {
     private const val TAG = "Calibration"
@@ -51,6 +53,11 @@ object Calibrator {
     /** True while a calibration runs. */
     @Volatile
     var running: Boolean = false
+        private set
+
+    /** How the last run ended: "ended true", or "ended false: " and why; null before any. */
+    @Volatile
+    var outcome: String? = null
         private set
 
     /** Called on the calibrating thread when a run ends, with whether it finished. */
@@ -121,8 +128,8 @@ object Calibrator {
         }
     }
 
-    /** True when this app version and system build have no calibration yet; false until what is kept is read. */
-    fun due(): Boolean = fingerprint.let { it != null && kept?.optString("fingerprint") != it }
+    /** True when this app version and system build have no calibration yet, or only one made under battery saver; false until what is kept is read. */
+    fun due(): Boolean = Calibration.due(kept, fingerprint)
 
     /** Runs [block] as app work no calibration timing may overlap: one it overlaps is made again. */
     inline fun <T> working(block: () -> T): T {
@@ -146,8 +153,9 @@ object Calibrator {
     }
 
     /**
-     * Calibrates now, charging or not (debug builds' Recalibrate); still only in front, not
-     * reading and idle. A run already waiting or timing is dropped for this one.
+     * Calibrates now, charging or not and under battery saver too (debug builds'
+     * Recalibrate); still only in front, not reading, cool and idle. A run already waiting or
+     * timing is dropped for this one.
      */
     fun recalibrate() = begin(force = true)
 
@@ -161,34 +169,37 @@ object Calibrator {
             }
             return
         }
-        if (!force && !charging(app)) return
+        if (!force && (!charging(app) || powerSave(app))) return
         running = true
         val id = ++runs
         current = id
         val dropped = { current != id }
         thread(name = "calibration", isDaemon = true) {
-            var done = false
+            var why: String? = "stopped"
             try {
                 // Let what brought the app to the front settle first.
                 val until = SystemClock.elapsedRealtime() + if (force) FORCED_START_MS else START_MS
                 while (!dropped() && SystemClock.elapsedRealtime() < until) SystemClock.sleep(STEP_MS)
-                if (!dropped()) done = calibrate(force, dropped)
+                if (!dropped()) why = calibrate(force, dropped)
             } catch (t: Throwable) {
+                why = "failed: ${t.javaClass.simpleName}: ${t.message}"
                 Log.w(TAG, "Calibration failed", t)
             } finally {
-                ended(dropped(), done)
+                ended(dropped(), why)
             }
         }
     }
 
-    /** A run ended: a dropped one without reporting it, then the forced run that dropped it starts. */
+    /** A run ended, finished unless [why] says why not: a dropped one without reporting it, then the forced run that dropped it starts. */
     @Synchronized
-    private fun ended(dropped: Boolean, done: Boolean) {
+    private fun ended(dropped: Boolean, why: String?) {
         running = false
         current = 0
         if (dropped) Log.i(TAG, "dropped for a new run") else {
-            Log.i(TAG, "ended $done")
-            onEnded?.invoke(done)
+            val line = if (why == null) "ended true" else "ended false: $why"
+            outcome = line
+            Log.i(TAG, line)
+            onEnded?.invoke(why == null)
         }
         if (again) {
             again = false
@@ -196,33 +207,35 @@ object Calibrator {
         }
     }
 
-    /** One calibration; true when it finished and its winners apply. */
-    private fun calibrate(force: Boolean, dropped: () -> Boolean): Boolean {
+    /** One calibration: null when it finished and its winners apply, else why not. */
+    private fun calibrate(force: Boolean, dropped: () -> Boolean): String? {
         val probe = DeviceProbe(app, force, dropped)
         try {
             // Nothing is drawn or encoded before the app is first found idle.
-            if (!probe.awaitFair()) return false
+            if (!probe.awaitFair()) return probe.why ?: "not fair"
             probe.prepare()
             val candidates = Calibration.candidates(
                 CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl()
             )
             val t0 = SystemClock.elapsedRealtime()
-            val timings = CalibrationRun(probe, candidates).run(dropped) ?: return false
-            if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return false
+            val run = CalibrationRun(probe, candidates)
+            val timings = run.run(dropped) ?: return run.why ?: "stopped"
+            if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
+            val f = fingerprint ?: return "not ready"
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
             val chosen = Calibration.tuning(timings, before)
             chosen.apply()
             tuning = chosen
-            val record = JSONObject().put("fingerprint", fingerprint ?: return false).put("at", System.currentTimeMillis())
+            val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
-                .put("timings", Calibration.timingsJson(timings)).put("forced", force)
+                .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", probe.sawPowerSave)
             kept = record
-            val f = file(app)
-            val tmp = File(f.path + ".tmp")
+            val out = file(app)
+            val tmp = File(out.path + ".tmp")
             tmp.writeText(record.toString())
-            if (!tmp.renameTo(f)) tmp.delete()
+            if (!tmp.renameTo(out)) tmp.delete()
             Log.i(TAG, record.toString())
-            return true
+            return null
         } finally {
             probe.release()
         }
@@ -243,17 +256,26 @@ object Calibrator {
         return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
     }
 
+    private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
+
     /** Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's portrait size. */
     private class DeviceProbe(private val context: Context, private val force: Boolean, private val dropped: () -> Boolean) : CalibrationProbe {
         private var src: Bitmap? = null
         private var dst: Bitmap? = null
         private var jxl: ByteArray? = null
         private var jxlOut: Bitmap? = null
-        private val started = SystemClock.elapsedRealtime()
         private val ui = UiCpu.self().also { it.scan() }
 
-        /** App work started before the timing in progress. */
+        /** App work started before the sample in progress. */
         private var workedBefore = 0L
+
+        private var reason: String? = null
+
+        override val why: String? get() = reason
+
+        /** True once battery saver was seen on during the run (only a forced run goes on under it). */
+        var sawPowerSave = false
+            private set
 
         /** CPU time in ms of all but the UI threads ([UiCpu]). */
         private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
@@ -285,7 +307,6 @@ object Calibrator {
         }
 
         override fun time(candidate: Candidate): Pair<Double, Double>? {
-            workedBefore = worked.get()
             val cpu0 = cpuMs()
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
@@ -306,34 +327,49 @@ object Calibrator {
             return (System.nanoTime() - t0) / 1e6 to (cpuMs() - cpu0).coerceAtLeast(0.0)
         }
 
+        /** Waits up to [GIVE_UP_MS] for a fair moment; says [why] when there is none. */
         override fun awaitFair(): Boolean {
+            val since = SystemClock.elapsedRealtime()
             while (true) {
-                if (dropped() || holds.get() > 0 || !inFront()) return false
-                if (!force && !charging(context)) return false
-                if (SystemClock.elapsedRealtime() - started > GIVE_UP_MS) return false
-                if (busy.get() == 0 && cool() && idle()) return true
+                if (dropped()) return no("dropped")
+                Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging(context) })
+                    ?.let { return no(it) }
+                val wait = hindrance() ?: if (idle()) null else "app not idle"
+                if (wait == null) {
+                    workedBefore = worked.get()
+                    return true
+                }
+                if (SystemClock.elapsedRealtime() - since > GIVE_UP_MS) return no("waited ${GIVE_UP_MS / 1000} s: $wait")
                 SystemClock.sleep(WAIT_MS)
             }
         }
 
-        /** Nothing held, left, read or decoded meanwhile, and not hot. */
+        private fun no(why: String): Boolean {
+            reason = why
+            return false
+        }
+
+        /** Nothing held, left, read or decoded since the sample began, and nothing to wait out. */
         override fun stillFair(): Boolean =
-            holds.get() == 0 && inFront() && busy.get() == 0 && worked.get() == workedBefore && cool()
+            holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null
 
         /** In front and not reading. */
         private fun inFront() = resumed.get() > 0 && reading.get() == 0
+
+        /** What timing now would be skewed by ([Calibration.waitReason]); null when nothing. */
+        private fun hindrance(): String? {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val saver = pm?.isPowerSaveMode == true
+            if (saver) sawPowerSave = true
+            val thermal = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else 0
+            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = thermal, powerSave = saver, forced = force)
+        }
 
         /** True when all but the UI threads used under a tenth of a core over a short while: nothing else of the app is busy. */
         private fun idle(): Boolean {
             val cpu0 = cpuMs()
             SystemClock.sleep(IDLE_WINDOW_MS)
             return cpuMs() - cpu0 < IDLE_WINDOW_MS / 10
-        }
-
-        private fun cool(): Boolean {
-            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
-            if (pm.isPowerSaveMode) return false
-            return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || pm.currentThermalStatus < PowerManager.THERMAL_STATUS_MODERATE
         }
 
         fun release() {

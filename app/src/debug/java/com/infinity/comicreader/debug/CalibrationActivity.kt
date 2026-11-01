@@ -21,8 +21,9 @@ import org.json.JSONObject
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]`
  *
- * Each run's end is logged under "Calibration" as "ended true" or "ended false", a run a
- * Recalibrate dropped as "dropped for a new run" ([Calibrator]).
+ * Each run's end is logged under "Calibration" as "ended true" or "ended false: " and why
+ * (shown here too), a run a Recalibrate dropped as "dropped for a new run" ([Calibrator]).
+ * Recalibrate goes on under battery saver; the result is marked so.
  */
 class CalibrationActivity : Activity() {
     private lateinit var text: TextView
@@ -74,6 +75,7 @@ class CalibrationActivity : Activity() {
         val kept = Calibrator.kept
         text.text = buildString {
             appendLine(if (Calibrator.running) "Calibrating…" else if (Calibrator.due()) "Due" else "Calibrated")
+            Calibrator.outcome?.let { appendLine("Last run: $it") }
             appendLine("Tuning: ${Calibrator.tuning?.toJson()}")
             appendLine(
                 "In effect: pixels ${NativeResampler.engine.key} ${NativeResampler.threads}/${NativeResampler.laterThreads} " +

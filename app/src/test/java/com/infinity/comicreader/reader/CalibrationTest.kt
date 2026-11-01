@@ -177,6 +177,33 @@ class CalibrationTest {
     }
 
     @Test
+    fun dueForANewBuildOrACalibrationUnderBatterySaver() {
+        fun kept(f: String, saver: Boolean? = null) = org.json.JSONObject().put("fingerprint", f).apply { saver?.let { put("powerSave", it) } }
+        assertFalse(Calibration.due(null, null))
+        assertTrue(Calibration.due(null, "a"))
+        assertTrue(Calibration.due(kept("b"), "a"))
+        assertFalse(Calibration.due(kept("a"), "a"))
+        assertFalse(Calibration.due(kept("a", saver = false), "a"))
+        assertTrue(Calibration.due(kept("a", saver = true), "a"))
+    }
+
+    @Test
+    fun aForcedRunGoesOnUnderBatterySaverAndOffTheCharger() {
+        assertEquals("battery saver on", Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, forced = false))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, forced = true))
+        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = 2, powerSave = false, forced = true))
+        assertEquals("app busy", Calibration.waitReason(busy = true, thermalStatus = 0, powerSave = true, forced = true))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, forced = false))
+        var asked = false
+        assertNull(Calibration.stopReason(held = false, reading = false, inFront = true, forced = true) { asked = true; false })
+        assertFalse(asked)
+        assertEquals("not charging", Calibration.stopReason(held = false, reading = false, inFront = true, forced = false) { false })
+        assertEquals("reading", Calibration.stopReason(held = false, reading = true, inFront = true, forced = true) { true })
+        assertEquals("app not in front", Calibration.stopReason(held = false, reading = false, inFront = false, forced = true) { true })
+        assertEquals("held off by a check", Calibration.stopReason(held = true, reading = false, inFront = true, forced = true) { true })
+    }
+
+    @Test
     fun medianOfOddAndEven() {
         assertEquals(2.0, Calibration.median(listOf(3.0, 1.0, 2.0)), 0.0)
         assertEquals(2.5, Calibration.median(listOf(4.0, 1.0, 2.0, 3.0)), 0.0)

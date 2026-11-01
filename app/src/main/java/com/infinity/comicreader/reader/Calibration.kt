@@ -160,6 +160,40 @@ object Calibration {
     /** What a calibration is kept for: this install of the app on this system build. */
     fun fingerprint(app: String, system: String): String = "$app|$system"
 
+    /**
+     * True when [kept], the calibration kept, is not for [fingerprint] (this install and
+     * system build), or was made under battery saver; false while [fingerprint] is unknown.
+     */
+    fun due(kept: JSONObject?, fingerprint: String?): Boolean =
+        fingerprint != null && (kept?.optString("fingerprint") != fingerprint || kept?.optBoolean("powerSave") == true)
+
+    /**
+     * Why a calibration run cannot go on now, or null: a check or benchmark holds it off,
+     * the reader or another app is in front, or, unless [forced], the device is off the
+     * charger ([charging], asked only then).
+     */
+    fun stopReason(held: Boolean, reading: Boolean, inFront: Boolean, forced: Boolean, charging: () -> Boolean): String? = when {
+        held -> "held off by a check"
+        reading -> "reading"
+        !inFront -> "app not in front"
+        !forced && !charging() -> "not charging"
+        else -> null
+    }
+
+    /**
+     * What a calibration run waits out before timing, or null: app work, heat (thermal
+     * status [HOT] or above), or, unless [forced], battery saver, whose clock caps skew timings.
+     */
+    fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, forced: Boolean): String? = when {
+        busy -> "app busy"
+        thermalStatus >= HOT -> "too warm (thermal status $thermalStatus)"
+        powerSave && !forced -> "battery saver on"
+        else -> null
+    }
+
+    /** PowerManager.THERMAL_STATUS_MODERATE: the device has begun to throttle. */
+    const val HOT = 2
+
     /** The median of [xs]; NaN when empty. */
     internal fun median(xs: List<Double>): Double {
         if (xs.isEmpty()) return Double.NaN

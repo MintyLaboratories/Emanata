@@ -427,9 +427,9 @@ class Compactor(
         if ((entry.size >= 0 && size != entry.size) || (entry.crc >= 0 && crc != entry.crc)) throw IOException("${entry.path} is damaged")
     }
 
-    /** True for a file read whole to be converted: named as an image, of a size held in memory. */
+    /** True for a file read whole to be converted: named as an image, of a size held in memory, not in a dot-folder (kept as it is there). */
     private fun isPage(entry: ArchiveEntry): Boolean =
-        Formats.isImageName(entry.path) && entry.size in 1..MAX_PAGE_BYTES
+        Formats.isImageName(entry.path) && entry.size in 1..MAX_PAGE_BYTES && !FlatNames.inDotFolder(entry.path)
 
     /** [file] read through [input] for its size and CRC. */
     private fun sum(input: InputStream, file: File): Piece {

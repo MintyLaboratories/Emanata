@@ -300,6 +300,18 @@ class FileJobsPackTest {
     }
 
     @Test
+    fun packCompactedKeepsWhatIsInDotFoldersAsItIs() {
+        val dir = folder("Odd", 2)
+        File(dir, ".thumbnails").mkdirs()
+        val hidden = jpeg(7)
+        File(dir, ".thumbnails/1.jpg").writeBytes(hidden)
+        pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = listOf(".thumbnails"), unusualToo = true), compacted = true) as FileWork.Outcome.Done
+        val cbz = File(tmp.root, "Odd.cbz")
+        assertEquals(listOf(".thumbnails/1.jpg", "1.jxl", "2.jxl"), names(cbz))
+        ZipFile(cbz).use { z -> assertArrayEquals(hidden, z.getInputStream(z.getEntry(".thumbnails/1.jpg")).readBytes()) }
+    }
+
+    @Test
     fun unusualFilesNotAskedAboutLeaveTheFolderAlone() {
         val dir = unusualFolder()
         val outcome = pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = listOf(".cover.jpg"))) as FileWork.Outcome.Failed

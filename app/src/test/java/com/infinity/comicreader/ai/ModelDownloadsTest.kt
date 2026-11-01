@@ -20,6 +20,7 @@ import org.robolectric.annotation.Config
 import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
 /** App-wide downloads: state while running, installed when done, a failure kept to show, deletes. */
@@ -37,11 +38,16 @@ class ModelDownloadsTest {
     /** Holds every answer until counted down. */
     private var gate = CountDownLatch(0)
 
+    /** Requests received; the nth waits for holds[n], when there is one. */
+    private val requests = AtomicInteger()
+    private val holds = ArrayList<CountDownLatch>()
+
     @Before
     fun setUp() {
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
+                holds.getOrNull(requests.getAndIncrement())?.await(10, TimeUnit.SECONDS)
                 gate.await(10, TimeUnit.SECONDS)
                 val data = files[request.path] ?: return MockResponse().setResponseCode(404)
                 return MockResponse().setBody(Buffer().write(data))
@@ -66,6 +72,14 @@ class ModelDownloadsTest {
             return ModelFile(name, server.url("/$name").toString(), n.toLong(), sha256(data))
         }
         return CatalogModel(id, id, AiStep.UPSCALE, 2, ModelSource.OPENCOMIC, serve("$id.param", 100), serve("$id.bin", 50_000))
+    }
+
+    private fun waitForRequests(n: Int) {
+        val end = System.currentTimeMillis() + 10_000
+        while (requests.get() < n) {
+            assertTrue("timed out waiting for request $n", System.currentTimeMillis() < end)
+            Thread.sleep(10)
+        }
     }
 
     private fun waitFor(what: String, condition: (Downloads) -> Boolean) {
@@ -120,6 +134,27 @@ class ModelDownloadsTest {
         assertFalse(m.id in ModelDownloads.state.value.states)
         gate.countDown()
         Thread.sleep(200)
+        assertFalse(m.id in ModelDownloads.state.value.states)
+    }
+
+    @Test
+    fun aCanceledDownloadEndingLateLeavesItsSuccessorCancelable() {
+        val m = model("dl-recancel")
+        val first = CountDownLatch(1)
+        val second = CountDownLatch(1)
+        holds += listOf(first, second)
+        ModelDownloads.start(store, m)
+        waitForRequests(1)
+        ModelDownloads.cancel(m.id)
+        ModelDownloads.start(store, m)
+        // The first download ends on its canceled answer, then the second asks.
+        first.countDown()
+        waitForRequests(2)
+        assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Running)
+        ModelDownloads.cancel(m.id)
+        second.countDown()
+        Thread.sleep(300)
+        assertFalse(store.installed(m))
         assertFalse(m.id in ModelDownloads.state.value.states)
     }
 }

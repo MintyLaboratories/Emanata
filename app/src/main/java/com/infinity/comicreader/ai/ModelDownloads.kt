@@ -54,6 +54,7 @@ object ModelDownloads {
         synchronized(jobs) {
             if (jobs[model.id]?.isActive == true) return
             set(model.id, DownloadState.Running(store.bytesHeld(model), model.bytes))
+            // The job's own entry is checked under the lock, which this block holds until it is stored.
             jobs[model.id] = scope.launch {
                 val job = coroutineContext[Job]
                 var last = 0L
@@ -62,18 +63,18 @@ object ModelDownloads {
                         val now = SystemClock.elapsedRealtime()
                         if (now - last >= PROGRESS_EVERY_MS || done == total) {
                             last = now
-                            set(model.id, DownloadState.Running(done, total))
+                            synchronized(jobs) { if (jobs[model.id] === job) set(model.id, DownloadState.Running(done, total)) }
                         }
                     }
-                    finish(model.id, null)
+                    finish(model.id, job, null)
                 } catch (e: CancellationException) {
-                    finish(model.id, null, changed = false)
+                    finish(model.id, job, null, changed = false)
                 } catch (e: DownloadException) {
                     Log.w(TAG, "${model.id}: ${e.message}")
-                    finish(model.id, DownloadState.Failed(e.failure), changed = false)
+                    finish(model.id, job, DownloadState.Failed(e.failure), changed = false)
                 } catch (e: Exception) {
                     Log.w(TAG, "${model.id}: ${e.message}", e)
-                    finish(model.id, DownloadState.Failed(DownloadFailure.NETWORK), changed = false)
+                    finish(model.id, job, DownloadState.Failed(DownloadFailure.NETWORK), changed = false)
                 }
             }
         }
@@ -81,8 +82,10 @@ object ModelDownloads {
 
     /** Stops [id]'s download, keeping what arrived. */
     fun cancel(id: String) {
-        synchronized(jobs) { jobs.remove(id) }?.cancel()
-        _state.update { it.copy(states = it.states - id) }
+        synchronized(jobs) {
+            jobs.remove(id)?.cancel()
+            _state.update { it.copy(states = it.states - id) }
+        }
     }
 
     /** Stops [model]'s download and deletes it from [store]. */
@@ -92,17 +95,31 @@ object ModelDownloads {
             job?.cancel()
             job?.join()
             store.delete(model)
-            _state.update { it.copy(states = it.states - model.id, generation = it.generation + 1) }
+            synchronized(jobs) {
+                // A download asked for since then owns the state.
+                val asked = jobs.containsKey(model.id)
+                _state.update { it.copy(states = if (asked) it.states else it.states - model.id, generation = it.generation + 1) }
+            }
         }
     }
 
     private fun set(id: String, s: DownloadState) = _state.update { it.copy(states = it.states + (id to s)) }
 
-    private fun finish(id: String, failed: DownloadState?, changed: Boolean = true) {
-        synchronized(jobs) { jobs.remove(id) }
+    /**
+     * Ends [job], [id]'s download: when it is still the one asked for, drops it and shows
+     * [failed] (null: nothing); a job canceled or replaced since leaves the state to its
+     * successor. [changed]: a model was installed.
+     */
+    private fun finish(id: String, job: Job?, failed: DownloadState?, changed: Boolean = true) = synchronized(jobs) {
+        val own = jobs[id] === job
+        if (own) jobs.remove(id)
         _state.update {
             Downloads(
-                if (failed == null) it.states - id else it.states + (id to failed),
+                when {
+                    !own -> it.states
+                    failed == null -> it.states - id
+                    else -> it.states + (id to failed)
+                },
                 if (changed) it.generation + 1 else it.generation
             )
         }

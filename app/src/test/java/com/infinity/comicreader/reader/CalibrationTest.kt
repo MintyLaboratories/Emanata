@@ -35,6 +35,35 @@ class CalibrationTest {
     }
 
     @Test
+    fun platformJpegIsTimedPinnedAndNotWhereThereAreLargeCores() {
+        val c = Calibration.candidates(tablet, 8, gpu = false, jxl = false, jpeg = true)
+        assertEquals(listOf("pixels/1/big", "pixels/2/big", "pixels/4/big", "pixels/8/any", "jpeg/big", "jpeg/any"), c.map { it.key })
+        assertTrue(Calibration.candidates(allBig, 8, gpu = false, jxl = false, jpeg = true).none { it.kind == Candidate.Kind.JPEG })
+    }
+
+    @Test
+    fun platformJpegIsLeftUnpinnedOnlyWhereThatIsClearlyFaster() {
+        val big = Candidate(Candidate.Kind.JPEG, 1, pinned = true)
+        val any = Candidate(Candidate.Kind.JPEG, 1, pinned = false)
+        val before = Tuning.defaults(tablet, 8)
+        // A multithreaded system decoder: 32 ms unpinned, 47 pinned, for twice the CPU.
+        val spread = listOf(Timing(big, 47.0, 47.0, 2.0), Timing(any, 32.0, 110.0, 2.0))
+        assertFalse(Calibration.tuning(spread, before).jpegPinned)
+        // One thread: pinned, even where unpinned is faster warm.
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 44.0, 44.0, 1.0), Timing(any, 40.0, 40.0, 1.0)), before = false))
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 30.0, 30.0), Timing(any, 40.0, 40.0)), before = true))
+        // Several threads, but not clearly faster: no change either way.
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 30.0, 30.0, 2.0), Timing(any, 29.0, 110.0, 2.0)), before = true))
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 50.0, 50.0, 10.0), Timing(any, 42.0, 150.0, 3.0)), before = true))
+        assertFalse(Calibration.jpegPinned(listOf(Timing(big, 42.0, 42.0, 3.0), Timing(any, 50.0, 180.0, 10.0)), before = false))
+        // Pinned clearly faster: pinned again.
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 40.0, 40.0, 1.0), Timing(any, 50.0, 180.0, 1.0)), before = false))
+        // Untimed: as before.
+        assertFalse(Calibration.jpegPinned(emptyList(), before = false))
+        assertTrue(Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0)), before).jpegPinned)
+    }
+
+    @Test
     fun allLargeCoresPinNothingAndDropDuplicates() {
         val c = Calibration.candidates(allBig, 8, gpu = false, jxl = false)
         assertEquals(listOf(pixels(1, false), pixels(2, false), pixels(8, false)), c)
@@ -92,7 +121,7 @@ class CalibrationTest {
     fun defaultsAreOnePerLargeCorePinned() {
         assertEquals(Tuning(PixelEngine.NATIVE, 4, true, 4, true), Tuning.defaults(tablet, 8))
         // No large cores to pin to: unpinned, as every setup calibration times there.
-        assertEquals(Tuning(PixelEngine.NATIVE, 8, false, 8, false), Tuning.defaults(allBig, 8))
+        assertEquals(Tuning(PixelEngine.NATIVE, 8, false, 8, false, false), Tuning.defaults(allBig, 8))
     }
 
     @Test
@@ -131,7 +160,10 @@ class CalibrationTest {
             JxlPages.laterThreads = 1
             chosen.apply()
             assertEquals(4, JxlPages.laterThreads)
+            chosen.copy(jpegPinned = false).apply()
+            assertFalse(PlatformPages.jpegPinned)
         } finally {
+            PlatformPages.jpegPinned = true
             NativeResampler.engine = kept[0] as PixelEngine
             NativeResampler.threads = kept[1] as Int
             NativeResampler.laterThreads = kept[2] as Int
@@ -144,8 +176,10 @@ class CalibrationTest {
 
     @Test
     fun tuningRoundTripsAndRejectsJunk() {
-        val t = Tuning(PixelEngine.GPU, 6, false, 3, true)
+        val t = Tuning(PixelEngine.GPU, 6, false, 3, true, false)
         assertEquals(t, Tuning.of(org.json.JSONObject(t.toJson().toString())))
+        // Kept before platform JPEG was calibrated: pinned.
+        assertTrue(Tuning.of(org.json.JSONObject(t.toJson().apply { remove("jpegPinned") }.toString()))!!.jpegPinned)
         assertNull(Tuning.of(null))
         assertNull(Tuning.of(org.json.JSONObject("{\"engine\":\"cuda\",\"pixelThreads\":1,\"pixelPinned\":true,\"jxlThreads\":1,\"jxlPinned\":true}")))
         assertNull(Tuning.of(org.json.JSONObject("{\"engine\":\"native\"}")))

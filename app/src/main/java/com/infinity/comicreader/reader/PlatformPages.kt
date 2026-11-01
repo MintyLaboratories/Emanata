@@ -19,12 +19,13 @@ enum class CoreSet(val key: String) {
 }
 
 /**
- * Where pages the platform decodes (JPEG, PNG, WebP, HEIF: one thread each) run: a page
- * decode of the reader ([Urgency.page]), shown or read ahead, has its thread pinned to
- * [cores], then put back. Left to the system, such a decode often starts on a little core
- * and stays there long enough to be slower than on a large one. With [readAhead] off, only
- * pages the reader waits on are pinned. Other decodes (covers, previews, scans) stay with
- * the system.
+ * Where pages the platform decodes (JPEG, PNG, WebP, HEIF) run: a page decode of the reader
+ * ([Urgency.page]), shown or read ahead, has its thread pinned to [cores], then put back.
+ * Left to the system, such a decode, one thread, often starts on a little core and stays
+ * there long enough to be slower than on a large one. Some systems decode a JPEG on several
+ * threads, which pinning confines: there calibration leaves JPEG unpinned ([jpegPinned]).
+ * With [readAhead] off, only pages the reader waits on are pinned. Other decodes (covers,
+ * previews, scans) stay with the system.
  */
 object PlatformPages {
     /** The cores platform decodes run on: the large ones ([CpuCores.big]; none to pin to where every core is large). */
@@ -39,6 +40,10 @@ object PlatformPages {
     @Volatile
     var readAhead: Boolean = true
 
+    /** Pins JPEG pages too; off where the system's JPEG decoder runs faster unpinned ([Tuning.jpegPinned]). */
+    @Volatile
+    var jpegPinned: Boolean = true
+
     internal var device: CpuCores? = null
         get() = field ?: CpuCores.device
 
@@ -49,12 +54,14 @@ object PlatformPages {
     /** The resampler's library, which pages load anyway: pinning loads nothing more. */
     private val loaded: ((Long) -> Long)? by lazy { if (LibPixels.loaded) { m: Long -> LibPixels.pin(m) } else null }
 
-    /** True when this thread's decode is to be pinned: a page of the reader's, waited on unless [readAhead]. */
-    fun wanted(): Boolean = if (readAhead) Urgency.page() else Urgency.waited()
+    /** True when this thread's decode, of a JPEG when [jpeg], is to be pinned: a page of the reader's, waited on unless [readAhead]. */
+    fun wanted(jpeg: Boolean = false): Boolean = (!jpeg || jpegPinned) && if (readAhead) Urgency.page() else Urgency.waited()
 
     /** Runs [block] on [cores] when [pinned]; as is otherwise, or where they are any, unknown or cannot be pinned to. */
-    fun <T> placed(pinned: Boolean = wanted(), block: () -> T): T {
-        val mask = if (pinned) cores.mask(device!!) else 0L
+    fun <T> placed(pinned: Boolean = wanted(), block: () -> T): T = on(if (pinned) cores.mask(device!!) else 0L, block)
+
+    /** Runs [block] pinned to [mask] (0: as is), then puts the thread back. */
+    internal fun <T> on(mask: Long, block: () -> T): T {
         val p = if (mask == 0L) null else pin
         val kept = p?.invoke(mask) ?: 0L
         try {

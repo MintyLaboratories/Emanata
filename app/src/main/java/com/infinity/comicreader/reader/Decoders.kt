@@ -88,10 +88,10 @@ object Decoders {
                     kind == ImageKind.JXL -> decodeJxl(bytes, sampled.capPixels, standIn = sampled != target)
                     kind == ImageKind.AVIF -> decodeAvif(bytes, sampled)
                     kind == ImageKind.TIFF -> decodeTiff(Tiff.ByteInput(bytes), sampled.capPixels)
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> PlatformPages.placed {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> PlatformPages.placed(PlatformPages.wanted(kind == ImageKind.JPEG)) {
                         decodePlatform(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), sampled.capPixels)
                     }
-                    else -> PlatformPages.placed { decodeLegacy(bytes, sampled.capPixels) }
+                    else -> PlatformPages.placed(PlatformPages.wanted(kind == ImageKind.JPEG)) { decodeLegacy(bytes, sampled.capPixels) }
                 }
             }
             sidesSinks.get()?.let { sink ->
@@ -152,7 +152,7 @@ object Decoders {
         }
         return reported(kind) {
             val full = Traces.section({ "decode ${kind?.name ?: "unknown"} file ${file.length() / 1024} KB" }) {
-                PlatformPages.placed { decodePlatform(ImageDecoder.createSource(file), sampled.capPixels) }
+                PlatformPages.placed(PlatformPages.wanted(kind == ImageKind.JPEG)) { decodePlatform(ImageDecoder.createSource(file), sampled.capPixels) }
             }
             fit(full, sampled, source)
         }

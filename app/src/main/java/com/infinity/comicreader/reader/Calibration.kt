@@ -9,14 +9,16 @@ import kotlin.math.abs
  * CPU workers, pinned to the large cores or not, and native JPEG XL decodes on
  * [jxlThreads], pinned or not. Pages read ahead get the same budget as pages on screen: one
  * often comes on screen mid-decode, and fewer JPEG XL threads for them measured slower fast
- * page turns for little less CPU time at reading pace.
+ * page turns for little less CPU time at reading pace. Platform JPEG decodes are pinned to
+ * the large cores with the other platform formats when [jpegPinned] ([PlatformPages]).
  */
 data class Tuning(
     val engine: PixelEngine,
     val pixelThreads: Int,
     val pixelPinned: Boolean,
     val jxlThreads: Int,
-    val jxlPinned: Boolean
+    val jxlPinned: Boolean,
+    val jpegPinned: Boolean = true
 ) {
     /** Makes this the tuning pages are decoded and resampled with from now on. */
     fun apply() {
@@ -27,10 +29,11 @@ data class Tuning(
         JxlPages.threads = jxlThreads
         JxlPages.laterThreads = jxlThreads
         JxlPages.pinned = jxlPinned
+        PlatformPages.jpegPinned = jpegPinned
     }
 
     fun toJson(): JSONObject = JSONObject().put("engine", engine.key).put("pixelThreads", pixelThreads).put("pixelPinned", pixelPinned)
-        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned)
+        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned).put("jpegPinned", jpegPinned)
 
     companion object {
         /**
@@ -41,7 +44,7 @@ data class Tuning(
         fun defaults(cores: CpuCores, processors: Int): Tuning {
             val n = NativeResampler.defaultThreads(cores, processors)
             val pinned = cores.big != 0L
-            return Tuning(PixelEngine.NATIVE, n, pinned, n, pinned)
+            return Tuning(PixelEngine.NATIVE, n, pinned, n, pinned, pinned)
         }
 
         /** The tuning [json] holds; null when it holds none. */
@@ -50,7 +53,8 @@ data class Tuning(
                 Tuning(
                     PixelEngine.of(j.getString("engine")) ?: return null,
                     j.getInt("pixelThreads").coerceIn(1, MAX_THREADS), j.getBoolean("pixelPinned"),
-                    j.getInt("jxlThreads").coerceIn(1, MAX_THREADS), j.getBoolean("jxlPinned")
+                    j.getInt("jxlThreads").coerceIn(1, MAX_THREADS), j.getBoolean("jxlPinned"),
+                    j.optBoolean("jpegPinned", true)
                 )
             }.getOrNull()
         }
@@ -59,11 +63,18 @@ data class Tuning(
     }
 }
 
-/** A setup calibration times: resampling ([PIXELS]) or JPEG XL decoding ([JXL]) on [threads] workers, or the GPU. */
+/**
+ * A setup calibration times: resampling ([PIXELS]) or JPEG XL decoding ([JXL]) on [threads]
+ * workers, or the GPU; or a platform JPEG decode ([JPEG]), its thread pinned or not.
+ */
 data class Candidate(val kind: Kind, val threads: Int, val pinned: Boolean, val gpu: Boolean = false) {
-    enum class Kind(val key: String) { PIXELS("pixels"), JXL("jxl") }
+    enum class Kind(val key: String) { PIXELS("pixels"), JXL("jxl"), JPEG("jpeg") }
 
-    val key: String get() = if (gpu) "${kind.key}/gpu" else "${kind.key}/$threads/${if (pinned) "big" else "any"}"
+    val key: String get() = when {
+        gpu -> "${kind.key}/gpu"
+        kind == Kind.JPEG -> "${kind.key}/${if (pinned) "big" else "any"}"
+        else -> "${kind.key}/$threads/${if (pinned) "big" else "any"}"
+    }
 }
 
 /** The median wall and CPU time of [candidate] over its runs, and how far its runs stray ([Calibration.spread]). */
@@ -99,9 +110,10 @@ object Calibration {
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large
      * core and one per core for resampling (with the GPU when [gpu]), 2, one per large core
      * and one per core for JPEG XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
-     * left to the system.
+     * left to the system. With [jpeg], a platform JPEG decode pinned to the large cores and
+     * one left to the system, where there are large cores to pin to.
      */
-    fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean): List<Candidate> {
+    fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean, jpeg: Boolean = false): List<Candidate> {
         val all = processors.coerceAtLeast(1)
         val big = NativeResampler.defaultThreads(cores, all)
         fun of(kind: Candidate.Kind, counts: List<Int>) = counts.filter { it in 1..all }.distinct().sorted()
@@ -109,7 +121,39 @@ object Calibration {
         val out = ArrayList(of(Candidate.Kind.PIXELS, listOf(1, 2, big, all)))
         if (gpu) out += Candidate(Candidate.Kind.PIXELS, 1, pinned = false, gpu = true)
         if (jxl) out += of(Candidate.Kind.JXL, listOf(2, big, all))
+        if (jpeg && cores.big != 0L) out += listOf(Candidate(Candidate.Kind.JPEG, 1, pinned = true), Candidate(Candidate.Kind.JPEG, 1, pinned = false))
         return out
+    }
+
+    /**
+     * An unpinned JPEG decode must be faster than a pinned one by this share (and the
+     * spread) for platform JPEG to be left unpinned. Where the system decoder spreads a page
+     * over several cores, pinning confines it to the large ones: 30-50 % slower on the
+     * synthetic page on a tablet with 2 large and 6 little cores. Its CPU time is not weighed:
+     * unpinned, such a decode timed alone uses about twice the CPU, but the same work is
+     * spread over cores otherwise idle.
+     */
+    const val JPEG_MARGIN = 0.05
+
+    /**
+     * An unpinned JPEG decode using at least this many cores' worth of CPU time over its wall
+     * time is multithreaded. Only then can pinning slow it: a one-thread decode timed warm
+     * runs as fast anywhere, while at reading pace it would often start on a little core.
+     */
+    const val JPEG_THREADED = 1.5
+
+    /**
+     * Whether platform JPEG decodes stay pinned, from the [JPEG][Candidate.Kind.JPEG] [timings]:
+     * pinned where the system decodes on one thread; else [before] unless the other choice
+     * is faster by more than [JPEG_MARGIN] and the spread.
+     */
+    fun jpegPinned(timings: List<Timing>, before: Boolean): Boolean {
+        val jpeg = timings.filter { it.candidate.kind == Candidate.Kind.JPEG }
+        val pinned = jpeg.firstOrNull { it.candidate.pinned } ?: return before
+        val any = jpeg.firstOrNull { !it.candidate.pinned } ?: return before
+        if (any.cpuMs < any.wallMs * JPEG_THREADED) return true
+        fun beats(a: Timing, b: Timing) = a.wallMs < b.wallMs * (1 - JPEG_MARGIN) && b.wallMs - a.wallMs > maxOf(a.wallSpreadMs, b.wallSpreadMs)
+        return if (before) !beats(any, pinned) else beats(pinned, any)
     }
 
     /**
@@ -154,7 +198,7 @@ object Calibration {
         pick(jxl, Candidate(Candidate.Kind.JXL, before.jxlThreads, before.jxlPinned))?.candidate?.let { c ->
             t = t.copy(jxlThreads = c.threads, jxlPinned = c.pinned)
         }
-        return t
+        return t.copy(jpegPinned = jpegPinned(timings, before.jpegPinned))
     }
 
     /**

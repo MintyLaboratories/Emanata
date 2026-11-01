@@ -12,6 +12,7 @@ import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
+import com.infinity.comicreader.reader.PlatformPages
 import org.json.JSONObject
 
 /**
@@ -79,7 +80,8 @@ class CalibrationActivity : Activity() {
             appendLine("Tuning: ${Calibrator.tuning?.toJson()}")
             appendLine(
                 "In effect: pixels ${NativeResampler.engine.key} ${NativeResampler.threads}/${NativeResampler.laterThreads} " +
-                    "pinned ${NativeResampler.pinned}; jxl ${JxlPages.threads}/${JxlPages.laterThreads} pinned ${JxlPages.pinned}"
+                    "pinned ${NativeResampler.pinned}; jxl ${JxlPages.threads}/${JxlPages.laterThreads} pinned ${JxlPages.pinned}; " +
+                    "platform JPEG pinned ${PlatformPages.jpegPinned}"
             )
             appendLine("Cores: large ${java.lang.Long.toBinaryString(cores.big)} little ${java.lang.Long.toBinaryString(cores.little)} prime ${java.lang.Long.toBinaryString(cores.prime)}")
             appendLine()

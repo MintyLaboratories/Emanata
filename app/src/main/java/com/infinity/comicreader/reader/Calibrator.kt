@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +23,7 @@ import com.awxkee.jxlcoder.JxlEffort
 import com.infinity.comicreader.compact.LibJxl
 import org.json.JSONObject
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
@@ -28,8 +31,8 @@ import kotlin.concurrent.thread
 /**
  * Per-device calibration on the device ([Calibration] chooses): once per app version and
  * system build, while the app is in front but not reading ([Reading]), charging, cool, out
- * of battery saver and otherwise idle, it times resampling and JPEG XL decoding setups on a
- * synthetic page and keeps the winners ([Tuning]) in a file that is not backed up. A timing
+ * of battery saver and otherwise idle, it times resampling, JPEG XL decoding and platform
+ * JPEG decoding setups on a synthetic page and keeps the winners ([Tuning]) in a file that is not backed up. A timing
  * during which the app decoded anything ([working]) is made again; the app's drawing
  * ([UiCpu]) is left out of CPU times. Until the first calibration ends, the
  * [Tuning.defaults] apply; after an update the previous winners apply until new ones are
@@ -215,7 +218,7 @@ object Calibrator {
             if (!probe.awaitFair()) return probe.why ?: "not fair"
             probe.prepare()
             val candidates = Calibration.candidates(
-                CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl()
+                CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl(), jpeg = probe.prepareJpeg()
             )
             val t0 = SystemClock.elapsedRealtime()
             val run = CalibrationRun(probe, candidates)
@@ -265,6 +268,7 @@ object Calibrator {
         private var dst: Bitmap? = null
         private var jxl: ByteArray? = null
         private var jxlOut: Bitmap? = null
+        private var jpeg: ByteArray? = null
         private val ui = UiCpu.self().also { it.scan() }
 
         /** App work started before the sample in progress. */
@@ -309,6 +313,32 @@ object Calibrator {
             return true
         }
 
+        /** Makes the JPEG page (quality 90, as most scans, once, kept in the cache); false when it cannot. */
+        fun prepareJpeg(): Boolean {
+            val f = File(context.cacheDir, "calibration/page-${PAGE_W}x$PAGE_H-q90.jpg")
+            jpeg = runCatching {
+                if (!f.exists()) {
+                    f.parentFile?.mkdirs()
+                    val tmp = File(f.path + ".tmp")
+                    tmp.outputStream().use { (src ?: return false).compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                    tmp.renameTo(f)
+                }
+                f.readBytes()
+            }.getOrNull()
+            return jpeg != null
+        }
+
+        /** [bytes] decoded by the platform as the reader decodes its pages, then dropped; false when it fails. */
+        private fun decodeJpeg(bytes: ByteArray): Boolean {
+            val b = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { d, _, _ -> d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE }
+            } else {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } ?: return false
+            b.recycle()
+            return true
+        }
+
         override fun time(candidate: Candidate): Pair<Double, Double>? {
             val cpu0 = cpuMs()
             val t0 = System.nanoTime()
@@ -324,6 +354,10 @@ object Calibrator {
                     val mask = if (candidate.pinned) CpuCores.device.big else 0L
                     val r = LibJxl.page(bytes, out, candidate.threads, mask)
                     r == LibJxl.PAGE_OPAQUE || r == LibJxl.PAGE_ALPHA
+                }
+                Candidate.Kind.JPEG -> {
+                    val bytes = jpeg ?: return null
+                    PlatformPages.placed(candidate.pinned) { runCatching { decodeJpeg(bytes) }.getOrDefault(false) }
                 }
             }
             if (!ok) return null

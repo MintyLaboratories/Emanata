@@ -22,6 +22,7 @@ class PlatformPagesTest {
         PlatformPages.pin = null
         PlatformPages.cores = CoreSet.BIG
         PlatformPages.readAhead = true
+        PlatformPages.jpegPinned = true
     }
 
     @Test
@@ -64,6 +65,23 @@ class PlatformPagesTest {
         Urgency.later { PlatformPages.placed { } }
         assertTrue(calls.isEmpty())
         Urgency.during({ false }) { PlatformPages.placed { } }
+        assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
+    }
+
+    @Test
+    fun jpegPagesStayWithTheSystemWhereCalibrationSaysSo() {
+        use(tablet, CoreSet.BIG)
+        PlatformPages.jpegPinned = false
+        Urgency.during({ true }) {
+            PlatformPages.placed(PlatformPages.wanted(jpeg = true)) { }
+            assertTrue(calls.isEmpty())
+            // Other formats still pinned.
+            PlatformPages.placed(PlatformPages.wanted(jpeg = false)) { }
+        }
+        assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
+        calls.clear()
+        PlatformPages.jpegPinned = true
+        Urgency.during({ true }) { PlatformPages.placed(PlatformPages.wanted(jpeg = true)) { } }
         assertEquals(listOf(0b1111_0000L, 0xFFL), calls)
     }
 

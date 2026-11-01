@@ -79,7 +79,9 @@ object Tiff {
         internal val colorMap: IntArray?,
         internal val jpegTables: ByteArray?,
         internal val bigEndian: Boolean,
-        internal val colorMap8: Boolean = false
+        internal val colorMap8: Boolean = false,
+        /** A palette's colors as stored, 16 bits each: reds, then greens, then blues. */
+        internal val colorMap16: IntArray? = null
     ) {
         /** True when the page has an alpha channel. */
         val hasAlpha: Boolean get() = alpha != 0
@@ -91,14 +93,24 @@ object Tiff {
         val isGray: Boolean get() = photometric == PHOTO_WHITE_IS_ZERO || photometric == PHOTO_BLACK_IS_ZERO
 
         /**
-         * True when [decodeSamples] reads the page: 16-bit gray or RGB samples, alpha
-         * unassociated or none, not JPEG-compressed.
+         * True when [decodeSamples] reads the page, finer than 8 bits hold: gray of 9-16 bits,
+         * RGB of 16, a palette of colors not all of 8 bits; alpha unassociated or none; not
+         * JPEG-compressed.
          */
         val sixteenBit: Boolean
-            get() = bits == 16 && compression != COMPRESSION_JPEG && (isGray || photometric == PHOTO_RGB) && alpha != ALPHA_ASSOCIATED
+            get() = compression != COMPRESSION_JPEG && alpha != ALPHA_ASSOCIATED && when (photometric) {
+                PHOTO_WHITE_IS_ZERO, PHOTO_BLACK_IS_ZERO -> bits > 8
+                PHOTO_RGB -> bits == 16
+                PHOTO_PALETTE -> !colorMap8
+                else -> false
+            }
 
         /** Samples per pixel [decodeSamples] gives: gray or RGB, then alpha when there is one. */
         val channels: Int get() = (if (isGray) 1 else 3) + (if (hasAlpha) 1 else 0)
+
+        /** How many of the 16 bits [decodeSamples] gives each of [channels] the page stores: a palette's colors 16, the rest as stored. */
+        val significantBits: IntArray
+            get() = IntArray(channels) { c -> if (photometric == PHOTO_PALETTE && c < 3) 16 else bits }
     }
 
     /** Raw samples of a run of [count] pixels starting at ([x], [y]): [Page.channels] per pixel in [samples]. */
@@ -171,18 +183,20 @@ object Tiff {
         if (counts == null && compression != 1) throw DecodeException("TIFF has no strip sizes")
         // Palette colors of 8 bits: each 16-bit value a multiple of 257.
         var colorMap8 = false
+        var colorMap16: IntArray? = null
         val colorMap = if (photometric == PHOTO_PALETTE) {
             val map = ifd.longs(COLOR_MAP) ?: throw DecodeException("Palette TIFF has no palette")
             val n = 1 shl bits
             if (map.size < 3 * n) throw DecodeException("TIFF palette is too short")
             colorMap8 = (0 until 3 * n).all { map[it] % 257 == 0L }
+            colorMap16 = IntArray(3 * n) { map[it].toInt() and 0xFFFF }
             IntArray(n) { i -> argb(to8(map[i].toInt()), to8(map[n + i].toInt()), to8(map[2 * n + i].toInt())) }
         } else {
             null
         }
         return Page(
             width, height, compression, photometric, bits, samples, planar, predictor, alpha,
-            chunkWidth, chunkHeight, offsets, counts, colorMap, ifd.bytes(JPEG_TABLES), ifd.bigEndian, colorMap8
+            chunkWidth, chunkHeight, offsets, counts, colorMap, ifd.bytes(JPEG_TABLES), ifd.bigEndian, colorMap8, colorMap16
         )
     }
 
@@ -233,16 +247,20 @@ object Tiff {
     }
 
     /**
-     * The stored samples of a [Page.sixteenBit] page, every pixel, into [sink]: gray
-     * inverted where white is zero, nothing else changed. Throws on any failure, a file
-     * that ends early too.
+     * The samples of a [Page.sixteenBit] page as 16 bits, every pixel, into [sink]: gray
+     * inverted where white is zero, a palette's colors as stored, samples of fewer bits
+     * widened by repeating their bits ([Page.significantBits]: those stored). Throws on any
+     * failure, a file that ends early too.
      */
     fun decodeSamples(input: Input, page: Page, sink: SampleSink) {
         require(page.sixteenBit)
         val across = (page.width + page.chunkWidth - 1) / page.chunkWidth
         val down = (page.height + page.chunkHeight - 1) / page.chunkHeight
         val n = page.channels
-        val max = (1 shl page.bits) - 1
+        val bits = page.bits
+        val max = (1 shl bits) - 1
+        val map = page.colorMap16
+        val colors = 1 shl bits
         val out = IntArray(minOf(page.width, page.chunkWidth) * n)
         for (cy in 0 until down) {
             for (cx in 0 until across) {
@@ -250,15 +268,35 @@ object Tiff {
                     val x0 = cx * page.chunkWidth
                     var o = 0
                     for (i in 0 until count) {
+                        val x = firstOut + i - x0
+                        if (map != null) {
+                            val index = raw(page, buffers, x, 0)
+                            out[o++] = map[index]
+                            out[o++] = map[colors + index]
+                            out[o++] = map[2 * colors + index]
+                            if (n == 4) out[o++] = to16(raw(page, buffers, x, 1), bits)
+                            continue
+                        }
                         for (s in 0 until n) {
-                            val v = raw(page, buffers, firstOut + i - x0, s)
-                            out[o++] = if (s == 0 && page.photometric == PHOTO_WHITE_IS_ZERO) max - v else v
+                            val v = raw(page, buffers, x, s)
+                            out[o++] = to16(if (s == 0 && page.photometric == PHOTO_WHITE_IS_ZERO) max - v else v, bits)
                         }
                     }
                     sink.row(firstOut, y, out, count)
                 }
             }
         }
+    }
+
+    /** [v] of [bits] (1-16) as 16 bits, its bits repeated: 0 stays 0, the largest becomes 0xFFFF. */
+    internal fun to16(v: Int, bits: Int): Int {
+        var out = v
+        var n = bits
+        while (n < 16) {
+            out = (out shl bits) or v
+            n += bits
+        }
+        return out ushr (n - 16)
     }
 
     /** Decodes chunk [index] (column [cx], row [cy]) row by row, giving [row] the rows kept at [sample]: buffers, y, first output column, columns. */

@@ -285,8 +285,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   HEIF) become very-high-quality WebP (JPEG where a side is over 16,383 px; PNG
   of the decoded pixels when such a page is transparent or too long for JPEG
   too). A TIFF page becomes lossless WebP, checked pixel for pixel (PNG for
-  16-bit samples, a gray color profile, a side over 16,383 px, and where the
-  WebP does not decode back the same), keeping a gray or RGB color profile;
+  a gray color profile, a side over 16,383 px, and where the WebP does not
+  decode back the same; a 16-bit PNG for samples finer than 8 bits hold:
+  16-bit, gray of 9-15 bits noted in `sBIT`, palette colors not of 8 bits),
+  keeping a gray or RGB color profile;
   one whose colors the reader converts (CMYK, premultiplied alpha) is stored as
   the reader shows it and counted as re-encoded; a JPEG-compressed TIFF stays.
   Lossy re-encoding is the one step that changes pixels: the dialog says so ("Converts the

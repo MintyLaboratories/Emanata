@@ -30,8 +30,11 @@ class Pixels(val width: Int, val height: Int, val channels: Int, val bits: Int, 
 object Png {
     private val SIGNATURE = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10)
 
-    /** [pixels] as a PNG, embedding [icc] when given. */
-    fun encode(pixels: Pixels, icc: ByteArray? = null): ByteArray {
+    /**
+     * [pixels] as a PNG, embedding [icc] when given, and [significant], the bits of each
+     * channel that hold the image, as `sBIT` when fewer than [Pixels.bits].
+     */
+    fun encode(pixels: Pixels, icc: ByteArray? = null, significant: IntArray? = null): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(SIGNATURE)
         val header = ByteArrayOutputStream(13)
@@ -52,6 +55,10 @@ object Png {
             profile.write(0)
             DeflaterOutputStream(profile, Deflater(Deflater.BEST_COMPRESSION)).use { it.write(icc) }
             chunk(out, "iCCP", profile.toByteArray())
+        }
+        if (significant != null && significant.any { it < pixels.bits }) {
+            require(significant.size == pixels.channels && significant.all { it in 1..pixels.bits })
+            chunk(out, "sBIT", ByteArray(significant.size) { significant[it].toByte() })
         }
         chunk(out, "IDAT", deflate(filtered(pixels)))
         chunk(out, "IEND", ByteArray(0))

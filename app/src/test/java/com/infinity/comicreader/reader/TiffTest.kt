@@ -309,6 +309,16 @@ class TiffTest {
     }
 
     @Test
+    fun samplesWidenTo16BitsByRepeatingTheirBits() {
+        assertEquals(0, Tiff.to16(0, 12))
+        assertEquals(0xFFFF, Tiff.to16(0xFFF, 12))
+        assertEquals(0xABCA, Tiff.to16(0xABC, 12))
+        assertEquals(0xFFFF, Tiff.to16(1, 1))
+        assertEquals(0x1234, Tiff.to16(0x1234, 16))
+        for (bits in 1..16) for (v in 0 until (1 shl bits) step maxOf(1, (1 shl bits) / 97)) assertEquals(v, Tiff.to16(v, bits) ushr (16 - bits))
+    }
+
+    @Test
     fun differencingOfSamplesNeither8Nor16BitsIsRefused() {
         val bytes = tiff(ByteArray(6), *tags(256 to 3L, 257 to 1L, 258 to 12L, 259 to 1L, 262 to 1L, 273 to 8L, 278 to 1L, 279 to 6L, 317 to 2L))
         assertThrows(DecodeException::class.java) { Tiff.page(Tiff.ByteInput(bytes)) }

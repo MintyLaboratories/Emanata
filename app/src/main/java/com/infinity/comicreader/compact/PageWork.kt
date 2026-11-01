@@ -147,9 +147,9 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         return Made(out, "webp")
     }
 
-    /** [pixels] as PNG, profile [icc] embedded, once it decodes back the same; else null. */
-    private fun png(pixels: Pixels, icc: ByteArray?): Made? {
-        val png = Png.encode(pixels, icc)
+    /** [pixels] as PNG, profile [icc] embedded, [significant] bits noted ([Png.encode]), once it decodes back the same; else null. */
+    private fun png(pixels: Pixels, icc: ByteArray?, significant: IntArray? = null): Made? {
+        val png = Png.encode(pixels, icc, significant)
         return if (pixels.same(Png.decode(png))) Made(png, "png") else null
     }
 
@@ -197,9 +197,10 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
 
     /**
      * A TIFF as lossless WebP, else PNG (a gray profile, a side too long, a WebP that does
-     * not decode back the same), checked pixel for pixel: 16-bit samples as a 16-bit PNG;
-     * samples that decode as stored ([Tiff.samplesExact]) as they are; any other (CMYK,
-     * premultiplied alpha, palette colors finer than 8 bits) as the reader shows them,
+     * not decode back the same), checked pixel for pixel: samples finer than 8 bits hold
+     * (16-bit, gray of 9-15 bits, palette colors not of 8 bits; [Tiff.Page.sixteenBit]) as a
+     * 16-bit PNG, the bits stored noted; samples that decode as stored ([Tiff.samplesExact])
+     * as they are; any other (CMYK, premultiplied alpha) as the reader shows them,
      * [Made.reencoded]. Its profile is kept when it suits the samples (gray or RGB). Throws
      * [Unconverted] for a JPEG-compressed one and one that does not decode.
      */
@@ -212,14 +213,14 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         }
         if (p.jpegCompressed) throw Unconverted("JPEG-compressed TIFF")
         val icc = Tiff.icc(input)?.takeIf { iccSpace(it) == if (p.isGray) ICC_GRAY else ICC_RGB }
-        if (p.sixteenBit) return tiff16(input, p)?.let { png(it, icc) } ?: throw Unconverted("TIFF not converted")
+        if (p.sixteenBit) return tiff16(input, p)?.let { png(it, icc, p.significantBits) } ?: throw Unconverted("TIFF not converted")
         val rgba = tiff(page) ?: throw Unconverted("TIFF not decoded")
         val webp = if (icc == null || !p.isGray) losslessWebp(rgba, icc) else null
         val made = webp ?: png(reduced(rgba, allowGray = icc == null || p.isGray), icc) ?: throw Unconverted("TIFF not converted")
         return if (Tiff.samplesExact(input)) made else Made(made.bytes, made.ext, reencoded = true)
     }
 
-    /** The samples of a [Tiff.Page.sixteenBit] page, as stored; null unless decoded whole. */
+    /** The samples of a [Tiff.Page.sixteenBit] page as 16 bits ([Tiff.decodeSamples]); null unless decoded whole. */
     private fun tiff16(input: Tiff.Input, p: Tiff.Page): Pixels? = try {
         val n = p.channels
         val out = ByteArray(p.width * p.height * n * 2)

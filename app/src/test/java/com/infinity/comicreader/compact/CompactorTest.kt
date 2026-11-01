@@ -223,6 +223,24 @@ class CompactorTest {
     }
 
     @Test
+    fun aPageTooLargeToConvertThatHadToBeIsListedAsFailed() {
+        val tiff = byteArrayOf(0x49, 0x49, 42, 0) + page(1, 1996)
+        val compactor = Compactor(scratch, 2, maxPage = 1000)
+        fun compatible(book: File) = compactor.run(
+            Compactor.Request(book, halve, inPlace = false, suffix = "compatible", smallerOnly = false, mustConvert = { PageWork.needsCompatible(it) }),
+            { ArchiveReader.open(book, "UTF-8")!! }, alive
+        )
+        val source = zip("Large.cbz", listOf("1.png" to page(PNG, 500), "2.tif" to tiff, "3.jpg" to page(JPG)))
+        val result = compatible(source) as Compactor.Result.Rebuilt
+        // The large JPEG needed nothing.
+        assertEquals(listOf("2.tif"), result.failed)
+        assertArrayEquals(tiff, entries(result.file).toMap()["2.tif"])
+        // Alone, the book is left as it is, the page named all the same.
+        val alone = zip("Large2.cbz", listOf("1.tif" to tiff))
+        assertEquals(listOf("1.tif"), (compatible(alone) as Compactor.Result.Unchanged).failed)
+    }
+
+    @Test
     fun aFileReadDamagedStopsTheRebuild() {
         // Noise: deflating stores it as it is, so it can be found in the archive.
         val random = java.util.Random(3)

@@ -292,6 +292,11 @@ class PageWork(private val jxl: JxlCodec, private val images: PlatformImages) {
         /** The color space an ICC profile's header names, as `RGB `, `GRAY`, `CMYK`. */
         fun iccSpace(icc: ByteArray): String = if (icc.size < 20) "" else String(icc, 16, 4, Charsets.ISO_8859_1)
 
+        /** True for a page, by its first bytes, in a format few readers open: one [compatible] makes anew. */
+        fun needsCompatible(head: ByteArray): Boolean = ImageKind.sniff(head) in FEW_OPEN
+
+        private val FEW_OPEN = setOf(ImageKind.JXL, ImageKind.TIFF, ImageKind.AVIF, ImageKind.HEIF)
+
         /** True when any pixel of RGBA [rgba] (8 bits) is not opaque. */
         fun hasAlpha(rgba: Pixels): Boolean {
             require(rgba.channels == 4 && rgba.bits == 8)

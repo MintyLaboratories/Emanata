@@ -319,7 +319,7 @@ internal class FileJobs(
                     }
                     val request = Compactor.Request(
                         book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible,
-                        cost = pages::memoryFor, placer = placer
+                        cost = pages::memoryFor, placer = placer, mustConvert = { compatible && PageWork.needsCompatible(it) }
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {

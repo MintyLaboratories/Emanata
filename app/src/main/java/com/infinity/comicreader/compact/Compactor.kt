@@ -46,7 +46,9 @@ class Compactor(
     private val threads: ThreadFactory = ThreadFactory { r -> Thread(r, "compact").apply { isDaemon = true } },
     private val memory: Long = Runtime.getRuntime().maxMemory() / 2,
     /** The bytes free for files where a file is; tests stand in their own. */
-    private val free: (File) -> Long = { it.usableSpace }
+    private val free: (File) -> Long = { it.usableSpace },
+    /** Pages larger than this are copied as they are; tests stand in a smaller one. */
+    private val maxPage: Long = MAX_PAGE_BYTES
 ) {
     /** What to make of a book. */
     class Request(
@@ -70,6 +72,8 @@ class Compactor(
         val replace: Boolean = false,
         /** True to write the new file even when no page is made anew (a folder packed). */
         val always: Boolean = false,
+        /** True for a page, by its first bytes ([HEAD_BYTES]), that [convert] must make anew: one too large to read whole is listed as failed. */
+        val mustConvert: (ByteArray) -> Boolean = { false },
         /** True to keep what is in dot-folders too, under its own path, never as pages (a folder packed with its unusual files). */
         val dotFolders: Boolean = false,
         /** Where the new file goes instead when a file takes [target]'s name meanwhile ("Keep both"); null to fail then. */
@@ -241,7 +245,10 @@ class Compactor(
                 val entry = files[i]
                 val file = File(work, i.toString())
                 if (request.convert == null || !isPage(entry)) {
-                    pieces[i] = asIs(reader, entry, file)
+                    val piece = asIs(reader, entry, file)
+                    // A page too large to convert that had to be: listed as failed.
+                    val unconverted = request.convert != null && isImage(entry) && request.mustConvert(head(piece.file))
+                    pieces[i] = if (unconverted) Piece(piece.file, piece.size, piece.crc, null, failed = true) else piece
                     advance(entry.size.coerceAtLeast(0))
                     continue
                 }
@@ -428,10 +435,22 @@ class Compactor(
     }
 
     /** True for a file read whole to be converted: a page ([isImage]) of a size held in memory. */
-    private fun isPage(entry: ArchiveEntry): Boolean = isImage(entry) && entry.size in 1..MAX_PAGE_BYTES
+    private fun isPage(entry: ArchiveEntry): Boolean = isImage(entry) && entry.size in 1..maxPage
 
     /** True for a file named as an image that the reader shows: not hidden, in a dot-folder or empty (each kept as it is). */
     private fun isImage(entry: ArchiveEntry): Boolean = Formats.isImageName(entry.path) && !ArchiveJunk.isJunk(entry.path, entry.size)
+
+    /** The first [HEAD_BYTES] of [file], fewer when it is shorter. */
+    private fun head(file: File): ByteArray = file.inputStream().use { input ->
+        val out = ByteArray(HEAD_BYTES)
+        var n = 0
+        while (n < out.size) {
+            val r = input.read(out, n, out.size - n)
+            if (r < 0) break
+            n += r
+        }
+        out.copyOf(n)
+    }
 
     /** [file] read through [input] for its size and CRC. */
     private fun sum(input: InputStream, file: File): Piece {
@@ -513,6 +532,9 @@ class Compactor(
         const val MAX_PAGE_BYTES = 64L * 1024 * 1024
 
         private const val COPY_BYTES = 256 * 1024
+
+        /** Bytes enough to tell an image's format ([Request.mustConvert]). */
+        const val HEAD_BYTES = 64
 
         /** Room left free beyond what a book needs, for the system and other apps. */
         const val SPARE_BYTES = 256L * 1024 * 1024

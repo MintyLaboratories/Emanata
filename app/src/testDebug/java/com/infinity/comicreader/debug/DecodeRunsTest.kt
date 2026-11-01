@@ -44,6 +44,21 @@ class DecodeRunsTest {
     }
 
     @Test
+    fun defaultSetupsAreEachTimedOnce() {
+        // The reader's 8 threads anywhere are the 8-thread setup: once, with the large cores' 2 to compare.
+        assertEquals(
+            listOf("coder", "page/8/any", "page/2/big", "platform"),
+            DecodeRuns.defaultSetups(threads = 8, pinned = false, bigThreads = 2).map { it.key }
+        )
+        assertEquals(
+            listOf("coder", "page/4/big", "page/8/any", "platform"),
+            DecodeRuns.defaultSetups(threads = 4, pinned = true, bigThreads = 4).map { it.key }
+        )
+        // No large cores: nothing pinned.
+        assertEquals(listOf("coder", "page/8/any", "platform"), DecodeRuns.defaultSetups(threads = 8, pinned = false, bigThreads = 0).map { it.key })
+    }
+
+    @Test
     fun jpegXlSetupsTakeOnlyJpegXl() {
         assertTrue(Setup.of("page", 4)!!.takes(jxl = true))
         assertFalse(Setup.of("coder", 4)!!.takes(jxl = false))

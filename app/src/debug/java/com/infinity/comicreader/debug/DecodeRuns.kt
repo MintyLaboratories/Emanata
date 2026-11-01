@@ -15,6 +15,17 @@ internal object DecodeRuns {
     /** Where the reader's JPEG XL threads run: the large cores when [pinned], else anywhere. */
     fun jxlCores(pinned: Boolean): ResampleRuns.Cores = if (pinned) ResampleRuns.Cores.BIG else ResampleRuns.Cores.ANY
 
+    /**
+     * The setups timed when none are asked, each once: jxl-coder, the reader's native JPEG XL
+     * setup ([threads], pinned when [pinned]), one thread per large core pinned there
+     * ([bigThreads]; 0 where there are no large cores), 8 threads anywhere, and the platform.
+     */
+    fun defaultSetups(threads: Int, pinned: Boolean, bigThreads: Int): List<Setup> = listOfNotNull(
+        Setup(Engine.CODER, 1, ResampleRuns.Cores.ANY), Setup(Engine.PAGE, threads, jxlCores(pinned)),
+        bigThreads.takeIf { it > 0 }?.let { Setup(Engine.PAGE, it, ResampleRuns.Cores.BIG) },
+        Setup(Engine.PAGE, 8, ResampleRuns.Cores.ANY), Setup(Engine.PLATFORM, 1, ResampleRuns.Cores.ANY)
+    ).distinct()
+
     /** A page decoder under test. */
     enum class Engine(val key: String, val jxl: Boolean) {
         /** jxl-coder's own decode, as JPEG XL pages decoded before; on cores, its threads start pinned there. */

@@ -33,6 +33,7 @@ import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.reader.JxlPages
+import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.SyntheticPage
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -92,10 +93,8 @@ class DecodeCheckService : Service() {
         val what = (intent?.getStringExtra("do") ?: "all").split(',').map { it.trim() }.toSet()
         val threads = JxlPages.threads
         val asked = intent?.getStringExtra("setups")?.split(',')
-        val setups = asked?.mapNotNull { Setup.of(it, threads) } ?: listOf(
-            Setup(Engine.CODER, 1, Cores.ANY), Setup(Engine.PAGE, threads, jxlCores), Setup(Engine.PAGE, 8, Cores.ANY),
-            Setup(Engine.PLATFORM, 1, Cores.ANY)
-        )
+        val big = CpuCores.device.let { if (it.big != 0L) NativeResampler.defaultThreads(it, Runtime.getRuntime().availableProcessors()) else 0 }
+        val setups = asked?.mapNotNull { Setup.of(it, threads) } ?: DecodeRuns.defaultSetups(threads, JxlPages.pinned, big)
         val dirs = intent?.getStringExtra("dirs")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
         val most = intent?.getIntExtra("pages", 16)?.coerceIn(1, 1000) ?: 16
         val synthetic = intent?.getBooleanExtra("synthetic", true) ?: true

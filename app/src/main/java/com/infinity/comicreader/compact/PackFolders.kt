@@ -29,9 +29,12 @@ object PackFolders {
     class Contents(val images: List<File>, val why: Why?, val extras: List<File> = emptyList(), val unusual: List<File> = emptyList()) {
         /** What goes into the CBZ, in natural order of their paths: [images], [extras], and with [unusualToo] every file of [unusual], dot-folders' too. */
         fun packed(dir: File, unusualToo: Boolean): List<File> {
-            val more = if (unusualToo) unusual.flatMap { if (it.isDirectory) it.walkTopDown().filter { f -> f.isFile }.toList() else listOf(it) } else emptyList()
+            val more = if (unusualToo) unusualFiles() else emptyList()
             return (images + extras + more).sortedWith(compareBy(NaturalOrder) { pathIn(dir, it) })
         }
+
+        /** Every file of [unusual] as it is now, dot-folders' too. Blocking. */
+        fun unusualFiles(): List<File> = unusual.flatMap { if (it.isDirectory) it.walkTopDown().filter { f -> f.isFile }.toList() else listOf(it) }
     }
 
     /** OS litter beside the images, left out and removed with the folder. */

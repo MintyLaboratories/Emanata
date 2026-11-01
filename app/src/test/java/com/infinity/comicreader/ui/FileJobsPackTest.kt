@@ -312,6 +312,25 @@ class FileJobsPackTest {
     }
 
     @Test
+    fun aFileAddedToADotFolderWhilePackingIsNeverDeleted() {
+        for (too in listOf(true, false)) {
+            val dir = unusualFolder()
+            val added = File(dir, ".thumbnails/sub/2.jpg")
+            val outcome = pack(
+                FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = unusualNames, unusualToo = too),
+                p = onFirstReport { added.writeBytes(byteArrayOf(2)) }
+            ) as FileWork.Outcome.Failed
+            assertEquals(1, outcome.done)
+            assertTrue("packed too: $too", added.exists())
+            // Nothing else removed either.
+            assertTrue(File(dir, ".thumbnails/sub/1.jpg").exists())
+            assertTrue(File(dir, "1.jpg").exists())
+            dir.deleteRecursively()
+            File(tmp.root, "Odd.cbz").delete()
+        }
+    }
+
+    @Test
     fun unusualFilesNotAskedAboutLeaveTheFolderAlone() {
         val dir = unusualFolder()
         val outcome = pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = listOf(".cover.jpg"))) as FileWork.Outcome.Failed

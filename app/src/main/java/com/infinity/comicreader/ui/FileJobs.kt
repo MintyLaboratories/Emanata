@@ -396,6 +396,8 @@ internal class FileJobs(
                     // Unusual files not asked about are never packed or deleted.
                     if (contents.why != null || !plan.unusual.containsAll(contents.unusual.map { it.name })) throw FileProblem(FileProblem.Kind.ALTERED, dir.name)
                     val files = contents.packed(dir, plan.unusualToo)
+                    // What the folder may lose of its unusual files: only those there now.
+                    val unusualFiles = contents.unusualFiles().toHashSet()
                     val images = contents.images.toHashSet()
                     val stats = files.map { it.length() to it.lastModified() }
                     // Found as for any book: an image never seen here may share what an identical copy keeps.
@@ -427,7 +429,7 @@ internal class FileJobs(
                             }
                         }
                         // Past the reader's wait: the folder holds nothing the library still needs.
-                        removed = removeFolder(dir, files, stats, contents.unusual.toSet())
+                        removed = removeFolder(dir, files, stats, contents.unusual.toSet(), unusualFiles)
                     }
                     val request = Compactor.Request(
                         dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
@@ -482,18 +484,29 @@ internal class FileJobs(
     /**
      * Removes folder [dir] once packed: its [files] packed, each still as it was ([stats],
      * size and time), its litter (junk files, junk folders whole) and the [unusual] files and
-     * dot-folders asked about, then the folder itself. False, and nothing removed, when a
-     * packed file changed or anything else is in it now; false, the folder left, when a file
-     * in it could not be deleted.
+     * dot-folders asked about, a dot-folder with only the files it held when the work began
+     * ([unusualFiles]), then the folder itself. False, and nothing removed, when a packed
+     * file changed or anything else is in it now; false, the folder left, when a file in it
+     * could not be deleted.
      */
-    private fun removeFolder(dir: File, files: List<File>, stats: List<Pair<Long, Long>>, unusual: Set<File>): Boolean {
+    private fun removeFolder(dir: File, files: List<File>, stats: List<Pair<Long, Long>>, unusual: Set<File>, unusualFiles: Set<File>): Boolean {
         if (files.indices.any { files[it].length() != stats[it].first || files[it].lastModified() != stats[it].second }) return false
         val children = dir.listFiles() ?: return false
         val packed = files.toHashSet()
         val litter = children.filter { it !in packed }
         if (litter.any { it !in unusual && if (it.isFile) !PackFolders.isJunk(it.name) else !PackFolders.isJunkFolder(it.name) }) return false
+        val dotFolders = litter.filter { it in unusual && it.isDirectory }.toHashSet()
+        fun known(f: File) = f.isDirectory || f in packed || f in unusualFiles
+        if (dotFolders.any { d -> !d.walkTopDown().all(::known) }) return false
         for (f in files) if (!f.delete() && f.exists()) return false
-        for (f in litter) if (!f.deleteRecursively() && f.exists()) return false
+        for (f in litter) {
+            if (f !in dotFolders) {
+                if (!f.deleteRecursively() && f.exists()) return false
+                continue
+            }
+            // Files first, then each folder once empty; one come since stays, and the folder with it.
+            for (x in f.walkBottomUp()) if (!known(x) || (!x.delete() && x.exists())) return false
+        }
         return dir.delete()
     }
 

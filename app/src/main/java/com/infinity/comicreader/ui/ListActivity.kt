@@ -206,6 +206,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     /** The tab and view the list is laid out for ([applyView]); null before the first layout. */
     private var shownTab: Int? = null
     private var shownView: TabView? = null
+
+    /** The item shown first when the list last switched between grid and list ([applyLayoutManager]). */
+    private var switchAnchor = RecyclerView.NO_POSITION
     private lateinit var progress: ProgressBar
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyIcon: ImageView
@@ -2371,9 +2374,18 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
             return
         }
         if (!grid && current != null && current !is GridLayoutManager) return
-        // Keep the reader's place when switching between list and grid.
-        val first = (current as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
-        recycler.layoutManager = if (grid) {
+        // Keep the reader's place when switching between list and grid: the first row shown stays where it was.
+        val old = current as? LinearLayoutManager
+        val shownFirst = old?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        val firstView = old?.findViewByPosition(shownFirst)
+        // Back from a grid, the item the list showed first, if still in the grid's first row, not that row's first cell.
+        val kept = switchAnchor.takeIf { old is GridLayoutManager && firstView != null && old.findViewByPosition(it)?.top == firstView.top }
+        val first = kept ?: shownFirst
+        switchAnchor = first
+        val offset = if (old == null || firstView == null) 0 else {
+            old.getDecoratedTop(firstView) - (firstView.layoutParams as ViewGroup.MarginLayoutParams).topMargin - recycler.paddingTop
+        }
+        val next = if (grid) {
             GridLayoutManager(this, columnCount()).apply {
                 // The "Recent" row and section headers are not grid cells: they span the whole width.
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
@@ -2384,7 +2396,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         } else {
             LinearLayoutManager(this)
         }
-        if (first > 0) recycler.scrollToPosition(first)
+        recycler.layoutManager = next
+        if (first != RecyclerView.NO_POSITION) next.scrollToPositionWithOffset(first, offset)
     }
 
     private fun columnCount(): Int {

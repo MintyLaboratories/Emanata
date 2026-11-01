@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.appbar.MaterialToolbar
@@ -155,6 +156,49 @@ class ListActivityViewLiveTest {
         assertFalse((list.recycler().adapter as BookAdapter).grid)
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
     }
+
+    @Test
+    fun switchingKeepsTheFirstRowShownInPlace() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
+        val list = launch()
+        val r = list.recycler()
+        r.scrollBy(0, 900)
+        settle()
+        val lm = r.layoutManager as LinearLayoutManager
+        val first = lm.findFirstVisibleItemPosition()
+        val top = outerTop(lm.findViewByPosition(first)!!)
+        assertTrue(first > 4)
+        assertTrue(top < 0)
+        list.tapFab()
+        val listed = r.layoutManager as LinearLayoutManager
+        assertEquals(first, listed.findFirstVisibleItemPosition())
+        assertEquals(top, outerTop(listed.findViewByPosition(first)!!))
+        list.tapFab()
+        val gridded = r.layoutManager as LinearLayoutManager
+        assertEquals(first, gridded.findFirstVisibleItemPosition())
+        assertEquals(top, outerTop(gridded.findViewByPosition(first)!!))
+    }
+
+    @Test
+    fun aRoundTripThroughTheGridComesBackToTheSameRow() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
+        val list = launch()
+        val r = list.recycler()
+        val lm = r.layoutManager as LinearLayoutManager
+        // A row that is not first in its grid row: the header is position 0, books 1 to 4 share the first grid row.
+        lm.scrollToPositionWithOffset(7, -30)
+        settle()
+        list.tapFab()
+        assertTrue(r.layoutManager is GridLayoutManager)
+        list.tapFab()
+        val back = r.layoutManager as LinearLayoutManager
+        assertEquals(7, back.findFirstVisibleItemPosition())
+        assertEquals(-30, outerTop(back.findViewByPosition(7)!!) - r.paddingTop)
+    }
+
+    /** Where [v]'s row starts, its margin included. */
+    private fun outerTop(v: View): Int = v.top - (v.layoutParams as ViewGroup.MarginLayoutParams).topMargin
 
     // ------------------------------------------------------------------ grid dimensions
 

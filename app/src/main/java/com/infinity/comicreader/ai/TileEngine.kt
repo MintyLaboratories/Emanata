@@ -17,6 +17,9 @@ enum class Fallback {
     /** It has transparency, which models do not keep. */
     TRANSLUCENT,
 
+    /** Its pixels are not readable: recycled, or not ARGB_8888 (a hardware or 16-bit bitmap). */
+    UNREADABLE,
+
     /** Conditions say stop: the device is hot, or battery saver is on ([AiConditions]). */
     PAUSED,
 
@@ -35,7 +38,12 @@ data class PageLimits(val timeoutMs: Long = DEFAULT_TIMEOUT_MS, val maxOutputPix
 }
 
 /** What one page's run did: tiles run of all planned, each tile's milliseconds, the whole run's. */
-class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val totalMs: Long)
+class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val totalMs: Long) {
+    companion object {
+        /** A run that never started. */
+        val NONE = RunStats(0, 0, LongArray(0), 0)
+    }
+}
 
 /** A page's run: [bitmap] when it finished, else why not ([fallback]). */
 class PageRun(val bitmap: Bitmap?, val fallback: Fallback?, val stats: RunStats)
@@ -72,6 +80,9 @@ internal object TileEngine {
     /** Tiles timed before the pace predicts a miss. */
     private const val PACE_AFTER = 2
 
+    /** Rows of a page read at a time when looking for transparency. */
+    private const val ALPHA_ROWS = 64
+
     /** [src] through [session]'s model, the output [Geometry.scale] times its size. */
     fun run(
         session: Session,
@@ -97,6 +108,7 @@ internal object TileEngine {
         session: Session, src: Bitmap, limits: PageLimits, canceled: () -> Boolean, gate: () -> Fallback?,
         clock: () -> Long, onTile: (Int, Int, Long) -> Unit
     ): PageRun {
+        if (src.isRecycled || src.config != Bitmap.Config.ARGB_8888) return PageRun(null, Fallback.UNREADABLE, RunStats.NONE)
         val g = session.geometry
         val tiles = TilePlan.tiles(src.width, src.height, session.size, g)
         val times = LongArray(tiles.size)
@@ -104,11 +116,11 @@ internal object TileEngine {
         fun stats(done: Int) = RunStats(done, tiles.size, times.copyOf(done), clock() - start)
         fun fallback(why: Fallback, done: Int) = PageRun(null, why, stats(done))
 
-        if (src.hasAlpha()) return fallback(Fallback.TRANSLUCENT, 0)
         val outW = src.width.toLong() * g.scale
         val outH = src.height.toLong() * g.scale
         if (outW * outH > limits.maxOutputPixels) return fallback(Fallback.TOO_LARGE, 0)
         gate()?.let { return fallback(it, 0) }
+        if (!opaque(src)) return fallback(Fallback.TRANSLUCENT, 0)
         val out = try {
             Bitmap.createBitmap(outW.toInt(), outH.toInt(), Bitmap.Config.ARGB_8888)
         } catch (e: OutOfMemoryError) {
@@ -137,5 +149,24 @@ internal object TileEngine {
         } finally {
             if (!kept) out.recycle()
         }
+    }
+
+    /**
+     * True when every pixel of [src] is opaque: at once when it says it has no alpha, else by
+     * reading its alpha, [ALPHA_ROWS] rows at a time (decoders mark opaque RGBA pages as
+     * having alpha).
+     */
+    fun opaque(src: Bitmap): Boolean {
+        if (!src.hasAlpha()) return true
+        val w = src.width
+        val rows = IntArray(w * minOf(ALPHA_ROWS, src.height))
+        var y = 0
+        while (y < src.height) {
+            val n = minOf(ALPHA_ROWS, src.height - y)
+            src.getPixels(rows, 0, w, 0, y, w, n)
+            for (i in 0 until w * n) if (rows[i] ushr 24 != 0xFF) return false
+            y += n
+        }
+        return true
     }
 }

@@ -156,8 +156,36 @@ class TileEngineTest {
     @Test
     fun aTranslucentPageFallsBack() {
         val model = FakeModel()
-        val src = page(50, 50).apply { setHasAlpha(true) }
-        assertEquals(Fallback.TRANSLUCENT, TileEngine.run(session(model), src).fallback)
+        val src = page(50, 150).apply {
+            setHasAlpha(true)
+            setPixel(20, 140, 0x80FFFFFF.toInt())
+        }
+        val s = session(model)
+        val before = model.runs.get()
+        assertEquals(Fallback.TRANSLUCENT, TileEngine.run(s, src).fallback)
+        assertEquals(before, model.runs.get())
+    }
+
+    @Test
+    fun anOpaquePageMarkedAsHavingAlphaRuns() {
+        // As decoders mark opaque RGBA pages: every pixel opaque, the bitmap saying it has alpha.
+        val src = page(50, 150).apply { setHasAlpha(true) }
+        assertTrue(src.hasAlpha())
+        val run = TileEngine.run(session(FakeModel()), src)
+        assertNull(run.fallback)
+        assertTrue(TileEngine.opaque(page(3, 3)))
+    }
+
+    @Test
+    fun anUnreadablePageFallsBackBeforeAnyTile() {
+        val model = FakeModel()
+        val s = session(model)
+        val before = model.runs.get()
+        val small = Bitmap.createBitmap(40, 40, Bitmap.Config.RGB_565)
+        assertEquals(Fallback.UNREADABLE, TileEngine.run(s, small).fallback)
+        val recycled = page(40, 40).apply { recycle() }
+        assertEquals(Fallback.UNREADABLE, TileEngine.run(s, recycled).fallback)
+        assertEquals(before, model.runs.get())
     }
 
     @Test

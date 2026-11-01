@@ -332,7 +332,8 @@ internal interface CalibrationProbe {
  * B A…) so heat weighs on each alike, [warmup] rounds left out. Each sample waits for the
  * device to be fair, runs the candidate once untimed when [warm] (the wait lets the cores
  * clock down, which the first run after it pays for), then takes the median of [burst]
- * runs back to back. A sample something disturbed is made again, up to [retries] times in all.
+ * runs back to back. A sample something disturbed is made again, up to [retries] times in
+ * all per run a sample makes: a longer sample is the likelier to be disturbed.
  */
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
@@ -350,6 +351,8 @@ internal class CalibrationRun(
     /** True when the last [run] kept a sample made with battery saver on ([CalibrationProbe.powerSave]). */
     var sawPowerSave: Boolean = false
         private set
+
+    private val mostRedone = retries * (burst.coerceAtLeast(1) + if (warm) 1 else 0)
 
     /** The median timing of each candidate that ran, with its spread over the samples; null when the run stopped first ([why]). */
     fun run(stopped: () -> Boolean = { false }): List<Timing>? {
@@ -380,7 +383,7 @@ internal class CalibrationRun(
                         }
                         break
                     }
-                    if (++redone > retries) return stop("disturbed $redone times")
+                    if (++redone > mostRedone) return stop("disturbed $redone times")
                 }
             }
         }

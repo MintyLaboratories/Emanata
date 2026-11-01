@@ -353,6 +353,12 @@ class CalibrationTest {
         assertNull(run.run())
         assertEquals(4, never.order.size)
         assertEquals("disturbed 4 times", run.why)
+        // Samples of a warm run and 3 timed: 4 times as many redone.
+        val warmed = FakeProbe(mapOf(a to listOf(10.0)), still = { false })
+        val longer = CalibrationRun(warmed, listOf(a), rounds = 2, retries = 3)
+        assertNull(longer.run())
+        assertEquals("disturbed 13 times", longer.why)
+        assertEquals(13 * 4, warmed.order.size)
     }
 
     /** Times every run 10 ms; [still] and [saver] script the device's state. */

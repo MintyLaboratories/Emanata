@@ -187,7 +187,8 @@ class CompactCheckService : Service() {
             log(
                 "book ${i + 1} of ${books.size}: ${if (done != null) "done" else outcome.javaClass.simpleName} in $took ms, " +
                     "$size -> $newSize bytes (${if (size > 0) "%.1f".format(100.0 * newSize / size) else "-"}%), " +
-                    "saved ${done?.summary?.saved}, unchanged ${done?.summary?.unchanged}, reencoded ${done?.summary?.reencoded?.values?.sumOf { it.size }}" +
+                    "saved ${done?.summary?.saved}, unchanged ${done?.summary?.unchanged}, reencoded ${done?.summary?.reencoded?.values?.sumOf { it.size }}, " +
+                    "not converted ${done?.summary?.failedPages}" +
                     ((outcome as? FileWork.Outcome.Failed)?.error?.let { ", error ${it.javaClass.simpleName}: ${it.message}" } ?: "")
             )
         }

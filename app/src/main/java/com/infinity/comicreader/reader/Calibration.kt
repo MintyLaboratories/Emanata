@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import org.json.JSONArray
+import java.io.File
 import org.json.JSONObject
 import kotlin.math.abs
 
@@ -226,6 +227,29 @@ object Calibration {
 
     /** What a calibration is kept for: this install of the app on this system build. */
     fun fingerprint(app: String, system: String): String = "$app|$system"
+
+    /**
+     * The bytes of the page [name].[ext] in [dir] made for [fingerprint]: as kept, or else
+     * made by [make] and kept, older ones of [name] deleted; null when it cannot be made. An
+     * update of the app or system may draw or encode the page differently, so each fingerprint
+     * makes its own.
+     */
+    internal fun cachedPage(dir: File, name: String, ext: String, fingerprint: String, make: () -> ByteArray?): ByteArray? = runCatching {
+        val tag = "%08x".format(fingerprint.hashCode())
+        val f = File(dir, "$name-$tag.$ext")
+        if (!f.exists()) {
+            dir.mkdirs()
+            dir.listFiles()?.filter { it.name.startsWith(name) }?.forEach { it.delete() }
+            val bytes = make() ?: return null
+            val tmp = File(f.path + ".tmp")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(f)) {
+                tmp.delete()
+                return bytes
+            }
+        }
+        f.readBytes()
+    }.getOrNull()
 
     /**
      * True when [kept], the calibration kept, is not for [fingerprint] (this install and

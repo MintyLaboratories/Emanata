@@ -202,6 +202,26 @@ class CalibrationTest {
     }
 
     @Test
+    fun pagesAreMadeOncePerFingerprintAndOlderOnesGo() {
+        val dir = kotlin.io.path.createTempDirectory("calibration").toFile()
+        try {
+            java.io.File(dir, "page-q90.jpg").writeBytes(byteArrayOf(9))
+            java.io.File(dir, "other.bin").writeBytes(byteArrayOf(7))
+            var made = 0
+            fun page(f: String) = Calibration.cachedPage(dir, "page-q90", "jpg", f) { made++; byteArrayOf(made.toByte()) }
+            assertEquals(listOf<Byte>(1), page("a")!!.toList())
+            assertEquals(listOf<Byte>(1), page("a")!!.toList())
+            // A new app or system build: made anew, the one before deleted with the unversioned one.
+            assertEquals(listOf<Byte>(2), page("b")!!.toList())
+            assertEquals(2, made)
+            assertEquals(listOf("other.bin", "page-q90-%08x.jpg".format("b".hashCode())), dir.list()!!.sorted())
+            assertNull(Calibration.cachedPage(dir, "page-q91", "jxl", "b") { null })
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun fingerprintChangesWithAppOrSystem() {
         val a = Calibration.fingerprint("12@100", "brand/device:16/BUILD1")
         assertTrue(a != Calibration.fingerprint("12@200", "brand/device:16/BUILD1"))

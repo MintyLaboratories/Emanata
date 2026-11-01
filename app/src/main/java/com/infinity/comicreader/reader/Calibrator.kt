@@ -25,6 +25,7 @@ import com.awxkee.jxlcoder.JxlDecodingSpeed
 import com.awxkee.jxlcoder.JxlEffort
 import com.infinity.comicreader.compact.LibJxl
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
@@ -215,19 +216,21 @@ object Calibrator {
 
     /** One calibration: null when it finished and its winners apply, else why not. */
     private fun calibrate(force: Boolean, dropped: () -> Boolean): String? {
-        val probe = DeviceProbe(app, force, dropped)
+        val f = fingerprint ?: return "not ready"
+        val probe = DeviceProbe(app, force, dropped, f)
         try {
             // Nothing is drawn or encoded before the app is first found idle.
             if (!probe.awaitFair()) return probe.why ?: "not fair"
             probe.prepare()
+            val cores = CpuCores.device
+            // Platform JPEG is timed only where there are large cores to pin it to.
             val candidates = Calibration.candidates(
-                CpuCores.device, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl(), jpeg = probe.prepareJpeg()
+                cores, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl(), jpeg = cores.big != 0L && probe.prepareJpeg()
             )
             val t0 = SystemClock.elapsedRealtime()
             val run = CalibrationRun(probe, candidates)
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
-            val f = fingerprint ?: return "not ready"
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
             val chosen = Calibration.tuning(timings, before)
             chosen.apply()
@@ -275,8 +278,17 @@ object Calibrator {
 
     private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
-    /** Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's portrait size. */
-    private class DeviceProbe(private val context: Context, private val force: Boolean, private val dropped: () -> Boolean) : CalibrationProbe {
+    /**
+     * Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's
+     * portrait size; its encoded forms are kept in the cache for [fingerprint] (this install
+     * and system build, whose drawing and encoders they come from).
+     */
+    private class DeviceProbe(
+        private val context: Context,
+        private val force: Boolean,
+        private val dropped: () -> Boolean,
+        private val fingerprint: String
+    ) : CalibrationProbe {
         private var src: Bitmap? = null
         private var dst: Bitmap? = null
         private var jxl: ByteArray? = null
@@ -322,34 +334,25 @@ object Calibrator {
         val page: String get() = "${PAGE_W}x$PAGE_H"
         val target: String get() = dst?.let { "${it.width}x${it.height}" } ?: "?"
 
-        /** Makes the JPEG XL page (quality 91, once, kept in the cache); false where native decodes are missing. */
+        private val cache: File get() = File(context.cacheDir, "calibration")
+
+        /** Makes the JPEG XL page (quality 91, once per [fingerprint]); false where native decodes are missing. */
         fun prepareJxl(): Boolean {
             if (JxlPages.kernel == null) return false
-            val f = File(context.cacheDir, "calibration/page-${PAGE_W}x$PAGE_H-q91.jxl")
-            jxl = runCatching {
-                if (!f.exists()) {
-                    f.parentFile?.mkdirs()
-                    val bytes = JxlCoder.encode(src ?: return false, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
-                    File(f.path + ".tmp").apply { writeBytes(bytes) }.renameTo(f)
-                }
-                f.readBytes()
-            }.getOrNull() ?: return false
+            val page = src ?: return false
+            jxl = Calibration.cachedPage(cache, "page-${PAGE_W}x$PAGE_H-q91", "jxl", fingerprint) {
+                JxlCoder.encode(page, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
+            } ?: return false
             jxlOut = Bitmap.createBitmap(PAGE_W, PAGE_H, Bitmap.Config.ARGB_8888)
             return true
         }
 
-        /** Makes the JPEG page (quality 90, as most scans, once, kept in the cache); false when it cannot. */
+        /** Makes the JPEG page (quality 90, as most scans, once per [fingerprint]); false when it cannot. */
         fun prepareJpeg(): Boolean {
-            val f = File(context.cacheDir, "calibration/page-${PAGE_W}x$PAGE_H-q90.jpg")
-            jpeg = runCatching {
-                if (!f.exists()) {
-                    f.parentFile?.mkdirs()
-                    val tmp = File(f.path + ".tmp")
-                    tmp.outputStream().use { (src ?: return false).compress(Bitmap.CompressFormat.JPEG, 90, it) }
-                    tmp.renameTo(f)
-                }
-                f.readBytes()
-            }.getOrNull()
+            val page = src ?: return false
+            jpeg = Calibration.cachedPage(cache, "page-${PAGE_W}x$PAGE_H-q90", "jpg", fingerprint) {
+                ByteArrayOutputStream().also { page.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+            }
             return jpeg != null
         }
 

@@ -466,9 +466,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     /**
      * Fills each AI step's choices from the catalog (none, then its models with their sizes),
-     * starts downloading a model as it is chosen or as AI processing is turned on, and shows
-     * the chain run (hidden advanced choices too), each choice's download state and the space
-     * models take, as they change.
+     * starts downloading a model as it is chosen, as AI processing is turned on, or (when a
+     * download was cut short with the app) as Settings open, and shows the chain run (hidden
+     * advanced choices too), each choice's download state and the space models take, as they
+     * change.
      */
     private fun setUpAi(prefs: Prefs) {
         val context = requireContext()
@@ -517,6 +518,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
         refreshAi = { lifecycleScope.launch { show(ModelDownloads.state.value) } }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { ModelDownloads.state.collect { show(it) } }
+        }
+        // A failed download waits to be chosen again; one the app's end cut short goes on.
+        lifecycleScope.launch(AppDispatchers.io) {
+            val states = ModelDownloads.state.value.states
+            for (m in AiChain.chosen(prefs)) if (m.id !in states) ModelDownloads.start(store, m)
         }
     }
 

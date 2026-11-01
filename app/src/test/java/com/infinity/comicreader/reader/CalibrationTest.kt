@@ -54,8 +54,10 @@ class CalibrationTest {
         assertTrue(Calibration.jpegPinned(listOf(Timing(big, 30.0, 30.0), Timing(any, 40.0, 40.0)), before = true))
         // Several threads, but not clearly faster: no change either way.
         assertTrue(Calibration.jpegPinned(listOf(Timing(big, 30.0, 30.0, 2.0), Timing(any, 29.0, 110.0, 2.0)), before = true))
-        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 50.0, 50.0, 10.0), Timing(any, 42.0, 150.0, 3.0)), before = true))
-        assertFalse(Calibration.jpegPinned(listOf(Timing(big, 42.0, 42.0, 3.0), Timing(any, 50.0, 180.0, 10.0)), before = false))
+        assertTrue(Calibration.jpegPinned(listOf(Timing(big, 50.0, 50.0, 3.0), Timing(any, 42.0, 150.0, 10.0)), before = true))
+        assertFalse(Calibration.jpegPinned(listOf(Timing(big, 42.0, 42.0, 10.0), Timing(any, 50.0, 180.0, 3.0)), before = false))
+        // The slower choice's spread does not count: unpinned 50.0 steady against pinned 57.0 that spread 10.2.
+        assertFalse(Calibration.jpegPinned(listOf(Timing(big, 57.0, 109.0, 10.2), Timing(any, 50.0, 171.0, 1.9)), before = true))
         // Pinned clearly faster: pinned again.
         assertTrue(Calibration.jpegPinned(listOf(Timing(big, 40.0, 40.0, 1.0), Timing(any, 50.0, 180.0, 1.0)), before = false))
         // Untimed: as before.

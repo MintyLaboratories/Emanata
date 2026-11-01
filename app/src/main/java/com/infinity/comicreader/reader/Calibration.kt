@@ -127,12 +127,14 @@ object Calibration {
     }
 
     /**
-     * An unpinned JPEG decode must be faster than a pinned one by this share (and the
+     * An unpinned JPEG decode must be faster than a pinned one by this share (and its own
      * spread) for platform JPEG to be left unpinned. Where the system decoder spreads a page
-     * over several cores, pinning confines it to the large ones: 30-50 % slower on the
-     * synthetic page on a tablet with 2 large and 6 little cores. Its CPU time is not weighed:
-     * unpinned, such a decode timed alone uses about twice the CPU, but the same work is
-     * spread over cores otherwise idle.
+     * over several cores, pinning confines it to the large ones. On a tablet with 2 large and
+     * 6 little cores, synthetic 2000x3000 and 4000x6000 JPEGs decoded on their own took
+     * 1.5-1.6x as long pinned; calibration, between its other setups, measured 1.0-1.6x
+     * (median 1.1x). Its CPU time is not weighed, unlike [pick]'s: unpinned, the decode used
+     * about 1.7x the CPU time, but mostly on the little cores, while pinned the large cores ran
+     * mostly at their lowest clock; which costs less energy is unknown.
      */
     const val JPEG_MARGIN = 0.05
 
@@ -146,14 +148,15 @@ object Calibration {
     /**
      * Whether platform JPEG decodes stay pinned, from the [JPEG][Candidate.Kind.JPEG] [timings]:
      * pinned where the system decodes on one thread; else [before] unless the other choice
-     * is faster by more than [JPEG_MARGIN] and the spread.
+     * is faster by more than [JPEG_MARGIN] and its own spread (a slow choice's outliers never
+     * count, as in [pick]).
      */
     fun jpegPinned(timings: List<Timing>, before: Boolean): Boolean {
         val jpeg = timings.filter { it.candidate.kind == Candidate.Kind.JPEG }
         val pinned = jpeg.firstOrNull { it.candidate.pinned } ?: return before
         val any = jpeg.firstOrNull { !it.candidate.pinned } ?: return before
         if (any.cpuMs < any.wallMs * JPEG_THREADED) return true
-        fun beats(a: Timing, b: Timing) = a.wallMs < b.wallMs * (1 - JPEG_MARGIN) && b.wallMs - a.wallMs > maxOf(a.wallSpreadMs, b.wallSpreadMs)
+        fun beats(a: Timing, b: Timing) = a.wallMs < b.wallMs * (1 - JPEG_MARGIN) && b.wallMs - a.wallMs > a.wallSpreadMs
         return if (before) !beats(any, pinned) else beats(pinned, any)
     }
 

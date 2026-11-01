@@ -16,7 +16,10 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.infinity.comicreader.util.Notice
 import com.infinity.comicreader.util.Notices
 
-/** Version, source and upstream links, the app's license, a tip jar and every third-party license. */
+/**
+ * Version, source and upstream links, the app's license, a tip jar, every third-party license,
+ * and the authors and licenses of the AI models the app downloads.
+ */
 class AboutActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +40,9 @@ class AboutActivity : AppCompatActivity() {
 
         val notices = findViewById<LinearLayout>(R.id.about_notices)
         for (n in Notices.all) addRow(notices, n.name, n.license) { showNotice(n) }
+
+        val models = findViewById<LinearLayout>(R.id.about_models)
+        for (n in Notices.models) addRow(models, n.name, n.license) { showNotice(n) }
     }
 
     /** [notice]'s note and license texts, with a button to its project page. */

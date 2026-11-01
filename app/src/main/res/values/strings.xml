@@ -1028,6 +1028,7 @@
     <string name="about_license_summary">The app\'s own code is MIT; bundled components keep their own licenses</string>
     <string name="about_tip">Leave a tip (Ko-fi)</string>
     <string name="about_third_party">Third-party licenses</string>
+    <string name="about_ai_models">AI models (downloaded on demand)</string>
     <string name="about_project_page">Project page</string>
 
     <!-- ===================== Arrays ===================== -->

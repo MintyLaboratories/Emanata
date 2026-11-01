@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/** The model catalog: well-formed entries, from the pinned repository, under licenses the app can use. */
+/** The model catalog: well-formed entries, from the pinned repository, under licenses the app can use, each within a page's time. */
 class ModelCatalogTest {
 
     private val assetDir = File("src/main/assets/licenses")
@@ -87,6 +87,11 @@ class ModelCatalogTest {
     fun theReadmeListsEveryModelSource() {
         val readme = File("../README.md").readText()
         for (s in ModelSource.entries) assertTrue("${s.title} not in README", readme.contains("| [${s.title}](${s.url}) |"))
+    }
+
+    @Test
+    fun everyModelTakesAPageWithinTheBudget() {
+        for (m in ModelCatalog.all) assertTrue("${m.id}: ${m.pageMs} ms", m.pageMs in 1..ModelCatalog.MAX_PAGE_MS)
     }
 
     @Test

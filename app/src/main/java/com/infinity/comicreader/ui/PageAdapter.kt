@@ -231,6 +231,12 @@ class PageAdapter(
     /** A page of [tallPages] that shows from its bottom, as one turned back to; -1 for none. */
     private var fromBottom = NO_PAGE
 
+    /**
+     * Pages of [tallPages] to land on ([landTall]) from their bottom (true) or top once their
+     * item is attached again: one kept aside off screen comes back as it was left, unbound.
+     */
+    private val landings = HashMap<Int, Boolean>()
+
     /** The fit page [page] shows at: [fitMode], or fit width for one of [tallPages] in paged reading. */
     private fun fitOf(page: Int): ZoomImageView.FitMode =
         if (mode == Mode.PAGED && page in tallPages) ZoomImageView.FitMode.WIDTH else fitMode
@@ -594,16 +600,43 @@ class PageAdapter(
         if (mode != Mode.PAGED) return
         val part = strip.parts(position).filterNotNull().singleOrNull()
         fromBottom = if (atBottom && part != null && part.page in tallPages) part.page else NO_PAGE
-        val image = tallImage(position) ?: return
+        land(position, atBottom)
+    }
+
+    /**
+     * Readies the items beside [position] as a swipe starts, as turning to them does: a page
+     * of [tallPages] before it shows from its bottom, one after it from its top.
+     */
+    fun swipingFrom(position: Int) {
+        if (mode != Mode.PAGED) return
+        land(position + 1, atBottom = false)
+        if (position > 0) landTall(position - 1, atBottom = true)
+    }
+
+    /** Shows the page of [tallPages] item [position] shows alone from its top or [atBottom]: now if it is attached, else once it is ([landings]). */
+    private fun land(position: Int, atBottom: Boolean) {
+        if (position !in 0 until itemCount) return
+        val page = strip.parts(position).filterNotNull().singleOrNull()?.page?.takeIf { it in tallPages } ?: return
+        val image = tallImage(position)
+        if (image == null) {
+            landings[page] = atBottom
+            return
+        }
+        landings.remove(page)
         image.startAtBottom = atBottom
         image.fit()
     }
 
-    /** Readies item [position], about to be swiped back to, to show from its bottom when it is a page of [tallPages] shown alone. */
-    fun swipingBackTo(position: Int) {
-        if (mode != Mode.PAGED || position < 0 || position >= itemCount) return
-        val part = strip.parts(position).filterNotNull().singleOrNull() ?: return
-        if (part.page in tallPages) landTall(position, atBottom = true)
+    /** An item attached again lands its tall page as [landings] says, before it shows. */
+    override fun onViewAttachedToWindow(holder: PageHolder) {
+        super.onViewAttachedToWindow(holder)
+        if (landings.isEmpty()) return
+        for (image in holder.images) {
+            if (image.visibility == View.GONE) continue
+            val atBottom = landings.remove(pageOf[image] ?: continue) ?: continue
+            image.startAtBottom = atBottom
+            image.fit()
+        }
     }
 
     /** The image of the page of [tallPages] item [position] shows alone, when it is bound. */

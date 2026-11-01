@@ -550,8 +550,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             override fun onPageScrollStateChanged(state: Int) {
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) {
                     stopAutoScroll()
-                    // A swipe back lands on a tall page at its bottom, as taps and keys do: set before it slides in.
-                    if (mode == MODE_PAGED && pager.currentItem > 0) adapter?.swipingBackTo(pager.currentItem - 1)
+                    // A swipe lands on a tall page as taps and keys do, back at its bottom: set before it slides in.
+                    if (mode == MODE_PAGED) adapter?.swipingFrom(pager.currentItem)
                 }
                 // Seams held back while the reader was on their pages may show now.
                 if (state == ViewPager2.SCROLL_STATE_IDLE && mode == MODE_PAGED) pager.post { relayout() }

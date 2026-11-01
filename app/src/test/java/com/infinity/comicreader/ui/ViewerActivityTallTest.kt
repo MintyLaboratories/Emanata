@@ -203,23 +203,54 @@ class ViewerActivityTallTest {
         assertTrue("$presses presses", presses > 3)
     }
 
+    /** Swipes [pager] a page back (toward the next one's side, [sign] 1) or on (-1), as a finger dragging most of the screen. */
+    private fun swipe(pager: ViewPager2, sign: Int) {
+        pager.beginFakeDrag()
+        for (i in 1..10) pager.fakeDragBy(sign * pager.width * 0.08f)
+        pager.endFakeDrag()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(800))
+    }
+
+    /** Where the shown page's top is, and how far down it may go: its top at 0, its bottom at the second. */
+    private fun ViewerActivity.shownTop(): Pair<Float, Float> {
+        val image = shownImage()
+        val values = FloatArray(9).also { image.imageMatrix.getValues(it) }
+        val shownHeight = image.drawable.intrinsicHeight * values[Matrix.MSCALE_Y]
+        assertTrue("taller than the screen", shownHeight > image.height)
+        return values[Matrix.MTRANS_Y] to image.height - shownHeight
+    }
+
     @Test
     fun swipingBackOntoATallPageLandsAtItsBottom() {
         val viewer = launch(book("Mixed 03.cbz", listOf(140, 1000, 140)), page = 2)
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
         await { asked() == null && pager.currentItem == 2 }
         assertEquals(2, pager.currentItem)
-        // A finger dragging the page toward the next one's side, as far as most of the screen.
-        pager.beginFakeDrag()
-        for (i in 1..10) pager.fakeDragBy(pager.width * 0.08f)
-        pager.endFakeDrag()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(800))
+        swipe(pager, 1)
         assertEquals(1, pager.currentItem)
         await { viewer.shownImage().drawable != null }
-        val image = viewer.shownImage()
-        val values = FloatArray(9).also { image.imageMatrix.getValues(it) }
-        val shownHeight = image.drawable.intrinsicHeight * values[Matrix.MSCALE_Y]
-        assertTrue("taller than the screen", shownHeight > image.height)
-        assertEquals(image.height - shownHeight, values[Matrix.MTRANS_Y], 1f)
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+    }
+
+    @Test
+    fun aTallPageKeptAsideLandsAtItsBottomSwipedBackAndItsTopSwipedOn() {
+        // Opened on the tall page, which stays bound off screen while the next one shows.
+        val viewer = launch(book("Mixed 04.cbz", listOf(140, 1000, 140, 140)), page = 1)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        await { asked() == null && pager.currentItem == 1 && viewer.shownImage().drawable != null }
+        assertEquals(0f, viewer.shownTop().first, 1f)
+        swipe(pager, -1)
+        assertEquals(2, pager.currentItem)
+        swipe(pager, 1)
+        assertEquals(1, pager.currentItem)
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+        // Back further, then on again: from its top, as a tap turning to it.
+        swipe(pager, 1)
+        assertEquals(0, pager.currentItem)
+        swipe(pager, -1)
+        assertEquals(1, pager.currentItem)
+        assertEquals(0f, viewer.shownTop().first, 1f)
     }
 }

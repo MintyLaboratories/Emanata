@@ -159,8 +159,8 @@ object Calibration {
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
      * fastest's own spread of it), the one using the least CPU time; [incumbent], the setup
-     * in effect, unless the winner uses less CPU time by more than the spread. A slow setup's
-     * own spread never counts, so its outliers cannot make it fast.
+     * in effect, unless the winner uses less CPU time by more than the noise ([cpuNoise]). A
+     * slow setup's own spread never counts, so its outliers cannot make it fast.
      */
     fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE): Timing? {
         val fastest = timings.minByOrNull { it.wallMs } ?: return null
@@ -169,8 +169,19 @@ object Calibration {
         }
         val winner = fast.minWith(compareBy({ it.cpuMs }, { it.wallMs }))
         val kept = fast.firstOrNull { it.candidate == incumbent } ?: return winner
-        return if (kept.cpuMs - winner.cpuMs <= maxOf(kept.cpuSpreadMs, winner.cpuSpreadMs)) kept else winner
+        return if (kept.cpuMs - winner.cpuMs <= cpuNoise(kept, winner)) kept else winner
     }
+
+    /**
+     * The CPU time difference between [a] and [b] that counts as none: their spread, but at
+     * least [CPU_NOISE_SHARE] of the lesser CPU time and [CPU_NOISE_MS]. CPU times come in whole
+     * ms, so medians of steady runs often spread 0.
+     */
+    internal fun cpuNoise(a: Timing, b: Timing): Double =
+        maxOf(a.cpuSpreadMs, b.cpuSpreadMs, CPU_NOISE_SHARE * minOf(a.cpuMs, b.cpuMs), CPU_NOISE_MS)
+
+    private const val CPU_NOISE_SHARE = 0.05
+    private const val CPU_NOISE_MS = 1.0
 
     /**
      * True when [gpu] beats every CPU setup in [cpu] by more than [TOLERANCE] and the

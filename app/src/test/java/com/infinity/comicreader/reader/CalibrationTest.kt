@@ -144,6 +144,21 @@ class CalibrationTest {
     }
 
     @Test
+    fun wholeMillisecondCpuTimesThatSpreadZeroStillCountNoise() {
+        // CPU in whole ms, every burst alike: spread 0. A 1-4 ms CPU gap on ~85 ms is noise.
+        val t = listOf(Timing(pixels(2, true), 50.6, 85.0, 1.1, 0.0), Timing(pixels(4, true), 45.0, 82.0, 1.0, 0.0))
+        assertEquals(pixels(2, true), Calibration.pick(t, incumbent = pixels(2, true))!!.candidate)
+        assertEquals(pixels(4, true), Calibration.pick(t, incumbent = pixels(4, true))!!.candidate)
+        // Tiny CPU times: at least 1 ms.
+        val tiny = listOf(Timing(pixels(1, true), 10.0, 11.0), Timing(pixels(2, true), 9.0, 10.0))
+        assertEquals(pixels(1, true), Calibration.pick(tiny, incumbent = pixels(1, true))!!.candidate)
+        // Beyond 5 %: the cheaper one wins.
+        val clear = listOf(Timing(pixels(2, true), 50.6, 85.0, 1.1, 0.0), Timing(pixels(4, true), 45.0, 78.0, 1.0, 0.0))
+        assertEquals(pixels(4, true), Calibration.pick(clear, incumbent = pixels(2, true))!!.candidate)
+        assertEquals(3.9, Calibration.cpuNoise(clear[0], clear[1]), 1e-9)
+    }
+
+    @Test
     fun withinTheSpreadOfTheFastestCountsAsFast() {
         // 25 % slower, but the fastest's runs spread over 30 ms.
         val t = listOf(Timing(jxl(8, false), 100.0, 1000.0, wallSpreadMs = 30.0), Timing(jxl(4, true), 125.0, 600.0))

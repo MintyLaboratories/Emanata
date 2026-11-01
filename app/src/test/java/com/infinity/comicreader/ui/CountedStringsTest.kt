@@ -40,7 +40,7 @@ class CountedStringsTest {
 
     @Test
     fun streaksCountDays() {
-        val text = context.statsText(ReadingStats(seconds = 3_660, pages = 1, chapters = 1, daysRead = 1, streak = 1, bestStreak = 2))
+        val text = context.statsText(ReadingStats(seconds = 3_660, pages = 1, books = 1, daysRead = 1, streak = 1, bestStreak = 2))
         assertTrue(text, text.contains("Current streak: 1 day\n"))
         assertTrue(text, text.endsWith("Best streak: 2 days"))
         assertTrue(text, text.contains("Time reading: 1 h 1 min"))

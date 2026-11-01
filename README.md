@@ -479,7 +479,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Housekeeping: **duplicate file finder** (bit-identical copies, SHA-256
   verified, shown as one cover with every place a copy is; spread two fingers
   on it to peek), **largest files** list,
-  reading **statistics**, and **backup / restore** of your library, settings
+  reading **statistics** (books read, pages read, time reading, days read,
+  streaks; a book is a PDF, a CB* archive, or a folder of loose images, which
+  counts once when all its images are read or it is marked read; books read
+  goes down when one is unmarked, never below 0), and **backup / restore** of
+  your library, settings
   and network shares (Settings → Your data) to a JSON file you choose.
 
 ### Reader

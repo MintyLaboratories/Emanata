@@ -70,6 +70,7 @@ import com.infinity.comicreader.data.FavoriteKind
 import com.infinity.comicreader.data.FavoriteKindCache
 import com.infinity.comicreader.data.FavoriteLabels
 import com.infinity.comicreader.data.FileStat
+import com.infinity.comicreader.data.FolderReads
 import com.infinity.comicreader.data.FolderSize
 import com.infinity.comicreader.data.ForwardCrumbs
 import com.infinity.comicreader.data.HistoryItem
@@ -2135,7 +2136,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private fun markBooks(entries: List<BookEntry>, read: Boolean) {
         lifecycleScope.launch {
             val books = refsOf(entries)
-            if (books.isNotEmpty()) withContext(AppDispatchers.io) { library.setReadMany(books, read) }
+            if (books.isNotEmpty()) withContext(AppDispatchers.io) {
+                library.setReadMany(books, read)
+                FolderReads.updateFor(library, books)
+            }
             tellDone(if (read) R.string.marked_read else R.string.marked_unread, books.size, entries.count { !it.isDir })
             refreshCurrent()
         }
@@ -2803,7 +2807,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             val files = withContext(AppDispatchers.io) { dirs.flatMap { dir -> dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() } }
             // Books never seen are read for their IDs, several at once.
             val books = idsOf(files).map { (f, id) -> BookRef(id, f.absolutePath) }
-            withContext(AppDispatchers.io) { library.setReadMany(books, read) }
+            withContext(AppDispatchers.io) {
+                library.setReadMany(books, read)
+                for (dir in dirs) FolderReads.update(library, dir)
+            }
             toast(if (read) R.string.marked_read else R.string.marked_unread)
             refreshCurrent()
         }

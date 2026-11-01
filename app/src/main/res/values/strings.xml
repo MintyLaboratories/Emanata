@@ -176,7 +176,7 @@
     <string name="done_part">%1$s: %2$d of %3$d</string>
     <string name="menu_search_deep">Search subfolders</string>
     <string name="menu_stats">Reading statistics</string>
-    <string name="stats_body">Chapters read: %1$d\nPages read: %2$d\nTime reading: %3$d h %4$d min\nDays read: %5$d\nCurrent streak: %6$s\nBest streak: %7$s</string>
+    <string name="stats_body">Books read: %1$d\nPages read: %2$d\nTime reading: %3$d h %4$d min\nDays read: %5$d\nCurrent streak: %6$s\nBest streak: %7$s</string>
     <plurals name="days_count">
         <item quantity="one">%1$d day</item>
         <item quantity="other">%1$d days</item>
@@ -963,7 +963,7 @@
     <string name="confirm_clear_library_export">Export first</string>
     <string name="confirm_reset_title">Reset all settings?</string>
     <string name="confirm_reset_msg">Returns every setting to its default, including theme, language and startup location. Per-book adjustments and reading progress are kept, as are favorites, history, bookmarks and folder layouts.</string>
-    <string name="confirm_clear_stats_msg">Sets chapters read, pages read, reading time, days read and streaks back to zero. Read marks stay.</string>
+    <string name="confirm_clear_stats_msg">Sets books read, pages read, reading time, days read and streaks back to zero. Read marks stay.</string>
     <string name="confirm_clear_stats_title">Clear reading statistics?</string>
     <string name="confirm_clear_book_bookmarks_title">Clear this book\'s bookmarks?</string>
     <string name="confirm_clear_book_bookmarks_msg">Removes every bookmark in %1$s.</string>

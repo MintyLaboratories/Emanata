@@ -179,18 +179,43 @@ class Library(context: Context) {
 
     fun setRead(book: BookRef, read: Boolean) = setReadMany(listOf(book), read)
 
+    /**
+     * Marks [books] read or unread. Books read in statistics change by the books among them
+     * whose mark changed, loose images aside: their folder counts as one ([setFolderRead]).
+     */
     fun setReadMany(books: Collection<BookRef>, read: Boolean) {
         synchronized(LOCK) {
             val set = readSet()
-            val before = set.size
-            val changed = if (read) set.addAll(books.map { it.id }) else set.removeAll(books.map { it.id }.toSet())
-            if (!changed) return@synchronized
+            val before = set.toSet()
+            val changing = books.filter { (it.id in set) != read }.distinctBy { it.id }
+            if (changing.isEmpty()) return@synchronized
+            if (read) set.addAll(changing.map { it.id }) else set.removeAll(changing.map { it.id }.toSet())
             writeIds(KEY_READ, set)
-            val stats = readObject(KEY_STATS)
-            stats.put(STAT_CHAPTERS, (chaptersRead(stats, before) + set.size - before).coerceAtLeast(0))
-            sp.edit().putString(KEY_STATS, stats.toString()).apply()
+            val counted = changing.count { !FolderReads.isLooseImage(it.path) }
+            if (counted > 0) addBooksRead(if (read) counted else -counted, before)
             if (read) keepAll(books)
         }
+    }
+
+    /** True when folder [folder] of loose images counts as a book read ([FolderReads]). */
+    fun isFolderRead(folder: String): Boolean = readObject(KEY_READ_FOLDERS).has(folder)
+
+    /** Counts folder [folder] of loose images as one book read, or no longer; books read change with it. */
+    fun setFolderRead(folder: String, read: Boolean) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_READ_FOLDERS)
+            if (all.has(folder) == read) return@synchronized
+            if (read) all.put(folder, true) else all.remove(folder)
+            sp.edit().putString(KEY_READ_FOLDERS, all.toString()).apply()
+            addBooksRead(if (read) 1 else -1, readSet())
+        }
+    }
+
+    /** Adds [delta] to books read in statistics, never below 0; [readMarks] are the books read before, for statistics kept before they counted. */
+    private fun addBooksRead(delta: Int, readMarks: Set<BookId>) {
+        val stats = readObject(KEY_STATS)
+        stats.put(STAT_BOOKS, (booksRead(stats, readMarks) + delta).coerceAtLeast(0))
+        sp.edit().putString(KEY_STATS, stats.toString()).apply()
     }
 
     private fun keepAll(books: Collection<BookRef>) {
@@ -745,7 +770,7 @@ class Library(context: Context) {
         return ReadingStats(
             seconds = o.optLong("seconds"),
             pages = o.optLong("pages"),
-            chapters = chaptersRead(o, readSet().size),
+            books = booksRead(o, readSet()),
             daysRead = days.size,
             streak = streak,
             bestStreak = best
@@ -755,17 +780,20 @@ class Library(context: Context) {
     /** Sets every statistic back to zero; read marks stay. */
     fun clearStats() {
         synchronized(LOCK) {
-            sp.edit().putString(KEY_STATS, JSONObject().put(STAT_CHAPTERS, 0).toString()).apply()
+            sp.edit().putString(KEY_STATS, JSONObject().put(STAT_BOOKS, 0).toString()).apply()
         }
     }
 
     /**
-     * Chapters read in statistics [o]: books marked read, less those unmarked, since the
-     * statistics were last cleared. Statistics kept before they counted them start from
-     * the [readMarks] there are.
+     * Books read in statistics [o]: books (and folders of loose images) marked read, less
+     * those unmarked, since the statistics were last cleared. Statistics kept before they
+     * counted them start from the [readMarks] there are, loose images aside.
      */
-    private fun chaptersRead(o: JSONObject, readMarks: Int): Int =
-        if (o.has(STAT_CHAPTERS)) o.optInt(STAT_CHAPTERS).coerceAtLeast(0) else readMarks
+    private fun booksRead(o: JSONObject, readMarks: Set<BookId>): Int {
+        if (o.has(STAT_BOOKS)) return o.optInt(STAT_BOOKS).coerceAtLeast(0)
+        val seen = seenAt()
+        return readMarks.count { id -> seen[id]?.path?.let { !FolderReads.isLooseImage(it) } ?: true }
+    }
 
     // ---------------- what books keep ----------------
     /** What is kept for each book with anything kept, by ID. */
@@ -1183,7 +1211,8 @@ class Library(context: Context) {
         private const val KEY_BOOKMARKS = "bookmarks"
         private const val KEY_SERIES = "series"
         private const val KEY_STATS = "stats"
-        private const val STAT_CHAPTERS = "chapters"
+        /** Books read; stored under its first name. */
+        private const val STAT_BOOKS = "chapters"
         private const val KEY_ADJUST = "adjust"
         private const val KEY_HIDDEN = "hidden_pages"
 
@@ -1202,6 +1231,7 @@ class Library(context: Context) {
         /** Books' answers to reading their tall pages as a strip ([tallStrip]), and folders' ([folderTallStrip]). */
         private const val KEY_TALL = "tall_strip"
         private const val KEY_TALL_FOLDERS = "tall_folders"
+        private const val KEY_READ_FOLDERS = "read_folders"
 
         /** Books' own layouts, from the folders packed into them ([bookLayout]). */
         private const val KEY_BOOK_LAYOUTS = "book_layouts"
@@ -1225,10 +1255,10 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_BOOK_LAYOUTS)
+        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
-        private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS)
+        private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
 
         /** Lists of book IDs. */
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)

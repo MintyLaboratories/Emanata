@@ -84,7 +84,7 @@ data class Bookmark(
 data class ReadingStats(
     val seconds: Long,
     val pages: Long,
-    val chapters: Int,
+    val books: Int,
     val daysRead: Int,
     val streak: Int,
     val bestStreak: Int

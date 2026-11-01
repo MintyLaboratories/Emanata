@@ -65,6 +65,7 @@ import com.infinity.comicreader.data.CopyMatch
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FolderLayout
+import com.infinity.comicreader.data.FolderReads
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Likeness
@@ -2655,6 +2656,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         if (!markedRead && onLast && !landedAtEnd) {
             markedRead = true
             book()?.let { library.setRead(it, true) }
+            // A loose image read may make its folder one more book read.
+            val image = file?.takeIf { looseImage(it) }
+            val dir = image?.parentFile
+            if (dir != null) {
+                val images = chapters.filter { looseImage(it) }
+                lifecycleScope.launch(AppDispatchers.io) { FolderReads.update(library, dir, images) }
+            }
         }
         invalidateOptionsMenu()
     }

@@ -100,36 +100,36 @@ class LibraryForgetTest {
         assertTrue(library.seenAt().isEmpty())
         assertNull(library.folderLayout("/storage/emulated/0/Comics"))
         assertEquals(60, library.stats().seconds)
-        assertEquals(1, library.stats().chapters)
+        assertEquals(1, library.stats().books)
     }
 
     @Test
-    fun chaptersReadFollowMarksUntilStatisticsAreCleared() {
+    fun booksReadFollowMarksUntilStatisticsAreCleared() {
         library.setReadMany(listOf(a, b), true)
         library.setRead(a, true)
-        assertEquals(2, library.stats().chapters)
+        assertEquals(2, library.stats().books)
         library.setRead(a, false)
-        assertEquals(1, library.stats().chapters)
+        assertEquals(1, library.stats().books)
         library.clearStats()
-        assertEquals(0, library.stats().chapters)
+        assertEquals(0, library.stats().books)
         assertTrue(library.isRead(b.id))
         library.setRead(c, true)
-        assertEquals(1, library.stats().chapters)
+        assertEquals(1, library.stats().books)
         library.setReadMany(listOf(b, c), false)
-        assertEquals(0, library.stats().chapters)
+        assertEquals(0, library.stats().books)
         library.forgetBooks(setOf(a.id))
         library.setRead(a, true)
         library.forgetBooks(setOf(a.id))
-        assertEquals(1, library.stats().chapters)
+        assertEquals(1, library.stats().books)
     }
 
     @Test
-    fun statisticsKeptBeforeChaptersCountedStartFromTheReadMarks() {
+    fun statisticsKeptBeforeBooksCountedStartFromTheReadMarks() {
         library.setReadMany(listOf(a, b), true)
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().putString("stats", "{\"seconds\":60}").commit()
-        assertEquals(2, library.stats().chapters)
+        assertEquals(2, library.stats().books)
         library.setRead(c, true)
-        assertEquals(3, library.stats().chapters)
+        assertEquals(3, library.stats().books)
         assertEquals(60, library.stats().seconds)
     }
 

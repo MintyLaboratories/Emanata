@@ -160,7 +160,7 @@ class SettingsConfirmTest {
         assertNull(library.folderLayout("/books/attic"))
         assertNull(library.folderTallStrip("/books/strip"))
         assertEquals(60, library.stats().seconds)
-        assertEquals(1, library.stats().chapters)
+        assertEquals(1, library.stats().books)
         assertEquals("sepia", prefs.filter)
     }
 
@@ -175,7 +175,7 @@ class SettingsConfirmTest {
         tap("pref_clear_stats").press(DialogInterface.BUTTON_POSITIVE)
         assertEquals(0, library.stats().seconds)
         assertEquals(0, library.stats().pages)
-        assertEquals(0, library.stats().chapters)
+        assertEquals(0, library.stats().books)
         assertTrue(library.isRead(one.id))
     }
 

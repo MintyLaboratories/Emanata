@@ -830,6 +830,8 @@
     <string name="ai_model_downloading">%1$s · downloading %2$d%%</string>
     <string name="ai_model_failed">%1$s · download failed, tap to retry</string>
     <string name="ai_model_missing">%1$s · not downloaded</string>
+    <string name="ai_chain">Chosen: %1$s</string>
+    <string name="ai_chain_slow">Together these may run past a page\'s time limit, and such pages show without AI processing</string>
     <string name="ai_models_summary">%1$d downloaded, %2$s</string>
     <string name="ai_models_title">AI models</string>
     <string name="ai_models_intro">Models download when chosen in Settings or here, and run on this device only.</string>

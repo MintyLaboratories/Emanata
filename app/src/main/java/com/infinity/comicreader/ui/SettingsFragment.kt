@@ -18,6 +18,7 @@ import androidx.preference.PreferenceGroup
 import androidx.preference.SeekBarPreference
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.Downloads
@@ -466,7 +467,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /**
      * Fills each AI step's choices from the catalog (none, then its models with their sizes),
      * starts downloading a model as it is chosen or as AI processing is turned on, and shows
-     * each choice's download state and the space models take, as they change.
+     * the chain run (hidden advanced choices too), each choice's download state and the space
+     * models take, as they change.
      */
     private fun setUpAi(prefs: Prefs) {
         val context = requireContext()
@@ -487,8 +489,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 true
             }
         }
-        findPreference<Preference>(Prefs.KEY_AI)?.setOnPreferenceChangeListener { _, value ->
+        val ai = findPreference<Preference>(Prefs.KEY_AI)
+        ai?.setOnPreferenceChangeListener { _, value ->
             if (value == true) for (step in AiStep.entries) chosen(step, prefs.aiModel(step))?.let { ModelDownloads.start(store, it) }
+            refreshAi()
             true
         }
         val manager = findPreference<Preference>("ai_models")
@@ -500,6 +504,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val installed = withContext(AppDispatchers.io) { ModelCatalog.all.filter { store.installed(it) } }
             val used = withContext(AppDispatchers.io) { store.bytesUsed() }
             if (!isAdded) return
+            ai?.summary = if (prefs.aiEnabled) ModelText.chain(context, AiChain.chosen(prefs)) else getString(R.string.pref_ai_desc)
             manager?.summary = getString(R.string.ai_models_summary, installed.size, ModelText.size(context, used))
             for ((step, pref) in pickers) {
                 val m = chosen(step, pref.value)

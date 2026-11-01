@@ -9,6 +9,7 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.DownloadFailure
@@ -32,7 +33,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.io.RandomAccessFile
 
-/** Settings › AI processing: off by default, a model per step from the catalog, battery saver pauses it. */
+/** Settings › AI processing: off by default, a model per step from the catalog, the chain run, battery saver pauses it. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsAiTest {
@@ -142,6 +143,31 @@ class SettingsAiTest {
         assertNotNull(pref.summaryProvider)
         pref.summaryProvider = Preference.SummaryProvider<ListPreference> { "${m.name} · downloading 40%" }
         assertEquals("${m.name} · downloading 40%", pref.summary.toString())
+    }
+
+    @Test
+    fun theAiSummaryShowsTheWholeChainAndWarnsWhenItIsSlow() {
+        val prefs = Prefs(context)
+        val slowest = AiStep.entries.map { step -> ModelCatalog.forStep(step).maxBy { it.pageMs } }
+        val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+        for (m in slowest + upscale) install(m)
+        assertTrue(AiChain.slow(slowest))
+        prefs.aiEnabled = true
+        for (m in slowest) prefs.setAiModel(m.step, m.id)
+        // The advanced steps show while Keep it simple hides their pickers.
+        assertTrue(prefs.keepSimple)
+        var ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
+        awaitSummary(ai, ModelText.chain(context, slowest))
+        assertTrue(ai.summary.toString().contains(slowest[0].name))
+        assertTrue(ai.summary.toString().endsWith(context.getString(R.string.ai_chain_slow)))
+        prefs.setAiModel(AiStep.ARTIFACTS, null)
+        prefs.setAiModel(AiStep.DESCREEN, null)
+        prefs.setAiModel(AiStep.UPSCALE, upscale.id)
+        ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
+        awaitSummary(ai, ModelText.chain(context, listOf(upscale)))
+        assertFalse(ai.summary.toString().contains(context.getString(R.string.ai_chain_slow)))
+        ai.performClick()
+        awaitSummary(ai, context.getString(R.string.pref_ai_desc))
     }
 
     @Test

@@ -12,4 +12,13 @@ object AiChain {
     /** The [chosen] models [store] holds, with their files; one not downloaded yet is left out. */
     fun ready(prefs: Prefs, store: ModelStore): List<Pair<CatalogModel, ModelFiles>> =
         chosen(prefs).mapNotNull { m -> store.files(m)?.let { m to it } }
+
+    /** [models]' time together for a page on the reference tablet ([CatalogModel.pageMs]). */
+    fun pageMs(models: List<CatalogModel>): Long = models.sumOf { it.pageMs }
+
+    /**
+     * True when [models] together take longer than [ModelCatalog.MAX_PAGE_MS] on the reference
+     * tablet: warmer or slower devices would run past a page's time and show it without AI.
+     */
+    fun slow(models: List<CatalogModel>): Boolean = pageMs(models) > ModelCatalog.MAX_PAGE_MS
 }

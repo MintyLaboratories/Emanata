@@ -21,6 +21,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.DownloadFailure
@@ -65,6 +66,16 @@ object ModelText {
         state is DownloadState.Running -> context.getString(R.string.ai_model_downloading, m.name, state.percent)
         state is DownloadState.Failed -> context.getString(R.string.ai_model_failed, m.name)
         else -> context.getString(R.string.ai_model_missing, m.name)
+    }
+
+    /**
+     * AI processing's description, then the models [chain] runs, in order, and a warning when
+     * together they would run past a page's time ([AiChain.slow]).
+     */
+    fun chain(context: Context, chain: List<CatalogModel>): String {
+        val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
+        val lines = listOf(context.getString(R.string.pref_ai_desc), context.getString(R.string.ai_chain, names))
+        return (if (AiChain.slow(chain)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
     }
 
     /** Who made [m], its license, where it is from and where it downloads from. */

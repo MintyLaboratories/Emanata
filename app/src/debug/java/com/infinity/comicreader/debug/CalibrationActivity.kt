@@ -20,7 +20,11 @@ import org.json.JSONObject
  * and a Recalibrate button (calibrates now, charging or not, once the app is idle). Only
  * the shell may start it:
  *
- * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]`
+ * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]
+ *  [--ei burst 3] [--ez warm true]`
+ *
+ * `burst` and `warm` shape a recalibration's samples (runs per sample, an untimed run before
+ * them), to compare against the default (3, true); the result keeps them.
  *
  * Each run's end is logged under "Calibration" as "ended true" or "ended false: " and why
  * (shown here too), a run a Recalibrate dropped as "dropped for a new run" ([Calibrator]).
@@ -47,7 +51,7 @@ class CalibrationActivity : Activity() {
             })
         })
         Calibrator.onEnded = refresh
-        if (savedInstanceState == null && intent.getStringExtra("do") == "recalibrate") recalibrate()
+        if (savedInstanceState == null && intent.getStringExtra("do") == "recalibrate") recalibrate(intent)
         show()
     }
 
@@ -55,7 +59,7 @@ class CalibrationActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getStringExtra("do") == "recalibrate") recalibrate()
+        if (intent.getStringExtra("do") == "recalibrate") recalibrate(intent)
     }
 
     private val refresh: (Boolean) -> Unit = { runOnUiThread { show() } }
@@ -66,8 +70,8 @@ class CalibrationActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun recalibrate() {
-        Calibrator.recalibrate()
+    private fun recalibrate(asked: Intent? = null) {
+        Calibrator.recalibrate(asked?.getIntExtra("burst", 3) ?: 3, asked?.getBooleanExtra("warm", true) ?: true)
         show()
     }
 
@@ -88,7 +92,8 @@ class CalibrationActivity : Activity() {
             if (kept == null) appendLine("No calibration kept") else {
                 appendLine(
                     "Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms, forced ${kept.optBoolean("forced")}, " +
-                        "battery saver ${kept.optBoolean("powerSave")}, page ${kept.optString("page", "?")} to ${kept.optString("target", "?")}"
+                        "battery saver ${kept.optBoolean("powerSave")}, thermal ${kept.optInt("thermal", -1)}, page ${kept.optString("page", "?")} " +
+                        "to ${kept.optString("target", "?")}, burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)}"
                 )
                 val timings = kept.optJSONArray("timings")
                 for (i in 0 until (timings?.length() ?: 0)) {

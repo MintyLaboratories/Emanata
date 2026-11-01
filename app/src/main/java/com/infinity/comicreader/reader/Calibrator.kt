@@ -164,7 +164,20 @@ object Calibrator {
      * Recalibrate); still only in front, not reading, cool and idle. A run already waiting or
      * timing is dropped for this one.
      */
-    fun recalibrate() = begin(force = true)
+    fun recalibrate() = recalibrate(BURST, warm = true)
+
+    /**
+     * [recalibrate] with each sample the median of [burst] runs, after an untimed one when
+     * [warm] ([CalibrationRun]): debug builds compare run shapes with it. Kept with the result.
+     */
+    fun recalibrate(burst: Int, warm: Boolean) {
+        shape = burst.coerceIn(1, 9) to warm
+        begin(force = true)
+    }
+
+    /** How forced runs sample: runs per burst, and whether an untimed run warms each. */
+    @Volatile
+    private var shape = BURST to true
 
     @Synchronized
     private fun begin(force: Boolean) {
@@ -228,7 +241,8 @@ object Calibrator {
                 cores, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl(), jpeg = cores.big != 0L && probe.prepareJpeg()
             )
             val t0 = SystemClock.elapsedRealtime()
-            val run = CalibrationRun(probe, candidates)
+            val (burst, warm) = if (force) shape else BURST to true
+            val run = CalibrationRun(probe, candidates, burst = burst, warm = warm)
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
@@ -238,7 +252,7 @@ object Calibrator {
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", run.sawPowerSave)
-                .put("thermal", probe.thermal).put("page", probe.page).put("target", probe.target)
+                .put("thermal", probe.thermal).put("page", probe.page).put("target", probe.target).put("burst", burst).put("warm", warm)
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -447,6 +461,7 @@ object Calibrator {
         }
     }
 
+    private const val BURST = 3
     private const val PAGE_W = 2000
     private const val PAGE_H = 3000
     private const val START_MS = 10_000L

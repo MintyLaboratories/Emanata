@@ -314,7 +314,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - Pages convert on up to half the cores (at most four) at background
     priority, fewer as the device warms up or saves power, and only as many at
     once as half the app's memory holds by their size decoded; pages over 64 MB
-    are copied as they are. Each passes through the app's cache: the files
+    are copied as they are (counted as not converted when Make compatible had
+    to convert them). Each passes through the app's cache: the files
     unpacked need room there and again for the new file (twice for Make
     compatible), and the run stops before free space drops under 256 MB.
   - A book open in the reader is left out (in use). Should the app stop between

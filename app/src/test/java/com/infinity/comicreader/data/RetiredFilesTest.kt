@@ -3,6 +3,8 @@ package com.infinity.comicreader.data
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.reader.PageSizes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,5 +60,19 @@ class RetiredFilesTest {
         RetiredFiles.drop(context)
         RetiredFiles.drop(context)
         assertFalse(prefsFile("book_facts").exists())
+    }
+
+    @Test
+    fun dropsModelsNoLongerInTheCatalogAndKeepsTheRest() {
+        val store = ModelStore.of(context)
+        val retired = File(store.root, "retired-model").apply { mkdirs() }
+        File(retired, "retired.bin").writeText("x")
+        val kept = store.dir(ModelCatalog.all.first()).apply { mkdirs() }
+        File(kept, "part.bin.part").writeText("x")
+
+        RetiredFiles.drop(context)
+
+        assertFalse(retired.exists())
+        assertTrue(File(kept, "part.bin.part").exists())
     }
 }

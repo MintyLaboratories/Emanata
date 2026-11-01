@@ -103,12 +103,4 @@ class ModelsActivityTest {
         assertTrue(text, text.contains(m.source.author) && text.contains(m.source.license) && text.contains(m.source.url))
         assertTrue(text.contains(ModelCatalog.REPOSITORY))
     }
-
-    @Test
-    fun modelsNoLongerInTheCatalogAreDeleted() {
-        val retired = File(store.root, "retired-model").apply { mkdirs() }
-        File(retired, "retired.bin").writeText("x")
-        open()
-        assertFalse(retired.exists())
-    }
 }

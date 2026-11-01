@@ -111,8 +111,6 @@ class ModelsActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            // Models an update dropped from the catalog can no longer be chosen: their space comes back.
-            withContext(AppDispatchers.io) { store.prune() }
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 ModelDownloads.state.collect { show(it) }
             }

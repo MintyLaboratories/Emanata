@@ -891,6 +891,28 @@ out; `ab` compares two builds installed in turn (A B B A); no session starts bel
 battery. `tools/bench/plans` holds plans for the synthetic books, read fast and slowly.
 See its `--help`.
 
+`AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
+on synthetic pages: its measured geometry, seams against one tile covering a whole
+page, GPU against CPU, time per tile and page with memory and thermal state, and
+the timeout and cancel paths. See its KDoc for the extras. On a Snapdragon 8 Gen 1
+(Adreno 730, Android 16, debug build, charging), a 2x compact upscaler (OpenComic
+AI upscale 2x compact v2) took a synthetic 1000x1500 page to 2000x3000:
+
+| Setup | Tiles | Per tile | Per page | Memory during the page |
+|---|---|---|---|---|
+| GPU fp16, 128 px tiles | 216 | 40 ms | 8.7 s | +17 MB graphics |
+| GPU fp16, 192 px tiles (default) | 77 | 76 ms | 5.9 s | +48 MB graphics |
+| GPU fp16, 256 px tiles | 40 | 162 ms | 6.5 s | +84 MB graphics |
+| GPU fp16, 384 px tiles | 15 | 401 ms | 6.1 s | +152 MB graphics |
+| GPU fp32, 192 px tiles | 54 | 148 ms | 8.1 s | +90 MB graphics |
+| CPU fp32, 4 large cores, 192 px tiles | 54 | 227 ms | 12.5 s | +111 MB resident |
+
+Seams stayed within 2 codes of one tile covering the page on both GPU and CPU, and
+fp16 on the GPU within 5 codes (mean 0.25) of fp32 on the CPU. A page given 40% of
+its time fell back to the Lanczos3 page after 2 of 77 tiles, in 0.2 s; a canceled
+page stopped within 5 ms. Opening the model (Vulkan start, shader compilation,
+measuring) took 1.1 s on the GPU, 0.15 s on the CPU.
+
 ## Permissions
 
 - `MANAGE_EXTERNAL_STORAGE` ("All files access", Android 11+): browse and

@@ -51,7 +51,7 @@ import kotlin.math.max
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.AiCheckService
  *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|sustain|all] [--es engines gpu,cpu]
- *  [--es tiles 128,192,256,384, or auto for the size it chose] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ez fp16 true]
+ *  [--es tiles 128,192,256,384, or auto for the size it chose] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ef cool <headroom>] [--ez fp16 true]
  *  [--ei threads 4] [--ei seconds 300]`
  *
  * or, for every model in a folder: `--es do survey --es dir <folder, searched for .param files> [--es size 1000x1500]
@@ -64,7 +64,8 @@ import kotlin.math.max
  * - check: tiled output at each size against one tile covering the whole of a `small` page on
  *   the CPU in fp32 (seams, plus fp16 rounding on the GPU), and the GPU's against the CPU's.
  * - time: per engine and tile size, `reps` pages of `size` after one warm-up: time per tile
- *   and per page, peak resident and graphics memory, thermal status and headroom.
+ *   and per page, peak resident and graphics memory, thermal status and headroom. Given
+ *   `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
  * - limits: a page whose time runs out falls back to exactly the Lanczos3 page; a page
  *   canceled after three tiles stops within one; a sample of each output saved as PNG.
  * - sustain (not part of all): pages of `size` back to back for `seconds`, through the gate
@@ -100,6 +101,7 @@ class AiCheckService : Service() {
         val dir = intent?.getStringExtra("dir")?.let(::File)
         val cap = intent?.getIntExtra("cap", 120)?.coerceIn(5, 3600) ?: 120
         val cool = intent?.getFloatExtra("cool", COOL_HEADROOM)?.coerceIn(0.1f, 1f) ?: COOL_HEADROOM
+        val timeCool = if (intent?.hasExtra("cool") == true) cool else null
         thread(name = "ai-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
@@ -140,7 +142,7 @@ class AiCheckService : Service() {
                                 .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size).put("fp16", s.fp16)
                         )
                         if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
-                        if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown)
+                        if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown, timeCool)
                         if (what == "limits" || what == "all") limits(s, size[0], size[1])
                         if (what == "sustain") sustain(s, size[0], size[1], seconds)
                     }
@@ -197,10 +199,11 @@ class AiCheckService : Service() {
 
     // ------------------------------------------------------------------ time
 
-    private fun time(s: Session, sizes: List<Int>, w: Int, h: Int, reps: Int, cooldown: Int) {
+    private fun time(s: Session, sizes: List<Int>, w: Int, h: Int, reps: Int, cooldown: Int, cool: Float?) {
         val page = SyntheticPage.draw(w, h)
         for (size in sizes.filter { TilePlan.fits(it, s.geometry) }) {
             if (cooldown > 0) Thread.sleep(cooldown * 1000L)
+            val waitedS = cool?.let { coolDown(it, COOL_TIME_MAX_S) } ?: 0L
             val session = Session(s.model, s.geometry, size)
             val before = state()
             val rssBefore = rssKb()
@@ -232,7 +235,7 @@ class AiCheckService : Service() {
                 tiles = run.stats.planned
             }
             log(
-                JSONObject().put("time", if (s.model.onGpu) "gpu" else "cpu").put("tile", size).put("page", "${w}x$h").put("tiles", tiles)
+                JSONObject().put("time", if (s.model.onGpu) "gpu" else "cpu").put("tile", size).put("page", "${w}x$h").put("tiles", tiles).put("cooledS", waitedS)
                     .put("warmUpMs", warmMs).put("pageMs", Stats.summary(pages)).put("tileMs", Stats.summary(tileMs))
                     .put("rssMb", JSONObject().put("before", rssBefore / 1024).put("peak", peakRss / 1024).put("after", rssKb() / 1024))
                     .put("graphicsPeakMb", peakGraphics / 1024).put("graphicsAfterMb", graphicsKb() / 1024)
@@ -396,12 +399,12 @@ class AiCheckService : Service() {
         log(JSONObject().put("surveyed", params.size).put("state", state()))
     }
 
-    /** Waits, up to [COOL_MAX_S], for the thermal headroom to fall below [below]; the seconds waited. */
-    private fun coolDown(below: Float): Long {
+    /** Waits, up to [maxS] seconds, for the thermal headroom to fall below [below]; the seconds waited. */
+    private fun coolDown(below: Float, maxS: Int = COOL_MAX_S): Long {
         if (Build.VERSION.SDK_INT < 30) return 0
         val power = getSystemService(PowerManager::class.java)
         val t0 = SystemClock.elapsedRealtime()
-        while (SystemClock.elapsedRealtime() - t0 < COOL_MAX_S * 1000L) {
+        while (SystemClock.elapsedRealtime() - t0 < maxS * 1000L) {
             val h = power.getThermalHeadroom(0)
             if (!h.isNaN() && h < below) break
             Thread.sleep(5_000)
@@ -487,6 +490,9 @@ class AiCheckService : Service() {
         /** The thermal headroom a survey waits below before each model by default, and its longest wait. */
         const val COOL_HEADROOM = 0.85f
         const val COOL_MAX_S = 180
+
+        /** The longest a timed run waits to cool. */
+        const val COOL_TIME_MAX_S = 900
 
         /** Limits no timed page reaches. */
         val UNLIMITED = PageLimits(timeoutMs = 3_600_000L)

@@ -407,7 +407,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         // Folder peeks from list rows reuse the grid's covers at this size.
         adapter.onGridCover = { w, h -> prefs.setGridCover(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE, w, h) }
         recycler.adapter = adapter
-        applyLayoutManager()
+        // Laid out for the tab as its view is: the first start finds nothing to catch up on.
+        applyView()
         setUpPeek()
         recycler.setHasFixedSize(false)
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {

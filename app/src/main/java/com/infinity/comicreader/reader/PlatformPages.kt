@@ -1,5 +1,7 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.compact.LibJxl
+
 /** A set of cores a thread can be pinned to ([CpuCores]); [ANY] leaves placement to the system. */
 enum class CoreSet(val key: String) {
     ANY("any"),
@@ -60,14 +62,14 @@ object PlatformPages {
     /** Runs [block] on [cores] when [pinned]; as is otherwise, or where they are any, unknown or cannot be pinned to. */
     fun <T> placed(pinned: Boolean = wanted(), block: () -> T): T = on(if (pinned) cores.mask(device!!) else 0L, block)
 
-    /** Runs [block] pinned to [mask] (0: as is), then puts the thread back. */
+    /** Runs [block] pinned to [mask] (0: as is), then lets the thread run on every core again ([LibJxl.EVERY_CORE]). */
     internal fun <T> on(mask: Long, block: () -> T): T {
         val p = if (mask == 0L) null else pin
         val kept = p?.invoke(mask) ?: 0L
         try {
             return block()
         } finally {
-            if (kept != 0L) p?.invoke(kept)
+            if (kept != 0L) p?.invoke(LibJxl.EVERY_CORE)
         }
     }
 }

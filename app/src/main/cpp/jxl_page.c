@@ -148,7 +148,7 @@ done:
     if (pool != NULL && jr_canceled(pool)) result = JP_CANCELED;
     api->JxlDecoderDestroy(dec);
     jr_destroy(pool);
-    if (pinned) sched_setaffinity(0, sizeof(kept), &kept);
+    if (pinned) jr_unpin();
     if (lowered) setpriority(PRIO_PROCESS, 0, kept_nice);
     return result;
 }

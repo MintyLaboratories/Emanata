@@ -158,6 +158,17 @@ static int pin(jlong cores, cpu_set_t * kept)
     return sched_setaffinity(0, sizeof(want), &want) == 0;
 }
 
+// Lets the calling thread run on every core again, ending a pin. Pins never nest, and the set
+// pin kept leaves out cores the system had paused then: put back, it would keep the thread
+// off those cores for good.
+static void unpin(void)
+{
+    cpu_set_t every;
+    CPU_ZERO(&every);
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) CPU_SET(n, &every);
+    sched_setaffinity(0, sizeof(every), &every);
+}
+
 // Moves the calling thread onto `cores` (bit n = core n) until moved again; the cores it
 // could use before, 0 when it stays where it was.
 EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
@@ -186,7 +197,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
     cpu_set_t kept;
     const int pinned = pin(cores, &kept);
     const int r = rs_band(&h->job, &h->workers[worker], y0, y1);
-    if (pinned) sched_setaffinity(0, sizeof(kept), &kept);
+    if (pinned) unpin();
     return r == 0;
 }
 

@@ -47,6 +47,14 @@ int jr_pin(uint64_t cores, cpu_set_t * kept)
     return sched_setaffinity(0, sizeof(want), &want) == 0;
 }
 
+void jr_unpin(void)
+{
+    cpu_set_t every;
+    CPU_ZERO(&every);
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) CPU_SET(n, &every);
+    sched_setaffinity(0, sizeof(every), &every);
+}
+
 // True once `stop` said so; only the calling thread (id 0) asks it.
 static int stopped(jr_pool * p, size_t id)
 {

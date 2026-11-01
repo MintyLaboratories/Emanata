@@ -688,7 +688,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
     const int canceled = pool != NULL && jr_canceled(pool);
     jr_destroy(pool);
     if (pinned) {
-        sched_setaffinity(0, sizeof(kept), &kept);
+        jr_unpin();
     }
     if (pixels != NULL) {
         AndroidBitmap_unlockPixels(env, bitmap);

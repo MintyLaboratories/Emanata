@@ -30,3 +30,8 @@ JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, J
 // Moves the calling thread onto `cores` (0 = leave it), keeping its old set in `kept`;
 // false when it stays where it was (no cores asked, or the system refuses them).
 int jr_pin(uint64_t cores, cpu_set_t * kept);
+
+// Lets the calling thread run on every core again, ending a jr_pin. Pins never nest, and the
+// set jr_pin kept leaves out cores the system had paused then: put back, it would keep the
+// thread, and threads it starts later, off those cores for good.
+void jr_unpin(void);

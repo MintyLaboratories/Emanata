@@ -6,14 +6,15 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 
 /**
- * When AI runs stop: with battery saver on (unless the Battery settings let AI run under it,
- * [Prefs.saverAi]), once the device is [HOT] or hotter, or once the thermal headroom forecast
+ * When AI runs stop: with battery saver on, unless the Battery settings let AI run under it
+ * ([Thrift.pausedAi]), once the device is [HOT] or hotter, or once the thermal headroom forecast
  * [FORECAST_S] seconds ahead reaches [MAX_HEADROOM].
  */
 object AiConditions {
@@ -45,7 +46,7 @@ object AiConditions {
         }
         return {
             val thermal = if (Build.VERSION.SDK_INT >= 29) pm.currentThermalStatus else PowerManager.THERMAL_STATUS_NONE
-            stop(pm.isPowerSaveMode && prefs.saverAi, thermal, headroom.get())
+            stop(Thrift.of(pm.isPowerSaveMode, prefs).pausedAi, thermal, headroom.get())
         }
     }
 

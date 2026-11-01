@@ -105,6 +105,16 @@ constexpr jint FAILED_INPUT = -1;
 constexpr jint FAILED_RUN = -2;
 constexpr jint FAILED_OUTPUT = -3;
 
+/**
+ * Places the calling thread and ncnn's workers for [m]: on the large cores for a model on the
+ * CPU, anywhere for one on the GPU. The placement is ncnn's, process-wide, so it is set before
+ * every run rather than once when a model opens.
+ */
+void place(const Model* m) {
+    const int powersave = m->gpu ? 0 : 2;
+    if (ncnn::get_cpu_powersave() != powersave) ncnn::set_cpu_powersave(powersave);
+}
+
 }  // namespace
 
 extern "C" {
@@ -148,7 +158,6 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring para
         m->net.set_vulkan_device(m->vkdev);
     } else {
         m->net.opt.use_vulkan_compute = false;
-        ncnn::set_cpu_powersave(2);
     }
     m->net.opt.num_threads = std::max(1, (int) threads);
     // Worker threads sleep at once between parallel loops rather than spin.
@@ -216,6 +225,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle,
 
     ncnn::Mat out;
     {
+        place(m);
         ncnn::Extractor ex = m->net.create_extractor();
         ex.set_blob_allocator(&m->blob);
         ex.set_workspace_allocator(&m->workspace);

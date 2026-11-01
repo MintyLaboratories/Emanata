@@ -5,14 +5,16 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 
 /**
- * When AI runs stop: with battery saver on, once the device is [HOT] or hotter, or once the
- * thermal headroom forecast [FORECAST_S] seconds ahead reaches [MAX_HEADROOM].
+ * When AI runs stop: with battery saver on (unless the Battery settings let AI run under it,
+ * [Prefs.saverAi]), once the device is [HOT] or hotter, or once the thermal headroom forecast
+ * [FORECAST_S] seconds ahead reaches [MAX_HEADROOM].
  */
 object AiConditions {
     /** The thermal status that stops runs: moderate, where the system starts throttling. */
@@ -34,15 +36,16 @@ object AiConditions {
     fun stop(saver: Boolean, thermal: Int, headroom: Float = Float.NaN): Fallback? =
         if (saver || thermal >= HOT || headroom >= MAX_HEADROOM) Fallback.PAUSED else null
 
-    /** A gate for [TileEngine.run] reading [context]'s power state at each call. */
+    /** A gate for [TileEngine.run] reading [context]'s power state and the Battery settings at each call. */
     fun gate(context: Context): () -> Fallback? {
         val pm = context.getSystemService(PowerManager::class.java) ?: return { null }
+        val prefs = Prefs(context)
         val headroom = Headroom(SystemClock::elapsedRealtime) {
             if (Build.VERSION.SDK_INT >= 30) pm.getThermalHeadroom(FORECAST_S) else Float.NaN
         }
         return {
             val thermal = if (Build.VERSION.SDK_INT >= 29) pm.currentThermalStatus else PowerManager.THERMAL_STATUS_NONE
-            stop(pm.isPowerSaveMode, thermal, headroom.get())
+            stop(pm.isPowerSaveMode && prefs.saverAi, thermal, headroom.get())
         }
     }
 

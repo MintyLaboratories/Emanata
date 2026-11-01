@@ -136,11 +136,12 @@ class SettingsRepositoryTest {
     fun batterySaverHoldsBackWhatTheBatterySettingsLet() {
         assertEquals(Thrift.NONE, repo.reader.value.thrift)
         setSaver(true)
-        assertEquals(Thrift(firstLayerCovers = true, lessReadAhead = true, pausedScans = true), repo.reader.value.thrift)
+        assertEquals(Thrift(firstLayerCovers = true, lessReadAhead = true, pausedScans = true, pausedAi = true), repo.reader.value.thrift)
         assertEquals(repo.reader.value.thrift, repo.list.value.thrift)
         assertEquals(1, repo.reader.value.thrift.readAhead(repo.reader.value.preload))
         prefs.saverCovers = false
         prefs.saverScans = false
+        prefs.saverAi = false
         assertEquals(Thrift(lessReadAhead = true), repo.list.value.thrift)
         setSaver(false)
         assertEquals(Thrift.NONE, repo.list.value.thrift)

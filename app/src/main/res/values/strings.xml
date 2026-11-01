@@ -778,6 +778,8 @@
     <string name="pref_saver_read_ahead_desc">While battery saver is on, at most one screen is prepared ahead and nothing is fetched ahead from network locations</string>
     <string name="pref_saver_scans">Pause background scans</string>
     <string name="pref_saver_scans_desc">While battery saver is on, page sizes, seams beyond nearby pages and folder facts wait</string>
+    <string name="pref_saver_ai">Pause AI processing</string>
+    <string name="pref_saver_ai_desc">While battery saver is on, pages are shown without AI processing</string>
     <string name="pref_keep_simple_desc">Hides advanced options</string>
     <string name="advanced_tag">Advanced</string>
     <string name="section_collapsed">Collapsed</string>

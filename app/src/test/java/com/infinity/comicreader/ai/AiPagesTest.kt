@@ -3,6 +3,8 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.graphics.Bitmap
 import android.os.PowerManager
+import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
@@ -14,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.concurrent.CancellationException
@@ -109,6 +112,20 @@ class AiPagesTest {
         assertEquals(Fallback.PAUSED, AiConditions.stop(false, PowerManager.THERMAL_STATUS_SHUTDOWN))
         assertEquals(Fallback.PAUSED, AiConditions.stop(true, PowerManager.THERMAL_STATUS_NONE))
         assertTrue(AiConditions.HOT > PowerManager.THERMAL_STATUS_LIGHT)
+    }
+
+    @Test
+    fun theGatePausesUnderBatterySaverOnlyAsTheBatterySettingSays() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val prefs = Prefs(context)
+        val gate = AiConditions.gate(context)
+        assertNull(gate())
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        assertEquals(Fallback.PAUSED, gate())
+        prefs.saverAi = false
+        assertNull(gate())
+        prefs.saverAi = true
+        assertEquals(Fallback.PAUSED, gate())
     }
 
     @Test

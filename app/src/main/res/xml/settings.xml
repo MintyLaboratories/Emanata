@@ -485,6 +485,11 @@
             app:key="pref_saver_scans"
             app:summary="@string/pref_saver_scans_desc"
             app:title="@string/pref_saver_scans" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_saver_ai"
+            app:summary="@string/pref_saver_ai_desc"
+            app:title="@string/pref_saver_ai" />
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory

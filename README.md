@@ -701,10 +701,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   per-book adjustments and reading progress.
 - **AI processing** (off by default; pages do not go through it yet): a model
   per step, or none, for artifact removal, then descreening, then upscaling
-  (Fast v2 2× by default). Artifact removal and descreen are advanced settings.
-  A chosen model downloads at once (Models shows each with its size, license
-  and progress, and deletes them). Battery: battery saver pauses AI processing
-  unless **Pause AI processing** is off.
+  (Fast v2 2× by default). Artifact removal and descreen are advanced settings;
+  the switch's summary shows the whole chain, hidden steps included, and warns
+  when its models together may run past a page's time. A chosen model
+  downloads at once, and one cut short with the app resumes as Settings open
+  (Models shows each with its size, license and progress, and deletes them;
+  models an update drops are deleted at the next start). Battery: battery
+  saver pauses AI processing unless **Pause AI processing** is off.
 - About: version, source, upstream credit, the license, third-party licenses,
   and the AI models' authors and licenses.
 
@@ -968,60 +971,78 @@ none throughout.
 `--es do survey` opens every model in a folder and runs one page through it,
 and `--es do download` fetches catalog models through the app's own downloader
 (stopping once partway, then resuming), checks their SHA-256, opens them and
-runs a page. The models OpenComic AI's desktop app offers whose licenses let a
-free app download them went through the survey on the same tablet; the catalog
-keeps those that run and take a synthetic 1000x1500 page through in at most two
-thirds of the 30 s page time. Medians of 3 pages after a warm-up, at each
-model's own scale, run one model after another (the tablet warmed from a thermal
-headroom of 0.79 to 0.93 over the catalog's models; the first, run again at
-0.85, took 8.3 s instead of 5.4 s):
+runs a page; `--ef cool 0.7` has a timing run first wait for the thermal
+headroom to fall below 0.7. The catalog keeps the models that run and, started
+cool, take a synthetic 1000x1500 page through in at most two thirds of the 30 s
+page time (`CatalogModel.pageMs`). Medians of 3 pages after a warm-up on the
+same tablet, each model started cool (the slower of two runs where two were
+made); Warm is the same model in an earlier run of all of them one after
+another, as the headroom rose from 0.79 to 0.93:
 
-| Model | Step | Setup | Margin | Tiles | Per page |
-|---|---|---|---|---|---|
-| OpenComic AI Artifact Removal Fast v2 | artifacts, 1x | GPU fp16, 192 px | 16 px | 70 | 7.1 s |
-| OpenComic AI Descreen Hard Fast v2 | descreen, 1x | GPU fp16, 192 px | 15 px | 70 | 7.1 s |
-| OpenComic AI Descreen Hard Fast v3 | descreen, 1x | GPU fp16, 192 px | 21 px | 77 | 17.8 s |
-| OpenComic AI Upscale Fast v2 2x | upscale | GPU fp16, 192 px | 20 px | 70 | 5.4 s |
-| OpenComic AI Upscale Fast v2 3x | upscale | GPU fp16, 256 px | 29 px | 48 | 11.1 s |
-| OpenComic AI Upscale Fast v2 4x | upscale | GPU fp16, 256 px | 30 px | 48 | 11.7 s |
-| Real-ESRGAN AnimeVideo v3 2x | upscale | GPU fp32, 192 px | 15 px | 70 | 14.6 s |
-| Real-ESRGAN AnimeVideo v3 3x | upscale | GPU fp32, 192 px | 15 px | 70 | 14.9 s |
-| Real-ESRGAN AnimeVideo v3 4x | upscale | GPU fp32, 128 px | 15 px | 176 | 19.5 s |
-| LSDIR Compact C3 4x | upscale | GPU fp32, 128 px | 13 px | 176 | 19.6 s |
-| waifu2x UpConv7 2x | upscale | GPU fp16, 192 px | 15 px | 70 | 3.6 s |
-| waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 4.0 s |
-| waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 3.1 s |
+| Model | Step | Setup | Margin | Tiles | Cool | Warm | Peak resident |
+|---|---|---|---|---|---|---|---|
+| OpenComic AI Artifact Removal Fast v2 | artifacts, 1x | GPU fp16, 192 px | 16 px | 70 | 5.1 s | 7.1 s | 299 MB |
+| OpenComic AI Descreen Hard Fast v2 | descreen, 1x | GPU fp16, 192 px | 15 px | 70 | 5.1 s | 7.1 s | 301 MB |
+| OpenComic AI Descreen Hard Fast v3 | descreen, 1x | GPU fp16, 192 px | 21 px | 77 | 15.4 s | 17.8 s | 292 MB |
+| OpenComic AI Upscale Fast v2 2x | upscale | GPU fp16, 192 px | 20 px | 70 | 5.5 s | 5.4 to 8.3 s | 301 MB |
+| OpenComic AI Upscale Fast v2 3x | upscale | GPU fp16, 256 px | 29 px | 48 | 8.3 s | 11.1 s | 362 MB |
+| OpenComic AI Upscale Fast v2 4x | upscale | GPU fp16, 256 px | 30 px | 48 | 8.5 s | 11.7 s | 421 MB |
+| Real-ESRGAN AnimeVideo v3 2x | upscale | GPU fp32, 192 px | 15 px | 70 | 10.8 s | 14.6 s | 325 MB |
+| Real-ESRGAN AnimeVideo v3 3x | upscale | GPU fp32, 192 px | 15 px | 70 | 11.1 s | 14.9 s | 357 MB |
+| Real-ESRGAN AnimeVideo v3 4x | upscale | GPU fp32, 128 px | 15 px | 176 | 14.0 s | 19.5 s | 385 MB |
+| LSDIR Compact C3 4x | upscale | GPU fp32, 128 px | 13 px | 176 | 14.0 s | 19.6 s | 389 MB |
+| waifu2x UpConv7 2x | upscale | GPU fp16, 192 px | 15 px | 70 | 3.4 s | 3.6 s | 323 MB |
+| waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 3.4 s | 4.0 s | 324 MB |
+| waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 2.7 s | 3.1 s | 322 MB |
 
-Real-ESRGAN AnimeVideo v3 and LSDIR Compact C3 differ from the CPU by a mean of
-1.6 to 1.9 codes in fp16 (more than rounding), so they run in fp32. All 15 downloaded
-from the repository, stopped after 0.5 MB and resumed, matched their SHA-256
-and finished a page within the page time. Under battery saver a page pauses at
-once; with Pause AI processing off it runs, at about half speed.
+Warm, models took up to 1.5 times as long as cool (single pages of the
+download check reached 21.4 s), still within the page time; the AI gate stops
+runs once the forecast headroom reaches 0.9. Real-ESRGAN AnimeVideo v3 and
+LSDIR Compact C3 differ from the CPU by a mean of 1.6 to 1.9 codes in fp16
+(more than rounding), so they run in fp32. 3x and 4x models run at their own
+scale and the page is then reduced to its shown size, so their time and memory
+are those of a 3000x4500 or 4000x6000 output whatever size the page is shown
+at (2x here); the 96 MB 4x output adds about 120 MB to the peak, and outputs
+past 32 MP fall back to Lanczos3. Chosen
+models add up: Settings show the chain and warn when the catalog times of its
+models together pass the same two thirds of the page time (Artifact Removal
+Fast v2, Descreen Hard Fast v3 and LSDIR Compact C3 4x: 34.5 s). All 15
+downloaded from the repository, stopped after 0.5 MB and resumed, matched their
+SHA-256 and finished a page within the page time. Under battery saver a page
+pauses at once; with Pause AI processing off it runs, at about half speed.
 
-Left out of the catalog:
+The survey covered every model OpenComic AI's desktop app offers from its model
+repository, run where its license allows (times are single survey pages, or
+estimated from the tiles run in 60 or 120 s):
 
-- too slow: OpenComic AI Upscale Fast v3 2x (27.5 s; 3x and 4x ran only on the
-  CPU, their GPU tiles showing seams in both precisions: 56 and 79 s for the
-  survey's single page),
-  Real-ESRGAN General v3 4x (50.6 s) and its WDN variant (60.0 s); ESRGAN-type
-  models, from one survey page each (or estimated from the tiles run in 60 or
-  120 s): NMKD Jaywreck3 Lite and Soft Lite (61 and 77 s), OpenComic AI
-  Descreen Hard Balanced v3 (84 s), Upscale Balanced v3 2x (about 97 s), and the
-  Balanced and Quality v2 models (2 to 14 minutes; the 2x upscalers ran only on
-  the CPU). Opening the 4x ones (WTP ColorDS, Real-ESRGAN x4plus Anime) took the
-  app past 1.8 GB resident while it checked them on the GPU, and the system
-  ended it; the other 4x models of that size (Real-ESRGAN x4plus, RealESRNet
-  x4plus, AI-Forever x4plus, HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo,
-  NMKD Siax) and the 3x and 4x versions of the OpenComic models above were not
-  run;
-- refused by the engine: Real-CUGAN SE and Pro and waifu2x CUnet (global
-  pooling in squeeze-excitation blocks: tiles would show), OpenComic AI
-  Artifact Removal Balanced and Quality v3 (output still changes 64 px from a
-  cut), Real-CUGAN NoSE (fails to run at the probe's 32 and 48 px inputs);
-- by license: CC BY-NC-SA 4.0 (Remacri, UltraSharp, UniScale Restore,
-  Int-RemAnime, AnimeSharp V4, SaiyaJin DeJpeg, and UltraMix, merged from such
-  models), GPL-3.0 (JPEG Destroyer V2), none stated (WTP DescreenTon Compact,
-  Halftone Patch 060000 G, Unknown 2.0.1).
+| Models | License | Source | Result |
+|---|---|---|---|
+| OpenComic AI Artifact Removal Fast v2; Descreen Hard Fast v2 and v3; Upscale Fast v2 2x, 3x, 4x | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | catalog |
+| OpenComic AI Upscale Fast v3 2x | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | too slow: 20.2 and 20.0 s started cool (two runs), 27.5 s warm |
+| OpenComic AI Upscale Fast v3 3x, 4x | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | GPU tiles show seams in both precisions; CPU: 56 and 79 s |
+| OpenComic AI Descreen Hard Balanced v3 | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | too slow: 84 s |
+| OpenComic AI Upscale Balanced v3 2x | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | too slow: about 97 s; 3x and 4x not run |
+| OpenComic AI Balanced and Quality v2 (each step) | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | too slow: 2 to 14 minutes (the 2x upscalers ran only on the CPU; 3x and 4x not run) |
+| OpenComic AI Artifact Removal Balanced and Quality v3 | CC BY 4.0 | [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | refused: output still changes 64 px from a cut |
+| Real-ESRGAN AnimeVideo v3 2x, 3x, 4x | BSD-3-Clause | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | catalog |
+| Real-ESRGAN General v3 4x, General WDN v3 4x | BSD-3-Clause | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | too slow: 50.6 and 60.0 s |
+| Real-ESRGAN x4plus Anime | BSD-3-Clause | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | the system ended the app while it checked the model (past 1.8 GB resident) |
+| Real-ESRGAN x4plus, RealESRNet x4plus | BSD-3-Clause | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | not run: as large as x4plus Anime |
+| AI-Forever x4plus | BSD-3-Clause | [ai-forever/Real-ESRGAN](https://github.com/ai-forever/Real-ESRGAN) | not run: as large as x4plus Anime |
+| Real-CUGAN SE and Pro | MIT | [Real-CUGAN](https://github.com/bilibili/ailab) | refused: global pooling in squeeze-excitation blocks (tiles would show) |
+| Real-CUGAN NoSE | MIT | [Real-CUGAN](https://github.com/bilibili/ailab) | refused: fails to run at the probe's 32 and 48 px inputs |
+| waifu2x UpConv7 2x (no denoise, denoise 0 to 3) | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | catalog |
+| waifu2x CUnet | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | refused: global pooling (tiles would show) |
+| LSDIR Compact C3 4x | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | catalog |
+| HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo (4x) | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | not run: as large as x4plus Anime |
+| WTP ColorDS 4x | CC BY 4.0 | [OpenModelDB](https://openmodeldb.info/models/4x-WTP-ColorDS) | the system ended the app while it checked the model (past 1.8 GB resident) |
+| NMKD Jaywreck3 Lite and Soft Lite | WTFPL | [OpenModelDB](https://openmodeldb.info/models/1x-NMKD-Jaywreck3-Lite) | too slow: 61 and 77 s |
+| NMKD Siax 4x | WTFPL | [OpenModelDB](https://openmodeldb.info/models/4x-NMKD-Siax-CX) | not run: as large as x4plus Anime |
+| Remacri, UltraSharp, UniScale Restore, AnimeSharp V4, SaiyaJin DeJpeg | CC BY-NC-SA 4.0 | [OpenModelDB](https://openmodeldb.info/) | left out: non-commercial terms |
+| Int-RemAnime, UltraMix Balanced (merged from such models) | CC BY-NC-SA 4.0 | [OpenComic AI's models](https://github.com/ollm/opencomic-ai-models) | left out: non-commercial terms |
+| JPEG Destroyer V2 | GPL-3.0 | [OpenModelDB](https://openmodeldb.info/models/1x-JPEGDestroyer) | left out: GPL |
+| WTP DescreenTon Compact | none stated | [OpenModelDB](https://openmodeldb.info/models/1x-wtp-descreentone-compact) | left out: no license |
+| Halftone Patch 060000 G, Unknown 2.0.1 | none stated | [OpenComic AI's models](https://github.com/ollm/opencomic-ai-models) | left out: no license |
 
 ## Permissions
 

@@ -97,7 +97,7 @@ object ModelCatalog {
             "opencomic-ai-descreen-hard-fast-v3-256", "OpenComic AI Descreen Hard Fast v3", AiStep.DESCREEN, 1, ModelSource.OPENCOMIC,
             file("descreen/models/opencomic-ai-descreen-hard-fast-v3-256.param", 22760, "6d3bdd193effcf56ab5bde4ae09ebb25d914bd14484b97fbdd2719142dda5d54"),
             file("descreen/models/opencomic-ai-descreen-hard-fast-v3-256.bin", 1426400, "35689df85b1a56bbd248f6b2f1aec3bce7fdca6aaa97c4937e7fc1c2bdf95abb"),
-            pageMs = 14_800
+            pageMs = 15_400
         ),
         CatalogModel(
             "opencomic-ai-upscale-2x-compact-v2", "OpenComic AI Upscale Fast v2 2×", AiStep.UPSCALE, 2, ModelSource.OPENCOMIC,

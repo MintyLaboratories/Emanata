@@ -10,7 +10,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * content exactly that far away changes it; [reach] is the furthest. [padded] models keep the input's size times [scale] and
  * see black past the tile's edge, as zero padding does; others drop the [reach] pixels on each
  * side whose taps would leave the tile (their trim). Reads [src] past its edge as the native
- * code does: the nearest edge pixel.
+ * code does: the nearest edge pixel. Like a GPU can, it may round by a pixel's place in its
+ * tile ([phaseNoise], [edgeNoise]), go wrong on tiles wider than [breaksAbove], or compute
+ * nonsense ([wrong]).
  */
 internal class FakeModel(
     val scale: Int = 2,
@@ -21,7 +23,17 @@ internal class FakeModel(
     /** Fails the run with this index (0-based) when set. */
     private val failAt: Int = -1,
     /** Called at the start of every run, with the run's index. */
-    private val onRun: (Int) -> Unit = {}
+    private val onRun: (Int) -> Unit = {},
+    /** Adds 3 codes to output from every fourth input column of a tile, as fp16 rounding by place can. */
+    private val phaseNoise: Boolean = false,
+    /** Adds 3 codes to output from every fifth input column counted from a tile's right edge, so by the tile's size. */
+    private val edgeNoise: Boolean = false,
+    /** Adds 3 codes to output from input this close to a tile's edge, as fp16 rounding of faint far context can. */
+    private val borderNoise: Int = 0,
+    /** Inverts the output of tiles wider than this, as a feature map past a GPU buffer can. */
+    private val breaksAbove: Int = Int.MAX_VALUE,
+    /** Writes mid-gray whatever the input. */
+    private val wrong: Boolean = false
 ) : TileModel {
     val trim: Int get() = if (padded) 0 else reach * scale
     val runs = AtomicInteger()
@@ -51,7 +63,15 @@ internal class FakeModel(
             val row = IntArray(c.width)
             for (y in 0 until c.height) {
                 for (x in 0 until c.width) {
-                    row[x] = pixel(tile, n, m, (c.x + x + trim) / scale, (c.y + y + trim) / scale)
+                    val px = (c.x + x + trim) / scale
+                    var v = pixel(tile, n, m, px, (c.y + y + trim) / scale)
+                    if (phaseNoise && px % 4 == 0) v = brighter(v, 3)
+                    if (edgeNoise && (n - 1 - px) % 5 == 0) v = brighter(v, 3)
+                    val py = (c.y + y + trim) / scale
+                    if (minOf(px, py, n - 1 - px, m - 1 - py) < borderNoise) v = brighter(v, 3)
+                    if (n > breaksAbove) v = v xor 0xFFFFFF
+                    if (wrong) v = 0xFF808080.toInt()
+                    row[x] = v
                 }
                 dst.setPixels(row, 0, c.width, dx, dy + y, c.width, 1)
             }
@@ -64,6 +84,12 @@ internal class FakeModel(
     /** The output pixel for tile input pixel ([px], [py]): the mean of it and its four taps, black past the tile. */
     private fun pixel(tile: IntArray, n: Int, m: Int, px: Int, py: Int): Int =
         mean(taps) { x, y -> if (x + px in 0 until n && y + py in 0 until m) tile[(y + py) * n + x + px] else 0 }
+
+    private fun brighter(v: Int, by: Int): Int {
+        var out = 0xFF shl 24
+        for (shift in intArrayOf(16, 8, 0)) out = out or (minOf(255, ((v shr shift) and 0xFF) + by) shl shift)
+        return out
+    }
 
     override fun trim() {
         trims.incrementAndGet()
@@ -119,27 +145,31 @@ internal class FakeModel(
 
 /** A runtime handing out [FakeModel]s: [gpu] when set, opening on it only when [gpuOpens]. */
 internal class FakeRuntime(
-    val gpu: GpuInfo? = GpuInfo("Test GPU", 2048, true),
+    val gpu: GpuInfo? = GpuInfo("Test GPU", 2048, true, Long.MAX_VALUE),
     private val gpuOpens: Boolean = true,
     override val available: Boolean = true,
-    private val make: (onGpu: Boolean) -> TileModel? = { FakeModel(onGpu = it) }
+    private val make: (onGpu: Boolean, fp16: Boolean) -> TileModel? = { onGpu, _ -> FakeModel(onGpu = onGpu) }
 ) : InferenceRuntime {
     val opened = ArrayList<TileModel>()
+
+    /** Each open's engine (true: the GPU) and precision (true: fp16). */
     val asked = ArrayList<Boolean>()
+    val askedFp16 = ArrayList<Boolean>()
 
     override fun gpu(): GpuInfo? = gpu
 
     override fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? {
         asked += gpu
+        askedFp16 += fp16
         if (gpu && (this.gpu == null || !gpuOpens)) return null
-        return make(gpu)?.also { opened += it }
+        return make(gpu, fp16)?.also { opened += it }
     }
 }
 
-/** Model files whose `.param` names [channels]-wide convolutions, under [dir]. */
-internal fun fakeFiles(dir: File, channels: Int = 32): ModelFiles {
+/** Model files whose `.param` names [channels]-wide convolutions and the layer lines [extra], under [dir]. */
+internal fun fakeFiles(dir: File, channels: Int = 32, extra: String = ""): ModelFiles {
     val param = File(dir, "model.param").apply {
-        writeText("7767517\n3 3\nInput in0 0 1 in0\nConvolution conv_1 1 1 in0 a 0=$channels 1=3 4=1 5=1 6=864\nPixelShuffle ps 1 1 a out0 0=2\n")
+        writeText("7767517\n3 3\nInput in0 0 1 in0\nConvolution conv_1 1 1 in0 a 0=$channels 1=3 4=1 5=1 6=864\n${extra}PixelShuffle ps 1 1 a out0 0=2\n")
     }
     val bin = File(dir, "model.bin").apply { writeBytes(ByteArray(4)) }
     return ModelFiles(param, bin)

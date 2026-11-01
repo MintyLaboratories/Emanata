@@ -13,14 +13,19 @@ data class Box(val x: Int, val y: Int, val width: Int, val height: Int)
 /** A [width] x [height] size. */
 data class Dims(val width: Int, val height: Int)
 
-/** The Vulkan device models run on: its [name], the memory it lets us use in MB, and whether it computes in fp16. */
-data class GpuInfo(val name: String, val budgetMb: Int, val fp16: Boolean) {
+/**
+ * The Vulkan device models run on: its [name], the memory it lets us use in MB, whether it
+ * computes in fp16, and the largest buffer one shader may address ([maxBufferBytes]): a
+ * feature map past it comes out wrong without an error.
+ */
+data class GpuInfo(val name: String, val budgetMb: Int, val fp16: Boolean, val maxBufferBytes: Long) {
     companion object {
-        /** From native code's "name\tbudget\tfp16"; null for null or anything else. */
+        /** From native code's "name\tbudget\tfp16\tbuffer"; null for null or anything else. */
         fun parse(s: String?): GpuInfo? {
-            val parts = s?.split('\t')?.takeIf { it.size == 3 } ?: return null
+            val parts = s?.split('\t')?.takeIf { it.size == 4 } ?: return null
             val budget = parts[1].toIntOrNull() ?: return null
-            return GpuInfo(parts[0], budget, parts[2] == "1")
+            val buffer = parts[3].toLongOrNull()?.takeIf { it > 0 } ?: return null
+            return GpuInfo(parts[0], budget, parts[2] == "1", buffer)
         }
     }
 }

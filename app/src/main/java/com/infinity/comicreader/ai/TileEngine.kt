@@ -49,10 +49,10 @@ class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val tota
 class PageRun(val bitmap: Bitmap?, val fallback: Fallback?, val stats: RunStats)
 
 /**
- * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size].
- * Closing it closes the model.
+ * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size],
+ * computing in fp16 when [fp16]. Closing it closes the model; a run in progress then falls back.
  */
-internal class Session(val model: TileModel, val geometry: Geometry, val size: Int) : AutoCloseable {
+internal class Session(val model: TileModel, val geometry: Geometry, val size: Int, val fp16: Boolean = false) : AutoCloseable {
     init {
         require(TilePlan.fits(size, geometry)) { "Tile $size too small for margin ${geometry.margin}" }
     }
@@ -62,7 +62,7 @@ internal class Session(val model: TileModel, val geometry: Geometry, val size: I
 
 /**
  * Runs a model over whole pages in fixed-size tiles ([TilePlan]), one page at a time in the
- * process: a run waits for the one before. Between tiles a run stops for:
+ * process: a run waits for the one before ([exclusive]). Between tiles a run stops for:
  * - [canceled]: throws [CancellationException], nothing kept;
  * - its time ([PageLimits.timeoutMs]): falls back, also as soon as the tiles left would
  *   take longer than the time left at the pace so far, so no work is spent on a page that
@@ -83,6 +83,21 @@ internal object TileEngine {
     /** Rows of a page read at a time when looking for transparency. */
     private const val ALPHA_ROWS = 64
 
+    /**
+     * [block] run while no page or model check runs; throws [CancellationException] once
+     * [canceled] while waiting for one.
+     */
+    fun <T> exclusive(canceled: () -> Boolean, block: () -> T): T {
+        while (!lock.tryLock(WAIT_POLL_MS, TimeUnit.MILLISECONDS)) {
+            if (canceled()) throw CancellationException("AI work canceled while waiting")
+        }
+        try {
+            return block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
     /** [src] through [session]'s model, the output [Geometry.scale] times its size. */
     fun run(
         session: Session,
@@ -92,19 +107,15 @@ internal object TileEngine {
         gate: () -> Fallback? = { null },
         clock: () -> Long = SystemClock::elapsedRealtime,
         onTile: (done: Int, of: Int, ms: Long) -> Unit = { _, _, _ -> }
-    ): PageRun {
-        while (!lock.tryLock(WAIT_POLL_MS, TimeUnit.MILLISECONDS)) {
-            if (canceled()) throw CancellationException("AI page canceled while waiting")
-        }
+    ): PageRun = exclusive(canceled) {
         try {
-            return runLocked(session, src, limits, canceled, gate, clock, onTile)
+            runAlone(session, src, limits, canceled, gate, clock, onTile)
         } finally {
             session.model.trim()
-            lock.unlock()
         }
     }
 
-    private fun runLocked(
+    private fun runAlone(
         session: Session, src: Bitmap, limits: PageLimits, canceled: () -> Boolean, gate: () -> Fallback?,
         clock: () -> Long, onTile: (Int, Int, Long) -> Unit
     ): PageRun {

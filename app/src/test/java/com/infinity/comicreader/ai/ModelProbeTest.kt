@@ -3,6 +3,7 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.concurrent.CancellationException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -47,10 +49,99 @@ class ModelProbeTest {
     }
 
     @Test
-    fun aReachBeyondTheLargestProbeTakesAllOfIt() {
+    fun aReachBeyondTheLargestProbeIsUnfit() {
         // Nearer taps too, as a real model's context is dense: a tile smaller than the reach still sees some of it.
-        val g = ModelProbe.measure(FakeModel(scale = 1, reach = 100, taps = intArrayOf(8, 40, 100)))
-        assertEquals(ModelProbe.MAX_PROBE / 4 + ModelProbe.SAFETY, g.context)
+        val model = FakeModel(scale = 1, reach = 100, taps = intArrayOf(8, 40, 100))
+        assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.measure(model) }
+        assertTrue(model.inputs.any { it.width == ModelProbe.MAX_PROBE })
+    }
+
+    @Test
+    fun measuringStopsOnceCanceled() {
+        val model = FakeModel()
+        assertThrows(CancellationException::class.java) { ModelProbe.measure(model, canceled = { model.runs.get() >= 2 }) }
+        assertEquals(2, model.runs.get())
+    }
+
+    @Test
+    fun aCleanModelPassesAtEverySize() {
+        for (padded in listOf(true, false)) {
+            val model = FakeModel(scale = 2, reach = 3, padded = padded)
+            val g = ModelProbe.measure(model)
+            for (size in listOf(64, 96, 192)) {
+                val check = ModelProbe.verify(model, FakeModel(scale = 2, reach = 3, padded = padded, onGpu = false), g, size, 64)
+                assertTrue("padded=$padded $size: $check", check.passes)
+                assertEquals(0, check.seams.max)
+                assertEquals(0, check.vsReference.max)
+            }
+        }
+    }
+
+    @Test
+    fun roundingByPlaceInAnAlignedTileLeavesNoSeams() {
+        val model = FakeModel(phaseNoise = true)
+        val reference = FakeModel(onGpu = false)
+        val check = ModelProbe.verify(model, reference, ModelProbe.measure(reference), 128, 128)
+        assertTrue(check.toString(), check.passes)
+        assertTrue(check.vsReference.noisy)
+    }
+
+    @Test
+    fun roundingByTileSizeShowsAsNoisySeams() {
+        val model = FakeModel(edgeNoise = true)
+        val reference = FakeModel(onGpu = false)
+        val check = ModelProbe.verify(model, reference, ModelProbe.measure(reference), 128, 128)
+        assertFalse(check.passes)
+        assertTrue(check.seams.toString(), check.seams.noisy)
+        assertFalse(check.vsReference.wrong)
+    }
+
+    @Test
+    fun aLargeTileGoneWrongDiffersFromTheReference() {
+        val model = FakeModel(breaksAbove = 100)
+        val reference = FakeModel(onGpu = false)
+        val g = ModelProbe.measure(reference)
+        val check = ModelProbe.verify(model, reference, g, 192, 64)
+        assertTrue(check.vsReference.toString(), check.vsReference.wrong)
+        assertFalse(check.passes)
+        assertTrue(ModelProbe.verify(model, reference, g, 96, 64).passes)
+    }
+
+    @Test
+    fun tilesGoneWrongByTheirContentShowAsSeams() {
+        // Wrong only where a tile starts at an even column: the same pixels come out right in a tile starting elsewhere.
+        val reference = FakeModel(onGpu = false)
+        val g = ModelProbe.measure(reference)
+        val flaky = object : TileModel by FakeModel() {
+            private val inner = FakeModel()
+            override fun run(src: android.graphics.Bitmap, input: Box, dst: android.graphics.Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+                val d = inner.run(src, input, dst, crop, dx, dy)
+                if (dst != null && crop != null && Math.floorMod(input.x, 16) == Math.floorMod(-g.margin, 16)) {
+                    dst.setPixels(IntArray(crop.width * crop.height) { 0xFF000000.toInt() }, 0, crop.width, dx, dy, crop.width, crop.height)
+                }
+                return d
+            }
+        }
+        val check = ModelProbe.verify(flaky, reference, g, 96, 96)
+        assertTrue(check.seams.toString(), check.seams.wrong)
+    }
+
+    @Test
+    fun outputUnlikeTheReferenceIsWrong() {
+        val reference = FakeModel(onGpu = false)
+        val check = ModelProbe.verify(FakeModel(wrong = true), reference, ModelProbe.measure(reference), 96, 96)
+        assertTrue(check.vsReference.wrong)
+        assertFalse(check.passes)
+    }
+
+    @Test
+    fun differencesAreSortedBySizeAndMean() {
+        assertTrue(ModelProbe.Diff(ModelProbe.TOLERANCE, 2.0).same)
+        assertTrue(ModelProbe.Diff(ModelProbe.TOLERANCE + 1, 0.5).noisy)
+        assertTrue(ModelProbe.Diff(ModelProbe.NOISE_MAX, ModelProbe.NOISE_MEAN).noisy)
+        assertTrue(ModelProbe.Diff(ModelProbe.NOISE_MAX + 1, 0.1).wrong)
+        assertTrue(ModelProbe.Diff(6, ModelProbe.NOISE_MEAN + 0.1).wrong)
+        assertEquals("max 6, mean 0.25", ModelProbe.Diff(6, 0.25).toString())
     }
 
     @Test

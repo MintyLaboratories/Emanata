@@ -83,7 +83,7 @@ class AiCheckService : Service() {
                 val files = ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin"))
                 log(
                     JSONObject().put("model", param.name).put("loaded", LibNcnn.available)
-                        .put("gpu", LibNcnn.gpu()?.let { JSONObject().put("name", it.name).put("budgetMb", it.budgetMb).put("fp16", it.fp16) })
+                        .put("gpu", LibNcnn.gpu()?.let { JSONObject().put("name", it.name).put("budgetMb", it.budgetMb).put("fp16", it.fp16).put("maxBufferMb", it.maxBufferBytes shr 20) })
                         .put("soc", if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else JSONObject.NULL)
                         .put("threads", threads).put("graphicsMb", graphicsKb() / 1024).put("rssMb", rssKb() / 1024)
                         .put("conditions", conditions()).put("state", state())
@@ -100,7 +100,7 @@ class AiCheckService : Service() {
                         val g = s.geometry
                         log(
                             JSONObject().put("open", if (gpu) "gpu" else "cpu").put("onGpu", s.model.onGpu).put("ms", openMs)
-                                .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size)
+                                .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size).put("fp16", s.fp16)
                         )
                         if (what == "check" || what == "all") seams(s, small[0], small[1])
                         if (what == "time" || what == "all") time(s, tiles, size[0], size[1], reps, cooldown)

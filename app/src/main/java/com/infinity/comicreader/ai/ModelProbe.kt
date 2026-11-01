@@ -1,21 +1,26 @@
 package com.infinity.comicreader.ai
 
 import android.graphics.Bitmap
+import java.util.Locale
+import java.util.concurrent.CancellationException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * Measures a model's [Geometry] by running it on small synthetic tiles:
+ * Measures a model's [Geometry] by running it on small synthetic tiles ([measure]), and checks
+ * a model in tiles of one size ([verify]):
  * - scale and trim from the output sizes of two input sizes;
  * - context by cutting: the model runs on a [probe]-sized tile of busy content, and on its
  *   top-left three quarters alone, as a tile of a page would see it; the output pixels that
  *   change by more than [TOLERANCE] codes lie within the context of the cut. A context
  *   reaching the quarter beyond the cut is measured again on a tile twice the size, up to
- *   [MAX_PROBE].
+ *   [MAX_PROBE]; one reaching past that makes the model [Unfit]: its output depends on content
+ *   too far away for tiles to share (as with layers that pool the whole tile).
  * Works for models that pad (output exactly scale times the input) and for ones that do not
- * (output smaller by a fixed trim; their cut changes nothing).
+ * (output smaller by a fixed trim; their cut changes nothing). Measure on the CPU, in fp32:
+ * fp16 rounding differs with a tile's shape and reads as reach.
  */
 object ModelProbe {
     /** Output change, in 8-bit codes, that counts; smaller ones do not show as seams. */
@@ -23,6 +28,12 @@ object ModelProbe {
 
     /** Input pixels added to the measured context, for content busier than the probes. */
     const val SAFETY = 2
+
+    /** Mean difference, in codes, up to which outputs past [TOLERANCE] count as rounding noise rather than wrong. */
+    const val NOISE_MEAN = 1.5
+
+    /** The largest difference, in codes, rounding noise may reach. */
+    const val NOISE_MAX = 32
 
     /** The two input sizes whose outputs give scale and trim. */
     private const val SMALL = 32
@@ -37,16 +48,111 @@ object ModelProbe {
     /** Why a model could not be measured. */
     class Unfit(message: String) : Exception(message)
 
-    /** [model]'s geometry; throws [Unfit] when it fails to run or maps tiles in a way tiles cannot use. */
-    internal fun measure(model: TileModel): Geometry {
-        val (scale, trim) = scaleAndTrim(model)
+    /** How two outputs differ: the largest and the mean channel difference, in codes. */
+    data class Diff(val max: Int, val mean: Double) {
+        /** Within [TOLERANCE]: nothing shows. */
+        val same: Boolean get() = max <= TOLERANCE
+
+        /** Rounding noise: past [TOLERANCE], but small on average and at worst. */
+        val noisy: Boolean get() = !same && mean <= NOISE_MEAN && max <= NOISE_MAX
+
+        /** Neither: one of the outputs is wrong. */
+        val wrong: Boolean get() = !same && !noisy
+
+        override fun toString() = String.format(Locale.ROOT, "max %d, mean %.2f", max, mean)
+    }
+
+    /**
+     * [verify]'s result at one tile size: the model against the reference ([vsReference]) and
+     * its tiles against tiles on a shifted grid ([seams]). It passes when its output is not
+     * wrong and no seams show.
+     */
+    class Check(val vsReference: Diff, val seams: Diff) {
+        val passes: Boolean get() = !vsReference.wrong && seams.same
+
+        override fun toString() = "against the reference $vsReference; seams $seams"
+    }
+
+    /**
+     * [model]'s geometry; throws [Unfit] when it fails to run or maps tiles in a way tiles
+     * cannot use, and [CancellationException] once [canceled], checked before every run.
+     */
+    internal fun measure(model: TileModel, canceled: () -> Boolean = { false }): Geometry {
+        val m = Checked(model, canceled)
+        val (scale, trim) = scaleAndTrim(m)
         var size = FIRST_PROBE
         while (true) {
-            val reach = Pattern.entries.maxOf { reach(cut(model, size, scale, trim, it)) }
-            // A reach filling the quarter past the cut may be longer still; past the largest probe, take all of it.
+            val reach = Pattern.entries.maxOf { reach(cut(m, size, scale, trim, it)) }
             if (reach < size / 4) return Geometry(scale, trim, reach + SAFETY)
-            if (size >= MAX_PROBE) return Geometry(scale, trim, size / 4 + SAFETY)
+            if (size >= MAX_PROBE) throw Unfit("Output changes ${size / 4} or more pixels away from a cut: tiles would show")
             size *= 2
+        }
+    }
+
+    /**
+     * Checks [model] in [size] tiles for [geometry] on a page of noise (the content fp16 rounds
+     * worst), three tiles wide:
+     * - seams: the page in [size] tiles against the page less its first [TilePlan.ALIGN] rows
+     *   and columns in [size] tiles, so tiles meet elsewhere while every pixel keeps its place
+     *   in the aligned period. Rounding that differs by where a pixel sits in its tile shows
+     *   here, as do tiles that go wrong by their content;
+     * - against [reference] (the model on the CPU, in fp32), on the page's first
+     *   [referenceSize] tile: wrong tiles (a feature map past what the GPU addresses) and wrong
+     *   arithmetic show here.
+     * Throws [Unfit] when a run fails, and [CancellationException] once [canceled], checked
+     * before every run.
+     */
+    internal fun verify(
+        model: TileModel,
+        reference: TileModel,
+        geometry: Geometry,
+        size: Int,
+        referenceSize: Int,
+        canceled: () -> Boolean = { false }
+    ): Check {
+        require(TilePlan.fits(size, geometry) && TilePlan.fits(referenceSize, geometry)) { "Tile too small for margin ${geometry.margin}" }
+        val m = Checked(model, canceled)
+        val r = Checked(reference, canceled)
+        val margin = geometry.margin
+        val s = geometry.scale
+        val shift = TilePlan.ALIGN
+        // Three tiles across, so the two pages' tiles meet inside what is compared; one down
+        // (unless the margin leaves too few rows to compare).
+        val core = TilePlan.core(size, geometry)
+        val w = size + core
+        val h = max(core, shift + margin + TilePlan.MIN_CORE)
+        val src = content(w, h, Pattern.NOISE)
+        val shifted = Bitmap.createBitmap(src, shift, shift, w - shift, h - shift)
+        try {
+            val a = tiled(m, src, size, geometry)
+            val b = tiled(m, shifted, size, geometry)
+            // The CPU runs the first tile alone: the reference is slow, and wrong output is wrong everywhere.
+            val first = TilePlan.tiles(w, h, referenceSize, geometry).first()
+            val truth = run(r, src, first.input, first.crop)
+            // The shifted page's pixels whose context lies inside it, from its margin on, and the same pixels of the page.
+            val aw = w * s
+            val bw = (w - shift) * s
+            val from = margin * s
+            val at = (shift + margin) * s
+            val seams = diff(bw - from, (h - shift) * s - from, { x, y -> a[(y + at) * aw + x + at] }, { x, y -> b[(y + from) * bw + x + from] })
+            val tw = first.crop.width
+            return Check(diff(tw, first.crop.height, { x, y -> a[y * aw + x] }, { x, y -> truth[y * tw + x] }), seams)
+        } finally {
+            shifted.recycle()
+            src.recycle()
+        }
+    }
+
+    /** [model]'s output for all of [src] in [size] tiles ([TilePlan]), as pixels. */
+    private fun tiled(model: TileModel, src: Bitmap, size: Int, geometry: Geometry): IntArray {
+        val dst = Bitmap.createBitmap(src.width * geometry.scale, src.height * geometry.scale, Bitmap.Config.ARGB_8888)
+        try {
+            for (t in TilePlan.tiles(src.width, src.height, size, geometry)) {
+                model.run(src, t.input, dst, t.crop, t.dx, t.dy) ?: throw Unfit("Model does not run")
+            }
+            return pixels(dst)
+        } finally {
+            dst.recycle()
         }
     }
 
@@ -113,36 +219,65 @@ object ModelProbe {
     private fun output(model: TileModel, src: Bitmap, side: Int, scale: Int, trim: Int): IntArray {
         val out = side * scale - 2 * trim
         if (out <= 0) throw Unfit("No output for $side at scale $scale, trim $trim")
-        val dst = Bitmap.createBitmap(out, out, Bitmap.Config.ARGB_8888)
+        return run(model, src, Box(0, 0, side, side), Box(0, 0, out, out))
+    }
+
+    /** Output window [crop] of [model]'s run on [input] of [src], as pixels. */
+    private fun run(model: TileModel, src: Bitmap, input: Box, crop: Box): IntArray {
+        val dst = Bitmap.createBitmap(crop.width, crop.height, Bitmap.Config.ARGB_8888)
         try {
-            model.run(src, Box(0, 0, side, side), dst, Box(0, 0, out, out), 0, 0) ?: throw Unfit("Model does not run")
-            val px = IntArray(out * out)
-            dst.getPixels(px, 0, out, 0, 0, out, out)
-            return px
+            model.run(src, input, dst, crop, 0, 0) ?: throw Unfit("Model does not run")
+            return pixels(dst)
         } finally {
             dst.recycle()
         }
+    }
+
+    private fun pixels(b: Bitmap): IntArray = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
+
+    /** How the pixels [a] and [b] give at each place of a [w] x [h] rectangle differ. */
+    private inline fun diff(w: Int, h: Int, a: (Int, Int) -> Int, b: (Int, Int) -> Int): Diff {
+        if (w <= 0 || h <= 0) return Diff(0, 0.0)
+        var worst = 0
+        var sum = 0L
+        for (y in 0 until h) for (x in 0 until w) {
+            val d = differ(a(x, y), b(x, y))
+            worst = max(worst, d)
+            sum += d
+        }
+        return Diff(worst, sum.toDouble() / (w.toLong() * h))
     }
 
     /** The largest channel difference of two opaque pixels. */
     private fun differ(a: Int, b: Int): Int =
         max(abs(((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)), max(abs(((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)), abs((a and 0xFF) - (b and 0xFF))))
 
-    private fun content(size: Int, pattern: Pattern): Bitmap {
-        val r = Random(size * 7 + pattern.ordinal)
+    private fun content(size: Int, pattern: Pattern): Bitmap = content(size, size, pattern)
+
+    /** An opaque [w] x [h] bitmap of [pattern]. */
+    private fun content(w: Int, h: Int, pattern: Pattern): Bitmap {
+        val r = Random(w * 7 + (h - w) * 13 + pattern.ordinal)
         val px = when (pattern) {
-            Pattern.NOISE -> IntArray(size * size) { r.nextInt(1 shl 24) }
+            Pattern.NOISE -> IntArray(w * h) { r.nextInt(1 shl 24) }
             Pattern.BLOCKS -> {
                 val block = 6
-                val per = (size + block - 1) / block
-                val colors = IntArray(per * per) { if (r.nextInt(3) == 0) 0x101010 else r.nextInt(1 shl 24) }
-                IntArray(size * size) { k -> colors[(k / size / block) * per + (k % size) / block] }
+                val across = (w + block - 1) / block
+                val colors = IntArray(across * ((h + block - 1) / block)) { if (r.nextInt(3) == 0) 0x101010 else r.nextInt(1 shl 24) }
+                IntArray(w * h) { k -> colors[(k / w / block) * across + (k % w) / block] }
             }
         }
         for (i in px.indices) px[i] = px[i] or (0xFF shl 24)
-        return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
-            setPixels(px, 0, size, 0, 0, size, size)
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+            setPixels(px, 0, w, 0, 0, w, h)
             setHasAlpha(false)
+        }
+    }
+
+    /** [model], refusing to run once [canceled]. */
+    private class Checked(private val model: TileModel, private val canceled: () -> Boolean) : TileModel by model {
+        override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+            if (canceled()) throw CancellationException("AI model check canceled")
+            return model.run(src, input, dst, crop, dx, dy)
         }
     }
 }

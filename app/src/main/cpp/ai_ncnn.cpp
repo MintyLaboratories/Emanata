@@ -125,7 +125,11 @@ JNIEXPORT jint JNI_OnLoad(JavaVM*, void*) {
     return JNI_VERSION_1_6;
 }
 
-/** GPU name and heap budget in MB, as "name\tbudget\tfp16"; null without a usable Vulkan device. */
+/**
+ * GPU name, heap budget in MB, fp16 support and the largest buffer one shader may address in
+ * bytes (the lesser of maxStorageBufferRange and maxMemoryAllocationSize), as
+ * "name\tbudget\tfp16\tbuffer"; null without a usable Vulkan device.
+ */
 JNIEXPORT jstring JNICALL
 Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
     if (!gpu_acquire()) return nullptr;
@@ -133,8 +137,18 @@ Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
     {
         const ncnn::GpuInfo& info = ncnn::get_gpu_info();
         ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device();
+        uint64_t buffer = info.physicalDeviceProperties().limits.maxStorageBufferRange;
+        if (info.support_VK_KHR_maintenance3() && ncnn::vkGetPhysicalDeviceProperties2KHR) {
+            VkPhysicalDeviceMaintenance3PropertiesKHR m3{};
+            m3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+            VkPhysicalDeviceProperties2KHR p2{};
+            p2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+            p2.pNext = &m3;
+            ncnn::vkGetPhysicalDeviceProperties2KHR(info.physicalDevice(), &p2);
+            if (m3.maxMemoryAllocationSize > 0) buffer = std::min<uint64_t>(buffer, m3.maxMemoryAllocationSize);
+        }
         s = std::string(info.device_name()) + "\t" + std::to_string(vkdev ? vkdev->get_heap_budget() : 0) + "\t" +
-            (info.support_fp16_storage() && info.support_fp16_arithmetic() ? "1" : "0");
+            (info.support_fp16_storage() && info.support_fp16_arithmetic() ? "1" : "0") + "\t" + std::to_string(buffer);
     }
     gpu_release();
     return env->NewStringUTF(s.c_str());

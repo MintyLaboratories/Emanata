@@ -131,7 +131,9 @@ class SelectionTest {
         val facts = SelectionActions.MoreFacts(true, { true }, { true }, { true }, packable = { it.name != "Share" })
         fun packing(vararg entries: BookEntry) = SelectionActions.more(entries.toList(), all, facts).filter { it in packs }
         assertEquals(packs, packing(folder("A"), folder("B")))
-        assertEquals(emptyList<MoreAction>(), packing(folder("A"), book("a.cbz")))
+        // Books selected too: offered, turned off with the reason on screen.
+        assertEquals(packs, packing(folder("A"), book("a.cbz")))
+        assertEquals(emptyList<MoreAction>(), packing(book("a.cbz")))
         assertEquals(emptyList<MoreAction>(), packing(folder("A"), folder("Share")))
         // Where nothing says a folder may be taken (a share's), none.
         val none = SelectionActions.MoreFacts(true, { true }, { true }, { true })

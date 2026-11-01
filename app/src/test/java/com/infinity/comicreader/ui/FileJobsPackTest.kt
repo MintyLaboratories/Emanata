@@ -189,6 +189,7 @@ class FileJobsPackTest {
         val outcome = pack(plan(dir)) as FileWork.Outcome.Done
         assertEquals(File(tmp.root, "Loose (2).cbz").absolutePath, outcome.path)
         assertEquals("there", File(tmp.root, "Loose.cbz").readText())
+        assertEquals(listOf("Loose (2).cbz"), outcome.summary!!.keptBoth)
     }
 
     @Test
@@ -215,14 +216,18 @@ class FileJobsPackTest {
     }
 
     @Test
-    fun aFileWrittenAtTheNameMeanwhileIsNeverReplaced() {
+    fun aFileWrittenAtTheNameMeanwhileIsNeverReplacedAndBothAreKept() {
         val dir = folder("Loose", 2)
         val cbz = File(tmp.root, "Loose.cbz")
-        val outcome = pack(plan(dir), p = onFirstReport { cbz.writeText("theirs") }) as FileWork.Outcome.Failed
-        assertEquals(FileProblem.Kind.ALTERED, (outcome.error as FileProblem).kind)
+        val outcome = pack(plan(dir), p = onFirstReport { cbz.writeText("theirs") }) as FileWork.Outcome.Done
         assertEquals("theirs", cbz.readText())
-        assertEquals(2, dir.list()!!.size)
-        assertEquals(listOf("Loose", "Loose.cbz"), tmp.root.list()!!.filter { it.startsWith("Loose") }.sorted())
+        val kept = File(tmp.root, "Loose (2).cbz")
+        assertEquals(kept.absolutePath, outcome.path)
+        assertEquals(listOf("Loose (2).cbz"), outcome.summary!!.keptBoth)
+        assertEquals(listOf("1.jpg", "2.jpg"), names(kept))
+        assertFalse(dir.exists())
+        // The folder's data follows the file where it went.
+        assertEquals(kept.absolutePath, library.pathOf(bookId(kept)))
     }
 
     @Test
@@ -253,10 +258,64 @@ class FileJobsPackTest {
         val dir = folder("Mac", 2)
         File(dir, "__MACOSX").mkdirs()
         File(dir, "__MACOSX/._1.jpg").writeBytes(byteArrayOf(1))
-        File(dir, ".thumbnails/sub").mkdirs()
-        File(dir, ".thumbnails/sub/1.jpg").writeBytes(byteArrayOf(1))
         pack(plan(dir)) as FileWork.Outcome.Done
         assertEquals(listOf("1.jpg", "2.jpg"), names(File(tmp.root, "Mac.cbz")))
+        assertFalse(dir.exists())
+    }
+
+    /** A folder of two images with unusual files: a dot-folder, a dot-file and an empty image. */
+    private fun unusualFolder(): File {
+        val dir = folder("Odd", 2)
+        File(dir, ".thumbnails/sub").mkdirs()
+        File(dir, ".thumbnails/sub/1.jpg").writeBytes(byteArrayOf(1))
+        File(dir, ".cover.jpg").writeBytes(jpeg(9))
+        File(dir, "0.jpg").writeBytes(ByteArray(0))
+        return dir
+    }
+
+    private val unusualNames = listOf(".cover.jpg", ".thumbnails", "0.jpg")
+
+    @Test
+    fun unusualFilesLeftOutAreDeletedWithTheFolder() {
+        val dir = unusualFolder()
+        pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = unusualNames)) as FileWork.Outcome.Done
+        assertEquals(listOf("1.jpg", "2.jpg"), names(File(tmp.root, "Odd.cbz")))
+        assertFalse(dir.exists())
+    }
+
+    @Test
+    fun unusualFilesPackedGoInAsFilesNeverPages() {
+        val dir = unusualFolder()
+        val images = (1..2).map { ref(File(dir, "$it.jpg")) }
+        library.setReadMany(images, true)
+        library.addBookmark(Bookmark(images[1].path, "2.jpg", 0, "note", 50, images[1].id))
+        pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = unusualNames, unusualToo = true)) as FileWork.Outcome.Done
+        val cbz = File(tmp.root, "Odd.cbz")
+        assertEquals(listOf(".cover.jpg", ".thumbnails/sub/1.jpg", "0.jpg", "1.jpg", "2.jpg"), names(cbz))
+        assertFalse(dir.exists())
+        val book = bookId(cbz)
+        assertTrue(library.isRead(book))
+        // The second image is the second page: none of the unusual files counts.
+        assertEquals(listOf(1), library.bookmarksFor(book).map { it.page })
+    }
+
+    @Test
+    fun unusualFilesNotAskedAboutLeaveTheFolderAlone() {
+        val dir = unusualFolder()
+        val outcome = pack(FileJobs.PackPlan(dir.absolutePath, "Odd.cbz", unusual = listOf(".cover.jpg"))) as FileWork.Outcome.Failed
+        assertEquals(FileProblem.Kind.ALTERED, (outcome.error as FileProblem).kind)
+        assertTrue(File(dir, ".thumbnails/sub/1.jpg").exists())
+        assertFalse(File(tmp.root, "Odd.cbz").exists())
+    }
+
+    @Test
+    fun comicInfoGoesIntoTheBook() {
+        val dir = folder("Info", 2)
+        File(dir, "ComicInfo.xml").writeText("<ComicInfo><Title>A title</Title></ComicInfo>")
+        pack(plan(dir)) as FileWork.Outcome.Done
+        val cbz = File(tmp.root, "Info.cbz")
+        assertEquals(listOf("1.jpg", "2.jpg", "ComicInfo.xml"), names(cbz))
+        ZipFile(cbz).use { z -> assertEquals("<ComicInfo><Title>A title</Title></ComicInfo>", z.getInputStream(z.getEntry("ComicInfo.xml")).readBytes().decodeToString()) }
         assertFalse(dir.exists())
     }
 

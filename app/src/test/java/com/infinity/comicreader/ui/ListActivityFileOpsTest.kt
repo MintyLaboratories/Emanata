@@ -274,16 +274,22 @@ class ListActivityFileOpsTest {
             ),
             activity.moreItems()
         )
-        // Both: what applies to all of them, and nothing that takes one.
+        // Both: what applies to all of them, nothing that takes one, and Pack turned off saying why.
         activity.select(book.absolutePath)
         assertEquals(
-            listOf(MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE),
+            listOf(
+                MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE,
+                MoreAction.PACK, MoreAction.PACK_COMPACTED
+            ),
             activity.moreItems()
         )
 
         // Settings reorder and hide items.
         Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(4, 0).with(MoreAction.MARK_ALL_READ, false)
-        assertEquals(listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE), activity.moreItems())
+        assertEquals(
+            listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE, MoreAction.PACK, MoreAction.PACK_COMPACTED),
+            activity.moreItems()
+        )
     }
 
     @Test
@@ -390,6 +396,67 @@ class ListActivityFileOpsTest {
         idle()
         assertTrue(activity.selection.active)
         assertTrue(other.exists())
+    }
+
+    @Test
+    fun packIsOffSayingWhyWithBooksSelectedToo() {
+        File(other, "1.jpg").writeBytes(byteArrayOf(1, 2))
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.select(book.absolutePath)
+        val item = activity.moreItem(MoreAction.PACK)
+        assertFalse(item.isEnabled)
+        assertEquals(activity.getString(R.string.pack_why_books), item.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
+    }
+
+    /** Packs [other] from the menu, answering the unusual files question with [button]. */
+    private fun packAnswering(button: Int): ListActivity {
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.moreItem(MoreAction.PACK).performClick()
+        idle()
+        latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        repeat(50) { if (latest().title() != activity.getString(R.string.pack_unusual_title)) idle() }
+        assertEquals(activity.getString(R.string.pack_unusual_title), latest().title())
+        val listed = activity.getString(R.string.pack_unusual_hidden, ".cover.png") + ", " + activity.getString(R.string.pack_unusual_folder, ".thumbs") +
+            ", " + activity.getString(R.string.pack_unusual_empty, "0.png")
+        assertEquals(activity.getString(R.string.pack_unusual_message, listed), latest().findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString())
+        latest().getButton(button).performClick()
+        idle()
+        return activity
+    }
+
+    private fun unusualFiles() {
+        File(other, "1.png").writeBytes(ByteArray(300) { 4 })
+        File(other, ".cover.png").writeBytes(ByteArray(30) { 5 })
+        File(other, "0.png").writeBytes(ByteArray(0))
+        File(other, ".thumbs").mkdirs()
+        File(other, ".thumbs/1.png").writeBytes(ByteArray(20) { 6 })
+    }
+
+    @Test
+    fun packAsksOnceAboutUnusualFilesAndYesPacksThem() {
+        unusualFiles()
+        packAnswering(DialogInterface.BUTTON_POSITIVE)
+        val cbz = File(shelf, "Other.cbz")
+        settle { cbz.exists() && !other.exists() }
+        java.util.zip.ZipFile(cbz).use { z -> assertEquals(listOf(".cover.png", ".thumbs/1.png", "0.png", "1.png"), z.entries().toList().map { it.name }) }
+    }
+
+    @Test
+    fun noLeavesUnusualFilesOutAndCancelPacksNothing() {
+        unusualFiles()
+        packAnswering(DialogInterface.BUTTON_NEGATIVE)
+        val cbz = File(shelf, "Other.cbz")
+        settle { cbz.exists() && !other.exists() }
+        java.util.zip.ZipFile(cbz).use { z -> assertEquals(listOf("1.png"), z.entries().toList().map { it.name }) }
+        cbz.delete()
+        other.mkdirs()
+        unusualFiles()
+        packAnswering(DialogInterface.BUTTON_NEUTRAL)
+        idle()
+        assertFalse(cbz.exists())
+        assertTrue(File(other, ".thumbs/1.png").exists())
     }
 
     @Test

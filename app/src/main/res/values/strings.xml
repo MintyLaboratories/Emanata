@@ -576,6 +576,21 @@
     <string name="pack_why_other_files">Holds files other than images</string>
     <string name="pack_why_no_images">Holds no images</string>
     <string name="pack_why_unreadable">Can\'t be read</string>
+    <string name="pack_why_books">Books are selected too; select folders only</string>
+    <!-- Asked once for all folders being packed that hold dot-files, dot-folders or empty files. -->
+    <string name="pack_unusual_title">Pack these unusual files too?</string>
+    <!-- %1$s: the unusual files, one folder per line. -->
+    <string name="pack_unusual_message">%1$s\n\nYes packs them as files, never as pages. No leaves them out, and they are deleted with the folder.</string>
+    <string name="pack_unusual_yes">Yes</string>
+    <string name="pack_unusual_no">No</string>
+    <string name="pack_unusual_hidden">%1$s (hidden)</string>
+    <string name="pack_unusual_empty">%1$s (empty)</string>
+    <string name="pack_unusual_folder">%1$s/ (hidden folder)</string>
+    <!-- %1$s: what was done, as "Packed 2 folders"; %2$d: how many names were taken; %3$s: the new files' names. -->
+    <plurals name="pack_kept_both">
+        <item quantity="one">%1$s; the name was taken, so kept both as %3$s</item>
+        <item quantity="other">%1$s; %2$d names were taken, so kept both as %3$s</item>
+    </plurals>
     <!-- %1$s: a folder; %2$s: why it can't be packed. -->
     <string name="pack_why_named">%1$s: %2$s</string>
     <plurals name="packed_count">

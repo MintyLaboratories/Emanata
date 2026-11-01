@@ -12,12 +12,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
+import com.infinity.comicreader.compact.PackFolders
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.files.Node
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
@@ -180,7 +182,8 @@ internal class FileActions(
     /**
      * Packs [folders], each holding images only, into a `.cbz` beside it once confirmed: its
      * images as they are, or with [compacted] made smaller losslessly (warned as Compact is).
-     * Asks once for all whose `.cbz` name is taken: Replace, Keep both, or Skip them. One
+     * Asks once for all holding unusual files ([PackFolders.isUnusual]) whether to pack them
+     * too, and once for all whose `.cbz` name is taken: Replace, Keep both, or Skip them. One
      * queued operation, a folder at a time; [onConfirmed] runs as the dialog is confirmed.
      */
     fun pack(folders: List<File>, compacted: Boolean, onConfirmed: () -> Unit = {}) {
@@ -200,12 +203,38 @@ internal class FileActions(
             .show()
     }
 
-    /** Packs [folders], asking first about the `.cbz` names taken beside them. */
+    /** Packs [folders], asking first about their unusual files, then about the `.cbz` names taken beside them. */
     private suspend fun planPack(folders: List<File>, compacted: Boolean) {
+        val unusual = withContext(AppDispatchers.io) { folders.associateWith { PackFolders.of(it).unusual } }
+        if (unusual.values.all { it.isEmpty() }) return planPack(folders, compacted, unusual, false)
+        val list = unusual.filterValues { it.isNotEmpty() }.entries.joinToString("\n") { (dir, files) ->
+            val names = files.joinToString(", ") { unusualLabel(it) }
+            if (folders.size > 1) activity.getString(R.string.pack_why_named, dir.name, names) else names
+        }
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.pack_unusual_title)
+            .setMessage(activity.getString(R.string.pack_unusual_message, list))
+            .setPositiveButton(R.string.pack_unusual_yes) { _, _ -> activity.lifecycleScope.launch { planPack(folders, compacted, unusual, true) } }
+            .setNegativeButton(R.string.pack_unusual_no) { _, _ -> activity.lifecycleScope.launch { planPack(folders, compacted, unusual, false) } }
+            .setNeutralButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** How the unusual [file] shows in the question: a dot-folder, an empty file, or a dot-file. */
+    private fun unusualLabel(file: File): String = when {
+        file.isDirectory -> activity.getString(R.string.pack_unusual_folder, file.name)
+        file.length() == 0L -> activity.getString(R.string.pack_unusual_empty, file.name)
+        else -> activity.getString(R.string.pack_unusual_hidden, file.name)
+    }
+
+    /** Packs [folders] with their [unusual] files when [unusualToo], asking first about the `.cbz` names taken beside them. */
+    private suspend fun planPack(folders: List<File>, compacted: Boolean, unusual: Map<File, List<File>>, unusualToo: Boolean) {
+        fun plan(dir: File, name: String, replace: Boolean = false, over: Node? = null) =
+            FileJobs.PackPlan(dir.absolutePath, name, replace, over, unusual[dir].orEmpty().map { it.name }, unusualToo)
         val there = withContext(AppDispatchers.io) {
             folders.associateWith { FileSpaces.of(it.absolutePath).stat(Transfer.child(it.parent ?: "", packName(it))) }
         }
-        val plans = folders.filter { there[it] == null }.map { FileJobs.PackPlan(it.absolutePath, packName(it)) }
+        val plans = folders.filter { there[it] == null }.map { plan(it, packName(it)) }
         val clashes = folders.filter { there[it] != null }
         if (clashes.isEmpty()) return startPack(plans, compacted)
         fun keepBoth(dir: File) = Transfer.keepBothName(packName(dir), false) { File(dir.parentFile, it).exists() }
@@ -217,12 +246,12 @@ internal class FileActions(
             // A folder of that name is never replaced: it would go, with everything in it.
             if (clashes.none { there[it]?.isDirectory == true }) {
                 setPositiveButton(R.string.clash_replace) { _, _ ->
-                    startPack(plans + clashes.map { FileJobs.PackPlan(it.absolutePath, packName(it), replace = true, over = there[it]) }, compacted)
+                    startPack(plans + clashes.map { plan(it, packName(it), replace = true, over = there[it]) }, compacted)
                 }
             }
             setNeutralButton(R.string.clash_keep_both) { _, _ ->
                 activity.lifecycleScope.launch {
-                    val kept = withContext(AppDispatchers.io) { clashes.map { FileJobs.PackPlan(it.absolutePath, keepBoth(it)) } }
+                    val kept = withContext(AppDispatchers.io) { clashes.map { plan(it, keepBoth(it)) } }
                     startPack(plans + kept, compacted)
                 }
             }
@@ -457,11 +486,14 @@ internal class FileActions(
         return text
     }
 
-    /** What packing folders did: how many, and the bytes Pack compacted saved. */
+    /** What packing folders did: how many, the bytes Pack compacted saved, and the new files named anew as their name was taken. */
     private fun packed(outcome: FileWork.Outcome.Done): String {
-        val text = activity.resources.getQuantityString(R.plurals.packed_count, outcome.count, outcome.count)
+        var text = activity.resources.getQuantityString(R.plurals.packed_count, outcome.count, outcome.count)
         val saved = outcome.summary?.saved ?: 0L
-        return if (saved > 0) activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved)) else text
+        if (saved > 0) text = activity.getString(R.string.rebuild_saved, text, FileUtils.formatSize(activity, saved))
+        val kept = outcome.summary?.keptBoth.orEmpty()
+        if (kept.isNotEmpty()) text = activity.resources.getQuantityString(R.plurals.pack_kept_both, kept.size, text, kept.size, kept.joinToString(", "))
+        return text
     }
 
     /** [text] with how many pages [summary] re-encoded, if any. */

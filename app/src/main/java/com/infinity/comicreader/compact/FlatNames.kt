@@ -18,6 +18,9 @@ object FlatNames {
             name.startsWith("._") || name.lowercase(Locale.ROOT) in JUNK_NAMES
     }
 
+    /** True when archive path [path] is inside a dot-folder (`.cache/`). */
+    fun inDotFolder(path: String): Boolean = parts(path).dropLast(1).any(::isDotFolder)
+
     /** A hidden folder's name; `...Extras` and other names opening with an ellipsis are not hidden. */
     private fun isDotFolder(name: String) = name.startsWith('.') && !name.startsWith("..")
 

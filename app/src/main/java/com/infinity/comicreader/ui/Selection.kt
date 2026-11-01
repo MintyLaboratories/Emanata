@@ -149,7 +149,8 @@ object SelectionActions {
                 MoreAction.NAME_CHARSET -> book != null && !facts.keepSimple && facts.charsetApplies(book)
                 MoreAction.PEEK -> one != null && facts.canPeek(one)
                 MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> entries.any(facts.rebuildable)
-                MoreAction.PACK, MoreAction.PACK_COMPACTED -> entries.isNotEmpty() && entries.all { it.isDir && facts.packable(it) }
+                // With books selected too it shows, turned off with the reason.
+                MoreAction.PACK, MoreAction.PACK_COMPACTED -> folders.isNotEmpty() && folders.all { facts.packable(it) }
                 MoreAction.REMOVE_FROM_HISTORY -> facts.inHistory && entries.isNotEmpty()
                 MoreAction.REMOVE_BOOKMARK -> facts.inBookmarks && entries.isNotEmpty()
             }

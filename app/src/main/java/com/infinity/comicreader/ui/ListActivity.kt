@@ -2198,10 +2198,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         popup.showAsDropDown(anchor, (anchor.width - list.measuredWidth) / 2, -(anchor.height + list.measuredHeight + gap))
         morePopup = popup
         if (packs.isEmpty()) return
-        val folders = selection.entries.map { it.file }
+        val books = selection.entries.any { !it.isDir }
+        val folders = selection.entries.filter { it.isDir }.map { it.file }
         moreLook = lifecycleScope.launch {
-            val blocked = withContext(AppDispatchers.io) { PackFolders.firstBlocked(folders) }
-            val why = blocked?.let { (dir, why) ->
+            val blocked = if (books) null else withContext(AppDispatchers.io) { PackFolders.firstBlocked(folders) }
+            val why = if (books) getString(R.string.pack_why_books) else blocked?.let { (dir, why) ->
                 val text = getString(packWhy(why))
                 if (folders.size > 1) getString(R.string.pack_why_named, dir.name, text) else text
             }

@@ -64,9 +64,18 @@ internal class FileJobs(
 
     /**
      * The folder at [folder] to pack into [name] beside it, over the file there when
-     * [replace]: the one [over], found there as the user chose to replace it.
+     * [replace]: the one [over], found there as the user chose to replace it. Its [unusual]
+     * files and dot-folders (names, as asked about) go in too when [unusualToo]; left out,
+     * they are deleted with the folder.
      */
-    data class PackPlan(val folder: String, val name: String, val replace: Boolean = false, val over: Node? = null)
+    data class PackPlan(
+        val folder: String,
+        val name: String,
+        val replace: Boolean = false,
+        val over: Node? = null,
+        val unusual: List<String> = emptyList(),
+        val unusualToo: Boolean = false
+    )
 
     /**
      * What is at each of [paths] as they are chosen, looked up at once beside the queue: a
@@ -370,8 +379,9 @@ internal class FileJobs(
         var last: String? = null
         val gone = ArrayList<String>()
         val failedPages = LinkedHashMap<String, List<String>>()
+        val keptBoth = ArrayList<String>()
         var failure: Exception? = null
-        fun summary() = FileWork.Summary(saved, failed = failedPages)
+        fun summary() = FileWork.Summary(saved, failed = failedPages, keptBoth = keptBoth)
         try {
             for ((i, plan) in plans.withIndex()) {
                 if (!p.alive) return FileWork.Outcome.Canceled(done, plans.size, gone, summary())
@@ -383,11 +393,13 @@ internal class FileJobs(
                 }
                 try {
                     val contents = PackFolders.of(dir)
-                    if (contents.why != null) throw FileProblem(FileProblem.Kind.ALTERED, dir.name)
-                    val images = contents.images
-                    val stats = images.map { it.length() to it.lastModified() }
+                    // Unusual files not asked about are never packed or deleted.
+                    if (contents.why != null || !plan.unusual.containsAll(contents.unusual.map { it.name })) throw FileProblem(FileProblem.Kind.ALTERED, dir.name)
+                    val files = contents.packed(dir, plan.unusualToo)
+                    val images = contents.images.toHashSet()
+                    val stats = files.map { it.length() to it.lastModified() }
                     // Found as for any book: an image never seen here may share what an identical copy keeps.
-                    val ids = images.map { BookIds.find(it) }
+                    val ids = files.map { if (it in images) BookIds.find(it) else null }
                     val (target, replace) = packTarget(plan, dir.parentFile ?: throw IOException("No folder"))
                     var removed = false
                     val placer = Compactor.Placer { result, part, swap ->
@@ -405,21 +417,25 @@ internal class FileJobs(
                                     throw FileProblem(FileProblem.Kind.ALTERED, target.name)
                                 }
                                 if (replace) BookCaches.deleted(app, library, target.absolutePath)
-                                val folderPages = Compactor.pagesOf(images.map { it.name to it.length() })
+                                val folderPages = Compactor.pagesOf(files.map { PackFolders.pathIn(dir, it) to it.length() })
                                 val byPage = arrayOfNulls<BookRef>(result.pageCount)
                                 folderPages.forEachIndexed { k, at ->
-                                    val ref = ids[at]?.let { BookRef(it, images[at].absolutePath) }
+                                    val ref = ids[at]?.let { BookRef(it, files[at].absolutePath) }
                                     result.moves.getOrNull(k)?.takeIf { it in byPage.indices }?.let { byPage[it] = ref }
                                 }
-                                library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, target.absolutePath), result.pageCount, shared)
+                                library.carryFolder(plan.folder, byPage.toList(), BookRef(newId, result.file.absolutePath), result.pageCount, shared)
                             }
                         }
                         // Past the reader's wait: the folder holds nothing the library still needs.
-                        removed = removeFolder(dir, images, stats)
+                        removed = removeFolder(dir, files, stats, contents.unusual.toSet())
                     }
-                    val request = Compactor.Request(dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true)
-                    val result = compactor.run(request, { FolderReader(images) }, progress) as? Compactor.Result.Rebuilt
+                    val request = Compactor.Request(
+                        dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
+                        dotFolders = plan.unusualToo, keepBoth = ::keepBoth
+                    )
+                    val result = compactor.run(request, { FolderReader(files, dir) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")
+                    if (result.file.name != plan.name) keptBoth += result.file.name
                     done++
                     saved += result.before - result.after
                     last = result.file.absolutePath
@@ -454,22 +470,29 @@ internal class FileJobs(
         val there = File(parent, plan.name)
         val now = DeviceSpace.stat(there.absolutePath) ?: return there to false
         if (plan.replace && !now.isDirectory && same(plan.over, now)) return there to true
-        return File(parent, Transfer.keepBothName(plan.name, false) { File(parent, it).exists() }) to false
+        return keepBoth(there) to false
+    }
+
+    /** A free name beside [taken] for a new file whose name is taken ("Keep both"). */
+    private fun keepBoth(taken: File): File {
+        val parent = taken.parentFile ?: throw IOException("No folder")
+        return File(parent, Transfer.keepBothName(taken.name, false) { File(parent, it).exists() })
     }
 
     /**
-     * Removes folder [dir] once packed: its [images], each still as it was ([stats], size and
-     * time), and its litter (junk files, junk folders whole), then the folder itself. False,
-     * and nothing removed, when an image changed or anything else is in it now; false, the
-     * folder left, when a file in it could not be deleted.
+     * Removes folder [dir] once packed: its [files] packed, each still as it was ([stats],
+     * size and time), its litter (junk files, junk folders whole) and the [unusual] files and
+     * dot-folders asked about, then the folder itself. False, and nothing removed, when a
+     * packed file changed or anything else is in it now; false, the folder left, when a file
+     * in it could not be deleted.
      */
-    private fun removeFolder(dir: File, images: List<File>, stats: List<Pair<Long, Long>>): Boolean {
-        if (images.indices.any { images[it].length() != stats[it].first || images[it].lastModified() != stats[it].second }) return false
+    private fun removeFolder(dir: File, files: List<File>, stats: List<Pair<Long, Long>>, unusual: Set<File>): Boolean {
+        if (files.indices.any { files[it].length() != stats[it].first || files[it].lastModified() != stats[it].second }) return false
         val children = dir.listFiles() ?: return false
-        val packed = images.toHashSet()
+        val packed = files.toHashSet()
         val litter = children.filter { it !in packed }
-        if (litter.any { if (it.isFile) !PackFolders.isJunk(it.name) else !PackFolders.isJunkFolder(it.name) }) return false
-        for (f in images) if (!f.delete() && f.exists()) return false
+        if (litter.any { it !in unusual && if (it.isFile) !PackFolders.isJunk(it.name) else !PackFolders.isJunkFolder(it.name) }) return false
+        for (f in files) if (!f.delete() && f.exists()) return false
         for (f in litter) if (!f.deleteRecursively() && f.exists()) return false
         return dir.delete()
     }

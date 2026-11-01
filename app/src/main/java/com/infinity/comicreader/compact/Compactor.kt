@@ -12,6 +12,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.CancellationException
@@ -68,7 +69,11 @@ class Compactor(
         /** True to put the new file over one at [target]; else a file found there fails it. */
         val replace: Boolean = false,
         /** True to write the new file even when no page is made anew (a folder packed). */
-        val always: Boolean = false
+        val always: Boolean = false,
+        /** True to keep what is in dot-folders too, under its own path, never as pages (a folder packed with its unusual files). */
+        val dotFolders: Boolean = false,
+        /** Where the new file goes instead when a file takes [target]'s name meanwhile ("Keep both"); null to fail then. */
+        val keepBoth: ((File) -> File)? = null
     )
 
     /** Puts a rebuilt book in place. */
@@ -95,7 +100,7 @@ class Compactor(
          * changed, [failed] those kept as they were because they could not be made anew.
          */
         class Rebuilt(
-            val file: File,
+            file: File,
             val before: Long,
             val after: Long,
             val moves: IntArray,
@@ -103,7 +108,11 @@ class Compactor(
             val removed: File?,
             val reencoded: List<String>,
             val failed: List<String> = emptyList()
-        ) : Result()
+        ) : Result() {
+            /** Where the new file is: the target, or the free name it took when that one was taken meanwhile ([Request.keepBoth]). */
+            var file: File = file
+                internal set
+        }
 
         /** Left as it was, for [why]; [failed] names the pages that could not be made anew. */
         class Unchanged(val why: Why, val failed: List<String> = emptyList()) : Result()
@@ -142,7 +151,7 @@ class Compactor(
         // Taken now: in place, the book goes or is replaced. A folder's is its newest file's.
         val time = if (book.isDirectory) all.maxOfOrNull { e -> reader.looseFile(e)?.lastModified() ?: 0L } ?: 0L else book.lastModified()
         if (all.any { Formats.isArchiveName(it.path) && !FlatNames.isJunk(it.path) }) return Result.Unchanged(Why.NESTED)
-        val kept = all.filter { !FlatNames.isJunk(it.path) }
+        val kept = all.filter { !FlatNames.isJunk(it.path) || (request.dotFolders && FlatNames.inDotFolder(it.path)) }
         val pages = pagesOf(kept.map { it.path to it.size }).map { kept[it] }
         val dropped = request.skip.mapNotNullTo(HashSet()) { pages.getOrNull(it) }
         val files = kept.filter { it !in dropped }.sortedWith(compareBy(NaturalOrder) { it.path })
@@ -167,14 +176,18 @@ class Compactor(
             closeReader()
             val failedAt = files.indices.filter { pieces[it].failed }
             if (!request.always && pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
-            val names = FlatNames.of(
-                files.map { it.path },
-                files.mapIndexed { i, e ->
-                    val base = FlatNames.baseName(e.path)
+            // What is kept of dot-folders keeps its path: never a page, never flattened.
+            val flat = files.indices.filter { !FlatNames.inDotFolder(files[it].path) }
+            val flatNames = FlatNames.of(
+                flat.map { files[it].path },
+                flat.map { i ->
+                    val base = FlatNames.baseName(files[i].path)
                     pieces[i].made?.let { FlatNames.withExtension(base, it.ext) } ?: base
                 },
-                pagesOf(files.map { it.path to it.size })
+                pagesOf(flat.map { files[it].path to files[it].size })
             )
+            val names = files.map { it.path }.toMutableList()
+            flat.forEachIndexed { k, i -> names[i] = flatNames[k] }
             val out = File(dir, ".${book.name}.${System.nanoTime()}.part")
             part = out
             pack(out, names, pieces, time, progress, total)
@@ -193,9 +206,9 @@ class Compactor(
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
             val result = Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
             request.placer.place(result, out) {
-                place(out, book, target, removed != null, request.replace)
+                result.file = place(out, book, target, removed != null, request.replace, request.keepBoth)
                 part = null
-                if (time > 0) target.setLastModified(time)
+                if (time > 0) result.file.setLastModified(time)
             }
             return result
         } finally {
@@ -377,18 +390,27 @@ class Compactor(
     }
 
     /**
-     * Puts [out] in place as [target]: over [book] when it is the book, or over a file there
-     * when [replace], else never over one (throws [java.nio.file.FileAlreadyExistsException]);
-     * [book] removed when [remove].
+     * Puts [out] in place as [target], returning where it went: over [book] when it is the
+     * book, or over a file there when [replace], else never over one: where [keepBoth] says
+     * when given, else throws [java.nio.file.FileAlreadyExistsException]; [book] removed
+     * when [remove].
      */
-    private fun place(out: File, book: File, target: File, remove: Boolean, replace: Boolean) {
+    private fun place(out: File, book: File, target: File, remove: Boolean, replace: Boolean, keepBoth: ((File) -> File)?): File {
         if (target == book || replace) {
             Files.move(out.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             if (remove && target != book && !book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
-            return
+            return target
         }
-        Files.move(out.toPath(), target.toPath())
+        val placed = try {
+            Files.move(out.toPath(), target.toPath())
+            target
+        } catch (e: FileAlreadyExistsException) {
+            val other = keepBoth?.invoke(target) ?: throw e
+            Files.move(out.toPath(), other.toPath())
+            other
+        }
         if (remove && !book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
+        return placed
     }
 
     private fun check(progress: Progress) {

@@ -152,7 +152,7 @@ object Tiff {
             if (!allowed) throw DecodeException("$bits-bit TIFF of this color model is not supported")
         }
         val predictor = ifd.int(PREDICTOR, 1)
-        if (predictor != 1 && (predictor != 2 || bits < 8)) throw DecodeException("TIFF predictor $predictor is not supported")
+        if (predictor != 1 && (predictor != 2 || (bits != 8 && bits != 16))) throw DecodeException("TIFF predictor $predictor is not supported")
         // The first extra sample is alpha when marked so; unspecified extras are ignored.
         val extra = ifd.longs(EXTRA_SAMPLES)?.firstOrNull()?.toInt() ?: 0
         val alpha = if (samples > base && (extra == ALPHA_ASSOCIATED || extra == ALPHA_UNASSOCIATED)) extra else 0
@@ -405,10 +405,18 @@ object Tiff {
         return when (page.bits) {
             8 -> row[i].toInt() and 0xFF
             16 -> u16(row, i, page.bigEndian)
-            else -> {
+            in 1..7 -> {
                 val bit = i * page.bits
                 val byte = row[bit ushr 3].toInt() and 0xFF
                 (byte ushr (8 - page.bits - (bit and 7))) and ((1 shl page.bits) - 1)
+            }
+            else -> {
+                // 9-15 bits, most significant first, across two or three bytes.
+                val bit = i * page.bits
+                val end = bit + page.bits
+                var acc = 0
+                for (b in (bit ushr 3) until ((end + 7) ushr 3)) acc = (acc shl 8) or (row[b].toInt() and 0xFF)
+                (acc ushr ((8 - (end and 7)) and 7)) and ((1 shl page.bits) - 1)
             }
         }
     }

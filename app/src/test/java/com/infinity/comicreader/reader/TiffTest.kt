@@ -278,6 +278,42 @@ class TiffTest {
         for (i in 0 until 6) assertEquals(argb(10 + i, 20 + i, 30 + i), image[i % 3, i / 3])
     }
 
+    /** Gray [values] of [bits] each, packed most significant bit first into rows of [width], each row ending on a byte. */
+    private fun packed(values: IntArray, bits: Int, width: Int): ByteArray {
+        val rowBytes = (width * bits + 7) / 8
+        val out = ByteArray(rowBytes * (values.size / width))
+        for ((i, v) in values.withIndex()) {
+            val start = (i / width) * rowBytes * 8 + (i % width) * bits
+            for (b in 0 until bits) {
+                if ((v shr (bits - 1 - b)) and 1 == 0) continue
+                val bit = start + b
+                out[bit / 8] = (out[bit / 8].toInt() or (0x80 ushr (bit % 8))).toByte()
+            }
+        }
+        return out
+    }
+
+    @Test
+    fun graySamplesWiderThanAByteButNotTwoDecode() {
+        for (bits in listOf(10, 12, 14)) {
+            val max = (1 shl bits) - 1
+            val values = intArrayOf(0, max, max / 3, 1, max - 1, max / 2)
+            val data = packed(values, bits, 3)
+            val bytes = tiff(data, *tags(256 to 3L, 257 to 2L, 258 to bits.toLong(), 259 to 1L, 262 to 1L, 273 to 8L, 278 to 2L, 279 to data.size.toLong()))
+            val image = decode(bytes)
+            for ((i, v) in values.withIndex()) {
+                val g = v * 255 / max
+                assertEquals("$bits bits, pixel $i", argb(g, g, g), image[i % 3, i / 3])
+            }
+        }
+    }
+
+    @Test
+    fun differencingOfSamplesNeither8Nor16BitsIsRefused() {
+        val bytes = tiff(ByteArray(6), *tags(256 to 3L, 257 to 1L, 258 to 12L, 259 to 1L, 262 to 1L, 273 to 8L, 278 to 1L, 279 to 6L, 317 to 2L))
+        assertThrows(DecodeException::class.java) { Tiff.page(Tiff.ByteInput(bytes)) }
+    }
+
     @Test
     fun samplesExactLooksOnlyAtHowSamplesDecode() {
         fun input(name: String) = Tiff.ByteInput(fixture(name))

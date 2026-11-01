@@ -100,13 +100,17 @@ class ListActivityViewLiveTest {
         // Touched, as on a phone or tablet: no row takes focus and scrolls itself into view.
         InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        settle()
+        activity.awaitListing()
         if (tab != 0) {
             activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
-            settle()
+            activity.awaitListing()
         }
         return activity
     }
+
+    /** Waits until the tab is listed: the spinner is gone. */
+    private fun ListActivity.awaitListing() =
+        awaitUntil("the listing") { findViewById<View>(R.id.progress).visibility != View.VISIBLE }
 
     private fun ListActivity.recycler(): RecyclerView = findViewById(R.id.recycler)
 
@@ -373,16 +377,15 @@ class ListActivityViewLiveTest {
         library.toggleFavoriteFolder(File(dir, "Book 01.cbz").absolutePath)
         prefs.setGridSize(Prefs.TAB_FAVORITES, 3, 2)
         val list = launch(tab = 1)
-        repeat(10) { settle(); Thread.sleep(20) }
         val r = list.recycler()
         fun sections() = (0 until r.childCount).count { r.getChildAt(it).findViewById<View>(R.id.title) !is TitleView }
         fun fits() = 2 * (r.adapter as BookAdapter).cellHeight + sectionHeight(r) * sections() <=
             r.height - r.paddingTop - r.paddingBottom
-        assertTrue(sections() > 0)
+        // Favorites are sorted into sections once their kinds are found.
+        awaitUntil("sections") { sections() > 0 }
         assertTrue(fits())
         prefs.groupFavorites = false
-        repeat(5) { settle(); Thread.sleep(20) }
-        assertEquals(0, sections())
+        awaitUntil("no sections") { sections() == 0 }
         // Without section headers the two rows take the whole height.
         val rowSpace = r.height - r.paddingTop - r.paddingBottom
         assertTrue(rowSpace - 2 * (r.adapter as BookAdapter).cellHeight < rowSpace / 10)
@@ -399,8 +402,7 @@ class ListActivityViewLiveTest {
         val list = launch()
         assertFalse(list.titles().any { it.startsWith(".") })
         list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
-        repeat(5) { settle(); Thread.sleep(20) }
-        assertTrue(list.titles().any { it.startsWith(".") })
+        awaitUntil("hidden files") { list.titles().any { it.startsWith(".") } }
     }
 
     // ------------------------------------------------------------------ without the settings feed

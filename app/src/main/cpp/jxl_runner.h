@@ -28,10 +28,15 @@ int jr_canceled(jr_pool * pool);
 JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, JxlParallelRunFunction func, uint32_t start, uint32_t end);
 
 // Moves the calling thread onto `cores` (0 = leave it), keeping its old set in `kept`;
-// false when it stays where it was (no cores asked, or the system refuses them).
+// false when it stays where it was (no cores asked, the system refuses them, or a pin of
+// this thread is in effect: pins never nest, so an inner one cannot end the outer one).
 int jr_pin(uint64_t cores, cpu_set_t * kept);
 
-// Lets the calling thread run on every core again, ending a jr_pin. Pins never nest, and the
-// set jr_pin kept leaves out cores the system had paused then: put back, it would keep the
-// thread, and threads it starts later, off those cores for good.
+// Lets the calling thread run on every core again, ending a jr_pin. The set jr_pin kept
+// leaves out cores the system had paused then: put back, it would keep the thread, and
+// threads it starts later, off those cores for good.
 void jr_unpin(void);
+
+// A pin asked from Java: jr_pin to `cores`, returning the old set of the first 64 cores, 0
+// when the thread stays where it was; every core's bit (all 64 set) ends a pin (jr_unpin), 0.
+uint64_t jr_pin_mask(uint64_t cores);

@@ -52,7 +52,10 @@ internal object LibPixels : PixelKernels {
 
     override fun end(job: Long) = nEnd(job)
 
-    /** Pins the calling thread to [cores] (bit n = core n); the cores it could use before, 0 when refused. */
+    /**
+     * Pins the calling thread to [cores] (bit n = core n), or ends its pin for every core's bit
+     * (-1); the cores it could use before, 0 when refused or a pin is in effect (pins never nest).
+     */
     fun pin(cores: Long): Long = nPin(cores)
 
     @JvmStatic

@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "jxl_runner.h"
 #include "resample.h"
 
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
@@ -144,44 +145,13 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nAxis(
     return JNI_TRUE;
 }
 
-// Moves the calling thread onto the cores set in `cores` (bit n = core n), keeping the
-// cores it may use now in `kept`; false when it stays where it was (no cores asked, or the
-// system refuses them, as when none of them is in the process's cpuset).
-static int pin(jlong cores, cpu_set_t * kept)
-{
-    if (cores == 0 || sched_getaffinity(0, sizeof(*kept), kept) != 0) return 0;
-    cpu_set_t want;
-    CPU_ZERO(&want);
-    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
-        if (((uint64_t)cores >> n) & 1) CPU_SET(n, &want);
-    }
-    return sched_setaffinity(0, sizeof(want), &want) == 0;
-}
-
-// Lets the calling thread run on every core again, ending a pin. Pins never nest, and the set
-// pin kept leaves out cores the system had paused then: put back, it would keep the thread
-// off those cores for good.
-static void unpin(void)
-{
-    cpu_set_t every;
-    CPU_ZERO(&every);
-    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) CPU_SET(n, &every);
-    sched_setaffinity(0, sizeof(every), &every);
-}
-
-// Moves the calling thread onto `cores` (bit n = core n) until moved again; the cores it
-// could use before, 0 when it stays where it was.
+// Moves the calling thread onto `cores` (bit n = core n), or every core for -1, until moved
+// again (jr_pin_mask); the cores it could use before, 0 when it stays where it was.
 EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
 {
     (void)env;
     (void)clazz;
-    cpu_set_t kept;
-    if (!pin(cores, &kept)) return 0;
-    uint64_t mask = 0;
-    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
-        if (CPU_ISSET(n, &kept)) mask |= 1ull << n;
-    }
-    return (jlong)mask;
+    return (jlong)jr_pin_mask((uint64_t)cores);
 }
 
 // Filters output rows y0 until y1 as `worker`, on `cores` (0 = any) while it runs; false
@@ -195,9 +165,9 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
     if (h->axes != 3 || worker < 0 || worker >= h->worker_count || y0 < 0 || y1 > h->dst_h || y0 >= y1) return JNI_FALSE;
     if (h->gpu) return h->on_gpu != NULL && rs_gpu_band(h->on_gpu, y0, y1) == 0;
     cpu_set_t kept;
-    const int pinned = pin(cores, &kept);
+    const int pinned = jr_pin((uint64_t)cores, &kept);
     const int r = rs_band(&h->job, &h->workers[worker], y0, y1);
-    if (pinned) unpin();
+    if (pinned) jr_unpin();
     return r == 0;
 }
 

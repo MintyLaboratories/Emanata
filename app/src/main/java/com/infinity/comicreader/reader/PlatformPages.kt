@@ -22,7 +22,8 @@ enum class CoreSet(val key: String) {
 
 /**
  * Where pages the platform decodes (JPEG, PNG, WebP, HEIF) run: a page decode of the reader
- * ([Urgency.page]), shown or read ahead, has its thread pinned to [cores], then put back.
+ * ([Urgency.page]), shown or read ahead, has its thread pinned to [cores], then lets it run
+ * on every core again.
  * Left to the system, such a decode, one thread, often starts on a little core and stays
  * there long enough to be slower than on a large one. Some systems decode a JPEG on several
  * threads, which pinning confines: there calibration leaves JPEG unpinned ([jpegPinned]).
@@ -62,7 +63,10 @@ object PlatformPages {
     /** Runs [block] on [cores] when [pinned]; as is otherwise, or where they are any, unknown or cannot be pinned to. */
     fun <T> placed(pinned: Boolean = wanted(), block: () -> T): T = on(if (pinned) cores.mask(device!!) else 0L, block)
 
-    /** Runs [block] pinned to [mask] (0: as is), then lets the thread run on every core again ([LibJxl.EVERY_CORE]). */
+    /**
+     * Runs [block] pinned to [mask] (0: as is), then lets the thread run on every core again
+     * ([LibJxl.EVERY_CORE]); inside another pin, on that pin's cores (pins never nest).
+     */
     internal fun <T> on(mask: Long, block: () -> T): T {
         val p = if (mask == 0L) null else pin
         val kept = p?.invoke(mask) ?: 0L

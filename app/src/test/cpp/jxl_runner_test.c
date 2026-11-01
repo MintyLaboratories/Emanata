@@ -1,6 +1,6 @@
 // Host tests of the JPEG XL parallel runner (jxl_runner.c): every value handed out exactly
 // once, init's thread count, the wait for workers, cancellation, the caller-only path and
-// pinning. Exits nonzero on the first failed run of checks.
+// pinning, which never nests. Exits nonzero on the first failed run of checks.
 
 // sched_getcpu, CPU_* and pthread_setaffinity_np.
 #define _GNU_SOURCE
@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static int failures;
 
@@ -242,10 +243,53 @@ static void pins_and_restores(void)
         CHECK(atomic_load(&job.off_core) == 0);
         jr_destroy(pool);
     }
-    CHECK(sched_setaffinity(0, sizeof(kept), &kept) == 0);
+    jr_unpin();
     cpu_set_t after;
     CHECK(sched_getaffinity(0, sizeof(after), &after) == 0);
     CHECK(CPU_EQUAL(&after, &before));
+}
+
+// The cores this thread may run on, as a mask of the first 64.
+static uint64_t allowed(void)
+{
+    cpu_set_t now;
+    if (sched_getaffinity(0, sizeof(now), &now) != 0) return 0;
+    uint64_t mask = 0;
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
+        if (CPU_ISSET(n, &now)) mask |= 1ull << n;
+    }
+    return mask;
+}
+
+static void pins_never_nest_and_end_on_every_core(void)
+{
+    const uint64_t every = allowed();
+    const long online = sysconf(_SC_NPROCESSORS_ONLN);
+    CHECK(online > 0 && __builtin_popcountll(every) == (online < 64 ? online : 64));
+    const int first = __builtin_ctzll(every);
+    const uint64_t other = every & ~(1ull << first);
+    // An inner pin is refused, so the outer one holds until it ends.
+    CHECK(jr_pin_mask(1ull << first) == every);
+    CHECK(allowed() == 1ull << first);
+    cpu_set_t kept;
+    if (other != 0) {
+        CHECK(jr_pin(other, &kept) == 0);
+        CHECK(jr_pin_mask(other) == 0);
+    }
+    CHECK(allowed() == 1ull << first);
+    // Ending it with every core's bit allows every online core again, not a set kept before.
+    CHECK(jr_pin_mask(UINT64_MAX) == 0);
+    CHECK(allowed() == every);
+    // Once ended, a new pin takes.
+    CHECK(jr_pin(1ull << first, &kept) == 1);
+    CHECK(allowed() == 1ull << first);
+    jr_unpin();
+    CHECK(allowed() == every);
+    // Pool workers pin themselves; the caller is left as it was.
+    jr_pool * pool = jr_create(2, 1ull << first);
+    CHECK(pool != NULL);
+    if (pool != NULL) jr_destroy(pool);
+    CHECK(allowed() == every);
 }
 
 int main(void)
@@ -257,6 +301,7 @@ int main(void)
     stop_after_the_last_value_keeps_every_value();
     caller_only_pool_runs_on_the_caller();
     pins_and_restores();
+    pins_never_nest_and_end_on_every_core();
     if (failures > 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

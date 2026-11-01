@@ -36,23 +36,43 @@ typedef struct {
     size_t id;
 } worker_arg;
 
+// True while a jr_pin of this thread is in effect.
+static _Thread_local int pinned;
+
 int jr_pin(uint64_t cores, cpu_set_t * kept)
 {
-    if (cores == 0 || sched_getaffinity(0, sizeof(*kept), kept) != 0) return 0;
+    if (cores == 0 || pinned || sched_getaffinity(0, sizeof(*kept), kept) != 0) return 0;
     cpu_set_t want;
     CPU_ZERO(&want);
     for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
         if ((cores >> n) & 1) CPU_SET(n, &want);
     }
-    return sched_setaffinity(0, sizeof(want), &want) == 0;
+    pinned = sched_setaffinity(0, sizeof(want), &want) == 0;
+    return pinned;
 }
 
 void jr_unpin(void)
 {
+    pinned = 0;
     cpu_set_t every;
     CPU_ZERO(&every);
     for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) CPU_SET(n, &every);
     sched_setaffinity(0, sizeof(every), &every);
+}
+
+uint64_t jr_pin_mask(uint64_t cores)
+{
+    if (cores == UINT64_MAX) {
+        jr_unpin();
+        return 0;
+    }
+    cpu_set_t kept;
+    if (!jr_pin(cores, &kept)) return 0;
+    uint64_t mask = 0;
+    for (int n = 0; n < 64 && n < CPU_SETSIZE; n++) {
+        if (CPU_ISSET(n, &kept)) mask |= 1ull << n;
+    }
+    return mask;
 }
 
 // True once `stop` said so; only the calling thread (id 0) asks it.

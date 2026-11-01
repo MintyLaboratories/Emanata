@@ -175,8 +175,8 @@ object LibJxl : JxlCodec {
 
     /**
      * Runs [block] with the calling thread pinned to [cores] (bit n = core n), so threads it
-     * starts, as jxl-coder's decoder does, start there too; where the system refuses, unpinned.
-     * Then the thread may run on every core again ([EVERY_CORE]).
+     * starts, as jxl-coder's decoder does, start there too; where the system refuses, unpinned;
+     * inside another pin, on that pin's cores. Then the thread may run on every core again ([EVERY_CORE]).
      */
     fun <T> onCores(cores: Long, block: () -> T): T {
         val kept = if (cores != 0L) pin(cores) else 0L
@@ -188,12 +188,15 @@ object LibJxl : JxlCodec {
     }
 
     /**
-     * Every core's bit, to end a pin with. Pins never nest, and the mask a pin returns leaves
-     * out cores the system had paused then: put back, it would keep the thread off them for good.
+     * Every core's bit, to end a pin with. The mask a pin returns leaves out cores the system
+     * had paused then: put back, it would keep the thread off them for good.
      */
     const val EVERY_CORE = -1L
 
-    /** Pins the calling thread to [cores] (bit n = core n); the mask it had, or 0 where the system refuses. */
+    /**
+     * Pins the calling thread to [cores] (bit n = core n), or ends its pin for [EVERY_CORE]; the
+     * mask it had, or 0 where the system refuses or a pin is in effect (pins never nest).
+     */
     fun pin(cores: Long): Long = nPin(cores)
 
     @JvmStatic

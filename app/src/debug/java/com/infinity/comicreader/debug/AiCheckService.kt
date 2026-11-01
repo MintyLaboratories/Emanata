@@ -22,7 +22,10 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.LibNcnn
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloader
 import com.infinity.comicreader.ai.ModelFiles
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PageLimits
 import com.infinity.comicreader.ai.Session
 import com.infinity.comicreader.ai.Sessions
@@ -48,8 +51,13 @@ import kotlin.math.max
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.AiCheckService
  *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|sustain|all] [--es engines gpu,cpu]
- *  [--es tiles 128,192,256,384] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ez fp16 true]
+ *  [--es tiles 128,192,256,384, or auto for the size it chose] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ez fp16 true]
  *  [--ei threads 4] [--ei seconds 300]`
+ *
+ * or, for every model in a folder: `--es do survey --es dir <folder, searched for .param files> [--es size 1000x1500]
+ *  [--ei cap 120] [--ef cool 0.85] [--ez fp16 true] [--ei threads 4]`
+ *
+ * or, for catalog models: `--es do download --es ids <id,id,…> [--ei cut 0] [--ez keep false]`
  *
  * - open: per engine, the time to open, measure and check the model, its geometry, tile size
  *   and precision (the checks themselves go to the log under "AiSessions").
@@ -62,6 +70,13 @@ import kotlin.math.max
  * - sustain (not part of all): pages of `size` back to back for `seconds`, through the gate
  *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
  *   headroom, until the time is up or the gate stops a page.
+ * - download: per catalog model, deletes it from the app's store, downloads it (stopping once
+ *   after `cut` bytes when given, then resuming), checks it is installed, opens it and runs one
+ *   page of `size` within the default page time; deletes it again unless `keep`.
+ * - survey: per model, how it opens on the GPU (or why not) and one page of `size` at the
+ *   tile size it chose, given at most `cap` seconds; a page that would take longer stops early
+ *   on its pace ([TileEngine]) and reports its time estimated from the tiles run. Waits for
+ *   the thermal headroom to fall below `cool` before each model, up to [COOL_MAX_S].
  *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
@@ -82,9 +97,24 @@ class AiCheckService : Service() {
         val fp16 = intent?.getBooleanExtra("fp16", true) ?: true
         val threads = intent?.getIntExtra("threads", NativeResampler.threads)?.coerceIn(1, 16) ?: NativeResampler.threads
         val seconds = intent?.getIntExtra("seconds", 300)?.coerceIn(10, 3600) ?: 300
+        val dir = intent?.getStringExtra("dir")?.let(::File)
+        val cap = intent?.getIntExtra("cap", 120)?.coerceIn(5, 3600) ?: 120
+        val cool = intent?.getFloatExtra("cool", COOL_HEADROOM)?.coerceIn(0.1f, 1f) ?: COOL_HEADROOM
         thread(name = "ai-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
+                if (what == "download") {
+                    require(size.size == 2) { "unreadable size" }
+                    val ids = intent?.getStringExtra("ids").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    download(ids, intent?.getIntExtra("cut", 0) ?: 0, intent?.getBooleanExtra("keep", false) ?: false, size[0], size[1], fp16, threads)
+                    return@hold
+                }
+                if (what == "survey") {
+                    require(dir != null && dir.isDirectory) { "no folder at $dir" }
+                    require(size.size == 2) { "unreadable size" }
+                    survey(dir, size[0], size[1], cap, cool, fp16, threads)
+                    return@hold
+                }
                 require(param != null && param.isFile) { "no model at $param" }
                 require(size.size == 2 && small.size == 2) { "unreadable size" }
                 val files = ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin"))
@@ -110,7 +140,7 @@ class AiCheckService : Service() {
                                 .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size).put("fp16", s.fp16)
                         )
                         if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
-                        if (what == "time" || what == "all") time(s, tiles, size[0], size[1], reps, cooldown)
+                        if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown)
                         if (what == "limits" || what == "all") limits(s, size[0], size[1])
                         if (what == "sustain") sustain(s, size[0], size[1], seconds)
                     }
@@ -174,7 +204,9 @@ class AiCheckService : Service() {
             val session = Session(s.model, s.geometry, size)
             val before = state()
             val rssBefore = rssKb()
+            val w0 = SystemClock.elapsedRealtime()
             TileEngine.run(session, page, UNLIMITED).bitmap?.recycle()
+            val warmMs = SystemClock.elapsedRealtime() - w0
             val pages = ArrayList<Long>()
             val tileMs = ArrayList<Long>()
             var peakRss = 0L
@@ -201,7 +233,7 @@ class AiCheckService : Service() {
             }
             log(
                 JSONObject().put("time", if (s.model.onGpu) "gpu" else "cpu").put("tile", size).put("page", "${w}x$h").put("tiles", tiles)
-                    .put("pageMs", Stats.summary(pages)).put("tileMs", Stats.summary(tileMs))
+                    .put("warmUpMs", warmMs).put("pageMs", Stats.summary(pages)).put("tileMs", Stats.summary(tileMs))
                     .put("rssMb", JSONObject().put("before", rssBefore / 1024).put("peak", peakRss / 1024).put("after", rssKb() / 1024))
                     .put("graphicsPeakMb", peakGraphics / 1024).put("graphicsAfterMb", graphicsKb() / 1024)
                     .put("before", before).put("after", state())
@@ -275,6 +307,106 @@ class AiCheckService : Service() {
         }
         log(JSONObject().put("sustained", pages).put("seconds", (SystemClock.elapsedRealtime() - t0) / 1000).put("end", state()))
         page.recycle()
+    }
+
+    // ------------------------------------------------------------------ download
+
+    private fun download(ids: List<String>, cut: Int, keep: Boolean, w: Int, h: Int, fp16: Boolean, threads: Int) {
+        val store = ModelStore.of(this)
+        val page = SyntheticPage.draw(w, h)
+        for (id in ids) {
+            val m = ModelCatalog.byId(id) ?: run { log(JSONObject().put("download", id).put("failed", "not in the catalog")); null } ?: continue
+            store.delete(m)
+            val downloader = ModelDownloader(store)
+            val result = JSONObject().put("download", id).put("bytes", m.bytes)
+            try {
+                if (cut > 0) {
+                    var held = 0L
+                    val t0 = SystemClock.elapsedRealtime()
+                    try {
+                        downloader.download(m, canceled = { held >= cut }) { done, _ -> held = done }
+                    } catch (e: CancellationException) {
+                        result.put("stoppedAt", store.bytesHeld(m)).put("stoppedMs", SystemClock.elapsedRealtime() - t0)
+                    }
+                }
+                val t1 = SystemClock.elapsedRealtime()
+                downloader.download(m)
+                result.put("ms", SystemClock.elapsedRealtime() - t1).put("installed", store.installed(m))
+                    .put("sha256", m.files.all { ModelDownloader.sha256(java.io.File(store.dir(m), it.name)) == it.sha256 })
+                val session = Sessions.open(LibNcnn, store.files(m)!!, threads, gpu = true, fp16 = fp16)
+                if (session == null) {
+                    result.put("opened", false)
+                } else session.use { s ->
+                    val run = TileEngine.run(s, page)
+                    run.bitmap?.recycle()
+                    result.put("opened", true).put("onGpu", s.model.onGpu).put("pageMs", run.stats.totalMs)
+                        .put("fallback", run.fallback?.name ?: JSONObject.NULL)
+                }
+            } catch (e: Exception) {
+                result.put("failed", "${e.javaClass.simpleName}: ${e.message}")
+            }
+            if (!keep) store.delete(m)
+            log(result)
+        }
+        page.recycle()
+    }
+
+    // ------------------------------------------------------------------ survey
+
+    private fun survey(dir: File, w: Int, h: Int, capS: Int, cool: Float, fp16: Boolean, threads: Int) {
+        val params = dir.walkTopDown().filter { it.isFile && it.name.endsWith(".param") }.sortedBy { it.path }.toList()
+        log(JSONObject().put("survey", params.size).put("page", "${w}x$h").put("capS", capS).put("gpu", LibNcnn.gpu()?.name ?: JSONObject.NULL).put("state", state()))
+        val page = SyntheticPage.draw(w, h)
+        for (param in params) {
+            val name = param.relativeTo(dir).path
+            val waitedS = coolDown(cool)
+            val files = ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin"))
+            val t0 = SystemClock.elapsedRealtime()
+            val session = try {
+                Sessions.open(LibNcnn, files, threads, gpu = true, fp16 = fp16)
+            } catch (t: Throwable) {
+                log(JSONObject().put("model", name).put("failed", "${t.javaClass.simpleName}: ${t.message}"))
+                continue
+            }
+            val openMs = SystemClock.elapsedRealtime() - t0
+            if (session == null) {
+                log(JSONObject().put("model", name).put("opened", false).put("openMs", openMs).put("waitedS", waitedS))
+                continue
+            }
+            session.use { s ->
+                val g = s.geometry
+                val before = state()
+                val p0 = SystemClock.elapsedRealtime()
+                val run = TileEngine.run(s, page, PageLimits(timeoutMs = capS * 1000L))
+                val pageMs = SystemClock.elapsedRealtime() - p0
+                run.bitmap?.recycle()
+                val tiles = run.stats.tileMs
+                val estimate = if (run.fallback == null || tiles.isEmpty()) pageMs else tiles.average().toLong() * run.stats.planned
+                log(
+                    JSONObject().put("model", name).put("opened", true).put("openMs", openMs).put("waitedS", waitedS)
+                        .put("onGpu", s.model.onGpu).put("fp16", s.fp16).put("scale", g.scale).put("trim", g.trim).put("context", g.context)
+                        .put("margin", g.margin).put("tile", s.size).put("tiles", run.stats.planned).put("tilesRun", run.stats.tiles)
+                        .put("fallback", run.fallback?.name ?: JSONObject.NULL).put("pageMs", pageMs).put("estimatedMs", estimate)
+                        .put("tileMs", Stats.summary(tiles.toList())).put("graphicsMb", graphicsKb() / 1024)
+                        .put("before", before).put("after", state())
+                )
+            }
+        }
+        page.recycle()
+        log(JSONObject().put("surveyed", params.size).put("state", state()))
+    }
+
+    /** Waits, up to [COOL_MAX_S], for the thermal headroom to fall below [below]; the seconds waited. */
+    private fun coolDown(below: Float): Long {
+        if (Build.VERSION.SDK_INT < 30) return 0
+        val power = getSystemService(PowerManager::class.java)
+        val t0 = SystemClock.elapsedRealtime()
+        while (SystemClock.elapsedRealtime() - t0 < COOL_MAX_S * 1000L) {
+            val h = power.getThermalHeadroom(0)
+            if (!h.isNaN() && h < below) break
+            Thread.sleep(5_000)
+        }
+        return (SystemClock.elapsedRealtime() - t0) / 1000
     }
 
     // ------------------------------------------------------------------ helpers
@@ -351,6 +483,10 @@ class AiCheckService : Service() {
         const val TAG = "AiCheck"
         const val CHANNEL = "ai_check"
         const val NOTIFICATION_ID = 7307
+
+        /** The thermal headroom a survey waits below before each model by default, and its longest wait. */
+        const val COOL_HEADROOM = 0.85f
+        const val COOL_MAX_S = 180
 
         /** Limits no timed page reaches. */
         val UNLIMITED = PageLimits(timeoutMs = 3_600_000L)

@@ -110,4 +110,29 @@ class AiPagesTest {
         assertEquals(Fallback.PAUSED, AiConditions.stop(true, PowerManager.THERMAL_STATUS_NONE))
         assertTrue(AiConditions.HOT > PowerManager.THERMAL_STATUS_LIGHT)
     }
+
+    @Test
+    fun runsStopOnceTheForecastHeadroomIsNearlyUsed() {
+        assertNull(AiConditions.stop(false, PowerManager.THERMAL_STATUS_NONE, 0.89f))
+        assertEquals(Fallback.PAUSED, AiConditions.stop(false, PowerManager.THERMAL_STATUS_NONE, AiConditions.MAX_HEADROOM))
+        assertEquals(Fallback.PAUSED, AiConditions.stop(false, PowerManager.THERMAL_STATUS_NONE, 1.2f))
+        assertNull("unknown headroom goes on", AiConditions.stop(false, PowerManager.THERMAL_STATUS_NONE, Float.NaN))
+    }
+
+    @Test
+    fun headroomIsReadAtMostOnceASecondKeepingTheLastNumber() {
+        var now = 0L
+        var reads = 0
+        val answers = ArrayDeque(listOf(0.5f, Float.NaN, 0.95f))
+        val h = AiConditions.Headroom({ now }) { reads++; answers.removeFirst() }
+        assertEquals(0.5f, h.get())
+        now += AiConditions.HEADROOM_EVERY_MS - 1
+        assertEquals(0.5f, h.get())
+        assertEquals(1, reads)
+        now += 1
+        assertEquals("NaN keeps the last", 0.5f, h.get())
+        now += AiConditions.HEADROOM_EVERY_MS
+        assertEquals(0.95f, h.get())
+        assertEquals(3, reads)
+    }
 }

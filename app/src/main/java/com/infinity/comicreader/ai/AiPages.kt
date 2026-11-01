@@ -4,25 +4,62 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 
-/** When AI runs stop: with battery saver on, or once the device is [HOT] or hotter. */
+/**
+ * When AI runs stop: with battery saver on, once the device is [HOT] or hotter, or once the
+ * thermal headroom forecast [FORECAST_S] seconds ahead reaches [MAX_HEADROOM].
+ */
 object AiConditions {
     /** The thermal status that stops runs: moderate, where the system starts throttling. */
     const val HOT = PowerManager.THERMAL_STATUS_MODERATE
 
-    /** Why to stop for battery saver [saver] and thermal status [thermal]; null to go on. */
-    fun stop(saver: Boolean, thermal: Int): Fallback? = if (saver || thermal >= HOT) Fallback.PAUSED else null
+    /**
+     * The forecast headroom that stops runs: 1.0 is where the system throttles hard, and the
+     * status lags it; stopping a little before keeps runs from adding to the heat.
+     */
+    const val MAX_HEADROOM = 0.9f
+
+    /** Seconds ahead the headroom is forecast. */
+    const val FORECAST_S = 10
+
+    /** The least time between headroom readings: the system answers NaN to more frequent ones. */
+    const val HEADROOM_EVERY_MS = 1_000L
+
+    /** Why to stop for battery saver [saver], thermal status [thermal] and forecast [headroom] (NaN: unknown); null to go on. */
+    fun stop(saver: Boolean, thermal: Int, headroom: Float = Float.NaN): Fallback? =
+        if (saver || thermal >= HOT || headroom >= MAX_HEADROOM) Fallback.PAUSED else null
 
     /** A gate for [TileEngine.run] reading [context]'s power state at each call. */
     fun gate(context: Context): () -> Fallback? {
         val pm = context.getSystemService(PowerManager::class.java) ?: return { null }
+        val headroom = Headroom(SystemClock::elapsedRealtime) {
+            if (Build.VERSION.SDK_INT >= 30) pm.getThermalHeadroom(FORECAST_S) else Float.NaN
+        }
         return {
             val thermal = if (Build.VERSION.SDK_INT >= 29) pm.currentThermalStatus else PowerManager.THERMAL_STATUS_NONE
-            stop(pm.isPowerSaveMode, thermal)
+            stop(pm.isPowerSaveMode, thermal, headroom.get())
+        }
+    }
+
+    /** The headroom [read] gives, read at most every [HEADROOM_EVERY_MS] by [clock]; a NaN reading keeps the one before. */
+    internal class Headroom(private val clock: () -> Long, private val read: () -> Float) {
+        private var at = Long.MIN_VALUE
+        private var last = Float.NaN
+
+        @Synchronized
+        fun get(): Float {
+            val now = clock()
+            if (at == Long.MIN_VALUE || now - at >= HEADROOM_EVERY_MS) {
+                at = now
+                val h = read()
+                if (!h.isNaN()) last = h
+            }
+            return last
         }
     }
 }

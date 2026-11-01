@@ -208,7 +208,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
     private var shownTab: Int? = null
     private var shownView: TabView? = null
 
-    /** Where the list was in the layout it last switched away from ([applyLayoutManager]), to switch back to; null when none. */
+    /**
+     * Where the list was in the layout it last switched away from ([applyLayoutManager]), to switch back to;
+     * null once the reader scrolls, the items change or another tab or folder shows.
+     */
     private var switchBack: Place? = null
 
     /** True while a switch between grid and list scrolls the new layout into place. */
@@ -382,6 +385,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         )
         adapter.isSelected = { it in selection }
         adapter.onSectionClick = { toggleSection(it.kind) }
+        // A place kept for switching back would show other items.
+        adapter.onRowsMoved = { switchBack = null }
         adapter.hiddenPages = library::hiddenAll
         adapter.firstLayerOnly = settings.list.value.thrift.firstLayerCovers
         // Folder peeks from list rows reuse the grid's covers at this size.
@@ -390,6 +395,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         applyLayoutManager()
         setUpPeek()
         recycler.setHasFixedSize(false)
+        recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                // Scrolled by the reader: switching goes on from where the list is now.
+                if (dy != 0 && !placing) switchBack = null
+            }
+        })
         recycler.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val widthChanged = right - left != oldRight - oldLeft
             // The keyboard shrinks the list while searching: cells keep their size.
@@ -1153,6 +1164,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host {
         if (mode != tab || (tab == TAB_BROWSE && currentDir?.absolutePath != dir?.absolutePath)) {
             adapter.cancelCovers()
             endSelection()
+            switchBack = null
         }
     }
 

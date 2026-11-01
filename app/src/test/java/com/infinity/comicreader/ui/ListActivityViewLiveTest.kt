@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.slider.Slider
@@ -77,7 +78,24 @@ class ListActivityViewLiveTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
     }
 
+    /** Runs the main thread until [done], while listing goes on in the background; fails after [timeoutMs]. */
+    private fun awaitUntil(what: String, timeoutMs: Long = 5000, done: () -> Boolean) {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            settle()
+            if (done()) return
+            assertTrue("timed out waiting for $what", System.currentTimeMillis() < end)
+            Thread.sleep(10)
+        }
+    }
+
+    /** Waits until [list] has [count] items or more. */
+    private fun awaitRows(list: ListActivity, count: Int) =
+        awaitUntil("$count items") { (list.recycler().adapter?.itemCount ?: 0) >= count }
+
     private fun launch(tab: Int = 0): ListActivity {
+        // Touched, as on a phone or tablet: no row takes focus and scrolls itself into view.
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         settle()
         if (tab != 0) {
@@ -203,7 +221,7 @@ class ListActivityViewLiveTest {
         val list = launch()
         val r = list.recycler()
         val lm = r.layoutManager as LinearLayoutManager
-        // A row that is not first in its grid row: the header is position 0, books 1 to 4 share the first grid row.
+        // A row that is not first in its grid row.
         lm.scrollToPositionWithOffset(7, -30)
         settle()
         list.tapFab()
@@ -212,6 +230,45 @@ class ListActivityViewLiveTest {
         val back = r.layoutManager as LinearLayoutManager
         assertEquals(7, back.findFirstVisibleItemPosition())
         assertEquals(-30, outerTop(back.findViewByPosition(7)!!) - r.paddingTop)
+    }
+
+    @Test
+    fun scrollingForgetsThePlaceToSwitchBackTo() {
+        prefs.setGrid(Prefs.TAB_HISTORY, false)
+        prefs.setGridSize(Prefs.TAB_HISTORY, 4, 0)
+        val library = Library(context)
+        for (i in 1..40) {
+            val book = File(dir, "Book %02d.cbz".format(i))
+            library.addHistory(HistoryItem(book.absolutePath, book.name, 1, 10, i.toLong(), BookId(0x2000L + i)))
+        }
+        val list = launch(tab = 2)
+        val r = list.recycler()
+        awaitRows(list, 40)
+        // Past the first grid row, so the grid is not at its top.
+        (r.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(9, 0)
+        settle()
+        list.tapFab()
+        r.scrollBy(0, -100_000)
+        settle()
+        list.tapFab()
+        assertEquals(Triple(0, 0, list.firstRow().third), list.firstRow())
+    }
+
+    @Test
+    fun reorderingForgetsThePlaceToSwitchBackTo() {
+        prefs.setGrid(Prefs.TAB_BROWSE, false)
+        prefs.setGridSize(Prefs.TAB_BROWSE, 4, 0)
+        val list = launch()
+        val r = list.recycler()
+        (r.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(7, 0)
+        settle()
+        list.tapFab()
+        prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.NAME, flipped = true)))
+        settle()
+        val gridFirst = list.firstRow().first
+        assertNotEquals(7, gridFirst)
+        list.tapFab()
+        assertEquals(gridFirst, list.firstRow().first)
     }
 
     /** Where [v]'s row starts, its margin included. */

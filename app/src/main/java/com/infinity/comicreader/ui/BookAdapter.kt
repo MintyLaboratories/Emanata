@@ -263,11 +263,14 @@ class BookAdapter(
             field = value
             when {
                 old == value -> Unit
-                old == null -> notifyItemInserted(0)
-                value == null -> notifyItemRemoved(0)
+                old == null -> notifyItemInserted(0).also { onRowsMoved() }
+                value == null -> notifyItemRemoved(0).also { onRowsMoved() }
                 else -> notifyItemChanged(0)
             }
         }
+
+    /** Called when rows come, go or change places: a position names another row after. */
+    var onRowsMoved: () -> Unit = {}
 
     val itemOffset: Int get() = if (header != null) 1 else 0
 
@@ -282,7 +285,9 @@ class BookAdapter(
         val old = ArrayList(items)
         items.clear()
         items.addAll(list)
-        if (redrawAll || !RowChanges.sameRows(old, list)) {
+        val same = RowChanges.sameRows(old, list)
+        if (!same) onRowsMoved()
+        if (redrawAll || !same) {
             redrawAll = false
             notifyDataSetChanged()
             return

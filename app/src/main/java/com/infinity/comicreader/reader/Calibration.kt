@@ -322,6 +322,9 @@ internal interface CalibrationProbe {
 
     /** Why [awaitFair] last said no; null when unknown. */
     val why: String? get() = null
+
+    /** True while battery saver is on (only a forced run times under it). */
+    val powerSave: Boolean get() = false
 }
 
 /**
@@ -344,9 +347,14 @@ internal class CalibrationRun(
     var why: String? = null
         private set
 
+    /** True when the last [run] kept a sample made with battery saver on ([CalibrationProbe.powerSave]). */
+    var sawPowerSave: Boolean = false
+        private set
+
     /** The median timing of each candidate that ran, with its spread over the samples; null when the run stopped first ([why]). */
     fun run(stopped: () -> Boolean = { false }): List<Timing>? {
         why = null
+        sawPowerSave = false
         val walls = candidates.associateWith { ArrayList<Double>() }
         val cpus = candidates.associateWith { ArrayList<Double>() }
         val missing = HashSet<Candidate>()
@@ -358,6 +366,7 @@ internal class CalibrationRun(
                 while (true) {
                     if (stopped()) return stop("stopped")
                     if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
+                    val saver = probe.powerSave
                     val t = sample(c)
                     if (t == null) {
                         missing += c
@@ -367,6 +376,7 @@ internal class CalibrationRun(
                         if (round >= warmup) {
                             walls.getValue(c) += t.first
                             cpus.getValue(c) += t.second
+                            if (saver || probe.powerSave) sawPowerSave = true
                         }
                         break
                     }

@@ -355,6 +355,33 @@ class CalibrationTest {
         assertEquals("disturbed 4 times", run.why)
     }
 
+    /** Times every run 10 ms; [still] and [saver] script the device's state. */
+    private class SaverProbe(val still: () -> Boolean, val saver: () -> Boolean) : CalibrationProbe {
+        override fun time(candidate: Candidate) = 10.0 to 20.0
+        override fun awaitFair() = true
+        override fun stillFair() = still()
+        override val powerSave: Boolean get() = saver()
+    }
+
+    @Test
+    fun batterySaverIsRecordedOnlyForSamplesKeptUnderIt() {
+        val a = pixels(1, true)
+        // Off for every sample (on only while an automatic run waits): not recorded.
+        val off = CalibrationRun(SaverProbe({ true }, { false }), listOf(a), rounds = 2)
+        assertNotNull(off.run())
+        assertFalse(off.sawPowerSave)
+        // On for a sample a forced run keeps: recorded.
+        var on = false
+        val kept = CalibrationRun(SaverProbe({ true.also { on = !on } }, { on }), listOf(a), rounds = 2)
+        assertNotNull(kept.run())
+        assertTrue(kept.sawPowerSave)
+        // On only for a disturbed sample, made again with it off: not recorded.
+        var n = 0
+        val redone = CalibrationRun(SaverProbe({ n++ > 0 }, { n == 0 }), listOf(a), rounds = 1)
+        assertNotNull(redone.run())
+        assertFalse(redone.sawPowerSave)
+    }
+
     @Test
     fun anUnfairDeviceOrAStopEndsTheRunSayingWhy() {
         val a = pixels(1, true)

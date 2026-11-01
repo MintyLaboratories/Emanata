@@ -234,7 +234,7 @@ object Calibrator {
             tuning = chosen
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
-                .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", probe.sawPowerSave)
+                .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", run.sawPowerSave)
                 .put("thermal", probe.thermal).put("page", probe.page).put("target", probe.target)
             kept = record
             val out = file(app)
@@ -291,9 +291,8 @@ object Calibrator {
 
         override val why: String? get() = reason
 
-        /** True once battery saver was seen on during the run (only a forced run goes on under it). */
-        var sawPowerSave = false
-            private set
+        override val powerSave: Boolean
+            get() = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
         /** The highest thermal status seen during the run. */
         var thermal = 0
@@ -426,11 +425,9 @@ object Calibrator {
         /** What timing now would be skewed by ([Calibration.waitReason]); null when nothing. */
         private fun hindrance(): String? {
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val saver = pm?.isPowerSaveMode == true
-            if (saver) sawPowerSave = true
             val status = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else 0
             thermal = maxOf(thermal, status)
-            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, forced = force, cooling = cooling)
+            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = pm?.isPowerSaveMode == true, forced = force, cooling = cooling)
         }
 
         /** True when all but the UI threads used under a tenth of a core over a short while: nothing else of the app is busy. */

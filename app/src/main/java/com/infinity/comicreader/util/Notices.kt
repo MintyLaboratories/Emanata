@@ -1,5 +1,8 @@
 package com.infinity.comicreader.util
 
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelSource
+
 /**
  * A third-party component shipped in the app and the license it is used under.
  * [texts] are the license and NOTICE files shown for it, under `assets/licenses/`;
@@ -183,8 +186,21 @@ object Notices {
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )
 
-    /** Every license and NOTICE file the notices refer to. */
-    val textFiles: Set<String> get() = all.flatMap { it.texts }.toSet()
+    /**
+     * The AI models' sources ([ModelSource]), as notices: who made them, the license, and which
+     * catalog models come from each, downloaded unchanged on demand.
+     */
+    val models: List<Notice>
+        get() = ModelSource.entries.filter { it.models.isNotEmpty() }.map { s ->
+            Notice(
+                s.title, s.license, s.url, s.texts,
+                note = "By ${s.author}. Models: ${s.models.joinToString { it.name }}. Downloaded on demand, unchanged, " +
+                    "from ${ModelCatalog.REPOSITORY} and run on this device only."
+            )
+        }
+
+    /** Every license and NOTICE file the notices and the AI models refer to. */
+    val textFiles: Set<String> get() = (all + models).flatMap { it.texts }.toSet()
 
     /** Every file of [notice] in order, each read by [read], separated by rules. */
     fun fullText(notice: Notice, read: (String) -> String): String =

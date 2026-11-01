@@ -758,7 +758,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   applies, and after an update the previous winners stay until new ones are
   established. Debug and bench builds show it and recalibrate in
   `CalibrationActivity` (shell only).
-- AI processing (`ai/`, so far the runtime only): ncnn with Vulkan, built from
+- AI processing (`ai/`; the reader does not use it yet): ncnn with Vulkan, built from
   source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own
   (`libaincnn.so`) loaded on first use. A model (`.param`/`.bin`) runs over a
   page in fixed-size square tiles (`TilePlan`), one page or model check at a
@@ -793,6 +793,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   after every page. Every ncnn call runs on one thread that lives as long as the
   process: its OpenMP runtime aborts when started again. ncnn's threads are
   placed on the large cores before each CPU run and let go before each GPU run.
+- AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
+  bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
+  licenses, all fetched unchanged from OpenComic AI's model repository at a
+  pinned commit. Each entry has its step (artifact removal, descreen,
+  upscale), scale, size, license, URL and SHA-256. `ModelStore` keeps each
+  model in its own folder in `noBackupFilesDir/ai-models` (not backed up, not
+  cleared with the cache); `ModelDownloader` fetches each file into a `.part`,
+  resumes it with an HTTP Range after a break (starting over when a server
+  sends the whole file), checks size and SHA-256, and renames it into place; a
+  part that does not match is deleted. `ModelDownloads` runs downloads one at
+  a time in the app's process, so they go on when Settings is left.
+  `tools/models/check_catalog.py` downloads every catalog file and checks its
+  size and SHA-256 (and prints both for new files).
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named
@@ -827,7 +840,8 @@ app/src/main/java/com/infinity/comicreader/
   files/                     FileSpace (device and shares), Transfer (copy/move
                              with checks), FileWork, FileClipboard
   ai/                        AI page processing: LibNcnn (JNI), TilePlan,
-                             ModelProbe, TileEngine, Sessions, AiPages
+                             ModelProbe, TileEngine, Sessions, AiPages; models:
+                             ModelCatalog, ModelStore + ModelDownloader
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,
@@ -1022,6 +1036,17 @@ license and NOTICE text under Settings → About (files in
 | Material Symbols | Apache-2.0 |
 
 Dual-licensed components are used under Apache-2.0.
+
+AI models are not bundled: the app downloads the ones you choose, unchanged,
+from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)
+and lists their authors and licenses under Settings → About.
+
+| Models | Author | License |
+|---|---|---|
+| [OpenComic AI](https://github.com/ollm/opencomic-ai-training) | Oleguer Llopart Mora | CC BY 4.0 |
+| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Xintao Wang | BSD-3-Clause |
+| [waifu2x](https://github.com/nagadomi/waifu2x) | nagadomi; ncnn conversion by nihui | MIT |
+| [Helaman's models](https://github.com/Phhofm/models) | Philip Hofmann (Helaman) | CC BY 4.0 |
 
 **UnRAR:** junrar is derived from the UnRAR source code. All copyrights to RAR
 and UnRAR are owned by Alexander Roshal. The UnRAR code may not be used to

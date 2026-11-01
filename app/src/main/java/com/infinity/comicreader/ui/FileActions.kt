@@ -207,9 +207,11 @@ internal class FileActions(
     private suspend fun planPack(folders: List<File>, compacted: Boolean) {
         val unusual = withContext(AppDispatchers.io) { folders.associateWith { PackFolders.of(it).unusual } }
         if (unusual.values.all { it.isEmpty() }) return planPack(folders, compacted, unusual, false)
-        val list = unusual.filterValues { it.isNotEmpty() }.entries.joinToString("\n") { (dir, files) ->
-            val names = files.joinToString(", ") { unusualLabel(it) }
-            if (folders.size > 1) activity.getString(R.string.pack_why_named, dir.name, names) else names
+        val list = withContext(AppDispatchers.io) {
+            unusual.filterValues { it.isNotEmpty() }.entries.joinToString("\n") { (dir, files) ->
+                val names = files.joinToString(", ") { unusualLabel(it) }
+                if (folders.size > 1) activity.getString(R.string.pack_why_named, dir.name, names) else names
+            }
         }
         AlertDialog.Builder(activity)
             .setTitle(R.string.pack_unusual_title)

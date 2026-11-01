@@ -10,11 +10,14 @@ import org.junit.Test
 
 class ResampleRunsTest {
     @Test
-    fun timingSizeIsAskedOrThePageFitToTheScreen() {
+    fun timingSizeIsAskedTheScreensOrTheSameEverywhere() {
         assertEquals(1200 to 1800, ResampleRuns.size("1200x1800", 1848, 2960))
         assertEquals(1848 to 2772, ResampleRuns.size(" 1848X2772 ", 1200, 2000))
-        assertEquals(1848 to 2772, ResampleRuns.size(null, 1848, 2960))
-        assertEquals(1200 to 1800, ResampleRuns.size("", 2000, 1200))
+        // Absent: the same on every screen.
+        assertEquals(1848 to 2772, ResampleRuns.size(null, 1200, 2000))
+        assertEquals(1848 to 2772, ResampleRuns.size("", 2000, 1200))
+        assertEquals(1200 to 1800, ResampleRuns.size("screen", 2000, 1200))
+        assertEquals(1848 to 2772, ResampleRuns.size(" Screen ", 1848, 2960))
         for (bad in listOf("1848", "x2772", "1848x", "0x100", "-5x100", "axb", "1x2x3", "99999x10")) assertNull(bad, ResampleRuns.size(bad, 1848, 2960))
     }
 

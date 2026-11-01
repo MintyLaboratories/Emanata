@@ -46,7 +46,7 @@ import kotlin.random.Random
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
  *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
- *  [--es size 1848x2772]`
+ *  [--es size 1848x2772|screen]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]) or left to the system (`any`);
@@ -55,8 +55,9 @@ import kotlin.random.Random
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each.
- * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default the 2000x3000 page
- *   fit to this screen held upright, as calibration does; 1848x2772 on a 1848x2960 screen)
+ * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default 1848x2772 on every
+ *   device, so runs compare across devices; `screen`: the 2000x3000 page fit to this screen
+ *   held upright, as calibration does)
  *   by each setup, filter and anti-ringing strength when shrinking (`rings`, default the
  *   setting's default), `reps` rounds after 2 warm-up rounds, the setups interleaved
  *   (A B, B A...): wall and process CPU per page, thermal status and headroom.

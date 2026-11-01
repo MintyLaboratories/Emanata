@@ -17,12 +17,19 @@ object FolderReads {
     fun images(dir: File): List<File>? =
         dir.listFiles()?.filter { it.isFile && !it.name.startsWith(".") && isLooseImage(it.name) }
 
-    /** Counts folder [dir] as read, or no longer, by its [images] (listed when null); unchanged when it can't be listed. */
+    /**
+     * Counts folder [dir] as read, or no longer, by its [images] (listed when null); unchanged
+     * when it can't be listed. An image whose last ID ([BookIds.last]) is not read settles it
+     * at once, no file looked at; else those never found are found, up to the first not read,
+     * and only a folder then all read is checked file by file.
+     */
     fun update(library: Library, dir: File, images: List<File>? = null) {
         val all = images ?: images(dir) ?: return
         val read = library.readSet()
-        // Stops at the first image not read: one ID found at most for a folder in progress.
-        val done = all.isNotEmpty() && all.all { BookIds.find(it)?.let { id -> id in read } == true }
+        val last = all.map { BookIds.last(it.absolutePath) }
+        fun isRead(f: File) = BookIds.find(f)?.let { it in read } == true
+        val done = all.isNotEmpty() && last.none { it != null && it !in read } &&
+            all.indices.filter { last[it] == null }.all { isRead(all[it]) } && all.all(::isRead)
         library.setFolderRead(dir.absolutePath, done)
     }
 

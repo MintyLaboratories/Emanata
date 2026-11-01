@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -71,6 +72,22 @@ class BooksReadTest {
         FolderReads.updateFor(library, listOf(refs[1]))
         assertEquals(0, books())
         assertFalse(library.isFolderRead(dir.absolutePath))
+    }
+
+    @Test
+    fun anImageKnownUnreadSettlesTheFolderWithoutReadingTheOthers() {
+        val (dir, images) = folder("Partly", 3)
+        val first = ref(images[0])
+        library.setRead(first, true)
+        // The last image known and not read; the second never looked at.
+        ref(images[2])
+        FolderReads.update(library, dir, images)
+        assertFalse(library.isFolderRead(dir.absolutePath))
+        assertNull(BookIds.last(images[1].absolutePath))
+        // All read: each found and checked.
+        library.setReadMany(images.map { ref(it) }, true)
+        FolderReads.update(library, dir, images)
+        assertTrue(library.isFolderRead(dir.absolutePath))
     }
 
     @Test

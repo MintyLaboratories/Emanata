@@ -86,7 +86,8 @@ data class CatalogModel(
  * The models the app offers: ncnn conversions that load and run in the tile engine
  * ([Sessions]) and, started cool (thermal headroom below 0.7), take a synthetic 1000 x 1500
  * page through in at most [MAX_PAGE_MS] on the reference tablet's GPU ([CatalogModel.pageMs];
- * warm, up to about 1.5 times as long, within [PageLimits.DEFAULT_TIMEOUT_MS]), under licenses
+ * warm, up to about 1.5 times as long, within [PageLimits.DEFAULT_TIMEOUT_MS]; in the reader, at
+ * background priority, a page may take [ReaderAi.WARM] times as long), under licenses
  * that let a free app download and run them (with attribution in About). All are fetched unchanged from
  * OpenComic AI's model repository at a fixed commit, so their checksums hold. Each step lists
  * its models as pickers show them: the default first, the faithful before the enhancing, the

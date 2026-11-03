@@ -60,7 +60,8 @@ object AiChain {
 
     /**
      * True when [models] together take longer than [ModelCatalog.MAX_PAGE_MS] on the reference
-     * tablet: warmer or slower devices would run past a page's time and show it without AI.
+     * tablet: each page takes long and costs battery, and a slower device may run past even the
+     * longer time the reader gives such a chain ([ReaderAi.limitsFor]) and show it without AI.
      */
     fun slow(models: List<CatalogModel>): Boolean = pageMs(models) > ModelCatalog.MAX_PAGE_MS
 }

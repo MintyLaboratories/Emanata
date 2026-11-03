@@ -425,7 +425,8 @@ internal class FileActions(
         for (status in operations) {
             val outcome = status.outcome
             if (outcome == null) {
-                watching += status.id
+                // Also for operations started elsewhere (the reader's Repack), which leaves for this screen.
+                if (watching.add(status.id)) notificationAsk.once()
                 continue
             }
             watching -= status.id

@@ -93,6 +93,19 @@ class FileActionsNotificationsTest {
     }
 
     @Test
+    fun asksForAnOperationStartedElsewhere() {
+        // As the reader queues Repack and leaves for the library.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        FileWork.start(FileWork.Kind.REPACK, "a.cb7") { gate.await(); FileWork.Outcome.Done(null) }
+        shadowOf(Looper.getMainLooper()).idle()
+        val first = asked()
+        gate.countDown()
+        assertNotNull(first)
+        assertTrue(Manifest.permission.POST_NOTIFICATIONS in first!!.requestedPermissions)
+        assertTrue(Prefs(context).askedNotifications)
+    }
+
+    @Test
     fun grantedAsksNothing() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         deleteOne("a.cbz")

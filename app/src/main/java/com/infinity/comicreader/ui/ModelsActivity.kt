@@ -147,6 +147,7 @@ object ModelText {
  */
 class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore
+    private lateinit var prefs: Prefs
     private val rows = HashMap<String, View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -156,6 +157,7 @@ class ModelsActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
         store = ModelStore.of(this)
+        prefs = Prefs(this)
 
         val list = findViewById<LinearLayout>(R.id.models_list)
         for (step in AiStep.entries) {
@@ -195,7 +197,7 @@ class ModelsActivity : AppCompatActivity() {
         val installed = withContext(AppDispatchers.io) { ModelCatalog.all.filter { store.installed(it) }.map { it.id }.toSet() }
         val used = withContext(AppDispatchers.io) { store.bytesUsed() }
         findViewById<TextView>(R.id.models_used).text = getString(R.string.ai_models_used, ModelText.size(this, used))
-        val simple = Prefs(this).keepSimple
+        val simple = prefs.keepSimple
         for (m in ModelCatalog.all) {
             val row = rows[m.id] ?: continue
             row.isVisible = !simple || !m.slow || m.id in installed || d.states[m.id] != null

@@ -163,18 +163,29 @@ object Calibration {
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
      * fastest's own spread of it), the one using the least CPU time; [incumbent], the setup
-     * in effect, unless the winner uses less CPU time by more than the noise ([cpuNoise]). A
-     * slow setup's own spread never counts, so its outliers cannot make it fast.
+     * in effect, while within [stay] more than that, unless the winner uses less CPU time by
+     * more than the noise ([cpuNoise]). A slow setup's own spread never counts, so its
+     * outliers cannot make it fast.
      */
-    fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE): Timing? {
+    fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE, stay: Double = 0.0): Timing? {
         val fastest = timings.minByOrNull { it.wallMs } ?: return null
-        val fast = timings.filter {
-            it.wallMs <= fastest.wallMs * (1 + tolerance) || it.wallMs - fastest.wallMs <= fastest.wallSpreadMs
-        }
-        val winner = fast.minWith(compareBy({ it.cpuMs }, { it.wallMs }))
-        val kept = fast.firstOrNull { it.candidate == incumbent } ?: return winner
+        fun fast(t: Timing, share: Double) = t.wallMs <= fastest.wallMs * (1 + share) || t.wallMs - fastest.wallMs <= fastest.wallSpreadMs
+        val winner = timings.filter { fast(it, tolerance) }.minWith(compareBy({ it.cpuMs }, { it.wallMs }))
+        val kept = timings.firstOrNull { it.candidate == incumbent && fast(it, tolerance + stay) } ?: return winner
         return if (kept.cpuMs - winner.cpuMs <= cpuNoise(kept, winner)) kept else winner
     }
+
+    /**
+     * How much further than [TOLERANCE] behind the fastest a resampling setup an earlier
+     * calibration chose ([chosen]) may fall and still count as fast: up to 1.4x the fastest's
+     * time, so a setup near the edge doesn't change with every calibration. On a tablet with 4
+     * large and 4 little cores, resampling on the 4 large cores took 1.04-1.34x as long as on 8
+     * unpinned threads over 79 calibrations in one day, for about two thirds of their CPU time;
+     * without this margin each calibration could pick either. JPEG XL decodes get none until
+     * their flips are measured. Defaults that no calibration chose get none either, so a first
+     * calibration still moves off them where they take over 1.2x the fastest's time.
+     */
+    const val STAY_MARGIN = 0.20
 
     /**
      * The CPU time difference between [a] and [b] that counts as none: their spread, but at
@@ -196,16 +207,20 @@ object Calibration {
         return gpu.wallMs * (1 + TOLERANCE) < fastest.wallMs && fastest.wallMs - gpu.wallMs > maxOf(gpu.wallSpreadMs, fastest.wallSpreadMs)
     }
 
-    /** [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]). */
-    fun tuning(timings: List<Timing>, before: Tuning): Tuning {
+    /**
+     * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]); [before]
+     * keeps its resampling setup near the edge ([STAY_MARGIN]) when a calibration chose it ([chosen]).
+     */
+    fun tuning(timings: List<Timing>, before: Tuning, chosen: Boolean = false): Tuning {
         var t = before
+        val stay = if (chosen) STAY_MARGIN else 0.0
         val pixels = timings.filter { it.candidate.kind == Candidate.Kind.PIXELS }
         val gpu = pixels.firstOrNull { it.candidate.gpu }
         val cpu = pixels.filter { !it.candidate.gpu }
         if (gpu != null && gpuWins(gpu, cpu)) {
             t = t.copy(engine = PixelEngine.GPU)
         } else {
-            pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned))?.candidate?.let { c ->
+            pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned), stay = stay)?.candidate?.let { c ->
                 t = t.copy(engine = PixelEngine.NATIVE, pixelThreads = c.threads, pixelPinned = c.pinned)
             }
         }
@@ -215,6 +230,16 @@ object Calibration {
         }
         return t.copy(jpegPinned = jpegPinned(timings, before.jpegPinned))
     }
+
+    /**
+     * True when [before], the tuning in effect, is the pick of [kept], the calibration kept,
+     * made out of battery saver: only such a pick earns [STAY_MARGIN]. One made under battery
+     * saver, whose clock caps skew timings, is replaced by the next run out of saver ([due]).
+     * A pick kept from an earlier app version or system build keeps the margin: automatic runs
+     * come only after an update, and a setup near the edge should not change with each one.
+     */
+    fun chosen(kept: JSONObject?, before: Tuning): Boolean =
+        kept != null && !kept.optBoolean("powerSave") && Tuning.of(kept.optJSONObject("tuning")) == before
 
     /**
      * The size a [width] x [height] page is shrunk to on a [screenW] x [screenH] screen held

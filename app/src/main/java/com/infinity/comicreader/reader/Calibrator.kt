@@ -246,7 +246,7 @@ object Calibrator {
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
-            val chosen = Calibration.tuning(timings, before)
+            val chosen = Calibration.tuning(timings, before, chosen = Calibration.chosen(kept, before))
             chosen.apply()
             tuning = chosen
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())

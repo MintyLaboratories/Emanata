@@ -762,7 +762,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   CPU time wins. The
   GPU wins only when more than 20% faster than every CPU setup, since its own
   power is not measured. Differences within the runs' spread count as none,
-  so the setup in effect stays. Winners are kept in `noBackupFilesDir`
+  so the setup in effect stays; a resampling setup an earlier calibration
+  chose outside battery saver also counts as fast up to 1.4x the fastest's
+  time, so a setup near the edge doesn't change with every calibration.
+  Winners are kept in `noBackupFilesDir`
   (never restored onto another
   device); until the first calibration ends the one-per-large-core rule
   applies, and after an update the previous winners stay until new ones are

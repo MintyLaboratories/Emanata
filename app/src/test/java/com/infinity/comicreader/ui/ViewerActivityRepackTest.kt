@@ -23,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -105,6 +106,32 @@ class ViewerActivityRepackTest {
         ShadowDialog.reset()
         launch(book)
         assertEquals(null, offer())
+    }
+
+    @Test
+    fun theNoteDismissedByBackOrATapOutsideCountsAsNotNow() {
+        val book = solid()
+        launch(book)
+        val dialog = offer() ?: throw AssertionError("no offer")
+        // Back and a tap outside both cancel the dialog.
+        dialog.cancel()
+        idle()
+        assertTrue(library.repackDeclined(bookId(book)))
+    }
+
+    @Test
+    fun theBookClosedWhileTheNoteShowsLeavesItUnanswered() {
+        val book = solid()
+        launch(book)
+        val dialog = offer() ?: throw AssertionError("no offer")
+        controllers.last().pause().stop().destroy()
+        idle()
+        assertFalse(dialog.isShowing)
+        assertFalse(library.repackDeclined(bookId(book)))
+        // Offered again on the next open.
+        ShadowDialog.reset()
+        launch(book)
+        assertNotNull(offer())
     }
 
     @Test

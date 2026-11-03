@@ -1434,6 +1434,10 @@ class PageAdapter(
         /** Pages decoded at once by an adapter made from now on. */
         @Volatile
         var decodeThreads: Int = 2
+
+        /** False turns off the screen behind for readers opened from now on (bench A/Bs). */
+        @Volatile
+        var screenBehind: Boolean = true
         private const val MIN_CACHE_BYTES = 24 * 1024 * 1024
 
         /** The page cache grows to at most this share of the heap limit: half ([fitCache]). */

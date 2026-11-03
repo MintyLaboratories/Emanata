@@ -25,7 +25,8 @@ decodes of pages read ahead (plans/jxl-later.json). "platformcores" ("any", "big
 the platform's one-thread decodes (JPEG, PNG, WebP), "platformahead" ("on"/"off") pins those of
 pages read ahead too, "decoders" sets how many pages decode at
 once, "preload" the pages read ahead and "seams" ("on"/"off") joining spreads by their seams,
-which runs the seam scans (both settings, put back after the run).
+which runs the seam scans (both settings, put back after the run); "behind" ("on"/"off")
+prepares the screen behind or not (plans/behind.json).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b". After

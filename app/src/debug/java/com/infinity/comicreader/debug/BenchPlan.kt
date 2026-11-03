@@ -82,7 +82,9 @@ internal data class BenchPlan(
     /** Pages read ahead, the setting (0-6); null keeps it. */
     val preload: Int? = null,
     /** Spreads joined by their seams, the setting, which runs the seam scans; null keeps it. */
-    val seams: Boolean? = null
+    val seams: Boolean? = null,
+    /** The screen behind prepared ([com.infinity.comicreader.ui.PageAdapter.screenBehind]); null keeps it. */
+    val behind: Boolean? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -97,6 +99,7 @@ internal data class BenchPlan(
         .put("platformCores", platformCores?.key ?: JSONObject.NULL).put("decodeThreads", decodeThreads ?: JSONObject.NULL)
         .put("platformAhead", platformAhead ?: JSONObject.NULL)
         .put("preload", preload ?: JSONObject.NULL).put("seams", seams ?: JSONObject.NULL)
+        .put("behind", behind ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -162,7 +165,8 @@ internal data class BenchPlan(
                 platformAhead = intent.getStringExtra("platformahead")?.let { if (it == "on" || it == "off") it == "on" else return null },
                 decodeThreads = if (intent.hasExtra("decoders")) intent.getIntExtra("decoders", 2).coerceIn(1, 8) else null,
                 preload = if (intent.hasExtra("preload")) intent.getIntExtra("preload", 2).coerceIn(0, 6) else null,
-                seams = intent.getStringExtra("seams")?.let { if (it == "on" || it == "off") it == "on" else return null }
+                seams = intent.getStringExtra("seams")?.let { if (it == "on" || it == "off") it == "on" else return null },
+                behind = intent.getStringExtra("behind")?.let { if (it == "on" || it == "off") it == "on" else return null }
             )
         }
     }

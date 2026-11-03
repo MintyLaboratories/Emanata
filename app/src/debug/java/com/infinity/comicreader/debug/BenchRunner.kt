@@ -102,6 +102,8 @@ internal class BenchRunner(private val app: Application) {
         }
         plan.platformAhead?.let { PlatformPages.readAhead = it }
         plan.decodeThreads?.let { PageAdapter.decodeThreads = it }
+        val keptBehind = PageAdapter.screenBehind
+        plan.behind?.let { PageAdapter.screenBehind = it }
         try {
             return when (plan.what) {
                 BenchPlan.GRID -> listOf(grid(plan))
@@ -123,6 +125,7 @@ internal class BenchRunner(private val app: Application) {
             PlatformPages.jpegPinned = keptJpeg
             PlatformPages.readAhead = keptAhead
             PageAdapter.decodeThreads = keptDecoders
+            PageAdapter.screenBehind = keptBehind
             kept.restore()
             ReadProbes.current = null
             probe.clear()

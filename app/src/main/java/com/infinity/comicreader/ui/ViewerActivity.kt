@@ -2249,7 +2249,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             pageScaling = prefs.pageScaling,
             zoomScaling = prefs.zoomScaling,
             preload = applied.thrift.readAhead(prefs.preload, pagesPerScreen()),
-            behind = prefs.preload > 0 && !applied.thrift.lessReadAhead,
+            behind = PageAdapter.screenBehind && prefs.preload > 0 && !applied.thrift.lessReadAhead,
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,

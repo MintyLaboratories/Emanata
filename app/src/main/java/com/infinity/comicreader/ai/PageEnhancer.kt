@@ -205,9 +205,12 @@ class ReaderAi internal constructor(
         return limits.copy(timeoutMs = (cool * WARM).toLong().coerceIn(limits.timeoutMs, maxOf(limits.timeoutMs, MAX_TIMEOUT_MS)))
     }
 
-    /** Takes [m]'s time of [ms] for [done] of an input of [pixels] into its measured rate. */
+    /**
+     * Takes [m]'s time of [ms] for [done] of an input of [pixels] into its measured rate; a run
+     * stopped before half its tiles says little, its first tiles carrying the GPU's warm-up.
+     */
     private fun learn(m: CatalogModel, pixels: Long, ms: Long, done: Double) {
-        if (pixels <= 0 || done <= 0) return
+        if (pixels <= 0 || done < MIN_LEARNED) return
         val rate = ms / (pixels / 1e6 * done)
         rates.merge(m.id, rate) { old, now -> (old + now) / 2 }
     }
@@ -273,6 +276,9 @@ class ReaderAi internal constructor(
 
         /** The longest a page may take, however slow its chain. */
         const val MAX_TIMEOUT_MS = 120_000L
+
+        /** Least share of a model's tiles run for its time to count toward its rate. */
+        const val MIN_LEARNED = 0.5
 
         /** Share of the way back to the catalog's rate a measured one moves at each page skipped as too slow. */
         const val RECOVER = 0.25

@@ -85,8 +85,11 @@ internal object TileEngine {
     /** How often a held run checks whether it may go on. */
     private const val HOLD_POLL_MS = 16L
 
-    /** Tiles timed before the pace predicts a miss. */
-    private const val PACE_AFTER = 2
+    /**
+     * Tiles timed before the pace predicts a miss, the first left out of it: it carries the
+     * GPU's warm-up, often several times a later tile's time.
+     */
+    private const val PACE_AFTER = 4
 
     /** Rows of a page read at a time when looking for transparency. */
     private const val ALPHA_ROWS = 64
@@ -145,6 +148,8 @@ internal object TileEngine {
         val times = LongArray(tiles.size)
         // Moved on by the time held, which counts toward neither the limit nor the pace.
         var start = clock()
+        // Time spent once the first tile was done.
+        var firstSpent = 0L
         fun stats(done: Int) = RunStats(done, tiles.size, times.copyOf(done), clock() - start)
         fun fallback(why: Fallback, done: Int) = PageRun(null, why, stats(done))
 
@@ -167,7 +172,10 @@ internal object TileEngine {
                     gate()?.let { return fallback(it, i) }
                     val spent = clock() - start
                     val left = limits.timeoutMs - spent
-                    if (left <= 0 || (i >= PACE_AFTER && spent.toDouble() * (tiles.size - i) > left.toDouble() * i)) {
+                    if (i == 1) firstSpent = spent
+                    // The tiles left at the pace of those after the first.
+                    val ahead = if (i >= PACE_AFTER) (spent - firstSpent).toDouble() / (i - 1) * (tiles.size - i) else 0.0
+                    if (left <= 0 || ahead > left) {
                         return fallback(Fallback.TIMEOUT, i)
                     }
                 }

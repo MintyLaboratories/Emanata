@@ -86,14 +86,27 @@ class TileEngineTest {
         var now = 0L
         val tiles = TilePlan.tiles(200, 200, s.size, s.geometry).size
         assertTrue(tiles > 10)
-        // 100 ms a tile: the pace after two tiles predicts a miss of 500 ms, so no third runs.
+        // 100 ms a tile: the pace after four tiles predicts a miss of 800 ms, so no fifth runs.
         val run = TileEngine.run(
-            s, page(200, 200), PageLimits(timeoutMs = 500), clock = { now }, onTile = { _, _, _ -> now += 100 }
+            s, page(200, 200), PageLimits(timeoutMs = 800), clock = { now }, onTile = { _, _, _ -> now += 100 }
         )
         assertNull(run.bitmap)
         assertEquals(Fallback.TIMEOUT, run.fallback)
-        assertEquals(2, run.stats.tiles)
+        assertEquals(4, run.stats.tiles)
         assertEquals(tiles, run.stats.planned)
+    }
+
+    @Test
+    fun aSlowFirstTileDoesNotSetThePace() {
+        val s = session(FakeModel())
+        var now = 0L
+        val tiles = TilePlan.tiles(200, 200, s.size, s.geometry).size
+        // The first tile takes 2 s (warm-up), the rest 100 ms: the page fits its time.
+        val run = TileEngine.run(
+            s, page(200, 200), PageLimits(timeoutMs = 2_000L + tiles * 100L), clock = { now },
+            onTile = { d, _, _ -> now += if (d == 1) 2_000 else 100 }
+        )
+        assertNotNull(run.bitmap)
     }
 
     @Test

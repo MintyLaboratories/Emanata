@@ -19,6 +19,8 @@ class PreviewingSource(
     private val book: String
 ) : PageSource by inner {
 
+    override val bookKey: String get() = book
+
     override fun loadPage(index: Int, target: Target): Bitmap {
         val key = keyOf(index)
         if (store.has(key)) return inner.loadPage(index, target)

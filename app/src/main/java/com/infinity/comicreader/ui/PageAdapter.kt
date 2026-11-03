@@ -17,6 +17,10 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiOutcome
+import com.infinity.comicreader.ai.AiQueue
+import com.infinity.comicreader.ai.Fallback
+import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Box
 import com.infinity.comicreader.reader.Cancellation
@@ -85,6 +89,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * bitmaps for other sizes stay cached while room allows, so going back to a recent size
  * is instant too.
  *
+ * With an [enhancer], pages of a book with an AI chain go through it ([AiQueue]) once their
+ * plain page shows: those of the item being read ([reading]), then the next item's, one at a
+ * time; each processed page takes the plain one's place in the cache and in its image, at the
+ * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]).
+ *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop], [linear]
  * (linear-light scaling) or the scaling of pages at rest ([pageScaling]) or zoomed
@@ -126,7 +135,9 @@ class PageAdapter(
     private val onLongPress: ((Int) -> Unit)? = null,
     pageLayout: PageLayout? = null,
     private val bounds: PageBounds = PageBounds(),
-    private val onLoaded: ((Int) -> Unit)? = null
+    private val onLoaded: ((Int) -> Unit)? = null,
+    /** Processes pages by AI; null for none. */
+    private val enhancer: PageEnhancer? = null
 ) : RecyclerView.Adapter<PageAdapter.PageHolder>() {
 
     enum class Mode { PAGED, CONTINUOUS }
@@ -1281,6 +1292,10 @@ class PageAdapter(
                 if (error == null) {
                     onLoaded?.invoke(pageIndex)
                     ReadProbes.current?.decoded(pageIndex)
+                    // A page decoded afresh shows plain: it is processed again.
+                    processed -= key
+                    ai?.forget(key)
+                    wantAi()
                 }
                 if (error == null && entry.waiters > 0) shownOnce = true
                 if (preloadWaits && !released && pending.values.none { it.waiters > 0 && it.deferred.isActive } && !firstMeasuring()) {
@@ -1362,6 +1377,91 @@ class PageAdapter(
         request(key).prefetch = true
     }
 
+    // ------------------------------------------------------------------ AI processing
+
+    /** What processing a page needs that only the main thread may read: its chapter's source, its index there, its plain page's size. */
+    private class AiPage(val source: PageSource, val index: Int, val width: Int, val height: Int)
+
+    private val aiPages = ConcurrentHashMap<PageKey, AiPage>()
+
+    /** The AI work queue, made once a page of a book with an AI chain shows. */
+    private var ai: AiQueue<PageKey>? = null
+
+    private fun queueOf(e: PageEnhancer): AiQueue<PageKey> = ai ?: AiQueue<PageKey>(scope, e.worker, { key, canceled ->
+        val p = aiPages[key] ?: return@AiQueue AiOutcome.Skipped(Fallback.UNNEEDED)
+        e.enhance(p.source, p.index, key.target, p.width, p.height, canceled)
+    }, ::enhanced).also { ai = it }
+
+    /** The item read now, whose pages go through AI first; [NO_PAGE] before [reading] says. */
+    private var readingAt = NO_PAGE
+
+    /** Pages whose cached bitmap is the processed one. Main thread only. */
+    private val processed = HashSet<PageKey>()
+
+    /** Processes item [position]'s pages, then the next item's, as each shows plain ([enhancer]). Call as the reader moves. */
+    fun reading(position: Int) {
+        if (readingAt == position) return
+        readingAt = position
+        wantAi()
+    }
+
+    /**
+     * Shows every page plain again and processes it anew: after a book's AI chain changed.
+     * Each image keeps its bitmap until the new one arrives.
+     */
+    fun aiChanged() {
+        if (enhancer == null || released) return
+        for (key in processed) cache.remove(key)
+        processed.clear()
+        ai?.reset()
+        notifyItemRangeChanged(0, itemCount, RESIZE)
+    }
+
+    /** Ends a wait for AI ([AiOutcome.Later]): a model downloaded, battery saver turned off. */
+    fun aiWake() {
+        ai?.wake()
+    }
+
+    /** Asks for AI work on the pages of the item [reading] and the next one that show plain in the cache. */
+    private fun wantAi() {
+        val e = enhancer ?: return
+        if (released || readingAt < 0) return
+        val keys = ArrayList<PageKey>()
+        for (item in readingAt..minOf(readingAt + 1, itemCount - 1)) {
+            for (part in strip.parts(item)) {
+                if (part == null || part.page >= end) continue
+                val chapter = strip.chapterOf(part.page)
+                val source = chapter.value.source
+                if (!e.enhances(source)) continue
+                val key = keyFor(part) ?: continue
+                val bitmap = cache.get(key) ?: continue
+                // A stand-in for a page drawn in bands is never processed.
+                if (key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble())) continue
+                aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height))
+                keys += key
+            }
+        }
+        if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
+        aiPages.keys.retainAll(keys.toSet())
+    }
+
+    /** Shows [done]'s page in place of [key]'s plain one, in the cache and wherever it shows at that size. */
+    private fun enhanced(key: PageKey, done: AiOutcome.Done) {
+        if (released || key != keyFor(key.part)) return
+        val bitmap = frozen(done.bitmap)
+        cache.put(key, bitmap)
+        processed += key
+        ReadProbes.current?.enhanced(key.page, done.ms, done.stored)
+        val list = recycler ?: return
+        for (i in 0 until list.childCount) {
+            val holder = list.getChildViewHolder(list.getChildAt(i)) as? PageHolder ?: continue
+            for (slot in holder.images.indices) {
+                if (holder.shown[slot] != key.code || (holder.images[slot].detailSource as? SlotDetail)?.key != key) continue
+                showBitmap(holder, slot, key, bitmap)
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ continuous
 
     /** Learns each page's real aspect ratio once its bitmap arrives, for a continuous column. */
@@ -1410,6 +1510,8 @@ class PageAdapter(
      */
     fun release(closeSources: Boolean = true) {
         released = true
+        ai?.release()
+        aiPages.clear()
         details.clear()
         scope.cancel()
         pending.clear()

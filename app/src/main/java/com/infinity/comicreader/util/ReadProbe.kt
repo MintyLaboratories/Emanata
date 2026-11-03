@@ -29,6 +29,9 @@ interface ReadProbe {
      */
     fun shown(view: View, page: Int, exact: Boolean) = Unit
 
+    /** [page] shows processed by AI, made or read back from disk ([stored]) in [ms]. */
+    fun enhanced(page: Int, ms: Long, stored: Boolean) = Unit
+
     /** Cover view [view] at [position] in a library list shows a cover; [exact] when it is the full one. */
     fun cover(view: View, position: Int, exact: Boolean) = Unit
 }

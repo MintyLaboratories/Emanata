@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
@@ -107,7 +108,9 @@ data class ReaderSettings(
     val pageScaling: Scaling = Scaling.DEFAULT,
     val zoomScaling: Scaling = Scaling.DEFAULT,
     val thumbScaling: Scaling = Scaling.DEFAULT,
-    val thrift: Thrift = Thrift.NONE
+    val thrift: Thrift = Thrift.NONE,
+    /** The AI models chosen in Settings, while AI processing is on; null while off. */
+    val ai: AiPicks? = null
 ) {
     companion object {
         fun from(p: Prefs, saving: Boolean = false) = ReaderSettings(
@@ -144,7 +147,8 @@ data class ReaderSettings(
             pageScaling = p.pageScaling,
             zoomScaling = p.zoomScaling,
             thumbScaling = p.thumbScaling,
-            thrift = Thrift.of(saving, p)
+            thrift = Thrift.of(saving, p),
+            ai = if (p.aiEnabled) AiPicks.of(p) else null
         )
     }
 }

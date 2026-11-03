@@ -146,6 +146,9 @@ object BookIds {
     /** The cache key of [file]'s contents: its ID when it can be found, else its path, size and time. Blocking. */
     fun keyOf(file: File): String = find(file)?.let { "id:${it.hex}" } ?: "${file.absolutePath}|${file.length()}|${file.lastModified()}"
 
+    /** The ID a cache key made by [keyOf] holds; null for a key made without one. */
+    fun parseKey(key: String): BookId? = if (key.startsWith("id:")) BookId.parse(key.substring(3)) else null
+
     /** Hashes [file], listed at [size] and [modified], and remembers the ID found. */
     private fun hashNow(file: File, size: Long, modified: Long): BookId =
         remember(file.absolutePath, size, modified, Timing.span("book id") { bytesOf(file, modified) })

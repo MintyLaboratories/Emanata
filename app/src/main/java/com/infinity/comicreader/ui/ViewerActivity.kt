@@ -56,6 +56,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
@@ -154,6 +155,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private lateinit var prefs: Prefs
     private lateinit var library: Library
     private lateinit var settings: SettingsRepository
+
+    /** AI processing of the pages shown ([PageAdapter.reading]); its models stay open until the reader closes. */
+    private lateinit var readerAi: ReaderAi
 
     /** The global settings last applied; changes are diffed against it. */
     private lateinit var applied: ReaderSettings
@@ -531,6 +535,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         prefs = Prefs(this)
         library = Library(this)
         settings = SettingsRepository.get(this)
+        readerAi = ReaderAi.of(this)
         setContentView(R.layout.activity_viewer)
         bindViews()
         applied = settings.reader.value
@@ -803,6 +808,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         openJob?.cancel()
         closeSource()
         deleteCropSource()
+        readerAi.close()
         file = null
     }
 
@@ -957,6 +963,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         ) {
             rebuild = true
         }
+        if (s.ai != old.ai) aiChanged()
+        // Pages put off for battery saver go on at once once it lets them.
+        if (old.thrift.pausedAi && !s.thrift.pausedAi) adapter?.aiWake()
         if (s.thrift.pausedScans != old.thrift.pausedScans) {
             // Paused, the scans under way stop; resumed, they go on from the page on screen.
             if (s.thrift.pausedScans) {
@@ -2261,6 +2270,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
             bounds = pageBounds,
+            enhancer = readerAi,
             onLoaded = {
                 learnSize(it)
                 if (!scansReleased) afterNextDraw(src) { startScans() }
@@ -2643,6 +2653,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         }
         timeShareWait(shownItem())
         ReadProbes.current?.moved(shownItem())
+        adapter?.reading(shownItem())
         val count = source?.pageCount ?: 0
         pageText.text = if (itemNumbers()) getString(R.string.page_indicator, shownItem() + 1, layout.itemCount(count))
         else getString(R.string.page_indicator, currentIndex + 1, count)
@@ -3618,6 +3629,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         } finally {
             syncingSheet = false
         }
+    }
+
+    /**
+     * Reads the books' AI chains again; the pages shown go through the new chain when this
+     * book's or the next chapter's changed.
+     */
+    private fun aiChanged() {
+        val books = listOfNotNull(source, stripAhead).map { it.bookKey }
+        val before = books.map { readerAi.chainFor(it) }
+        readerAi.refresh()
+        if (books.map { readerAi.chainFor(it) } != before) adapter?.aiChanged()
+        syncSheet()
     }
 
     private fun <T> syncSegments(view: View, s: Segments<T>) {

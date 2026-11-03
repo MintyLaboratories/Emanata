@@ -11,6 +11,9 @@ interface PageSource : Closeable {
     /** True when pages are drawn from vectors at any size, so none is native ([PdfSource]). */
     val isVector: Boolean get() = false
 
+    /** What identifies the book's contents ([PreviewStore.bookId]), to key what is kept of its pages; null when unknown. */
+    val bookKey: String? get() = null
+
     /** Render page [index] at exactly the size [target] gives for it. */
     fun loadPage(index: Int, target: Target): Bitmap
 

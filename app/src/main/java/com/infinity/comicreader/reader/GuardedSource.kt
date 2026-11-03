@@ -20,6 +20,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override val isVector: Boolean get() = inner.isVector
 
+    override val bookKey: String? get() = inner.bookKey
+
     override val cheapSizes: Boolean get() = inner.cheapSizes
 
     override val dearSides: Boolean get() = inner.dearSides

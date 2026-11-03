@@ -68,6 +68,8 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
 
     override val isVector: Boolean get() = inner.isVector
 
+    override val bookKey: String? get() = inner.bookKey
+
     override val cheapSizes: Boolean get() = inner.cheapSizes
 
     override val dearSides: Boolean get() = inner.dearSides

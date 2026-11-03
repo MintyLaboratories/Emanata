@@ -1,0 +1,162 @@
+package com.infinity.comicreader.ai
+
+import android.app.Application
+import android.graphics.Bitmap
+import androidx.preference.PreferenceManager
+import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.data.BookId
+import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Target
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+import java.io.RandomAccessFile
+import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.random.Random
+
+/** The reader's AI: a book's chain, pages made and kept on disk, put off when it must wait, skipped when nothing would change. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = Application::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class ReaderAiTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private val context = ApplicationProvider.getApplicationContext<Application>()
+    private lateinit var prefs: Prefs
+    private lateinit var models: ModelStore
+    private lateinit var ai: ReaderAi
+    private val own = HashMap<BookId, AiPicks>()
+    private var stop: Fallback? = null
+    private val downloads = ArrayList<String>()
+
+    private val book = BookId(0xaa)
+    private val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+
+    @Before
+    fun setUp() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        prefs = Prefs(context)
+        prefs.aiEnabled = true
+        models = ModelStore(tmp.newFolder("models"))
+        ai = reader()
+    }
+
+    @After
+    fun tearDown() = ai.close()
+
+    private fun reader(): ReaderAi = ReaderAi(
+        prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), FakeRuntime(),
+        { stop }, { downloads += it.id }, threads = 2
+    )
+
+    private fun install(m: CatalogModel) {
+        for (f in m.files) {
+            models.dir(m).mkdirs()
+            RandomAccessFile(File(models.dir(m), f.name), "rw").use { it.setLength(f.bytes) }
+            File(models.dir(m), f.name + ModelStore.STAMP).writeText(f.sha256)
+        }
+    }
+
+    /** A book of [count] pages of [w] x [h], counting full loads. */
+    private class Book(val w: Int, val h: Int, override val bookKey: String?, override val isVector: Boolean = false) : PageSource {
+        val loads = AtomicInteger()
+        override val pageCount = 3
+
+        override fun pageSize(index: Int) = intArrayOf(w, h)
+
+        override fun pageName(index: Int) = "p$index.png"
+
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            loads.incrementAndGet()
+            val r = Random(index)
+            val px = IntArray(w * h) { 0xFF000000.toInt() or r.nextInt(1 shl 24) }
+            return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
+        }
+
+        override fun close() {}
+    }
+
+    private fun bookOf(w: Int = 30, h: Int = 45, id: BookId = book) = Book(w, h, "id:${id.hex}")
+
+    /** Shows a page at 40 x 60: a 30 x 45 page enlarged. */
+    private val target = Target(40, 60)
+
+    @Test
+    fun aPageIsMadeAtThePlainPagesSizeThenReadBack() {
+        install(upscale)
+        val b = bookOf()
+        val made = ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done
+        assertFalse(made.stored)
+        assertEquals(40, made.bitmap.width)
+        assertEquals(60, made.bitmap.height)
+        assertFalse(made.bitmap.isMutable)
+        assertEquals(1, b.loads.get())
+        val again = ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done
+        assertTrue(again.stored)
+        assertEquals("read back, not decoded", 1, b.loads.get())
+    }
+
+    @Test
+    fun aHotOrSavingDeviceOrAMissingModelPutsPagesOff() {
+        val b = bookOf()
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+        assertEquals("a model missing starts downloading", listOf(upscale.id), downloads)
+        install(upscale)
+        stop = Fallback.PAUSED
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+        assertEquals(0, b.loads.get())
+    }
+
+    @Test
+    fun aPageAnUpscalerWouldOnlyShrinkIsSkippedUnread() {
+        install(upscale)
+        val b = bookOf(80, 120)
+        val out = ai.enhance(b, 0, target, 40, 60) { false }
+        assertEquals(Fallback.UNNEEDED, (out as AiOutcome.Skipped).why)
+        assertEquals(0, b.loads.get())
+    }
+
+    @Test
+    fun aBooksOwnPicksWinAndAreReadAgainOnRefresh() {
+        install(upscale)
+        val b = bookOf()
+        assertTrue(ai.enhances(b))
+        own[book] = AiPicks.NONE
+        assertTrue("kept until refreshed", ai.enhances(b))
+        ai.refresh()
+        assertFalse(ai.enhances(b))
+        assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+        assertTrue("another book follows the global picks", ai.enhances(bookOf(id = BookId(0xbb))))
+        prefs.aiEnabled = false
+        ai.refresh()
+        assertFalse(ai.enhances(bookOf(id = BookId(0xbb))))
+    }
+
+    @Test
+    fun vectorBooksAreNotProcessed() {
+        install(upscale)
+        assertFalse(ai.enhances(Book(30, 45, "id:${book.hex}", isVector = true)))
+    }
+
+    @Test
+    fun anUpscaleIsUnneededOnlyWhenThePageShowsNoLarger() {
+        val chain = listOf(upscale)
+        assertTrue(ReaderAi.unneeded(chain, target, intArrayOf(80, 120)))
+        assertFalse(ReaderAi.unneeded(chain, target, intArrayOf(30, 45)))
+        assertFalse("a crop to be found may enlarge", ReaderAi.unneeded(chain, target.copy(autoCrop = true), intArrayOf(80, 120)))
+        assertFalse("a cleanup runs at any size", ReaderAi.unneeded(listOf(ModelCatalog.forStep(AiStep.ARTIFACTS).first()), target, intArrayOf(80, 120)))
+    }
+}

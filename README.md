@@ -163,8 +163,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     unread, Mark all as read / unread (folders), Set as startup folder (one
     folder), Show in folder (except from that folder itself), Book info (one
     book, without opening it), Filename charset (one book, advanced),
-    **Compact** and **Make compatible** (books on the device; a folder gives
-    every book inside it and its subfolders), **Pack** and **Pack compacted**
+    **Repack ›**, a submenu holding **Losslessly compact**, **Make compatible**
+    and **Repack as CBZ** (the last for CBR, CB7 and CBT; books on the device;
+    a folder gives every book inside it and its subfolders; each off, saying
+    why, where nothing selected can be written, or where each book's mark says
+    it had that done already), **Pack** and **Pack compacted**
     (folders on the device; off, saying why, unless each holds images only, or
     when books are selected too)
     and Peek (off by default). Settings → **Selection menu (⋮)** shows, hides and
@@ -206,7 +209,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   nearest the button; the bubbles keep their place when the button is hidden.
   At most four buttons show, the button's place included, and always the operation under
   way; older bubbles fold into a count on the top one, which lists them on a
-  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible, pack) go through
+  tap (a Paste's row pastes; each row has Cancel). All file operations (copy, move, delete, rename, compact, make compatible, pack, repack) go through
   one queue, one at a time, never in parallel; several items are one operation,
   done one item at a time. A waiting bubble is gray; the running one darkens
   with a progress ring in its action's color. Tap it for a card (what it does,
@@ -297,9 +300,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   convert losslessly."), and the message counts those pages. Other pages are left as
   they are; a page that can't be converted (an animation) stays, and is
   counted and listed.
-  - **In place** (both; off by default, remembered): off, the new file goes
-    beside the book (`Book.cbz`, or `Book (compacted).cbz` /
-    `Book (compatible).cbz` when taken); on, it replaces the book once fully
+  - **In place** (shared with Repack as CBZ; off by default, remembered): off,
+    the new file goes beside the book (`Book.cbz`, or `Book (compacted).cbz` /
+    `Book (compatible).cbz` / `Book (repacked).cbz` when taken); on, it replaces the book once fully
     written and checked (a `.cbr`, `.cb7` or `.cbt` becomes `.cbz`, its old file
     removed). Either way the new file takes the book's favorite, read mark,
     history, bookmarks, hidden pages and own settings (pages renumbered where
@@ -329,6 +332,30 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     (pinned with its SHA-256), and used only when `libjxl.so` reports that
     release; no second copy of libjxl in the APK. Efforts:
     JPEG transcode and lossless 7, recompressing files already JPEG XL 9.
+- **Repack as CBZ** copies every page and file of a CBR, CB7 or CBT as it is
+  into a flat `.cbz` of stored entries (the Compact rules for names, litter
+  and ComicInfo.xml; nothing converted), every entry checked by its CRC-32.
+  Solid RAR (4 and 5) and 7z archives, told from their headers, unpack every
+  page before the one asked for, so they are slow to jump around in and never
+  read for seam checks: with **Suggest repacking solid archives** (Settings →
+  Library, on by default), opening one on the device offers **Repack as CBZ**
+  (with In place) or **Not now**, kept for that book by its Book ID. Repacking
+  from there closes the reader; the operation shows in the library.
+- Compact, Make compatible and Repack as CBZ mark their new file with a block
+  at the end of its ZIP archive comment, `[i:Emanata <operation> v<version>
+  <hash>]`: the operation `compacted` (`compacted-partial` when hidden pages
+  were skipped), `compatible` or `repacked`; a version per operation, raised
+  when its output would improve, so books made by an older version are offered
+  it again; the hash the XXH3-64 of the central directory in 16 hex digits,
+  which changes with any entry. A ZIP book's own comment is kept, the block on
+  a new line after it; blocks already there are dropped (a rewrite makes them
+  stale), and no block is written when the comment would pass 65,535 bytes.
+  Blocks are found by their shape, any tool's, operation or version; one counts
+  only while its hash matches. A current one disables the same operation
+  ("Already compacted by Emanata") while the reverse stays offered, and a
+  folder's books already done are left as they are; any other tool's valid
+  `compacted` block counts as compacted. Reading it takes only the file's
+  tail (the end record and central directory).
 - **Pack** turns the selected folders of loose images (on the device) into
   books: each becomes `<folder name>.cbz` beside it, stored entries in natural
   order, its images as they are (**Pack**) or each made smaller losslessly by
@@ -894,8 +921,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 ```
 app/src/main/java/com/infinity/comicreader/
   App.kt                     application; applies theme + locale
-  compact/                   Compact, Make compatible and Pack: Compactor (flat
-                             CBZ), PageWork (each page), PackFolders, LibJxl (JNI)
+  compact/                   Compact, Make compatible, Repack and Pack: Compactor
+                             (flat CBZ), OutputMarks (comment marks), PageWork
+                             (each page), PackFolders, LibJxl (JNI)
   data/                      Prefs, Library (history/bookmarks/favorites),
                              Thumbs, models
   files/                     FileSpace (device and shares), Transfer (copy/move

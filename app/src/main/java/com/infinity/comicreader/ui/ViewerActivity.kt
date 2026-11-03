@@ -671,16 +671,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 settings.reader.collect { applySettings(it) }
             }
         }
-        // Pages waiting for a model go on once it is in, whether or not the sheet is open;
-        // also once one failed, when the queue stops asking for it.
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                ModelDownloads.state.map { d -> d.generation to d.states.filterValues { it is DownloadState.Failed }.keys }
-                    .distinctUntilChanged()
-                    .collect { adapter?.aiWake() }
-            }
-        }
-
         open()
     }
 
@@ -3810,6 +3800,30 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         readerAi.know(stripAhead?.bookKey, stripAheadId)
         val keep = listOfNotNull(source, stripAhead).flatMapTo(HashSet()) { s -> readerAi.chainFor(s.bookKey).map { it.id } }
         readerAi.closeModels(keep)
+        followModels(keep.isNotEmpty())
+    }
+
+    /** Wakes pages waiting for a model ([followModels]); null while no open book runs one. */
+    private var modelsJob: Job? = null
+
+    /**
+     * While [on] (an open book runs models), lets pages waiting for a model go on once it is in,
+     * whether or not the sheet is open, and once one failed, when the queue stops asking for it.
+     */
+    private fun followModels(on: Boolean) {
+        if (!on) {
+            modelsJob?.cancel()
+            modelsJob = null
+            return
+        }
+        if (modelsJob != null) return
+        modelsJob = lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ModelDownloads.state.map { d -> d.generation to d.states.filterValues { it is DownloadState.Failed }.keys }
+                    .distinctUntilChanged()
+                    .collect { adapter?.aiWake() }
+            }
+        }
     }
 
     private fun <T> syncSegments(view: View, s: Segments<T>) {

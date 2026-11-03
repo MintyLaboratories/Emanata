@@ -26,7 +26,10 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** Pages shown plain at once, then swapped in place for their AI version, the page read first, then the next. */
 @RunWith(RobolectricTestRunner::class)
@@ -37,7 +40,11 @@ class PageAdapterAiTest {
     private val processed = Color.rgb(10, 120, 30)
 
     private class Source(override val pageCount: Int, private val color: Int) : PageSource {
+        /** Pages whose loads wait until their latch opens. */
+        val held = ConcurrentHashMap<Int, CountDownLatch>()
+
         override fun loadPage(index: Int, target: Target): Bitmap {
+            held[index]?.await(5, TimeUnit.SECONDS)
             val plan = target.plan(1000.0, 1500.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
         }
@@ -79,6 +86,12 @@ class PageAdapterAiTest {
             Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
         }
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    /** Lets work run for a while, whatever it does. */
+    private fun aWhile() = repeat(20) {
+        Thread.sleep(10)
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -124,10 +137,35 @@ class PageAdapterAiTest {
         val (adapter, rv) = reader(preload = 2)
         idle { colorAt(rv, 0) == plain }
         // Let reading ahead decode the pages after it.
-        idle { false.also { Thread.sleep(50) } }
+        aWhile()
         adapter.reading(0)
         idle { enhancer.asked.size >= 2 }
-        idle { false.also { Thread.sleep(50) } }
+        aWhile()
+        assertEquals(listOf(0, 1), enhancer.asked.toList())
+        adapter.release()
+    }
+
+    @Test
+    fun nothingIsProcessedUntilThePageReadHasDecoded() {
+        val source = Source(4, plain)
+        val held = CountDownLatch(1).also { source.held[0] = it }
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0, enhancer = enhancer
+        )
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = adapter
+            layOut(600, 900)
+        }
+        // The next page decodes first, as when a turn lands before the page read.
+        val next = adapter.onCreateViewHolder(rv, 0)
+        adapter.onBindViewHolder(next, 1)
+        adapter.reading(0)
+        idle { (next.images[0].drawable as? BitmapDrawable) != null }
+        aWhile()
+        assertTrue("the next page waits for the page read", enhancer.asked.isEmpty())
+        held.countDown()
+        idle { enhancer.asked.size >= 2 }
         assertEquals(listOf(0, 1), enhancer.asked.toList())
         adapter.release()
     }

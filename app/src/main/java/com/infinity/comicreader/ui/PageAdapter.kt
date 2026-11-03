@@ -1422,19 +1422,30 @@ class PageAdapter(
         ai?.wake()
     }
 
-    /** Asks for AI work on the pages of the item [reading] and the next one that show plain in the cache. */
+    /**
+     * Asks for AI work on the pages of the item [reading] and the next one that show plain in
+     * the cache; none until every page of the item read is there (or failed), so the page
+     * read goes first and AI work never competes with its decode.
+     */
     private fun wantAi() {
         val e = enhancer ?: return
         if (released || readingAt < 0) return
         val keys = ArrayList<PageKey>()
-        for (item in readingAt..minOf(readingAt + 1, itemCount - 1)) {
+        items@ for (item in readingAt..minOf(readingAt + 1, itemCount - 1)) {
             for (part in strip.parts(item)) {
                 if (part == null || part.page >= end) continue
                 val chapter = strip.chapterOf(part.page)
                 val source = chapter.value.source
                 if (!e.enhances(source)) continue
-                val key = keyFor(part) ?: continue
-                val bitmap = cache.get(key) ?: continue
+                val key = keyFor(part)
+                val bitmap = key?.let { cache.get(it) }
+                if (key == null || bitmap == null) {
+                    if (item == readingAt && (key == null || permanentFailure(key) == null)) {
+                        keys.clear()
+                        break@items
+                    }
+                    continue
+                }
                 // A stand-in for a page drawn in bands is never processed.
                 if (key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble())) continue
                 aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height))

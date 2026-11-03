@@ -10,7 +10,6 @@ import com.infinity.comicreader.util.CacheFiles
 import com.infinity.comicreader.util.Traces
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.nio.ByteBuffer
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -46,23 +45,35 @@ object JxlPageCodec : PageCodec {
     /** True when libjxl loads as the release our binding was built against, and the reader decodes JPEG XL natively. */
     val available: Boolean by lazy { runCatching { LibJxl.available && JxlPages.enabled }.getOrDefault(false) }
 
-    override fun encode(page: Bitmap): ByteArray? {
+    override fun encode(page: Bitmap): ByteArray? = LibJxl.encode(rgbOf(page), page.width, page.height, 3, 8, null, EFFORT)
+
+    /** Rows of [page] read at a time by [rgbOf]. */
+    private const val ROWS = 64
+
+    /**
+     * [page]'s pixels as packed 8-bit RGB, read [ROWS] rows at a time, so the only large
+     * buffer is the result (3 bytes a pixel, not another 4 for a whole RGBA copy).
+     */
+    internal fun rgbOf(page: Bitmap): ByteArray {
         val w = page.width
         val h = page.height
-        val rgba = ByteBuffer.allocate(w * h * 4)
-        page.copyPixelsToBuffer(rgba)
-        val src = rgba.array()
         val rgb = ByteArray(w * h * 3)
+        val rows = IntArray(w * minOf(ROWS, h))
         var o = 0
-        var i = 0
-        while (i < src.size) {
-            rgb[o] = src[i]
-            rgb[o + 1] = src[i + 1]
-            rgb[o + 2] = src[i + 2]
-            o += 3
-            i += 4
+        var y = 0
+        while (y < h) {
+            val n = minOf(ROWS, h - y)
+            page.getPixels(rows, 0, w, 0, y, w, n)
+            for (i in 0 until w * n) {
+                val c = rows[i]
+                rgb[o] = (c shr 16).toByte()
+                rgb[o + 1] = (c shr 8).toByte()
+                rgb[o + 2] = c.toByte()
+                o += 3
+            }
+            y += n
         }
-        return LibJxl.encode(rgb, w, h, 3, 8, null, EFFORT)
+        return rgb
     }
 
     override fun decode(bytes: ByteArray, width: Int, height: Int): Bitmap? = JxlPages.decode(bytes, width, height, urgent = false)
@@ -85,8 +96,9 @@ object PngPageCodec : PageCodec {
  * Pages processed by AI ([AiPages.chain]) on disk under [dir], one file per page at the size
  * it shows, named after the book ([CacheFiles.nameOf]) so [forget] finds all of one book's,
  * and a hash of its key ([keyOf]): the book, page, size and crop shown, and the chain with its
- * models' versions, so nothing stale is ever read. Kept under [maxBytes] by dropping the least
- * recently read first, every [trimEvery] writes and at startup. Writes run on [writer], off the
+ * models' versions, so nothing stale is ever read. Kept under [maxBytes], and a tenth of the
+ * space it and the free space take together ([limit]), by dropping the least recently read
+ * first, every [trimEvery] writes and at startup. Writes run on [writer], off the
  * AI thread; a file appears whole or not at all.
  */
 class ProcessedStore(
@@ -149,8 +161,14 @@ class ProcessedStore(
         private const val PART_SUFFIX = ".part"
         private const val STALE_PART_MS = 10L * 60 * 1000
 
-        /** Upper bound of the store on disk: some fifty pages at a large tablet's size. */
-        const val MAX_BYTES = 256L * 1024 * 1024
+        /** Upper bound of the store on disk: some two hundred pages at a large tablet's size, a few books' worth. */
+        const val MAX_BYTES = 1024L * 1024 * 1024
+
+        /** The most of the space it and the free space take together the store keeps. */
+        const val FREE_SHARE = 0.1
+
+        /** The store's limit holding [held] bytes with [free] bytes free on its disk: [maxBytes] at most, else [FREE_SHARE] of both. */
+        fun limit(held: Long, free: Long, maxBytes: Long = MAX_BYTES): Long = minOf(maxBytes, ((held + free) * FREE_SHARE).toLong())
 
         /** Writes between trims of a store while the app runs; it is trimmed at startup too. */
         const val TRIM_EVERY = 16
@@ -174,11 +192,19 @@ class ProcessedStore(
         fun keyOf(book: String, index: Int, entry: String?, target: Target, width: Int, height: Int, signature: String): String =
             "$book|$index|${entry.orEmpty()}|${width}x$height|$target|$signature"
 
-        /** Keeps [dir] under [maxBytes], least recently read first; partial writes left by an earlier run go too. */
-        fun trim(dir: File, maxBytes: Long = MAX_BYTES, now: Long = System.currentTimeMillis()) {
-            dir.listFiles()?.filter { it.name.endsWith(PART_SUFFIX) && it.lastModified() < now - STALE_PART_MS }?.forEach { it.delete() }
-            CacheFiles.trim(dir, maxBytes) { it.name.endsWith(PART_SUFFIX) }
+        /**
+         * Keeps [dir] under [maxBytes] and its [limit] with [free] bytes free, least recently
+         * read first; partial writes left by an earlier run go too.
+         */
+        fun trim(dir: File, maxBytes: Long = MAX_BYTES, now: Long = System.currentTimeMillis(), free: Long = freeOn(dir)) {
+            val files = dir.listFiles() ?: return
+            files.filter { it.name.endsWith(PART_SUFFIX) && it.lastModified() < now - STALE_PART_MS }.forEach { it.delete() }
+            val held = files.sumOf { if (it.isFile) it.length() else 0L }
+            CacheFiles.trim(dir, limit(held, free, maxBytes)) { it.name.endsWith(PART_SUFFIX) }
         }
+
+        /** Bytes free to the app on [dir]'s disk; unknown counts as plenty. */
+        private fun freeOn(dir: File): Long = runCatching { dir.usableSpace }.getOrDefault(0L).takeIf { it > 0 } ?: Long.MAX_VALUE / 4
 
         /** Deletes the processed pages of book [id] in [dir]. */
         fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex)

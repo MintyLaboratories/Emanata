@@ -137,4 +137,33 @@ class ProcessedStoreTest {
         assertNull(store.get(key(), 40, 60))
         assertFalse(store.has(key()))
     }
+
+    @Test
+    fun theStoreTakesATenthOfTheFreeSpaceAtMost() {
+        val gb = 1024L * 1024 * 1024
+        assertEquals(ProcessedStore.MAX_BYTES, ProcessedStore.limit(held = 0, free = 100 * gb))
+        assertEquals((0.1 * 3 * gb).toLong(), ProcessedStore.limit(held = gb, free = 2 * gb))
+        val dir = tmp.newFolder("small")
+        val store = ProcessedStore(dir, PngPageCodec, now)
+        store.put(key(), page(40, 60))
+        store.put(key(index = 1), page(40, 60, seed = 2))
+        ProcessedStore.trim(dir, free = 100L * 1024 * 1024)
+        assertEquals("room enough", 2, dir.list()!!.size)
+        // With no space free, a tenth of the two pages holds neither.
+        ProcessedStore.trim(dir, free = 0)
+        assertEquals(0, dir.list()!!.size)
+    }
+
+    @Test
+    fun rgbIsReadFromThePageRowsAsTheyAre() {
+        val p = page(70, 130)
+        val rgb = JxlPageCodec.rgbOf(p)
+        val px = pixels(p)
+        assertEquals(70 * 130 * 3, rgb.size)
+        for (i in px.indices step 37) {
+            assertEquals((px[i] shr 16) and 0xFF, rgb[3 * i].toInt() and 0xFF)
+            assertEquals((px[i] shr 8) and 0xFF, rgb[3 * i + 1].toInt() and 0xFF)
+            assertEquals(px[i] and 0xFF, rgb[3 * i + 2].toInt() and 0xFF)
+        }
+    }
 }

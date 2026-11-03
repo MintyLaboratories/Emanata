@@ -39,7 +39,7 @@ interface PageEnhancer {
 
 /**
  * The reader's AI processing: each book's chain ([AiChain.forBook]: its own picks, else the
- * global ones), models opened once as [Session]s and kept until [close], pages kept on disk
+ * global ones), models opened once as [Session]s and kept until closed ([closeModels]), pages kept on disk
  * ([ProcessedStore]). A page is processed from its full-detail decode (at most
  * [MAX_INPUT_PIXELS]) and resampled to exactly the plain page's size, so it swaps in without
  * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
@@ -60,9 +60,13 @@ class ReaderAi internal constructor(
 
     override val worker: CoroutineDispatcher get() = WORKER
 
-    /** True once [session] opened a model, which [close] then closes. */
+    /** True once [close]d: no model opens any more. */
     @Volatile
-    private var opened = false
+    private var closed = false
+
+    /** True once a model was asked for: [closeModels] has something to close, or soon may. */
+    @Volatile
+    private var used = false
 
     /** Each book's chain by its key ("" for none), until [refresh]. */
     private val chains = ConcurrentHashMap<String, List<CatalogModel>>()
@@ -128,21 +132,32 @@ class ReaderAi internal constructor(
 
     /** [m] opened, once; null when it does not open. */
     private fun session(m: CatalogModel, files: ModelFiles, canceled: () -> Boolean): Session? {
+        used = true
+        if (closed) return null
         if (m.id in sessions) return sessions[m.id]
         val s = Sessions.open(runtime, files, threads, canceled = canceled)
-        opened = true
         if (s == null) Log.w(TAG, "${m.id}: does not open; its books' pages show without AI")
         sessions[m.id] = s
         return s
     }
 
-    /** Closes the models, after any page in progress. */
-    override fun close() {
-        if (!opened) return
+    /**
+     * Closes the models open but those of [keep] (catalog ids), after any page in progress,
+     * freeing their native and GPU memory; they open again when next needed.
+     */
+    fun closeModels(keep: Set<String> = emptySet()) {
+        // No model was ever asked for: nothing is open, and no thread need start.
+        if (!used) return
         EXECUTOR.execute {
-            sessions.values.forEach { it?.close() }
-            sessions.clear()
+            val gone = sessions.keys.filter { it !in keep }
+            for (id in gone) sessions.remove(id)?.close()
         }
+    }
+
+    /** Closes the models for good, after any page in progress, also one opening now. */
+    override fun close() {
+        closed = true
+        closeModels()
     }
 
     companion object {

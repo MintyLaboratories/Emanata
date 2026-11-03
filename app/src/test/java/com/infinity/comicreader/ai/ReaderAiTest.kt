@@ -38,6 +38,7 @@ class ReaderAiTest {
     private lateinit var prefs: Prefs
     private lateinit var models: ModelStore
     private lateinit var ai: ReaderAi
+    private val runtime = FakeRuntime()
     private val own = HashMap<BookId, AiPicks>()
     private var stop: Fallback? = null
     private val downloads = ArrayList<String>()
@@ -58,7 +59,7 @@ class ReaderAiTest {
     fun tearDown() = ai.close()
 
     private fun reader(): ReaderAi = ReaderAi(
-        prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), FakeRuntime(),
+        prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), runtime,
         { stop }, { downloads += it.id }, threads = 2
     )
 
@@ -169,5 +170,40 @@ class ReaderAiTest {
         assertFalse(ReaderAi.unneeded(chain, target, intArrayOf(30, 45)))
         assertFalse("a crop to be found may enlarge", ReaderAi.unneeded(chain, target.copy(autoCrop = true), intArrayOf(80, 120)))
         assertFalse("a cleanup runs at any size", ReaderAi.unneeded(listOf(ModelCatalog.forStep(AiStep.ARTIFACTS).first()), target, intArrayOf(80, 120)))
+    }
+
+    private fun until(done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (!done() && System.currentTimeMillis() < deadline) Thread.sleep(5)
+    }
+
+    @Test
+    fun closingClosesTheModelsAndOpensNoneAfter() {
+        install(upscale)
+        val b = bookOf()
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+        val model = runtime.opened.last() as FakeModel
+        ai.close()
+        until { model.closed }
+        assertTrue(model.closed)
+        val opens = runtime.opened.size
+        // A page asked for after closing, as one already queued: no model opens again.
+        assertEquals(Fallback.FAILED, (ai.enhance(b, 1, target, 40, 60) { false } as AiOutcome.Skipped).why)
+        assertEquals(opens, runtime.opened.size)
+    }
+
+    @Test
+    fun closingModelsKeepsThoseStillUsedAndOpensTheOthersAgainWhenNeeded() {
+        install(upscale)
+        val b = bookOf()
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+        val first = runtime.opened.last() as FakeModel
+        val opens = runtime.opened.size
+        ai.closeModels(keep = setOf(upscale.id))
+        ai.closeModels(keep = setOf("another"))
+        until { first.closed }
+        assertTrue(first.closed)
+        assertTrue(ai.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Done)
+        assertTrue("opened again", runtime.opened.size > opens)
     }
 }

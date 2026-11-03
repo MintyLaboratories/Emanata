@@ -78,6 +78,9 @@ object BookIds {
 
     private fun hash(): Xxh3 = hasher ?: LibXxh3
 
+    /** The XXH3-64 Book IDs are made with, for other hashes of the same kind (output marks). */
+    val xxh3: Xxh3 get() = hash()
+
     /** The size and modification time of [file] as known now; null for a file on a share whose stat is not known. */
     private fun statOf(file: File): Pair<Long, Long>? =
         if (file is RemoteFile) file.stat()?.takeIf { !it.isDirectory }?.let { it.size to it.modified }

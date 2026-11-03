@@ -38,6 +38,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -472,6 +473,22 @@ class ListActivityFileOpsTest {
         assertTrue(activity.moreRow(MoreAction.MAKE_COMPATIBLE).isEnabled)
         // Not a solid archive's: no Repack as CBZ in the submenu.
         assertTrue(activity.moreMenu!!.let { menu -> (0 until menu.childCount).none { menu.getChildAt(it).tag == MoreAction.REPACK_CBZ } })
+    }
+
+    @Test
+    fun aReadOnlyLocationTurnsRepackOffSayingWhyWithoutOpeningIt() {
+        val activity = launch()
+        activity.canWrite = { false }
+        activity.select(book.absolutePath)
+        activity.bar(R.id.selection_more).performClick()
+        idle()
+        val menu = activity.moreMenu!!
+        val repack = (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == ListActivity.MORE_REPACK_TAG }
+        assertFalse(repack.isEnabled)
+        assertEquals(activity.getString(R.string.rebuild_why_read_only), repack.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
+        repack.performClick()
+        idle()
+        assertSame("the submenu stays shut", menu, activity.moreMenu)
     }
 
     @Test

@@ -263,6 +263,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** Lists the storage roots; tests stand in drives. */
     internal var listRoots: () -> List<StorageRoot> = { StorageRoots.list(this) }
 
+    /** Whether a folder can be written; tests stand in read-only ones. Blocking. */
+    internal var canWrite: (File) -> Boolean = { it.canWrite() }
+
     /** A drive plugged in that the location picker has not shown yet. */
     private var pluggedDrive: String? = null
     private var mode = TAB_BROWSE
@@ -2270,6 +2273,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             }
             if (morePopup !== popup) return@launch
             for ((action, why) in reasons) offMore(action, why)
+            // Every item under "Repack ›" off for one reason: the row itself, so no submenu opens with nothing to tap.
+            val inside = group.map { reasons[it] }
+            if (inside.isNotEmpty() && inside.all { it != null } && inside.distinct().size == 1) offMore(MORE_REPACK_TAG, inside.first())
             refit()
         }
     }
@@ -2295,11 +2301,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     }
 
     /** True when the new file of [entry]'s rebuild can be written where it goes: in the folder itself, or beside the book. Blocking. */
-    private fun writable(entry: BookEntry): Boolean = (if (entry.isDir) entry.file else entry.file.parentFile)?.canWrite() == true
+    private fun writable(entry: BookEntry): Boolean = (if (entry.isDir) entry.file else entry.file.parentFile)?.let(canWrite) == true
 
-    /** Turns ⋮ menu item [action] off saying [why] (nothing while it is not known), or on again when null; in the menu or its submenu. */
-    private fun offMore(action: MoreAction, why: String?) {
-        val item = listOfNotNull(moreMain, moreSub).flatMap { list -> (0 until list.childCount).map { list.getChildAt(it) } }.firstOrNull { it.tag == action } ?: return
+    /** Turns ⋮ menu item [tag] (a [MoreAction] or [MORE_REPACK_TAG]) off saying [why] (nothing while it is not known), or on again when null; in the menu or its submenu. */
+    private fun offMore(tag: Any, why: String?) {
+        val item = listOfNotNull(moreMain, moreSub).flatMap { list -> (0 until list.childCount).map { list.getChildAt(it) } }.firstOrNull { it.tag == tag } ?: return
         item.isEnabled = why == null
         item.alpha = if (why == null) 1f else DISABLED_ALPHA
         item.findViewById<TextView>(R.id.more_action_reason).apply {

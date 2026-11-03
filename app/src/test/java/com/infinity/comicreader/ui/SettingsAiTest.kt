@@ -115,17 +115,39 @@ class SettingsAiTest {
 
     @Test
     fun eachStepOffersNoneThenItsCatalogModels() {
+        Prefs(context).keepSimple = false
         val fragment = settings()
         for (step in AiStep.entries) {
             val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!
             assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(step).map { it.id }, pref.entryValues.map { it.toString() })
             assertEquals(context.getString(R.string.ai_none), pref.entries[0].toString())
             assertTrue(pref.entries[1].toString().startsWith(ModelCatalog.forStep(step)[0].name + " · "))
+            // Each with what it does below.
+            for ((i, m) in ModelCatalog.forStep(step).withIndex()) assertEquals(ModelText.entry(context, m).toString(), pref.entries[i + 1].toString())
             assertFalse("needs AI processing on", pref.isEnabled)
         }
         fragment.findPreference<Preference>(Prefs.KEY_AI)!!.performClick()
         assertTrue(Prefs(context).aiEnabled)
         for (step in AiStep.entries) assertTrue(fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!.isEnabled)
+    }
+
+    @Test
+    fun slowModelsAreOfferedOnlyWithAdvancedSettingsShown() {
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        val simple = pref.entryValues.map { it.toString() }
+        assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(AiStep.UPSCALE).filter { !it.slow }.map { it.id }, simple)
+        assertTrue(pref.entries[1].toString().endsWith("Faithful, fast and reliable clarity improvement (default)"))
+        val keep = fragment.findPreference<Preference>("pref_keep_simple")!!
+        keep.performClick()
+        idle()
+        assertFalse(Prefs(context).keepSimple)
+        assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(AiStep.UPSCALE).map { it.id }, pref.entryValues.map { it.toString() })
+        val slow = pref.entries[pref.findIndexOfValue("realesr-animevideov3-x2")].toString()
+        assertTrue(slow, slow.endsWith("\nSlow (~11 s per page)"))
+        keep.performClick()
+        idle()
+        assertEquals(simple, pref.entryValues.map { it.toString() })
     }
 
     @Test

@@ -702,7 +702,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **AI processing** (off by default): a model
   per step, or none, for artifact removal, then descreening, then upscaling
   (waifu2x UpConv7 2× by default; only a choice is stored, so a step never
-  chosen follows a later default). Artifact removal and descreen are advanced settings;
+  chosen follows a later default). Each choice says in a few words what its
+  model does; models that take 10 s or more for a 1000×1500 page on the
+  reference tablet are marked slow with their time, and are offered only with
+  Keep it simple off (or once chosen), in Settings, the reader's sheet and
+  Models alike. Artifact removal and descreen are advanced settings;
   the switch's summary shows the whole chain, hidden steps included, and warns
   when its models together may run past a page's time. A chosen model
   downloads at once, and one cut short with the app resumes as Settings open

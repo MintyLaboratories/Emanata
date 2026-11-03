@@ -6,12 +6,14 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,6 +38,7 @@ class ModelsActivityTest {
 
     @Before
     fun setUp() {
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         store = ModelStore.of(context)
         store.root.deleteRecursively()
     }
@@ -70,14 +73,33 @@ class ModelsActivityTest {
 
     @Test
     fun everyCatalogModelHasARowUnderItsStep() {
+        Prefs(context).keepSimple = false
         val activity = open()
         val rows = rows(activity)
         assertEquals(ModelCatalog.all.size, rows.size)
         for ((m, row) in ModelCatalog.all.zip(rows)) {
+            assertEquals(View.VISIBLE, row.visibility)
             assertEquals(m.name, row.findViewById<TextView>(R.id.title).text.toString())
             assertEquals(ModelText.details(activity, m), row.findViewById<TextView>(R.id.subtitle).text.toString())
             assertTrue(row.findViewById<TextView>(R.id.subtitle).text.contains(m.source.license))
+            val blurb = row.findViewById<TextView>(R.id.blurb)
+            assertEquals(ModelText.blurb(activity, m), blurb.text.toString())
+            assertEquals(m.id, blurb.text.isNotEmpty(), blurb.visibility == View.VISIBLE)
         }
+        val waifu2x = rows[ModelCatalog.all.indexOfFirst { it.id == ModelCatalog.DEFAULT_UPSCALE }]
+        assertEquals("Faithful, fast and reliable clarity improvement (default)", waifu2x.findViewById<TextView>(R.id.blurb).text.toString())
+    }
+
+    @Test
+    fun keepingItSimpleHidesSlowModelsNotDownloaded() {
+        assertTrue(Prefs(context).keepSimple)
+        val kept = ModelCatalog.byId("realesr-animevideov3-x2")!!
+        install(kept)
+        val rows = rows(open())
+        for ((m, row) in ModelCatalog.all.zip(rows)) {
+            assertEquals(m.id, !m.slow || m == kept, row.visibility == View.VISIBLE)
+        }
+        assertTrue(rows[ModelCatalog.all.indexOf(kept)].findViewById<TextView>(R.id.blurb).text.endsWith("Slow (~11 s per page)"))
     }
 
     @Test

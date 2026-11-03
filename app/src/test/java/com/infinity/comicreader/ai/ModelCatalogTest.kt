@@ -103,4 +103,64 @@ class ModelCatalogTest {
             assertTrue(t, text.contains("The MIT License") && text.contains("Copyright (c) 2019 nihui"))
         }
     }
+
+    @Test
+    fun upscalersListTheDefaultFirstAndTheSlowLast() {
+        val ids = ModelCatalog.forStep(AiStep.UPSCALE).map { it.id }
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, ids.first())
+        assertEquals(
+            listOf(
+                "waifu2x-upconv7-2x", "waifu2x-upconv7-2x-denoise0", "waifu2x-upconv7-2x-denoise1", "waifu2x-upconv7-2x-denoise2",
+                "waifu2x-upconv7-2x-denoise3", "opencomic-ai-upscale-2x-compact-v2", "opencomic-ai-upscale-3x-compact-v2",
+                "opencomic-ai-upscale-4x-compact-v2", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4",
+                "4x-lsdir-compact-c3"
+            ),
+            ids
+        )
+        for (step in AiStep.entries) {
+            val slow = ModelCatalog.forStep(step).map { it.slow }
+            assertEquals("${step.key}: slow ones last", slow.sorted(), slow)
+        }
+    }
+
+    @Test
+    fun modelsOfTenSecondsAPageOrMoreAreSlow() {
+        val slow = ModelCatalog.all.filter { it.slow }.map { it.id }.toSet()
+        assertEquals(
+            setOf("opencomic-ai-descreen-hard-fast-v3-256", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4", "4x-lsdir-compact-c3"),
+            slow
+        )
+        for (m in ModelCatalog.all) assertEquals(m.id, m.pageMs >= 10_000, m.slow)
+        assertEquals(11L, ModelCatalog.byId("realesr-animevideov3-x2")!!.pageSeconds)
+        assertEquals(15L, ModelCatalog.byId("opencomic-ai-descreen-hard-fast-v3-256")!!.pageSeconds)
+        assertEquals(14L, ModelCatalog.byId("4x-lsdir-compact-c3")!!.pageSeconds)
+    }
+
+    @Test
+    fun eachModelSaysWhatItDoes() {
+        fun blurbOf(id: String) = ModelCatalog.byId(id)!!.blurb
+        assertEquals(ModelBlurb.WAIFU2X, blurbOf("waifu2x-upconv7-2x"))
+        for (n in 0..3) assertEquals(ModelBlurb.WAIFU2X_DENOISE, blurbOf("waifu2x-upconv7-2x-denoise$n"))
+        for (x in 2..4) assertEquals(ModelBlurb.OPENCOMIC_UPSCALE, blurbOf("opencomic-ai-upscale-${x}x-compact-v2"))
+        for (x in 2..4) assertEquals(ModelBlurb.REAL_ESRGAN_ANIME, blurbOf("realesr-animevideov3-x$x"))
+        assertEquals(ModelBlurb.DESCREEN_V2, blurbOf("opencomic-ai-descreen-hard-compact-v2"))
+        assertEquals(ModelBlurb.DESCREEN_V3, blurbOf("opencomic-ai-descreen-hard-fast-v3-256"))
+        assertEquals(ModelBlurb.ARTIFACT_REMOVAL, blurbOf("opencomic-ai-artifact-removal-compact-v2"))
+        // No description was given for it: it shows as slow alone.
+        assertNull(blurbOf("4x-lsdir-compact-c3"))
+    }
+
+    @Test
+    fun keepItSimpleOffersTheSlowModelsOnlyWhenChosen() {
+        val all = ModelCatalog.forStep(AiStep.UPSCALE)
+        assertEquals(all, ModelCatalog.offered(AiStep.UPSCALE, keepSimple = false, current = null))
+        val simple = ModelCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = ModelCatalog.DEFAULT_UPSCALE)
+        assertEquals(all.filter { !it.slow }, simple)
+        assertTrue(simple.size in 1 until all.size)
+        val chosen = ModelCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = "realesr-animevideov3-x3")
+        assertEquals(all.filter { !it.slow || it.id == "realesr-animevideov3-x3" }, chosen)
+        // Both descreens stay in the catalog; the slow v3 waits for advanced settings.
+        assertEquals(listOf("opencomic-ai-descreen-hard-compact-v2"), ModelCatalog.offered(AiStep.DESCREEN, true, null).map { it.id })
+        assertEquals(2, ModelCatalog.offered(AiStep.DESCREEN, false, null).size)
+    }
 }

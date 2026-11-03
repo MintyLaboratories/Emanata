@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A catalog model: name, scale, size and license, its download state, and an action. -->
+<!-- A catalog model: name, what it does, scale, size and license, its download state, and an action. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -25,6 +25,14 @@
             android:layout_height="wrap_content"
             android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
             tools:text="Upscale Fast v2" />
+
+        <TextView
+            android:id="@+id/blurb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            android:visibility="gone"
+            tools:text="Faithful, fast and reliable clarity improvement" />
 
         <TextView
             android:id="@+id/subtitle"

@@ -845,6 +845,15 @@
     <string name="ai_step_descreen">Descreen</string>
     <string name="ai_step_upscale">Upscale</string>
     <string name="ai_model_details">%1$d× · %2$s · %3$s</string>
+    <string name="ai_blurb_waifu2x">Faithful, fast and reliable clarity improvement</string>
+    <string name="ai_blurb_waifu2x_denoise">May mildly blur textures yet sharpen detail; a balance between faithful and enhanced</string>
+    <string name="ai_blurb_opencomic_upscale">Slower and sharper; may remove noise, ringing and similar flaws in the original</string>
+    <string name="ai_blurb_real_esrgan_anime">Sharpest restoration, for vintage or low-resolution webcomics; unfaithful: reimagines fine detail, texture and color</string>
+    <string name="ai_blurb_descreen_v2">For scanned print with visible dot patterns; softens clean art</string>
+    <string name="ai_blurb_descreen_v3">For scanned print with visible dot patterns; softens clean art; slower, smoother tone</string>
+    <string name="ai_blurb_artifact_removal">For blocky, heavily compressed pages; no visible effect on clean ones</string>
+    <string name="ai_model_default">%1$s (default)</string>
+    <string name="ai_model_slow">Slow (~%1$d s per page)</string>
     <string name="ai_download">Download</string>
     <string name="ai_downloaded">Downloaded</string>
     <string name="ai_download_failed_network">Download stopped: no connection. Tap Download to resume</string>

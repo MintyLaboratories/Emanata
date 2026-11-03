@@ -53,6 +53,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** Shows the AI choices again ([setUpAi]). */
     private var refreshAi: () -> Unit = {}
 
+    /** Lists each AI step's choices again, the slow models hidden while Keep it simple is on ([setUpAi]). */
+    private var fillAi: (keepSimple: Boolean) -> Unit = {}
+
     /** False when the backup being exported leaves share passwords out. */
     private var exportPasswords = true
 
@@ -389,6 +392,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         AdvancedSettings.apply(screen, prefs.keepSimple)
         findPreference<Preference>("pref_keep_simple")?.setOnPreferenceChangeListener { _, value ->
             AdvancedSettings.apply(screen, value as Boolean)
+            fillAi(value)
             true
         }
     }
@@ -465,8 +469,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     /**
-     * Fills each AI step's choices from the catalog (none, then its models with their sizes),
-     * starts downloading a model as it is chosen, as AI processing is turned on, or (when a
+     * Fills each AI step's choices from the catalog (none, then its models with their sizes
+     * and what they do; slow ones only while Keep it simple is off, or when chosen), starts
+     * downloading a model as it is chosen, as AI processing is turned on, or (when a
      * download was cut short with the app) as Settings open, and shows the chain run (hidden
      * advanced choices too), each choice's download state and the space models take, as they
      * change.
@@ -477,25 +482,29 @@ class SettingsFragment : PreferenceFragmentCompat() {
         val pickers = AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step))?.let { step to it } }
         fun chosen(step: AiStep, value: Any?): CatalogModel? =
             (value as? String)?.let(ModelCatalog::byId)?.takeIf { it.step == step }
+        fillAi = { keepSimple ->
+            for ((step, pref) in pickers) {
+                val (entries, values) = ModelText.choices(context, step, keepSimple, pref.value)
+                pref.entries = entries.toTypedArray()
+                pref.entryValues = values.toTypedArray()
+                // A model the catalog no longer has reads as none.
+                if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
+            }
+        }
         for ((step, pref) in pickers) {
-            val models = ModelCatalog.forStep(step)
-            pref.entries = (listOf(getString(R.string.ai_none)) +
-                models.map { getString(R.string.ai_model_entry, it.name, ModelText.size(context, it.bytes)) }).toTypedArray()
-            pref.entryValues = (listOf(Prefs.AI_NONE) + models.map { it.id }).toTypedArray()
             // Unchosen, a step shows its default without storing it, so a later default reaches it.
             if (pref.value == null) {
                 pref.isPersistent = false
                 pref.value = prefs.aiModel(step) ?: Prefs.AI_NONE
                 pref.isPersistent = true
             }
-            // A model the catalog no longer has reads as none.
-            if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
             pref.setOnPreferenceChangeListener { _, value ->
                 if (prefs.aiEnabled) chosen(step, value)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true
             }
         }
+        fillAi(prefs.keepSimple)
         val ai = findPreference<Preference>(Prefs.KEY_AI)
         ai?.setOnPreferenceChangeListener { _, value ->
             if (value == true) for (step in AiStep.entries) chosen(step, prefs.aiModel(step))?.let { ModelDownloads.start(store, it) }

@@ -33,7 +33,6 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -3583,7 +3582,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
         switch(R.id.sheet_keep_on) { setKeepOn(it) }
         switch(R.id.sheet_fullscreen) { setFullscreen(it) }
-        for ((step, id) in aiPickers) view.findViewById<MaterialButton>(id).setOnClickListener { showAiChoices(it, step) }
+        for ((step, id) in aiPickers) view.findViewById<MaterialButton>(id).setOnClickListener { showAiChoices(step) }
         view.findViewById<Slider>(R.id.sheet_spacing).addOnChangeListener { _, value, fromUser ->
             if (!fromUser) return@addOnChangeListener
             setSpacingDp(value.toInt())
@@ -3739,19 +3738,21 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         aiChanged()
     }
 
-    /** The models [step] can run, under [anchor], the one this book runs checked. */
-    private fun showAiChoices(anchor: View, step: AiStep) {
+    /**
+     * The models [step] can run, with what they do, the one this book runs checked; slow ones
+     * only while Keep it simple is off, or when running ([ModelCatalog.offered]).
+     */
+    private fun showAiChoices(step: AiStep) {
         val current = aiShown().id(step)
-        val models = ModelCatalog.forStep(step)
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add(0, 0, 0, R.string.ai_none).isChecked = current == null
-        models.forEachIndexed { i, m -> menu.menu.add(0, i + 1, i + 1, m.name).isChecked = m.id == current }
-        menu.menu.setGroupCheckable(0, true, true)
-        menu.setOnMenuItemClickListener { item ->
-            pickAi(step, models.getOrNull(item.itemId - 1)?.id)
-            true
-        }
-        menu.show()
+        val (entries, ids) = ModelText.choices(this, step, prefs.keepSimple, current)
+        AlertDialog.Builder(this)
+            .setTitle(ModelText.step(this, step))
+            .setSingleChoiceItems(entries.toTypedArray(), ids.indexOf(current ?: Prefs.AI_NONE).coerceAtLeast(0)) { dialog, which ->
+                dialog.dismiss()
+                pickAi(step, ids[which].takeIf { it != Prefs.AI_NONE })
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .showKeepingFullscreen()
     }
 
     /**

@@ -7,6 +7,7 @@ import com.infinity.comicreader.compact.Compactor
 import com.infinity.comicreader.compact.FolderReader
 import com.infinity.comicreader.compact.Handovers
 import com.infinity.comicreader.compact.LibJxl
+import com.infinity.comicreader.compact.OutputMarks
 import com.infinity.comicreader.compact.PackFolders
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.data.BookCaches
@@ -248,13 +249,26 @@ internal class FileJobs(
         return ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(first, sourceLeft, gone, done))
     }
 
-    /**
-     * Rebuilds the books at [paths] on the device one at a time ([Compactor]): with
-     * [compatible], their pages in formats few readers open made ones every reader opens, else compacted
-     * losslessly. Goes on past one that fails; one no longer what was [chosen] ([look]) is
-     * left alone. Everything kept for each book follows its new file, which takes the
-     * book's place when [inPlace]; [skipHidden] leaves its hidden pages out.
-     */
+    /** What a rebuild makes of each book, the operation it runs as, the word naming a new file beside it, and the mark it leaves. */
+    enum class Rebuild(val kind: FileWork.Kind, val suffix: String, val mark: OutputMarks.Operation) {
+        /** Pages made smaller losslessly. */
+        COMPACT(FileWork.Kind.COMPACT, SUFFIX_COMPACTED, OutputMarks.Operation.COMPACTED),
+
+        /** Pages in formats few readers open made ones every reader opens. */
+        COMPATIBLE(FileWork.Kind.COMPATIBLE, SUFFIX_COMPATIBLE, OutputMarks.Operation.COMPATIBLE),
+
+        /** Every file copied as it is into a CBZ: a solid archive made quick to open at any page. */
+        REPACK(FileWork.Kind.REPACK, SUFFIX_REPACKED, OutputMarks.Operation.REPACKED);
+
+        /** True when [done] says a book had this done already, at the current version. */
+        fun doneIn(done: OutputMarks.Done): Boolean = when (this) {
+            COMPACT -> done.compactedBy != null
+            COMPATIBLE -> done.compatible
+            REPACK -> done.repacked
+        }
+    }
+
+    /** [rebuild] compacting books, or with [compatible] making them compatible. */
     fun rebuild(
         paths: List<String>,
         compatible: Boolean,
@@ -262,15 +276,36 @@ internal class FileJobs(
         skipHidden: Boolean,
         chosen: Future<List<Result<Node?>>>,
         p: FileWork.Progress
+    ): FileWork.Outcome = rebuild(paths, if (compatible) Rebuild.COMPATIBLE else Rebuild.COMPACT, inPlace, skipHidden, chosen, p)
+
+    /**
+     * Rebuilds the books at [paths] on the device one at a time ([Compactor]) as [how] says.
+     * Goes on past one that fails; one no longer what was [chosen] ([look]) is left alone, as
+     * is one whose mark says it had this done already ([OutputMarks]) unless pages are left
+     * out. Everything kept for each book follows its new file, which takes the book's place
+     * when [inPlace]; [skipHidden] leaves its hidden pages out.
+     */
+    fun rebuild(
+        paths: List<String>,
+        how: Rebuild,
+        inPlace: Boolean,
+        skipHidden: Boolean,
+        chosen: Future<List<Result<Node?>>>,
+        p: FileWork.Progress
     ): FileWork.Outcome {
-        val pages = pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
+        // Repacking copies every file as it is: no page is made anew.
+        val pages = if (how == Rebuild.REPACK) null else pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
         recover()
         val seen = settled(chosen)
         // One operation at a time: whatever is there was left by one that ended early.
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
         val workers = CompactWorkers.max()
         val compactor = Compactor(scratch, workers, CompactWorkers.limit(app, workers), CompactWorkers.threads)
-        val convert: (ByteArray) -> PageWork.Made? = if (compatible) pages::compatible else pages::compact
+        val convert: ((ByteArray) -> PageWork.Made?)? = when (how) {
+            Rebuild.COMPACT -> pages!!::compact
+            Rebuild.COMPATIBLE -> pages!!::compatible
+            Rebuild.REPACK -> null
+        }
         val progress = object : Compactor.Progress {
             override val alive: Boolean get() = p.alive
 
@@ -279,13 +314,14 @@ internal class FileJobs(
         var done = 0
         var unchanged = 0
         var nested = 0
+        var already = 0
         var saved = 0L
         var last: String? = null
         val gone = ArrayList<String>()
         val reencoded = LinkedHashMap<String, List<String>>()
         val failedPages = LinkedHashMap<String, List<String>>()
         var failure: Exception? = null
-        fun summary() = FileWork.Summary(saved, unchanged, reencoded, failedPages, nested)
+        fun summary() = FileWork.Summary(saved, unchanged, reencoded, failedPages, nested, already = already)
         try {
             for ((i, path) in paths.withIndex()) {
                 if (!p.alive) return FileWork.Outcome.Canceled(done, paths.size, gone, summary())
@@ -303,6 +339,11 @@ internal class FileJobs(
                 try {
                     val id = BookIds.find(book)
                     val hidden = if (skipHidden && id != null) library.hiddenPages(id) else emptySet()
+                    if (hidden.isEmpty() && how.doneIn(OutputMarks.verified(book, BookIds.xxh3))) {
+                        unchanged++
+                        already++
+                        continue
+                    }
                     // Not opened meanwhile: the reader waits while the new file takes the book's place and its data follows.
                     val placer = Compactor.Placer { result, part, swap ->
                         OpenBooks.unlessOpen(path) {
@@ -318,8 +359,9 @@ internal class FileJobs(
                         }
                     }
                     val request = Compactor.Request(
-                        book, convert, inPlace, if (compatible) SUFFIX_COMPATIBLE else SUFFIX_COMPACTED, hidden, smallerOnly = !compatible,
-                        cost = pages::memoryFor, placer = placer, mustConvert = { compatible && PageWork.needsCompatible(it) }
+                        book, convert, inPlace, how.suffix, hidden, smallerOnly = how == Rebuild.COMPACT,
+                        cost = pages?.let { it::memoryFor } ?: { it.size.toLong() }, placer = placer,
+                        always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, mark = how.mark
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {
@@ -581,6 +623,7 @@ internal class FileJobs(
         val RECOVERY = Any()
         const val SUFFIX_COMPACTED = "compacted"
         const val SUFFIX_COMPATIBLE = "compatible"
+        const val SUFFIX_REPACKED = "repacked"
     }
 
     /** Runs [block]; what it threw, else null. */

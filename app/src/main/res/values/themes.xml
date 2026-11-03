@@ -52,6 +52,9 @@
         <item name="colorOpPack">@color/op_pack</item>
         <item name="colorOnOpPack">@color/op_on_pack</item>
         <item name="colorOpPackRing">@color/op_pack_ring</item>
+        <item name="colorOpRepack">@color/op_repack</item>
+        <item name="colorOnOpRepack">@color/op_on_repack</item>
+        <item name="colorOpRepackRing">@color/op_repack_ring</item>
 
         <item name="colorSurfaceInverse">@color/md_inverse_surface</item>
         <item name="colorOnSurfaceInverse">@color/md_inverse_on_surface</item>

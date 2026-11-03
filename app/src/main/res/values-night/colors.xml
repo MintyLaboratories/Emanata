@@ -52,6 +52,9 @@
     <color name="op_pack">#075985</color>
     <color name="op_on_pack">#E0F2FE</color>
     <color name="op_pack_ring">#7DD3FC</color>
+    <color name="op_repack">#9A3412</color>
+    <color name="op_on_repack">#FFEDD5</color>
+    <color name="op_repack_ring">#FDBA74</color>
 
 
 

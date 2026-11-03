@@ -156,6 +156,7 @@ class FileWorkService : Service() {
             FileWork.Kind.COMPACT -> R.string.file_compacting
             FileWork.Kind.COMPATIBLE -> R.string.file_making_compatible
             FileWork.Kind.PACK -> R.string.file_packing
+            FileWork.Kind.REPACK -> R.string.file_repacking
             else -> R.string.file_copying
         }
 
@@ -164,12 +165,12 @@ class FileWorkService : Service() {
             FileWork.Kind.MOVE -> R.drawable.ic_drive_file_move
             FileWork.Kind.COMPACT -> R.drawable.ic_compress
             FileWork.Kind.COMPATIBLE -> R.drawable.ic_unfold_more
-            FileWork.Kind.PACK -> R.drawable.ic_archive
+            FileWork.Kind.PACK, FileWork.Kind.REPACK -> R.drawable.ic_archive
             else -> R.drawable.ic_content_copy
         }
 
         /** Operations that take a while even for one item: Cancel shows for them alone too. */
-        private val LONG_KINDS = setOf(FileWork.Kind.COPY, FileWork.Kind.MOVE, FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE, FileWork.Kind.PACK)
+        private val LONG_KINDS = setOf(FileWork.Kind.COPY, FileWork.Kind.MOVE, FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE, FileWork.Kind.PACK, FileWork.Kind.REPACK)
 
         private const val CHANNEL = "file_work"
         private const val NOTIFICATION_ID = 7301

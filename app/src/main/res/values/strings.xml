@@ -159,6 +159,7 @@
     <string name="fab_open">Open</string>
     <string name="more_compact">Compact</string>
     <string name="more_make_compatible">Make compatible</string>
+    <string name="more_repack">Repack as CBZ</string>
     <string name="toolbar_button_favorite">Favorite</string>
     <string name="toolbar_button_drag">Drag to reorder</string>
     <string name="pref_cover_spacing_desc">Space between covers in the grid, in dp</string>
@@ -376,6 +377,7 @@
     <string name="file_renaming">Renaming</string>
     <string name="file_compacting">Compacting</string>
     <string name="file_making_compatible">Making compatible</string>
+    <string name="file_repacking">Repacking</string>
     <string name="file_amount">%1$s of %2$s</string>
     <string name="file_copied">Copied</string>
     <string name="file_moved">Moved</string>
@@ -482,6 +484,10 @@
         <item quantity="one">Making %1$d book compatible</item>
         <item quantity="other">Making %1$d books compatible</item>
     </plurals>
+    <plurals name="op_repacking">
+        <item quantity="one">Repacking %1$d book</item>
+        <item quantity="other">Repacking %1$d books</item>
+    </plurals>
     <!-- Lossless compaction, from the selection's ⋮ menu. -->
     <string name="compact_title_one">Compact %1$s?</string>
     <string name="rebuild_no_books">No books on the device in the folders selected</string>
@@ -494,6 +500,12 @@
         <item quantity="one">Make %1$d book compatible?</item>
         <item quantity="other">Make %1$d books compatible?</item>
     </plurals>
+    <string name="repack_title_one">Repack %1$s as CBZ?</string>
+    <plurals name="repack_title">
+        <item quantity="one">Repack %1$d book as CBZ?</item>
+        <item quantity="other">Repack %1$d books as CBZ?</item>
+    </plurals>
+    <string name="repack_message">Copies every page and file as it is into a CBZ, which opens quickly at any page. Nothing is converted.</string>
     <string name="compact_warning">Pixel-perfect and reversible, but older readers may not open JPEG XL pages.</string>
     <string name="compatible_message">Converts the comic into legacy formats every reader opens. This may be lossy if no better way is found, but aims for minimal visible loss. Comics compacted by Emanata convert losslessly.</string>
     <string name="compact_in_place">In place</string>
@@ -509,6 +521,14 @@
         <item quantity="one">Made %1$d book compatible</item>
         <item quantity="other">Made %1$d books compatible</item>
     </plurals>
+    <plurals name="repacked_count">
+        <item quantity="one">Repacked %1$d book as CBZ</item>
+        <item quantity="other">Repacked %1$d books as CBZ</item>
+    </plurals>
+    <plurals name="repacked_part">
+        <item quantity="one">Repacked %1$d of %2$d book</item>
+        <item quantity="other">Repacked %1$d of %2$d books</item>
+    </plurals>
     <plurals name="compacted_part">
         <item quantity="one">Compacted %1$d of %2$d book</item>
         <item quantity="other">Compacted %1$d of %2$d books</item>
@@ -521,6 +541,15 @@
     <string name="rebuild_saved">%1$s, saved %2$s</string>
     <string name="compact_nothing">Nothing to compact: no page got smaller</string>
     <string name="compatible_nothing">Nothing to change: every page already opens in every reader</string>
+    <string name="repack_nothing">Nothing to repack</string>
+    <plurals name="compact_already">
+        <item quantity="one">Already compacted: %1$d book left as it was</item>
+        <item quantity="other">Already compacted: %1$d books left as they were</item>
+    </plurals>
+    <plurals name="compatible_already">
+        <item quantity="one">Already compatible: %1$d book left as it was</item>
+        <item quantity="other">Already compatible: %1$d books left as they were</item>
+    </plurals>
     <!-- %1$s: what was done, as "Compacted 2 books, saved 40 MB". -->
     <plurals name="rebuild_unchanged">
         <item quantity="one">%1$s; %2$d book was left as it was</item>

@@ -15,21 +15,22 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The queue of file operations (copy, move, delete, rename, compact, make compatible, pack): one at a time, never two
+ * The queue of file operations (copy, move, delete, rename, compact, make compatible, pack, repack): one at a time, never two
  * at once, each in turn as it was started. They run in the app's process rather than in
  * a screen, so turning the device does not stop them, and [onStart] keeps the app running
  * meanwhile ([FileWorkService]). Whichever library screen is there shows their [operations],
  * and [acknowledge]s each outcome once it has shown it.
  */
 object FileWork {
-    enum class Kind { COPY, MOVE, DELETE, RENAME, COMPACT, COMPATIBLE, PACK }
+    enum class Kind { COPY, MOVE, DELETE, RENAME, COMPACT, COMPATIBLE, PACK, REPACK }
 
     /**
      * What rebuilding books did beyond their count: bytes [saved] (less than 0 when they
      * grew), books left [unchanged] ([nested] of them for holding other archives), and by
      * book the pages [reencoded] (their pixels changed slightly) and those [failed] (kept
-     * as they were, as they could not be made anew). For Pack, the new files [keptBoth]:
-     * named anew, as their name was taken.
+     * as they were, as they could not be made anew); [already] of those unchanged had it done
+     * before, as their mark says. For Pack, the new files [keptBoth]: named anew, as their
+     * name was taken.
      */
     data class Summary(
         val saved: Long,
@@ -37,7 +38,8 @@ object FileWork {
         val reencoded: Map<String, List<String>> = emptyMap(),
         val failed: Map<String, List<String>> = emptyMap(),
         val nested: Int = 0,
-        val keptBoth: List<String> = emptyList()
+        val keptBoth: List<String> = emptyList(),
+        val already: Int = 0
     ) {
         /** How many pages [failed]. */
         val failedPages: Int get() = failed.values.sumOf { it.size }

@@ -1,8 +1,11 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.Xxh3
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.reader.ArchiveEntry
 import com.infinity.comicreader.reader.ArchiveJunk
+import com.infinity.comicreader.reader.ArchiveKind
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.PageMoves
 import com.infinity.comicreader.util.Formats
@@ -37,7 +40,8 @@ import java.util.zip.ZipOutputStream
  * as it is is read from where it is. The new archive is written beside the book, every entry
  * checked by its CRC, and only then put in place: as the book itself when [Request.inPlace]
  * (a non-ZIP book's file removed), as [Request.target] when given (over a file there only
- * when [Request.replace]), else beside it.
+ * when [Request.replace]), else beside it. With [Request.mark], its archive comment says
+ * what was done ([OutputMarks]), after a ZIP book's own comment.
  */
 class Compactor(
     private val scratch: File,
@@ -48,7 +52,9 @@ class Compactor(
     /** The bytes free for files where a file is; tests stand in their own. */
     private val free: (File) -> Long = { it.usableSpace },
     /** Pages larger than this are copied as they are; tests stand in a smaller one. */
-    private val maxPage: Long = MAX_PAGE_BYTES
+    private val maxPage: Long = MAX_PAGE_BYTES,
+    /** The hash of output marks ([OutputMarks]). */
+    private val hash: () -> Xxh3 = { BookIds.xxh3 }
 ) {
     /** What to make of a book. */
     class Request(
@@ -77,7 +83,9 @@ class Compactor(
         /** True to keep what is in dot-folders too, under its own path, never as pages (a folder packed with its unusual files). */
         val dotFolders: Boolean = false,
         /** Where the new file goes instead when a file takes [target]'s name meanwhile ("Keep both"); null to fail then. */
-        val keepBoth: ((File) -> File)? = null
+        val keepBoth: ((File) -> File)? = null,
+        /** What the new file's comment says was done ([OutputMarks]); compacting with pages left out says so. Null for no mark. */
+        val mark: OutputMarks.Operation? = null
     )
 
     /** Puts a rebuilt book in place. */
@@ -195,6 +203,10 @@ class Compactor(
             val out = File(dir, ".${book.name}.${System.nanoTime()}.part")
             part = out
             pack(out, names, pieces, time, progress, total)
+            request.mark?.let { op ->
+                val partial = op == OutputMarks.Operation.COMPACTED && dropped.isNotEmpty()
+                OutputMarks.write(out, sourceComment(book), if (partial) OutputMarks.Operation.COMPACTED_PARTIAL else op, hash())
+            }
             verify(out, names, pieces)
             val before = if (book.isDirectory) all.sumOf { it.size.coerceAtLeast(0) } else book.length()
             val after = out.length()
@@ -419,6 +431,10 @@ class Compactor(
         if (remove && !book.delete() && book.exists()) throw IOException("Cannot remove ${book.name}")
         return placed
     }
+
+    /** The archive comment of [book] as stored, kept in its new file: a ZIP's; other readers expose none. */
+    private fun sourceComment(book: File): ByteArray =
+        if (book.isFile && ArchiveKind.sniff(book) == ArchiveKind.ZIP) OutputMarks.commentOf(book) else ByteArray(0)
 
     private fun check(progress: Progress) {
         if (!progress.alive) throw CancellationException("Canceled")

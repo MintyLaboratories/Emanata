@@ -10,4 +10,7 @@
     <attr name="colorOpPack" format="color" />
     <attr name="colorOnOpPack" format="color" />
     <attr name="colorOpPackRing" format="color" />
+    <attr name="colorOpRepack" format="color" />
+    <attr name="colorOnOpRepack" format="color" />
+    <attr name="colorOpRepackRing" format="color" />
 </resources>

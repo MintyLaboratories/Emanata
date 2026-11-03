@@ -139,39 +139,51 @@ internal class FileActions(
 
     // ------------------------------------------------------------------ compact
 
+    /** [rebuild] compacting the books at [paths], or with [compatible] making them compatible. */
+    fun rebuild(paths: List<String>, compatible: Boolean, onConfirmed: () -> Unit = {}) =
+        rebuild(paths, if (compatible) FileJobs.Rebuild.COMPATIBLE else FileJobs.Rebuild.COMPACT, onConfirmed)
+
     /**
-     * Rebuilds the books at [paths] once confirmed: compacts them losslessly, or with
-     * [compatible] makes their pages in formats few readers open ones every reader opens. The dialog warns,
-     * and offers In place (remembered) and, for Compact, Skip hidden pages (off each time).
-     * One queued operation, a book at a time; [onConfirmed] runs as it is queued.
+     * Rebuilds the books at [paths] as [how] says once confirmed: compacts them losslessly,
+     * makes their pages in formats few readers open ones every reader opens, or repacks
+     * them as CBZ. The dialog warns, and offers In place (remembered, shared by all three)
+     * and, for Compact, Skip hidden pages (off each time). One queued operation, a book at
+     * a time; [onConfirmed] runs as it is queued.
      */
-    fun rebuild(paths: List<String>, compatible: Boolean, onConfirmed: () -> Unit = {}) {
+    fun rebuild(paths: List<String>, how: FileJobs.Rebuild, onConfirmed: () -> Unit = {}) {
         val first = paths.firstOrNull() ?: return
-        val title = if (paths.size == 1) {
-            activity.getString(if (compatible) R.string.compatible_title_one else R.string.compact_title_one, File(first).name)
-        } else {
-            activity.resources.getQuantityString(if (compatible) R.plurals.compatible_title else R.plurals.compact_title, paths.size, paths.size)
+        val (one, many) = when (how) {
+            FileJobs.Rebuild.COMPACT -> R.string.compact_title_one to R.plurals.compact_title
+            FileJobs.Rebuild.COMPATIBLE -> R.string.compatible_title_one to R.plurals.compatible_title
+            FileJobs.Rebuild.REPACK -> R.string.repack_title_one to R.plurals.repack_title
         }
-        val view = activity.layoutInflater.inflate(R.layout.dialog_compact, null)
-        val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place).apply { isChecked = prefs.compactInPlace }
+        val title = if (paths.size == 1) activity.getString(one, File(first).name) else activity.resources.getQuantityString(many, paths.size, paths.size)
+        val view = compactOptions(activity, prefs, skipHidden = how == FileJobs.Rebuild.COMPACT)
+        val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place)
         val skip = view.findViewById<MaterialSwitch>(R.id.compact_skip_hidden)
-        if (compatible) {
-            skip.visibility = View.GONE
-            view.findViewById<View>(R.id.compact_skip_hidden_hint).visibility = View.GONE
-        }
         AlertDialog.Builder(activity)
             .setTitle(title)
-            .setMessage(if (compatible) R.string.compatible_message else R.string.compact_warning)
+            .setMessage(
+                when (how) {
+                    FileJobs.Rebuild.COMPACT -> R.string.compact_warning
+                    FileJobs.Rebuild.COMPATIBLE -> R.string.compatible_message
+                    FileJobs.Rebuild.REPACK -> R.string.repack_message
+                }
+            )
             .setView(view)
-            .setPositiveButton(if (compatible) R.string.more_make_compatible else R.string.more_compact) { _, _ ->
+            .setPositiveButton(
+                when (how) {
+                    FileJobs.Rebuild.COMPACT -> R.string.more_compact
+                    FileJobs.Rebuild.COMPATIBLE -> R.string.more_make_compatible
+                    FileJobs.Rebuild.REPACK -> R.string.more_repack
+                }
+            ) { _, _ ->
                 prefs.compactInPlace = inPlace.isChecked
                 onConfirmed()
-                val jobs = this.jobs
-                val chosen = jobs.look(paths)
-                val place = inPlace.isChecked
-                val skipHidden = !compatible && skip.isChecked
-                val kind = if (compatible) FileWork.Kind.COMPATIBLE else FileWork.Kind.COMPACT
-                start(kind, File(first).name, paths.size) { p -> jobs.rebuild(paths, compatible, place, skipHidden, chosen, p) }
+                val skipHidden = how == FileJobs.Rebuild.COMPACT && skip.isChecked
+                startRebuild(jobs, paths, how, inPlace.isChecked, skipHidden)
+                // Asked once, as the first operation starts: operations show their progress there while the app is away.
+                notificationAsk.once()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -439,7 +451,7 @@ internal class FileActions(
                     if (outcome.sourceLeft) activity.getString(R.string.file_source_left) else counted(R.string.file_moved, R.plurals.moved_count, outcome.count)
                 FileWork.Kind.DELETE -> activity.resources.getQuantityString(R.plurals.deleted_format, outcome.count, outcome.count)
                 FileWork.Kind.RENAME -> activity.getString(R.string.renamed)
-                FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE -> rebuilt(status.kind, outcome)
+                FileWork.Kind.COMPACT, FileWork.Kind.COMPATIBLE, FileWork.Kind.REPACK -> rebuilt(status.kind, outcome)
                 FileWork.Kind.PACK -> packed(outcome)
             }
             is FileWork.Outcome.Canceled -> canceled(status.kind, outcome)
@@ -478,7 +490,11 @@ internal class FileActions(
         var text = when {
             count == 0 && failed > 0 -> res.getQuantityString(R.plurals.rebuild_failed_only, failed, failed)
             count == 0 && summary.nested > 0 && summary.nested == unchanged -> res.getQuantityString(R.plurals.rebuild_nested, unchanged, unchanged)
+            count == 0 && summary.already > 0 && summary.already == unchanged && kind != FileWork.Kind.REPACK ->
+                res.getQuantityString(if (compatible) R.plurals.compatible_already else R.plurals.compact_already, unchanged, unchanged)
+            count == 0 && kind == FileWork.Kind.REPACK -> activity.getString(R.string.repack_nothing)
             count == 0 -> activity.getString(if (compatible) R.string.compatible_nothing else R.string.compact_nothing)
+            kind == FileWork.Kind.REPACK -> res.getQuantityString(R.plurals.repacked_count, count, count)
             compatible -> res.getQuantityString(R.plurals.compatible_count, count, count)
             else -> res.getQuantityString(R.plurals.compacted_count, count, count, FileUtils.formatSize(activity, summary.saved.coerceAtLeast(0)))
         }
@@ -528,6 +544,7 @@ internal class FileActions(
                 FileWork.Kind.COMPACT -> R.plurals.compacted_part
                 FileWork.Kind.COMPATIBLE -> R.plurals.compatible_part
                 FileWork.Kind.PACK -> R.plurals.packed_part
+                FileWork.Kind.REPACK -> R.plurals.repacked_part
             },
             count, done, count
         )
@@ -575,4 +592,27 @@ internal class FileActions(
     }
 
     private fun toast(text: String, long: Boolean = false) = Toast.makeText(activity, text, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+
+    companion object {
+        /**
+         * The options of a rebuild's dialog: In place, as last chosen, and when [skipHidden]
+         * Skip hidden pages (off each time) with its note.
+         */
+        fun compactOptions(activity: AppCompatActivity, prefs: Prefs, skipHidden: Boolean): View {
+            val view = activity.layoutInflater.inflate(R.layout.dialog_compact, null)
+            view.findViewById<MaterialSwitch>(R.id.compact_in_place).isChecked = prefs.compactInPlace
+            if (!skipHidden) {
+                view.findViewById<View>(R.id.compact_skip_hidden).visibility = View.GONE
+                view.findViewById<View>(R.id.compact_skip_hidden_hint).visibility = View.GONE
+            }
+            return view
+        }
+
+        /** Queues rebuilding the books at [paths] as [how] says through [jobs], in place when [inPlace]. */
+        fun startRebuild(jobs: FileJobs, paths: List<String>, how: FileJobs.Rebuild, inPlace: Boolean, skipHidden: Boolean = false) {
+            val first = paths.firstOrNull() ?: return
+            val chosen = jobs.look(paths)
+            FileWork.start(how.kind, File(first).name, paths.size) { p -> jobs.rebuild(paths, how, inPlace, skipHidden, chosen, p) }
+        }
+    }
 }

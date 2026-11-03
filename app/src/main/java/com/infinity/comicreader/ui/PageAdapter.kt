@@ -92,7 +92,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * With an [enhancer], pages of a book with an AI chain go through it ([AiQueue]) once their
  * plain page shows: those of the item being read ([reading]), then the next item's, one at a
  * time; each processed page takes the plain one's place in the cache and in its image, at the
- * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]).
+ * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]). Turning pages faster
+ * than they are processed, the work skips ahead to pages the reader reaches once they are done
+ * ([AiLead]).
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop], [linear]
@@ -1395,6 +1397,12 @@ class PageAdapter(
     /** What processing a page needs that only the main thread may read: its chapter's source, its index there, its plain page's size. */
     private class AiPage(val source: PageSource, val index: Int, val width: Int, val height: Int)
 
+    /** The reader's pace of turns, which AI work keeps ahead of ([AiLead]). */
+    private val pace = TurnPace()
+
+    /** Asks for AI work again once the reader has stayed on a page past its pace. */
+    private val rethinkAi = Runnable { wantAi() }
+
     private val aiPages = ConcurrentHashMap<PageKey, AiPage>()
 
     /** The AI work queue, made once a page of a book with an AI chain shows. */
@@ -1443,6 +1451,7 @@ class PageAdapter(
     fun reading(position: Int) {
         if (readingAt == position) return
         readingAt = position
+        pace.turned(position)
         wantAi()
     }
 
@@ -1468,37 +1477,69 @@ class PageAdapter(
     /**
      * Asks for AI work on the pages of the item [reading] and the next one that show plain in
      * the cache; none until every page of the item read is there (or failed), so the page
-     * read goes first and AI work never competes with its decode.
+     * read goes first and AI work never competes with its decode. While the reader turns
+     * faster than a page is processed ([AiLead]), the work starts at the first item it reaches
+     * once a page is done instead; of the items before, only pages kept on disk are read back
+     * (at once), and the page under way goes on.
      */
     private fun wantAi() {
         val e = enhancer ?: return
         if (released || readingAt < 0) return
+        mainHandler.removeCallbacks(rethinkAi)
+        val read = aiCandidates(e, readingAt)
         val keys = ArrayList<PageKey>()
-        items@ for (item in readingAt..minOf(readingAt + 1, itemCount - 1)) {
-            for (part in strip.parts(item)) {
-                if (part == null || part.page >= end) continue
-                val chapter = strip.chapterOf(part.page)
-                val source = chapter.value.source
-                if (!e.enhances(source)) continue
-                val key = keyFor(part)
-                // A page shown processed already needs nothing.
-                if (key != null && key in processed) continue
-                val bitmap = key?.let { cache.get(it) }
-                if (key == null || bitmap == null) {
-                    if (item == readingAt && (key == null || permanentFailure(key) == null)) {
-                        keys.clear()
-                        break@items
-                    }
-                    continue
+        if (read != null) {
+            val pageMs = readSource()?.let { e.pageMs(it) } ?: 0L
+            val lead = AiLead.of(pageMs, pace.paceMs, pace.dwellMs)
+            if (lead == 0) {
+                keys += read
+                keys += aiCandidates(e, readingAt + 1).orEmpty()
+            } else {
+                val passed = read + (readingAt + 1 until readingAt + lead).flatMap { aiCandidates(e, it).orEmpty() }
+                for (key in passed) {
+                    val p = aiPages[key] ?: continue
+                    if (e.stored(p.source, p.index, key.target, p.width, p.height)) keys += key
                 }
-                // A stand-in for a page drawn in bands is never processed.
-                if (key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble())) continue
-                aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height))
-                keys += key
+                for (item in readingAt + lead..readingAt + lead + 1) keys += aiCandidates(e, item).orEmpty()
+                // The page under way is not wasted while the reader may still see it.
+                ai?.current?.let { if (it in passed && it !in keys) keys += it }
+                pace.paceMs?.let { mainHandler.postDelayed(rethinkAi, (it - pace.dwellMs).coerceAtLeast(0) + RETHINK_MS) }
             }
         }
         if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
         aiPages.keys.retainAll(keys.toSet())
+    }
+
+    /** The source of the item read. */
+    private fun readSource(): PageSource? =
+        strip.parts(readingAt).firstOrNull { it != null && it.page < end }?.let { strip.chapterOf(it.page).value.source }
+
+    /**
+     * The pages of item [item] that show plain in the cache and may be processed, noted in
+     * [aiPages]; null while one of the item read is not there yet (nor failed).
+     */
+    private fun aiCandidates(e: PageEnhancer, item: Int): List<PageKey>? {
+        if (item < 0 || item >= itemCount) return emptyList()
+        val keys = ArrayList<PageKey>()
+        for (part in strip.parts(item)) {
+            if (part == null || part.page >= end) continue
+            val chapter = strip.chapterOf(part.page)
+            val source = chapter.value.source
+            if (!e.enhances(source)) continue
+            val key = keyFor(part)
+            // A page shown processed already needs nothing.
+            if (key != null && key in processed) continue
+            val bitmap = key?.let { cache.get(it) }
+            if (key == null || bitmap == null) {
+                if (item == readingAt && (key == null || permanentFailure(key) == null)) return null
+                continue
+            }
+            // A stand-in for a page drawn in bands is never processed.
+            if (key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble())) continue
+            aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height))
+            keys += key
+        }
+        return keys
     }
 
     /** Shows [done]'s page in place of [key]'s plain one, in the cache and wherever it shows at that size. */
@@ -1508,14 +1549,17 @@ class PageAdapter(
         cache.put(key, bitmap)
         processed += key
         ReadProbes.current?.enhanced(key.page, done.ms, done.stored)
-        val list = recycler ?: return
-        for (i in 0 until list.childCount) {
-            val holder = list.getChildViewHolder(list.getChildAt(i)) as? PageHolder ?: continue
-            for (slot in holder.images.indices) {
-                if (holder.shown[slot] != key.code || (holder.images[slot].detailSource as? SlotDetail)?.key != key) continue
-                showBitmap(holder, slot, key, bitmap)
+        recycler?.let { list ->
+            for (i in 0 until list.childCount) {
+                val holder = list.getChildViewHolder(list.getChildAt(i)) as? PageHolder ?: continue
+                for (slot in holder.images.indices) {
+                    if (holder.shown[slot] != key.code || (holder.images[slot].detailSource as? SlotDetail)?.key != key) continue
+                    showBitmap(holder, slot, key, bitmap)
+                }
             }
         }
+        // Where to go on depends on how long the reader has stayed since.
+        wantAi()
     }
 
     // ------------------------------------------------------------------ continuous
@@ -1566,6 +1610,7 @@ class PageAdapter(
      */
     fun release(closeSources: Boolean = true) {
         released = true
+        mainHandler.removeCallbacks(rethinkAi)
         ai?.release()
         aiPages.clear()
         details.clear()
@@ -1582,6 +1627,9 @@ class PageAdapter(
     companion object {
         private const val TAG = "PageAdapter"
         private const val NO_PAGE = PageLayout.NONE
+
+        /** Margin past the reader's pace before AI work is asked for again ([rethinkAi]). */
+        private const val RETHINK_MS = 50L
 
         /** Item view types: one page, a two-slot row, or two pages shown as one picture. */
         private const val SINGLE = 0

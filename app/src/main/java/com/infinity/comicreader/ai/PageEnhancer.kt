@@ -32,6 +32,9 @@ interface PageEnhancer {
     /** About how long a page of the book [source] reads takes to process, from start to shown; 0 when unknown. Cheap; any thread. */
     fun pageMs(source: PageSource): Long = 0
 
+    /** True when page [index] of [source], as [enhance] would make it, is kept on disk: read back at once. Cheap. */
+    fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean = false
+
     /**
      * Page [index] of [source], shown as [target] lays it out at [width] x [height], processed:
      * read back from disk, or made from the page at full detail and stored. Blocking; stops
@@ -115,13 +118,22 @@ class ReaderAi internal constructor(
     /** [m]'s milliseconds per megapixel: as measured here, else from the catalog's reference page. */
     internal fun rateOf(m: CatalogModel): Double = rates[m.id] ?: priorRate(m)
 
-    override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
-        val book = source.bookKey
-        val chain = chainFor(book)
-        if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
-        val key = book?.let {
+    override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean {
+        val chain = chainFor(source.bookKey)
+        if (chain.isEmpty() || source.isVector) return false
+        return keyOf(source, index, target, width, height, chain)?.let(store::has) == true
+    }
+
+    /** The key [store] keeps page [index] of [source] by, made by [chain] for [target] at [width] x [height]; null for a book without a key. */
+    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<CatalogModel>): String? =
+        source.bookKey?.let {
             ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain))
         }
+
+    override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+        val chain = chainFor(source.bookKey)
+        if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
+        val key = keyOf(source, index, target, width, height, chain)
         // Paused pages show plain, as the Battery settings say, even when kept processed.
         if (gate() != null) return AiOutcome.Later
         val t0 = SystemClock.elapsedRealtime()

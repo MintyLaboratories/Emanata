@@ -25,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -61,7 +62,18 @@ class PageAdapterAiTest {
         @Volatile
         var on = true
 
+        /** What [pageMs] says. */
+        @Volatile
+        var ms = 0L
+
+        /** Pages [stored] says are kept on disk. */
+        val kept: MutableSet<Int> = Collections.synchronizedSet(HashSet())
+
         override fun enhances(source: PageSource): Boolean = on
+
+        override fun pageMs(source: PageSource): Long = ms
+
+        override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean = index in kept
 
         override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
             asked += index
@@ -105,9 +117,9 @@ class PageAdapterAiTest {
 
     private fun colorAt(rv: RecyclerView, position: Int): Int? = shownBitmap(rv, position)?.let { it.getPixel(it.width / 2, it.height / 2) }
 
-    private fun reader(preload: Int = 1): Pair<PageAdapter, RecyclerView> {
+    private fun reader(preload: Int = 1, pages: Int = 4): Pair<PageAdapter, RecyclerView> {
         val adapter = PageAdapter(
-            source = Source(4, plain), mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            source = Source(pages, plain), mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
             preload = preload, enhancer = enhancer
         )
         val rv = RecyclerView(context).apply {
@@ -251,6 +263,28 @@ class PageAdapterAiTest {
         adapter.resumeAi()
         idle { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
+        adapter.release()
+    }
+
+    @Test
+    fun turningFasterThanPagesAreProcessedSkipsToThePagesReachedOnceDone() {
+        val (adapter, rv) = reader(preload = 7, pages = 8)
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        // Three turns 3 s apart with nothing to process set the pace.
+        enhancer.on = false
+        for (item in 0..2) {
+            adapter.reading(item)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(3_000))
+        }
+        enhancer.on = true
+        enhancer.ms = 5_000
+        enhancer.kept += 4
+        adapter.reading(3)
+        idle { enhancer.asked.size >= 3 }
+        aWhile()
+        // Page 4 is kept on disk: read back first; 3 would be done after the reader left it.
+        assertEquals(listOf(4, 5, 6), enhancer.asked.toList())
         adapter.release()
     }
 }

@@ -2254,6 +2254,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         if (fresh) shownSeams = pageSeams
         layoutStale = false
         val decoded = adapter?.decoded(src).orEmpty()
+        val processed = adapter?.processedOf(decoded).orEmpty()
         pager.adapter = null
         vertical.adapter = null
         // The new adapter reads the same chapters: they must stay open.
@@ -2299,7 +2300,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         a.filter = filter
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
-        a.adopt(decoded)
+        a.adopt(decoded, processed)
         adapter = a
 
         val item = pageToItem(currentIndex)

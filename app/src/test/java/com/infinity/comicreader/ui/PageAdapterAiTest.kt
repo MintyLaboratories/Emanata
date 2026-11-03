@@ -185,6 +185,40 @@ class PageAdapterAiTest {
     }
 
     @Test
+    fun anAdapterTakingProcessedPagesShowsThemPlainOnceTheChainChanges() {
+        val source = Source(4, plain)
+        fun adapterOf() = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0, enhancer = enhancer
+        )
+        val first = adapterOf()
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            this.adapter = first
+            layOut(600, 900)
+        }
+        idle { colorAt(rv, 0) == plain }
+        first.reading(0)
+        idle { colorAt(rv, 0) == processed }
+        val decoded = first.decoded(source)
+        val done = first.processedOf(decoded)
+        first.release(closeSources = false)
+        val second = adapterOf()
+        second.adopt(decoded, done)
+        rv.adapter = second
+        rv.layOut(600, 900)
+        second.reading(0)
+        idle { colorAt(rv, 0) == processed }
+        aWhile()
+        assertEquals("taken as processed, not processed again", 1, enhancer.asked.size)
+        enhancer.on = false
+        second.aiChanged()
+        rv.layOut(600, 900)
+        idle { colorAt(rv, 0) == plain }
+        assertEquals(plain, colorAt(rv, 0))
+        second.release()
+    }
+
+    @Test
     fun aChangedChainShowsPagesPlainAgain() {
         val (adapter, rv) = reader()
         idle { colorAt(rv, 0) == plain }
@@ -196,6 +230,12 @@ class PageAdapterAiTest {
         idle { colorAt(rv, 0) == plain }
         assertEquals(plain, colorAt(rv, 0))
         assertTrue(enhancer.asked.size >= 1)
+        // Back on, the plain page goes through AI again without a decode.
+        enhancer.on = true
+        adapter.aiChanged()
+        rv.layOut(600, 900)
+        idle { colorAt(rv, 0) == processed }
+        assertEquals(processed, colorAt(rv, 0))
         adapter.release()
     }
 }

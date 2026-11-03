@@ -369,9 +369,20 @@ class PageAdapter(
     internal fun decoded(source: PageSource): Map<PageKey, Bitmap> =
         if (released || mode != Mode.PAGED || strip.chapters.firstOrNull()?.value?.source !== source) emptyMap() else cache.snapshot()
 
-    /** Takes the [pages] an adapter of the same pages decoded, so those it showed show at once here. */
-    internal fun adopt(pages: Map<PageKey, Bitmap>) {
-        for ((key, bitmap) in pages) if (!bitmap.isRecycled) cache.put(key, bitmap)
+    /** The pages of [decoded] whose bitmap is processed by AI, for one that replaces this adapter ([adopt]). */
+    internal fun processedOf(decoded: Map<PageKey, Bitmap>): Set<PageKey> = processed.filterTo(HashSet()) { it in decoded }
+
+    /**
+     * Takes the [pages] an adapter of the same pages decoded, so those it showed show at once
+     * here; those [processed] by AI count as such, so they are not processed again and go
+     * back to plain should the AI chain change.
+     */
+    internal fun adopt(pages: Map<PageKey, Bitmap>, processed: Set<PageKey> = emptySet()) {
+        for ((key, bitmap) in pages) {
+            if (bitmap.isRecycled) continue
+            cache.put(key, bitmap)
+            if (key in processed) this.processed += key
+        }
     }
 
     /** True when a page on screen is zoomed in. */
@@ -1415,6 +1426,8 @@ class PageAdapter(
         processed.clear()
         ai?.reset()
         notifyItemRangeChanged(0, itemCount, RESIZE)
+        // Pages cached plain go through the new chain at once; those that were processed once decoded again.
+        wantAi()
     }
 
     /** Ends a wait for AI ([AiOutcome.Later]): a model downloaded, battery saver turned off. */
@@ -1438,6 +1451,8 @@ class PageAdapter(
                 val source = chapter.value.source
                 if (!e.enhances(source)) continue
                 val key = keyFor(part)
+                // A page shown processed already needs nothing.
+                if (key != null && key in processed) continue
                 val bitmap = key?.let { cache.get(it) }
                 if (key == null || bitmap == null) {
                     if (item == readingAt && (key == null || permanentFailure(key) == null)) {

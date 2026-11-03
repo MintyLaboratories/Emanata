@@ -122,14 +122,14 @@ class ReaderAiTest {
     }
 
     @Test
-    fun aPausedReaderShowsEvenStoredPagesPlain() {
+    fun aPausedReaderStillShowsStoredPagesButMakesNone() {
         install(upscale)
         val b = bookOf()
         assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
         stop = Fallback.PAUSED
-        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
-        stop = null
         assertTrue((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        assertTrue(ai.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Later)
+        assertEquals("page 1 not decoded", 1, b.loads.get())
     }
 
     @Test

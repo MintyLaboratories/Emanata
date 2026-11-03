@@ -27,7 +27,8 @@ sealed class AiOutcome {
  * shown, then the next screen's). A page no longer wanted stops at once ([work]'s `canceled`
  * turns true); a page done or skipped is not tried again until [forget] or [reset]. A page put
  * off ([AiOutcome.Later]) holds the whole queue back for a back-off that doubles each time in
- * a row, from [backoffMs] up to [maxBackoffMs], so a hot or saving device is asked seldom.
+ * a row, from [backoffMs] up to [maxBackoffMs], so a hot or saving device is asked seldom; a
+ * page wanted first in its place is tried at once (one kept on disk shows meanwhile).
  * Work runs on [worker]; [deliver] runs on [scope]'s thread (the main one), as do all calls.
  */
 internal class AiQueue<K : Any>(
@@ -47,6 +48,9 @@ internal class AiQueue<K : Any>(
     private var released = false
     private var paused = false
 
+    /** The page put off last ([AiOutcome.Later]). */
+    private var putOff: K? = null
+
     /** The page being worked on; null when none is. */
     val current: K? get() = running
 
@@ -58,6 +62,11 @@ internal class AiQueue<K : Any>(
         if (released) return
         wanted = keys
         running?.let { if (it !in keys) stop() }
+        // Another page first: tried now, the back-off still doubling should it be put off too.
+        if (waiting && keys.firstOrNull { it !in finished }.let { it != null && it != putOff }) {
+            wait?.cancel()
+            wait = null
+        }
         next()
     }
 
@@ -141,6 +150,7 @@ internal class AiQueue<K : Any>(
                 }
                 is AiOutcome.Skipped -> finished += key
                 AiOutcome.Later -> {
+                    putOff = key
                     val ms = (backoffMs shl backoffs.coerceAtMost(MAX_DOUBLINGS)).coerceAtMost(maxBackoffMs)
                     backoffs++
                     wait = scope.launch {

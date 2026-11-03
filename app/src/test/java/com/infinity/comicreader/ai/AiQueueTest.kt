@@ -217,4 +217,20 @@ class AiQueueTest {
         assertFalse(w.delivered.contains("a"))
         assertFalse("it may still be on its way to disk", made.isRecycled)
     }
+
+    @Test
+    fun anotherPageWantedFirstWhilePutOffIsTriedAtOnce() {
+        val w = Work()
+        w.outcomes["a"] = { AiOutcome.Later }
+        val q = w.queue(backoffMs = 60_000)
+        q.want(listOf("a"))
+        idleUntil { q.waiting }
+        q.want(listOf("a"))
+        Thread.sleep(20)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the same page waits out its back-off", listOf("a"), w.started)
+        q.want(listOf("b", "a"))
+        idleUntil { w.delivered.contains("b") }
+        assertEquals(listOf("b"), w.delivered)
+    }
 }

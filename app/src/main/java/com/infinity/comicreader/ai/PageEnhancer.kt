@@ -134,10 +134,10 @@ class ReaderAi internal constructor(
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val key = keyOf(source, index, target, width, height, chain)
-        // Paused pages show plain, as the Battery settings say, even when kept processed.
-        if (gate() != null) return AiOutcome.Later
         val t0 = SystemClock.elapsedRealtime()
+        // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = SystemClock.elapsedRealtime() - t0) }
+        if (gate() != null) return AiOutcome.Later
         val files = chain.map { m ->
             models.files(m) ?: run {
                 download(m)

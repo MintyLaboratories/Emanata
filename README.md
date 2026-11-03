@@ -707,13 +707,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). Battery: battery
-  saver pauses AI processing unless **Pause AI processing** is off. In the
-  reader a page shows at once, then its processed version takes its place at
-  the same size when ready: the page read first, then the next screen's, one
-  at a time. Each book can run its own models (Reader settings → AI
-  processing → **This book**), kept with its other data; **Default** follows
-  Settings, and a change there changes the default. Processed pages are kept
-  on disk (up to 256 MB, cleared by Clear cache).
+  saver pauses AI processing unless **Pause AI processing** is off; pages
+  processed before still show. In the reader a page shows at once, then its
+  processed version takes its place at the same size when ready: the page
+  read first, then the next screen's, one at a time; turning pages faster
+  than they are processed, the work skips ahead to pages it can finish in
+  time. Each book can run its own models (Reader settings → AI processing →
+  **This book**), kept with its other data; **Default** follows Settings, and
+  a change there changes the default. Processed pages are kept on disk (up to
+  1 GB and a tenth of the free space, cleared by Clear cache).
 - About: version, source, upstream credit, the license, third-party licenses,
   and the AI models' authors and licenses.
 
@@ -815,19 +817,33 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - AI in the reader (`ReaderAi`, `AiQueue`): once a page of a book with a chain
   (its own picks in the library, else the global ones) shows plain, it is
   queued; the queue works on the item being read, then the next one, one page
-  at a time on one background thread, and stops a page no longer wanted. A
-  page is decoded again at full detail (up to 8 MP), run through each model in
-  turn (an upscaler skipped where the page would show no larger,
-  `AiPages.chain`; the chain shares one page's time) and resampled to exactly
-  the plain page's size and crop, so it swaps in without a jump; it replaces
-  the plain page in the page cache. Heat or battery saver (`AiConditions`) or
-  a model still downloading puts the queue off for 15 s, doubling to 2 min;
-  a page that times out or fails keeps its plain rendering. Vector books and
-  pages drawn in bands are not processed; a zoom renders its detail from the
-  plain page. Models stay open while the reader is. Processed pages are kept
-  in `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
+  at a time on one background thread, and stops a page no longer wanted. When
+  the reader turns faster than a page takes (`TurnPace`, `AiLead`: the median
+  of the last three turns against the chain's measured page time), the work
+  starts at the first page the reader will see processed for at least half a
+  turn, pages kept on disk are read back first, and the page under way goes on
+  while the reader has not passed it. A page is decoded again at full detail
+  (up to 8 MP), run through each model in turn (an upscaler skipped where the
+  page would show no larger, `AiPages.chain`) and resampled to exactly the
+  plain page's size and crop, so it swaps in without a jump; it replaces the
+  plain page in the page cache. A page's time is 30 s, or for a slower chain
+  1.5x the catalog's cool time for its input, up to 120 s; each model keeps
+  back what the models after it are expected to take, and a chain expected to
+  run past its time at the rates measured on the device falls back before any
+  model runs (those rates drift back toward the catalog's with each such
+  page). Tiles wait while the reader is touched or scrolling, so the GPU
+  leaves its frames alone. Heat or battery saver (`AiConditions`) or a model
+  still downloading puts the queue off for 15 s, doubling to 2 min (a page
+  wanted first meanwhile is tried at once, a model download ending or failing
+  wakes it, and a failed download is not retried until picked again); a page
+  that times out or fails keeps its plain rendering. Vector books and pages
+  drawn in bands are not processed; a zoom renders its detail from the plain
+  page. The queue pauses while the reader is out of sight; models close when
+  its UI hides and when no open book runs them. Processed pages are kept in
+  `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
   where libjxl is missing), keyed by Book ID, page, size, crop and the chain
-  with its models' checksums, trimmed least recently read first to 256 MB.
+  with its models' checksums, trimmed least recently read first to 1 GB and a
+  tenth of the free space; they show even while AI is paused.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
   bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
   licenses, all fetched unchanged from OpenComic AI's model repository at a

@@ -660,6 +660,7 @@
     <string name="ai_scope_default">Default</string>
     <string name="ai_scope_book_hint">This book\'s own models; other books keep the default</string>
     <string name="ai_scope_default_hint">The default from Settings; a change here changes it for every book without its own</string>
+    <string name="ai_scope_default_off_hint">AI processing is off in Settings; picking a model here turns it on with the models shown, for every book without its own</string>
     <string name="fit_screen_short">Screen</string>
     <string name="fit_width_short">Width</string>
     <string name="fit_height_short">Height</string>

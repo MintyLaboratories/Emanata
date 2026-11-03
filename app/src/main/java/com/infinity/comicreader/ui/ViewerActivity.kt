@@ -3706,23 +3706,40 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** This book's own AI picks; null when it follows the default. */
     private fun aiOwn(): AiPicks? = bookId?.let { library.aiPicks(it) }
 
-    /** The picks this book's pages go through now: its own, else the default (none while AI processing is off). */
-    private fun aiShown(): AiPicks = aiOwn() ?: AiChain.startingPicks(prefs)
+    /** The picks the sheet shows: this book's own, else those chosen in Settings, which run while AI processing is on. */
+    private fun aiShown(): AiPicks = aiOwn() ?: AiPicks.of(prefs)
 
-    /** Shows the AI picks this book runs, each model's download state, whose picks they are and whether they run slow. */
+    /**
+     * Shows the AI picks this book runs, each model's download state, whose picks they are and
+     * whether they run slow. With Keep it simple on, the advanced steps show only when a model
+     * is picked there, as in Settings' summary.
+     */
     private fun syncAi(view: View) {
         val own = aiOwn()
-        val picks = own ?: AiChain.startingPicks(prefs)
+        val picks = aiShown()
         val states = ModelDownloads.state.value.states
         for ((step, id) in aiPickers) {
             val m = ModelCatalog.byId(picks.id(step))?.takeIf { it.step == step }
-            view.findViewById<MaterialButton>(id).text = ModelText.choice(this, m, m != null && aiModels.installed(m), m?.let { states[it.id] })
+            val button = view.findViewById<MaterialButton>(id)
+            button.text = ModelText.choice(this, m, m != null && aiModels.installed(m), m?.let { states[it.id] })
+            val shown = step == AiStep.UPSCALE || !prefs.keepSimple || m != null
+            button.visibility = if (shown) View.VISIBLE else View.GONE
+            aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
         view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
-        val hint = getString(if (own != null) R.string.ai_scope_book_hint else R.string.ai_scope_default_hint)
+        val hint = getString(
+            when {
+                own != null -> R.string.ai_scope_book_hint
+                prefs.aiEnabled -> R.string.ai_scope_default_hint
+                else -> R.string.ai_scope_default_off_hint
+            }
+        )
         view.findViewById<TextView>(R.id.sheet_ai_hint).text =
-            if (AiChain.slow(picks.models)) hint + "\n" + getString(R.string.ai_chain_slow) else hint
+            if ((own != null || prefs.aiEnabled) && AiChain.slow(picks.models)) hint + "\n" + getString(R.string.ai_chain_slow) else hint
     }
+
+    /** The label above each advanced step's picker. */
+    private val aiLabels = mapOf(AiStep.ARTIFACTS to R.id.sheet_ai_artifacts_label, AiStep.DESCREEN to R.id.sheet_ai_descreen_label)
 
     /** Gives this book its own AI picks, starting from the default ones, or hands it back to the default. */
     private fun setAiOwn(own: Boolean) {
@@ -3749,20 +3766,22 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     /**
      * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else as
-     * the default. Picking a model while AI processing is off turns it on with that model
-     * alone; leaving no model turns it off. A model not downloaded starts downloading.
+     * the default. Picking a model while AI processing is off turns it on with the models the
+     * sheet shows, the other steps' picks kept; leaving no model turns it off. A model not
+     * downloaded starts downloading.
      */
     private fun pickAi(step: AiStep, id: String?) {
         val own = aiOwn()
         val book = book()
         if (own != null && book != null) {
             library.setAiPicks(book, own.with(step, id))
-        } else if (id != null && !prefs.aiEnabled) {
-            for (s in AiStep.entries) prefs.setAiModel(s, if (s == step) id else null)
-            prefs.aiEnabled = true
         } else {
             prefs.setAiModel(step, id)
-            if (prefs.aiEnabled && AiPicks.of(prefs).models.isEmpty()) prefs.aiEnabled = false
+            if (id != null) {
+                prefs.aiEnabled = true
+            } else if (prefs.aiEnabled && AiPicks.of(prefs).models.isEmpty()) {
+                prefs.aiEnabled = false
+            }
         }
         ModelCatalog.byId(id)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
         aiChanged()

@@ -335,6 +335,7 @@
             tools:text="@string/ai_scope_default_hint" />
 
         <TextView
+            android:id="@+id/sheet_ai_artifacts_label"
             style="@style/Widget.ComicReader.SheetLabel"
             android:text="@string/ai_step_artifacts" />
 
@@ -343,6 +344,7 @@
             style="@style/Widget.ComicReader.SheetPicker" />
 
         <TextView
+            android:id="@+id/sheet_ai_descreen_label"
             style="@style/Widget.ComicReader.SheetLabel"
             android:text="@string/ai_step_descreen" />
 

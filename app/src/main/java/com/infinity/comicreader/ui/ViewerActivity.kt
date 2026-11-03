@@ -1345,16 +1345,19 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     /**
      * Offers to repack [book], opened as [src], of ID [id], as CBZ when it is a solid archive
-     * ([SolidArchives]) named as a RAR or 7z, on the device in a folder that can be written, unless "Suggest repacking
-     * solid archives" is off or the book was answered "Not now" before.
+     * named as a RAR or 7z, on the device in a folder that can be written, unless "Suggest
+     * repacking solid archives" is off or the book was answered "Not now" before. Solid as
+     * the open reader told ([PageSource.solid]); read from the headers ([SolidArchives]) only
+     * where it could not tell.
      */
     private fun offerRepack(book: File, src: PageSource, id: BookId?) {
         repackJob?.cancel()
         // Named as a RAR or 7z: other books are never read for it.
         val named = Formats.ext(book.name).let { it in Formats.RAR || it in Formats.SEVEN_ZIP }
-        if (id == null || !named || !prefs.suggestRepack || book is RemoteFile || Remotes.isRemote(book.path) || library.repackDeclined(id)) return
+        val known = src.solid
+        if (id == null || !named || known == false || !prefs.suggestRepack || book is RemoteFile || Remotes.isRemote(book.path) || library.repackDeclined(id)) return
         repackJob = lifecycleScope.launch {
-            val solid = withContext(AppDispatchers.io) { !ownCopy(book) && book.parentFile?.canWrite() == true && SolidArchives.isSolid(book) }
+            val solid = withContext(AppDispatchers.io) { !ownCopy(book) && book.parentFile?.canWrite() == true && (known ?: SolidArchives.isSolid(book)) }
             // Another question showing first: asked again on a later open.
             if (!solid || source !== src || file != book || bookId != id || tallAsk != null || isFinishing) return@launch
             askRepack(BookRef(id, book.absolutePath))

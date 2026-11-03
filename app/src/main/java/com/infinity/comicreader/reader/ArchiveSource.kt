@@ -123,6 +123,9 @@ class ArchiveSource(
 
     override val pageCount: Int get() = pages.size
 
+    /** The book's own archive's, inner archives aside. */
+    override val solid: Boolean? = root.solid
+
     /** False when any archive holding pages is solid. */
     override val cheapSizes: Boolean = synchronized(lock) { pages.map { it.slot }.distinct().all { it.randomAccess == true } }
 

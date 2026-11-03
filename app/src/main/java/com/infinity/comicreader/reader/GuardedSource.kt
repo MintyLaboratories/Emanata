@@ -24,6 +24,8 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override val cheapSizes: Boolean get() = inner.cheapSizes
 
+    override val solid: Boolean? get() = inner.solid
+
     override val dearSides: Boolean get() = inner.dearSides
 
     override fun loadedSize(index: Int): IntArray? = inner.loadedSize(index)

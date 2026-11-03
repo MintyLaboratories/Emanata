@@ -19,8 +19,11 @@ class RarReader private constructor(private val archive: Archive, private val ow
 
     override val entries: List<ArchiveEntry>
 
+    /** By its main header; null when that cannot be read. */
+    override val solid: Boolean? = runCatching { archive.mainHeader.isSolid }.getOrNull()
+
     /** False for a solid archive, where each entry unpacks those stored before it. */
-    override val randomAccess: Boolean = runCatching { !archive.mainHeader.isSolid }.getOrDefault(false)
+    override val randomAccess: Boolean = solid == false
 
     init {
         try {

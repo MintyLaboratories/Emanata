@@ -24,7 +24,7 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
     override val randomAccess: Boolean
 
     /** True when some block holds several entries, false when none does; null when the description cannot be read. */
-    val solid: Boolean?
+    override val solid: Boolean?
 
     init {
         try {

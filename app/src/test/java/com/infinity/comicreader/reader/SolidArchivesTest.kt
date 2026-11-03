@@ -52,6 +52,21 @@ class SolidArchivesTest {
     }
 
     @Test
+    fun theOpenSourceTellsWhatItsReaderFound() {
+        fun solidOf(file: File) = ArchiveSource(ArchiveReader.open(file, "UTF-8")!!).let { src ->
+            HiddenPages.wrap(GuardedSource(src), setOf(0)).use { it.solid }
+        }
+        assertEquals(true, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages, solid = true))))
+        assertEquals(false, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages))))
+        // junrar tells nothing of RAR 5: its headers are read for it ([SolidArchives.isSolid]).
+        assertNull(solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages, solid = true))))
+        assertNull(solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages))))
+        assertEquals(true, solidOf(Fixtures.solidSevenZip(File(tmp.root, "solid.cb7"), *pages)))
+        assertEquals(false, solidOf(Fixtures.sevenZip(File(tmp.root, "plain.cb7"), *pages)))
+        assertNull("no reader tells for a ZIP", solidOf(Fixtures.zip(File(tmp.root, "a.cbz"), *pages)))
+    }
+
+    @Test
     fun otherFilesAreNotSolid() {
         assertFalse(SolidArchives.isSolid(Fixtures.zip(File(tmp.root, "a.cbz"), *pages)))
         assertFalse(SolidArchives.isSolid(Fixtures.tar(File(tmp.root, "a.cbt"), *pages)))

@@ -27,6 +27,9 @@ interface ArchiveReader : Closeable {
      */
     val randomAccess: Boolean get() = true
 
+    /** True for a solid archive (RAR, 7z), false for one known not to be; null where this reader cannot tell. */
+    val solid: Boolean? get() = null
+
     /** The charset its file names were read in, where the format leaves that open (zip, tar). */
     val nameCharset: Charset? get() = null
 

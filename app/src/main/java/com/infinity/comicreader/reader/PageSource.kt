@@ -30,6 +30,9 @@ interface PageSource : Closeable {
      */
     val cheapSizes: Boolean get() = true
 
+    /** True when the book is a solid archive, as its reader told on opening; false when it is known not to be; null when unknown or no archive. */
+    val solid: Boolean? get() = null
+
     /**
      * True once a page read for its [sides] alone turned out to decode whole for them (a
      * progressive JPEG: any strip of it decodes every scan), so reading more costs a decode each.

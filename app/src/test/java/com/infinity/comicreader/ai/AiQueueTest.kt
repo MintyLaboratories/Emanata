@@ -178,4 +178,43 @@ class AiQueueTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(w.started.isEmpty())
     }
+
+    @Test
+    fun pausingStopsThePageRunningAndStartsNoneUntilResumed() {
+        val w = Work()
+        w.held["a"] = CountDownLatch(1)
+        val q = w.queue()
+        q.want(listOf("a", "b"))
+        idleUntil { w.started.contains("a") }
+        q.pause()
+        idleUntil { w.canceled.contains("a") }
+        q.want(listOf("a", "b"))
+        Thread.sleep(20)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("nothing starts while paused", listOf("a"), w.started)
+        w.held.remove("a")
+        q.resume()
+        idleUntil { w.delivered.size == 2 }
+        assertEquals(listOf("a", "b"), w.delivered)
+    }
+
+    @Test
+    fun aPageFinishingAfterItWasDroppedIsLeftForTheGc() {
+        val w = Work()
+        val gate = CountDownLatch(1)
+        val made = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        // Ignores being canceled, as a model run between two checks does.
+        w.outcomes["a"] = {
+            gate.await(5, TimeUnit.SECONDS)
+            AiOutcome.Done(made)
+        }
+        val q = w.queue()
+        q.want(listOf("a"))
+        idleUntil { w.started.contains("a") }
+        q.want(listOf("c"))
+        gate.countDown()
+        idleUntil { w.delivered.contains("c") }
+        assertFalse(w.delivered.contains("a"))
+        assertFalse("it may still be on its way to disk", made.isRecycled)
+    }
 }

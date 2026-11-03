@@ -45,6 +45,7 @@ internal class AiQueue<K : Any>(
     private var wait: Job? = null
     private var backoffs = 0
     private var released = false
+    private var paused = false
 
     /** The page being worked on; null when none is. */
     val current: K? get() = running
@@ -83,6 +84,23 @@ internal class AiQueue<K : Any>(
         finished -= key
     }
 
+    /**
+     * Stops the page running, its work lost, and starts none until [resume]: while the reader
+     * is out of sight. What is wanted, done and skipped is kept.
+     */
+    fun pause() {
+        if (paused) return
+        paused = true
+        stop()
+    }
+
+    /** Goes on from [pause] with the pages wanted. */
+    fun resume() {
+        if (!paused) return
+        paused = false
+        next()
+    }
+
     /** Stops for good. */
     fun release() {
         released = true
@@ -97,7 +115,7 @@ internal class AiQueue<K : Any>(
     }
 
     private fun next() {
-        if (released || job != null || waiting) return
+        if (released || paused || job != null || waiting) return
         val key = wanted.firstOrNull { it !in finished } ?: return
         running = key
         val started = scope.launch {
@@ -111,10 +129,8 @@ internal class AiQueue<K : Any>(
             } catch (t: Throwable) {
                 AiOutcome.Skipped(Fallback.FAILED)
             }
-            if (job !== coroutineContext.job) {
-                (outcome as? AiOutcome.Done)?.bitmap?.recycle()
-                return@launch
-            }
+            // A page no longer wanted: its bitmap may still be on its way to disk, so the GC frees it.
+            if (job !== coroutineContext.job) return@launch
             job = null
             running = null
             when (outcome) {

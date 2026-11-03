@@ -29,6 +29,9 @@ interface PageEnhancer {
     /** True when the pages of the book [source] reads go through AI: a chain is chosen for it. Cheap; any thread. */
     fun enhances(source: PageSource): Boolean
 
+    /** About how long a page of the book [source] reads takes to process, from start to shown; 0 when unknown. Cheap; any thread. */
+    fun pageMs(source: PageSource): Long = 0
+
     /**
      * Page [index] of [source], shown as [target] lays it out at [width] x [height], processed:
      * read back from disk, or made from the page at full detail and stored. Blocking; stops
@@ -74,6 +77,12 @@ class ReaderAi internal constructor(
     /** Each book's chain by its key ("" for none), until [refresh]. */
     private val chains = ConcurrentHashMap<String, List<CatalogModel>>()
 
+    /** Each model's milliseconds per megapixel of input as measured here, by catalog id ([rateOf]). */
+    private val rates = ConcurrentHashMap<String, Double>()
+
+    /** How long a page took from start to shown, by chain ([AiChain.signature]), smoothed. */
+    private val pageTimes = ConcurrentHashMap<String, Long>()
+
     /** Models opened so far by catalog id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
@@ -96,6 +105,15 @@ class ReaderAi internal constructor(
     }
 
     override fun enhances(source: PageSource): Boolean = !source.isVector && chainFor(source.bookKey).isNotEmpty()
+
+    override fun pageMs(source: PageSource): Long {
+        val chain = chainFor(source.bookKey)
+        if (chain.isEmpty()) return 0
+        return pageTimes[AiChain.signature(chain)] ?: chain.sumOf { (rateOf(it) * REFERENCE_MP).toLong() }
+    }
+
+    /** [m]'s milliseconds per megapixel: as measured here, else from the catalog's reference page. */
+    internal fun rateOf(m: CatalogModel): Double = rates[m.id] ?: priorRate(m)
 
     override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val book = source.bookKey
@@ -124,15 +142,26 @@ class ReaderAi internal constructor(
             if (target.banded && Target.bands(plan)) return AiOutcome.Skipped(Fallback.TOO_LARGE)
             val readable = if (input.config == Bitmap.Config.ARGB_8888) input else input.copy(Bitmap.Config.ARGB_8888, false)
             try {
+                val shownPlan = plan.copy(width = width, height = height)
+                val steps = AiPages.steps(chain.map { it.scale }, readable.width, readable.height, shownPlan)
                 val run = Urgency.later {
-                    AiPages.chain(opened, readable, plan.copy(width = width, height = height), target.scaling, target.linear, limits, canceled, gate, hold = held)
+                    AiPages.chain(
+                        opened, readable, shownPlan, target.scaling, target.linear, limitsFor(chain, steps), canceled, gate, hold = held,
+                        expect = { i, px -> (rateOf(chain[i]) * px / 1e6).toLong() },
+                        onStep = { i, px, ms, done -> learn(chain[i], px, ms, done) }
+                    )
                 }
                 val out = run.bitmap ?: return when (run.fallback) {
                     Fallback.PAUSED -> AiOutcome.Later
-                    else -> AiOutcome.Skipped(run.fallback ?: Fallback.FAILED)
+                    else -> {
+                        if (run.early) forgetSome(chain)
+                        AiOutcome.Skipped(run.fallback ?: Fallback.FAILED)
+                    }
                 }
                 val shown = immutable(out)
                 key?.let { store.put(it, shown) }
+                val ms = SystemClock.elapsedRealtime() - t0
+                pageTimes.merge(AiChain.signature(chain), ms) { old, now -> (old + now) / 2 }
                 return AiOutcome.Done(shown, ms = run.ms)
             } finally {
                 if (readable !== input) readable.recycle()
@@ -140,6 +169,31 @@ class ReaderAi internal constructor(
         } finally {
             input.recycle()
         }
+    }
+
+    /**
+     * The limits of a page whose models run [steps] of [chain]: [PageLimits.DEFAULT_TIMEOUT_MS],
+     * or for a slower chain [WARM] times what the catalog says it takes on the reference tablet
+     * started cool, up to [MAX_TIMEOUT_MS], so a slow chain picked for a book can finish.
+     */
+    internal fun limitsFor(chain: List<CatalogModel>, steps: List<ChainStep>): PageLimits {
+        val cool = steps.sumOf { priorRate(chain[it.index]) * it.pixels / 1e6 }
+        return limits.copy(timeoutMs = (cool * WARM).toLong().coerceIn(limits.timeoutMs, maxOf(limits.timeoutMs, MAX_TIMEOUT_MS)))
+    }
+
+    /** Takes [m]'s time of [ms] for [done] of an input of [pixels] into its measured rate. */
+    private fun learn(m: CatalogModel, pixels: Long, ms: Long, done: Double) {
+        if (pixels <= 0 || done <= 0) return
+        val rate = ms / (pixels / 1e6 * done)
+        rates.merge(m.id, rate) { old, now -> (old + now) / 2 }
+    }
+
+    /**
+     * Moves [chain]'s measured rates a step back toward the catalog's after a page skipped as
+     * too slow, so a device that has cooled down tries the chain again after a few pages.
+     */
+    private fun forgetSome(chain: List<CatalogModel>) {
+        for (m in chain) rates.computeIfPresent(m.id) { _, r -> r + (priorRate(m) - r) * RECOVER }
     }
 
     /** [m] opened, once; null when it does not open. */
@@ -186,6 +240,21 @@ class ReaderAi internal constructor(
         }
 
         private val WORKER: CoroutineDispatcher by lazy { EXECUTOR.asCoroutineDispatcher() }
+
+        /** Megapixels of the catalog's reference page ([CatalogModel.pageMs]): 1000 x 1500. */
+        const val REFERENCE_MP = 1.5
+
+        /** How much longer than the catalog's cool time a model may take warm. */
+        const val WARM = 1.5
+
+        /** The longest a page may take, however slow its chain. */
+        const val MAX_TIMEOUT_MS = 120_000L
+
+        /** Share of the way back to the catalog's rate a measured one moves at each page skipped as too slow. */
+        const val RECOVER = 0.25
+
+        /** [m]'s milliseconds per megapixel on the reference tablet, started cool. */
+        fun priorRate(m: CatalogModel): Double = m.pageMs / REFERENCE_MP
 
         /** Largest page a chain reads, reduced evenly to fit: 32 MB of ARGB. */
         const val MAX_INPUT_PIXELS = 8_000_000L

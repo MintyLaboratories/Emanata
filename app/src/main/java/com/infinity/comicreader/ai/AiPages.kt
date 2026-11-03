@@ -71,8 +71,15 @@ object AiConditions {
 /** A page rendered for display: [bitmap], from the model's output when [run] finished, else from the page alone. */
 class AiRendered(val bitmap: Bitmap, val run: PageRun)
 
-/** A page through a chain ([AiPages.chain]): [bitmap] when it finished, else why not ([fallback]); [ran] models in [ms]. */
-class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val ms: Long)
+/**
+ * A page through a chain ([AiPages.chain]): [bitmap] when it finished, else why not
+ * ([fallback]); [ran] models in [ms]. [early]: it fell back as [Fallback.TIMEOUT] before any
+ * model ran, its expected time past the limit.
+ */
+class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val ms: Long, val early: Boolean = false)
+
+/** A model of a chain that runs on a page: [index] in the chain, on an input of [pixels]. */
+data class ChainStep(val index: Int, val pixels: Long)
 
 /**
  * Pages through a model, then to their display size by Lanczos3; a run that falls back
@@ -121,8 +128,12 @@ internal object AiPages {
      * nothing else is made: the page shows as it would without AI. An upscaling model is
      * skipped where the page shows no larger than its input to it; the chain falls back as
      * [Fallback.UNNEEDED] when every model is. All models share [limits]' time, toward which
-     * time [hold] held them back does not count. Throws
-     * [java.util.concurrent.CancellationException] once [canceled]. [src] is only read.
+     * time [hold] held them back does not count. [expect] gives the milliseconds a model is
+     * expected to take on an input of so many pixels (0: unknown): a chain expected to take
+     * longer than the limit falls back at once, and each model stops as soon as it would leave
+     * the models after it too little time. [onStep] hears each model's time on its input, and
+     * the share of its tiles it ran. Throws [java.util.concurrent.CancellationException] once
+     * [canceled]. [src] is only read.
      */
     fun chain(
         sessions: List<Session>,
@@ -134,34 +145,56 @@ internal object AiPages {
         canceled: () -> Boolean = { false },
         gate: () -> Fallback? = { null },
         clock: () -> Long = SystemClock::elapsedRealtime,
-        hold: () -> Boolean = { false }
+        hold: () -> Boolean = { false },
+        expect: (index: Int, pixels: Long) -> Long = { _, _ -> 0L },
+        onStep: (index: Int, pixels: Long, ms: Long, done: Double) -> Unit = { _, _, _, _ -> }
     ): ChainRun {
         val start = clock()
+        val steps = steps(sessions.map { it.geometry.scale }, src.width, src.height, plan)
+        if (steps.isEmpty()) return ChainRun(null, Fallback.UNNEEDED, 0, 0)
+        val expected = steps.map { expect(it.index, it.pixels).coerceAtLeast(0) }
+        if (expected.sum() > limits.timeoutMs) return ChainRun(null, Fallback.TIMEOUT, 0, 0, early = true)
         // The models' own time, without time held.
         var spent = 0L
         var page = src
         var scale = 1
         var ran = 0
         try {
-            for (session in sessions) {
-                val s = session.geometry.scale
-                if (s > 1 && scaled(plan, scale).shrinks()) continue
-                val left = limits.timeoutMs - spent
+            for ((n, step) in steps.withIndex()) {
+                val session = sessions[step.index]
+                // Time left for this model: what the models after it are expected to take is kept for them.
+                val left = limits.timeoutMs - spent - expected.drop(n + 1).sum()
                 if (left <= 0) return ChainRun(null, Fallback.TIMEOUT, ran, clock() - start)
                 val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock, hold)
                 spent += run.stats.totalMs
+                if (run.stats.tiles > 0) onStep(step.index, step.pixels, run.stats.totalMs, run.stats.tiles.toDouble() / run.stats.planned)
                 val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)
                 if (page !== src) page.recycle()
                 page = out
-                scale *= s
+                scale *= session.geometry.scale
                 ran++
             }
-            if (ran == 0) return ChainRun(null, Fallback.UNNEEDED, 0, clock() - start)
             val out = Cancellation.during(canceled) { BitmapUtils.resample(page, scaled(plan, scale), linear, scaling) }
             return ChainRun(out, null, ran, clock() - start)
         } finally {
             if (page !== src) page.recycle()
         }
+    }
+
+    /**
+     * The models of a chain, by their [scales], that run on a [width] x [height] page shown as
+     * [plan], each with its input's pixels: an upscaler is left out where the page shows no
+     * larger than its input.
+     */
+    fun steps(scales: List<Int>, width: Int, height: Int, plan: Plan): List<ChainStep> {
+        val out = ArrayList<ChainStep>()
+        var scale = 1
+        for ((i, s) in scales.withIndex()) {
+            if (s > 1 && scaled(plan, scale).shrinks()) continue
+            out += ChainStep(i, width.toLong() * height * scale * scale)
+            scale *= s
+        }
+        return out
     }
 
     /** [plan] for a source [scale] times larger. */

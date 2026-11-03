@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -125,5 +126,50 @@ class AiChainRunTest {
     fun cancelingThrows() {
         val up = FakeModel(scale = 2, reach = 1)
         assertThrows(CancellationException::class.java) { AiPages.chain(listOf(session(up)), page(60, 90), plan, canceled = { true }) }
+    }
+
+    @Test
+    fun aChainExpectedToRunPastItsTimeFallsBackBeforeAnyModelRuns() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 1)
+        val steps = ArrayList<Int>()
+        val run = AiPages.chain(
+            listOf(session(clean), session(up)), page(60, 90), plan, limits = PageLimits(timeoutMs = 1_000),
+            expect = { _, _ -> 600 }, onStep = { i, _, _, _ -> steps += i }
+        )
+        assertEquals(Fallback.TIMEOUT, run.fallback)
+        assertTrue(run.early)
+        assertEquals(0, run.ran)
+        assertTrue("no model ran", steps.isEmpty())
+    }
+
+    @Test
+    fun aModelLeavesTheModelsAfterItTheirExpectedTime() {
+        val up = FakeModel(scale = 2, reach = 1)
+        var t = 0L
+        val first = session(FakeModel(scale = 1, reach = 1, onRun = { t += 100 }))
+        val tiles = TilePlan.tiles(60, 90, 48, first.geometry).size
+        val seen = ArrayList<Pair<Int, Long>>()
+        // The first model alone fits the limit at 100 ms a tile, but not with the 600 ms kept for the second.
+        val run = AiPages.chain(
+            listOf(first, session(up)), page(60, 90), plan, limits = PageLimits(timeoutMs = tiles * 100L + 500), clock = { t },
+            expect = { i, _ -> if (i == 0) 0 else 600 },
+            onStep = { i, px, _, done ->
+                seen += i to px
+                assertTrue(done < 1)
+            }
+        )
+        assertEquals(Fallback.TIMEOUT, run.fallback)
+        assertEquals(listOf(0 to 60L * 90), seen)
+    }
+
+    @Test
+    fun stepsLeaveOutAnUpscalerWhereThePageShowsNoLarger() {
+        val shrink = Plan(30, 45, 0.0, 0.0, 60.0, 90.0)
+        assertEquals(listOf(ChainStep(0, 5400L)), AiPages.steps(listOf(1, 2), 60, 90, shrink))
+        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 5400L)), AiPages.steps(listOf(1, 2), 60, 90, plan))
+        // A second upscaler reads the first's output, four times the pixels.
+        val big = Plan(240, 360, 0.0, 0.0, 60.0, 90.0)
+        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 21600L)), AiPages.steps(listOf(2, 2), 60, 90, big))
     }
 }

@@ -217,4 +217,29 @@ class ReaderAiTest {
         assertFalse(ai.enhances(b))
         assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
     }
+
+    @Test
+    fun aSlowChainGetsMoreTimeUpToALimit() {
+        val fast = listOf(upscale)
+        val slowPair = listOf(ModelCatalog.byId("opencomic-ai-descreen-hard-fast-v3-256")!!, ModelCatalog.byId("realesr-animevideov3-x2")!!)
+        val reference = 1_500_000L
+        assertEquals(PageLimits.DEFAULT_TIMEOUT_MS, ai.limitsFor(fast, listOf(ChainStep(0, reference))).timeoutMs)
+        // Cool 15.4 + 10.8 s on the reference page: 1.5 times that once warm.
+        assertEquals(39_300L, ai.limitsFor(slowPair, listOf(ChainStep(0, reference), ChainStep(1, reference))).timeoutMs)
+        // A 6 MP scan through the slow descreen alone: 61.6 s cool, 92.4 s warm.
+        assertEquals(92_400L, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 4 * reference))).timeoutMs)
+        // Twice that: held to the most a page may take.
+        assertEquals(ReaderAi.MAX_TIMEOUT_MS, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 8 * reference))).timeoutMs)
+    }
+
+    @Test
+    fun aPagesTimeIsLearnedFromTheModelsRuns() {
+        install(upscale)
+        val b = bookOf()
+        val before = ai.pageMs(b)
+        assertEquals("the catalog's reference time", upscale.pageMs, before)
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+        assertTrue("measured: fake models are fast", ai.pageMs(b) < before)
+        assertTrue(ai.rateOf(upscale) < ReaderAi.priorRate(upscale))
+    }
 }

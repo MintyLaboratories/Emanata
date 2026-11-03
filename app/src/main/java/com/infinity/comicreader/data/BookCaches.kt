@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import android.content.Context
+import com.infinity.comicreader.ai.ProcessedStore
 import com.infinity.comicreader.net.FileEnds
 import com.infinity.comicreader.net.Listings
 import com.infinity.comicreader.net.RemoteCache
@@ -13,8 +14,8 @@ import com.infinity.comicreader.util.CacheFiles
 import java.io.File
 
 /**
- * What the app keeps that it can make again ("Clear cache"): covers, page previews, page
- * sizes, seams and pages seen, book facts, the Book ID index, network copies, share
+ * What the app keeps that it can make again ("Clear cache"): covers, page previews, pages
+ * processed by AI, page sizes, seams and pages seen, book facts, the Book ID index, network copies, share
  * listings and copies of nested archives. Library data (favorites, read marks, history,
  * bookmarks, hidden pages, books' own settings) is never part of it.
  */
@@ -25,6 +26,7 @@ object BookCaches {
     private fun dirs(cacheDir: File): List<File> = listOf(
         Thumbs.dirIn(cacheDir),
         PreviewStore.dirIn(cacheDir),
+        ProcessedStore.dirIn(cacheDir),
         PageSizes.dirIn(cacheDir),
         PageSeams.dirIn(cacheDir),
         RemoteCache.dirIn(cacheDir),
@@ -49,6 +51,7 @@ object BookCaches {
         val cacheDir = app.cacheDir
         Thumbs.clear(app)
         PreviewStore.clear(PreviewStore.dirIn(cacheDir))
+        ProcessedStore.clear(ProcessedStore.dirIn(cacheDir))
         PageSizes.dirIn(cacheDir).deleteRecursively()
         PageSeams.dirIn(cacheDir).deleteRecursively()
         BookFactsCache(app).clear()
@@ -75,7 +78,7 @@ object BookCaches {
 
     /**
      * Deletes what is cached for book [id] alone, as when it is deleted: its facts, network
-     * copy, page sizes, seams, previews and nested archives. Blocking.
+     * copy, page sizes, seams, previews, pages processed by AI and nested archives. Blocking.
      */
     fun forget(context: Context, id: BookId) {
         val app = context.applicationContext
@@ -85,6 +88,7 @@ object BookCaches {
         PageSizes.forget(PageSizes.dirIn(cacheDir), id)
         PageSeams.forget(PageSeams.dirIn(cacheDir), id)
         PreviewStore.forget(PreviewStore.dirIn(cacheDir), id)
+        ProcessedStore.forget(ProcessedStore.dirIn(cacheDir), id)
         NestedArchives.forget(NestedArchives.dirIn(cacheDir), id)
     }
 }

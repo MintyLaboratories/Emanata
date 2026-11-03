@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.appcompat.app.AppCompatDelegate
+import com.infinity.comicreader.ai.ProcessedStore
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -80,6 +81,7 @@ class App : Application() {
                 File(cacheDir, "crop_src.png").takeIf { it.lastModified() < cutoff }?.delete()
                 Thumbs.trim(this)
                 PreviewStore.trim(PreviewStore.dirIn(cacheDir))
+                ProcessedStore.trim(ProcessedStore.dirIn(cacheDir))
                 PageSizes.trim(PageSizes.dirIn(cacheDir))
                 PageSeams.trim(PageSeams.dirIn(cacheDir))
                 NestedArchives.trim(NestedArchives.dirIn(cacheDir))

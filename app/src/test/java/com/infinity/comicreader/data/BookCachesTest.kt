@@ -3,6 +3,7 @@ package com.infinity.comicreader.data
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.ai.ProcessedStore
 import com.infinity.comicreader.net.Listings
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.reader.NestedArchives
@@ -51,7 +52,7 @@ class BookCachesTest {
     }
 
     private val perBook get() = listOf(
-        PageSizes.dirIn(cache), PageSeams.dirIn(cache), PreviewStore.dirIn(cache), NestedArchives.dirIn(cache)
+        PageSizes.dirIn(cache), PageSeams.dirIn(cache), PreviewStore.dirIn(cache), ProcessedStore.dirIn(cache), NestedArchives.dirIn(cache)
     )
 
     @Test

@@ -198,12 +198,7 @@ class DecodeCheckService : Service() {
     /** Where the reader's JPEG XL threads run: the large cores when pinned ([JxlPages.pinned]), else anywhere. */
     private val jxlCores: Cores get() = DecodeRuns.jxlCores(JxlPages.pinned)
 
-    private fun mask(cores: Cores): Long = when (cores) {
-        Cores.BIG -> CpuCores.device.big
-        Cores.LITTLE -> CpuCores.device.little
-        Cores.PRIME -> CpuCores.device.prime
-        Cores.ANY -> 0L
-    }
+    private fun mask(cores: Cores): Long = ResampleRuns.mask(cores, CpuCores.device)
 
     private fun decode(setup: Setup, page: Page): Bitmap = when (setup.engine) {
         Engine.CODER -> LibJxl.onCores(mask(setup.cores)) { JxlCoder.decode(page.bytes, PreferredColorConfig.RGBA_8888) }

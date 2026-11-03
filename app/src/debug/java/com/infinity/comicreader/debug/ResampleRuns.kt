@@ -1,6 +1,7 @@
 package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.reader.Calibration
+import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.PixelEngine
 
 /** Pure parts of [ResampleCheckService]: what to run, in which order, to what size, and the energy it took. */
@@ -38,14 +39,22 @@ internal object ResampleRuns {
         }
     }
 
+    /** The cores [cores] pins to on a CPU split as [c] says; 0 pins nothing. */
+    fun mask(cores: Cores, c: CpuCores): Long = when (cores) {
+        Cores.BIG -> c.big
+        Cores.LITTLE -> c.little
+        Cores.PRIME -> c.prime
+        Cores.ANY -> 0L
+    }
+
     /** One engine setup: [threads] CPU workers (Kotlin's, or native code's) on [cores]; the GPU has neither. */
     data class Setup(val engine: PixelEngine, val threads: Int, val cores: Cores) {
         val key: String get() = if (engine == PixelEngine.GPU) engine.key else "${engine.key}/$threads/${cores.key}"
 
         companion object {
             /**
-             * `engine[/threads[/cores]]`, as `native/4/big`, `native/1/little`, `kotlin/8` or
-             * `gpu`; threads default to [threads], cores to any. Null when unreadable.
+             * `engine[/threads[/cores]]`, as `native/4/big`, `native/1/little`, `native/2/prime`,
+             * `kotlin/8` or `gpu`; threads default to [threads], cores to any. Null when unreadable.
              */
             fun of(text: String, threads: Int): Setup? {
                 val parts = text.trim().split('/')
@@ -53,7 +62,7 @@ internal object ResampleRuns {
                 if (engine == PixelEngine.GPU) return Setup(engine, 1, Cores.ANY)
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { Cores.of(it) ?: return null } ?: Cores.ANY
-                if (n !in 1..16 || cores == Cores.PRIME || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null
+                if (n !in 1..16 || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null
                 return Setup(engine, n, cores)
             }
         }

@@ -111,6 +111,10 @@ object NativeResampler {
     @Volatile
     internal var laterOnLittle: Boolean = false
 
+    /** Pins every worker to the fastest cores alone ([CpuCores.prime]) instead, for A/B runs. */
+    @Volatile
+    internal var onPrime: Boolean = false
+
     /** The cores the workers are pinned to. */
     internal var cores: CpuCores? = null
         get() = field ?: CpuCores.device
@@ -174,7 +178,7 @@ object NativeResampler {
             val failed = AtomicBoolean()
             try {
                 Resampler.inBands(dst.height, most, canceled, { if (urgent()) now else later }) { worker, y0, y1 ->
-                    val on = if (!pin) 0L else if (laterOnLittle && !urgent()) c.little else c.big
+                    val on = if (!pin) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
                     k.band(job, worker, y0, y1, on).also { if (!it) failed.set(true) }
                 }
             } catch (e: CancellationException) {

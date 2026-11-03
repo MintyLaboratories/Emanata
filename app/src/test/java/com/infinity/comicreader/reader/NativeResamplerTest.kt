@@ -101,6 +101,7 @@ class NativeResamplerTest {
         NativeResampler.laterThreads = 1
         NativeResampler.pinned = true
         NativeResampler.laterOnLittle = false
+        NativeResampler.onPrime = false
     }
 
     @After
@@ -108,6 +109,7 @@ class NativeResamplerTest {
         NativeResampler.kernels = null
         NativeResampler.cores = null
         NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.onPrime = false
         windows.clear()
     }
 
@@ -158,6 +160,16 @@ class NativeResamplerTest {
         // Waited-on work stays on the large cores.
         assertTrue(resample(noise(64, 64), 40, 401, Resampler.Window.of(64, 64), Scaling.DEFAULT).first)
         assertEquals(setOf(0b1111_0000L), k.jobs.last().cores.toSet())
+    }
+
+    @Test
+    fun workCanBeSentToTheFastestCoreAlone() {
+        val k = use(FakeKernels())
+        NativeResampler.onPrime = true
+        assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT).first)
+        assertEquals(setOf(0b1000_0000L), k.jobs.single().cores.toSet())
+        assertTrue(resample(noise(64, 64), 40, 401, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { false }).first)
+        assertEquals(setOf(0b1000_0000L), k.jobs.last().cores.toSet())
     }
 
     @Test

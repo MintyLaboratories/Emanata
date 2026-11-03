@@ -49,8 +49,8 @@ import kotlin.random.Random
  *  [--es size 1848x2772|screen]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
- * workers pinned to the large or little cores ([CpuCores]) or left to the system (`any`);
- * a little setup runs as work nobody waits on (`Urgency`).
+ * workers pinned to the large or little cores ([CpuCores]), to the fastest alone (`prime`),
+ * or left to the system (`any`); a little setup runs as work nobody waits on (`Urgency`).
  *
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
@@ -110,6 +110,7 @@ class ResampleCheckService : Service() {
             val keptLater = NativeResampler.laterThreads
             val keptPinned = NativeResampler.pinned
             val keptLittle = NativeResampler.laterOnLittle
+            val keptPrime = NativeResampler.onPrime
             try {
                 out.parentFile?.mkdirs()
                 if (asked != null && timed.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
@@ -130,6 +131,7 @@ class ResampleCheckService : Service() {
                 NativeResampler.laterThreads = keptLater
                 NativeResampler.pinned = keptPinned
                 NativeResampler.laterOnLittle = keptLittle
+                NativeResampler.onPrime = keptPrime
                 Log.i(TAG, "done")
                 stopSelfResult(startId)
             }
@@ -361,6 +363,7 @@ class ResampleCheckService : Service() {
         NativeResampler.laterThreads = setup.threads
         NativeResampler.pinned = setup.cores != Cores.ANY
         NativeResampler.laterOnLittle = setup.cores == Cores.LITTLE
+        NativeResampler.onPrime = setup.cores == Cores.PRIME
         val urgent = setup.cores != Cores.LITTLE
         try {
             check(NativeResampler.resample(src, dst, window, false, scaling, engine = setup.engine, fallback = false, urgent = { urgent })) {

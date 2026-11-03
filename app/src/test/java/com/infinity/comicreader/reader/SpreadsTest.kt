@@ -454,6 +454,20 @@ class SpreadsTest {
     }
 
     @Test
+    fun aFewKnownWidePagesAreNoLandscapeBook() {
+        val paths = book(run("page", 1..10, pad = 2))
+        // Two wide pages and one portrait known at opening: two spreads, not a landscape book.
+        val opening = List(10) { i -> if (i in 3..5) (if (i == 3) portrait else wide) else null }
+        val a = Spreads.classify(paths, opening)
+        assertFalse(a.landscape)
+        assertTrue(a.splittable(4))
+        // Five known, all wide: landscape.
+        assertTrue(Spreads.classify(paths, List(10) { i -> if (i in 2..6) wide else null }).landscape)
+        // A shorter book is judged on all its pages.
+        assertTrue(Spreads.classify(book(run("page", 1..3, pad = 2)), List(3) { wide }).landscape)
+    }
+
+    @Test
     fun onlyWideSpreadsAfterTheFirstPageSplit() {
         val sizes = sizes(gate, setOf("Iron Gate 001-000", "Iron Gate 001-012"))
         val a = Spreads.classify(gate, sizes)

@@ -150,6 +150,37 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun openingOnTwoWidePagesSplitsBoth() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        prefs.saverScans = true
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val viewer = openAt(book(numbered(1, 10), setOf("Tale 001-005", "Tale 001-006")), 4)
+        assertEquals(12, viewer.items())
+        assertEquals("5 / 12", viewer.indicator())
+    }
+
+    @Test
+    fun openingALandscapeBookShowsWholePages() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        prefs.saverScans = true
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val names = numbered(1, 10)
+        val viewer = openAt(book(names, names.toSet()), 4)
+        assertEquals(10, viewer.items())
+        assertEquals("5 / 10", viewer.indicator())
+    }
+
+    /** The reader opened on [book] at page [page] once its first layout settles. */
+    private fun openAt(book: File, page: Int): ViewerActivity {
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, page)
+        val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        waitUntil { pager.adapter != null }
+        repeat(20) { Thread.sleep(10); idle() }
+        return viewer
+    }
+
+    @Test
     fun splitShowsAWidePageAsTwoNumberedPages() {
         prefs.spreads = SpreadDisplay.SPLIT
         val viewer = launch(book(numbered(1, 10), setOf("Tale 001-005")))

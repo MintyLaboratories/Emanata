@@ -136,6 +136,13 @@ object Spreads {
     /** Pages either way of a seam within which the reader sees it, so a lone match there may settle its run. */
     const val NEAR = 4
 
+    /**
+     * The fewest known page sizes a book is judged [landscape][Analysis.landscape] on (all of
+     * a shorter book's): two one-file spreads beside the page a book opens on are not a
+     * landscape book.
+     */
+    const val LANDSCAPE_SAMPLE = 5
+
     // ------------------------------------------------------------------ tokens
 
     /** A number in a name: digits at [start] until [end], letter suffix until [endAll]. */
@@ -239,7 +246,7 @@ object Spreads {
         // Wider than tall, and clearly wider than the book's pages.
         val wide = { a: Double -> a > 1.0 && a >= 1.45 * m }
         val known = aspects.count { it > 0 }
-        val landscape = known > 0 && aspects.count(wide) * 10 >= known * 6
+        val landscape = known > 0 && known >= minOf(n, LANDSCAPE_SAMPLE) && aspects.count(wide) * 10 >= known * 6
 
         val kinds = arrayOfNulls<Kind>(n)
         val last = LongArray(n) { -1 }

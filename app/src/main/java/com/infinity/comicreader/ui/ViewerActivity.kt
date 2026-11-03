@@ -1663,13 +1663,17 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     }
 
     /**
-     * Reads the sizes [sizes] lacks of the pages a book opens on, page [at] and those beside
-     * it, from their headers where that is cheap ([PageSource.cheapSizes]), so a tall page
-     * among them is decoded as one from the start. Blocking.
+     * Reads the sizes [sizes] lacks of the pages a book opens on, the [Spreads.LANDSCAPE_SAMPLE]
+     * pages nearest page [at], from their headers where that is cheap ([PageSource.cheapSizes]),
+     * so a tall page or spread among them is laid out as one from the start and enough sizes
+     * are known to tell a landscape book. Blocking.
      */
     private fun sizeOpening(src: PageSource, sizes: Array<IntArray?>, at: Int) {
         if (!src.cheapSizes) return
-        for (i in at - 1..at + 1) if (i in sizes.indices && sizes[i] == null) sizes[i] = runCatching { src.pageSize(i) }.getOrNull()
+        val from = (at - Spreads.LANDSCAPE_SAMPLE / 2).coerceAtMost(sizes.size - Spreads.LANDSCAPE_SAMPLE).coerceAtLeast(0)
+        for (i in from until minOf(sizes.size, from + Spreads.LANDSCAPE_SAMPLE)) {
+            if (sizes[i] == null) sizes[i] = runCatching { src.pageSize(i) }.getOrNull()
+        }
     }
 
     /**

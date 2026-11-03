@@ -1,0 +1,129 @@
+package com.infinity.comicreader.ai
+
+import android.app.Application
+import android.graphics.Bitmap
+import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Plan
+import com.infinity.comicreader.reader.Scaling
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.util.concurrent.CancellationException
+import kotlin.random.Random
+
+/** A page through a chain of models ([AiPages.chain]): each in turn, then resampled; nothing made when it falls back. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = Application::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class AiChainRunTest {
+
+    private fun page(w: Int, h: Int): Bitmap {
+        val r = Random(w * 7 + h)
+        val px = IntArray(w * h) { 0xFF000000.toInt() or r.nextInt(1 shl 24) }
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+            setPixels(px, 0, w, 0, 0, w, h)
+            setHasAlpha(false)
+        }
+    }
+
+    private fun pixels(b: Bitmap): IntArray = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
+
+    private fun bitmapOf(px: IntArray, w: Int, h: Int) = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+        setPixels(px, 0, w, 0, 0, w, h)
+        setHasAlpha(false)
+    }
+
+    private fun session(model: FakeModel) = Session(model, ModelProbe.measure(model), 48)
+
+    /** Shows a 60 x 90 page at 70 x 105: enlarged. */
+    private val plan = Plan(70, 105, 0.0, 0.0, 60.0, 90.0)
+
+    @Test
+    fun eachModelRunsOnTheOneBeforesOutputThenThePageIsResampled() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 2)
+        val src = page(60, 90)
+        val run = AiPages.chain(listOf(session(clean), session(up)), src, plan)
+        assertNull(run.fallback)
+        assertEquals(2, run.ran)
+        val once = bitmapOf(FakeModel.reference(src, 1, 1), 60, 90)
+        val twice = bitmapOf(FakeModel.reference(once, 2, 2), 120, 180)
+        val expected = BitmapUtils.resample(twice, AiPages.scaled(plan, 2), false, Scaling.DEFAULT)
+        assertEquals(70, run.bitmap!!.width)
+        assertArrayEquals(pixels(expected), pixels(run.bitmap!!))
+        assertFalse("the page itself is only read", src.isRecycled)
+    }
+
+    @Test
+    fun anUpscalerIsSkippedWhereThePageShowsNoLarger() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 1)
+        val upSession = session(up)
+        val before = up.runs.get()
+        val shrink = Plan(50, 75, 0.0, 0.0, 60.0, 90.0)
+        val run = AiPages.chain(listOf(session(clean), upSession), page(60, 90), shrink)
+        assertNull(run.fallback)
+        assertEquals(1, run.ran)
+        assertEquals(before, up.runs.get())
+    }
+
+    @Test
+    fun aSecondUpscalerIsSkippedOnceTheFirstMadeThePageLargeEnough() {
+        val first = FakeModel(scale = 2, reach = 1)
+        val second = FakeModel(scale = 2, reach = 1)
+        val secondSession = session(second)
+        val before = second.runs.get()
+        val run = AiPages.chain(listOf(session(first), secondSession), page(60, 90), plan)
+        assertEquals(1, run.ran)
+        assertEquals(before, second.runs.get())
+    }
+
+    @Test
+    fun onlyUpscalersOnAShrunkPageMakeNothing() {
+        val up = FakeModel(scale = 2, reach = 1)
+        val run = AiPages.chain(listOf(session(up)), page(60, 90), Plan(30, 45, 0.0, 0.0, 60.0, 90.0))
+        assertEquals(Fallback.UNNEEDED, run.fallback)
+        assertNull(run.bitmap)
+        assertEquals(0, run.ran)
+    }
+
+    @Test
+    fun aModelThatFallsBackMakesNothing() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 1)
+        val sessions = listOf(session(clean), session(up))
+        var gateCalls = 0
+        // The gate is asked before a page's first tile and between tiles: the first model passes, the second stops.
+        val tilesOfFirst = TilePlan.tiles(60, 90, 48, sessions[0].geometry).size
+        val run = AiPages.chain(sessions, page(60, 90), plan, gate = { if (++gateCalls > tilesOfFirst) Fallback.PAUSED else null })
+        assertEquals(Fallback.PAUSED, run.fallback)
+        assertNull(run.bitmap)
+        assertEquals(1, run.ran)
+    }
+
+    @Test
+    fun theModelsShareOnePagesTime() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 1)
+        var now = 0L
+        // Every clock reading moves time on by 400 ms: the first model alone takes more than the 1 s allowed.
+        val run = AiPages.chain(
+            listOf(session(clean), session(up)), page(60, 90), plan, limits = PageLimits(timeoutMs = 1_000), clock = { now.also { now += 400 } }
+        )
+        assertEquals(Fallback.TIMEOUT, run.fallback)
+        assertNull(run.bitmap)
+    }
+
+    @Test
+    fun cancelingThrows() {
+        val up = FakeModel(scale = 2, reach = 1)
+        assertThrows(CancellationException::class.java) { AiPages.chain(listOf(session(up)), page(60, 90), plan, canceled = { true }) }
+    }
+}

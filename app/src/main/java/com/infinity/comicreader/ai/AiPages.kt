@@ -71,6 +71,9 @@ object AiConditions {
 /** A page rendered for display: [bitmap], from the model's output when [run] finished, else from the page alone. */
 class AiRendered(val bitmap: Bitmap, val run: PageRun)
 
+/** A page through a chain ([AiPages.chain]): [bitmap] when it finished, else why not ([fallback]); [ran] models in [ms]. */
+class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val ms: Long)
+
 /**
  * Pages through a model, then to their display size by Lanczos3; a run that falls back
  * leaves the page as it would be without AI: the page itself by Lanczos3. An upscaling model
@@ -109,6 +112,50 @@ internal object AiPages {
                     big.recycle()
                 }
             }
+        }
+    }
+
+    /**
+     * [src] through [sessions]' models in turn, then resampled as [plan] (in [src]'s pixels)
+     * and [scaling] say; no bitmap when the chain falls back ([ChainRun.fallback]), when
+     * nothing else is made: the page shows as it would without AI. An upscaling model is
+     * skipped where the page shows no larger than its input to it; the chain falls back as
+     * [Fallback.UNNEEDED] when every model is. All models share [limits]' time. Throws
+     * [java.util.concurrent.CancellationException] once [canceled]. [src] is only read.
+     */
+    fun chain(
+        sessions: List<Session>,
+        src: Bitmap,
+        plan: Plan,
+        scaling: Scaling = Scaling.DEFAULT,
+        linear: Boolean = false,
+        limits: PageLimits = PageLimits(),
+        canceled: () -> Boolean = { false },
+        gate: () -> Fallback? = { null },
+        clock: () -> Long = SystemClock::elapsedRealtime
+    ): ChainRun {
+        val start = clock()
+        var page = src
+        var scale = 1
+        var ran = 0
+        try {
+            for (session in sessions) {
+                val s = session.geometry.scale
+                if (s > 1 && scaled(plan, scale).shrinks()) continue
+                val left = limits.timeoutMs - (clock() - start)
+                if (left <= 0) return ChainRun(null, Fallback.TIMEOUT, ran, clock() - start)
+                val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock)
+                val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)
+                if (page !== src) page.recycle()
+                page = out
+                scale *= s
+                ran++
+            }
+            if (ran == 0) return ChainRun(null, Fallback.UNNEEDED, 0, clock() - start)
+            val out = Cancellation.during(canceled) { BitmapUtils.resample(page, scaled(plan, scale), linear, scaling) }
+            return ChainRun(out, null, ran, clock() - start)
+        } finally {
+            if (page !== src) page.recycle()
         }
     }
 

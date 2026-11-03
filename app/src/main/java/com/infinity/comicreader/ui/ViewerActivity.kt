@@ -1238,9 +1238,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                         Traces.section("open: direction") { runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
                     }
                     known = s.getOrNull()?.let { src ->
-                        val kept = knownSizes(target, src)
-                        Traces.section("open: sizes of the first pages") { sizeOpening(src, kept.sizes, startOf(src.pageCount, id).page) }
-                        kept
+                        knownSizes(target, src, opening = startOf(src.pageCount, id).page)
                     }
                     // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.
                     s.getOrNull()?.takeIf { slice }?.let { src ->
@@ -1715,10 +1713,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** [src], book [id] opened, without the pages hidden in it. */
     private fun hiding(id: BookId?, src: PageSource): PageSource = HiddenPages.wrap(src, library.hiddenPages(id))
 
-    /** The page names of [src], the sizes, seams and pages seen stored for them and their [Spreads.classify]. Blocking. */
-    private suspend fun knownSizes(book: File, src: PageSource): KnownPages {
+    /**
+     * The page names of [src], the sizes, seams and pages seen stored for them and their
+     * [Spreads.classify], with the sizes of the pages the book opens on at [opening] read
+     * first ([sizeOpening]), so a spread there is laid out as one from the start. Blocking.
+     */
+    private suspend fun knownSizes(book: File, src: PageSource, opening: Int = -1): KnownPages {
         val store = StoredPages(PageSizes(PageSizes.dirIn(cacheDir)), PageSeams(PageSeams.dirIn(cacheDir)), PreviewStore.bookId(book), src)
         val sizes = store.readSizes()
+        if (opening >= 0) Traces.section("open: sizes of the first pages") { sizeOpening(src, sizes, opening) }
         return KnownPages(store, sizes, classify(store.names, sizes), store.readSeams(), withContext(seenIo) { store.readSeen() })
     }
 

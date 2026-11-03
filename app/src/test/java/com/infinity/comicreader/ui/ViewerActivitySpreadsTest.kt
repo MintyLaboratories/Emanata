@@ -8,6 +8,7 @@ import android.content.pm.ActivityInfo
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Looper
+import android.os.PowerManager
 import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
@@ -130,6 +131,22 @@ class ViewerActivitySpreadsTest {
         assertEquals(5, viewer.items())
         viewer.next()
         assertEquals("2 / 8", viewer.indicator())
+    }
+
+    @Test
+    fun openingOnAWidePageSplitsItFromTheFirstLayout() {
+        prefs.spreads = SpreadDisplay.SPLIT
+        // Battery saver holds the size scans back: only the sizes read at opening are known.
+        prefs.saverScans = true
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val book = book(numbered(1, 10), setOf("Tale 001-005"))
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, 4)
+        val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        waitUntil { pager.adapter != null }
+        repeat(20) { Thread.sleep(10); idle() }
+        assertEquals(11, viewer.items())
+        assertEquals("5 / 11", viewer.indicator())
     }
 
     @Test

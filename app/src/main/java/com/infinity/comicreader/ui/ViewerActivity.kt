@@ -481,6 +481,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
     private var slicesJob: Job? = null
 
+    /**
+     * True once nothing opening the book started still runs: the open, what it left for
+     * later, and page decodes. Tests wait for it so no late result lands mid-run.
+     */
+    internal fun openSettled(): Boolean =
+        listOf(openJob, lateDetectionJob, likenessJob, tallJob, repackJob, slicesJob, sizesJob, seamsJob, learnJob, bookInfoJob).none { it?.isActive == true } &&
+            adapter?.decoding != true
+
     /** True while the open book's scans (sizes, seams, slices) or a page decode run; for benchmarks. */
     internal val busy: Boolean
         get() = sizesJob?.isActive == true || seamsJob?.isActive == true || slicesJob?.isActive == true || adapter?.decoding == true

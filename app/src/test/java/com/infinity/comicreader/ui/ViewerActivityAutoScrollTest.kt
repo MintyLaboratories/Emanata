@@ -16,6 +16,7 @@ import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.AutoScroll
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -50,15 +51,17 @@ class ViewerActivityAutoScrollTest {
         book = Fixtures.zip(File(tmp.newFolder("shelf"), "Book 01.cbz"), *(0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }.toTypedArray())
     }
 
+    /** Opens the book and waits until everything its open started is done: a late result would land mid-run on the fake clock. */
     private fun launch(): ViewerActivity {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
+        val deadline = System.currentTimeMillis() + 30_000
         do {
             Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        } while ((progress.visibility == View.VISIBLE || !viewer.openSettled()) && System.currentTimeMillis() < deadline)
+        assertTrue("book still opening", progress.visibility != View.VISIBLE && viewer.openSettled())
         return viewer
     }
 

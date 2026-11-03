@@ -43,15 +43,15 @@ data class PageLimits(val timeoutMs: Long = DEFAULT_TIMEOUT_MS, val maxOutputPix
 /** What one page's run did: tiles run of all planned, each tile's milliseconds, the whole run's. */
 class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val totalMs: Long) {
     /**
-     * The run's time for all [planned] tiles: [totalMs] once all ran; else, with two or more
-     * run, the time outside tiles, the first tile's (it carries the GPU's warm-up) and the
-     * later ones' mean for each tile left; null with fewer.
+     * The run's time for all [planned] tiles: [totalMs] once all ran; else, with at least
+     * [TileEngine.PACE_AFTER] run, the time outside tiles, the first tile's (it carries the
+     * GPU's warm-up) and the later ones' mean for each tile left; null with fewer.
      */
     val fullMs: Long?
         get() = when {
             planned <= 0 -> null
             tiles >= planned -> totalMs
-            tiles < 2 -> null
+            tiles < TileEngine.PACE_AFTER -> null
             else -> {
                 val inTiles = tileMs.take(tiles).sum()
                 val later = (inTiles - tileMs[0]).toDouble() / (tiles - 1)
@@ -106,7 +106,7 @@ internal object TileEngine {
      * Tiles timed before the pace predicts a miss, the first left out of it: it carries the
      * GPU's warm-up, often several times a later tile's time.
      */
-    private const val PACE_AFTER = 4
+    internal const val PACE_AFTER = 4
 
     /** Rows of a page read at a time when looking for transparency. */
     private const val ALPHA_ROWS = 64

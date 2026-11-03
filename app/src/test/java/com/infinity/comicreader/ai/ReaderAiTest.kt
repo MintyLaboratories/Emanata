@@ -246,8 +246,10 @@ class ReaderAiTest {
     @Test
     fun aRunStoppedByItsPaceIsLearnedWithItsWarmUpCountedOnce() {
         val prior = ReaderAi.priorRate(upscale)
-        // One tile: no pace yet, nothing learned.
+        // Fewer tiles than the pace check needs: nothing learned.
         ai.learn(upscale, 1_500_000, RunStats(1, 70, longArrayOf(9_000), 9_000))
+        ai.learn(upscale, 1_500_000, RunStats(2, 70, longArrayOf(2_000, 50), 2_050))
+        ai.learn(upscale, 1_500_000, RunStats(3, 70, longArrayOf(2_000, 50, 50), 2_100))
         assertEquals(prior, ai.rateOf(upscale), 1e-9)
         // Stopped after 4 of 70 tiles: 2 s warm-up, then 300 ms a tile, 21.3 s for the page.
         ai.learn(upscale, 1_500_000, RunStats(4, 70, longArrayOf(2_000, 300, 300, 300), 2_900))

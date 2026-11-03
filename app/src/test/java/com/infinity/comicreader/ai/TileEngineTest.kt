@@ -102,6 +102,8 @@ class TileEngineTest {
         assertEquals(50L + 2_000 + 69 * 100, RunStats(4, 70, longArrayOf(2_000, 100, 100, 100), 2_350).fullMs)
         assertEquals("finished: as it took", 3_210L, RunStats(3, 3, longArrayOf(3_000, 100, 100), 3_210).fullMs)
         assertNull("one tile tells no pace", RunStats(1, 70, longArrayOf(2_000), 2_050).fullMs)
+        assertNull("two or three tell too little", RunStats(2, 70, longArrayOf(2_000, 100), 2_150).fullMs)
+        assertNull(RunStats(3, 70, longArrayOf(2_000, 100, 100), 2_250).fullMs)
         assertNull(RunStats.NONE.fullMs)
     }
 

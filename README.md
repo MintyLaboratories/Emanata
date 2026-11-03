@@ -838,8 +838,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   priority of the AI thread), up to 120 s; each model keeps
   back what the models after it are expected to take, and a chain expected to
   run past its time at the rates measured on the device falls back before any
-  model runs (a run cut short counts as its whole input: its first tile once,
-  the rest at their pace; those rates drift back toward the catalog's with
+  model runs (a run cut short after four tiles or more counts as its whole
+  input: its first tile once, the rest at their pace; one cut shorter teaches
+  nothing; those rates drift back toward the catalog's with
   each such page). Tiles wait while the reader is touched or scrolling, so the GPU
   leaves its frames alone. Heat or battery saver (`AiConditions`) or a model
   still downloading puts the queue off for 15 s, doubling to 2 min (a page

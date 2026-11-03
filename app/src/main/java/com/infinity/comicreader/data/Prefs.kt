@@ -483,7 +483,10 @@ class Prefs(context: Context) {
         get() = bool(KEY_AI, false)
         set(v) = put(KEY_AI, v)
 
-    /** The catalog id of [step]'s model; null for none. Upscale starts with [ModelCatalog.DEFAULT_UPSCALE], the others with none. */
+    /**
+     * The catalog id of [step]'s model; null for none. Only a choice is stored: Upscale
+     * without one runs [ModelCatalog.DEFAULT_UPSCALE], the others none.
+     */
     fun aiModel(step: AiStep): String? =
         sp.getString(aiKey(step), null).let { it ?: if (step == AiStep.UPSCALE) ModelCatalog.DEFAULT_UPSCALE else null }
             ?.takeIf { it != AI_NONE && it.isNotEmpty() }
@@ -737,8 +740,19 @@ class Prefs(context: Context) {
         /** The stored value of a step without a model. */
         const val AI_NONE = "none"
 
-        /** The key of [step]'s model. */
-        fun aiKey(step: AiStep) = "pref_ai_${step.key}"
+        /** The key of [step]'s model; Upscale's changed with its default ([OLD_AI_UPSCALE]). */
+        fun aiKey(step: AiStep) = if (step == AiStep.UPSCALE) KEY_AI_UPSCALE else "pref_ai_${step.key}"
+
+        private const val KEY_AI_UPSCALE = "pref_ai_upscale_model"
+
+        /**
+         * Replaced by [KEY_AI_UPSCALE]. The settings screen stored its default unasked, so the
+         * old default ([OLD_DEFAULT_UPSCALE]) is dropped, following today's; other choices move.
+         */
+        private const val OLD_AI_UPSCALE = "pref_ai_upscale"
+
+        /** Upscale's default while [OLD_AI_UPSCALE] held its model. */
+        private const val OLD_DEFAULT_UPSCALE = "opencomic-ai-upscale-2x-compact-v2"
 
         private val KNOWN_KEYS = setOf(
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -751,7 +765,7 @@ class Prefs(context: Context) {
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
-            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_AI
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_AI, OLD_AI_UPSCALE
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */
@@ -908,6 +922,11 @@ class Prefs(context: Context) {
             }
             val locale = stored[KEY_LOCALE]
             if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]
+            if (OLD_AI_UPSCALE in stored) {
+                val old = stored[OLD_AI_UPSCALE] as? String
+                if (KEY_AI_UPSCALE !in stored && old != null && old != OLD_DEFAULT_UPSCALE) out[KEY_AI_UPSCALE] = old
+                out[OLD_AI_UPSCALE] = null
+            }
             return out
         }
     }

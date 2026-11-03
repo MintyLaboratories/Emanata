@@ -5,6 +5,8 @@ import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.reader.Adjustments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -410,5 +412,38 @@ class PrefsUpgradeTest {
         )
         assertEquals(mapOf("pref_charset" to null), Prefs.upgrade(mapOf("pref_charset" to "GBK", "pref_name_charset" to "auto")))
         assertEquals("auto", Prefs(context).charset)
+    }
+
+    @Test
+    fun theOldUpscaleDefaultFollowsTheNewOneWhileOtherChoicesStay() {
+        val old = "pref_ai_upscale"
+        val key = Prefs.aiKey(AiStep.UPSCALE)
+        // Stored by the settings screen unasked: dropped, so the new default applies.
+        assertEquals(mapOf(old to null), Prefs.upgrade(mapOf(old to "opencomic-ai-upscale-2x-compact-v2")))
+        assertEquals(mapOf(key to "realesr-animevideov3-x2", old to null), Prefs.upgrade(mapOf(old to "realesr-animevideov3-x2")))
+        assertEquals(mapOf(key to Prefs.AI_NONE, old to null), Prefs.upgrade(mapOf(old to Prefs.AI_NONE)))
+        assertEquals(mapOf(old to null), Prefs.upgrade(mapOf(old to "realesr-animevideov3-x2", key to "waifu2x-upconv7-2x-denoise1")))
+        assertTrue(Prefs.upgrade(mapOf(key to "opencomic-ai-upscale-2x-compact-v2")).isEmpty())
+
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+            .putString(old, "opencomic-ai-upscale-2x-compact-v2").putString("pref_ai_descreen", "opencomic-ai-descreen-hard-compact-v2").commit()
+        val prefs = Prefs(context)
+        prefs.upgrade()
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, prefs.aiModel(AiStep.UPSCALE))
+        assertEquals("opencomic-ai-descreen-hard-compact-v2", prefs.aiModel(AiStep.DESCREEN))
+        assertFalse(old in stored())
+        assertFalse(key in stored())
+        // Chosen now, the old default is kept.
+        prefs.setAiModel(AiStep.UPSCALE, "opencomic-ai-upscale-2x-compact-v2")
+        prefs.upgrade()
+        assertEquals("opencomic-ai-upscale-2x-compact-v2", Prefs(context).aiModel(AiStep.UPSCALE))
+    }
+
+    @Test
+    fun anOldBackupsUpscaleChoiceIsRestored() {
+        val prefs = Prefs(context)
+        prefs.importAll(mapOf("pref_ai_upscale" to "realesr-animevideov3-x3"))
+        assertEquals("realesr-animevideov3-x3", prefs.aiModel(AiStep.UPSCALE))
+        assertFalse("pref_ai_upscale" in stored())
     }
 }

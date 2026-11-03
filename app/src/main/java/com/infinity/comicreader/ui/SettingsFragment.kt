@@ -482,6 +482,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
             pref.entries = (listOf(getString(R.string.ai_none)) +
                 models.map { getString(R.string.ai_model_entry, it.name, ModelText.size(context, it.bytes)) }).toTypedArray()
             pref.entryValues = (listOf(Prefs.AI_NONE) + models.map { it.id }).toTypedArray()
+            // Unchosen, a step shows its default without storing it, so a later default reaches it.
+            if (pref.value == null) {
+                pref.isPersistent = false
+                pref.value = prefs.aiModel(step) ?: Prefs.AI_NONE
+                pref.isPersistent = true
+            }
             // A model the catalog no longer has reads as none.
             if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
             pref.setOnPreferenceChangeListener { _, value ->

@@ -52,6 +52,8 @@ class ModelCatalogTest {
 
     @Test
     fun theDefaultUpscalerIsInTheCatalog() {
+        // waifu2x UpConv7 2x: the fastest upscaler that works well.
+        assertEquals("waifu2x-upconv7-2x", ModelCatalog.DEFAULT_UPSCALE)
         assertEquals(AiStep.UPSCALE, ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!.step)
         assertNull(ModelCatalog.byId("none"))
         assertNull(ModelCatalog.byId(null))

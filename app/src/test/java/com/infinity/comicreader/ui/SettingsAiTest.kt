@@ -97,6 +97,23 @@ class SettingsAiTest {
     }
 
     @Test
+    fun theSettingsScreenShowsEachStepsDefaultWithoutStoringIt() {
+        val fragment = settings()
+        val stored = PreferenceManager.getDefaultSharedPreferences(context)
+        for (step in AiStep.entries) {
+            val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!
+            assertEquals(Prefs(context).aiModel(step) ?: Prefs.AI_NONE, pref.value)
+            assertFalse("${step.key}: no choice made, none stored", stored.contains(Prefs.aiKey(step)))
+        }
+        assertEquals("waifu2x-upconv7-2x", fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!.value)
+        // A choice is stored.
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        val other = ModelCatalog.forStep(AiStep.UPSCALE).first { it.id != ModelCatalog.DEFAULT_UPSCALE }
+        if (pref.callChangeListener(other.id)) pref.value = other.id
+        assertEquals(other.id, stored.getString(Prefs.aiKey(AiStep.UPSCALE), null))
+    }
+
+    @Test
     fun eachStepOffersNoneThenItsCatalogModels() {
         val fragment = settings()
         for (step in AiStep.entries) {

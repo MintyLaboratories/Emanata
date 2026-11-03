@@ -176,8 +176,8 @@ object ModelCatalog {
     /** The longest [CatalogModel.pageMs] the catalog takes, and the budget of a whole chain ([AiChain.slow]). */
     const val MAX_PAGE_MS = PageLimits.DEFAULT_TIMEOUT_MS * 2 / 3
 
-    /** The model Upscale starts with, once AI processing is turned on. */
-    const val DEFAULT_UPSCALE = "opencomic-ai-upscale-2x-compact-v2"
+    /** The model Upscale runs until another is chosen: the fastest that works well. */
+    const val DEFAULT_UPSCALE = "waifu2x-upconv7-2x"
 
     fun byId(id: String?): CatalogModel? = all.firstOrNull { it.id == id }
 

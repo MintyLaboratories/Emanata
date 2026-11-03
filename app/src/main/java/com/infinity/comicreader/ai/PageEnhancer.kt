@@ -131,6 +131,18 @@ class ReaderAi internal constructor(
         }
 
     override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+        val t0 = SystemClock.elapsedRealtime()
+        val outcome = enhanceNow(source, index, target, width, height, held, canceled)
+        val ms = SystemClock.elapsedRealtime() - t0
+        when (outcome) {
+            is AiOutcome.Done -> Log.d(TAG, "page $index: ${if (outcome.stored) "read back" else "made"} in $ms ms")
+            is AiOutcome.Skipped -> Log.d(TAG, "page $index: skipped (${outcome.why}) after $ms ms")
+            AiOutcome.Later -> Log.d(TAG, "page $index: put off")
+        }
+        return outcome
+    }
+
+    private fun enhanceNow(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val key = keyOf(source, index, target, width, height, chain)

@@ -766,6 +766,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         updateShareWait()
         started = true
         watchUpright()
+        adapter?.resumeAi()
     }
 
     /** Closes the book, saying why, once the drive it is read from is gone from [now]. */
@@ -791,17 +792,21 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         handler.removeCallbacks(checkShareWait)
         started = false
         watchUpright()
+        // Out of sight, pages are neither processed nor shown.
+        adapter?.pauseAi()
     }
 
     /**
      * Gives up the zoom's full-detail pages, the largest memory the reader holds, once the
      * UI hides, and before API 34 also once memory runs low. From API 34 only the UI-hidden
      * and background levels arrive, so in the foreground the detail budget alone bounds them.
+     * Hidden, the AI models close too, freeing their native and GPU memory.
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         @Suppress("DEPRECATION")
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) adapter?.trimMemory()
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) readerAi.closeModels()
     }
 
     override fun onDestroy() {
@@ -1311,6 +1316,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             }
             applyDetection()
             source = src
+            aiBooks()
             known?.let { showPages(it) }
             setup(src)
             updateShareWait()
@@ -2301,6 +2307,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
         a.adopt(decoded, processed)
+        if (!started) a.pauseAi()
         adapter = a
 
         val item = pageToItem(currentIndex)
@@ -2380,6 +2387,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             stripAhead = src
             stripAheadFile = next
             stripAheadId = id
+            aiBooks()
             // The mode or the setting may have changed while the archive was opening.
             if (mode != MODE_PAGED && prefs.autoNext) adapter?.append(src)
         }
@@ -2418,6 +2426,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         persistAdjustments()
         file = nextFile
         bookId = stripAheadId
+        aiBooks()
         val fresh = bookId?.let { !library.mayHaveData(it) } == true
         noteLikeness(nextFile, next, bookId, fresh)
         book()?.let { library.seen(it) }
@@ -3756,7 +3765,19 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val before = books.map { readerAi.chainFor(it) }
         readerAi.refresh()
         if (books.map { readerAi.chainFor(it) } != before) adapter?.aiChanged()
+        aiBooks()
         syncSheet()
+    }
+
+    /**
+     * Tells the reader's AI the IDs found for the open books (their own picks apply even when
+     * their keys hold none), and closes the models none of them runs.
+     */
+    private fun aiBooks() {
+        readerAi.know(source?.bookKey, bookId)
+        readerAi.know(stripAhead?.bookKey, stripAheadId)
+        val keep = listOfNotNull(source, stripAhead).flatMapTo(HashSet()) { s -> readerAi.chainFor(s.bookKey).map { it.id } }
+        readerAi.closeModels(keep)
     }
 
     private fun <T> syncSegments(view: View, s: Segments<T>) {

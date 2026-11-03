@@ -1401,7 +1401,25 @@ class PageAdapter(
     private fun queueOf(e: PageEnhancer): AiQueue<PageKey> = ai ?: AiQueue<PageKey>(scope, e.worker, { key, canceled ->
         val p = aiPages[key] ?: return@AiQueue AiOutcome.Skipped(Fallback.UNNEEDED)
         e.enhance(p.source, p.index, key.target, p.width, p.height, canceled)
-    }, ::enhanced).also { ai = it }
+    }, ::enhanced).also {
+        ai = it
+        if (aiPaused) it.pause()
+    }
+
+    /** True while the reader is out of sight ([pauseAi]). */
+    private var aiPaused = false
+
+    /** Stops AI work, the page under way dropped, while the reader is out of sight. */
+    fun pauseAi() {
+        aiPaused = true
+        ai?.pause()
+    }
+
+    /** Goes on with AI work from [pauseAi], from the page read. */
+    fun resumeAi() {
+        aiPaused = false
+        ai?.resume()
+    }
 
     /** The item read now, whose pages go through AI first; [NO_PAGE] before [reading] says. */
     private var readingAt = NO_PAGE

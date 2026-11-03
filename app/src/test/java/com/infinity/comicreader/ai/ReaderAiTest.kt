@@ -206,4 +206,15 @@ class ReaderAiTest {
         assertTrue(ai.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Done)
         assertTrue("opened again", runtime.opened.size > opens)
     }
+
+    @Test
+    fun aBookWhoseKeyHoldsNoIdFollowsItsOwnPicksOnceItsIdIsKnown() {
+        install(upscale)
+        val b = Book(30, 45, "/books/a.cbz|100|5")
+        own[book] = AiPicks.NONE
+        assertTrue("its key holds no ID: the global picks", ai.enhances(b))
+        ai.know(b.bookKey, book)
+        assertFalse(ai.enhances(b))
+        assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+    }
 }

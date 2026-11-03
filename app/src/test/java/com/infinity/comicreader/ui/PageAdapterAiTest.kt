@@ -238,4 +238,19 @@ class PageAdapterAiTest {
         assertEquals(processed, colorAt(rv, 0))
         adapter.release()
     }
+
+    @Test
+    fun aPausedReaderProcessesNothingUntilResumed() {
+        val (adapter, rv) = reader()
+        idle { colorAt(rv, 0) == plain }
+        adapter.pauseAi()
+        adapter.reading(0)
+        aWhile()
+        assertTrue("out of sight, nothing is processed", enhancer.asked.isEmpty())
+        assertEquals(plain, colorAt(rv, 0))
+        adapter.resumeAi()
+        idle { colorAt(rv, 0) == processed }
+        assertEquals(processed, colorAt(rv, 0))
+        adapter.release()
+    }
 }

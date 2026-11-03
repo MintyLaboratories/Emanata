@@ -74,12 +74,21 @@ class ReaderAi internal constructor(
     /** Models opened so far by catalog id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
+    /** The Book IDs of books whose key holds none ([BookIds.keyOf] made it from the path when the ID could not be read). */
+    private val ids = ConcurrentHashMap<String, BookId>()
+
     /** Reads every book's chain again: after the global or a book's own picks changed. */
     fun refresh() = chains.clear()
 
+    /** Says the book keyed [key] is [id], as the reader found it, so its own picks apply though its key holds no ID. */
+    fun know(key: String?, id: BookId?) {
+        if (key == null || id == null || BookIds.parseKey(key) != null) return
+        if (ids.put(key, id) != id) chains.remove(key)
+    }
+
     /** The chain the pages of the book keyed [book] go through. */
     fun chainFor(book: String?): List<CatalogModel> = chains.getOrPut(book.orEmpty()) {
-        val own = book?.let { BookIds.parseKey(it) }?.let(ownPicks)
+        val own = book?.let { BookIds.parseKey(it) ?: ids[it] }?.let(ownPicks)
         AiChain.forBook(prefs, own)
     }
 

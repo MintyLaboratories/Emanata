@@ -145,6 +145,8 @@ internal class BenchRunner(private val app: Application) {
         if (plan.fresh) forgetBook(path)
         probe.clear()
         idle()
+        // What earlier sessions left for the collector is not this one's.
+        collectGarbage()
         val before = ProcStats.now(app)
         val start = System.nanoTime()
         val power = PowerSampler(app).also { it.start() }
@@ -229,7 +231,7 @@ internal class BenchRunner(private val app: Application) {
             .put("before", before.toJson()).put("afterOpen", afterOpen.toJson()).put("afterTurns", turnEnd.toJson())
             .put("after", after.toJson())
             .put("turns", turns)
-            .put("ai", aiStats())
+            .put("ai", aiStats(plan))
             .put("power", power.toJson())
     }
 
@@ -238,12 +240,14 @@ internal class BenchRunner(private val app: Application) {
      * each made page's time to make, and from its plain page showing sharp to its processed one
      * showing (the wait a reader sees).
      */
-    private fun aiStats(): JSONObject {
+    private fun aiStats(plan: BenchPlan): JSONObject {
         val made = probe.enhanced.filter { !it.stored }
         val stored = probe.enhanced.filter { it.stored }
         // A page processed before it showed waits for nothing.
         val waits = probe.enhanced.mapNotNull { e -> probe.sharpAt[e.page]?.let { maxOf(0L, e.at - it) } }
-        return JSONObject().put("made", made.size).put("stored", stored.size)
+        // Shown processed before the next turn (one pace after the page showed).
+        val seen = waits.count { it < plan.pace * 1_000_000L }
+        return JSONObject().put("made", made.size).put("stored", stored.size).put("seenProcessed", seen)
             .put("makeMs", Stats.summary(made.map { it.ms })).put("readMs", Stats.summary(stored.map { it.ms }))
             .put("shownAfterMs", Stats.summary(waits.map { Stats.ms(it) }))
             .put("pages", JSONArray(probe.enhanced.map { e ->
@@ -427,6 +431,16 @@ internal class BenchRunner(private val app: Application) {
     /** Lets the last session's work settle: a second of nothing. */
     private suspend fun idle() = delay(IDLE_MS)
 
+    /** Runs the collector until what is unreachable is gone, so memory read next is the session's own. */
+    private suspend fun collectGarbage() {
+        repeat(2) {
+            Runtime.getRuntime().gc()
+            @Suppress("DEPRECATION")
+            System.runFinalization()
+            delay(GC_SETTLE_MS)
+        }
+    }
+
     /**
      * Waits until [viewer]'s background work ([ViewerActivity.busy]) has stopped for [SETTLE_QUIET_MS],
      * looking every [SETTLE_POLL_MS]; false when it still runs after [SETTLE_TIMEOUT_MS].
@@ -535,6 +549,9 @@ internal class BenchRunner(private val app: Application) {
         private const val GRID_GIVE_UP_MS = 15_000L
         private const val NO_MOVE_MS = 3_000L
         private const val IDLE_MS = 1_000L
+
+        /** Wait after each collection, for the finalizers and native frees it starts. */
+        private const val GC_SETTLE_MS = 200L
 
         /** How long background work must have stopped to count as done, how often that is looked at, and the longest wait ([settle]). */
         private const val SETTLE_QUIET_MS = 500L

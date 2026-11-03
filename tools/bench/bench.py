@@ -40,6 +40,13 @@ Time a release build: `./gradlew assembleBench`, then install app-bench.apk over
 --energy fakes unplugged power (dumpsys battery unplug) and resets the battery statistics before
 each session, then reads the app's estimated drain; the battery state is always reset after.
 Estimates come from the device's power profile, not a meter: compare at least 5 sessions a side.
+Unplugged, the battery service stops updating, so the battery temperature the app sees stays
+fixed: every session also records the device's thermal sensors read from the host ("temps":
+each sensor's start, peak and end in degrees C, from `dumpsys thermalservice`).
+
+--restart stops the app before each session, so each starts in a fresh process and its memory
+figures do not carry what the session before left. Each result also names the build it ran on
+("build": the git commit the script ran from, the app's versionCode and install time).
 
 A session's CPU time runs until the reader's background work (page size and seam scans,
 decodes) is done after its last turn ("settle"), so work a build defers still counts; decodes
@@ -397,12 +404,99 @@ def estimated_mah(stats: str, uid: int | None) -> float | None:
     return float(m.group(1)) if m else None
 
 
+def thermal_temps(text: str) -> dict[str, float]:
+    """The thermal sensors' current temperatures in `dumpsys thermalservice` [text], by name; zero readings left out."""
+    temps: dict[str, float] = {}
+    section = text.split("Current temperatures from HAL:", 1)
+    if len(section) < 2:
+        return temps
+    for line in section[1].splitlines()[1:]:
+        m = re.search(r"Temperature\{mValue=([-\d.]+), mType=\d+, mName=([^,]+),", line)
+        if not m:
+            if line.strip() and not line.startswith((" ", "\t")):
+                break
+            continue
+        value = float(m.group(1))
+        if value != 0.0:
+            temps[m.group(2)] = value
+    return temps
+
+
+def temp_summary(samples: list[dict[str, float]]) -> dict[str, dict[str, float]]:
+    """Each sensor's start, peak and end over [samples]."""
+    names = sorted({n for s in samples for n in s})
+    out = {}
+    for n in names:
+        xs = [s[n] for s in samples if n in s]
+        out[n] = {"start": xs[0], "max": max(xs), "end": xs[-1]}
+    return out
+
+
+class TempSampler:
+    """Reads the device's thermal sensors every [every_s] seconds on a thread of its own, from the host."""
+
+    def __init__(self, every_s: float = 15):
+        import threading
+        self.every_s = every_s
+        self.samples: list[dict[str, float]] = []
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        while True:
+            text = adb("shell", "dumpsys", "thermalservice", capture=True, check=False)
+            temps = thermal_temps(text or "")
+            if temps:
+                self.samples.append(temps)
+            if self.stop_event.wait(self.every_s):
+                break
+
+    def start(self) -> "TempSampler":
+        self.thread.start()
+        return self
+
+    def stop(self) -> dict[str, dict[str, float]]:
+        self.stop_event.set()
+        self.thread.join(timeout=30)
+        text = adb("shell", "dumpsys", "thermalservice", capture=True, check=False)
+        temps = thermal_temps(text or "")
+        if temps:
+            self.samples.append(temps)
+        return temp_summary(self.samples)
+
+
+def package_info(text: str) -> dict:
+    """versionCode and lastUpdateTime from `dumpsys package` [text]."""
+    info = {}
+    m = re.search(r"versionCode=(\d+)", text)
+    if m:
+        info["versionCode"] = int(m.group(1))
+    m = re.search(r"lastUpdateTime=([\d-]+ [\d:]+)", text)
+    if m:
+        info["lastUpdateTime"] = m.group(1)
+    return info
+
+
+def build_info() -> dict:
+    """The build the sessions run on: the app's versionCode and install time, and the git commit this script runs from."""
+    info = package_info(adb("shell", "dumpsys", "package", PACKAGE, capture=True, check=False) or "")
+    try:
+        root = Path(__file__).resolve().parents[2]
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout.strip()
+        info["git"] = head + ("+" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return info
+
+
 def run_plan(args) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     plan = json.loads(Path(args.plan).read_text())
     results = out / "results.jsonl"
     uid = app_uid()
+    build = build_info()
     adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
     if not getattr(args, "variant", None):
         # `ab` calibrates after each install.
@@ -422,13 +516,21 @@ def run_plan(args) -> None:
             if not tracer.isdigit():
                 raise SystemExit(f"perfetto gave no process id: {tracer!r}")
             time.sleep(2)
+        if getattr(args, "restart", False):
+            adb("shell", "am", "force-stop", PACKAGE, check=False)
+            time.sleep(2)
         if args.energy:
             adb("shell", "dumpsys", "battery", "unplug")
             adb("shell", "dumpsys", "batterystats", "--reset")
         lines: list[dict] = []
+        temps = TempSampler().start()
         try:
             lines = bench_once(session, args.timeout)
         finally:
+            sensors = temps.stop()
+            for line in lines:
+                line["temps"] = sensors
+                line["build"] = build
             if args.energy:
                 stats = adb("shell", "dumpsys", "batterystats", capture=True, check=False)
                 adb("shell", "dumpsys", "battery", "reset")
@@ -657,6 +759,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", required=True)
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
+    p.add_argument("--restart", action="store_true", help="stop the app before each session: a fresh process each")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
     p.set_defaults(func=run_plan)
@@ -669,6 +772,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rest", type=int, default=20, help="seconds to idle after each install")
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
+    p.add_argument("--restart", action="store_true", help="stop the app before each session: a fresh process each")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
     p.set_defaults(func=ab)

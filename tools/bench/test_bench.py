@@ -1,4 +1,4 @@
-"""Tests for bench.py's battery gate and session log: `py -m unittest discover tools/bench` from the repository root."""
+"""Tests for bench.py's battery gate, session log, thermal readings and build info: `py -m unittest discover tools/bench` from the repository root."""
 import contextlib
 import io
 import unittest
@@ -59,6 +59,37 @@ class NoResultLogTest(unittest.TestCase):
             self.assertEqual([], bench.bench_once({"label": "book"}, 30))
         self.assertIn("waiting for page 3", err.getvalue())
         self.assertNotIn("restore run", err.getvalue())
+
+
+class ThermalTemps(unittest.TestCase):
+    DUMP = """Thermal Status: 0
+Cached temperatures:
+\tTemperature{mValue=99.0, mType=2, mName=OLD, mStatus=0}
+HAL Ready: true
+Current temperatures from HAL:
+\tTemperature{mValue=22.7, mType=0, mName=AP, mStatus=0}
+\tTemperature{mValue=27.0, mType=2, mName=BAT, mStatus=0}
+\tTemperature{mValue=0.0, mType=2, mName=SUB, mStatus=0}
+Current cooling devices from HAL:
+\tCoolingDevice{mValue=0, mType=0, mName=fan}
+"""
+
+    def test_reads_the_hal_section_only_and_drops_zeros(self):
+        self.assertEqual({"AP": 22.7, "BAT": 27.0}, bench.thermal_temps(self.DUMP))
+
+    def test_no_section_reads_nothing(self):
+        self.assertEqual({}, bench.thermal_temps("Thermal Status: 0\n"))
+
+    def test_summary_has_start_peak_and_end(self):
+        s = bench.temp_summary([{"AP": 30.0}, {"AP": 34.5, "BAT": 27.0}, {"AP": 33.0, "BAT": 27.5}])
+        self.assertEqual({"start": 30.0, "max": 34.5, "end": 33.0}, s["AP"])
+        self.assertEqual({"start": 27.0, "max": 27.5, "end": 27.5}, s["BAT"])
+
+
+class PackageInfo(unittest.TestCase):
+    def test_reads_version_and_install_time(self):
+        text = "    versionCode=1234 minSdk=26 targetSdk=36\n    lastUpdateTime=2026-01-02 03:04:05\n"
+        self.assertEqual({"versionCode": 1234, "lastUpdateTime": "2026-01-02 03:04:05"}, bench.package_info(text))
 
 
 if __name__ == "__main__":

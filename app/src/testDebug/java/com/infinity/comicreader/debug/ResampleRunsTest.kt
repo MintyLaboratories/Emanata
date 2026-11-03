@@ -6,7 +6,9 @@ import com.infinity.comicreader.debug.ResampleRuns.Setup
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.PixelEngine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ResampleRunsTest {
@@ -44,6 +46,24 @@ class ResampleRunsTest {
         assertEquals(0b0000_1111L, ResampleRuns.mask(Cores.LITTLE, c))
         assertEquals(0b1100_0000L, ResampleRuns.mask(Cores.PRIME, c))
         assertEquals(0L, ResampleRuns.mask(Cores.ANY, c))
+    }
+
+    @Test
+    fun aRunCountsOnlyWhileItStaysCool() {
+        val heat = ResampleRuns.Heat()
+        assertEquals(-1, heat.peak)
+        assertTrue("nothing seen", heat.cool)
+        heat.see(-1)
+        assertTrue("unknown", heat.cool)
+        heat.see(0)
+        assertTrue(heat.cool)
+        // Light throttling mid-run, cool again by the end: the run does not count.
+        heat.see(1)
+        heat.see(0)
+        assertEquals(1, heat.peak)
+        assertFalse(heat.cool)
+        // A run that starts warm does not count either.
+        assertFalse(ResampleRuns.Heat().apply { see(2); see(0) }.cool)
     }
 
     @Test

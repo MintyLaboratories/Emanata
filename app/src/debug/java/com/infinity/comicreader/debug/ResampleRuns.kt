@@ -75,6 +75,29 @@ internal object ResampleRuns {
     fun <T> interleaved(setups: List<T>, rounds: Int): List<List<T>> =
         List(rounds) { if (it % 2 == 0) setups else setups.asReversed() }
 
+    /**
+     * The thermal statuses seen through a timed run, from before it starts to after it ends
+     * ([see]); an unknown status (-1, before Android 10) counts as none. A run's times count
+     * only while it stayed [cool]: from light throttling on, a phone's cores already slow down.
+     */
+    class Heat {
+        /** The highest status seen; -1 before any. */
+        var peak: Int = -1
+            private set
+
+        fun see(status: Int) {
+            if (status > peak) peak = status
+        }
+
+        /** True while no status seen reached [WARM]. */
+        val cool: Boolean get() = peak < WARM
+
+        companion object {
+            /** `PowerManager.THERMAL_STATUS_LIGHT`. */
+            const val WARM = 1
+        }
+    }
+
     /** Battery current samples in mA, negative while the battery drains. */
     class Draw(val samples: List<Double>) {
         val mean: Double get() = if (samples.isEmpty()) Double.NaN else samples.average()

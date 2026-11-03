@@ -60,10 +60,12 @@ import kotlin.random.Random
  *   held upright, as calibration does)
  *   by each setup, filter and anti-ringing strength when shrinking (`rings`, default the
  *   setting's default), `reps` rounds after 2 warm-up rounds, the setups interleaved
- *   (A B, B A...): wall and process CPU per page, thermal status and headroom.
+ *   (A B, B A...): wall and process CPU per page, thermal status and headroom before and
+ *   after, and the highest thermal status seen, sampled after each setup's turn (`thermalPeak`).
  * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, a 5 s
  *   idle baseline of the battery current, then pages back to back for `seconds`, sampling
- *   every 100 ms: pages per second, and energy per page from the signed drain above idle.
+ *   every 100 ms (the thermal status every second): pages per second, and energy per page
+ *   from the signed drain above idle.
  *   Valid only on battery alone: unplug the cable (adb over Wi-Fi). A charger keeps
  *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger, or
  *   any sample not draining, refuses the estimate.
@@ -71,7 +73,9 @@ import kotlin.random.Random
  * Timings are valid only from a bench build (`assembleBench`: a debuggable build runs
  * Kotlin many times slower) with the app in front (`am start` its list first; otherwise the
  * process sits in a cpuset of little cores only). Every result carries the build's
- * debuggability, the process's cpuset, and "valid" when both hold.
+ * debuggability, the process's cpuset, and "valid" when both hold (`conditions`); a time or
+ * sustain result's own "valid" also needs the run to have stayed below thermal status light
+ * (1) from before it started to after it ended: warm cores run slower.
  *
  * Results go to the log under "ResampleCheck", one JSON object per line, ending with "done",
  * and to `files/bench/resample.jsonl` in the app's external files.
@@ -243,6 +247,7 @@ class ResampleCheckService : Service() {
                 for (filter in filters) for (ring in rings) {
                     val scaling = Scaling(filter, 0, ring)
                     val before = state()
+                    val heat = ResampleRuns.Heat().apply { see(before.getInt("thermal")) }
                     val walls = setups.associateWith { ArrayList<Double>() }
                     val cpus = setups.associateWith { ArrayList<Double>() }
                     for ((round, order) in ResampleRuns.interleaved(setups, 2 + reps).withIndex()) {
@@ -255,14 +260,18 @@ class ResampleCheckService : Service() {
                                 walls.getValue(s) += wall
                                 cpus.getValue(s) += (Process.getElapsedCpuTime() - cpu0).toDouble()
                             }
+                            heat.see(thermal())
                         }
                     }
                     val after = state()
+                    heat.see(after.getInt("thermal"))
                     for (s in setups) {
+                        val conditions = conditions()
                         log(
                             JSONObject().put("time", s.key).put("page", "${w}x$h").put("to", "${size.first}x${size.second}").put("filter", filter.key).put("downRing", ring)
                                 .put("wallMs", summary(walls.getValue(s))).put("cpuMs", summary(cpus.getValue(s)))
-                                .put("before", before).put("after", after).put("conditions", conditions())
+                                .put("before", before).put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions)
+                                .put("valid", conditions.getBoolean("valid") && heat.cool)
                         )
                     }
                 }
@@ -282,11 +291,12 @@ class ResampleCheckService : Service() {
                 for (s in order) {
                     Thread.sleep(cooldown * 1000L)
                     val charged = charging()
+                    val heat = ResampleRuns.Heat().apply { see(thermal()) }
                     val idle = sampleCurrent(5_000) {}
                     var pages = 0
                     val t0 = SystemClock.elapsedRealtime()
                     val cpu0 = Process.getElapsedCpuTime()
-                    val busy = sampleCurrent(seconds * 1000L) { until ->
+                    val busy = sampleCurrent(seconds * 1000L, heat) { until ->
                         while (SystemClock.elapsedRealtime() < until) {
                             run(s, page, 1848, 2772, Scaling.DEFAULT).recycle()
                             pages++
@@ -295,13 +305,17 @@ class ResampleCheckService : Service() {
                     val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
                     val volts = voltage()
                     val mj = ResampleRuns.millijoulesPerPage(idle, busy, volts, wall, pages, charged || charging())
+                    val after = state()
+                    heat.see(after.getInt("thermal"))
+                    val conditions = conditions()
                     log(
                         JSONObject().put("sustain", s.key).put("round", round).put("seconds", wall).put("pages", pages)
                             .put("pagesPerS", pages / wall).put("cpuMsPerPage", (Process.getElapsedCpuTime() - cpu0).toDouble() / max(pages, 1))
                             .put("idleMa", num(idle.mean)).put("busyMa", num(busy.mean)).put("volts", volts)
                             .put("mJPerPage", mj ?: JSONObject.NULL)
                             .put("refused", if (mj == null) "a charger was connected, or the battery did not drain throughout" else JSONObject.NULL)
-                            .put("after", state()).put("conditions", conditions())
+                            .put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions)
+                            .put("valid", conditions.getBoolean("valid") && heat.cool)
                     )
                 }
             }
@@ -310,13 +324,18 @@ class ResampleCheckService : Service() {
         }
     }
 
-    /** Battery current in mA every 100 ms over [ms] while [work] runs (given its deadline); negative while draining. */
-    private fun sampleCurrent(ms: Long, work: (until: Long) -> Unit): ResampleRuns.Draw {
+    /**
+     * Battery current in mA every 100 ms over [ms] while [work] runs (given its deadline);
+     * negative while draining. [heat], when given, sees the thermal status every second.
+     */
+    private fun sampleCurrent(ms: Long, heat: ResampleRuns.Heat? = null, work: (until: Long) -> Unit): ResampleRuns.Draw {
         val battery = getSystemService(BatteryManager::class.java)
         val samples = ArrayList<Double>()
         val until = SystemClock.elapsedRealtime() + ms
         val sampler = thread(name = "current") {
+            var n = 0
             while (SystemClock.elapsedRealtime() < until) {
+                if (heat != null && n++ % 10 == 0) heat.see(thermal())
                 // Microamperes, as on the reference tablet and most devices.
                 battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).takeIf { it != Int.MIN_VALUE }
                     ?.let { synchronized(samples) { samples += it / 1000.0 } }
@@ -324,6 +343,7 @@ class ResampleCheckService : Service() {
             }
         }
         work(until)
+        // The sampler's samples and statuses are seen from here on.
         sampler.join()
         return synchronized(samples) { ResampleRuns.Draw(samples.toList()) }
     }
@@ -338,6 +358,10 @@ class ResampleCheckService : Service() {
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         return (sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0) / 1000.0
     }
+
+    /** The thermal status now; -1 before Android 10. */
+    private fun thermal(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getSystemService(PowerManager::class.java).currentThermalStatus else -1
 
     private fun state(): JSONObject {
         val power = getSystemService(PowerManager::class.java)

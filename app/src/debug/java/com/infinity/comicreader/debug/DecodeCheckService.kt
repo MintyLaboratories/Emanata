@@ -11,7 +11,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -62,7 +64,10 @@ import kotlin.math.max
  *   difference, and how many pixels differ.
  * - time: each page by each setup, 1 warm-up round and `reps` timed ones, the setups
  *   interleaved (A B, B A...), `gap` ms of rest before each decode (a reading pace lets the
- *   cores clock down): wall and process CPU per page.
+ *   cores clock down): wall and process CPU per page, and the highest thermal status seen
+ *   from before the run to after it, sampled after each setup's turn (`thermalPeak`); the
+ *   result is "valid" only when the conditions before and after are, and that status stayed
+ *   below light (1).
  * - cancel: each JPEG XL page by the native setup, asked to stop 30 ms in: how long it
  *   takes to return, and what it returned.
  * - fixtures (not in all): each `<name>.jxl` of the `fixtures` folder by the native page
@@ -136,6 +141,10 @@ class DecodeCheckService : Service() {
         if ("cancel" in what || "all" in what) cancel(groups, threads)
         return coldDone || cold(groups, setups.first())
     }
+
+    /** The thermal status now; -1 before Android 10. */
+    private fun thermal(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getSystemService(PowerManager::class.java).currentThermalStatus else -1
 
     private fun conditions(): JSONObject {
         val cpuset = runCatching { File("/proc/self/cpuset").readText().trim() }.getOrDefault("?")
@@ -272,6 +281,7 @@ class DecodeCheckService : Service() {
             val walls = taking.associateWith { ArrayList<Double>() }
             val cpus = taking.associateWith { ArrayList<Double>() }
             val before = conditions()
+            val heat = ResampleRuns.Heat().apply { see(thermal()) }
             for ((round, order) in ResampleRuns.interleaved(taking, reps + 1).withIndex()) {
                 for (setup in order) {
                     for (page in group.pages) {
@@ -287,14 +297,17 @@ class DecodeCheckService : Service() {
                             cpus.getValue(setup) += cpu
                         }
                     }
+                    heat.see(thermal())
                 }
             }
             val after = conditions()
+            heat.see(thermal())
+            val valid = before.getBoolean("valid") && after.getBoolean("valid") && heat.cool
             for (setup in taking) {
                 log(
                     JSONObject().put("time", setup.key).put("group", group.name).put("pages", group.pages.size).put("reps", reps).put("gapMs", gap)
                         .put("wallMs", summary(walls.getValue(setup))).put("cpuMs", summary(cpus.getValue(setup)))
-                        .put("before", before).put("after", after)
+                        .put("before", before).put("after", after).put("thermalPeak", heat.peak).put("valid", valid)
                 )
             }
         }

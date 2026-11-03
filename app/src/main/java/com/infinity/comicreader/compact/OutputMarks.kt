@@ -149,21 +149,37 @@ object OutputMarks {
         var directorySize = b.getInt(at + 12).toLong() and 0xFFFFFFFFL
         val directoryAt = b.getInt(at + 16).toLong() and 0xFFFFFFFFL
         val entries = b.getShort(at + 10).toInt() and 0xFFFF
-        // Where the directory ends: at the end record, or at a ZIP64 one when the end record leaves its fields to that.
+        // Where the directory ends: at the end record, or at a ZIP64 end record wherever one
+        // precedes it (some writers add one to every archive), which then holds the directory's size.
         var directoryEnd = end
-        if (directorySize == 0xFFFFFFFFL || directoryAt == 0xFFFFFFFFL || entries == 0xFFFF) {
-            val locator = read(channel, end - ZIP64_LOCATOR_BYTES, ZIP64_LOCATOR_BYTES)?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN) }
-            if (locator != null && locator.getInt(0) == ZIP64_LOCATOR_SIG) {
-                val recordAt = locator.getLong(8)
-                val record = read(channel, recordAt, ZIP64_EOCD_BYTES)?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN) } ?: return null
-                if (record.getInt(0) != ZIP64_EOCD_SIG) return null
-                directorySize = record.getLong(40)
-                directoryEnd = recordAt
-            }
+        val sentinels = directorySize == 0xFFFFFFFFL || directoryAt == 0xFFFFFFFFL || entries == 0xFFFF
+        val record = zip64Record(channel, end)
+        if (record != null) {
+            directorySize = record.second
+            directoryEnd = record.first
+        } else if (sentinels) {
+            return null
         }
         if (directorySize < 0 || directorySize > MAX_DIRECTORY_BYTES || directoryEnd - directorySize < 0) return null
         // Where the directory is by where it ends, so data before the archive (a self-extractor) moves nothing.
         return RawTail(comment, directoryEnd - directorySize, directorySize, end)
+    }
+
+    /**
+     * The ZIP64 end record before the end record at [end], as where it starts and the
+     * central directory's size it holds; null when there is none. Found through its locator,
+     * or right before the locator when the locator's offset is off (data before the archive).
+     */
+    private fun zip64Record(channel: SeekableByteChannel, end: Long): Pair<Long, Long>? {
+        val locatorAt = end - ZIP64_LOCATOR_BYTES
+        val locator = read(channel, locatorAt, ZIP64_LOCATOR_BYTES)?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN) } ?: return null
+        if (locator.getInt(0) != ZIP64_LOCATOR_SIG) return null
+        for (at in listOf(locator.getLong(8), locatorAt - ZIP64_EOCD_BYTES).distinct()) {
+            if (at < 0 || at > locatorAt - ZIP64_EOCD_BYTES) continue
+            val record = read(channel, at, ZIP64_EOCD_BYTES)?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN) } ?: continue
+            if (record.getInt(0) == ZIP64_EOCD_SIG) return at to record.getLong(40)
+        }
+        return null
     }
 
     /**

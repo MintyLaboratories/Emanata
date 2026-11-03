@@ -171,6 +171,36 @@ class OutputMarksTest {
         assertEquals("Emanata", OutputMarks.verified(tail).compactedBy)
     }
 
+    /**
+     * [zip] (no comment) with a ZIP64 end record and locator before its end record, as some
+     * writers add to every archive, the end record's fields left as they were.
+     */
+    private fun withZip64(zip: File): File {
+        val bytes = zip.readBytes()
+        val end = bytes.size - 22
+        val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val entries = b.getShort(end + 10).toLong() and 0xFFFF
+        val size = b.getInt(end + 12).toLong()
+        val offset = b.getInt(end + 16).toLong()
+        val extra = java.nio.ByteBuffer.allocate(56 + 20).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        extra.putInt(0x06064b50).putLong(44).putShort(45).putShort(45).putInt(0).putInt(0)
+            .putLong(entries).putLong(entries).putLong(size).putLong(offset)
+        extra.putInt(0x07064b50).putInt(0).putLong(end.toLong()).putInt(1)
+        val out = File(zip.parentFile, "zip64.cbz")
+        out.writeBytes(bytes.copyOfRange(0, end) + extra.array() + bytes.copyOfRange(end, bytes.size))
+        return out
+    }
+
+    @Test
+    fun aZip64EndRecordWithoutSentinelsIsLeftOutOfTheDirectory() {
+        val plain = zip(*pages)
+        val f = withZip64(plain)
+        assertEquals("the directory alone is hashed", directoryHash(plain), directoryHash(f))
+        setComment(f, "[i:SomeTool compacted v1 ${"%016x".format(directoryHash(plain))}]".toByteArray())
+        assertEquals("SomeTool", OutputMarks.verified(f, Xxh3Port).compactedBy)
+        ZipFile(f).use { z -> assertEquals("one", z.getInputStream(z.getEntry("01.jpg")).readBytes().decodeToString()) }
+    }
+
     @Test
     fun notAZipMarksNothing() {
         val f = File(tmp.root, "x.cbz").apply { writeBytes(ByteArray(100)) }

@@ -512,6 +512,9 @@
         <item quantity="one">Repack %1$d book as CBZ?</item>
         <item quantity="other">Repack %1$d books as CBZ?</item>
     </plurals>
+    <string name="repack_note">This archive is solid: each page unpacks the pages before it, so jumping around is slow. Repack it as CBZ? Every page and file is copied as it is.</string>
+    <string name="repack_not_now">Not now</string>
+    <string name="repack_started">Repacking as CBZ; it shows in the library</string>
     <string name="repack_message">Copies every page and file as it is into a CBZ, which opens quickly at any page. Nothing is converted.</string>
     <string name="compact_warning">Pixel-perfect and reversible, but older readers may not open JPEG XL pages.</string>
     <string name="compatible_message">Converts the comic into legacy formats every reader opens. This may be lossy if no better way is found, but aims for minimal visible loss. Comics compacted by Emanata convert losslessly.</string>
@@ -954,6 +957,8 @@
 
     <string name="pref_show_hidden">Show hidden files</string>
     <string name="pref_thumbs">Show page thumbnails</string>
+    <string name="pref_suggest_repack">Suggest repacking solid archives</string>
+    <string name="pref_suggest_repack_desc">Solid RAR and 7z archives are slow to jump around in. When one opens, offer to repack it as CBZ.</string>
     <string name="view_browse">Browse view</string>
     <string name="view_favorites">Favorites view</string>
     <string name="view_history">History view</string>

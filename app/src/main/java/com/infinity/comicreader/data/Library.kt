@@ -261,6 +261,18 @@ class Library(context: Context) {
         }
     }
 
+    // ---------------- solid archives ----------------
+    /** True when the reader was told "Not now" for repacking book [id] as CBZ ([setRepackDeclined]): it is not offered again. */
+    fun repackDeclined(id: BookId): Boolean = id in readIds(KEY_NO_REPACK)
+
+    fun setRepackDeclined(book: BookRef) {
+        synchronized(LOCK) {
+            val set = readIds(KEY_NO_REPACK)
+            if (set.add(book.id)) writeIds(KEY_NO_REPACK, set)
+            keep(book)
+        }
+    }
+
     // ---------------- history ----------------
     /** The history, latest first, each book at the path it was last seen at. */
     fun history(): MutableList<HistoryItem> {
@@ -828,7 +840,7 @@ class Library(context: Context) {
         val history = readArray(KEY_HISTORY).ids()
         val marks = readArray(KEY_BOOKMARKS).ids()
         val hidden = hiddenCounts()
-        val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) +
+        val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
             readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids() +
             readObject(KEY_AI).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
@@ -1140,7 +1152,7 @@ class Library(context: Context) {
         for (i in 0 until arr.length()) {
             when (key) {
                 KEY_FAVORITES -> arr.optString(i, "").takeIf { bookToken(it) != null || isFolderPath(it) }?.let { out.put(it) }
-                KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS -> BookId.parse(arr.optString(i, ""))?.let { out.put(it.hex) }
+                KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK -> BookId.parse(arr.optString(i, ""))?.let { out.put(it.hex) }
                 else -> arr.optJSONObject(i)?.takeIf { BookId.parse(it.optString("id")) != null }?.let { out.put(it) }
             }
         }
@@ -1251,6 +1263,9 @@ class Library(context: Context) {
         /** Books whose seams are ignored ([ignoresSeams]); stored under its first name. */
         private const val KEY_IGNORE_SEAMS = "no_merge"
 
+        /** Books not to offer repacking again ([repackDeclined]). */
+        private const val KEY_NO_REPACK = "no_repack"
+
         /** Books' own file name charsets ([nameCharset]). */
         private const val KEY_CHARSETS = "name_charsets"
 
@@ -1286,14 +1301,14 @@ class Library(context: Context) {
 
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
-        private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
+        private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
         private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
         private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
 
         /** Lists of book IDs. */
-        private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS)
+        private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
 
         /** Documents kept by book ID. */
         private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI)
@@ -1301,7 +1316,7 @@ class Library(context: Context) {
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI
         )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */

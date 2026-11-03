@@ -121,6 +121,7 @@ import com.infinity.comicreader.reader.PageSizes
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.reader.Slices
+import com.infinity.comicreader.reader.SolidArchives
 import com.infinity.comicreader.reader.Spreads
 import com.infinity.comicreader.reader.StoredPages
 import com.infinity.comicreader.reader.TallPages
@@ -470,6 +471,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     /** The question whether to read the open book as a strip, while it shows. */
     private var tallAsk: AlertDialog? = null
+
+    /** Checks whether the open book is a solid archive worth repacking ([offerRepack]). */
+    private var repackJob: Job? = null
+
+    /** The offer to repack the open book as CBZ, while it shows. */
+    private var repackAsk: AlertDialog? = null
 
     /** Checks the open book's seams, or sizes not known on open, for slices after it shows. */
     private var slicesJob: Job? = null
@@ -1324,7 +1331,74 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             if (contents != null) detectLater(target, src, contents)
             if (slice && !sliceSettled) detectSlicesLater(target, src, sliceSizes)
             noteLikeness(target, src, found, fresh)
+            offerRepack(target, src, found)
         }
+    }
+
+    /**
+     * Offers to repack [book], opened as [src], of ID [id], as CBZ when it is a solid archive
+     * ([SolidArchives]) on the device whose folder can be written, unless "Suggest repacking
+     * solid archives" is off or the book was answered "Not now" before.
+     */
+    private fun offerRepack(book: File, src: PageSource, id: BookId?) {
+        repackJob?.cancel()
+        if (id == null || !prefs.suggestRepack || book is RemoteFile || Remotes.isRemote(book.path) || library.repackDeclined(id)) return
+        repackJob = lifecycleScope.launch {
+            val solid = withContext(AppDispatchers.io) { !ownCopy(book) && book.parentFile?.canWrite() == true && SolidArchives.isSolid(book) }
+            // Another question showing first: asked again on a later open.
+            if (!solid || source !== src || file != book || bookId != id || tallAsk != null || isFinishing) return@launch
+            askRepack(BookRef(id, book.absolutePath))
+        }
+    }
+
+    /** True for [book] kept in the app's own folders (a copy of a file another app shared): not the user's to repack. Blocking. */
+    private fun ownCopy(book: File): Boolean {
+        val path = runCatching { book.canonicalPath }.getOrDefault(book.absolutePath)
+        val own = listOfNotNull(dataDir, externalCacheDir?.parentFile).map { runCatching { it.canonicalPath }.getOrDefault(it.absolutePath) }
+        return own.any { path.startsWith(it + File.separator) }
+    }
+
+    /**
+     * "Repack as CBZ" or "Not now" for solid archive [book], with In place as Compact shares
+     * it. Not now, or the note dismissed, is kept for the book: not offered again.
+     */
+    private fun askRepack(book: BookRef) {
+        var answered = false
+        val view = FileActions.compactOptions(this, prefs, skipHidden = false)
+        val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place)
+        repackAsk = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.repack_title_one, File(book.path).name))
+            .setMessage(R.string.repack_note)
+            .setView(view)
+            .setPositiveButton(R.string.more_repack) { _, _ ->
+                answered = true
+                repack(File(book.path), inPlace.isChecked)
+            }
+            .setNegativeButton(R.string.repack_not_now, null)
+            .setOnDismissListener {
+                repackAsk = null
+                if (!answered) library.setRepackDeclined(book)
+            }
+            .showKeepingFullscreen()
+    }
+
+    /**
+     * Queues repacking [book] as CBZ, beside it or [inPlace], and leaves the reader for the
+     * library, where the operation shows: the book is let go first, as a rebuild leaves
+     * books open in the reader alone; its place is kept, and follows the new file.
+     */
+    private fun repack(book: File, inPlace: Boolean) {
+        if (file != book) return
+        prefs.compactInPlace = inPlace
+        stopAutoScroll()
+        flushStats()
+        saveHistory()
+        openJob?.cancel()
+        closeSource()
+        file = null
+        FileActions.startRebuild(FileJobs(this, library, prefs), listOf(book.absolutePath), FileJobs.Rebuild.REPACK, inPlace)
+        toast(R.string.repack_started)
+        finish()
     }
 
     /**
@@ -1516,6 +1590,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private fun closeSource() {
         lateDetectionJob?.cancel()
         lateDetectionJob = null
+        repackJob?.cancel()
+        repackJob = null
+        // Closed with the book, unanswered: offered again on a later open.
+        repackAsk?.let {
+            repackAsk = null
+            it.setOnDismissListener(null)
+            it.dismiss()
+        }
         likenessJob?.cancel()
         likenessJob = null
         slicesJob?.cancel()

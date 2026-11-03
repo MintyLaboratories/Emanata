@@ -87,4 +87,41 @@ class AiChainTest {
         assertTrue(AiChain.slow(listOf(m.copy(pageMs = half), m.copy(pageMs = rest + 1))))
         assertFalse(AiChain.slow(listOf(ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!)))
     }
+
+    @Test
+    fun aBooksOwnPicksWinOverTheGlobalOnes() {
+        val descreen = first(AiStep.DESCREEN)
+        val own = AiPicks.NONE.with(AiStep.DESCREEN, descreen.id)
+        assertEquals("AI off, but the book has its own", listOf(descreen), AiChain.forBook(prefs, own))
+        prefs.aiEnabled = true
+        assertEquals(listOf(descreen), AiChain.forBook(prefs, own))
+        assertEquals("a book without AI", emptyList<CatalogModel>(), AiChain.forBook(prefs, AiPicks.NONE))
+        assertEquals("no picks of its own: the global ones", AiChain.chosen(prefs), AiChain.forBook(prefs, null))
+    }
+
+    @Test
+    fun aBookStartsFromTheGlobalPicksOnlyWhileAiIsOn() {
+        assertEquals(AiPicks.NONE, AiChain.startingPicks(prefs))
+        prefs.aiEnabled = true
+        prefs.setAiModel(AiStep.ARTIFACTS, first(AiStep.ARTIFACTS).id)
+        assertEquals(AiPicks.of(prefs), AiChain.startingPicks(prefs))
+        assertEquals(listOf(first(AiStep.ARTIFACTS), ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)), AiChain.startingPicks(prefs).models)
+    }
+
+    @Test
+    fun picksOfAnotherStepOrUnknownRunNone() {
+        val picks = AiPicks(mapOf(AiStep.DESCREEN to first(AiStep.UPSCALE).id, AiStep.UPSCALE to "gone"))
+        assertEquals(emptyList<CatalogModel>(), picks.models)
+    }
+
+    @Test
+    fun aSignatureNamesTheModelsTheirFilesAndTheEngine() {
+        val m = first(AiStep.UPSCALE)
+        val s = AiChain.signature(listOf(m))
+        assertTrue(s.startsWith("e${AiChain.ENGINE};"))
+        assertTrue(m.id in s)
+        assertFalse("other files", s == AiChain.signature(listOf(m.copy(bin = m.bin.copy(sha256 = "0".repeat(64))))))
+        assertFalse("another order", AiChain.signature(listOf(first(AiStep.ARTIFACTS), m)) == AiChain.signature(listOf(m, first(AiStep.ARTIFACTS))))
+        assertEquals("e${AiChain.ENGINE};", AiChain.signature(emptyList()))
+    }
 }

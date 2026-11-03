@@ -29,7 +29,9 @@ internal class ProcStats private constructor(
     /** Current into the battery in mA, negative while it drains; null when unknown. */
     val currentMa: Int?,
     /** True while on external power. */
-    val plugged: Boolean
+    val plugged: Boolean,
+    /** Battery temperature in tenths of a degree Celsius; null when unknown. */
+    val batteryDeciC: Int? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("pssMb", pssKb / 1024)
@@ -41,6 +43,7 @@ internal class ProcStats private constructor(
         .put("batteryPct", batteryPct)
         .put("currentMa", currentMa ?: JSONObject.NULL)
         .put("plugged", plugged)
+        .put("batteryC", batteryDeciC?.let { it / 10.0 } ?: JSONObject.NULL)
 
     companion object {
         /** Now; with [memory] false, CPU and thermal state only. */
@@ -55,12 +58,13 @@ internal class ProcStats private constructor(
             val current = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).takeIf { it != Int.MIN_VALUE }?.let { it / 1000 }
             val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val plugged = (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
-            if (!memory) return ProcStats(cpu, 0, 0, 0, 0, thermal, headroom, pct, current, plugged)
+            val temp = sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
+            if (!memory) return ProcStats(cpu, 0, 0, 0, 0, thermal, headroom, pct, current, plugged, temp)
             val info = Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }
             fun stat(name: String) = info.getMemoryStat(name)?.toLongOrNull() ?: 0L
             return ProcStats(
                 cpu, info.totalPss.toLong(), stat("summary.graphics"), stat("summary.native-heap"), stat("summary.java-heap"),
-                thermal, headroom, pct, current, plugged
+                thermal, headroom, pct, current, plugged, temp
             )
         }
     }

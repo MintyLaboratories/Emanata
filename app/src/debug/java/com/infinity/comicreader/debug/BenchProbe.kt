@@ -34,6 +34,18 @@ internal class BenchProbe : ReadProbe {
     /** Pages decoded besides, by what for ([ReadProbe.decodedAside]); written from any thread. */
     val aside = ConcurrentHashMap<String, AtomicInteger>()
 
+    /** When each page first showed sharp, by page; nanoseconds. */
+    val sharpAt = HashMap<Int, Long>()
+
+    /** Pages shown processed by AI: page, when (ns), the time making or reading it back took (ms), read back from disk. */
+    val enhanced = ArrayList<Enhanced>()
+
+    class Enhanced(val page: Int, val at: Long, val ms: Long, val stored: Boolean)
+
+    override fun enhanced(page: Int, ms: Long, stored: Boolean) {
+        enhanced += Enhanced(page, System.nanoTime(), ms, stored)
+    }
+
     override fun decoded(page: Int) {
         decodes++
     }
@@ -55,7 +67,10 @@ internal class BenchProbe : ReadProbe {
 
     override fun bound(view: View, page: Int) = pages.bound(view, page)
 
-    override fun shown(view: View, page: Int, exact: Boolean) = pages.shown(view, page, exact)
+    override fun shown(view: View, page: Int, exact: Boolean) {
+        if (exact && page >= 0) sharpAt.putIfAbsent(page, System.nanoTime())
+        pages.shown(view, page, exact)
+    }
 
     override fun cover(view: View, position: Int, exact: Boolean) {
         val now = System.nanoTime()
@@ -85,6 +100,8 @@ internal class BenchProbe : ReadProbe {
         opening = -1
         decodes = 0
         aside.clear()
+        sharpAt.clear()
+        enhanced.clear()
     }
 
     private companion object {

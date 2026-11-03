@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.reader.CoreSet
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
@@ -84,7 +85,9 @@ internal data class BenchPlan(
     /** Spreads joined by their seams, the setting, which runs the seam scans; null keeps it. */
     val seams: Boolean? = null,
     /** The screen behind prepared ([com.infinity.comicreader.ui.PageAdapter.screenBehind]); null keeps it. */
-    val behind: Boolean? = null
+    val behind: Boolean? = null,
+    /** AI processing: the catalog ids run as the global chain, in step order; empty for off; null keeps it. */
+    val ai: List<String>? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("what", what).put("label", label).put("share", share != null).put("layout", layout).put("input", input).put("page", page)
@@ -100,6 +103,7 @@ internal data class BenchPlan(
         .put("platformAhead", platformAhead ?: JSONObject.NULL)
         .put("preload", preload ?: JSONObject.NULL).put("seams", seams ?: JSONObject.NULL)
         .put("behind", behind ?: JSONObject.NULL)
+        .put("ai", ai?.let { if (it.isEmpty()) "off" else it.joinToString(",") } ?: JSONObject.NULL)
 
     companion object {
         const val READ = "read"
@@ -117,6 +121,14 @@ internal data class BenchPlan(
             "landscape" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
             "any" to ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         )
+
+        /** `off`, or catalog ids by commas, as [ai]; null when an id is not in the catalog or two share a step. */
+        fun aiOf(s: String): List<String>? {
+            if (s == "off") return emptyList()
+            val models = s.split(',').map { it.trim() }.map { ModelCatalog.byId(it) ?: return null }
+            if (models.map { it.step }.toSet().size != models.size) return null
+            return models.sortedBy { it.step.ordinal }.map { it.id }
+        }
 
         /** The plan [intent]'s extras give; null when they name nothing to do. */
         fun of(intent: Intent): BenchPlan? {
@@ -166,7 +178,8 @@ internal data class BenchPlan(
                 decodeThreads = if (intent.hasExtra("decoders")) intent.getIntExtra("decoders", 2).coerceIn(1, 8) else null,
                 preload = if (intent.hasExtra("preload")) intent.getIntExtra("preload", 2).coerceIn(0, 6) else null,
                 seams = intent.getStringExtra("seams")?.let { if (it == "on" || it == "off") it == "on" else return null },
-                behind = intent.getStringExtra("behind")?.let { if (it == "on" || it == "off") it == "on" else return null }
+                behind = intent.getStringExtra("behind")?.let { if (it == "on" || it == "off") it == "on" else return null },
+                ai = intent.getStringExtra("ai")?.let { aiOf(it) ?: return null }
             )
         }
     }

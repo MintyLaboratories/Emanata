@@ -147,6 +147,7 @@ internal class BenchRunner(private val app: Application) {
         idle()
         val before = ProcStats.now(app)
         val start = System.nanoTime()
+        val power = PowerSampler(app).also { it.start() }
         val host = tracker.resumed ?: error("No activity to start the reader from")
         host.startActivity(
             Intent(host, ViewerActivity::class.java)
@@ -202,6 +203,7 @@ internal class BenchRunner(private val app: Application) {
         val settled = settle(viewer)
         val settleWall = System.nanoTime() - settleFrom
         val after = ProcStats.now(app)
+        power.stop()
         unwatch()
         viewer.finish()
         awaitDestroyed(viewer)
@@ -227,6 +229,26 @@ internal class BenchRunner(private val app: Application) {
             .put("before", before.toJson()).put("afterOpen", afterOpen.toJson()).put("afterTurns", turnEnd.toJson())
             .put("after", after.toJson())
             .put("turns", turns)
+            .put("ai", aiStats())
+            .put("power", power.toJson())
+    }
+
+    /**
+     * Pages shown processed by AI this session: how many were made and read back from disk,
+     * each made page's time to make, and from its plain page showing sharp to its processed one
+     * showing (the wait a reader sees).
+     */
+    private fun aiStats(): JSONObject {
+        val made = probe.enhanced.filter { !it.stored }
+        val stored = probe.enhanced.filter { it.stored }
+        // A page processed before it showed waits for nothing.
+        val waits = probe.enhanced.mapNotNull { e -> probe.sharpAt[e.page]?.let { maxOf(0L, e.at - it) } }
+        return JSONObject().put("made", made.size).put("stored", stored.size)
+            .put("makeMs", Stats.summary(made.map { it.ms })).put("readMs", Stats.summary(stored.map { it.ms }))
+            .put("shownAfterMs", Stats.summary(waits.map { Stats.ms(it) }))
+            .put("pages", JSONArray(probe.enhanced.map { e ->
+                JSONArray(listOf(e.page, e.ms, e.stored, probe.sharpAt[e.page]?.let { Stats.ms(e.at - it) } ?: JSONObject.NULL))
+            }))
     }
 
     /**

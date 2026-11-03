@@ -1,5 +1,7 @@
 package com.infinity.comicreader.debug
 
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.TwoPage
@@ -32,6 +34,11 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         plan.doubleTap?.let { prefs.doubleTapZoom = it }
         plan.preload?.let { prefs.preload = it }
         plan.seams?.let { prefs.joinSpreads = it }
+        plan.ai?.let { ids ->
+            val models = ids.mapNotNull { ModelCatalog.byId(it) }
+            for (step in AiStep.entries) prefs.setAiModel(step, models.firstOrNull { it.step == step }?.id)
+            prefs.aiEnabled = models.isNotEmpty()
+        }
     }
 
     /** Puts the kept settings back. */
@@ -53,6 +60,8 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
             .put("tapZones", prefs.tapZones)
             .put("preload", prefs.preload)
             .put("joinSpreads", prefs.joinSpreads)
+            .put("ai", prefs.aiEnabled)
+            .put("aiModels", JSONObject().apply { for (step in AiStep.entries) put(step.key, prefs.aiModel(step) ?: Prefs.AI_NONE) })
 
         /** Puts back the settings [file] keeps, if any, and forgets them; true when it held some. */
         fun restoreLeft(prefs: Prefs, file: File): Boolean {
@@ -70,6 +79,10 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
                 prefs.tapZones = kept.getString("tapZones")
                 if (kept.has("preload")) prefs.preload = kept.getInt("preload")
                 if (kept.has("joinSpreads")) prefs.joinSpreads = kept.getBoolean("joinSpreads")
+                if (kept.has("ai")) prefs.aiEnabled = kept.getBoolean("ai")
+                kept.optJSONObject("aiModels")?.let { m ->
+                    for (step in AiStep.entries) prefs.setAiModel(step, m.optString(step.key).takeIf { it.isNotEmpty() && it != Prefs.AI_NONE })
+                }
             }
             file.delete()
             return kept != null

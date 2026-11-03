@@ -233,4 +233,20 @@ class AiQueueTest {
         idleUntil { w.delivered.contains("b") }
         assertEquals(listOf("b"), w.delivered)
     }
+
+    @Test
+    fun releasingStopsThePageRunningAndDeliversNothing() {
+        val w = Work()
+        w.held["a"] = CountDownLatch(1)
+        val q = w.queue()
+        q.want(listOf("a", "b"))
+        idleUntil { w.started.contains("a") }
+        q.release()
+        idleUntil { w.canceled.contains("a") }
+        Thread.sleep(20)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("a"), w.canceled)
+        assertTrue(w.delivered.isEmpty())
+        assertEquals(listOf("a"), w.started)
+    }
 }

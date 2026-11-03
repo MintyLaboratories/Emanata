@@ -14,7 +14,7 @@ import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
-import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -29,7 +29,6 @@ import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** Pages shown plain at once, then swapped in place for their AI version, the page read first, then the next. */
@@ -55,8 +54,8 @@ class PageAdapterAiTest {
 
     /** Makes every page [color] at the size asked, listing the pages asked for; [on] false makes it process none. */
     private class Enhancer(private val color: Int) : PageEnhancer {
-        private val executor = Executors.newSingleThreadExecutor()
-        override val worker = executor.asCoroutineDispatcher()
+        // On the main looper: the work runs as the tests idle it, with no thread of its own to wait for.
+        override val worker = Dispatchers.Main
         val asked: MutableList<Int> = Collections.synchronizedList(ArrayList())
 
         @Volatile
@@ -81,7 +80,7 @@ class PageAdapterAiTest {
             return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) })
         }
 
-        fun close() = executor.shutdownNow()
+        fun close() = Unit
     }
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
@@ -93,7 +92,8 @@ class PageAdapterAiTest {
     }
 
     private fun idle(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
+        // Only decodes still run on threads of their own: a generous bound, reached only on failure.
+        val deadline = System.currentTimeMillis() + 30_000
         while (!done() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             shadowOf(Looper.getMainLooper()).idle()
@@ -285,6 +285,26 @@ class PageAdapterAiTest {
         aWhile()
         // Page 4 is kept on disk: read back first; 3 would be done after the reader left it.
         assertEquals(listOf(4, 5, 6), enhancer.asked.toList())
+        adapter.release()
+    }
+
+    @Test
+    fun aContinuousColumnProcessesThePageReadThenTheNext() {
+        val adapter = PageAdapter(
+            source = Source(4, plain), mode = PageAdapter.Mode.CONTINUOUS, onTap = { _, _ -> }, doubleTapZoom = false,
+            preload = 2, enhancer = enhancer
+        )
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            this.adapter = adapter
+            layOut(600, 900)
+        }
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        adapter.reading(0)
+        idle { colorAt(rv, 0) == processed }
+        assertEquals(processed, colorAt(rv, 0))
+        assertEquals(0, enhancer.asked.first())
         adapter.release()
     }
 }

@@ -499,6 +499,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 pref.isPersistent = true
             }
             pref.setOnPreferenceChangeListener { _, value ->
+                // Picking the shown default stores it: ListPreference skips an unchanged value.
+                if (value == pref.value) prefs.setAiModel(step, value as String)
                 if (prefs.aiEnabled) chosen(step, value)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true

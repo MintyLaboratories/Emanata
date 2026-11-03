@@ -114,6 +114,20 @@ class SettingsAiTest {
     }
 
     @Test
+    fun pickingTheShownDefaultStoresIt() {
+        val fragment = settings()
+        val stored = PreferenceManager.getDefaultSharedPreferences(context)
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, pref.value)
+        if (pref.callChangeListener(ModelCatalog.DEFAULT_UPSCALE)) pref.value = ModelCatalog.DEFAULT_UPSCALE
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, stored.getString(Prefs.aiKey(AiStep.UPSCALE), null))
+        // None as well, where none is shown.
+        val descreen = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.DESCREEN))!!
+        if (descreen.callChangeListener(Prefs.AI_NONE)) descreen.value = Prefs.AI_NONE
+        assertEquals(Prefs.AI_NONE, stored.getString(Prefs.aiKey(AiStep.DESCREEN), null))
+    }
+
+    @Test
     fun eachStepOffersNoneThenItsCatalogModels() {
         Prefs(context).keepSimple = false
         val fragment = settings()

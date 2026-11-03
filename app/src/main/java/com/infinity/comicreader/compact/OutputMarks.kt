@@ -99,7 +99,11 @@ object OutputMarks {
         return Done(compacted, ours(Operation.COMPATIBLE), ours(Operation.REPACKED))
     }
 
-    /** [verified] for the ZIP [file] on the device; nothing for one that is no ZIP or cannot be read. Blocking. */
+    /**
+     * [verified] for the ZIP [file] on the device; nothing for one that is no ZIP or cannot
+     * be read, a file on a share included (rebuilds never run there): a share's tail reads
+     * through [tail] with its remote channel. Blocking.
+     */
     fun verified(file: File, hash: Xxh3): Done = try {
         FileChannel.open(file.toPath(), StandardOpenOption.READ).use { tail(it, hash) }?.let(::verified) ?: Done.NOTHING
     } catch (e: IOException) {

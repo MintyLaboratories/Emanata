@@ -58,8 +58,13 @@ object OutputMarks {
         version.toLongOrNull()?.let { Block(tool, operation, it, hash) }
     }.toList()
 
-    /** [comment] without any block, each taken with the line break before it. */
-    fun withoutBlocks(comment: String): String = BLOCK_LINE.replace(comment, "")
+    /** [comment] without any block, each taken with the line break before it, or after it when it starts the comment. */
+    fun withoutBlocks(comment: String): String {
+        val text = BLOCK_LINE.replace(comment, "")
+        return if (BLOCK.find(comment)?.range?.first == 0) text.replaceFirst(LEADING_BREAK, "") else text
+    }
+
+    private val LEADING_BREAK = Regex("""^\r?\n""")
 
     /** Emanata's block for [operation] over a central directory of hash [directory]. */
     fun block(operation: Operation, directory: Long): String =
@@ -67,13 +72,13 @@ object OutputMarks {
 
     /**
      * The comment for a new archive from its source's [kept] comment (bytes as they were,
-     * blocks then dropped) with [block] after it on a new line; just what is kept when both
-     * would be longer than [MAX_COMMENT].
+     * blocks then dropped) with [block] after it on a new line (its own when it ends in one);
+     * just what is kept when both would be longer than [MAX_COMMENT].
      */
     fun comment(kept: ByteArray, block: String): ByteArray {
         val text = withoutBlocks(String(kept, Charsets.ISO_8859_1))
         val base = text.toByteArray(Charsets.ISO_8859_1)
-        val joined = (if (text.isEmpty()) block else text + "\n" + block).toByteArray(Charsets.ISO_8859_1)
+        val joined = (if (text.isEmpty() || text.endsWith("\n")) text + block else text + "\n" + block).toByteArray(Charsets.ISO_8859_1)
         return if (joined.size <= MAX_COMMENT) joined else base
     }
 

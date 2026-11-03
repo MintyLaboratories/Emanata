@@ -111,6 +111,17 @@ class OutputMarksTest {
     }
 
     @Test
+    fun noEmptyLineBeforeTheBlockNorLineBreakLeftAtTheStart() {
+        val block = OutputMarks.block(Operation.COMPACTED, 1L)
+        fun text(kept: String) = String(OutputMarks.comment(kept.toByteArray(), block), Charsets.ISO_8859_1)
+        assertEquals("Notes\n$block", text("Notes\n"))
+        assertEquals("Notes\n$block", text("[i:Other compacted v1 0123456789abcdef]\nNotes"))
+        assertEquals("Notes\n$block", text("[i:A b v1 x][i:C d v2 y]\nNotes"))
+        // Rewritten again, the same.
+        assertEquals("Notes\n$block", text(text("Notes\n")))
+    }
+
+    @Test
     fun anyToolOperationAndVersionParses() {
         val blocks = OutputMarks.blocks("x [i:Tool-9 squeezed v42 abcd] y\n[i:A b v7 0123456789ABCDEF][i:Big v v99999999999999999999 0000000000000000]")
         assertEquals(listOf("Tool-9", "A"), blocks.map { it.tool })

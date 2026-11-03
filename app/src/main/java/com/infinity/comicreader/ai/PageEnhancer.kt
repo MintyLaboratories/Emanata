@@ -271,8 +271,12 @@ class ReaderAi internal constructor(
         /** Megapixels of the catalog's reference page ([CatalogModel.pageMs]): 1000 x 1500. */
         const val REFERENCE_MP = 1.5
 
-        /** How much longer than the catalog's cool time a model may take warm. */
-        const val WARM = 1.5
+        /**
+         * How much longer than the catalog's cool time a model may take in the reader: up to
+         * 1.5x warm, and its thread runs at background priority beside the reader's own work
+         * (on the reference tablet waifu2x took 5.2 s a page there against 3.4 s alone, cool).
+         */
+        const val WARM = 2.5
 
         /** The longest a page may take, however slow its chain. */
         const val MAX_TIMEOUT_MS = 120_000L

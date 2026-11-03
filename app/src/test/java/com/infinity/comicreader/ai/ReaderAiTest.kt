@@ -224,12 +224,12 @@ class ReaderAiTest {
         val slowPair = listOf(ModelCatalog.byId("opencomic-ai-descreen-hard-fast-v3-256")!!, ModelCatalog.byId("realesr-animevideov3-x2")!!)
         val reference = 1_500_000L
         assertEquals(PageLimits.DEFAULT_TIMEOUT_MS, ai.limitsFor(fast, listOf(ChainStep(0, reference))).timeoutMs)
-        // Cool 15.4 + 10.8 s on the reference page: 1.5 times that once warm.
-        assertEquals(39_300L, ai.limitsFor(slowPair, listOf(ChainStep(0, reference), ChainStep(1, reference))).timeoutMs)
-        // A 6 MP scan through the slow descreen alone: 61.6 s cool, 92.4 s warm.
-        assertEquals(92_400L, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 4 * reference))).timeoutMs)
-        // Twice that: held to the most a page may take.
-        assertEquals(ReaderAi.MAX_TIMEOUT_MS, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 8 * reference))).timeoutMs)
+        // Cool 15.4 + 10.8 s on the reference page: 2.5 times that in the reader.
+        assertEquals(65_500L, ai.limitsFor(slowPair, listOf(ChainStep(0, reference), ChainStep(1, reference))).timeoutMs)
+        // A 3 MP scan through the slow descreen alone: 30.8 s cool, 77 s in the reader.
+        assertEquals(77_000L, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 2 * reference))).timeoutMs)
+        // A 6 MP one: held to the most a page may take.
+        assertEquals(ReaderAi.MAX_TIMEOUT_MS, ai.limitsFor(slowPair.take(1), listOf(ChainStep(0, 4 * reference))).timeoutMs)
     }
 
     @Test

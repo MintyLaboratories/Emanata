@@ -40,6 +40,43 @@ object Fixtures {
         return file
     }
 
+    /**
+     * A solid 7z: every entry in one block, stored (the Copy coder), with an unpacked
+     * header, per the 7z format notes; Commons Compress writes a block per entry.
+     */
+    fun solidSevenZip(file: File, vararg entries: Pair<String, ByteArray>): File {
+        val data = ByteArrayOutputStream().apply { for ((_, content) in entries) write(content) }.toByteArray()
+        val h = SevenZBytes()
+        h.u8(0x01).u8(0x04) // Header, MainStreamsInfo
+        h.u8(0x06).num(0).num(1).u8(0x09).num(data.size.toLong()).u8(0x00) // PackInfo: one pack stream
+        h.u8(0x07).u8(0x0B).num(1).u8(0) // UnpackInfo: one folder, inline
+        h.num(1).u8(0x01).u8(0x00) // one coder: Copy (id 00)
+        h.u8(0x0C).num(data.size.toLong()).u8(0x00) // its unpacked size; end of UnpackInfo
+        h.u8(0x08).u8(0x0D).num(entries.size.toLong()) // SubStreamsInfo: entries in the folder
+        if (entries.size > 1) {
+            h.u8(0x09)
+            for ((_, content) in entries.dropLast(1)) h.num(content.size.toLong())
+        }
+        h.u8(0x0A).u8(1)
+        for ((_, content) in entries) h.u32(crc(content))
+        h.u8(0x00).u8(0x00) // end of SubStreamsInfo, of MainStreamsInfo
+        val names = ByteArrayOutputStream().apply {
+            write(0) // not external
+            for ((path, _) in entries) write((path + "\u0000").toByteArray(Charsets.UTF_16LE))
+        }.toByteArray()
+        h.u8(0x05).num(entries.size.toLong()).u8(0x11).num(names.size.toLong()).raw(names).u8(0x00) // FilesInfo: names
+        h.u8(0x00) // end of Header
+        val header = h.bytes()
+        val start = SevenZBytes().u64(data.size.toLong()).u64(header.size.toLong()).u32(crc(header)).bytes()
+        val out = ByteArrayOutputStream()
+        out.write(bytes(0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x04))
+        out.write(SevenZBytes().u32(crc(start)).bytes())
+        out.write(start)
+        out.write(data)
+        out.write(header)
+        return file.apply { writeBytes(out.toByteArray()) }
+    }
+
     /** A POSIX (ustar) tar; [posix] false writes pre-POSIX headers, which carry no magic. */
     fun tarBytes(vararg entries: Pair<String, ByteArray>, posix: Boolean = true): ByteArray {
         val out = ByteArrayOutputStream()
@@ -96,11 +133,11 @@ object Fixtures {
     }
 
     /** A RAR 5 archive with every entry stored (method 0), per the RAR 5.0 format notes. */
-    fun rar5Bytes(vararg entries: Pair<String, ByteArray>): ByteArray {
+    fun rar5Bytes(vararg entries: Pair<String, ByteArray>, solid: Boolean = false): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(bytes(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00))
-        // Main header: type 1, no header flags, no archive flags.
-        rar5Block(out, VarBytes().v(1).v(0).v(0).bytes())
+        // Main header: type 1, no header flags, archive flags (0x0004 marks the archive solid).
+        rar5Block(out, VarBytes().v(1).v(0).v(if (solid) 4 else 0).bytes())
         for ((path, content) in entries) {
             val name = path.toByteArray(Charsets.UTF_8)
             val head = VarBytes().v(2).v(0x0002).v(content.size.toLong()) // type, data area, data size
@@ -138,6 +175,31 @@ object Fixtures {
         fun u16(v: Int) = apply { u8(v).u8(v ushr 8) }
         fun u32(v: Long) = apply { u16((v and 0xFFFF).toInt()).u16(((v ushr 16) and 0xFFFF).toInt()) }
         fun raw(b: ByteArray) = apply { out.write(b) }
+        fun bytes(): ByteArray = out.toByteArray()
+    }
+
+    /** 7z fields: little-endian integers and its own variable-length numbers. */
+    private class SevenZBytes {
+        private val out = ByteArrayOutputStream()
+        fun u8(v: Int) = apply { out.write(v and 0xFF) }
+        fun u32(v: Long) = apply { for (i in 0 until 4) out.write(((v ushr (8 * i)) and 0xFF).toInt()) }
+        fun u64(v: Long) = apply { for (i in 0 until 8) out.write(((v ushr (8 * i)) and 0xFF).toInt()) }
+        fun raw(b: ByteArray) = apply { out.write(b) }
+
+        /** A number: the first byte's leading ones count the bytes after it (up to 8). */
+        fun num(v: Long) = apply {
+            require(v >= 0)
+            if (v < 0x80) {
+                u8(v.toInt())
+                return@apply
+            }
+            var n = 1
+            while (n < 8 && v >= (1L shl (7 * (n + 1)))) n++
+            val first = (0xFF shl (8 - n)) and 0xFF
+            val high = if (n < 8) (v ushr (8 * n)).toInt() else 0
+            u8(first or high)
+            for (i in 0 until n) u8(((v ushr (8 * i)) and 0xFF).toInt())
+        }
         fun bytes(): ByteArray = out.toByteArray()
     }
 

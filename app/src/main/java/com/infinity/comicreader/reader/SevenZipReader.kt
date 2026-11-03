@@ -23,6 +23,9 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
      */
     override val randomAccess: Boolean
 
+    /** True when some block holds several entries, false when none does; null when the description cannot be read. */
+    val solid: Boolean?
+
     init {
         try {
             val list = ArrayList<SevenZArchiveEntry>()
@@ -33,7 +36,9 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
             }
             native = list
             entries = native.mapIndexed { i, n -> ArchiveEntry(n.name, n.size, i) }
-            randomAccess = separateBlocks(sz.toString(), native.count { it.hasStream() })
+            val streams = native.count { it.hasStream() }
+            solid = folders(sz.toString())?.let { it < streams }
+            randomAccess = solid == false
         } catch (t: Throwable) {
             runCatching { sz.close() }
             throw t
@@ -57,10 +62,10 @@ class SevenZipReader(private val sz: SevenZFile) : ArchiveReader {
     companion object {
         private val FOLDERS = Regex("""(\d+) folders""")
 
-        /** True when [description] (the archive's, as Commons Compress words it) names a block for each of [streams] entries with contents. */
-        internal fun separateBlocks(description: String, streams: Int): Boolean {
-            val folders = FOLDERS.find(description)?.groupValues?.get(1)?.toIntOrNull() ?: return false
-            return folders >= streams
-        }
+        /** The blocks [description] (the archive's, as Commons Compress words it) names; null when it names none. */
+        private fun folders(description: String): Int? = FOLDERS.find(description)?.groupValues?.get(1)?.toIntOrNull()
+
+        /** True when [description] names a block for each of [streams] entries with contents. */
+        internal fun separateBlocks(description: String, streams: Int): Boolean = folders(description)?.let { it >= streams } ?: false
     }
 }

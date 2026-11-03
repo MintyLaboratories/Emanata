@@ -140,6 +140,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -667,6 +669,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 settings.reader.collect { applySettings(it) }
+            }
+        }
+        // Pages waiting for a model go on once it is in, whether or not the sheet is open;
+        // also once one failed, when the queue stops asking for it.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ModelDownloads.state.map { d -> d.generation to d.states.filterValues { it is DownloadState.Failed }.keys }
+                    .distinctUntilChanged()
+                    .collect { adapter?.aiWake() }
             }
         }
 
@@ -3672,9 +3683,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private var shownDownloads: Downloads? = null
 
     /**
-     * While the sheet is open and a model downloads, shows its progress, and lets pages waiting
-     * for it go on once it is in; asks every [DOWNLOAD_POLL_MS] rather than subscribing, so
-     * nothing app-wide holds the reader.
+     * While the sheet is open and a model downloads, shows its progress; asks every
+     * [DOWNLOAD_POLL_MS] rather than redrawing at every update.
      */
     private val followDownloads = object : Runnable {
         override fun run() {
@@ -3683,7 +3693,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             val now = ModelDownloads.state.value
             if (now != shownDownloads) {
                 shownDownloads = now
-                adapter?.aiWake()
                 syncSheet()
             }
             if (now.states.values.any { it is DownloadState.Running }) handler.postDelayed(this, DOWNLOAD_POLL_MS)

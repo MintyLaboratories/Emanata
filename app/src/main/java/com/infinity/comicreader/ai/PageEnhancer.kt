@@ -43,7 +43,8 @@ interface PageEnhancer {
  * ([ProcessedStore]). A page is processed from its full-detail decode (at most
  * [MAX_INPUT_PIXELS]) and resampled to exactly the plain page's size, so it swaps in without
  * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
- * model is still downloading ([download] starts one missing); skips pages of vector books,
+ * model is still downloading ([download] starts one missing, unless its download failed: a pick
+ * or Settings starts that again); skips pages of vector books,
  * pages drawn in bands, and pages an upscaler would only shrink.
  */
 class ReaderAi internal constructor(
@@ -214,7 +215,7 @@ class ReaderAi internal constructor(
             val models = ModelStore.of(app)
             return ReaderAi(
                 Prefs(app), library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
-                AiConditions.gate(app), { ModelDownloads.start(models, it) }
+                AiConditions.gate(app), { m -> if (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) }
             )
         }
     }

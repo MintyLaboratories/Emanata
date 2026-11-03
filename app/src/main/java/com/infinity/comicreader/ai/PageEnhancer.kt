@@ -88,9 +88,10 @@ class ReaderAi internal constructor(
         val key = book?.let {
             ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain))
         }
+        // Paused pages show plain, as the Battery settings say, even when kept processed.
+        if (gate() != null) return AiOutcome.Later
         val t0 = SystemClock.elapsedRealtime()
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = SystemClock.elapsedRealtime() - t0) }
-        if (gate() != null) return AiOutcome.Later
         val files = chain.map { m ->
             models.files(m) ?: run {
                 download(m)

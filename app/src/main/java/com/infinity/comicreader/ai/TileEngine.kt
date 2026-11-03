@@ -70,7 +70,9 @@ internal class Session(val model: TileModel, val geometry: Geometry, val size: I
  * - its time ([PageLimits.timeoutMs]): falls back, also as soon as the tiles left would
  *   take longer than the time left at the pace so far, so no work is spent on a page that
  *   would miss it anyway;
- * - [gate] (heat, battery saver): falls back.
+ * - [gate] (heat, battery saver): falls back;
+ * - [hold] (the reader turning a page or zooming): waits, the time waited not counted, so
+ *   the GPU leaves the reader's frames alone.
  * Output memory is bounded by [PageLimits.maxOutputPixels]; the model's own buffers are freed
  * after every page ([TileModel.trim]), on the GPU and the CPU.
  */
@@ -79,6 +81,9 @@ internal object TileEngine {
 
     /** How often a waiting run checks whether it was canceled. */
     private const val WAIT_POLL_MS = 50L
+
+    /** How often a held run checks whether it may go on. */
+    private const val HOLD_POLL_MS = 16L
 
     /** Tiles timed before the pace predicts a miss. */
     private const val PACE_AFTER = 2
@@ -109,24 +114,37 @@ internal object TileEngine {
         canceled: () -> Boolean = { false },
         gate: () -> Fallback? = { null },
         clock: () -> Long = SystemClock::elapsedRealtime,
+        hold: () -> Boolean = { false },
         onTile: (done: Int, of: Int, ms: Long) -> Unit = { _, _, _ -> }
     ): PageRun = exclusive(canceled) {
         try {
-            runAlone(session, src, limits, canceled, gate, clock, onTile)
+            runAlone(session, src, limits, canceled, gate, clock, hold, onTile)
         } finally {
             session.model.trim()
         }
     }
 
+    /** Waits while [hold] says so; throws [CancellationException] once [canceled]. The milliseconds waited by [clock]. */
+    fun held(hold: () -> Boolean, canceled: () -> Boolean, clock: () -> Long = SystemClock::elapsedRealtime): Long {
+        val t0 = clock()
+        if (!hold()) return 0
+        while (hold()) {
+            if (canceled()) throw CancellationException("AI work canceled while held")
+            Thread.sleep(HOLD_POLL_MS)
+        }
+        return clock() - t0
+    }
+
     private fun runAlone(
         session: Session, src: Bitmap, limits: PageLimits, canceled: () -> Boolean, gate: () -> Fallback?,
-        clock: () -> Long, onTile: (Int, Int, Long) -> Unit
+        clock: () -> Long, hold: () -> Boolean, onTile: (Int, Int, Long) -> Unit
     ): PageRun {
         if (src.isRecycled || src.config != Bitmap.Config.ARGB_8888) return PageRun(null, Fallback.UNREADABLE, RunStats.NONE)
         val g = session.geometry
         val tiles = TilePlan.tiles(src.width, src.height, session.size, g)
         val times = LongArray(tiles.size)
-        val start = clock()
+        // Moved on by the time held, which counts toward neither the limit nor the pace.
+        var start = clock()
         fun stats(done: Int) = RunStats(done, tiles.size, times.copyOf(done), clock() - start)
         fun fallback(why: Fallback, done: Int) = PageRun(null, why, stats(done))
 
@@ -144,6 +162,7 @@ internal object TileEngine {
         try {
             for ((i, t) in tiles.withIndex()) {
                 if (canceled()) throw CancellationException("AI page canceled")
+                start += held(hold, canceled, clock)
                 if (i > 0) {
                     gate()?.let { return fallback(it, i) }
                     val spent = clock() - start

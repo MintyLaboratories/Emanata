@@ -63,7 +63,7 @@ class PageAdapterAiTest {
 
         override fun enhances(source: PageSource): Boolean = on
 
-        override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, canceled: () -> Boolean): AiOutcome {
+        override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
             asked += index
             if (!on) return AiOutcome.Skipped(Fallback.UNNEEDED)
             return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) })

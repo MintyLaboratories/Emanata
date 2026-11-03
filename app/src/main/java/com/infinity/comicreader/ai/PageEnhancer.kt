@@ -32,9 +32,11 @@ interface PageEnhancer {
     /**
      * Page [index] of [source], shown as [target] lays it out at [width] x [height], processed:
      * read back from disk, or made from the page at full detail and stored. Blocking; stops
-     * once [canceled].
+     * once [canceled]; waits between tiles while [held] (the reader moving).
      */
-    fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, canceled: () -> Boolean): AiOutcome
+    fun enhance(
+        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean = { false }, canceled: () -> Boolean
+    ): AiOutcome
 }
 
 /**
@@ -95,7 +97,7 @@ class ReaderAi internal constructor(
 
     override fun enhances(source: PageSource): Boolean = !source.isVector && chainFor(source.bookKey).isNotEmpty()
 
-    override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, canceled: () -> Boolean): AiOutcome {
+    override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val book = source.bookKey
         val chain = chainFor(book)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
@@ -123,7 +125,7 @@ class ReaderAi internal constructor(
             val readable = if (input.config == Bitmap.Config.ARGB_8888) input else input.copy(Bitmap.Config.ARGB_8888, false)
             try {
                 val run = Urgency.later {
-                    AiPages.chain(opened, readable, plan.copy(width = width, height = height), target.scaling, target.linear, limits, canceled, gate)
+                    AiPages.chain(opened, readable, plan.copy(width = width, height = height), target.scaling, target.linear, limits, canceled, gate, hold = held)
                 }
                 val out = run.bitmap ?: return when (run.fallback) {
                     Fallback.PAUSED -> AiOutcome.Later

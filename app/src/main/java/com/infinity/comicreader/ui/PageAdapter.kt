@@ -486,6 +486,7 @@ class PageAdapter(
         super.onAttachedToRecyclerView(recyclerView)
         recycler = recyclerView
         if (mode == Mode.CONTINUOUS) recyclerView.addOnScrollListener(bandScroll)
+        recyclerView.addOnScrollListener(aiScroll)
         recyclerView.context.getSystemService(ActivityManager::class.java)?.let { am ->
             detailBudget = DetailStore.budget(ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem)
         }
@@ -511,6 +512,7 @@ class PageAdapter(
         layoutListener?.let { recyclerView.removeOnLayoutChangeListener(it) }
         layoutListener = null
         recyclerView.removeOnScrollListener(bandScroll)
+        recyclerView.removeOnScrollListener(aiScroll)
         if (recycler === recyclerView) recycler = null
     }
 
@@ -1400,10 +1402,20 @@ class PageAdapter(
 
     private fun queueOf(e: PageEnhancer): AiQueue<PageKey> = ai ?: AiQueue<PageKey>(scope, e.worker, { key, canceled ->
         val p = aiPages[key] ?: return@AiQueue AiOutcome.Skipped(Fallback.UNNEEDED)
-        e.enhance(p.source, p.index, key.target, p.width, p.height, canceled)
+        e.enhance(p.source, p.index, key.target, p.width, p.height, { motion.moving }, canceled)
     }, ::enhanced).also {
         ai = it
         if (aiPaused) it.pause()
+    }
+
+    /** The reader's touches and scrolling, which AI work waits out between tiles. */
+    private val motion = ReaderMotion()
+
+    /** Follows the reader's touches, so AI work waits while it is touched; call with every touch event its window gets. */
+    fun touched(action: Int) = motion.touched(action)
+
+    private val aiScroll = object : RecyclerView.OnScrollListener() {
+        override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) = motion.scrolled(newState)
     }
 
     /** True while the reader is out of sight ([pauseAi]). */

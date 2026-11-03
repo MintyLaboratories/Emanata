@@ -130,6 +130,32 @@ class TileEngineTest {
     }
 
     @Test
+    fun aHeldRunWaitsAndTheTimeHeldCountsTowardNeitherLimitNorPace() {
+        val model = FakeModel()
+        val s = session(model)
+        val tiles = TileEngine.run(s, page(200, 200)).stats.planned
+        var now = 0L
+        var holds = 0
+        // Each tile takes 100 ms; before each the run is held twice, 1 s a time, far past the limit.
+        val run = TileEngine.run(
+            s, page(200, 200), PageLimits(timeoutMs = tiles * 100L + 50), clock = { now },
+            hold = { (holds++ % 3 != 2).also { if (it) now += 1_000 } },
+            onTile = { _, _, _ -> now += 100 }
+        )
+        assertNotNull(run.bitmap)
+        assertTrue(holds > 3)
+        assertEquals("held time is left out", tiles * 100L, run.stats.totalMs)
+    }
+
+    @Test
+    fun aRunCanceledWhileHeldStops() {
+        val s = session(FakeModel())
+        assertThrows(CancellationException::class.java) {
+            TileEngine.run(s, page(60, 60), canceled = { true }, hold = { true })
+        }
+    }
+
+    @Test
     fun theGateStopsARun() {
         val model = FakeModel()
         val s = session(model)

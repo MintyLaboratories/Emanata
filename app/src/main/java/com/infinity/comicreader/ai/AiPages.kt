@@ -120,7 +120,8 @@ internal object AiPages {
      * and [scaling] say; no bitmap when the chain falls back ([ChainRun.fallback]), when
      * nothing else is made: the page shows as it would without AI. An upscaling model is
      * skipped where the page shows no larger than its input to it; the chain falls back as
-     * [Fallback.UNNEEDED] when every model is. All models share [limits]' time. Throws
+     * [Fallback.UNNEEDED] when every model is. All models share [limits]' time, toward which
+     * time [hold] held them back does not count. Throws
      * [java.util.concurrent.CancellationException] once [canceled]. [src] is only read.
      */
     fun chain(
@@ -132,9 +133,12 @@ internal object AiPages {
         limits: PageLimits = PageLimits(),
         canceled: () -> Boolean = { false },
         gate: () -> Fallback? = { null },
-        clock: () -> Long = SystemClock::elapsedRealtime
+        clock: () -> Long = SystemClock::elapsedRealtime,
+        hold: () -> Boolean = { false }
     ): ChainRun {
         val start = clock()
+        // The models' own time, without time held.
+        var spent = 0L
         var page = src
         var scale = 1
         var ran = 0
@@ -142,9 +146,10 @@ internal object AiPages {
             for (session in sessions) {
                 val s = session.geometry.scale
                 if (s > 1 && scaled(plan, scale).shrinks()) continue
-                val left = limits.timeoutMs - (clock() - start)
+                val left = limits.timeoutMs - spent
                 if (left <= 0) return ChainRun(null, Fallback.TIMEOUT, ran, clock() - start)
-                val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock)
+                val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock, hold)
+                spent += run.stats.totalMs
                 val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)
                 if (page !== src) page.recycle()
                 page = out

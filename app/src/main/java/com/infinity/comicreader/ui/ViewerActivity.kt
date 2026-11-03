@@ -2945,8 +2945,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** True while the preview strip shows. */
     internal val seekPanelShown: Boolean get() = seekPanel.visibility == View.VISIBLE
 
-    /** A touch on the bars, which sit above the strip's scrim, closes the strip and goes on to the bars. */
+    /**
+     * A touch on the bars, which sit above the strip's scrim, closes the strip and goes on to
+     * the bars. Every touch holds AI work back while it lasts ([PageAdapter.touched]).
+     */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        adapter?.touched(ev.actionMasked)
         if (ev.actionMasked == MotionEvent.ACTION_DOWN && seekPanelShown && !hits(seekPanel, ev) &&
             (hits(toolbar, ev) || hits(bottomBar, ev))
         ) {

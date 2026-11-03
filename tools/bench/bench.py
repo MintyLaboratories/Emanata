@@ -44,7 +44,7 @@ A session's CPU time runs until the reader's background work (page size and seam
 decodes) is done after its last turn ("settle"), so work a build defers still counts; decodes
 besides the reader's own ("aside": seam sides, quick previews, sizes) are counted apart.
 Each session records the battery level and current; `run` and `ab` stop below --min-battery
-percent (default 30), where a device may slow down to save power.
+percent (default 20; 0 turns the check off), where a device may slow down to save power.
 """
 from __future__ import annotations
 
@@ -68,6 +68,8 @@ BENCH = f"{PACKAGE}/com.infinity.comicreader.debug.BenchActivity"
 DEVICE_DIR = "/storage/emulated/0/Download/emanata-test"
 TRACE_DIR = "/data/misc/perfetto-traces"
 RESULTS = f"/storage/emulated/0/Android/data/{PACKAGE}/files/bench/results.jsonl"
+# Battery percent below which no session starts (--min-battery); 0 turns the check off.
+MIN_BATTERY = 20
 ADB = os.environ.get("ADB", "adb")
 
 # ---------------------------------------------------------------- synthetic books
@@ -361,6 +363,13 @@ def battery_level() -> int | None:
     return int(m.group(1)) if m else None
 
 
+def battery_refusal(level: int | None, minimum: int) -> str | None:
+    """Why no session may start at battery [level] percent with --min-battery [minimum]; None when one may."""
+    if level is None or level >= minimum:
+        return None
+    return f"battery at {level}%, below --min-battery {minimum}%: charge the device first (--min-battery 0 overrides)"
+
+
 def app_uid() -> int | None:
     m = re.search(r"uid:(\d+)", adb("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, capture=True))
     return int(m.group(1)) if m else None
@@ -386,9 +395,9 @@ def run_plan(args) -> None:
         # `ab` calibrates after each install.
         calibrate(out)
     for n, session in enumerate(plan):
-        level = battery_level()
-        if level is not None and level < args.min_battery:
-            raise SystemExit(f"battery at {level}%, below --min-battery {args.min_battery}%: charge the device first")
+        refusal = battery_refusal(battery_level(), args.min_battery)
+        if refusal:
+            raise SystemExit(refusal)
         tag = f"{n:02}-" + re.sub(r"[^A-Za-z0-9]+", "-", session.get("label", "s"))
         trace = f"{TRACE_DIR}/emanata-{tag}.pftrace"
         tracer = None
@@ -614,7 +623,7 @@ def calibrate(out: Path | None = None, variant: str = "", timeout_s: int = 300) 
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(required=True)
     p = sub.add_parser("make")
@@ -636,7 +645,7 @@ def main() -> None:
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
-    p.add_argument("--min-battery", type=int, default=30, help="percent below which no session starts")
+    p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
     p.set_defaults(func=run_plan)
     p = sub.add_parser("ab")
     p.add_argument("--a", required=True, help="the build A apk")
@@ -648,7 +657,7 @@ def main() -> None:
     p.add_argument("--trace", action="store_true")
     p.add_argument("--energy", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
-    p.add_argument("--min-battery", type=int, default=30, help="percent below which no session starts")
+    p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
     p.set_defaults(func=ab)
     p = sub.add_parser("report")
     p.add_argument("results")
@@ -657,7 +666,11 @@ def main() -> None:
     p.add_argument("trace")
     p.add_argument("--top", type=int, default=40)
     p.set_defaults(func=slices)
-    args = ap.parse_args()
+    return ap
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     args.func(args)
 
 

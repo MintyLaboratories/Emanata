@@ -929,9 +929,10 @@ reader's background scans and decodes end after the last turn) and per decoded p
 decodes besides the reader's own (seam sides, quick previews), memory, jank, thermal
 headroom, battery level and current, and optionally a Perfetto trace and the battery
 statistics' estimate per session. Each session starts with a warm-up that reports leave
-out; `ab` compares two builds installed in turn (A B B A); no session starts below 30%
-battery. `tools/bench/plans` holds plans for the synthetic books, read fast and slowly.
-See its `--help`.
+out; `ab` compares two builds installed in turn (A B B A); no session starts below 20%
+battery (`--min-battery 0` overrides). `tools/bench/plans` holds plans for the synthetic
+books, read fast and slowly. See its `--help`; its tests run with
+`py -m unittest discover tools/bench`.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

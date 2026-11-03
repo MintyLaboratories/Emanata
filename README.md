@@ -699,7 +699,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   read marks stay. Also clear history, clear bookmarks, reset
   all settings; every Clear or Reset asks first. Resetting settings keeps
   per-book adjustments and reading progress.
-- **AI processing** (off by default; pages do not go through it yet): a model
+- **AI processing** (off by default): a model
   per step, or none, for artifact removal, then descreening, then upscaling
   (Fast v2 2× by default). Artifact removal and descreen are advanced settings;
   the switch's summary shows the whole chain, hidden steps included, and warns
@@ -707,7 +707,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). Battery: battery
-  saver pauses AI processing unless **Pause AI processing** is off.
+  saver pauses AI processing unless **Pause AI processing** is off. In the
+  reader a page shows at once, then its processed version takes its place at
+  the same size when ready: the page read first, then the next screen's, one
+  at a time. Each book can run its own models (Reader settings → AI
+  processing → **This book**), kept with its other data; **Default** follows
+  Settings, and a change there changes the default. Processed pages are kept
+  on disk (up to 256 MB, cleared by Clear cache).
 - About: version, source, upstream credit, the license, third-party licenses,
   and the AI models' authors and licenses.
 
@@ -771,7 +777,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   applies, and after an update the previous winners stay until new ones are
   established. Debug and bench builds show it and recalibrate in
   `CalibrationActivity` (shell only).
-- AI processing (`ai/`; the reader does not use it yet): ncnn with Vulkan, built from
+- AI processing (`ai/`): ncnn with Vulkan, built from
   source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own
   (`libaincnn.so`) loaded on first use. A model (`.param`/`.bin`) runs over a
   page in fixed-size square tiles (`TilePlan`), one page or model check at a
@@ -806,6 +812,22 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   after every page. Every ncnn call runs on one thread that lives as long as the
   process: its OpenMP runtime aborts when started again. ncnn's threads are
   placed on the large cores before each CPU run and let go before each GPU run.
+- AI in the reader (`ReaderAi`, `AiQueue`): once a page of a book with a chain
+  (its own picks in the library, else the global ones) shows plain, it is
+  queued; the queue works on the item being read, then the next one, one page
+  at a time on one background thread, and stops a page no longer wanted. A
+  page is decoded again at full detail (up to 8 MP), run through each model in
+  turn (an upscaler skipped where the page would show no larger,
+  `AiPages.chain`; the chain shares one page's time) and resampled to exactly
+  the plain page's size and crop, so it swaps in without a jump; it replaces
+  the plain page in the page cache. Heat or battery saver (`AiConditions`) or
+  a model still downloading puts the queue off for 15 s, doubling to 2 min;
+  a page that times out or fails keeps its plain rendering. Vector books and
+  pages drawn in bands are not processed; a zoom renders its detail from the
+  plain page. Models stay open while the reader is. Processed pages are kept
+  in `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
+  where libjxl is missing), keyed by Book ID, page, size, crop and the chain
+  with its models' checksums, trimmed least recently read first to 256 MB.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
   bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
   licenses, all fetched unchanged from OpenComic AI's model repository at a

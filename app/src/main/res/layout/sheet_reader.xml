@@ -306,6 +306,58 @@
             android:minHeight="48dp"
             android:text="@string/menu_night" />
 
+        <!-- AI processing: this book's own models, or the default ones -->
+        <TextView
+            style="@style/Widget.ComicReader.SheetSection"
+            android:text="@string/sheet_ai" />
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_ai_scope"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ai_book"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/ai_scope_book" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ai_default"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/ai_scope_default" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <TextView
+            android:id="@+id/sheet_ai_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            tools:text="@string/ai_scope_default_hint" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/ai_step_artifacts" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sheet_ai_artifacts"
+            style="@style/Widget.ComicReader.SheetPicker" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/ai_step_descreen" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sheet_ai_descreen"
+            style="@style/Widget.ComicReader.SheetPicker" />
+
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/ai_step_upscale" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sheet_ai_upscale"
+            style="@style/Widget.ComicReader.SheetPicker" />
+
         <!-- Behavior -->
         <TextView
             style="@style/Widget.ComicReader.SheetSection"

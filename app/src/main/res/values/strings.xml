@@ -655,6 +655,11 @@
     <string name="sheet_layout">Layout</string>
     <string name="sheet_color">Color</string>
     <string name="sheet_behavior">Behavior</string>
+    <string name="sheet_ai">AI processing</string>
+    <string name="ai_scope_book">This book</string>
+    <string name="ai_scope_default">Default</string>
+    <string name="ai_scope_book_hint">This book\'s own models; other books keep the default</string>
+    <string name="ai_scope_default_hint">The default from Settings; a change here changes it for every book without its own</string>
     <string name="fit_screen_short">Screen</string>
     <string name="fit_width_short">Width</string>
     <string name="fit_height_short">Height</string>

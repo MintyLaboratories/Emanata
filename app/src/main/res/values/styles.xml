@@ -110,6 +110,17 @@
         <item name="android:paddingEnd">@dimen/space_1</item>
     </style>
 
+    <!-- A choice from a list: the choice shown, a tap opens the list. -->
+    <style name="Widget.ComicReader.SheetPicker" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_1</item>
+        <item name="android:gravity">start|center_vertical</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
     <!-- ================= Reader chrome ================= -->
     <!-- Always-dark overlay for the reader bars, whatever the app theme. -->
     <style name="ThemeOverlay.ComicReader.Reader" parent="ThemeOverlay.Material3.Dark">

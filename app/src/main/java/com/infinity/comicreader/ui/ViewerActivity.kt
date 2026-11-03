@@ -33,6 +33,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -50,12 +51,21 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiPicks
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.DownloadState
+import com.infinity.comicreader.ai.Downloads
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloads
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookId
@@ -804,6 +814,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         handler.removeCallbacks(seekHoldUp)
         handler.removeCallbacks(checkShareWait)
         handler.removeCallbacks(releaseScans)
+        handler.removeCallbacks(followDownloads)
         stopAutoScroll()
         openJob?.cancel()
         closeSource()
@@ -3459,6 +3470,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         dialog.setOnDismissListener {
+            handler.removeCallbacks(followDownloads)
             if (sheet === view) {
                 sheet = null
                 sheetDialog = null
@@ -3468,6 +3480,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         sheet = view
         sheetDialog = dialog
         syncSheet()
+        followDownloads.run()
         Immersive.follow(dialog).show()
     }
 
@@ -3518,7 +3531,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     R.id.btn_orient_landscape to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 ),
                 { spreadRotation.user }
-            ) { setOrientationLock(it) }
+            ) { setOrientationLock(it) },
+            Segments(R.id.sheet_ai_scope, listOf(R.id.btn_ai_book to true, R.id.btn_ai_default to false), { aiOwn() != null }) { setAiOwn(it) }
         )
     }
 
@@ -3554,6 +3568,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
         switch(R.id.sheet_keep_on) { setKeepOn(it) }
         switch(R.id.sheet_fullscreen) { setFullscreen(it) }
+        for ((step, id) in aiPickers) view.findViewById<MaterialButton>(id).setOnClickListener { showAiChoices(it, step) }
         view.findViewById<Slider>(R.id.sheet_spacing).addOnChangeListener { _, value, fromUser ->
             if (!fromUser) return@addOnChangeListener
             setSpacingDp(value.toInt())
@@ -3626,9 +3641,109 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             view.findViewById<Slider>(R.id.sheet_auto_speed).safeSet(AutoScroll.indexOf(prefs.autoSpeed).toFloat())
             view.findViewById<MaterialSwitch>(R.id.sheet_keep_on).isChecked = keepOn
             view.findViewById<MaterialSwitch>(R.id.sheet_fullscreen).isChecked = prefs.fullscreen
+            syncAi(view)
         } finally {
             syncingSheet = false
         }
+    }
+
+    // ------------------------------------------------------- AI processing
+
+    /** The sheet's model picker of each AI step. */
+    private val aiPickers = listOf(
+        AiStep.ARTIFACTS to R.id.sheet_ai_artifacts,
+        AiStep.DESCREEN to R.id.sheet_ai_descreen,
+        AiStep.UPSCALE to R.id.sheet_ai_upscale
+    )
+
+    private val aiModels by lazy { ModelStore.of(this) }
+
+    /** The model downloads last shown in the sheet. */
+    private var shownDownloads: Downloads? = null
+
+    /**
+     * While the sheet is open and a model downloads, shows its progress, and lets pages waiting
+     * for it go on once it is in; asks every [DOWNLOAD_POLL_MS] rather than subscribing, so
+     * nothing app-wide holds the reader.
+     */
+    private val followDownloads = object : Runnable {
+        override fun run() {
+            handler.removeCallbacks(this)
+            if (sheet == null) return
+            val now = ModelDownloads.state.value
+            if (now != shownDownloads) {
+                shownDownloads = now
+                adapter?.aiWake()
+                syncSheet()
+            }
+            if (now.states.values.any { it is DownloadState.Running }) handler.postDelayed(this, DOWNLOAD_POLL_MS)
+        }
+    }
+
+    /** This book's own AI picks; null when it follows the default. */
+    private fun aiOwn(): AiPicks? = bookId?.let { library.aiPicks(it) }
+
+    /** The picks this book's pages go through now: its own, else the default (none while AI processing is off). */
+    private fun aiShown(): AiPicks = aiOwn() ?: AiChain.startingPicks(prefs)
+
+    /** Shows the AI picks this book runs, each model's download state, whose picks they are and whether they run slow. */
+    private fun syncAi(view: View) {
+        val own = aiOwn()
+        val picks = own ?: AiChain.startingPicks(prefs)
+        val states = ModelDownloads.state.value.states
+        for ((step, id) in aiPickers) {
+            val m = ModelCatalog.byId(picks.id(step))?.takeIf { it.step == step }
+            view.findViewById<MaterialButton>(id).text = ModelText.choice(this, m, m != null && aiModels.installed(m), m?.let { states[it.id] })
+        }
+        view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
+        val hint = getString(if (own != null) R.string.ai_scope_book_hint else R.string.ai_scope_default_hint)
+        view.findViewById<TextView>(R.id.sheet_ai_hint).text =
+            if (AiChain.slow(picks.models)) hint + "\n" + getString(R.string.ai_chain_slow) else hint
+    }
+
+    /** Gives this book its own AI picks, starting from the default ones, or hands it back to the default. */
+    private fun setAiOwn(own: Boolean) {
+        val book = book() ?: return
+        if (own == (aiOwn() != null)) return
+        library.setAiPicks(book, if (own) AiChain.startingPicks(prefs) else null)
+        aiChanged()
+    }
+
+    /** The models [step] can run, under [anchor], the one this book runs checked. */
+    private fun showAiChoices(anchor: View, step: AiStep) {
+        val current = aiShown().id(step)
+        val models = ModelCatalog.forStep(step)
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(0, 0, 0, R.string.ai_none).isChecked = current == null
+        models.forEachIndexed { i, m -> menu.menu.add(0, i + 1, i + 1, m.name).isChecked = m.id == current }
+        menu.menu.setGroupCheckable(0, true, true)
+        menu.setOnMenuItemClickListener { item ->
+            pickAi(step, models.getOrNull(item.itemId - 1)?.id)
+            true
+        }
+        menu.show()
+    }
+
+    /**
+     * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else as
+     * the default. Picking a model while AI processing is off turns it on with that model
+     * alone; leaving no model turns it off. A model not downloaded starts downloading.
+     */
+    private fun pickAi(step: AiStep, id: String?) {
+        val own = aiOwn()
+        val book = book()
+        if (own != null && book != null) {
+            library.setAiPicks(book, own.with(step, id))
+        } else if (id != null && !prefs.aiEnabled) {
+            for (s in AiStep.entries) prefs.setAiModel(s, if (s == step) id else null)
+            prefs.aiEnabled = true
+        } else {
+            prefs.setAiModel(step, id)
+            if (prefs.aiEnabled && AiPicks.of(prefs).models.isEmpty()) prefs.aiEnabled = false
+        }
+        ModelCatalog.byId(id)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
+        aiChanged()
+        followDownloads.run()
     }
 
     /**
@@ -4333,5 +4448,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         private const val MODE_PAGED = ReaderLayout.MODE_PAGED
         private const val MODE_CONTINUOUS = ReaderLayout.MODE_CONTINUOUS
         private const val DIR_TTB = ReaderLayout.DIR_TTB
+
+        /** How often the open sheet asks how a model download goes ([followDownloads]). */
+        private const val DOWNLOAD_POLL_MS = 500L
     }
 }

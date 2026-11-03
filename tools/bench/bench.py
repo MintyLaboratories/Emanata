@@ -341,6 +341,7 @@ def bench_once(session: dict, timeout_s: int) -> list[dict]:
     adb("logcat", "-c")
     adb("shell", "am", "start", "-W", "-n", BENCH, *extras(session))
     end = time.time() + timeout_s
+    why = None
     while time.time() < end:
         time.sleep(2)
         log = adb("logcat", "-d", "-s", "Bench:*", capture=True)
@@ -351,16 +352,22 @@ def bench_once(session: dict, timeout_s: int) -> list[dict]:
             break
     else:
         print("timed out", session.get("label"))
+        # The session's own log, read before the restore start below logs lines of its own.
+        why = session_log()
         # A start with nothing to do puts back the reading settings a run that died left changed.
         adb("shell", "am", "force-stop", PACKAGE, check=False)
         adb("shell", "am", "start", "-W", "-n", BENCH, check=False)
     text = adb("exec-out", "cat", RESULTS, capture=True, check=False)
     lines = [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
     if not lines:
-        # Why the session left no result: the app's own bench log and any crash.
-        why = adb("logcat", "-d", "-s", "Bench:*", "AndroidRuntime:E", capture=True, check=False).strip().splitlines()
+        why = session_log() if why is None else why
         print(f"no result for {session.get('label')}:", *why[-8:], sep="\n  ", file=sys.stderr, flush=True)
     return lines
+
+
+def session_log() -> list[str]:
+    """Why a session left no result: the app's own bench log and any crash since logcat was cleared."""
+    return adb("logcat", "-d", "-s", "Bench:*", "AndroidRuntime:E", capture=True, check=False).strip().splitlines()
 
 
 def battery_level() -> int | None:

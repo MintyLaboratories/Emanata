@@ -11,7 +11,9 @@ import android.text.format.Formatter
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.LinearLayout
+import android.widget.ListAdapter
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -101,6 +103,10 @@ object ModelText {
         return (listOf<CharSequence>(context.getString(R.string.ai_none)) + models.map { entry(context, it) }) to
             (listOf(Prefs.AI_NONE) + models.map { it.id })
     }
+
+    /** A picker's list of [entries], each spaced apart from the next, its description lines kept. */
+    fun adapter(context: Context, entries: List<CharSequence>): ListAdapter =
+        ArrayAdapter(context, R.layout.item_ai_choice, android.R.id.text1, entries)
 
     /** The size of a [blurb] beside a model's name. */
     private const val BLURB_SIZE = 0.85f

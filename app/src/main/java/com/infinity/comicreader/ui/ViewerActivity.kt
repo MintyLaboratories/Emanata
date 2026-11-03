@@ -3747,7 +3747,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val (entries, ids) = ModelText.choices(this, step, prefs.keepSimple, current)
         AlertDialog.Builder(this)
             .setTitle(ModelText.step(this, step))
-            .setSingleChoiceItems(entries.toTypedArray(), ids.indexOf(current ?: Prefs.AI_NONE).coerceAtLeast(0)) { dialog, which ->
+            .setSingleChoiceItems(ModelText.adapter(this, entries), ids.indexOf(current ?: Prefs.AI_NONE).coerceAtLeast(0)) { dialog, which ->
                 dialog.dismiss()
                 pickAi(step, ids[which].takeIf { it != Prefs.AI_NONE })
             }

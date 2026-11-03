@@ -3,6 +3,8 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.os.Looper
+import android.widget.CheckedTextView
+import androidx.appcompat.app.AlertDialog
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -125,6 +127,34 @@ class SettingsAiTest {
         val descreen = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.DESCREEN))!!
         if (descreen.callChangeListener(Prefs.AI_NONE)) descreen.value = Prefs.AI_NONE
         assertEquals(Prefs.AI_NONE, stored.getString(Prefs.aiKey(AiStep.DESCREEN), null))
+    }
+
+    @Test
+    fun aStepsPickerSpacesItsChoicesAndStoresATap() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        pref.performClick()
+        idle()
+        val shown = fragment.parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) as AiChoiceDialog
+        val dialog = shown.dialog as AlertDialog
+        val list = dialog.listView
+        assertEquals(pref.entries.size, list.adapter.count)
+        assertEquals(pref.findIndexOfValue(pref.value), list.checkedItemPosition)
+        val row = list.adapter.getView(1, null, list) as CheckedTextView
+        assertEquals(pref.entries[1].toString(), row.text.toString())
+        val padding = context.resources.getDimensionPixelSize(R.dimen.ai_choice_padding)
+        assertTrue(padding > 0)
+        assertEquals(padding, row.paddingTop)
+        assertEquals(padding, row.paddingBottom)
+        // A tap picks, closes and stores.
+        val other = ModelCatalog.forStep(AiStep.UPSCALE).first { it.id != pref.value && !it.slow }
+        val at = pref.findIndexOfValue(other.id)
+        list.performItemClick(list.adapter.getView(at, null, list), at, list.adapter.getItemId(at))
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(other.id, pref.value)
+        assertEquals(other.id, PreferenceManager.getDefaultSharedPreferences(context).getString(Prefs.aiKey(AiStep.UPSCALE), null))
     }
 
     @Test

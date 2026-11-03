@@ -51,4 +51,8 @@
     <dimen name="fab_bottom">16dp</dimen>
     <!-- The stack's bottom margin: above the floating button's place (its margin, its 56dp, a gap). -->
     <dimen name="op_stack_bottom">80dp</dimen>
+    <!-- An AI model choice's space above and below, so multi-line choices stand apart. -->
+    <dimen name="ai_choice_padding">14dp</dimen>
+    <!-- An AI model choice's start, before its radio button. -->
+    <dimen name="ai_choice_start">20dp</dimen>
 </resources>

@@ -95,7 +95,7 @@ object SelectionActions {
         /** True when the book's file names may be read in another charset. */
         val charsetApplies: (BookEntry) -> Boolean,
         val canPeek: (BookEntry) -> Boolean,
-        /** True when the item is a book Compact and Make compatible can rebuild: an archive on the device that can be changed. */
+        /** True when the item is a book Compact and Make compatible can rebuild: an archive on the device that can be changed; or a folder there. */
         val rebuildable: (BookEntry) -> Boolean = { false },
         /** True when the item is a folder Pack can take: on the device and changeable; what it holds is checked as the menu opens. */
         val packable: (BookEntry) -> Boolean = { false },
@@ -149,6 +149,7 @@ object SelectionActions {
                 MoreAction.NAME_CHARSET -> book != null && !facts.keepSimple && facts.charsetApplies(book)
                 MoreAction.PEEK -> one != null && facts.canPeek(one)
                 MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE -> entries.any(facts.rebuildable)
+                MoreAction.REPACK_CBZ -> entries.any { facts.rebuildable(it) && (it.isDir || repackable(it.name)) }
                 // With books selected too it shows, turned off with the reason.
                 MoreAction.PACK, MoreAction.PACK_COMPACTED -> folders.isNotEmpty() && folders.all { facts.packable(it) }
                 MoreAction.REMOVE_FROM_HISTORY -> facts.inHistory && entries.isNotEmpty()
@@ -156,6 +157,9 @@ object SelectionActions {
             }
         }
     }
+
+    /** True for a book Repack as CBZ takes: an archive that is not a ZIP (ZIP has no solid mode). */
+    fun repackable(name: String): Boolean = Formats.isArchiveName(name) && Formats.ext(name) !in Formats.ZIP
 
     /**
      * The floating button with [count] items selected: none selected, the list/grid toggle

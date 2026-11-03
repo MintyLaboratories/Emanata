@@ -7,6 +7,7 @@ import com.infinity.comicreader.data.MoreAction
 import com.infinity.comicreader.data.MoreActions
 import com.infinity.comicreader.ui.SelectionActions.Bar
 import com.infinity.comicreader.ui.SelectionActions.Fab
+import com.infinity.comicreader.util.Formats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -122,6 +123,11 @@ class SelectionTest {
             SelectionActions.more(listOf(book("a.cbr"), folder("Sub")), all, rebuild).filter { it == MoreAction.COMPACT || it == MoreAction.MAKE_COMPATIBLE }
         )
         assertFalse(MoreAction.COMPACT in SelectionActions.more(listOf(book("a.pdf"), folder("Sub")), all, rebuild))
+        // Repack as CBZ for archives that are not ZIP, and folders that may hold them.
+        val any = SelectionActions.MoreFacts(true, { true }, { true }, { true }, rebuildable = { it.isDir || Formats.isArchiveName(it.name) })
+        for (name in listOf("a.cbr", "a.cb7", "a.cbt", "a.rar")) assertTrue(name, MoreAction.REPACK_CBZ in SelectionActions.more(listOf(book(name)), all, any))
+        for (name in listOf("a.cbz", "a.zip", "a.pdf")) assertFalse(name, MoreAction.REPACK_CBZ in SelectionActions.more(listOf(book(name)), all, any))
+        assertTrue(MoreAction.REPACK_CBZ in SelectionActions.more(listOf(folder("Sub")), all, any))
     }
 
     @Test

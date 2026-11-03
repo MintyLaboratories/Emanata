@@ -14,6 +14,9 @@ enum class MoreAction(val key: String) {
     COMPACT("compact"),
     MAKE_COMPATIBLE("make_compatible"),
 
+    /** Archives that are not ZIP (CBR, CB7, CBT), and folders holding them. */
+    REPACK_CBZ("repack_cbz"),
+
     /** Folders of loose images only. */
     PACK("pack"),
     PACK_COMPACTED("pack_compacted"),
@@ -30,6 +33,9 @@ enum class MoreAction(val key: String) {
 
         /** Shown unless turned off: all but Peek. */
         val SHOWN_BY_DEFAULT: Set<MoreAction> = entries.toSet() - PEEK
+
+        /** The items the menu holds together under "Repack ›" when two or more of them apply. */
+        val REPACK_GROUP: Set<MoreAction> = setOf(COMPACT, MAKE_COMPATIBLE, REPACK_CBZ)
     }
 }
 

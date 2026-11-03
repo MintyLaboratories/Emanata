@@ -19,6 +19,7 @@ import com.infinity.comicreader.data.MoreAction.PACK_COMPACTED
 import com.infinity.comicreader.data.MoreAction.PEEK
 import com.infinity.comicreader.data.MoreAction.REMOVE_BOOKMARK
 import com.infinity.comicreader.data.MoreAction.REMOVE_FROM_HISTORY
+import com.infinity.comicreader.data.MoreAction.REPACK_CBZ
 import com.infinity.comicreader.data.MoreAction.SET_STARTUP
 import com.infinity.comicreader.data.MoreAction.SHOW_IN_FOLDER
 import org.junit.Assert.assertEquals
@@ -35,7 +36,7 @@ class MoreActionsTest {
     @Test
     fun defaultOffersEveryItemButPeekInTheAgreedOrder() {
         assertEquals(
-            listOf(CONTINUE_READING, MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE, PACK, PACK_COMPACTED, REMOVE_FROM_HISTORY, REMOVE_BOOKMARK),
+            listOf(CONTINUE_READING, MARK_READ, MARK_UNREAD, MARK_ALL_READ, MARK_ALL_UNREAD, SET_STARTUP, SHOW_IN_FOLDER, BOOK_INFO, NAME_CHARSET, COMPACT, MAKE_COMPATIBLE, REPACK_CBZ, PACK, PACK_COMPACTED, REMOVE_FROM_HISTORY, REMOVE_BOOKMARK),
             MoreActions.DEFAULT.visible
         )
         // Peek is listed, off.

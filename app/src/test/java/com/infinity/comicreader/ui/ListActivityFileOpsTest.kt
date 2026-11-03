@@ -18,6 +18,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.compact.OutputMarks
+import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.MoreAction
@@ -174,12 +176,32 @@ class ListActivityFileOpsTest {
         idle()
     }
 
-    /** The ⋮ menu's items for what is selected. */
+    /** The ⋮ menu's items for what is selected, those under "Repack ›" in its place. */
     private fun ListActivity.moreItems(): List<MoreAction> {
         bar(R.id.selection_more).performClick()
         idle()
         val menu = moreMenu ?: return emptyList()
-        return (0 until menu.childCount).map { menu.getChildAt(it).tag as MoreAction }
+        return (0 until menu.childCount).flatMap { i ->
+            when (val tag = menu.getChildAt(i).tag) {
+                is MoreAction -> listOf(tag)
+                ListActivity.MORE_REPACK_TAG -> {
+                    menu.getChildAt(i).performClick()
+                    val sub = moreMenu!!
+                    val inner = (0 until sub.childCount).mapNotNull { sub.getChildAt(it).tag as? MoreAction }
+                    sub.getChildAt(0).performClick()
+                    inner
+                }
+                else -> throw AssertionError("tag $tag")
+            }
+        }
+    }
+
+    /** The ⋮ menu's row for [action], opening "Repack ›" when it is there. */
+    private fun ListActivity.moreRow(action: MoreAction): View {
+        fun rows() = moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) } }
+        rows().firstOrNull { it.tag == action }?.let { return it }
+        rows().first { it.tag == ListActivity.MORE_REPACK_TAG }.performClick()
+        return rows().first { it.tag == action }
     }
 
     private fun View.usable(): Boolean = visibility == View.VISIBLE && isEnabled
@@ -270,7 +292,7 @@ class ListActivityFileOpsTest {
         assertEquals(
             listOf(
                 MoreAction.CONTINUE_READING, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.SET_STARTUP, MoreAction.COMPACT,
-                MoreAction.MAKE_COMPATIBLE, MoreAction.PACK, MoreAction.PACK_COMPACTED
+                MoreAction.MAKE_COMPATIBLE, MoreAction.REPACK_CBZ, MoreAction.PACK, MoreAction.PACK_COMPACTED
             ),
             activity.moreItems()
         )
@@ -279,7 +301,7 @@ class ListActivityFileOpsTest {
         assertEquals(
             listOf(
                 MoreAction.MARK_UNREAD, MoreAction.MARK_ALL_READ, MoreAction.MARK_ALL_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE,
-                MoreAction.PACK, MoreAction.PACK_COMPACTED
+                MoreAction.REPACK_CBZ, MoreAction.PACK, MoreAction.PACK_COMPACTED
             ),
             activity.moreItems()
         )
@@ -287,7 +309,7 @@ class ListActivityFileOpsTest {
         // Settings reorder and hide items.
         Prefs(context).moreActions = com.infinity.comicreader.data.MoreActions.DEFAULT.moved(4, 0).with(MoreAction.MARK_ALL_READ, false)
         assertEquals(
-            listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE, MoreAction.PACK, MoreAction.PACK_COMPACTED),
+            listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE, MoreAction.REPACK_CBZ, MoreAction.PACK, MoreAction.PACK_COMPACTED),
             activity.moreItems()
         )
     }
@@ -298,7 +320,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.select(other.absolutePath)
         activity.moreItems()
-        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.CONTINUE_READING } }.performClick()
+        activity.moreRow(MoreAction.CONTINUE_READING).performClick()
         var started: android.content.Intent? = null
         repeat(100) {
             idle()
@@ -315,7 +337,7 @@ class ListActivityFileOpsTest {
         activity.select(book.absolutePath)
         activity.select(other.absolutePath)
         activity.moreItems()
-        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+        activity.moreRow(MoreAction.COMPACT).performClick()
         idle()
         val dialog = latest()
         // The books among those selected; the warning; Skip hidden pages off each time.
@@ -346,7 +368,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.select(other.absolutePath)
         activity.moreItems()
-        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.MAKE_COMPATIBLE } }.performClick()
+        activity.moreRow(MoreAction.MAKE_COMPATIBLE).performClick()
         repeat(50) { if (ShadowDialog.getLatestDialog()?.isShowing != true) idle() }
         assertEquals(context.resources.getQuantityString(R.plurals.compatible_title, 2, 2), latest().title())
         latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
@@ -361,7 +383,7 @@ class ListActivityFileOpsTest {
         val spinner = activity.findViewById<View>(R.id.progress)
         fun tap() {
             activity.bar(R.id.selection_more).performClick()
-            activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+            activity.moreRow(MoreAction.COMPACT).performClick()
         }
         // The search's end waits on the main thread, which these taps hold.
         tap()
@@ -379,8 +401,7 @@ class ListActivityFileOpsTest {
     private fun ListActivity.moreItem(action: MoreAction): View {
         bar(R.id.selection_more).performClick()
         idle()
-        val menu = moreMenu!!
-        return (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == action }
+        return moreRow(action)
     }
 
     @Test
@@ -432,6 +453,25 @@ class ListActivityFileOpsTest {
         File(other, "0.png").writeBytes(ByteArray(0))
         File(other, ".thumbs").mkdirs()
         File(other, ".thumbs/1.png").writeBytes(ByteArray(20) { 6 })
+    }
+
+    @Test
+    fun aBookWhoseMarkSaysCompactedIsNotCompactedAgainButMadeCompatible() {
+        val marked = File(shelf, "marked.cbz")
+        java.util.zip.ZipOutputStream(marked.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("1.png"))
+            zip.write(byteArrayOf(1, 2, 3))
+            zip.closeEntry()
+        }
+        assertTrue(OutputMarks.write(marked, ByteArray(0), OutputMarks.Operation.COMPACTED, BookIds.xxh3))
+        val activity = launch()
+        activity.select(marked.absolutePath)
+        val compact = activity.moreItem(MoreAction.COMPACT)
+        assertFalse(compact.isEnabled)
+        assertEquals(activity.getString(R.string.rebuild_why_compacted, "Emanata"), compact.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
+        assertTrue(activity.moreRow(MoreAction.MAKE_COMPATIBLE).isEnabled)
+        // Not a solid archive's: no Repack as CBZ in the submenu.
+        assertTrue(activity.moreMenu!!.let { menu -> (0 until menu.childCount).none { menu.getChildAt(it).tag == MoreAction.REPACK_CBZ } })
     }
 
     @Test
@@ -505,7 +545,7 @@ class ListActivityFileOpsTest {
         val activity = launch()
         activity.select(book.absolutePath)
         activity.moreItems()
-        activity.moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == MoreAction.COMPACT } }.performClick()
+        activity.moreRow(MoreAction.COMPACT).performClick()
         idle()
         latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()

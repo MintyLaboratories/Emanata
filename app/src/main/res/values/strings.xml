@@ -159,7 +159,14 @@
     <string name="fab_open">Open</string>
     <string name="more_compact">Compact</string>
     <string name="more_make_compatible">Make compatible</string>
+    <string name="more_compact_lossless">Losslessly compact</string>
     <string name="more_repack">Repack as CBZ</string>
+    <string name="more_repack_group">Repack ›</string>
+    <string name="more_repack_back">Repack</string>
+    <string name="rebuild_why_read_only">This location is read-only</string>
+    <!-- %1$s: the tool whose mark says so, as "Emanata". -->
+    <string name="rebuild_why_compacted">Already compacted by %1$s</string>
+    <string name="rebuild_why_compatible">Already made compatible by Emanata</string>
     <string name="toolbar_button_favorite">Favorite</string>
     <string name="toolbar_button_drag">Drag to reorder</string>
     <string name="pref_cover_spacing_desc">Space between covers in the grid, in dp</string>

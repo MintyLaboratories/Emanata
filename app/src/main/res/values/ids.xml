@@ -23,6 +23,7 @@
     <item name="menu_select_all" type="id" />
     <!-- The selection's ⋮ menu. -->
     <item name="more_menu" type="id" />
+    <item name="more_submenu" type="id" />
     <item name="missing_remove" type="id" />
     <item name="missing_show" type="id" />
     <item name="missing_forget" type="id" />

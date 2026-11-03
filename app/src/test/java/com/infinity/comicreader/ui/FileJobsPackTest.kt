@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.compact.OutputMarks
 import com.infinity.comicreader.compact.PageWork
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Bookmark
@@ -180,6 +181,15 @@ class FileJobsPackTest {
         assertEquals(listOf("1.jxl", "2.jxl"), names(cbz))
         assertTrue(outcome.summary!!.saved > 0)
         assertFalse(dir.exists())
+        assertEquals("marked as compacted", "Emanata", OutputMarks.verified(cbz, BookIds.xxh3).compactedBy)
+    }
+
+    @Test
+    fun packAsItIsLeavesNoMark() {
+        val dir = folder("Loose", 2)
+        pack(plan(dir)) as FileWork.Outcome.Done
+        val cbz = File(tmp.root, "Loose.cbz")
+        assertEquals(OutputMarks.Done.NOTHING, OutputMarks.verified(cbz, BookIds.xxh3))
     }
 
     @Test

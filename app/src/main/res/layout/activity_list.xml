@@ -31,7 +31,7 @@
             app:navigationIcon="@drawable/ic_close"
             app:subtitleTextAppearance="?attr/textAppearanceBodySmall" />
 
-        <com.google.android.material.tabs.TabLayout
+        <com.infinity.comicreader.ui.FitTabLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -60,7 +60,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/tab_bookmarks" />
-        </com.google.android.material.tabs.TabLayout>
+        </com.infinity.comicreader.ui.FitTabLayout>
 
         <com.infinity.comicreader.ui.CrumbBar
             android:id="@+id/pathbar"

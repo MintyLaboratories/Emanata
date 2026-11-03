@@ -384,7 +384,8 @@ class AiCheckService : Service() {
                 val pageMs = SystemClock.elapsedRealtime() - p0
                 run.bitmap?.recycle()
                 val tiles = run.stats.tileMs
-                val estimate = if (run.fallback == null || tiles.isEmpty()) pageMs else tiles.average().toLong() * run.stats.planned
+                // Cut short: the first tile (the GPU's warm-up) once, the rest at their pace.
+                val estimate = if (run.fallback == null) pageMs else run.stats.fullMs ?: pageMs
                 log(
                     JSONObject().put("model", name).put("opened", true).put("openMs", openMs).put("waitedS", waitedS)
                         .put("onGpu", s.model.onGpu).put("fp16", s.fp16).put("scale", g.scale).put("trim", g.trim).put("context", g.context)

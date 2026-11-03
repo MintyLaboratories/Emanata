@@ -42,6 +42,23 @@ data class PageLimits(val timeoutMs: Long = DEFAULT_TIMEOUT_MS, val maxOutputPix
 
 /** What one page's run did: tiles run of all planned, each tile's milliseconds, the whole run's. */
 class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val totalMs: Long) {
+    /**
+     * The run's time for all [planned] tiles: [totalMs] once all ran; else, with two or more
+     * run, the time outside tiles, the first tile's (it carries the GPU's warm-up) and the
+     * later ones' mean for each tile left; null with fewer.
+     */
+    val fullMs: Long?
+        get() = when {
+            planned <= 0 -> null
+            tiles >= planned -> totalMs
+            tiles < 2 -> null
+            else -> {
+                val inTiles = tileMs.take(tiles).sum()
+                val later = (inTiles - tileMs[0]).toDouble() / (tiles - 1)
+                totalMs - inTiles + tileMs[0] + (later * (planned - 1)).toLong()
+            }
+        }
+
     companion object {
         /** A run that never started. */
         val NONE = RunStats(0, 0, LongArray(0), 0)

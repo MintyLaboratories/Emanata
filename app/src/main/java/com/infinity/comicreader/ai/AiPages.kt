@@ -131,8 +131,8 @@ internal object AiPages {
      * time [hold] held them back does not count. [expect] gives the milliseconds a model is
      * expected to take on an input of so many pixels (0: unknown): a chain expected to take
      * longer than the limit falls back at once, and each model stops as soon as it would leave
-     * the models after it too little time. [onStep] hears each model's time on its input, and
-     * the share of its tiles it ran. Throws [java.util.concurrent.CancellationException] once
+     * the models after it too little time. [onStep] hears each model's run on its input, once
+     * it ran a tile. Throws [java.util.concurrent.CancellationException] once
      * [canceled]. [src] is only read.
      */
     fun chain(
@@ -147,7 +147,7 @@ internal object AiPages {
         clock: () -> Long = SystemClock::elapsedRealtime,
         hold: () -> Boolean = { false },
         expect: (index: Int, pixels: Long) -> Long = { _, _ -> 0L },
-        onStep: (index: Int, pixels: Long, ms: Long, done: Double) -> Unit = { _, _, _, _ -> }
+        onStep: (index: Int, pixels: Long, stats: RunStats) -> Unit = { _, _, _ -> }
     ): ChainRun {
         val start = clock()
         val steps = steps(sessions.map { it.geometry.scale }, src.width, src.height, plan)
@@ -167,7 +167,7 @@ internal object AiPages {
                 if (left <= 0) return ChainRun(null, Fallback.TIMEOUT, ran, clock() - start)
                 val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock, hold)
                 spent += run.stats.totalMs
-                if (run.stats.tiles > 0) onStep(step.index, step.pixels, run.stats.totalMs, run.stats.tiles.toDouble() / run.stats.planned)
+                if (run.stats.tiles > 0) onStep(step.index, step.pixels, run.stats)
                 val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)
                 if (page !== src) page.recycle()
                 page = out

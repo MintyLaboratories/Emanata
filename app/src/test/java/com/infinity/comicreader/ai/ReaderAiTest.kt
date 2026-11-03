@@ -242,4 +242,15 @@ class ReaderAiTest {
         assertTrue("measured: fake models are fast", ai.pageMs(b) < before)
         assertTrue(ai.rateOf(upscale) < ReaderAi.priorRate(upscale))
     }
+
+    @Test
+    fun aRunStoppedByItsPaceIsLearnedWithItsWarmUpCountedOnce() {
+        val prior = ReaderAi.priorRate(upscale)
+        // One tile: no pace yet, nothing learned.
+        ai.learn(upscale, 1_500_000, RunStats(1, 70, longArrayOf(9_000), 9_000))
+        assertEquals(prior, ai.rateOf(upscale), 1e-9)
+        // Stopped after 4 of 70 tiles: 2 s warm-up, then 300 ms a tile, 21.3 s for the page.
+        ai.learn(upscale, 1_500_000, RunStats(4, 70, longArrayOf(2_000, 300, 300, 300), 2_900))
+        assertEquals((2_000 + 69 * 300) / 1.5, ai.rateOf(upscale), 1e-9)
+    }
 }

@@ -811,8 +811,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   enough to show as seams). Opening is cancelable between runs. Between tiles a
   run stops when canceled, when battery saver is on, the device reaches thermal
   status moderate or its thermal headroom forecast 10 s ahead reaches 0.9
-  (`AiConditions`), and when its time (30 s by default) is up or the pace so far
-  says it will be; the page then gets its plain Lanczos3 rendering (`AiPages`).
+  (`AiConditions`), and when its time (30 s by default) is up or, from the
+  fifth tile, the pace of the tiles after the first (which carries the GPU's
+  warm-up) says it will be; the page then gets its plain Lanczos3 rendering
+  (`AiPages`).
   An upscaling model does not run for a page shown no larger than it is.
   Output is capped at 32 MP, pages must be readable ARGB_8888 and opaque (pixels
   read when the bitmap says it has alpha), and the model's buffers are freed
@@ -836,8 +838,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   priority of the AI thread), up to 120 s; each model keeps
   back what the models after it are expected to take, and a chain expected to
   run past its time at the rates measured on the device falls back before any
-  model runs (those rates drift back toward the catalog's with each such
-  page). Tiles wait while the reader is touched or scrolling, so the GPU
+  model runs (a run cut short counts as its whole input: its first tile once,
+  the rest at their pace; those rates drift back toward the catalog's with
+  each such page). Tiles wait while the reader is touched or scrolling, so the GPU
   leaves its frames alone. Heat or battery saver (`AiConditions`) or a model
   still downloading puts the queue off for 15 s, doubling to 2 min (a page
   wanted first meanwhile is tried at once, a model download ending or failing

@@ -97,6 +97,15 @@ class TileEngineTest {
     }
 
     @Test
+    fun aStoppedRunsFullTimeCountsItsFirstTileOnce() {
+        // 50 ms outside tiles, a 2 s warm-up tile, then 100 ms a tile: 66 more to go.
+        assertEquals(50L + 2_000 + 69 * 100, RunStats(4, 70, longArrayOf(2_000, 100, 100, 100), 2_350).fullMs)
+        assertEquals("finished: as it took", 3_210L, RunStats(3, 3, longArrayOf(3_000, 100, 100), 3_210).fullMs)
+        assertNull("one tile tells no pace", RunStats(1, 70, longArrayOf(2_000), 2_050).fullMs)
+        assertNull(RunStats.NONE.fullMs)
+    }
+
+    @Test
     fun aSlowFirstTileDoesNotSetThePace() {
         val s = session(FakeModel())
         var now = 0L

@@ -135,7 +135,7 @@ class AiChainRunTest {
         val steps = ArrayList<Int>()
         val run = AiPages.chain(
             listOf(session(clean), session(up)), page(60, 90), plan, limits = PageLimits(timeoutMs = 1_000),
-            expect = { _, _ -> 600 }, onStep = { i, _, _, _ -> steps += i }
+            expect = { _, _ -> 600 }, onStep = { i, _, _ -> steps += i }
         )
         assertEquals(Fallback.TIMEOUT, run.fallback)
         assertTrue(run.early)
@@ -154,9 +154,9 @@ class AiChainRunTest {
         val run = AiPages.chain(
             listOf(first, session(up)), page(60, 90), plan, limits = PageLimits(timeoutMs = tiles * 100L + 500), clock = { t },
             expect = { i, _ -> if (i == 0) 0 else 600 },
-            onStep = { i, px, _, done ->
+            onStep = { i, px, stats ->
                 seen += i to px
-                assertTrue(done < 1)
+                assertTrue(stats.tiles < stats.planned)
             }
         )
         assertEquals(Fallback.TIMEOUT, run.fallback)

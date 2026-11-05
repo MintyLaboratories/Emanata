@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks2
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Typeface
@@ -32,6 +33,7 @@ import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -53,6 +55,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
@@ -84,6 +87,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Likeness
 import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.OpenBooks
+import com.infinity.comicreader.data.PageAction
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.ReaderLayout
@@ -92,6 +96,7 @@ import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.SpreadDisplay
+import com.infinity.comicreader.data.SpreadOverrides
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.net.RemoteCache
@@ -118,6 +123,7 @@ import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.HidingSource
 import com.infinity.comicreader.reader.NestedArchives
+import com.infinity.comicreader.reader.PageFormat
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSizes
@@ -332,6 +338,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     /** True when the open book's seams are never checked, nor pair, merge or join its pages. */
     private var ignoreSeams = false
+
+    /** The open book's own spread choices ("Show alone", "Pair with next"), counted in pages shown. */
+    private var spreadChoices = SpreadOverrides()
 
     /** The seams between the open book's pages checked so far, and the job checking more ([checkSeams]). */
     private var pageSeams = PageSeams.Found(0)
@@ -1867,6 +1876,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         shifted = id != null && library.isShifted(id)
         shiftedByNames = id != null && library.isShiftedByNames(id)
         ignoreSeams = id != null && library.ignoresSeams(id)
+        spreadChoices = shownChoices(library.spreadOverrides(id))
         analysis = known.analysis
         pageSeams = known.seams
         shownSeams = pageSeams
@@ -2084,14 +2094,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
      * left or right, or with spreads in two files shown as one ([SpreadDisplay.MERGE]);
      * otherwise a page an item. Seams shown so far ([shownSeams]) settle pairs and merges.
      */
-    private fun buildLayout(): PageLayout {
+    private fun buildLayout(choices: SpreadOverrides = spreadChoices): PageLayout {
         val rtl = readingDir == "rtl"
         val a = analysis
         if (mode != MODE_PAGED || a == null) return PageLayout(spread, rtl)
         visit(currentIndex)
         shownVisits = visitedPages.cardinality()
         val visited = visitedPages.stream().boxed().collect(Collectors.toSet())
-        val options = Spreads.Options(prefs.coverAlone, shifted, if (seamsRead()) shownSeams.of(rtl) else emptyList(), shiftedByNames, visited, tallPages)
+        val seams = if (seamsRead()) shownSeams.of(rtl) else emptyList()
+        val options = Spreads.Options(prefs.coverAlone, shifted, seams, shiftedByNames, visited, tallPages + choices.alone, choices.paired)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -2100,7 +2111,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         if (spreadDisplay == SpreadDisplay.SPLIT && (0 until a.size).any { a.splittable(it) }) {
             return PageLayout.split(a.size, rtl) { a.splittable(it) }
         }
-        if (spreadDisplay == SpreadDisplay.MERGE && !ignoreSeams) {
+        if (spreadDisplay == SpreadDisplay.MERGE && (!ignoreSeams || choices.paired.isNotEmpty())) {
             val views = Spreads.merge(a, options)
             if (views.size < a.size) return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
         }
@@ -4289,22 +4300,175 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     }
 
     /**
-     * Page ▸ actions for [page], from a long-press on it: share, save, crop, hide, and
-     * rotating the screen.
+     * The menu of [page], from a long-press on it (in two-page reading, the page pressed): a
+     * fixed row of Share, Save, Crop and Bookmark, then the rows Settings orders
+     * ([Prefs.pageActions]).
      */
-    private fun showPageActions(page: Int) {
-        if (source == null) return
-        val actions = listOf<Pair<Int, () -> Unit>>(
-            R.string.menu_share_page to { exportPage(share = true, page = page) },
-            R.string.menu_save_page to { exportPage(share = false, page = page) },
-            R.string.menu_crop to { startCrop(page) },
-            R.string.menu_hide_page to { hidePage(page) },
-            R.string.menu_rotate to { cycleOrientation() }
-        )
-        AlertDialog.Builder(this)
+    internal fun showPageActions(page: Int) {
+        val src = source ?: return
+        if (page !in 0 until src.pageCount) return
+        val view = layoutInflater.inflate(R.layout.dialog_page_actions, null)
+        val top = view.findViewById<LinearLayout>(R.id.page_actions_top)
+        val rows = view.findViewById<LinearLayout>(R.id.page_actions_rows)
+        val primary = ColorStateList.valueOf(MaterialColors.getColor(view, androidx.appcompat.R.attr.colorPrimary))
+        lateinit var dialog: AlertDialog
+        fun button(id: Int, icon: Int, label: Int, onTap: () -> Unit) {
+            val item = layoutInflater.inflate(R.layout.item_bar_action, top, false)
+            item.id = id
+            item.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            item.findViewById<ImageView>(R.id.bar_action_icon).apply {
+                setImageResource(icon)
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.bar_action_label).apply {
+                setText(label)
+                maxLines = 2
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+            item.contentDescription = getString(label)
+            item.setOnClickListener {
+                dialog.dismiss()
+                onTap()
+            }
+            top.addView(item)
+        }
+        val marked = bookId?.let { library.isBookmarked(it, page) } == true
+        button(R.id.page_action_share, R.drawable.ic_share, R.string.page_share) { exportPage(share = true, page = page) }
+        button(R.id.page_action_save, R.drawable.ic_save_alt, R.string.page_save) { exportPage(share = false, page = page) }
+        button(R.id.page_action_crop, R.drawable.ic_crop, R.string.page_crop) { startCrop(page) }
+        if (marked) button(R.id.page_action_bookmark, R.drawable.ic_bookmark_remove, R.string.page_unbookmark) { toggleBookmark(page) }
+        else button(R.id.page_action_bookmark, R.drawable.ic_bookmark_border, R.string.page_bookmark) { toggleBookmark(page) }
+        val bookPage = HiddenPages.bookIndex(src, page)
+        val given = library.coverPage(bookId)
+        for (action in prefs.pageActions.visible) {
+            val (icon, label) = when (action) {
+                PageAction.HIDE -> R.drawable.ic_visibility_off to R.string.menu_hide_page
+                PageAction.SET_COVER -> R.drawable.ic_image to if (given == bookPage) R.string.page_reset_cover else R.string.page_set_cover
+                PageAction.PAGE_INFO -> R.drawable.ic_info to R.string.page_info
+                PageAction.SPREAD -> {
+                    if (!spreadChoosable()) continue
+                    val alone = layout.shownAlone(page, src.pageCount)
+                    // The last page pairs with none.
+                    if (alone && page + 1 >= src.pageCount) continue
+                    if (alone) R.drawable.ic_auto_stories to R.string.page_pair_next else R.drawable.ic_crop_portrait to R.string.page_show_alone
+                }
+            }
+            val item = layoutInflater.inflate(R.layout.item_more_action, rows, false)
+            item.tag = action
+            item.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            item.findViewById<ImageView>(R.id.more_action_icon).apply {
+                setImageResource(icon)
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.more_action_label).setText(label)
+            item.setOnClickListener {
+                dialog.dismiss()
+                when (action) {
+                    PageAction.HIDE -> hidePage(page)
+                    PageAction.SET_COVER -> setCover(page)
+                    PageAction.PAGE_INFO -> showPageInfo(page)
+                    PageAction.SPREAD -> toggleSpread(page)
+                }
+            }
+            rows.addView(item)
+        }
+        if (rows.childCount == 0) view.findViewById<View>(R.id.page_actions_divider).visibility = View.GONE
+        dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.page_actions_title, page + 1))
-            .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, which -> actions[which].second() }
+            .setView(view)
             .showKeepingFullscreen()
+    }
+
+    /** Makes [page] the open book's cover in the library, or gives it back its first page when [page] is already its cover. */
+    private fun setCover(page: Int) {
+        val src = source ?: return
+        val ref = keptBook() ?: return
+        val bookPage = HiddenPages.bookIndex(src, page)
+        if (library.coverPage(ref.id) == bookPage) {
+            library.setCoverPage(ref, null)
+            toast(R.string.page_cover_reset)
+        } else {
+            library.setCoverPage(ref, bookPage)
+            toast(R.string.page_cover_set)
+        }
+    }
+
+    /** The book's spread choices [stored] by book index, as the open book's pages shown count them. */
+    private fun shownChoices(stored: SpreadOverrides): SpreadOverrides {
+        val src = source as? HidingSource ?: return stored
+        return stored.shown(library.hiddenPages(bookId))
+            .let { o -> SpreadOverrides(o.alone.filterTo(HashSet()) { it < src.pageCount }, o.paired.filterTo(HashSet()) { it < src.pageCount }) }
+    }
+
+    /** True when the layout pairs pages, so a page can be shown alone or paired: two pages a screen, or spreads merged. */
+    private fun spreadChoosable(): Boolean =
+        mode == MODE_PAGED && analysis != null && !topToBottom() && (spread || spreadDisplay == SpreadDisplay.MERGE)
+
+    /**
+     * Shows [page] alone when it shares a screen, else pairs it with the next page, and keeps the
+     * choice for the book. Undoing the choices that touch it comes first, when that is enough.
+     */
+    private fun toggleSpread(page: Int) {
+        val src = source ?: return
+        val ref = keptBook() ?: return
+        val count = src.pageCount
+        if (page !in 0 until count) return
+        fun book(p: Int) = HiddenPages.bookIndex(src, p)
+        val at = book(page)
+        val previous = if (page > 0) book(page - 1) else -1
+        val stored = library.spreadOverrides(ref.id)
+        val alone = layout.shownAlone(page, count)
+        val candidates = if (alone) {
+            if (page + 1 >= count) return
+            val next = book(page + 1)
+            listOf(stored.cleared(at, previous).let { it.copy(alone = it.alone - next) }, stored.pairing(at, next, previous))
+        } else {
+            listOf(stored.cleared(at, previous), stored.showingAlone(at, previous))
+        }
+        val wanted = { o: SpreadOverrides ->
+            val laid = buildLayout(shownChoices(o))
+            if (alone) laid.itemOf(page) == laid.itemOf(page + 1) else laid.shownAlone(page, count)
+        }
+        val chosen = candidates.firstOrNull { it != stored && wanted(it) } ?: candidates.last()
+        library.setSpreadOverrides(ref, chosen)
+        spreadChoices = shownChoices(chosen)
+        attach()
+    }
+
+    /** Page info: [page]'s name in the book, pixel size, format and size in bytes, read in the background. */
+    private fun showPageInfo(page: Int) {
+        val src = source ?: return
+        progress.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            val facts = try {
+                withContext(AppDispatchers.io) {
+                    val bytes = runCatching { src.pageBytes(page) }.getOrNull()
+                    val size = runCatching { src.pageSize(page) }.getOrNull() ?: bytes?.let { runCatching { Decoders.size(it) }.getOrNull() }
+                    Triple(bytes?.let { PageFormat.of(it) }, size, bytes?.size?.toLong())
+                }
+            } finally {
+                if (source === src) progress.visibility = View.GONE
+            }
+            if (isFinishing || source !== src) return@launch
+            val (format, size, bytes) = facts
+            val text = SpannableStringBuilder()
+            fun row(label: Int, value: String) {
+                if (text.isNotEmpty()) text.append("\n\n")
+                val start = text.length
+                text.append(getString(label))
+                text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.append('\n').append(value)
+            }
+            src.pageName(page)?.let { row(R.string.page_info_name, it) }
+            if (!src.isVector) size?.let { row(R.string.page_info_pixels, getString(R.string.page_info_pixels_value, it[0], it[1])) }
+            row(R.string.page_info_format, if (src.isVector) getString(R.string.page_format_pdf) else PageInfoText.format(this@ViewerActivity, format))
+            bytes?.let { row(R.string.page_info_bytes, FileUtils.formatSize(this@ViewerActivity, it)) }
+            AlertDialog.Builder(this@ViewerActivity)
+                .setTitle(getString(R.string.page_actions_title, page + 1))
+                .setMessage(text)
+                .setPositiveButton(R.string.close, null)
+                .showKeepingFullscreen()
+        }
     }
 
     /** Hides the page on screen, or the one picked when two pages share it. */
@@ -4448,14 +4612,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     // ------------------------------------------------------------------ bookmarks
 
-    private fun toggleBookmark() {
+    /** Bookmarks [page], or removes its bookmark. */
+    private fun toggleBookmark(page: Int = currentIndex) {
         val f = file ?: return
         val id = keptBook()?.id ?: return
-        if (library.isBookmarked(id, currentIndex)) {
-            library.removeBookmark(id, currentIndex)
+        if (library.isBookmarked(id, page)) {
+            library.removeBookmark(id, page)
             toast(R.string.bookmark_removed)
         } else {
-            library.addBookmark(Bookmark(f.absolutePath, f.name, currentIndex, "", System.currentTimeMillis(), id))
+            library.addBookmark(Bookmark(f.absolutePath, f.name, page, "", System.currentTimeMillis(), id))
             toast(R.string.bookmark_saved)
         }
         invalidateOptionsMenu()

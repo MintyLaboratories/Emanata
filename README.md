@@ -649,9 +649,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Chapter drawer** (toolbar button, or Chapters in the menu): *Chapters in
   this book* (its folders, or the inner archives of a nested book) and *In this
   folder* (the files beside it), the current ones highlighted; tap one to go there.
-- **Page actions** (Page ▸ in the menu, or a long-press on a page): share or
-  save the page as an image, crop it, hide it, or rotate the screen. With two
-  pages on screen, the menu's **Hide this page** asks which one.
+- **Page actions** (Page ▸ in the menu): share or save the page as an image,
+  crop it, hide it, or rotate the screen. With two pages on screen, the menu's
+  **Hide this page** asks which one.
+- **Page menu** (long-press a page; with two pages on screen, the one pressed):
+  a row of **Share**, **Save**, **Crop** and **Bookmark** (**Remove bookmark**
+  on a bookmarked page), then rows Settings → **Page menu (long-press)** shows,
+  hides and orders:
+  - **Hide this page**
+  - **Set as cover:** the page becomes the book's cover in the library (and its
+    folder's, where it is one); on that page, **Use the first page as cover**
+    undoes it. A hidden cover page gives way to the first page shown. Kept per
+    book, backed up, cleared by Clear library data.
+  - **Page info:** its name in the book, pixel size, format (lossless or lossy,
+    progressive JPEG, animated, layered AVIF with its layer count) and file size.
+  - **Show alone / Pair with next** (two pages a screen, or spreads merged): for
+    when seams or Shift pair pages wrongly. A page shown alone breaks its run; a
+    page paired with the next shares its screen whatever it is, and the pages
+    after it pair on from there. Undoing a choice comes first when that is
+    enough. Kept per book, backed up, cleared by Clear library data.
 - **Hide this page:** a hidden page is left out of reading, page counts, the
   seek strip, page grids and peeks for that book; history and bookmarks keep
   their pages, except a bookmark on the hidden page, which moves to the next

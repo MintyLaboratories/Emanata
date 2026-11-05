@@ -230,8 +230,9 @@ class ViewerActivityMenuTest {
         press(page)
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         assertEquals(context.getString(R.string.page_actions_title, 1), dialog.title())
-        assertEquals(5, dialog.listView.adapter.count)
-        assertEquals(context.getString(R.string.menu_share_page), dialog.listView.adapter.getItem(0).toString())
+        // The fixed row: Share, Save, Crop, Bookmark.
+        assertEquals(4, dialog.findViewById<android.view.ViewGroup>(R.id.page_actions_top)!!.childCount)
+        assertEquals(context.getString(R.string.page_share), dialog.findViewById<View>(R.id.page_action_share)!!.contentDescription)
     }
 
     @Test

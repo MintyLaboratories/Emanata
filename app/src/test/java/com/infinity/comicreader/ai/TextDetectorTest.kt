@@ -122,6 +122,27 @@ class TextDetectorTest {
     }
 
     @Test
+    fun aCloseTimedAfterOneRunLeavesTheModelToTheNext() {
+        val models = ArrayList<MapModel>()
+        val idle = 400L
+        val detector = TextDetector(FakeRuntime(make = { _, _ -> MapModel().also { models += it } }), ::files, idleMs = idle)
+        detector.detect(image)
+        // The first run's close comes due while the second holds the detector: it waits, then must leave the model open.
+        synchronized(detector) {
+            Thread.sleep(idle + 200)
+            assertNotNull(detector.detect(image))
+        }
+        Thread.sleep(idle / 2)
+        assertTrue(detector.isOpen)
+        assertFalse(models[0].closed)
+        // The second run's own close still comes.
+        val until = System.currentTimeMillis() + 5_000
+        while (detector.isOpen && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertFalse(detector.isOpen)
+        assertEquals(1, models.size)
+    }
+
+    @Test
     fun installsFromTheAssetsOnce() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val files = TextDetector.install(context)!!

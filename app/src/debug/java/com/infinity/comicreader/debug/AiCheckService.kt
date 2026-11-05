@@ -384,6 +384,7 @@ class AiCheckService : Service() {
         when (state) {
             is ImportState.Fit -> {
                 line.put("fit", true).put("scale", state.scale).put("pageMs", state.pageMs)
+                    .put("headroom", if (state.headroom.isNaN()) JSONObject.NULL else Stats.round1(state.headroom * 100.0) / 100)
                 if (name != null) {
                     val at = AiStep.entries.firstOrNull { it.key == step } ?: ModelImports.steps(state.scale).first()
                     val m = ModelImports.saveNow(ModelStore.of(this), state, name, at)

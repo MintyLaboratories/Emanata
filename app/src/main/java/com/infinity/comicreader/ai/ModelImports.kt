@@ -2,6 +2,8 @@ package com.infinity.comicreader.ai
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.util.Log
 import com.infinity.comicreader.reader.NativeResampler
@@ -46,8 +48,8 @@ sealed interface ImportState {
     /** Copying the files, then checking the model ([checking]) named [name] for now. */
     data class Working(val name: String, val checking: Boolean) : ImportState
 
-    /** Checked and fit: waits for a name and a step ([ModelImports.save]); [suggested] is the file's name. */
-    data class Fit(val id: String, val suggested: String, val scale: Int, val pageMs: Long) : ImportState
+    /** Checked and fit: waits for a name and a step ([ModelImports.save]); [suggested] is the file's name; [pageMs] timed at thermal [headroom]. */
+    data class Fit(val id: String, val suggested: String, val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN) : ImportState
 
     /** The check refused it: [why]; for memory, the [bytes] it would need and the [limit] it would pass; for time, the [pageMs] a page would take (0: unknown). */
     data class Refused(val name: String, val why: ModelRefusal, val bytes: Long, val limit: Long, val pageMs: Long) : ImportState
@@ -237,12 +239,12 @@ object ModelImports {
             val marker = File(store.root, CHECKING)
             marker.writeText(name)
             val result = try {
-                ModelCheck.check(runtime, files, NativeResampler.threads, budget, canceled)
+                ModelCheck.check(runtime, files, NativeResampler.threads, budget, canceled, headroom = { headroom(context) })
             } finally {
                 marker.delete()
             }
             return when (result) {
-                is ModelCheck.Result.Fit -> ImportState.Fit(id, name, result.scale, result.pageMs).also { kept = true }
+                is ModelCheck.Result.Fit -> ImportState.Fit(id, name, result.scale, result.pageMs, result.headroom).also { kept = true }
                 is ModelCheck.Result.Refused -> ImportState.Refused(name, result.why, result.bytes, result.limit, result.pageMs)
             }
         } finally {
@@ -255,7 +257,7 @@ object ModelImports {
         val files = store.userFiles(store.staging(fit.id))
         val m = UserModel(
             fit.id, name.trim().take(UserModel.MAX_NAME).ifEmpty { fit.suggested }, step, fit.scale, fit.pageMs,
-            files.param.length(), files.bin.length(), ModelDownloader.sha256(files.param), ModelDownloader.sha256(files.bin)
+            files.param.length(), files.bin.length(), ModelDownloader.sha256(files.param), ModelDownloader.sha256(files.bin), fit.headroom
         )
         store.saveUser(m)
         UserModels.load(store)
@@ -329,6 +331,10 @@ object ModelImports {
             }
         }
     }
+
+    /** The device's thermal headroom now (1: throttling); NaN where unknown. */
+    private fun headroom(context: Context): Float =
+        if (Build.VERSION.SDK_INT >= 30) context.getSystemService(PowerManager::class.java)?.getThermalHeadroom(0) ?: Float.NaN else Float.NaN
 
     /** A new imported model's id: never a catalog id. */
     private fun newId(): String {

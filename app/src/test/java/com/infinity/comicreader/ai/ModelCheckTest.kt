@@ -3,6 +3,7 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -83,6 +84,22 @@ class ModelCheckTest {
         // The first carries the warm-up; the rest at their mean.
         assertEquals(500L + 100 * 9, ModelCheck.estimate(listOf(500L, 90, 110), 10))
         assertEquals(700L, ModelCheck.estimate(listOf(500L, 100, 100), 3))
+    }
+
+    @Test
+    fun aCheapPageIsTimedWholeASlowOneFromItsFirstTiles() {
+        val tiles = ModelCheck.TIMED_TILES
+        assertFalse("7 s: timed whole", ModelCheck.enough(List(tiles) { 100L }, 70, 1))
+        assertTrue("70 s: estimated", ModelCheck.enough(List(tiles) { 1000L }, 70, 1))
+        assertFalse("too few to tell", ModelCheck.enough(List(tiles - 1) { 1000L }, 70, 1))
+        assertTrue("past the reader's limit", ModelCheck.enough(listOf(5000L, 5000L), 70, 1))
+        assertTrue("a smaller page counts for more", ModelCheck.enough(List(tiles) { 100L }, 70, 2))
+    }
+
+    @Test
+    fun aFitModelKeepsTheHeadroomItWasTimedAt() {
+        val r = ModelCheck.check(FakeRuntime(), fakeFiles(tmp.root), 4, Long.MAX_VALUE, headroom = { 0.5f }) as ModelCheck.Result.Fit
+        assertEquals(0.5f, r.headroom, 0f)
     }
 
     @Test

@@ -37,12 +37,14 @@ class UserModelsTest {
     }
 
     /** A model of [scale] at [step], [pageMs] a page, its files staged and taken in. */
-    private fun import(id: String, name: String, step: AiStep, scale: Int = if (step == AiStep.UPSCALE) 2 else 1, pageMs: Long = 2_500): UserModel {
+    private fun import(
+        id: String, name: String, step: AiStep, scale: Int = if (step == AiStep.UPSCALE) 2 else 1, pageMs: Long = 2_500, headroom: Float = Float.NaN
+    ): UserModel {
         val dir = store.staging(id).apply { mkdirs() }
         val files = store.userFiles(dir)
         files.param.writeText("7767517\n1 1\nInput in0 0 1 in0\n")
         files.bin.writeBytes(ByteArray(100))
-        val m = UserModel(id, name, step, scale, pageMs, files.param.length(), 100, "a".repeat(64), "b".repeat(64))
+        val m = UserModel(id, name, step, scale, pageMs, files.param.length(), 100, "a".repeat(64), "b".repeat(64), headroom)
         store.saveUser(m)
         UserModels.load(store)
         return m
@@ -58,6 +60,15 @@ class UserModelsTest {
         assertEquals(File(store.userDir("user-1"), ModelStore.USER_PARAM), files.param)
         assertFalse("left in staging", store.staging("user-1").exists())
         assertEquals(m.paramBytes + 100, m.bytes)
+    }
+
+    @Test
+    fun theHeadroomItsPageWasTimedAtReadsBack() {
+        val m = import("user-1", "Timed warm", AiStep.UPSCALE, headroom = 0.42f)
+        assertEquals(0.42f, store.userModels().single().pageHeadroom, 0f)
+        assertEquals(listOf(m), store.userModels())
+        import("user-2", "Timed somewhere", AiStep.UPSCALE)
+        assertTrue(store.userModels().single { it.id == "user-2" }.pageHeadroom.isNaN())
     }
 
     @Test

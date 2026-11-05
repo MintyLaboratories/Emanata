@@ -13,8 +13,9 @@ sealed interface AiModel {
     val scale: Int
 
     /**
-     * Its time for a synthetic 1000 x 1500 page, started cool, at its own scale: on the
-     * reference tablet's GPU for catalog models, on this device for imported ones.
+     * Its time for a synthetic 1000 x 1500 page at its own scale: started cool on the reference
+     * tablet's GPU for catalog models; for imported ones, measured once on this device as it
+     * was taken in, at the heat the device had then ([UserModel.pageHeadroom]), so rougher.
      */
     val pageMs: Long
 
@@ -34,7 +35,8 @@ sealed interface AiModel {
 /**
  * A model the user imported ([ModelImports]): ncnn files they converted elsewhere, named by
  * them, run at the [step] they chose, its [scale] and [pageMs] measured on this device when
- * it was taken in. No license or source is known or claimed.
+ * it was taken in, the latter at thermal headroom [pageHeadroom] (NaN: unknown). No license
+ * or source is known or claimed.
  */
 data class UserModel(
     override val id: String,
@@ -45,7 +47,8 @@ data class UserModel(
     val paramBytes: Long,
     val binBytes: Long,
     val paramSha256: String,
-    val binSha256: String
+    val binSha256: String,
+    val pageHeadroom: Float = Float.NaN
 ) : AiModel {
     override val bytes: Long get() = paramBytes + binBytes
 
@@ -59,6 +62,7 @@ data class UserModel(
         setProperty(PAGE_MS, pageMs.toString())
         setProperty(PARAM_SHA, paramSha256)
         setProperty(BIN_SHA, binSha256)
+        if (!pageHeadroom.isNaN()) setProperty(PAGE_HEADROOM, pageHeadroom.toString())
     }
 
     companion object {
@@ -68,6 +72,7 @@ data class UserModel(
         private const val PAGE_MS = "pageMs"
         private const val PARAM_SHA = "paramSha256"
         private const val BIN_SHA = "binSha256"
+        private const val PAGE_HEADROOM = "pageHeadroom"
 
         /** The longest name kept. */
         const val MAX_NAME = 60
@@ -81,7 +86,8 @@ data class UserModel(
             val paramSha = p.getProperty(PARAM_SHA) ?: return null
             val binSha = p.getProperty(BIN_SHA) ?: return null
             if (!param.isFile || !bin.isFile) return null
-            return UserModel(dir.name, name, step, scale, pageMs, param.length(), bin.length(), paramSha, binSha)
+            val headroom = p.getProperty(PAGE_HEADROOM)?.toFloatOrNull() ?: Float.NaN
+            return UserModel(dir.name, name, step, scale, pageMs, param.length(), bin.length(), paramSha, binSha, headroom)
         }
     }
 }

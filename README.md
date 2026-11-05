@@ -876,9 +876,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   model memory, run on a small smooth picture whose output, averaged back down,
   must stay within 24 codes of it on average (else the model expects pixels
   scaled otherwise, or the files don't belong together), and timed on a
-  synthetic 1000×1500 page (the first six tiles, the first counted once); a
-  page past 120 s, or a check past 2 minutes, is refused. While a check runs a
-  marker names the model, so a check that ends the app is reported next time.
+  synthetic 1000×1500 page (whole while it takes at most 20 s, else from its
+  first six tiles, the first counted once; one measurement at the device's heat
+  then, its thermal headroom kept beside it); a page past 120 s, or a check
+  past 2 minutes (counted once no reader page holds the engine), is refused.
+  While a check runs a marker names the model, read at the next start before
+  the model folder is cleaned, so a check that ends the app is reported.
   A taken-in model keeps its files and what was measured beside them; its
   processed pages are keyed by its files' checksums like catalog ones.
 - AI in the reader (`ReaderAi`, `AiQueue`): once a page of a book with a chain

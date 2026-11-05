@@ -20,9 +20,12 @@ import kotlin.math.abs
  *   [UNLIKE_MEAN] codes on average (a model expecting pixels scaled otherwise, or files that
  *   do not belong together, give something else);
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
- *   on: [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at their
- *   pace, stopping sooner once the page would take longer than [ReaderAi.MAX_TIMEOUT_MS],
- *   the most the reader gives a page: such a model is refused.
+ *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
+ *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
+ *   their pace; stopping sooner once the page would take longer than
+ *   [ReaderAi.MAX_TIMEOUT_MS], the most the reader gives a page: such a model is refused.
+ *   One measurement at whatever heat the device has then (its thermal headroom is kept
+ *   beside it): a rough figure.
  * All within [TIME_LIMIT_MS], else the model is refused as too slow.
  */
 internal object ModelCheck {
@@ -34,8 +37,11 @@ internal object ModelCheck {
     /** Mean difference, in codes, past which output does not resemble its input. */
     const val UNLIKE_MEAN = 24.0
 
-    /** Tiles timed. */
+    /** Tiles timed at least. */
     const val TIMED_TILES = TileEngine.PACE_AFTER + 2
+
+    /** The longest page timed whole; a slower one is estimated from its first tiles. */
+    const val FULL_PAGE_MS = 20_000L
 
     const val PAGE_W = 1000
     const val PAGE_H = 1500
@@ -44,8 +50,8 @@ internal object ModelCheck {
     private const val LIKE_SIDE = 96
 
     sealed interface Result {
-        /** Fit to take in: [scale] times larger out than in, about [pageMs] for a page here. */
-        data class Fit(val scale: Int, val pageMs: Long) : Result
+        /** Fit to take in: [scale] times larger out than in, about [pageMs] for a page here, timed at thermal [headroom] (NaN: unknown). */
+        data class Fit(val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN) : Result
 
         /**
          * Refused for [why]; for memory, the [bytes] it would need and the [limit] it would
@@ -56,8 +62,9 @@ internal object ModelCheck {
 
     /**
      * [files] checked through [runtime] on [threads] CPU threads, within [memoryBytes], holding
-     * the engine throughout ([TileEngine.exclusive]): no page runs between its steps. Throws
-     * [CancellationException] once [canceled].
+     * the engine throughout ([TileEngine.exclusive]): no page runs between its steps; the
+     * device's thermal [headroom] read as timing starts. Throws [CancellationException] once
+     * [canceled].
      */
     fun check(
         runtime: InferenceRuntime,
@@ -65,14 +72,16 @@ internal object ModelCheck {
         threads: Int,
         memoryBytes: Long,
         canceled: () -> Boolean = { false },
-        clock: () -> Long = SystemClock::elapsedRealtime
+        clock: () -> Long = SystemClock::elapsedRealtime,
+        headroom: () -> Float = { Float.NaN }
     ): Result = TileEngine.exclusive(canceled) {
         // Timed from here: a page the reader is running is waited for, not counted.
-        checkAlone(runtime, files, threads, memoryBytes, canceled, clock)
+        checkAlone(runtime, files, threads, memoryBytes, canceled, clock, headroom)
     }
 
     private fun checkAlone(
-        runtime: InferenceRuntime, files: ModelFiles, threads: Int, memoryBytes: Long, canceled: () -> Boolean, clock: () -> Long
+        runtime: InferenceRuntime, files: ModelFiles, threads: Int, memoryBytes: Long, canceled: () -> Boolean, clock: () -> Long,
+        headroom: () -> Float
     ): Result {
         val deadline = clock() + TIME_LIMIT_MS
         val late = { clock() > deadline }
@@ -84,10 +93,11 @@ internal object ModelCheck {
                 val unlike = unlikeness(s, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 Log.i(TAG, "${files.param.name}: output differs from its input by $unlike on average")
                 if (unlike > UNLIKE_MEAN) return Result.Refused(ModelRefusal.UNLIKE)
+                val heat = headroom()
                 val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
-                Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page")
+                Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
                 if (ms > ReaderAi.MAX_TIMEOUT_MS) return Result.Refused(ModelRefusal.TOO_SLOW, pageMs = ms)
-                return Result.Fit(s.geometry.scale, ms)
+                return Result.Fit(s.geometry.scale, ms, heat)
             }
         } catch (e: CancellationException) {
             if (!canceled() && late()) return Result.Refused(ModelRefusal.TOO_SLOW)
@@ -152,9 +162,9 @@ internal object ModelCheck {
     }
 
     /**
-     * [s]'s time for a synthetic page here: all its tiles when there are no more than
-     * [TIMED_TILES], else the first once and the rest at the pace of the next few; null when
-     * it fails. A model whose output of the page would pass [PageLimits.DEFAULT_MAX_OUTPUT_PIXELS]
+     * [s]'s time for a synthetic page here: all its tiles while the page's pace keeps it within
+     * [FULL_PAGE_MS], else, once [TIMED_TILES] are timed, the first once and the rest at their
+     * pace; null when it fails. A model whose output of the page would pass [PageLimits.DEFAULT_MAX_OUTPUT_PIXELS]
      * is timed on a page [shrink] times smaller each way, its time taken [shrink] squared times.
      */
     private fun pageMs(s: Session, canceled: () -> Boolean, clock: () -> Long): Long? {
@@ -165,10 +175,7 @@ internal object ModelCheck {
             var planned = 0
             val run = TileEngine.run(
                 s, page, PageLimits(timeoutMs = Long.MAX_VALUE), canceled, clock = clock,
-                gate = {
-                    val over = times.size >= 2 && estimate(times, planned) * shrink * shrink > ReaderAi.MAX_TIMEOUT_MS
-                    if (times.size >= TIMED_TILES || over) Fallback.PAUSED else null
-                },
+                gate = { if (enough(times, planned, shrink)) Fallback.PAUSED else null },
                 onTile = { _, of, ms ->
                     planned = of
                     times += ms
@@ -183,6 +190,16 @@ internal object ModelCheck {
         } finally {
             page.recycle()
         }
+    }
+
+    /**
+     * True once the [times] of a page of [planned] tiles, timed [shrink] times smaller each way,
+     * say enough: past [ReaderAi.MAX_TIMEOUT_MS], or past [FULL_PAGE_MS] after [TIMED_TILES].
+     */
+    internal fun enough(times: List<Long>, planned: Int, shrink: Int): Boolean {
+        if (times.size < 2) return false
+        val page = estimate(times, planned) * shrink * shrink
+        return page > ReaderAi.MAX_TIMEOUT_MS || (times.size >= TIMED_TILES && page > FULL_PAGE_MS)
     }
 
     /** How many times smaller each way the timed page is for a model of [scale], so its output fits [PageLimits.DEFAULT_MAX_OUTPUT_PIXELS]. */

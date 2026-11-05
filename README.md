@@ -979,7 +979,8 @@ app/src/main/java/com/infinity/comicreader/
   ai/                        AI page processing: LibNcnn (JNI), TilePlan,
                              ModelProbe, TileEngine, Sessions, AiPages; models:
                              ModelCatalog, ModelStore + ModelDownloader,
-                             ModelDownloads
+                             ModelDownloads; TextDetector (covers' Smart
+                             crop anchor)
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,
@@ -1249,11 +1250,12 @@ license and NOTICE text under Settings → About (files in
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
 | [OkHttp](https://github.com/square/okhttp), Okio | Apache-2.0 |
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, converted to ncnn (`tools/text-detector`) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 
 Dual-licensed components are used under Apache-2.0.
 
-AI models are not bundled: the app downloads the ones you choose, unchanged,
+AI models for pages are not bundled: the app downloads the ones you choose, unchanged,
 from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)
 and lists their authors and licenses under Settings → About.
 

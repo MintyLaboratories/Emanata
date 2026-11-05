@@ -183,6 +183,12 @@ object Notices {
             listOf("com.squareup.okhttp3:*", "com.squareup.okio:*"), note = "Used for WebDAV shares."
         ),
         Notice("MBassador", MIT, "https://github.com/bennidi/mbassador", listOf("mbassador.txt"), listOf("net.engio:mbassador")),
+        Notice(
+            "PaddleOCR text detector", APACHE_2, "https://github.com/PaddlePaddle/PaddleOCR", APACHE,
+            note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, shipped converted to ncnn " +
+                "(weights stored in fp16, otherwise unchanged). Finds where text is on covers for the Smart crop " +
+                "anchor, on this device only."
+        ),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )
 

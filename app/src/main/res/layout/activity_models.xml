@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The AI model manager: per step, each catalog model with its download state. -->
+<!-- The AI model manager: per step, each catalog model with its download state and each imported one; importing. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -42,6 +42,23 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:paddingHorizontal="16dp"
+                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/models_import"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="@dimen/space_2"
+                android:text="@string/ai_import" />
+
+            <TextView
+                android:id="@+id/models_import_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:text="@string/ai_import_hint"
                 android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
         </LinearLayout>
     </ScrollView>

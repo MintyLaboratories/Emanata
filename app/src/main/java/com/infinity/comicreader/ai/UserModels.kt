@@ -32,7 +32,7 @@ sealed interface AiModel {
 }
 
 /**
- * A model the user imported: ncnn files they converted elsewhere, named by
+ * A model the user imported ([ModelImports]): ncnn files they converted elsewhere, named by
  * them, run at the [step] they chose, its [scale] and [pageMs] measured on this device when
  * it was taken in. No license or source is known or claimed.
  */

@@ -14,8 +14,10 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.ListAdapter
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
@@ -27,6 +29,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.radiobutton.MaterialRadioButton
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
@@ -35,12 +40,19 @@ import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
+import com.infinity.comicreader.ai.ImportFailure
+import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.ModelBlurb
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelCheck
 import com.infinity.comicreader.ai.ModelDownloads
+import com.infinity.comicreader.ai.ModelImports
+import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.ai.UserModel
+import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.launch
@@ -148,18 +160,66 @@ object ModelText {
     fun attribution(context: Context, m: CatalogModel): String = context.getString(
         R.string.ai_model_info, details(context, m), m.source.author, m.source.license, m.source.url, ModelCatalog.REPOSITORY
     )
+
+    /** What is known of imported model [m]: its details, that it is the user's, and its time here. */
+    fun imported(context: Context, m: UserModel): String =
+        context.getString(R.string.ai_model_info_imported, details(context, m), m.pageSeconds)
+
+    /** Why an import was refused, in a sentence. */
+    fun refusal(context: Context, r: ImportState.Refused): String = when (r.why) {
+        ModelRefusal.RUNTIME -> context.getString(R.string.ai_refused_runtime)
+        ModelRefusal.NOT_LOADED -> context.getString(R.string.ai_refused_not_loaded)
+        ModelRefusal.WHOLE_TILE -> context.getString(R.string.ai_refused_whole_tile)
+        ModelRefusal.DOES_NOT_RUN -> context.getString(R.string.ai_refused_does_not_run)
+        ModelRefusal.SHAPE -> context.getString(R.string.ai_refused_shape)
+        ModelRefusal.REACH -> context.getString(R.string.ai_refused_reach)
+        ModelRefusal.MEMORY ->
+            if (r.bytes > 0 && r.limit > 0) context.getString(R.string.ai_refused_memory, size(context, r.bytes), size(context, r.limit))
+            else context.getString(R.string.ai_refused_memory_unknown)
+        ModelRefusal.UNLIKE -> context.getString(R.string.ai_refused_unlike)
+        ModelRefusal.TOO_SLOW ->
+            if (r.pageMs > 0) context.getString(R.string.ai_refused_too_slow, (r.pageMs + 500) / 1000, ReaderAi.MAX_TIMEOUT_MS / 1000)
+            else context.getString(R.string.ai_refused_too_slow_check, (ModelCheck.TIME_LIMIT_MS / 1000))
+    }
+
+    /** Why picked files were not taken in, in a sentence. */
+    fun failure(context: Context, f: ImportFailure): String = when (f) {
+        ImportFailure.NOT_A_PAIR -> context.getString(R.string.ai_import_failed_pair)
+        ImportFailure.UNREADABLE -> context.getString(R.string.ai_import_failed_unreadable)
+        ImportFailure.TOO_LARGE ->
+            context.getString(R.string.ai_import_failed_large, size(context, ModelImports.MAX_PARAM_BYTES), size(context, ModelImports.MAX_BIN_BYTES))
+        ImportFailure.SPACE -> context.getString(R.string.ai_import_failed_space)
+    }
 }
 
 /**
- * The AI model manager: every catalog model by step, with what it does, its size and
+ * The AI model manager: every model by step. Catalog models with what they do, their size and
  * license, downloaded or not; downloads (with progress, resumed when cut short), cancels and
- * deletes. With Keep it simple on, slow models show only once downloaded or downloading. A
- * model's row opens its attribution.
+ * deletes. With Keep it simple on, slow catalog models show only once downloaded or
+ * downloading. Imported models (marked so, no license) after them, deleted after asking.
+ * "Import a model…" takes the user's own: its two files picked ([ModelImports]), copied and
+ * checked with progress, then named and given a step, or refused with the reason. A model's
+ * row opens what is known of it.
  */
 class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore
     private lateinit var prefs: Prefs
     private val rows = HashMap<String, View>()
+
+    /** The imported models the rows were built for. */
+    private var builtFor: List<UserModel>? = null
+
+    /** The import state shown, and its dialog. */
+    private var shownImport: ImportState? = null
+    private var importDialog: AlertDialog? = null
+
+    private val pick = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        when {
+            uris.isNotEmpty() -> ModelImports.start(this, uris)
+            // Asked for the pair's other file and picked none.
+            ModelImports.state.value is ImportState.Half -> ModelImports.cancel()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -169,14 +229,52 @@ class ModelsActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
         store = ModelStore.of(this)
         prefs = Prefs(this)
+        findViewById<MaterialButton>(R.id.models_import).setOnClickListener { pickFiles() }
+        build()
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { ModelDownloads.state.collect { show(it) } }
+                launch { ModelImports.state.collect { showImport(it) } }
+            }
+        }
+        lifecycleScope.launch {
+            val name = withContext(AppDispatchers.io) { ModelImports.crashed(this@ModelsActivity) } ?: return@launch
+            AlertDialog.Builder(this@ModelsActivity)
+                .setTitle(R.string.ai_import_failed)
+                .setMessage(getString(R.string.ai_import_crashed, name))
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        }
+    }
+
+    override fun onDestroy() {
+        importDialog?.dismiss()
+        importDialog = null
+        super.onDestroy()
+    }
+
+    private fun pickFiles() {
+        try {
+            pick.launch(arrayOf("*/*"))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, R.string.op_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** A card of rows per step: its catalog models, then the imported ones ([Models.forStep]). */
+    private fun build() {
         val list = findViewById<LinearLayout>(R.id.models_list)
+        val header = list.indexOfChild(findViewById(R.id.models_import_hint)) + 1
+        while (list.childCount > header) list.removeViewAt(header)
+        rows.clear()
+        builtFor = UserModels.all
         for (step in AiStep.entries) {
-            val models = ModelCatalog.forStep(step)
+            val models = Models.forStep(step)
             if (models.isEmpty()) continue
-            val header = layoutInflater.inflate(R.layout.item_section_title, list, false) as TextView
-            header.text = ModelText.step(this, step)
-            list.addView(header)
+            val title = layoutInflater.inflate(R.layout.item_section_title, list, false) as TextView
+            title.text = ModelText.step(this, step)
+            list.addView(title)
             val card = layoutInflater.inflate(R.layout.card_models, list, false) as MaterialCardView
             val rowsBox = card.findViewById<LinearLayout>(R.id.card_rows)
             for (m in models) {
@@ -188,33 +286,37 @@ class ModelsActivity : AppCompatActivity() {
                 }
                 row.findViewById<TextView>(R.id.subtitle).text = ModelText.details(this, m)
                 // Shown once the store says whether it is downloaded.
-                row.isVisible = !m.slow
+                row.isVisible = m is UserModel || !m.slow
                 row.setOnClickListener { showInfo(m) }
                 rowsBox.addView(row)
                 rows[m.id] = row
             }
             list.addView(card)
         }
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                ModelDownloads.state.collect { show(it) }
-            }
-        }
     }
 
     /** Every row's state, and the space models take, as [d] and the store say. */
     private suspend fun show(d: Downloads) {
-        val installed = withContext(AppDispatchers.io) { ModelCatalog.all.filter { store.installed(it) }.map { it.id }.toSet() }
+        if (UserModels.all != builtFor) build()
+        val models = Models.all()
+        val installed = withContext(AppDispatchers.io) { models.filter { store.installed(it) }.map { it.id }.toSet() }
         val used = withContext(AppDispatchers.io) { store.bytesUsed() }
         findViewById<TextView>(R.id.models_used).text = getString(R.string.ai_models_used, ModelText.size(this, used))
         val simple = prefs.keepSimple
-        for (m in ModelCatalog.all) {
+        for (m in models) {
             val row = rows[m.id] ?: continue
-            row.isVisible = !simple || !m.slow || m.id in installed || d.states[m.id] != null
             val status = row.findViewById<TextView>(R.id.status)
             val progress = row.findViewById<LinearProgressIndicator>(R.id.progress)
             val action = row.findViewById<MaterialButton>(R.id.action)
+            if (m is UserModel) {
+                status.isVisible = false
+                progress.isVisible = false
+                action.setText(R.string.delete)
+                action.setOnClickListener { confirmDelete(m) }
+                continue
+            }
+            m as CatalogModel
+            row.isVisible = !simple || !m.slow || m.id in installed || d.states[m.id] != null
             when (val s = d.states[m.id]) {
                 is DownloadState.Running -> {
                     status.isVisible = false
@@ -247,13 +349,114 @@ class ModelsActivity : AppCompatActivity() {
         }
     }
 
-    private fun showInfo(m: CatalogModel) {
+    private fun confirmDelete(m: UserModel) {
         AlertDialog.Builder(this)
-            .setTitle(m.name)
-            .setMessage(ModelText.attribution(this, m))
-            .setPositiveButton(R.string.ok, null)
-            .setNeutralButton(R.string.about_project_page) { _, _ -> open(m.source.url) }
+            .setMessage(getString(R.string.ai_model_delete_imported, m.name))
+            .setPositiveButton(R.string.delete) { _, _ -> ModelImports.delete(this, m) }
+            .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    /** Shows import state [s]: what it waits for, how it goes, or how it ended. */
+    private fun showImport(s: ImportState) {
+        if (s == shownImport) return
+        shownImport = s
+        importDialog?.dismiss()
+        importDialog = null
+        importDialog = when (s) {
+            ImportState.Idle -> null
+            is ImportState.Half -> AlertDialog.Builder(this)
+                .setTitle(R.string.ai_import_title)
+                .setMessage(if (s.isParam) R.string.ai_import_pick_bin else R.string.ai_import_pick_param)
+                .setPositiveButton(R.string.ai_import_pick) { _, _ -> pickFiles() }
+                .setNegativeButton(R.string.cancel) { _, _ -> ModelImports.cancel() }
+                .setCancelable(false)
+                .show()
+            is ImportState.Working -> {
+                val view = layoutInflater.inflate(R.layout.dialog_import_progress, null)
+                view.findViewById<TextView>(R.id.import_progress_text).text =
+                    getString(if (s.checking) R.string.ai_import_checking else R.string.ai_import_copying, s.name)
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.ai_import_title)
+                    .setView(view)
+                    .setNegativeButton(R.string.cancel) { _, _ -> ModelImports.cancel() }
+                    .setCancelable(false)
+                    .show()
+            }
+            is ImportState.Fit -> fitDialog(s)
+            is ImportState.Refused -> AlertDialog.Builder(this)
+                .setTitle(getString(R.string.ai_import_refused, s.name))
+                .setMessage(ModelText.refusal(this, s))
+                .setPositiveButton(R.string.ok) { _, _ -> ModelImports.dismiss(this) }
+                .setCancelable(false)
+                .show()
+            is ImportState.Failed -> AlertDialog.Builder(this)
+                .setTitle(R.string.ai_import_failed)
+                .setMessage(ModelText.failure(this, s.why))
+                .setPositiveButton(R.string.ok) { _, _ -> ModelImports.dismiss(this) }
+                .setCancelable(false)
+                .show()
+            is ImportState.Imported -> {
+                Toast.makeText(this, getString(R.string.ai_import_done, s.model.name), Toast.LENGTH_SHORT).show()
+                ModelImports.dismiss(this)
+                null
+            }
+        }
+    }
+
+    /** Asks for a checked model's name and step, warning that heavy models may be too slow. */
+    private fun fitDialog(s: ImportState.Fit): AlertDialog {
+        val view = layoutInflater.inflate(R.layout.dialog_import_model, null)
+        val seconds = (s.pageMs + 500) / 1000
+        view.findViewById<TextView>(R.id.import_found).text =
+            if (s.scale == 1) getString(R.string.ai_import_found_keeps, seconds) else getString(R.string.ai_import_found_enlarges, s.scale, seconds)
+        val name = view.findViewById<TextInputEditText>(R.id.import_name)
+        name.setText(s.suggested)
+        val group = view.findViewById<RadioGroup>(R.id.import_steps)
+        val steps = ModelImports.steps(s.scale)
+        for ((i, step) in steps.withIndex()) {
+            group.addView(MaterialRadioButton(this).apply {
+                id = View.generateViewId()
+                tag = step
+                text = ModelText.step(this@ModelsActivity, step)
+                minHeight = (48 * resources.displayMetrics.density).toInt()
+                isChecked = i == 0
+            })
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.ai_import_title)
+            .setView(view)
+            .setPositiveButton(R.string.ai_import_save, null)
+            .setNegativeButton(R.string.ai_import_discard) { _, _ -> ModelImports.dismiss(this) }
+            .setCancelable(false)
+            .show()
+        // Kept open while the name is empty.
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val text = name.text?.toString()?.trim().orEmpty()
+            if (text.isEmpty()) {
+                view.findViewById<TextInputLayout>(R.id.import_name_box).error = getString(R.string.ai_import_name)
+                return@setOnClickListener
+            }
+            val step = group.findViewById<View>(group.checkedRadioButtonId)?.tag as? AiStep ?: steps.first()
+            ModelImports.save(this, text, step)
+        }
+        return dialog
+    }
+
+    private fun showInfo(m: AiModel) {
+        when (m) {
+            is CatalogModel -> AlertDialog.Builder(this)
+                .setTitle(m.name)
+                .setMessage(ModelText.attribution(this, m))
+                .setPositiveButton(R.string.ok, null)
+                .setNeutralButton(R.string.about_project_page) { _, _ -> open(m.source.url) }
+                .show()
+            is UserModel -> AlertDialog.Builder(this)
+                .setTitle(m.name)
+                .setMessage(ModelText.imported(this, m))
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        }
     }
 
     private fun open(url: String) {

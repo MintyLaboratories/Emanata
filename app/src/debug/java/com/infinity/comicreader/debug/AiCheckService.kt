@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.graphics.Bitmap
 import android.os.BatteryManager
 import android.os.Build
@@ -24,7 +25,10 @@ import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloader
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.ModelFiles
+import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelMemory
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PageLimits
@@ -60,6 +64,9 @@ import kotlin.math.max
  *
  * or, for catalog models: `--es do download --es ids <id,id,…> [--ei cut 0] [--ez keep false]`
  *
+ * or, to import a model as Models does: `--es do import --es model <.param> [--es bin <.bin, else beside it>]
+ *  [--es name <name, to take it in>] [--es step artifacts|descreen|upscale]`
+ *
  * - open: per engine, the time to open, measure and check the model, its geometry, tile size
  *   and precision (the checks themselves go to the log under "AiSessions").
  * - check: tiled output at each size against one tile covering the whole of a `small` page on
@@ -75,6 +82,9 @@ import kotlin.math.max
  * - download: per catalog model, deletes it from the app's store, downloads it (stopping once
  *   after `cut` bytes when given, then resuming), checks it is installed, opens it and runs one
  *   page of `size` within the default page time; deletes it again unless `keep`.
+ * - import: copies and checks the pair ([ModelImports]), with the time it took, the device's
+ *   model memory and the peak resident memory; given a name, takes a fit model in at `step`
+ *   (else the first its scale suits).
  * - survey: per model, how it opens on the GPU within the device's model memory
  *   ([ModelMemory]; or why not, with the memory it would need) and one page of `size` at the
  *   tile size it chose, given at most `cap` seconds; a page that would take longer stops early
@@ -111,6 +121,12 @@ class AiCheckService : Service() {
                     require(size.size == 2) { "unreadable size" }
                     val ids = intent?.getStringExtra("ids").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
                     download(ids, intent?.getIntExtra("cut", 0) ?: 0, intent?.getBooleanExtra("keep", false) ?: false, size[0], size[1], fp16, threads)
+                    return@hold
+                }
+                if (what == "import") {
+                    require(param != null && param.isFile) { "no model at $param" }
+                    val bin = intent?.getStringExtra("bin")?.let(::File) ?: File(param.path.removeSuffix(".param") + ".bin")
+                    importModel(param, bin, intent?.getStringExtra("name"), intent?.getStringExtra("step"))
                     return@hold
                 }
                 if (what == "survey") {
@@ -354,6 +370,32 @@ class AiCheckService : Service() {
             log(result)
         }
         page.recycle()
+    }
+
+    // ------------------------------------------------------------------ import
+
+    private fun importModel(param: File, bin: File, name: String?, step: String?) {
+        val memory = ModelMemory.of(this)
+        val t0 = SystemClock.elapsedRealtime()
+        val state = ModelImports.importNow(this, listOf(Uri.fromFile(param), Uri.fromFile(bin)))
+        val ms = SystemClock.elapsedRealtime() - t0
+        val line = JSONObject().put("import", param.name).put("ms", ms).put("memoryMb", memory shr 20).put("peakRssMb", peakRssKb() / 1024)
+        when (state) {
+            is ImportState.Fit -> {
+                line.put("fit", true).put("scale", state.scale).put("pageMs", state.pageMs)
+                if (name != null) {
+                    val at = AiStep.entries.firstOrNull { it.key == step } ?: ModelImports.steps(state.scale).first()
+                    val m = ModelImports.saveNow(ModelStore.of(this), state, name, at)
+                    line.put("saved", m.id).put("step", m.step.key)
+                } else {
+                    ModelStore.of(this).staging(state.id).deleteRecursively()
+                }
+            }
+            is ImportState.Refused -> line.put("fit", false).put("refusal", state.why.name).put("neededMb", state.bytes shr 20)
+                .put("limitMb", state.limit shr 20).put("pageMs", state.pageMs)
+            else -> line.put("state", state.toString())
+        }
+        log(line)
     }
 
     // ------------------------------------------------------------------ survey

@@ -7,7 +7,7 @@ import android.util.Log
 import kotlin.math.max
 import kotlin.math.min
 
-/** Why a model does not open. */
+/** Why a model does not open, or is not taken in ([ModelCheck]). */
 enum class ModelRefusal {
     /** The inference library does not load on this device. */
     RUNTIME,
@@ -28,7 +28,13 @@ enum class ModelRefusal {
     REACH,
 
     /** It needs more memory than the device can spare ([ModelMemory]). */
-    MEMORY
+    MEMORY,
+
+    /** Its output does not resemble its input: scaled differently, or files that do not belong together. */
+    UNLIKE,
+
+    /** It would take longer than a page may, or checking it took too long. */
+    TOO_SLOW
 }
 
 /**

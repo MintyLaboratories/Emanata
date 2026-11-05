@@ -13,7 +13,11 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.UserModel
+import com.infinity.comicreader.ai.UserModels
+import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.data.Prefs
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,6 +45,24 @@ class ModelsActivityTest {
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         store = ModelStore.of(context)
         store.root.deleteRecursively()
+        UserModels.load(store)
+    }
+
+    @After
+    fun tearDown() {
+        store.root.deleteRecursively()
+        UserModels.load(store)
+    }
+
+    /** An imported model named [name] at [step], taken in. */
+    private fun imported(id: String, name: String, step: AiStep): UserModel {
+        val files = store.userFiles(store.staging(id).apply { mkdirs() })
+        files.param.writeText("7767517")
+        files.bin.writeBytes(ByteArray(2048))
+        val m = UserModel(id, name, step, if (step == AiStep.UPSCALE) 2 else 1, 12_000, files.param.length(), 2048, "a".repeat(64), "b".repeat(64))
+        store.saveUser(m)
+        UserModels.load(store)
+        return m
     }
 
     private fun install(m: CatalogModel) {
@@ -124,5 +146,46 @@ class ModelsActivityTest {
         val text = dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
         assertTrue(text, text.contains(m.source.author) && text.contains(m.source.license) && text.contains(m.source.url))
         assertTrue(text.contains(ModelCatalog.REPOSITORY))
+    }
+
+    @Test
+    fun importedModelsShowAfterTheCatalogsMarkedAndDeletable() {
+        val mine = imported("user-1", "My upscaler", AiStep.UPSCALE)
+        val activity = open()
+        val rows = rows(activity)
+        assertEquals(ModelCatalog.all.size + 1, rows.size)
+        val row = rows[ModelCatalog.all.size]
+        assertEquals(View.VISIBLE, row.visibility)
+        assertEquals("My upscaler", row.findViewById<TextView>(R.id.title).text.toString())
+        val details = row.findViewById<TextView>(R.id.subtitle).text.toString()
+        assertTrue(details, details.startsWith("2× · ") && details.endsWith(" · imported"))
+        // Slow here, and shown while keeping it simple.
+        assertEquals("Slow (~12 s per page)", row.findViewById<TextView>(R.id.blurb).text.toString())
+        assertEquals(activity.getString(R.string.delete), row.findViewById<MaterialButton>(R.id.action).text.toString())
+
+        row.findViewById<MaterialButton>(R.id.action).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val ask = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(ask.findViewById<TextView>(android.R.id.message)!!.text.contains("My upscaler"))
+        ask.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        for (i in 0 until 100) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (UserModels.all.isEmpty() && rows(activity).size == ModelCatalog.all.size) break
+            Thread.sleep(20)
+        }
+        assertTrue(UserModels.all.isEmpty())
+        assertFalse(store.userDir(mine.id).exists())
+        assertEquals(ModelCatalog.all.size, rows(activity).size)
+    }
+
+    @Test
+    fun anImportedModelsRowSaysNoLicense() {
+        imported("user-1", "Cleaner", AiStep.DESCREEN)
+        val activity = open()
+        rows(activity).single { it.findViewById<TextView>(R.id.title).text == "Cleaner" }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val text = dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
+        assertTrue(text, text.contains("no source or license is known") && text.contains("12 s per page"))
     }
 }

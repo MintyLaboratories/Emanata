@@ -328,6 +328,23 @@
         <item quantity="other">%1$d selected</item>
     </plurals>
     <string name="selection_leave">Leave selection</string>
+    <!-- The view ring: a long press on the grid/list button. -->
+    <string name="view_ring_open">View options</string>
+    <string name="view_ring_close">Close view options</string>
+    <string name="view_ring_layout">Layout</string>
+    <string name="view_ring_smaller">Smaller</string>
+    <string name="view_ring_larger">Larger</string>
+    <string name="view_ring_details">Details</string>
+    <string name="view_ring_sections">Sections</string>
+    <string name="view_ring_on">On</string>
+    <string name="view_ring_off">Off</string>
+    <string name="view_ring_sort_more">More sort options</string>
+    <string name="view_ring_item">%1$s: %2$s</string>
+    <string name="view_ring_grid">%1$d × %2$d</string>
+    <plurals name="view_ring_columns">
+        <item quantity="one">%1$d column</item>
+        <item quantity="other">%1$d columns</item>
+    </plurals>
     <string name="select_all">Select all</string>
     <string name="selection_unfavorite">Unfavorite</string>
     <string name="selection_remove">Remove</string>

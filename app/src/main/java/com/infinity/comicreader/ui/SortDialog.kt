@@ -53,7 +53,8 @@ object SortDialog {
         return if (level.flipped) second else first
     }
 
-    private fun levelText(context: Context, level: SortLevel) =
+    /** One level in words: "Name – A → Z". */
+    internal fun levelText(context: Context, level: SortLevel) =
         context.getString(R.string.sort_level, context.getString(nameOf(level.key)), context.getString(directionOf(level)))
 
     /** The order in words: "Year – newest first, then Length – shortest first". */

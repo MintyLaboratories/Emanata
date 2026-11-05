@@ -178,6 +178,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     another action or none. Each action has its own icon and color from the
     theme's roles: toggle primary container, Open secondary container, Move
     tertiary container, Copy secondary, Delete error container.
+  - **View ring:** a long press on the list/grid toggle fans round buttons on
+    a quarter arc from the button toward the screen's inside (mirrored when
+    left-handed), each labeled with its setting and current value: Layout
+    (grid or list), Smaller and Larger (grid columns, and rows when set; list
+    density; grayed at the end), Details (Hidden, Comfortable, Dense in turn),
+    Sort (flips the first level's direction; long press opens the Sort popup),
+    plus Folders first in Browse or Sections in Favorites. A tap applies at
+    once and the ring stays open; the X in the button's place, a tap outside
+    or Back closes it. TalkBack reads each button's setting and value.
   - Several items are one operation, one item at a time: Move and Copy pick
     them all up at once (from the device and shares alike), Delete asks once
     for all, Share sends them all in one share action. File operations work on

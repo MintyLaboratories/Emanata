@@ -37,6 +37,7 @@ import androidx.appcompat.widget.SearchView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -155,6 +156,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** What [fab] does now; null while it is hidden. */
     private var fabShows: SelectionActions.Fab? = null
+
+    /** The quick view options a long press on the grid/list button fans out. */
+    internal val viewRing = ViewRingOverlay(this)
 
     /** The items selected: selecting swaps the toolbar for [selectionBar] and shows [selectionActions]. */
     internal val selection = Selection()
@@ -449,6 +453,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         })
 
         fab.setOnClickListener { onFabClick() }
+        fab.setOnLongClickListener { openViewRing() }
+        viewRing.onTap = ::onRingTap
+        viewRing.onLongTap = ::onRingLongTap
         setUpSelection()
         placeButton()
         fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, {}, ::folderName)
@@ -525,6 +532,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     }
 
     override fun onStop() {
+        viewRing.close(animate = false)
         adapter.stopped = true
         storageWatcher.stop()
         super.onStop()
@@ -1972,12 +1980,98 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         // Shown in an empty folder too: the button never comes and goes with the list.
         val shows = SelectionActions.fab(selection.size, prefs.listQuickFab, prefs.fabOne, prefs.fabMany, bar)
         fabShows = shows
+        if (shows != SelectionActions.Fab.GRID_LIST) viewRing.close()
+        // Only the grid/list toggle opens the view ring; TalkBack names what its long press does.
+        val ring = shows == SelectionActions.Fab.GRID_LIST
+        fab.isLongClickable = ring
+        if (ring) ViewCompat.replaceAccessibilityAction(fab, AccessibilityActionCompat.ACTION_LONG_CLICK, getString(R.string.view_ring_open), null)
+        else ViewCompat.removeAccessibilityAction(fab, AccessibilityActionCompat.ACTION_LONG_CLICK.id)
         if (shows == null) {
             fab.visibility = View.GONE
             return
         }
         paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
         fab.visibility = View.VISIBLE
+    }
+
+    // ------------------------------------------------------------------ view ring
+
+    /** Opens the view ring around the grid/list button; true when it did. */
+    private fun openViewRing(): Boolean {
+        if (fabShows != SelectionActions.Fab.GRID_LIST || viewRing.isOpen) return false
+        viewRing.open(fab, ringItems())
+        return true
+    }
+
+    /** The ring's buttons for the current tab, each with its current value. */
+    private fun ringItems(): List<ViewRingOverlay.Item> {
+        val tab = tabName()
+        val v = view
+        val columns = columnCount()
+        val sort = prefs.sort(tab)
+        val size = if (!v.grid) TabViewDialogs.densityLabel(this, v.density)
+        else if (v.rows > 0) getString(R.string.view_ring_grid, columns, v.rows)
+        else resources.getQuantityString(R.plurals.view_ring_columns, columns, columns)
+        fun onOff(on: Boolean) = getString(if (on) R.string.view_ring_on else R.string.view_ring_off)
+        return ViewRing.options(tab).map { option ->
+            when (option) {
+                RingOption.LAYOUT -> ViewRingOverlay.Item(
+                    option, if (v.grid) R.drawable.ic_grid_view else R.drawable.ic_view_list,
+                    getString(R.string.view_ring_layout), getString(if (v.grid) R.string.layout_grid else R.string.layout_list)
+                )
+                RingOption.SMALLER -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_zoom_out, getString(R.string.view_ring_smaller), size, ViewRing.smaller(v, columns) != null
+                )
+                RingOption.LARGER -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_zoom_in, getString(R.string.view_ring_larger), size, ViewRing.larger(v, columns) != null
+                )
+                RingOption.DETAIL -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_info, getString(R.string.view_ring_details), TabViewDialogs.detailLabel(this, v.detail)
+                )
+                RingOption.SORT -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_sort, getString(R.string.menu_sort), SortDialog.levelText(this, sort.by),
+                    longLabel = getString(R.string.view_ring_sort_more)
+                )
+                RingOption.FOLDERS_FIRST -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_folder, getString(R.string.sort_folders_first), onOff(sort.foldersFirst)
+                )
+                RingOption.SECTIONS -> ViewRingOverlay.Item(
+                    option, R.drawable.ic_view_agenda, getString(R.string.view_ring_sections), onOff(prefs.groupFavorites)
+                )
+            }
+        }
+    }
+
+    /** Writes what ring button [option] changes, shows it at once, and the ring shows the new values. */
+    private fun onRingTap(option: RingOption) {
+        val tab = tabName()
+        val v = view
+        when (option) {
+            RingOption.LAYOUT -> prefs.setGrid(tab, !v.grid)
+            RingOption.SMALLER -> ViewRing.smaller(v, columnCount())?.let { setView(tab, it) }
+            RingOption.LARGER -> ViewRing.larger(v, columnCount())?.let { setView(tab, it) }
+            RingOption.DETAIL -> prefs.setDetail(tab, ViewRing.nextDetail(v.detail))
+            RingOption.SORT -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(by = it.by.flip())) }
+            RingOption.FOLDERS_FIRST -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(foldersFirst = !it.foldersFirst)) }
+            RingOption.SECTIONS -> prefs.groupFavorites = !prefs.groupFavorites
+        }
+        when (option) {
+            RingOption.SORT, RingOption.FOLDERS_FIRST, RingOption.SECTIONS -> onTabSettingsChanged()
+            else -> showCurrentView()
+        }
+        viewRing.refresh(ringItems())
+    }
+
+    /** Writes a grid size or list density stepped by the ring. */
+    private fun setView(tab: String, v: TabView) {
+        if (v.grid) prefs.setGridSize(tab, v.columns, v.rows) else prefs.setDensity(tab, v.density)
+    }
+
+    /** A long press on the ring's Sort opens the whole Sort popup instead. */
+    private fun onRingLongTap(option: RingOption) {
+        if (option != RingOption.SORT) return
+        viewRing.close()
+        showSortDialog()
     }
 
     /** Gives [button] the icon, name and colors of [look]. */
@@ -3266,6 +3360,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (viewRing.isOpen) {
+            viewRing.close()
+            return
+        }
         if (peek.isShowing) {
             peek.close()
             return

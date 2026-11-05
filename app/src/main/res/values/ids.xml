@@ -33,4 +33,7 @@
     <item name="paste_bubble" type="id" />
     <!-- Tags an activity's window whose system bars Immersive hid. -->
     <item name="immersive_bars" type="id" />
+    <!-- A view ring button's offset from the hub, for its fly-out. -->
+    <item name="view_ring_dx" type="id" />
+    <item name="view_ring_dy" type="id" />
 </resources>

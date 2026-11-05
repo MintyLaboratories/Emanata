@@ -43,7 +43,7 @@ object TabViewDialogs {
         DetailDisplay.DENSE to R.id.detail_dense
     )
 
-    private fun detailLabel(context: Context, detail: DetailDisplay) = context.getString(
+    internal fun detailLabel(context: Context, detail: DetailDisplay) = context.getString(
         when (detail) {
             DetailDisplay.HIDDEN -> R.string.detail_hidden
             DetailDisplay.COMFORTABLE -> R.string.detail_comfortable
@@ -85,7 +85,7 @@ object TabViewDialogs {
         return dialog
     }
 
-    private fun densityLabel(context: Context, density: ListDensity) = context.getString(
+    internal fun densityLabel(context: Context, density: ListDensity) = context.getString(
         when (density) {
             ListDensity.TINY -> R.string.density_tiny
             ListDensity.COMPACT -> R.string.density_compact

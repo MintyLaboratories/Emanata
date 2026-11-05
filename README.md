@@ -532,8 +532,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   re-encoded from JPEG to JPEG XL or WebP: page counts within one and
   perceptual hashes (dHash) of the cover and pages a quarter, half and three
   quarters in, shown side by side with format, size and page dimensions,
-  never preselected; pages are read once per book and kept by Book ID; the
-  search shows its progress and can be stopped), **largest files** list,
+  never preselected; PDFs and books under 8 pages must match more closely;
+  pages are read once per book and kept by Book ID; the search shows its
+  progress and can be stopped; it reads up to 20 new books unasked, more on
+  **Compare**, and none unasked while battery saver pauses scans; fewer at
+  once as the device warms up or saves power), **largest files** list,
   reading **statistics** (books read, pages read, time reading, days read,
   streaks; a book is a PDF, a CB* archive, or a folder of loose images, which
   counts once when all its images are read or it is marked read; books read

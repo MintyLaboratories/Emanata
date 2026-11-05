@@ -109,6 +109,9 @@ internal class TextDetector(
         const val PARAM_BYTES = 23_386L
         const val BIN_BYTES = 2_357_216L
 
+        /** Beside the copy: when the app that made it was installed, so an update copies its model anew. */
+        private const val STAMP = "installed"
+
         private val closer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "text-detector-idle").apply { isDaemon = true } }
 
         @Volatile
@@ -120,16 +123,19 @@ internal class TextDetector(
         }
 
         /**
-         * The model's files, copied once from the assets to the app's no-backup files (ncnn reads
-         * files by path); null when they cannot be.
+         * The model's files, copied from the assets to the app's no-backup files (ncnn reads files
+         * by path) once per install or update of the app; null when they cannot be.
          */
         fun install(context: Context): ModelFiles? {
             val dir = File(context.noBackupFilesDir, DIR)
             val param = File(dir, PARAM)
             val bin = File(dir, BIN)
+            val stamp = File(dir, STAMP)
             try {
+                val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString()
+                val current = runCatching { stamp.readText() }.getOrNull() == installed
                 for ((file, bytes) in listOf(param to PARAM_BYTES, bin to BIN_BYTES)) {
-                    if (file.length() == bytes) continue
+                    if (current && file.length() == bytes) continue
                     dir.mkdirs()
                     val part = File(dir, file.name + ".part")
                     context.assets.open("$DIR/${file.name}").use { input -> part.outputStream().use { input.copyTo(it) } }
@@ -139,6 +145,7 @@ internal class TextDetector(
                     }
                     Files.move(part.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
                 }
+                if (!current) stamp.writeText(installed)
             } catch (e: Exception) {
                 Log.w(TAG, "cannot install the text detector: ${e.message}")
                 return null

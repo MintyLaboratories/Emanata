@@ -121,5 +121,12 @@ class TextDetectorTest {
         // A copy cut short is replaced.
         files.param.writeText("7767517\n")
         assertEquals(TextDetector.PARAM_BYTES, TextDetector.install(context)!!.param.length())
+        // So is one an earlier install of the app made, though the same size.
+        File(files.bin.parentFile, "installed").writeText("1")
+        TextDetector.install(context)
+        assertTrue(files.bin.lastModified() != 1_000_000L)
+        files.bin.setLastModified(2_000_000L)
+        TextDetector.install(context)
+        assertEquals(2_000_000L, files.bin.lastModified())
     }
 }

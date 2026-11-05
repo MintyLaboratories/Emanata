@@ -54,18 +54,18 @@ object Thumbs {
         return (max / 8L).toInt().coerceIn(8 * 1024 * 1024, 96 * 1024 * 1024)
     }
 
-    /** Each wraparound's front half, by [key]; [NO_FRONT] when its barcode tells nothing. */
+    /** Each wraparound's front half, by [imageKey]; [NO_FRONT] when its barcode tells nothing. */
     private val fronts = LruCache<String, Int>(1024)
     private const val NO_FRONT = -1
 
-    /** The front half of wraparound cover [src] of [entry], found once per cover file. */
-    private fun frontOf(entry: BookEntry, src: Bitmap): Wraparound.Half? {
-        val k = key(entry)
+    /** The front half of wraparound cover [src] of [entry], found once per cover image ([imageKey]). */
+    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap): Wraparound.Half? {
+        val k = imageKey(context, entry)
         val known = fronts.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { fronts.put(k, it) }
         return Wraparound.Half.entries.getOrNull(known)
     }
 
-    /** Where the Smart crop anchor looks on each cover, by [key] and the part shown; kept across sessions in [focusStore]. */
+    /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
     private val focuses = LruCache<String, CoverFocus>(1024)
     private const val FOCUS_FILE = "cover-focus.txt"
 
@@ -87,7 +87,7 @@ object Thumbs {
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val k = "${key(entry)}|$part"
+        val k = "${imageKey(context, entry)}|$part"
         focuses.get(k)?.let { return it }
         val store = focusStore(context)
         store.get(k)?.let { focuses.put(k, it); return it }
@@ -214,7 +214,7 @@ object Thumbs {
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio, rightToLeft,
-                front = { src -> frontOf(entry, src).also { if (it == null) sided = true } },
+                front = { src -> frontOf(context, entry, src).also { if (it == null) sided = true } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
                 focus = { src, region -> focusOf(context, entry, src, region, find = made.full) }
             )
@@ -312,10 +312,19 @@ object Thumbs {
         rightToLeft: Boolean = entry.direction == ReadingDirection.RTL
     ): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        val hidden = hiddenTag(entry, Library(context).hiddenAll())
-        val names = idOf(entry)?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
-        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}$hidden$names" + if (page >= 0) "|p$page" else ""
+        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
     }
+
+    /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */
+    private fun imageKey(context: Context, entry: BookEntry): String = key(entry) + imageTag(context, entry)
+
+    /**
+     * What picks the cover image of [entry] besides its file: the hidden pages that move it
+     * ([hiddenTag]) and the book's own file name charset, which may reorder its pages
+     * ([NameCharset.overrides]). Empty when neither does.
+     */
+    private fun imageTag(context: Context, entry: BookEntry): String =
+        hiddenTag(entry, Library(context).hiddenAll()) + idOf(entry)?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
 
     /** The book index of the cover of a book hiding [hidden]: its first page not hidden. */
     fun coverPage(hidden: Set<Int>): Int {

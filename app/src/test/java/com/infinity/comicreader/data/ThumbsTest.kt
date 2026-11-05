@@ -361,6 +361,26 @@ class ThumbsTest {
         assertEquals(Color.GREEN, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
     }
 
+    @Test
+    fun aCoverPageMovedByHiddenPagesOrCharsetIsLookedAtAgain() {
+        val calls = textAt(0.85, 0.92)
+        val book = rgbBook("refocus.cbz")
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
+        Thumbs.load(context, book, "UTF-8", 80, 80, smart)!!
+        assertEquals(1, calls[0])
+        Library(context).setHiddenPages(ref(book), setOf(0), 3)
+        Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
+        assertEquals(2, calls[0])
+        try {
+            Library(context).setNameCharset(ref(book), "windows-1251")
+            Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
+            assertEquals(3, calls[0])
+        } finally {
+            Library(context).setNameCharset(ref(book), null)
+        }
+    }
+
     /** [book] as the library keeps it, its ID found now. */
     private fun ref(book: BookEntry) = BookRef(bookId(book.file), book.path)
 

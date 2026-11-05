@@ -926,7 +926,7 @@
     <string name="ai_refused_does_not_run">It fails to run on an RGB picture</string>
     <string name="ai_refused_shape">Its output isn\'t the picture enlarged a whole number of times (1×, 2×, 3×…)</string>
     <string name="ai_refused_reach">Its output depends on parts of the picture too far away to run in tiles without visible seams</string>
-    <string name="ai_refused_memory">It needs about %1$s of memory; a model may take %2$s on this device</string>
+    <string name="ai_refused_memory">Running it here would take about %1$s of memory, more than the %2$s a model may take on this device</string>
     <string name="ai_refused_memory_unknown">It needs more memory than a model may take on this device</string>
     <string name="ai_refused_unlike">Its output doesn\'t resemble its input: it may expect pixels scaled differently, or the .param and .bin don\'t belong together</string>
     <string name="ai_refused_too_slow">It would take about %1$d s per page on this device, longer than a page may take (%2$d s)</string>

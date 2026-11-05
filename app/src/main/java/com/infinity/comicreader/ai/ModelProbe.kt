@@ -12,12 +12,13 @@ import kotlin.random.Random
  * Measures a model's [Geometry] by running it on small synthetic tiles ([measure]), and checks
  * a model in tiles of one size ([verify]):
  * - scale and trim from the output sizes of two input sizes;
- * - context by cutting: the model runs on a [probe]-sized tile of busy content, and on its
- *   top-left three quarters alone, as a tile of a page would see it; the output pixels that
- *   change by more than [TOLERANCE] codes lie within the context of the cut. A context
- *   reaching the quarter beyond the cut is measured again on a tile twice the size, up to
- *   [MAX_PROBE]; one reaching past that makes the model [Unfit]: its output depends on content
- *   too far away for tiles to share (as with layers that pool the whole tile).
+ * - context by cutting: the model runs on a strip of busy content as long as the probe, a row
+ *   and a column, and on its first three quarters alone, as a tile of a page would see it;
+ *   the output pixels that change by more than [TOLERANCE] codes lie within the context of
+ *   the cut. A context reaching the quarter beyond the cut is measured again on a strip twice
+ *   as long, up to [MAX_PROBE]; one reaching past that makes the model [Unfit]: its output
+ *   depends on content too far away for tiles to share (as with layers that pool the whole
+ *   tile).
  * Works for models that pad (output exactly scale times the input) and for ones that do not
  * (output smaller by a fixed trim; their cut changes nothing). Measure on the CPU, in fp32:
  * fp16 rounding differs with a tile's shape and reads as reach.
@@ -26,7 +27,8 @@ import kotlin.random.Random
  * freed before it so each run counts alone. A run whose input would need more than its budget
  * at the bytes per input pixel of the largest run so far is not started: the model is [Unfit]
  * for [ModelRefusal.MEMORY]. Heavy upscalers work at output resolution, so their memory grows
- * with the square of the probe (a 4x ESRGAN-class model needs gigabytes for a 256 probe).
+ * with the input's area (a 4x ESRGAN-class model needs gigabytes for a 256 x 256 input, a
+ * quarter of that for the longest strip).
  */
 object ModelProbe {
     /** Output change, in 8-bit codes, that counts; smaller ones do not show as seams. */
@@ -48,6 +50,9 @@ object ModelProbe {
     /** The first probe tile, and the largest. */
     const val FIRST_PROBE = 64
     const val MAX_PROBE = 256
+
+    /** The short side of a probe's strips ([cut]). */
+    const val STRIP = 64
 
     private const val SCALE_LIMIT = 8
 
@@ -96,7 +101,7 @@ object ModelProbe {
         val (scale, trim) = scaleAndTrim(m)
         var size = FIRST_PROBE
         while (true) {
-            val reach = Pattern.entries.maxOf { reach(cut(m, size, scale, trim, it)) }
+            val reach = Pattern.entries.maxOf { p -> listOf(true, false).maxOf { across -> reach(cut(m, size, scale, trim, p, across)) } }
             if (reach < size / 4) return Probed(Geometry(scale, trim, reach + SAFETY), m.perPixel)
             if (size >= MAX_PROBE) throw Unfit(ModelRefusal.REACH, "Output changes ${size / 4} or more pixels away from a cut: tiles would show")
             size *= 2
@@ -175,24 +180,30 @@ object ModelProbe {
 
     /**
      * The largest output change, in codes, at each distance (in input pixels) from the cut,
-     * when [model] sees only the top-left three quarters of a [size] tile of [pattern]: index 0
-     * is the row and column next to the cut.
+     * when [model] sees only the first three quarters of a [size] x [STRIP] strip of [pattern]
+     * ([across]: a row, cut on its right; else a column, cut at its bottom): index 0 is the
+     * column or row next to the cut. The strip's other edges are the same in both runs, so
+     * only the cut shows; a strip costs what a tile of a quarter the area does.
      */
-    internal fun cut(model: TileModel, size: Int, scale: Int, trim: Int, pattern: Pattern): IntArray {
+    internal fun cut(model: TileModel, size: Int, scale: Int, trim: Int, pattern: Pattern, across: Boolean = true): IntArray {
         val part = size - size / 4
-        val src = content(size, pattern)
+        val thin = min(size, STRIP)
+        val w = if (across) size else thin
+        val h = if (across) thin else size
+        val src = content(w, h, pattern)
         try {
-            val whole = output(model, src, size, scale, trim)
-            val cut = output(model, src, part, scale, trim)
-            val wholeW = size * scale - 2 * trim
-            val cutW = part * scale - 2 * trim
+            val cw = if (across) part else w
+            val ch = if (across) h else part
+            val whole = output(model, src, w, h, scale, trim)
+            val cut = output(model, src, cw, ch, scale, trim)
+            val wholeW = w * scale - 2 * trim
+            val cutW = cw * scale - 2 * trim
+            val cutH = ch * scale - 2 * trim
             val worst = IntArray(part)
-            for (y in 0 until cutW) for (x in 0 until cutW) {
+            for (y in 0 until cutH) for (x in 0 until cutW) {
                 val d = differ(whole[y * wholeW + x], cut[y * cutW + x])
                 if (d == 0) continue
-                val ix = (x + trim) / scale
-                val iy = (y + trim) / scale
-                val from = min(part - 1 - ix, part - 1 - iy)
+                val from = part - 1 - (if (across) x + trim else y + trim) / scale
                 worst[from] = max(worst[from], d)
             }
             return worst
@@ -229,11 +240,12 @@ object ModelProbe {
         }
     }
 
-    /** All of [model]'s output for the top-left [side] x [side] of [src], as pixels. */
-    private fun output(model: TileModel, src: Bitmap, side: Int, scale: Int, trim: Int): IntArray {
-        val out = side * scale - 2 * trim
-        if (out <= 0) throw Unfit(ModelRefusal.SHAPE, "No output for $side at scale $scale, trim $trim")
-        return run(model, src, Box(0, 0, side, side), Box(0, 0, out, out))
+    /** All of [model]'s output for the top-left [w] x [h] of [src], as pixels. */
+    private fun output(model: TileModel, src: Bitmap, w: Int, h: Int, scale: Int, trim: Int): IntArray {
+        val ow = w * scale - 2 * trim
+        val oh = h * scale - 2 * trim
+        if (ow <= 0 || oh <= 0) throw Unfit(ModelRefusal.SHAPE, "No output for ${w}x$h at scale $scale, trim $trim")
+        return run(model, src, Box(0, 0, w, h), Box(0, 0, ow, oh))
     }
 
     /** Output window [crop] of [model]'s run on [input] of [src], as pixels. */

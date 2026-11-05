@@ -154,9 +154,43 @@ class ModelProbeTest {
 
     @Test
     fun theCutChangesOnlyPixelsWithinReach() {
-        val worst = ModelProbe.cut(FakeModel(scale = 2, reach = 5), 64, 2, 0, ModelProbe.Pattern.NOISE)
-        assertTrue(worst.take(5).any { it > ModelProbe.TOLERANCE })
-        assertTrue(worst.drop(5).all { it == 0 })
+        for (across in listOf(true, false)) {
+            val worst = ModelProbe.cut(FakeModel(scale = 2, reach = 5), 128, 2, 0, ModelProbe.Pattern.NOISE, across)
+            assertTrue(worst.take(5).any { it > ModelProbe.TOLERANCE })
+            assertTrue(worst.drop(5).all { it == 0 })
+        }
+    }
+
+    @Test
+    fun probesRunOnStripsNoWiderThanATile() {
+        val model = FakeModel(scale = 1, reach = 40)
+        ModelProbe.measure(model)
+        assertTrue(model.inputs.any { it.width == ModelProbe.MAX_PROBE } && model.inputs.any { it.height == ModelProbe.MAX_PROBE })
+        assertTrue(model.inputs.all { it.width.toLong() * it.height <= ModelProbe.MAX_PROBE.toLong() * ModelProbe.STRIP })
+    }
+
+    @Test
+    fun aReachAlongOneAxisOnlyIsMeasured() {
+        // Blue mixed with the pixel 30 below only: a cut on the right alone would miss it.
+        val vertical = object : TileModel by FakeModel(scale = 1, reach = 0) {
+            override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+                if (dst == null) return Dims(input.width, input.height)
+                val c = crop!!
+                val tile = FakeModel.read(src, input)
+                val row = IntArray(c.width)
+                for (y in 0 until c.height) {
+                    for (x in 0 until c.width) {
+                        val px = c.x + x
+                        val py = c.y + y
+                        val far = if (py + 30 < input.height) tile[(py + 30) * input.width + px] else 0
+                        row[x] = (0xFF shl 24) or (((tile[py * input.width + px] and 0xFF) + (far and 0xFF)) / 2)
+                    }
+                    dst.setPixels(row, 0, c.width, dx, dy + y, c.width, 1)
+                }
+                return Dims(input.width, input.height)
+            }
+        }
+        assertEquals(30 + ModelProbe.SAFETY, ModelProbe.measure(vertical).context)
     }
 
     @Test
@@ -207,12 +241,12 @@ class ModelProbeTest {
 
     @Test
     fun aProbeThatWouldPassItsBudgetIsNotRun() {
-        // Reach 40 is measured on a 256 probe, 655 MB at 10 KB per input pixel; 128 needs 164 MB.
+        // Reach 40 is measured on 256 x 64 strips, 164 MB at 10 KB per input pixel; 128 x 64 ones need 82 MB.
         val model = FakeModel(scale = 1, reach = 40, bytesPerPixel = 10_000)
         val e = assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.probe(model, budgetBytes = 100L shl 20) }
         assertEquals(ModelRefusal.MEMORY, e.reason)
-        assertEquals(128L * 128 * 10_000, e.bytes)
-        assertTrue("ran past the first probe", model.inputs.none { it.width > ModelProbe.FIRST_PROBE })
+        assertEquals(256L * ModelProbe.STRIP * 10_000, e.bytes)
+        assertTrue("ran past the 128 probe", model.inputs.none { maxOf(it.width, it.height) > 128 })
         val roomy = ModelProbe.probe(FakeModel(scale = 1, reach = 40, bytesPerPixel = 10_000), budgetBytes = 1L shl 30)
         assertEquals(Geometry(1, 0, 40 + ModelProbe.SAFETY), roomy.geometry)
     }

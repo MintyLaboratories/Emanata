@@ -828,15 +828,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   starting at multiples of 8, so GPU kernels working on pixel blocks round each
   pixel alike in every tile. Each model is first opened on the CPU, in fp32, and
   measured (`ModelProbe`): its scale and edge trim from two input sizes, and its
-  context by running a busy tile whole and cut and finding how far from the cut
-  the output changes by more than 2 codes; tiles keep only pixels that saw all
-  their context. Every probe run counts the working memory the model holds
+  context by running busy strips (a row and a column, 64 pixels thick) whole and
+  cut and finding how far from the cut the output changes by more than 2 codes;
+  tiles keep only pixels that saw all their context. Every probe run counts the
+  working memory the model holds
   (feature maps and scratch, on the GPU and the CPU, through counting
   allocators in `ai_ncnn.cpp`); a run that would need more than the model's
   share of memory (`ModelMemory`: an eighth of the device's memory, at most
   half of what is free, weights included) at the bytes per pixel measured so
   far is not started and the model is refused: heavy 4× upscalers work at
-  output resolution and would need gigabytes for the largest probe. Tiles are
+  output resolution, and strips keep the largest probe near a tile's cost. Tiles are
   then sized by the larger of the estimate and the measured bytes per pixel,
   and a GPU tile size whose check held more than its budget is passed over.
   A model whose output still changes 64 pixels from the cut, or

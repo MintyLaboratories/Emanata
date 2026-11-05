@@ -7,7 +7,9 @@ import com.infinity.comicreader.data.TabView
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** A quick view option on the ring a long press on the grid/list button opens. */
 internal enum class RingOption {
@@ -109,4 +111,138 @@ internal object RingGeometry {
         val k = max(abs(ux), abs(uy))
         return (ux * reach + ux / k * width / 2) to (uy * reach + uy / k * height / 2)
     }
+
+    /** An axis-aligned rectangle; y grows downward. */
+    data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+        val width get() = right - left
+        val height get() = bottom - top
+
+        /** The area this shares with [other] grown by [pad] on every side. */
+        fun overlap(other: Box, pad: Float = 0f): Float {
+            val w = min(right, other.right + pad) - max(left, other.left - pad)
+            val h = min(bottom, other.bottom + pad) - max(top, other.top - pad)
+            return if (w > 0 && h > 0) w * h else 0f
+        }
+
+        /** How deep a round button of [radius] at [x], [y], grown by [pad], reaches into this; 0 when clear. */
+        fun overlap(x: Float, y: Float, radius: Float, pad: Float = 0f): Float {
+            val dx = x - x.coerceIn(left, right)
+            val dy = y - y.coerceIn(top, bottom)
+            val d = sqrt(dx * dx + dy * dy)
+            val inside = x in left..right && y in top..bottom
+            return if (inside) radius + pad + min(min(x - left, right - x), min(y - top, bottom - y)) else max(0f, radius + pad - d)
+        }
+
+        fun within(b: Box) = left >= b.left - EPS && top >= b.top - EPS && right <= b.right + EPS && bottom <= b.bottom + EPS
+
+        /** Moved, not resized, to lie within [b] as far as it fits, its left and top first. */
+        fun movedInto(b: Box): Box {
+            val x = left.coerceAtMost(b.right - width).coerceAtLeast(b.left)
+            val y = top.coerceAtMost(b.bottom - height).coerceAtLeast(b.top)
+            return Box(x, y, x + width, y + height)
+        }
+
+        companion object {
+            fun around(x: Float, y: Float, width: Float, height: Float) = Box(x - width / 2, y - height / 2, x + width / 2, y + height / 2)
+        }
+    }
+
+    /** Labels laid out on a ring of [radius]: their [boxes], how much they [overlap] the rest, and how many sit [aside] rather than outward. */
+    class Placement(val radius: Float, val boxes: List<Box>, val overlap: Float, val aside: Int)
+
+    /**
+     * The largest radius at which a [width] x [height] box, centered ([ox], [oy]) off the spot
+     * at [angle] on the ring, stays within [bounds] around a hub at [cx], [cy]. Only the sides
+     * the radius moves toward count.
+     */
+    fun room(angle: Double, cx: Float, cy: Float, bounds: Box, ox: Float, oy: Float, width: Float, height: Float): Float {
+        val a = Math.toRadians(angle)
+        val ux = cos(a)
+        val uy = -sin(a)
+        var r = Double.POSITIVE_INFINITY
+        if (ux < -AXIS) r = min(r, (cx + ox - width / 2 - bounds.left) / -ux)
+        if (ux > AXIS) r = min(r, (bounds.right - cx - ox - width / 2) / ux)
+        if (uy < -AXIS) r = min(r, (cy + oy - height / 2 - bounds.top) / -uy)
+        if (uy > AXIS) r = min(r, (bounds.bottom - cy - oy - height / 2) / uy)
+        return r.toFloat()
+    }
+
+    /**
+     * The ring for [button]-wide buttons at [angles] around a hub at [cx], [cy], their labels
+     * ([labels], width to height) [reach] off each button's center: the largest radius up to
+     * [want] that keeps the buttons within [bounds] and, down to buttons [spacing] apart center
+     * to center, the labels outward, clear of each other and of every button ([pad] apart).
+     * Where no radius does, the one whose labels overlap least, the fewest of them aside
+     * ([place]).
+     */
+    fun arrange(
+        angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, want: Float,
+        spacing: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>
+    ): Placement {
+        val buttons = angles.minOfOrNull { room(it, cx, cy, bounds, 0f, 0f, button, button) } ?: want
+        val most = min(want, max(buttons, button))
+        val least = min(max(radius(angles.size, spacing, 0f), spacing), most)
+        var best = place(angles, cx, cy, bounds, button, most, reach, pad, labels)
+        if (best.overlap == 0f && best.aside == 0) return best
+        for (s in 1..STEPS) {
+            val p = place(angles, cx, cy, bounds, button, most - (most - least) * s / STEPS, reach, pad, labels)
+            if (p.overlap < best.overlap || (p.overlap == best.overlap && p.aside < best.aside)) best = p
+            if (best.overlap == 0f && best.aside == 0) break
+        }
+        return best
+    }
+
+    /**
+     * Where each label goes beside its button on a ring of [radius] (as in [arrange]), in
+     * order: outward when that lies within [bounds] clear of the hub, the buttons and the
+     * labels before it ([pad] apart; its own button only untouched); else the nearest side
+     * that does; else, moved within [bounds], the side where it overlaps least.
+     */
+    fun place(
+        angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, radius: Float,
+        reach: Float, pad: Float, labels: List<Pair<Float, Float>>
+    ): Placement {
+        val centers = angles.map { spot(it, radius).let { (dx, dy) -> (cx + dx) to (cy + dy) } }
+        val round = listOf(cx to cy) + centers
+        val taken = ArrayList<Box>()
+        val boxes = ArrayList<Box>()
+        var overlap = 0f
+        var aside = 0
+        for ((i, angle) in angles.withIndex()) {
+            val (w, h) = labels[i]
+            val (bx, by) = centers[i]
+            var pick: Box? = null
+            var least = Float.MAX_VALUE
+            var out = true
+            for ((k, side) in sides(angle).withIndex()) {
+                val (ox, oy) = labelCenter(side, reach, w, h)
+                val box = Box.around(bx + ox, by + oy, w, h).let { if (it.within(bounds)) it else it.movedInto(bounds) }
+                val o = taken.sumOf { box.overlap(it, pad).toDouble() }.toFloat() +
+                    round.withIndex().sumOf { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad).toDouble() }.toFloat()
+                if (o < least) {
+                    pick = box
+                    least = o
+                    out = k == 0
+                }
+                if (o == 0f) break
+            }
+            boxes += pick!!
+            taken += pick
+            overlap += least
+            if (!out) aside++
+        }
+        return Placement(radius, boxes, overlap, aside)
+    }
+
+    /** The sides a label of a button at [angle] may take: outward first, then the nearest ones, inward last. */
+    fun sides(angle: Double): List<Double> {
+        fun norm(a: Double) = ((a % 360) + 360) % 360
+        fun apart(a: Double) = abs(norm(a - angle + 180) - 180)
+        val out = norm(angle)
+        return listOf(out) + listOf(0.0, 90.0, 180.0, 270.0, norm(angle + 180)).filter { apart(it) > AXIS }.distinct().sortedBy { apart(it) }
+    }
+
+    private const val EPS = 0.01f
+    private const val AXIS = 1e-6
+    private const val STEPS = 32
 }

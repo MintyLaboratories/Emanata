@@ -36,6 +36,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
+import kotlin.math.hypot
 
 /**
  * A long press on the grid/list button fans out the view ring: quick view options for the
@@ -136,6 +137,68 @@ class ListActivityViewRingTest {
         assertEquals("Layout\nGrid", list.labelOf(RingOption.LAYOUT))
         assertEquals("Folders first\nOn", list.labelOf(RingOption.FOLDERS_FIRST))
         assertNull(list.viewRing.button(RingOption.SECTIONS))
+    }
+
+    private fun box(v: View): RingGeometry.Box {
+        val at = IntArray(2).also { v.getLocationInWindow(it) }
+        return RingGeometry.Box(at[0].toFloat(), at[1].toFloat(), (at[0] + v.width).toFloat(), (at[1] + v.height).toFloat())
+    }
+
+    /** Every label shows whole on screen, clear of every round button, the hub and each other. */
+    private fun ListActivity.assertLabelsClear(tab: String) {
+        val screen = box(window.decorView)
+        val round = (ViewRing.options(tab).map { viewRing.button(it)!! } + viewRing.hub()!!).map { b ->
+            center(b).let { (x, y) -> Triple(x, y, b.width / 2f) }
+        }
+        val labels = ViewRing.options(tab).map { it to box(viewRing.label(it)!!) }
+        for ((o, l) in labels) {
+            assertTrue("$o $l on $screen", l.within(screen))
+            for ((x, y, r) in round) assertEquals("$o $l on $x, $y", 0f, l.overlap(x, y, r), 0f)
+            for ((p, other) in labels) if (p != o) assertEquals("$o on $p", 0f, l.overlap(other), 0f)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h800dp")
+    fun labelsStayClearInANarrowWindow() {
+        val list = launch()
+        list.openRing()
+        val full = RingGeometry.radius(ViewRing.options(Prefs.TAB_BROWSE).size, 112f, 136f)
+        val (fx, fy) = center(list.fab())
+        val (lx, ly) = center(list.viewRing.button(RingOption.FOLDERS_FIRST)!!)
+        // The ring shrank to fit its labels.
+        assertTrue(hypot(fx - lx, fy - ly) < full * list.resources.displayMetrics.density)
+        list.assertLabelsClear(Prefs.TAB_BROWSE)
+        // Values that change width keep clear too.
+        list.tap(RingOption.LAYOUT)
+        list.tap(RingOption.SORT)
+        list.assertLabelsClear(Prefs.TAB_BROWSE)
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h800dp")
+    fun leftHandedLabelsStayClearInANarrowWindow() {
+        prefs.leftHanded = true
+        val list = launch()
+        settle()
+        list.openRing()
+        val (fx, _) = center(list.fab())
+        for (o in ViewRing.options(Prefs.TAB_BROWSE)) assertTrue("$o", center(list.viewRing.button(o)!!).first >= fx - 1)
+        list.assertLabelsClear(Prefs.TAB_BROWSE)
+    }
+
+    @Test
+    fun aRoomyWindowKeepsEveryLabelOutward() {
+        val list = launch()
+        list.openRing()
+        list.assertLabelsClear(Prefs.TAB_BROWSE)
+        val (fx, fy) = center(list.fab())
+        for (o in ViewRing.options(Prefs.TAB_BROWSE)) {
+            val (bx, by) = center(list.viewRing.button(o)!!)
+            val (lx, ly) = center(list.viewRing.label(o)!!)
+            // Outward: farther from the hub than its button.
+            assertTrue("$o", hypot(lx - fx, ly - fy) > hypot(bx - fx, by - fy))
+        }
     }
 
     @Test

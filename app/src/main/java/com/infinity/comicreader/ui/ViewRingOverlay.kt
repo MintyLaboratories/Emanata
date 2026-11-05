@@ -18,7 +18,9 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import com.google.android.material.R as M
 import com.google.android.material.color.MaterialColors
@@ -57,6 +59,10 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The hub's center in the overlay. */
     private var cx = 0f
     private var cy = 0f
+
+    /** The ring's radius, and where buttons and labels may go in the overlay. */
+    private var radius = 0f
+    private var bounds = RingGeometry.Box(0f, 0f, 0f, 0f)
     private val buttons = LinkedHashMap<RingOption, Pair<FloatingActionButton, TextView>>()
 
     /** The views hidden from accessibility while the ring shows, and how they were. */
@@ -102,6 +108,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val origin = IntArray(2).also { host.getLocationInWindow(it) }
         cx = at[0] - origin[0] + fab.width / 2f
         cy = at[1] - origin[1] + fab.height / 2f
+        bounds = bounds(host, origin)
         hub = (fab as? FloatingActionButton).let { main ->
             FloatingActionButton(activity).apply {
                 setImageResource(R.drawable.ic_close)
@@ -112,7 +119,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             }
         }.also { place(it, cx - fab.width / 2f, cy - fab.height / 2f, fab.width, fab.height) }
 
-        lay(items, host.width, host.height)
+        lay(items)
         // Keys go to the ring's first button, never to the list beneath.
         if (!root.isInTouchMode) buttons.values.firstOrNull()?.first?.requestFocus()
         animateIn()
@@ -128,16 +135,14 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             }
             buttons.clear()
             this.items = items
-            lay(items, root.width, root.height)
+            lay(items)
             return
         }
         this.items = items
-        val angles = RingGeometry.angles(items.size, left = cx > root.width / 2f)
-        for ((i, item) in items.withIndex()) {
-            val (button, label) = buttons[item.option] ?: continue
-            bind(button, label, item)
-            placeLabel(label, button, angles[i], root.width, root.height)
-        }
+        for (item in items) buttons[item.option]?.let { (button, label) -> bind(button, label, item) }
+        // The buttons stay; a label whose text grew may take another side.
+        val placed = RingGeometry.place(angles(), cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), sizes())
+        for ((i, pair) in buttons.values.withIndex()) placeLabel(pair.second, placed.boxes[i])
     }
 
     /** Closes the ring, at once or [animate]d back into the hub. */
@@ -176,24 +181,48 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
     private fun View.tag(key: Int): Float = (getTag(key) as? Float) ?: 0f
 
-    /** Lays [items] out around the hub's center in a [width] x [height] overlay. */
-    private fun lay(items: List<Item>, width: Int, height: Int) {
+    /** The overlay's room for the ring: inside the system bars and display cutout, [MARGIN_DP] in; [origin] is [host]'s place in the window. */
+    private fun bounds(host: View, origin: IntArray): RingGeometry.Box {
+        val m = MARGIN_DP * density
+        val bars = ViewCompat.getRootWindowInsets(host)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()) ?: Insets.NONE
+        val window = host.rootView
+        val left = maxOf(0, bars.left - origin[0])
+        val top = maxOf(0, bars.top - origin[1])
+        val right = minOf(host.width, window.width - bars.right - origin[0])
+        val bottom = minOf(host.height, window.height - bars.bottom - origin[1])
+        return RingGeometry.Box(left + m, top + m, right - m, bottom - m)
+    }
+
+    private fun buttonSize() = (BUTTON_DP * density).roundToInt()
+
+    /** From a button's center to its label's near side. */
+    private fun reach() = buttonSize() / 2f + LABEL_GAP_DP * density
+
+    private fun pad() = LABEL_PAD_DP * density
+
+    /** The buttons' angles, toward the overlay's inside from the hub. */
+    private fun angles() = RingGeometry.angles(buttons.size, left = cx > (bounds.left + bounds.right) / 2)
+
+    /** Each label's measured width and height, in the ring's order. */
+    private fun sizes(): List<Pair<Float, Float>> = buttons.values.map { (_, label) ->
+        val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        label.measure(spec, spec)
+        label.measuredWidth.toFloat() to label.measuredHeight.toFloat()
+    }
+
+    /**
+     * Lays [items] out around the hub: as wide as the spacing asks, but small enough that the
+     * buttons and their labels stay within [bounds], labels clear of every button and of each
+     * other ([RingGeometry.arrange]).
+     */
+    private fun lay(items: List<Item>) {
         val root = root ?: return
-        val size = (BUTTON_DP * density).roundToInt()
-        val left = cx > width / 2f
-        val angles = RingGeometry.angles(items.size, left)
-        val margin = MARGIN_DP * density
-        // As wide as the spacing asks, but within the room above and beside the hub.
-        val room = minOf(if (left) cx else width - cx, cy) - size / 2f - margin
-        val radius = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density).coerceAtMost(room.coerceAtLeast(size.toFloat()))
-        for ((i, item) in items.withIndex()) {
-            val (dx, dy) = RingGeometry.spot(angles[i], radius)
+        val size = buttonSize()
+        for (item in items) {
             val button = FloatingActionButton(activity).apply {
                 setOnClickListener { if (isOpen) onTap(item.option) }
-                setTag(TAG_DX, dx)
-                setTag(TAG_DY, dy)
             }
-            place(button, cx + dx - size / 2f, cy + dy - size / 2f, size, size)
             val label = TextView(activity).apply {
                 maxWidth = (LABEL_MAX_DP * density).roundToInt()
                 maxLines = 2
@@ -209,10 +238,21 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setOnClickListener { if (isOpen) button.performClick() }
             }
-            root.addView(label, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             buttons[item.option] = button to label
             bind(button, label, item)
-            placeLabel(label, button, angles[i], width, height)
+        }
+        val angles = angles()
+        val want = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density)
+        val spacing = size + LABEL_GAP_DP * density
+        val placed = RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), sizes())
+        radius = placed.radius
+        for ((i, pair) in buttons.values.withIndex()) {
+            val (button, label) = pair
+            val (dx, dy) = RingGeometry.spot(angles[i], radius)
+            button.setTag(TAG_DX, dx)
+            button.setTag(TAG_DY, dy)
+            place(button, cx + dx - size / 2f, cy + dy - size / 2f, size, size)
+            placeLabel(label, placed.boxes[i])
         }
     }
 
@@ -249,22 +289,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         }
     }
 
-    /** Puts [label] outward of [button] at [angle], kept within the [width] x [height] overlay. */
-    private fun placeLabel(label: TextView, button: View, angle: Double, width: Int, height: Int) {
-        val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        label.measure(spec, spec)
-        val w = label.measuredWidth
-        val h = label.measuredHeight
-        val lp = button.layoutParams as FrameLayout.LayoutParams
-        val bx = lp.leftMargin + lp.width / 2f
-        val by = lp.topMargin + lp.height / 2f
-        val reach = lp.width / 2f + LABEL_GAP_DP * density
-        val (dx, dy) = RingGeometry.labelCenter(angle, reach, w.toFloat(), h.toFloat())
-        val margin = MARGIN_DP * density
-        val x = (bx + dx - w / 2f).coerceIn(margin, (width - w - margin).coerceAtLeast(margin))
-        val y = (by + dy - h / 2f).coerceIn(margin, (height - h - margin).coerceAtLeast(margin))
-        place(label, x, y, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-    }
+    /** Puts [label] at [box]'s left top. */
+    private fun placeLabel(label: TextView, box: RingGeometry.Box) =
+        place(label, box.left, box.top, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
     private fun place(view: View, x: Float, y: Float, width: Int, height: Int) {
         val lp = FrameLayout.LayoutParams(width, height).apply {
@@ -316,6 +343,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         const val LABEL_GAP_DP = 8f
         const val LABEL_MAX_DP = 200f
         const val MARGIN_DP = 8f
+        const val LABEL_PAD_DP = 4f
         const val DISABLED_ALPHA = 0.38f
         const val SCALE_FROM = 0.4f
         const val OPEN_MS = 200L

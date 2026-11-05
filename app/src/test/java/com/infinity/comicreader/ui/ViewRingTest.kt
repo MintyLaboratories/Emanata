@@ -106,4 +106,86 @@ class ViewRingTest {
         assertTrue(hypot(cornerX.toDouble(), cornerY.toDouble()) >= 36.0 - 0.01)
         assertTrue(abs(cornerX) > 0f)
     }
+
+    @Test
+    fun labelSidesRunOutwardNearestFirstInwardLast() {
+        assertEquals(listOf(162.0, 180.0, 90.0, 270.0, 0.0, 342.0), RingGeometry.sides(162.0))
+        assertEquals(listOf(90.0, 0.0, 180.0, 270.0), RingGeometry.sides(90.0))
+    }
+
+    @Test
+    fun aRoundButtonOverlapsABoxByDepth() {
+        val box = RingGeometry.Box(0f, 0f, 100f, 40f)
+        assertEquals(0f, box.overlap(150f, 20f, 28f), 0f)
+        assertEquals(6f, box.overlap(122f, 20f, 28f), 0.001f)
+        // Off the corner: clear along the diagonal though its bounding square would touch.
+        assertEquals(0f, box.overlap(120f, 60f, 28f), 0f)
+        assertTrue(box.overlap(50f, 20f, 28f) > 28f)
+    }
+
+    @Test
+    fun roomStopsAtTheBoundsOnTheSideTheRingGrowsTo() {
+        val bounds = RingGeometry.Box(8f, 32f, 392f, 792f)
+        assertEquals(264f, RingGeometry.room(180.0, 300f, 500f, bounds, 0f, 0f, 56f, 56f), 0.01f)
+        // A label 100 wide whose center sits 86 left of the spot.
+        assertEquals(156f, RingGeometry.room(180.0, 300f, 500f, bounds, -86f, 0f, 100f, 40f), 0.01f)
+        // Straight up, the top inset counts; the sides do not.
+        assertEquals(440f, RingGeometry.room(90.0, 300f, 500f, bounds, 0f, 0f, 56f, 56f), 0.01f)
+    }
+
+    /** Six labels of typical widths and one at the label's widest, all two lines tall (dp). */
+    private val labels = listOf(96f, 132f, 132f, 140f, 150f, 200f).map { it to 44f }
+
+    private fun arrange(width: Float, height: Float, hubX: Float, hubY: Float, top: Float = 0f, left: Boolean = hubX > width / 2) =
+        RingGeometry.Box(8f, top + 8f, width - 8f, height - 8f).let { bounds ->
+            val angles = RingGeometry.angles(6, left)
+            Triple(angles, bounds, RingGeometry.arrange(angles, hubX, hubY, bounds, 56f, RingGeometry.radius(6, 112f, 136f), 64f, 36f, 4f, labels))
+        }
+
+    /** Every button and label of [p] lies within [bounds], and no label covers a round button, the hub or another label. */
+    private fun assertClear(angles: List<Double>, hubX: Float, hubY: Float, bounds: RingGeometry.Box, p: RingGeometry.Placement) {
+        val buttons = listOf(hubX to hubY) + angles.map { a -> RingGeometry.spot(a, p.radius).let { (dx, dy) -> (hubX + dx) to (hubY + dy) } }
+        for ((x, y) in buttons) assertTrue("$x, $y", RingGeometry.Box.around(x, y, 56f, 56f).within(bounds))
+        for ((i, l) in p.boxes.withIndex()) {
+            assertTrue("label $i $l", l.within(bounds))
+            for ((x, y) in buttons) assertEquals("label $i on $x, $y", 0f, l.overlap(x, y, 28f), 0f)
+            for (o in p.boxes.drop(i + 1)) assertEquals("label $i on $o", 0f, l.overlap(o), 0f)
+        }
+        assertEquals(0f, p.overlap, 0f)
+    }
+
+    @Test
+    fun aRoomyWindowKeepsTheFullRingWithEveryLabelOutward() {
+        val (angles, bounds, p) = arrange(800f, 1280f, 744f, 1180f)
+        assertEquals(RingGeometry.radius(6, 112f, 136f), p.radius, 0.01f)
+        assertEquals(0, p.aside)
+        assertClear(angles, 744f, 1180f, bounds, p)
+    }
+
+    @Test
+    fun aNarrowWindowShrinksTheRingSoLabelsClearTheButtons() {
+        for (left in listOf(true, false)) {
+            val hubX = if (left) 356f else 44f
+            val (angles, bounds, p) = arrange(400f, 800f, hubX, 700f, left = left)
+            assertTrue("$left ${p.radius}", p.radius < RingGeometry.radius(6, 112f, 136f))
+            // Neighbors stay apart.
+            assertTrue("$left ${p.radius}", p.radius >= RingGeometry.radius(6, 64f, 0f) - 0.01f)
+            assertClear(angles, hubX, 700f, bounds, p)
+        }
+    }
+
+    @Test
+    fun landscapeKeepsEverythingBelowTheStatusBar() {
+        val (angles, bounds, p) = arrange(1280f, 400f, 1224f, 344f, top = 24f)
+        assertClear(angles, 1224f, 344f, bounds, p)
+    }
+
+    @Test
+    fun placingAgainKeepsTheRadiusAndMovesAGrownLabelAside() {
+        val (angles, bounds, p) = arrange(400f, 800f, 356f, 700f)
+        val wider = labels.toMutableList().apply { this[5] = 200f to 66f }
+        val again = RingGeometry.place(angles, 356f, 700f, bounds, 56f, p.radius, 36f, 4f, wider)
+        assertEquals(p.radius, again.radius, 0f)
+        assertTrue(again.boxes.all { it.within(bounds) })
+    }
 }

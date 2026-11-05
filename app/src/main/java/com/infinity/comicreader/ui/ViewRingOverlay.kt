@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -126,6 +127,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     }
 
     /** Closes the ring, at once or [animate]d back into the hub. */
+    @SuppressLint("ClickableViewAccessibility")
     fun close(animate: Boolean = true) {
         val root = root ?: return
         this.root = null
@@ -133,7 +135,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         for ((v, was) in hidden) v.importantForAccessibility = was
         hidden.clear()
         val host = root.parent as? ViewGroup
-        root.isClickable = false
+        // While it fades, the scrim still takes every touch, so none reaches the list beneath.
+        root.setOnTouchListener { _, _ -> true }
         val parts = buttons.values.toList()
         buttons.clear()
         if (!animate || !ValueAnimator.areAnimatorsEnabled()) {

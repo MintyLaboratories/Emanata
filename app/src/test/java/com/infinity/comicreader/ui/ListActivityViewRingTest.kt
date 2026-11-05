@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.appcompat.app.AlertDialog
@@ -222,6 +223,37 @@ class ListActivityViewRingTest {
         assertFalse(list.viewRing.isOpen)
         settle(300)
         assertNull(scrim.parent)
+    }
+
+    /** Taps the window at [x], [y] as a finger would. */
+    private fun ListActivity.tapAt(x: Float, y: Float) {
+        val t = android.os.SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val e = MotionEvent.obtain(t, t + 50, action, x, y, 0)
+            window.decorView.dispatchTouchEvent(e)
+            e.recycle()
+        }
+    }
+
+    @Test
+    fun aQuickTapAfterClosingDoesNotOpenTheBookUnderneath() {
+        val list = launch()
+        val rows = list.recycler()
+        val (x, y) = center(rows.getChildAt(rows.childCount - 1))
+        list.openRing()
+        val scrim = list.viewRing.scrim()!!
+        scrim.performClick()
+        assertFalse(list.viewRing.isOpen)
+        // Still fading out: the second tap lands on it.
+        assertNotNull(scrim.parent)
+        list.tapAt(x, y)
+        settle(300)
+        assertNull(scrim.parent)
+        assertNull(shadowOf(list).nextStartedActivity)
+        // Once gone, the same tap opens the book.
+        list.tapAt(x, y)
+        settle()
+        assertNotNull(shadowOf(list).nextStartedActivity)
     }
 
     @Test

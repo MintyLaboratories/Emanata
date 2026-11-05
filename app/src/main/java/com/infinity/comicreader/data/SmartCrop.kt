@@ -68,6 +68,12 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
  * anchor's. Free of Android types.
  */
 object SmartCrop {
+    /**
+     * The version of these rules and of the detector: focuses and Smart covers found under
+     * another are found again. Raise it with any change to what a focus holds.
+     */
+    const val RULES = 2
+
     /** The detector's input: its longer side at most this, both sides multiples of [STRIDE]. */
     const val INPUT_SIDE = 640
     const val STRIDE = 32

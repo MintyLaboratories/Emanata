@@ -59,4 +59,10 @@ class CoverStyleTest {
         assertEquals(CropAnchor.TOP, CropAnchor.of("bottom"))
         assertEquals(CropAnchor.SMART, CropAnchor.of("smart"))
     }
+
+    @Test
+    fun smartCoversAreKnownByTheirRulesVersion() {
+        assertTrue(CoverStyle(anchor = CropAnchor.SMART).key.contains("smart${SmartCrop.RULES}"))
+        assertEquals("auto|top", CoverStyle().key)
+    }
 }

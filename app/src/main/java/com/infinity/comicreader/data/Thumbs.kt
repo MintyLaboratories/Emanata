@@ -67,13 +67,18 @@ object Thumbs {
 
     /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
     private val focuses = LruCache<String, CoverFocus>(1024)
-    private const val FOCUS_FILE = "cover-focus.txt"
+    private const val FOCUS_PREFIX = "cover-focus"
+    private const val FOCUS_FILE = "$FOCUS_PREFIX-${SmartCrop.RULES}.txt"
 
     @Volatile
     private var focusStore: FocusStore? = null
 
+    /** The focus store of the current [SmartCrop.RULES]; those of others are deleted. */
     private fun focusStore(context: Context): FocusStore = focusStore ?: synchronized(this) {
-        focusStore ?: FocusStore(File(context.cacheDir, FOCUS_FILE)).also { focusStore = it }
+        focusStore ?: run {
+            context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && !f.name.startsWith(FOCUS_FILE) }?.forEach { it.delete() }
+            FocusStore(File(context.cacheDir, FOCUS_FILE)).also { focusStore = it }
+        }
     }
 
     /** Finds text on a cover for the Smart crop anchor; null when it cannot. Tests stand in their own. */

@@ -256,6 +256,8 @@ class PageWorkTest {
         for (page in listOf(avif(30, 20, av1Flags = 0x40), avif(30, 20, av1Flags = 0x60), avif(30, 20, full = false), avif(30, 20, icc = true))) {
             assertTrue(PageProbe.avifLossless(page, anyDepth = true))
         }
+        // Gray, whatever its matrix.
+        assertTrue(PageProbe.avifLossless(avif(30, 20, av1Flags = 0x1C, matrix = 6), anyDepth = true))
         assertFalse(PageProbe.avifLossless(avif(30, 20, av1Flags = 0x0C), anyDepth = true))
         assertFalse(PageProbe.avifLossless(avif(30, 20, matrix = 1), anyDepth = true))
         // Without its properties.

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.compact.PageProbe
 import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,6 +64,18 @@ class PageFormatTest {
         }
         // Cut short of its metadata, a layered file tells none.
         assertEquals(0, AvifPreview.layers(fixture("layered.avif").copyOf(64)))
+    }
+
+    @Test
+    fun aLosslessAvifIsLosslessWithAlphaAndInGray() {
+        // avifenc -l: 4:4:4, identity matrix; its alpha plane and a gray image are monochrome (gray: matrix 6).
+        for (name in listOf("lossless.avif", "lossless-alpha.avif", "lossless-gray.avif")) {
+            assertEquals(name, true, PageFormat.of(fixture(name)).lossless)
+        }
+        // Compaction's check, which wants decodes equal to the samples, takes no monochrome plane.
+        assertEquals(false, PageProbe.avifLossless(fixture("lossless-alpha.avif")))
+        assertEquals(false, PageProbe.avifLossless(fixture("lossless-gray.avif")))
+        assertEquals(false, PageFormat.of(fixture("single.avif")).lossless)
     }
 
     @Test

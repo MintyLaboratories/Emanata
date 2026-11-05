@@ -148,7 +148,8 @@ object PageProbe {
      * decodes premultiplied) and each `colr` an `nclx` with identity matrix coefficients
      * (0), full range, BT.709 or unspecified primaries and the sRGB, BT.709 or unspecified
      * curve, at least one of each. With [anyDepth], as any lossless AVIF is stored, its samples
-     * of any depth, in any range, with any profile: 4:4:4 with identity matrix coefficients.
+     * of any depth, in any range, with any profile: each `av1C` 4:4:4 or monochrome (gray, or
+     * alpha), and identity matrix coefficients wherever one is in color.
      */
     fun avifLossless(b: ByteArray, anyDepth: Boolean = false): Boolean {
         if (ImageKind.sniff(b) != ImageKind.AVIF) return false
@@ -156,7 +157,9 @@ object PageProbe {
         val iprp = box(b, meta.first + 4, meta.last + 1, "iprp") ?: return false
         val ipco = box(b, iprp.first, iprp.last + 1, "ipco") ?: return false
         var codecs = 0
+        var inColor = 0
         var colors = 0
+        var identity = true
         var ok = true
         boxes(b, ipco.first, ipco.last + 1) { kind, body ->
             when (kind) {
@@ -166,7 +169,9 @@ object PageProbe {
                     else {
                         // seq_tier_0, high_bitdepth, twelve_bit, monochrome, chroma_subsampling_x, _y, chroma_sample_position.
                         val flags = b[body.first + 2].toInt() and 0xFF
-                        if ((flags and (if (anyDepth) 0x0C else 0x7C)) != 0) ok = false
+                        val mono = flags and 0x10 != 0
+                        if (!mono) inColor++
+                        if (if (anyDepth) !mono && flags and 0x0C != 0 else flags and 0x7C != 0) ok = false
                     }
                 }
                 "colr" -> {
@@ -179,12 +184,14 @@ object PageProbe {
                         val transfer = be16(b, body.first + 6)
                         val matrix = be16(b, body.first + 8)
                         val full = (b[body.first + 10].toInt() and 0x80) != 0
-                        if (matrix != 0 || !anyDepth && (!full || primaries !in SRGB_PRIMARIES || transfer !in SRGB_TRANSFERS)) ok = false
+                        if (matrix != 0) identity = false
+                        if (!anyDepth && (!full || primaries !in SRGB_PRIMARIES || transfer !in SRGB_TRANSFERS)) ok = false
                     }
                 }
             }
         }
-        return ok && codecs > 0 && colors > 0
+        // Gray alone decodes as stored whatever its matrix.
+        return ok && codecs > 0 && colors > 0 && (identity || anyDepth && inColor == 0)
     }
 
     /** The body (`first..last`) of the first box of [kind] among those in `[from, to)` of [b]; null when none. */

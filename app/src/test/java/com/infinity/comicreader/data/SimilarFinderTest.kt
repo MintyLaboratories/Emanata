@@ -123,4 +123,14 @@ class SimilarFinderTest {
         assertEquals(listOf("a copy.cbz"), left.byId.getValue(BookId(1)).map { it.name })
         assertEquals(listOf(BookId(1), BookId(3)), left.unread)
     }
+
+    @Test
+    fun clearingTheStoreMidwayStillComparesWhatWasRead() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> if (f.name == "a.cbz") store.clear(); read(f) }, workers = 1)
+        val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"))
+        assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
+        // Read after the clear, so kept anew.
+        assertEquals(entry(31), SimilarStore(File(tmp.root, "store.txt")).get(BookId(2)))
+    }
 }

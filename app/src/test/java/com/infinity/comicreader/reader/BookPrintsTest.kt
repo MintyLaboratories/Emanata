@@ -3,6 +3,8 @@ package com.infinity.comicreader.reader
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.infinity.comicreader.util.SimilarBooks
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -68,6 +70,27 @@ class BookPrintsTest {
         val read = read(Fixtures.zip(File(temp.root, "Tale.cbz"), *entries.toTypedArray()))!!
         assertTrue(read.keep)
         assertNull(read.entry.print.slots[0][1])
+    }
+
+    @Test
+    fun cbrAndCbzOfTheSamePagesAreAlike() {
+        val seeds = (1L..8L).toList()
+        val zip = Fixtures.zip(File(temp.root, "Tale.cbz"), *pages(seeds, Bitmap.CompressFormat.PNG, "png").toTypedArray())
+        val rar = File(temp.root, "Tale.cbr").apply { writeBytes(Fixtures.rar4Bytes(*pages(seeds, Bitmap.CompressFormat.JPEG, "jpg").toTypedArray())) }
+        val rar5 = File(temp.root, "Tale 5.cbr").apply { writeBytes(Fixtures.rar5Bytes(*pages(seeds, Bitmap.CompressFormat.WEBP, "webp").toTypedArray())) }
+        val other = File(temp.root, "Other.cbr").apply {
+            writeBytes(Fixtures.rar4Bytes(*pages((101L..108L).toList(), Bitmap.CompressFormat.JPEG, "jpg").toTypedArray()))
+        }
+        val a = read(zip)!!.entry
+        val b = read(rar)!!.entry
+        val c = read(rar5)!!.entry
+        val d = read(other)!!.entry
+        assertEquals("cbr", b.container)
+        assertEquals("jpg", b.image)
+        assertEquals(8, b.print.pages)
+        assertTrue(SimilarBooks.alike(a.print, b.print))
+        assertTrue(SimilarBooks.alike(b.print, c.print))
+        assertFalse(SimilarBooks.alike(b.print, d.print))
     }
 
     private companion object {

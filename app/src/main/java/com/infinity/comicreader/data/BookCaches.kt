@@ -16,7 +16,7 @@ import java.io.File
 /**
  * What the app keeps that it can make again ("Clear cache"): covers, page previews, pages
  * processed by AI, page sizes, seams and pages seen, book facts, the Book ID index, network copies, share
- * listings and copies of nested archives. Library data (favorites, read marks, history,
+ * listings, copies of nested archives and what the similar-books search read of books. Library data (favorites, read marks, history,
  * bookmarks, hidden pages, books' own settings) is never part of it.
  */
 object BookCaches {
@@ -39,7 +39,8 @@ object BookCaches {
     fun bytes(context: Context): Long {
         val app = context.applicationContext
         val files = DATABASES.flatMap { db -> listOf(db, "$db-journal", "$db-wal").map { app.getDatabasePath(it) } }
-        return dirs(app.cacheDir).sumOf { CacheFiles.bytesUnder(it) } + files.filter { it.isFile }.sumOf { CacheFiles.onDisk(it) }
+        val loose = files + SimilarStore.fileIn(app.cacheDir)
+        return dirs(app.cacheDir).sumOf { CacheFiles.bytesUnder(it) } + loose.filter { it.isFile }.sumOf { CacheFiles.onDisk(it) }
     }
 
     /**
@@ -62,6 +63,7 @@ object BookCaches {
         Remotes.clearListings()
         Listings.dirIn(cacheDir).deleteRecursively()
         NestedArchives.trim(NestedArchives.dirIn(cacheDir), maxBytes = 0)
+        SimilarStore.of(cacheDir).clear()
     }
 
     /**
@@ -78,7 +80,8 @@ object BookCaches {
 
     /**
      * Deletes what is cached for book [id] alone, as when it is deleted: its facts, network
-     * copy, page sizes, seams, previews, pages processed by AI and nested archives. Blocking.
+     * copy, page sizes, seams, previews, pages processed by AI, nested archives and what the
+     * similar-books search read of it. Blocking.
      */
     fun forget(context: Context, id: BookId) {
         val app = context.applicationContext
@@ -90,5 +93,6 @@ object BookCaches {
         PreviewStore.forget(PreviewStore.dirIn(cacheDir), id)
         ProcessedStore.forget(ProcessedStore.dirIn(cacheDir), id)
         NestedArchives.forget(NestedArchives.dirIn(cacheDir), id)
+        SimilarStore.of(cacheDir).forget(id)
     }
 }

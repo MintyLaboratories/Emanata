@@ -383,6 +383,24 @@ class ThumbsTest {
     }
 
     @Test
+    fun aPageGivenAsCoverIsTheCoverUnlessHidden() {
+        val dir = File(context.cacheDir, "Given").apply { mkdirs() }
+        val book = rgbBook("given.cbz", dir)
+        val folder = BookEntry(dir, dir.name, true, EntryType.OTHER, 0, dir.lastModified())
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        Library(context).setCoverPage(ref(book), 2)
+        assertEquals(Color.BLUE, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        // A folder shows its book's cover as given.
+        assertEquals(Color.BLUE, Thumbs.load(context, folder, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        // Hidden, the given page gives way to the first page shown.
+        Library(context).setHiddenPages(ref(book), setOf(0, 2), 3)
+        assertEquals(Color.GREEN, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+        Library(context).setHiddenPages(ref(book), emptySet(), 3)
+        Library(context).setCoverPage(ref(book), null)
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 100, 150)!!.getPixel(50, 75))
+    }
+
+    @Test
     fun aBooksOwnCharsetMakesItsOwnCover() {
         // Its own charset may order its pages anew: the cover made before is not taken.
         val book = rgbBook("charset.cbz")
@@ -448,6 +466,10 @@ class ThumbsTest {
         val moved = Thumbs.hiddenTag(folder, hidden(setOf(0)))
         assertTrue(moved.startsWith("|h"))
         assertTrue(moved != Thumbs.hiddenTag(folder, hidden(setOf(0, 1))))
+        // A cover given moves the key as hidden pages do; one hidden gives way.
+        assertEquals("|c3", Thumbs.hiddenTag(book, Library.Hidden(emptyMap(), emptyMap(), emptyMap(), mapOf(id to 3), mapOf(inside to 3))))
+        assertEquals("|c1", Thumbs.hiddenTag(book, Library.Hidden(mapOf(id to setOf(0, 3)), mapOf(inside to setOf(0, 3)), emptyMap(), mapOf(id to 3))))
+        assertTrue(Thumbs.hiddenTag(folder, Library.Hidden(emptyMap(), emptyMap(), emptyMap(), mapOf(id to 3), mapOf(inside to 3))).startsWith("|h"))
         // A folder whose name only starts the same is not inside.
         assertEquals("", Thumbs.hiddenTag(folder, hidden(setOf(0), File(context.cacheDir, "Shelf 2/a.cbz").path)))
     }

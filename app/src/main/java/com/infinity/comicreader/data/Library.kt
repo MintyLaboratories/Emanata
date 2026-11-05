@@ -410,11 +410,16 @@ class Library(context: Context) {
     /** The pages left out of book [id] ("Hide this page"), by book index. */
     fun hiddenPages(id: BookId?): Set<Int> = id?.let { hiddenAll().byId[it] }.orEmpty()
 
-    /** The pages every book leaves out, by ID and by where it was last seen; parsed once per change of what is stored. */
+    /**
+     * The pages every book leaves out and the covers books were given ([coverPage]), by ID and
+     * by where each was last seen; parsed once per change of what is stored.
+     */
     fun hiddenAll(): Hidden {
         val raw = sp.getString(KEY_HIDDEN, "{}") ?: "{}"
+        val rawCovers = sp.getString(KEY_COVERS, "{}") ?: "{}"
         val seen = seenAt()
-        hiddenParsed?.let { (from, hidden) -> if (from == raw && hidden.seen === seen) return hidden }
+        val text = raw + "\u0000" + rawCovers
+        hiddenParsed?.let { (from, hidden) -> if (from == text && hidden.seen === seen) return hidden }
         val all = parse(raw)
         val byId = HashMap<BookId, Set<Int>>()
         all.keys().forEach { k ->
@@ -423,7 +428,33 @@ class Library(context: Context) {
         }
         val byPath = HashMap<String, Set<Int>>()
         for ((id, pages) in byId) seen[id]?.let { byPath[it.path] = pages }
-        return Hidden(byId, byPath, seen).also { hiddenParsed = raw to it }
+        val coverAll = parse(rawCovers)
+        val covers = HashMap<BookId, Int>()
+        coverAll.keys().forEach { k ->
+            val id = BookId.parse(k) ?: return@forEach
+            coverAll.optInt(k, -1).takeIf { it > 0 }?.let { covers[id] = it }
+        }
+        val coversByPath = HashMap<String, Int>()
+        for ((id, page) in covers) seen[id]?.let { coversByPath[it.path] = page }
+        return Hidden(byId, byPath, seen, covers, coversByPath).also { hiddenParsed = text to it }
+    }
+
+    // ---------------- covers ----------------
+    /** The page book [id] was given as its cover ("Set as cover"), by book index; null for its first page shown. */
+    fun coverPage(id: BookId?): Int? = id?.let { hiddenAll().covers[it] }
+
+    /** Makes book page [page] [book]'s cover; null or 0 gives it back its first page shown. */
+    fun setCoverPage(book: BookRef, page: Int?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_COVERS)
+            if (page == null || page <= 0) {
+                if (all.remove(book.id.hex) == null) return@synchronized
+            } else {
+                all.put(book.id.hex, page)
+                keep(book)
+            }
+            sp.edit().putString(KEY_COVERS, all.toString()).apply()
+        }
     }
 
     /** How many pages each book leaves out, by ID. */
@@ -458,6 +489,12 @@ class Library(context: Context) {
      */
     fun movePages(id: BookId, moves: IntArray, pageCount: Int) {
         synchronized(LOCK) {
+            val covers = readObject(KEY_COVERS)
+            if (covers.has(id.hex)) {
+                val to = moves.getOrNull(covers.optInt(id.hex, -1)) ?: -1
+                if (to > 0 && to < pageCount) covers.put(id.hex, to) else covers.remove(id.hex)
+                sp.edit().putString(KEY_COVERS, covers.toString()).apply()
+            }
             val old = hiddenPages(id)
             val new = old.mapNotNull { h -> moves.getOrNull(h)?.takeIf { it in 0 until pageCount } }.toSortedSet()
             if (old != new) {
@@ -842,7 +879,7 @@ class Library(context: Context) {
         val hidden = hiddenCounts()
         val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
             readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids() +
-            readObject(KEY_AI).ids()
+            readObject(KEY_AI).ids() + readObject(KEY_COVERS).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
         return all.associateWith { id ->
             Kept(
@@ -1234,9 +1271,19 @@ class Library(context: Context) {
     /** A favorite: a folder at [path], or book [id] last seen at [path]. */
     data class Favorite(val path: String, val id: BookId?)
 
-    /** The pages books leave out by [BookId], and by the path each was last seen at ([seen]). */
-    class Hidden(val byId: Map<BookId, Set<Int>>, val byPath: Map<String, Set<Int>>, internal val seen: Map<BookId, Seen>) {
-        fun isEmpty(): Boolean = byId.isEmpty()
+    /**
+     * The pages books leave out by [BookId], and by the path each was last seen at ([seen]);
+     * and the pages books were given as covers ([coverPage]), likewise.
+     */
+    class Hidden(
+        val byId: Map<BookId, Set<Int>>,
+        val byPath: Map<String, Set<Int>>,
+        internal val seen: Map<BookId, Seen>,
+        val covers: Map<BookId, Int> = emptyMap(),
+        val coversByPath: Map<String, Int> = emptyMap()
+    ) {
+        /** True when no page is hidden and no cover given: every book's cover is its first page. */
+        fun isEmpty(): Boolean = byId.isEmpty() && covers.isEmpty()
     }
 
     companion object {
@@ -1277,6 +1324,9 @@ class Library(context: Context) {
         /** Books' own layouts, from the folders packed into them ([bookLayout]). */
         private const val KEY_BOOK_LAYOUTS = "book_layouts"
 
+        /** The pages books were given as covers ([coverPage]), by book index. */
+        private const val KEY_COVERS = "cover_pages"
+
         /** Books' own AI chains ([aiPicks]): a model id or [AI_NONE] per step. */
         private const val KEY_AI = "ai_picks"
 
@@ -1302,7 +1352,7 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI)
+        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
         private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
@@ -1311,12 +1361,12 @@ class Library(context: Context) {
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
 
         /** Documents kept by book ID. */
-        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI)
+        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS)
 
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS
         )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */
@@ -1335,7 +1385,7 @@ class Library(context: Context) {
         @Volatile
         private var seenParsed: Pair<String, Map<BookId, Seen>>? = null
 
-        /** The stored hidden pages [hiddenAll] parsed last, with the text they were parsed from. */
+        /** The stored hidden pages and covers [hiddenAll] parsed last, with the text they were parsed from. */
         @Volatile
         private var hiddenParsed: Pair<String, Hidden>? = null
     }

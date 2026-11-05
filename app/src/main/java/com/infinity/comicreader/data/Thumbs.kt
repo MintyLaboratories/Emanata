@@ -26,7 +26,7 @@ import java.util.Locale
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
- * render their first page not hidden ([coverPage]); folders fall back to the first image/openable file
+ * render the page they were given as cover, else their first page not hidden ([coverPage]); folders fall back to the first image/openable file
  * found a couple of levels deep. Covers are made at exactly the size of the view
  * showing them: decoded at full size (up to [THUMB_CAP_PIXELS]; a PDF rendered
  * just covering the box), then made into the box by [CoverArt] as the [CoverStyle]
@@ -281,7 +281,7 @@ object Thumbs {
             book == null -> null
             entry.isDir && Formats.typeOf(book.name) == EntryType.IMAGE -> Decoders.decode(book, target)
             else -> {
-                val page = coverPage(Library(context).hiddenPages(if (book == entry.file) idOf(entry) else BookIds.known(book)))
+                val page = coverPage(Library(context).hiddenAll(), if (book == entry.file) idOf(entry) else BookIds.known(book), book.absolutePath)
                 coverOf(book, charset, context.cacheDir, target.width, target.height, page, full = target, inner = false)?.bitmap
             }
         }
@@ -354,27 +354,38 @@ object Thumbs {
     private fun imageTag(context: Context, entry: BookEntry): String =
         hiddenTag(entry, Library(context).hiddenAll()) + idOf(entry)?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
 
-    /** The book index of the cover of a book hiding [hidden]: its first page not hidden. */
-    fun coverPage(hidden: Set<Int>): Int {
+    /**
+     * The book index of the cover of a book hiding [hidden]: the page it was [given] as cover
+     * unless that is hidden, else its first page not hidden.
+     */
+    fun coverPage(hidden: Set<Int>, given: Int? = null): Int {
+        if (given != null && given >= 0 && given !in hidden) return given
         var page = 0
         while (page in hidden) page++
         return page
     }
 
+    /** The book index of the cover of book [id], else of the book last seen at [path], as [hidden] says. */
+    fun coverPage(hidden: Library.Hidden, id: BookId?, path: String?): Int =
+        if (id != null && (id in hidden.byId || id in hidden.covers)) coverPage(hidden.byId[id].orEmpty(), hidden.covers[id])
+        else coverPage(path?.let { hidden.byPath[it] }.orEmpty(), path?.let { hidden.coversByPath[it] })
+
     /**
      * What [hidden] adds to the key of [entry]'s cover: a book's cover page when it is not the
      * first, and for a folder, which books below it (where last seen) start later. Empty when
-     * no hidden page moves the cover, so such keys stay as they were.
+     * neither hidden pages nor a cover given move the cover, so such keys stay as they were.
      */
     internal fun hiddenTag(entry: BookEntry, hidden: Library.Hidden): String {
         if (hidden.isEmpty() || (!entry.isDir && entry.type == EntryType.IMAGE)) return ""
-        if (!entry.isDir) return coverPage(idOf(entry)?.let { hidden.byId[it] }.orEmpty()).takeIf { it > 0 }?.let { "|c$it" }.orEmpty()
+        if (!entry.isDir) return coverPage(hidden, idOf(entry), null).takeIf { it > 0 }?.let { "|c$it" }.orEmpty()
         val dir = entry.path
-        val moved = hidden.byPath.entries
-            .filter { (path, pages) -> path.length > dir.length && path.startsWith(dir) && isSeparator(path[dir.length]) && coverPage(pages) > 0 }
-            .sortedBy { it.key }
+        val moved = (hidden.byPath.keys + hidden.coversByPath.keys)
+            .filter { path -> path.length > dir.length && path.startsWith(dir) && isSeparator(path[dir.length]) }
+            .map { path -> path to coverPage(hidden.byPath[path].orEmpty(), hidden.coversByPath[path]) }
+            .filter { it.second > 0 }
+            .sortedBy { it.first }
         if (moved.isEmpty()) return ""
-        return "|h" + Hashes.sha256Hex(moved.joinToString("\u0000") { (path, pages) -> path + ":" + coverPage(pages) }).take(16)
+        return "|h" + Hashes.sha256Hex(moved.joinToString("\u0000") { (path, page) -> "$path:$page" }).take(16)
     }
 
     /** WebP lossless where the platform writes it, PNG before that. */
@@ -434,9 +445,7 @@ object Thumbs {
         canceled: () -> Boolean = { false },
         quickFirst: Boolean = false
     ): Made? = try {
-        fun pageOf(book: File) = coverPage(
-            (if (book == entry.file) idOf(entry) else BookIds.known(book))?.let { hidden.byId[it] } ?: hidden.byPath[book.absolutePath].orEmpty()
-        )
+        fun pageOf(book: File) = coverPage(hidden, if (book == entry.file) idOf(entry) else BookIds.known(book), book.absolutePath)
         when {
             entry.isDir -> findCover(entry.file, 2)?.takeIf { !canceled() }?.let {
                 coverOf(it, charset, cacheDir, width, height, pageOf(it), canceled, quickFirst)

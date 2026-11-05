@@ -54,6 +54,36 @@ class LibraryHiddenPagesTest {
     }
 
     @Test
+    fun aBookKeepsTheCoverItWasGivenUntilCleared() {
+        assertEquals(null, library.coverPage(a.id))
+        library.setCoverPage(a, 4)
+        assertEquals(4, library.coverPage(a.id))
+        assertEquals(mapOf(a.path to 4), library.hiddenAll().coversByPath)
+        assertTrue(library.kept().getValue(a.id).settings)
+        // The first page is no choice: nothing is kept.
+        library.setCoverPage(a, 0)
+        assertEquals(null, library.coverPage(a.id))
+        library.setCoverPage(a, 4)
+        // It follows its page when pages move, and goes with it.
+        library.movePages(a.id, intArrayOf(0, 1, 2, 3, 6, 4, 5), 7)
+        assertEquals(6, library.coverPage(a.id))
+        library.movePages(a.id, intArrayOf(0, 1, 2, 3, 4, 5, -1), 6)
+        assertEquals(null, library.coverPage(a.id))
+        library.setCoverPage(a, 2)
+        library.carryOver(a.id, b, IntArray(10) { it }, 10)
+        assertEquals(2, library.coverPage(b.id))
+        assertEquals(null, library.coverPage(a.id))
+        library.clearLibraryData()
+        assertEquals(null, library.coverPage(b.id))
+        library.setCoverPage(a, 1)
+        val backup = library.exportAll()
+        library.forgetBooks(setOf(a.id))
+        assertEquals(null, library.coverPage(a.id))
+        library.importAll(backup)
+        assertEquals(1, library.coverPage(a.id))
+    }
+
+    @Test
     fun historyAndBookmarksStayOnTheirPages() {
                 library.addHistory(HistoryItem(a.path, "a.cbz", 6, 10, 1, a.id))
         library.addBookmark(Bookmark(a.path, "a.cbz", 3, "", 1, a.id))

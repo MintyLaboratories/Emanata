@@ -837,7 +837,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   share of memory (`ModelMemory`: an eighth of the device's memory, at most
   half of what is free, weights included) at the bytes per pixel measured so
   far is not started and the model is refused: heavy 4× upscalers work at
-  output resolution, and strips keep the largest probe near a tile's cost. Tiles are
+  output resolution, and strips keep the largest probe near a tile's cost.
+  Weights count as loading them grew the native heap and the GPU's memory
+  (ncnn's fast 3×3 convolutions hold several times the file), the CPU's and
+  the GPU's copies together while the GPU is checked. Tiles are
   then sized by the larger of the estimate and the measured bytes per pixel,
   and a GPU tile size whose check held more than its budget is passed over.
   A model whose output still changes 64 pixels from the cut, or

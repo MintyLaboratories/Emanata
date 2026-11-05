@@ -20,6 +20,7 @@ import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.SimilarStore
+import com.infinity.comicreader.reader.BookPrints
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import org.junit.Assert.assertEquals
@@ -187,6 +188,29 @@ class CleanupSimilarTest {
         settle(activity)
         lay(list)
         assertEquals(2, list.adapter!!.itemCount)
+    }
+
+    @Test
+    fun booksDeletedBeforeTheSearchEndsAreNotListed() {
+        // Retold is known already and has a bit-identical copy; the rest wait for Compare.
+        val copy = File(retold.parentFile, "Tale retold copy.cbz").also { retold.copyTo(it) }
+        BookIds.init(context)
+        SimilarStore.of(context.cacheDir).put(BookIds.of(retold), BookPrints.read(retold, "UTF-8", context.cacheDir)!!.entry)
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val (activity, list) = launch()
+        // Only the bit-identical group: both copies of retold, ticked and deleted.
+        assertEquals(2, list.adapter!!.itemCount)
+        val places = list.row(1).findViewById<LinearLayout>(R.id.locations)
+        for (i in 0 until places.childCount) places.getChildAt(i).performClick()
+        activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        settle(activity)
+        assertFalse(copy.exists())
+        activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
+        settle(activity)
+        lay(list)
+        assertEquals(0, list.adapter!!.itemCount)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
     }
 
     private companion object {

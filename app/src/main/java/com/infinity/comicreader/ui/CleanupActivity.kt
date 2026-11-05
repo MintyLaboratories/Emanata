@@ -109,6 +109,9 @@ class CleanupActivity : AppCompatActivity() {
     @Volatile
     private var compared = 0 to 0
 
+    /** Every file deleted here, so a search under way when they went lists none of them. */
+    private val deleted = HashSet<String>()
+
     /** True while a progress update waits on the main thread, so updates from many reads coalesce. */
     private val progressPosted = AtomicBoolean(false)
 
@@ -334,10 +337,11 @@ class CleanupActivity : AppCompatActivity() {
         comparing = false
         rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
+        forget(deleted)
         val left = result.total - result.compared
         if (left > 0 && context.isActive) {
             showSimilarBar(getString(R.string.similar_unread, left, result.total), running = false)
-            similarCompare.setOnClickListener { lifecycleScope.launch { compareSimilar(finder, contents, readNew = true) } }
+            similarCompare.setOnClickListener { lifecycleScope.launch { compareSimilar(finder, contents.without(deleted), readNew = true) } }
         } else {
             similarBar.visibility = View.GONE
         }
@@ -432,6 +436,7 @@ class CleanupActivity : AppCompatActivity() {
                 Toast.makeText(this@CleanupActivity, R.string.op_failed, Toast.LENGTH_SHORT).show()
             }
             selected.removeAll(deleted)
+            this@CleanupActivity.deleted.addAll(deleted)
             forget(deleted)
             updateEmpty()
             adapter.notifyDataSetChanged()

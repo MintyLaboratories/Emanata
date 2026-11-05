@@ -112,4 +112,15 @@ class SimilarFinderTest {
         assertEquals(3, found.total)
         assertEquals(emptyList<String>(), reads.toList())
     }
+
+    @Test
+    fun contentsWithoutDeletedFilesDropEmptiedOnes() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> read(f) })
+        val contents = finder.contents(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz"))
+        val left = contents.without(setOf(File(tmp.root, "a.cbz").absolutePath, File(tmp.root, "b.cbr").absolutePath))
+        assertEquals(listOf(BookId(1), BookId(3)), left.byId.keys.toList())
+        assertEquals(listOf("a copy.cbz"), left.byId.getValue(BookId(1)).map { it.name })
+        assertEquals(listOf(BookId(1), BookId(3)), left.unread)
+    }
 }

@@ -30,7 +30,15 @@ class SimilarFinder(
     data class Found(val groups: List<List<Book>>, val compared: Int, val total: Int)
 
     /** The contents among some files: each one's files ([byId], in the order given), and those with nothing kept of them yet ([unread]). */
-    class Contents(val byId: Map<BookId, List<File>>, val unread: List<BookId>)
+    class Contents(val byId: Map<BookId, List<File>>, val unread: List<BookId>) {
+        /** These contents without the files at [paths], and without contents left with none. */
+        fun without(paths: Set<String>): Contents {
+            if (paths.isEmpty()) return this
+            val left = LinkedHashMap<BookId, List<File>>()
+            for ((id, files) in byId) files.filterNot { it.absolutePath in paths }.takeIf { it.isNotEmpty() }?.let { left[id] = it }
+            return Contents(left, unread.filter { it in left })
+        }
+    }
 
     /** The contents among [files], as far as they were told apart before [alive] turned false. */
     fun contents(files: List<File>, alive: () -> Boolean = { true }): Contents {

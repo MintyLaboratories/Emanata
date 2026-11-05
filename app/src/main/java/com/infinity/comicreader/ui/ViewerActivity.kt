@@ -4464,7 +4464,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
             val facts = try {
                 withContext(AppDispatchers.io) {
                     val bytes = runCatching { src.pageBytes(page) }.getOrNull()
-                    val size = runCatching { src.pageSize(page) }.getOrNull() ?: bytes?.let { runCatching { Decoders.size(it) }.getOrNull() }
+                    // Sized from the bytes read, not read again through pageSize.
+                    val size = if (bytes != null) runCatching { Decoders.headerSize(bytes.inputStream()) ?: Decoders.size(bytes) }.getOrNull()
+                    else runCatching { src.pageSize(page) }.getOrNull()
                     Triple(bytes?.let { runCatching { PageFormat.of(it) }.getOrNull() }, size, bytes?.size?.toLong())
                 }
             } finally {

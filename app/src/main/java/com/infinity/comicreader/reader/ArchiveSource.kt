@@ -161,7 +161,7 @@ class ArchiveSource(
     }
 
     /** The encoded bytes of page [index]: read whole where its reader can ([ArchiveReader.readWhole]), else streamed. */
-    fun pageBytes(index: Int): ByteArray {
+    override fun pageBytes(index: Int): ByteArray {
         val page = pages[index]
         val reader = acquire(page.slot)
         try {

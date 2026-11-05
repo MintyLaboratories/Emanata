@@ -39,6 +39,9 @@ class ImageSource(private val file: File) : PageSource {
 
     override fun pageName(index: Int): String = file.name
 
+    override fun pageBytes(index: Int): ByteArray =
+        if (file is RemoteFile) Remotes.readBytes(file.path) else file.inputStream().use { BitmapUtils.readCapped(it) }
+
     override fun close() {
         // Intentionally empty: pages are decoded on demand and no file handle is kept open.
     }

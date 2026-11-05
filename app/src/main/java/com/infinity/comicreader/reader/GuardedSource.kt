@@ -122,6 +122,15 @@ class GuardedSource(private val inner: PageSource) : PageSource {
 
     override fun pageName(index: Int): String? = inner.pageName(index)
 
+    override fun pageBytes(index: Int): ByteArray? {
+        if (!enter()) throw IOException("Source closed")
+        try {
+            return inner.pageBytes(index)
+        } finally {
+            exit()
+        }
+    }
+
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? {
         if (!enter()) return null
         try {

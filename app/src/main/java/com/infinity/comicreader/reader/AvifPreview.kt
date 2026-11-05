@@ -46,6 +46,25 @@ object AvifPreview {
         return build(parsed, item, data, plan.width, plan.height)
     }
 
+    /**
+     * How many layers the primary image of the AVIF file [bytes] holds by its `a1lx` property
+     * (libavif's `--layered`); 0 when it has none or [bytes] stop before its metadata ends.
+     */
+    fun layers(bytes: ByteArray): Int {
+        val meta = (findMeta(bytes, bytes.size) as? Found.At)?.box ?: return 0
+        val parsed = parseMeta(bytes, meta) ?: return 0
+        val primary = parsed.items[parsed.primary] ?: return 0
+        val a1lx = parsed.property(primary, "a1lx") ?: return 0
+        val large = (bytes[a1lx.body].toInt() and 1) != 0
+        val width = if (large) 4 else 2
+        if (a1lx.end - a1lx.body < 1 + 3 * width) return 0
+        // Three sizes, zero for a layer not there; the last layer's size is what is left.
+        return 1 + (0 until 3).count { i ->
+            val at = a1lx.body + 1 + i * width
+            (if (large) u32(bytes, at) else u16(bytes, at).toLong()) > 0
+        }
+    }
+
     // ------------------------------------------------------------------ boxes
 
     /** A box at [start] whose contents run from [body] to [end] in the file. */

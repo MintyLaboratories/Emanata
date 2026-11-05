@@ -83,6 +83,9 @@ interface PageSource : Closeable {
      */
     fun sides(index: Int): SpreadSeams.Sides? = null
 
+    /** The bytes of page [index] as its file stores them; null where pages are no files of their own (PDF). Blocking. */
+    fun pageBytes(index: Int): ByteArray? = null
+
     /** Name of page [index] as stored (an archive entry's path), for messages; null when it has none. */
     fun pageName(index: Int): String? = null
 

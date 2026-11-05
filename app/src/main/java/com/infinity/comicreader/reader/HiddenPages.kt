@@ -98,6 +98,8 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
 
     override fun pageName(index: Int): String? = shown.getOrNull(index)?.let { inner.pageName(it) }
 
+    override fun pageBytes(index: Int): ByteArray? = shown.getOrNull(index)?.let { inner.pageBytes(it) }
+
     override fun comicInfo(cheapOnly: Boolean): ComicInfo? = inner.comicInfo(cheapOnly)
 
     override fun comicInfoCostly(): Boolean = inner.comicInfoCostly()

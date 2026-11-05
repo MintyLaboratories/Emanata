@@ -37,18 +37,25 @@ import kotlin.concurrent.thread
  * and times the text detector. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.CoverFocusCheckService
- *  --es dir /path [--ei books 40] [--es setups cpu1,cpu2,cpu4,gpu] [--ei reps 3] [--ez marked false]`
+ *  --es dir /path [--ei books 40] [--es setups cpu1,cpu2,cpu4,gpu|none] [--ei reps 3] [--ez marked false]
+ *  [--es lane own|shared] [--ez busy false]`
  *
  * Takes `books` books spread evenly over every book under `dir` (read only), in name order,
  * and decodes each cover as the library does. For each: the detector's time on the cover's
  * input by each setup (`cpuN`: N threads of the large cores; `gpu`: Vulkan, fp16), 1 warm-up
- * and `reps` timed runs, the median; the time of the whole focus (shrink, detail, detection,
- * boxes) by the app's own setup; the focus; and where Top, Center and Smart start a crop to a
+ * and `reps` timed runs, the median; the app's own setup's `reps` runs, as asked (waits
+ * included), median and most; the time of the whole focus (shrink, detail, detection, boxes) by
+ * the app's own setup; the focus; and where Top, Center and Smart start a crop to a
  * 3:4 and a 1:1 box, as shares of the cover's height. With `marked`, a small copy of each cover
  * marked up (text boxes yellow, title green, the 1:1 crop by Smart cyan and by Top red) goes to
  * `files/bench/focus/<index>.jpg`. Books are named by index only. Results go to the log under
  * "CoverFocusCheck", one JSON object per line, ending with "done", and to
  * `files/bench/focus.jsonl` in the app's external files.
+ *
+ * The app's setup runs on [LibNcnn.cpuLane] (`lane own`, as the app does) or on the thread
+ * of AI page tiles (`lane shared`). With `busy`, that thread meanwhile runs the detector on the
+ * GPU over and over, as AI tiles keep it busy; its runs and their median time are logged at the
+ * end.
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -57,16 +64,18 @@ class CoverFocusCheckService : Service() {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         val dir = intent?.getStringExtra("dir")
         val count = intent?.getIntExtra("books", 40)?.coerceIn(1, 10_000) ?: 40
-        val setups = (intent?.getStringExtra("setups") ?: "cpu1,cpu2,cpu4,gpu").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val setups = (intent?.getStringExtra("setups") ?: "cpu1,cpu2,cpu4,gpu").split(',').map { it.trim() }.filter { it.isNotEmpty() && it != "none" }
         val reps = intent?.getIntExtra("reps", 3)?.coerceIn(1, 50) ?: 3
         val marked = intent?.getBooleanExtra("marked", false) ?: false
+        val shared = intent?.getStringExtra("lane") == "shared"
+        val busy = intent?.getBooleanExtra("busy", false) ?: false
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
                 if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else {
-                    run(File(dir), count, setups, reps, marked)
+                    run(File(dir), count, setups, reps, marked, shared, busy)
                 }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", t.toString()))
@@ -79,12 +88,12 @@ class CoverFocusCheckService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean) {
+    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean, shared: Boolean, busy: Boolean) {
         val all = dir.walkTopDown().filter { it.isFile && Formats.isOpenable(it.name) && Formats.typeOf(it.name) != com.infinity.comicreader.data.EntryType.IMAGE }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath }).toList()
         val step = maxOf(1.0, all.size.toDouble() / count)
         val picked = (0 until minOf(count, all.size)).map { all[(it * step).toInt()] }
-        log(JSONObject().put("books", all.size).put("picked", picked.size).put("setups", JSONArray(setups)))
+        log(JSONObject().put("books", all.size).put("picked", picked.size).put("setups", JSONArray(setups)).put("lane", if (shared) "shared" else "own").put("busy", busy))
         val files = TextDetector.install(this) ?: run {
             log(JSONObject().put("failed", "no model"))
             return
@@ -92,8 +101,46 @@ class CoverFocusCheckService : Service() {
         val detectors = setups.associateWith { s ->
             TextDetector(LibNcnn, { files }, gpu = s == "gpu", threads = s.removePrefix("cpu").toIntOrNull() ?: TextDetector.THREADS)
         }
-        val app = TextDetector(LibNcnn, { files })
+        val app = TextDetector(if (shared) LibNcnn else LibNcnn.cpuLane, { files })
         val markDir = File(getExternalFilesDir(null), "bench/focus").apply { if (marked) mkdirs() }
+        val load = if (busy) Load(files).apply { start() } else null
+        try {
+            covers(picked, detectors, app, reps, marked, markDir)
+        } finally {
+            load?.stop()
+        }
+        (detectors.values + app).forEach { it.close() }
+    }
+
+    /** Runs the detector on the GPU on the AI tiles' thread until [stop], which logs its runs. */
+    private inner class Load(files: com.infinity.comicreader.ai.ModelFiles) {
+        private val detector = TextDetector(LibNcnn, { files }, gpu = true)
+        private val input = Bitmap.createBitmap(448, 640, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GRAY) }
+        private val ms = ArrayList<Double>()
+
+        @Volatile
+        private var going = true
+        private val worker = thread(start = false, name = "cover-focus-load") {
+            while (going) {
+                val t = SystemClock.elapsedRealtimeNanos()
+                detector.detect(input)
+                ms += (SystemClock.elapsedRealtimeNanos() - t) / 1e6
+            }
+        }
+
+        fun start() = worker.start()
+
+        fun stop() {
+            going = false
+            worker.join()
+            detector.close()
+            input.recycle()
+            val sorted = ms.sorted()
+            log(JSONObject().put("load", sorted.size).put("loadMs", if (sorted.isEmpty()) JSONObject.NULL else Stats.round1(sorted[sorted.size / 2])))
+        }
+    }
+
+    private fun covers(picked: List<File>, detectors: Map<String, TextDetector>, app: TextDetector, reps: Int, marked: Boolean, markDir: File) {
         for ((index, book) in picked.withIndex()) {
             val cover = runCatching {
                 PageSources.openCover(book, "UTF-8", cacheDir, 0).use { it.loadPage(0, Target(capPixels = 16_000_000L)) }
@@ -117,6 +164,11 @@ class CoverFocusCheckService : Service() {
                     }.sorted()
                     times.put(name, Stats.round1(ms[ms.size / 2]))
                 }
+                val appMs = (1..reps).map {
+                    val t = SystemClock.elapsedRealtimeNanos()
+                    app.detect(small)
+                    (SystemClock.elapsedRealtimeNanos() - t) / 1e6
+                }.sorted()
                 small.recycle()
                 val t0 = SystemClock.elapsedRealtimeNanos()
                 val focus = CoverArt.focusOf(cover, region) { app.detect(it) }
@@ -126,7 +178,9 @@ class CoverFocusCheckService : Service() {
                     app.detect(s).also { s.recycle() }
                 }
                 val boxes = map?.let { SmartCrop.boxes(it) }.orEmpty()
-                o.put("input", "${iw}x$ih").put("detectMs", times).put("focusMs", Stats.round1(focusMs)).put("boxes", boxes.size)
+                o.put("input", "${iw}x$ih").put("detectMs", times)
+                    .put("appMs", JSONObject().put("median", Stats.round1(appMs[appMs.size / 2])).put("most", Stats.round1(appMs.last())))
+                    .put("focusMs", Stats.round1(focusMs)).put("boxes", boxes.size)
                     .put("glyphMax", boxes.maxOfOrNull { it.glyph / minOf(iw, ih) }?.let { Stats.round1(it * 1000) / 1000 } ?: JSONObject.NULL)
                     .put("title", band(focus.title?.let { it.top to it.bottom }))
                     .put("text", band(focus.text?.let { it.top to it.bottom }))
@@ -143,7 +197,6 @@ class CoverFocusCheckService : Service() {
                 cover.recycle()
             }
         }
-        (detectors.values + app).forEach { it.close() }
     }
 
     private fun r3(v: Double) = Math.round(v * 1000) / 1000.0

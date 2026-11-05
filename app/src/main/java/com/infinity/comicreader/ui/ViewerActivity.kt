@@ -4351,15 +4351,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val given = library.coverPage(bookId)
         for (action in prefs.pageActions.visible) {
             val (icon, label) = when (action) {
-                PageAction.HIDE -> R.drawable.ic_visibility_off to R.string.menu_hide_page
-                PageAction.SET_COVER -> R.drawable.ic_image to if (given == bookPage) R.string.page_reset_cover else R.string.page_set_cover
-                PageAction.PAGE_INFO -> R.drawable.ic_info to R.string.page_info
+                PageAction.HIDE, PageAction.PAGE_INFO -> PageActionsDialog.iconOf(action) to PageActionsDialog.labelOf(action)
+                PageAction.SET_COVER -> PageActionsDialog.iconOf(action) to if (given == bookPage) R.string.page_reset_cover else R.string.page_set_cover
                 PageAction.SPREAD -> {
                     if (!spreadChoosable()) continue
                     val alone = layout.shownAlone(page, src.pageCount)
                     // The last page pairs with none.
                     if (alone && page + 1 >= src.pageCount) continue
-                    if (alone) R.drawable.ic_auto_stories to R.string.page_pair_next else R.drawable.ic_crop_portrait to R.string.page_show_alone
+                    if (alone) PageActionsDialog.iconOf(action) to R.string.page_pair_next else R.drawable.ic_crop_portrait to R.string.page_show_alone
                 }
             }
             val item = layoutInflater.inflate(R.layout.item_more_action, rows, false)

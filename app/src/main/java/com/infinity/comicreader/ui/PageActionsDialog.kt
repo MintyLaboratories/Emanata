@@ -17,6 +17,7 @@ object PageActionsDialog {
         PageAction.SPREAD -> R.string.page_spread_setting
     }
 
+    /** The row's icon in the page menu; Show alone has one of its own. */
     fun iconOf(action: PageAction): Int = when (action) {
         PageAction.HIDE -> R.drawable.ic_visibility_off
         PageAction.SET_COVER -> R.drawable.ic_image

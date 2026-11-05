@@ -937,6 +937,7 @@
     <string name="ai_import_failed_unreadable">The files can\'t be read</string>
     <string name="ai_import_failed_large">The files are too large: at most %1$s for the .param and %2$s for the .bin</string>
     <string name="ai_import_failed_space">Not enough free space</string>
+    <string name="ai_import_failed_storage">The app couldn\'t store the files</string>
     <string name="ai_model_details_imported">%1$d× · %2$s · imported</string>
     <string name="ai_model_info_imported">%1$s\n\nImported by you; no source or license is known. About %2$d s per page on this device when imported.</string>
     <string name="ai_model_delete_imported">Delete %1$s? To use it again, import its files again.</string>

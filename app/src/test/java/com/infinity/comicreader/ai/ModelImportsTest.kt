@@ -185,4 +185,16 @@ class ModelImportsTest {
         assertEquals(listOf(AiStep.ARTIFACTS, AiStep.DESCREEN), ModelImports.steps(1))
         assertEquals(listOf(AiStep.UPSCALE), ModelImports.steps(3))
     }
+
+    @Test
+    fun aModelTheStoreWillNotTakeIsNotBlamedOnSpace() {
+        ModelImports.start(context, pair())
+        val until = System.currentTimeMillis() + 10_000
+        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        // A file where the imported models' folder goes: the move fails.
+        store.userRoot.writeText("")
+        ModelImports.save(context, "Mine", AiStep.UPSCALE)
+        while (ModelImports.state.value !is ImportState.Failed && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertEquals(ImportState.Failed(ImportFailure.STORAGE), ModelImports.state.value)
+    }
 }

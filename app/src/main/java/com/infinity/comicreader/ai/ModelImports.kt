@@ -34,7 +34,10 @@ enum class ImportFailure {
     TOO_LARGE,
 
     /** Not enough free space to copy them. */
-    SPACE
+    SPACE,
+
+    /** The app's storage would not take them, though space is free. */
+    STORAGE
 }
 
 /** Where an import is. */
@@ -152,7 +155,7 @@ object ModelImports {
             } catch (e: IOException) {
                 Log.w(TAG, "${fit.id}: ${e.message}")
                 store.staging(fit.id).deleteRecursively()
-                ImportState.Failed(ImportFailure.SPACE)
+                ImportState.Failed(storing(store.root))
             }
         }
     }
@@ -220,7 +223,7 @@ object ModelImports {
         report(ImportState.Working(name, checking = false))
         var kept = false
         try {
-            if (!dir.mkdirs()) return ImportState.Failed(ImportFailure.SPACE)
+            if (!dir.mkdirs()) return ImportState.Failed(storing(context.noBackupFilesDir))
             if (dir.usableSpace < param.bytes + bin.bytes + ModelDownloader.SPARE_BYTES) return ImportState.Failed(ImportFailure.SPACE)
             val files = store.userFiles(dir)
             try {
@@ -331,6 +334,10 @@ object ModelImports {
             }
         }
     }
+
+    /** Why storing under [dir] failed: no space, or the storage itself. */
+    private fun storing(dir: File): ImportFailure =
+        if (dir.usableSpace < ModelDownloader.SPARE_BYTES) ImportFailure.SPACE else ImportFailure.STORAGE
 
     /** The device's thermal headroom now (1: throttling); NaN where unknown. */
     private fun headroom(context: Context): Float =

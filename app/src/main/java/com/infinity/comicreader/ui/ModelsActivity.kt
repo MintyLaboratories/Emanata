@@ -189,6 +189,7 @@ object ModelText {
         ImportFailure.TOO_LARGE ->
             context.getString(R.string.ai_import_failed_large, size(context, ModelImports.MAX_PARAM_BYTES), size(context, ModelImports.MAX_BIN_BYTES))
         ImportFailure.SPACE -> context.getString(R.string.ai_import_failed_space)
+        ImportFailure.STORAGE -> context.getString(R.string.ai_import_failed_storage)
     }
 }
 

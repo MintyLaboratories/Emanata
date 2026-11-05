@@ -51,10 +51,13 @@ internal object ViewRing {
     /** [view] with smaller covers or rows: one column more than the [columns] shown (and one row, when set), or the next density down; null at the end. */
     fun smaller(view: TabView, columns: Int): TabView? = if (view.grid) grid(view, columns, +1) else density(view, -1)
 
+    /** Columns and set rows stepped together, keeping the grid's shape; null once either would leave 1..[TabView.MAX_CELLS]. */
     private fun grid(view: TabView, columns: Int, step: Int): TabView? {
-        val c = (columns + step).coerceIn(1, TabView.MAX_CELLS)
-        val r = if (view.rows > 0) (view.rows + step).coerceIn(1, TabView.MAX_CELLS) else 0
-        return if (c == columns && r == view.rows) null else view.copy(columns = c, rows = r)
+        val cells = 1..TabView.MAX_CELLS
+        val c = columns + step
+        val r = if (view.rows > 0) view.rows + step else 0
+        if (c !in cells || (view.rows > 0 && r !in cells)) return null
+        return view.copy(columns = c, rows = r)
     }
 
     private fun density(view: TabView, step: Int): TabView? {

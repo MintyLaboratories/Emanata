@@ -37,8 +37,11 @@ class ViewRingTest {
         assertNull(ViewRing.larger(TabView(grid = true, columns = 1), 1))
         assertNull(ViewRing.smaller(TabView(grid = true), 6))
         assertNull(ViewRing.smaller(TabView(grid = true, columns = 6, rows = 6), 6))
-        // One side at its end, the other still steps.
-        assertEquals(TabView(grid = true, columns = 1, rows = 2), ViewRing.larger(TabView(grid = true, columns = 1, rows = 3), 1))
+        // One side at its end stops both, keeping the shape.
+        assertNull(ViewRing.larger(TabView(grid = true, columns = 1, rows = 3), 1))
+        assertNull(ViewRing.smaller(TabView(grid = true, columns = 6, rows = 3), 6))
+        assertNull(ViewRing.larger(TabView(grid = true, columns = 3, rows = 1), 3))
+        assertEquals(TabView(grid = true, columns = 2, rows = 2), ViewRing.larger(TabView(grid = true, columns = 3, rows = 3), 3))
     }
 
     @Test

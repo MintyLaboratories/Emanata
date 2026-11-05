@@ -8,6 +8,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -18,6 +19,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Importing the user's own models: picked files copied, checked, then named and given a step. */
 @RunWith(RobolectricTestRunner::class)
@@ -144,6 +148,36 @@ class ModelImportsTest {
         File(store.root, ModelImports.CHECKING).writeText("Heavy one")
         store.prune()
         assertEquals("Heavy one", ModelImports.crashed(context))
+    }
+
+    @Test
+    fun anImportCanceledThenStartedAgainShowsOnlyTheNewOne() {
+        val checking = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        ModelImports.runtime = FakeRuntime(make = { onGpu, _ ->
+            FakeModel(onGpu = onGpu, onRun = {
+                checking.countDown()
+                release.await(10, TimeUnit.SECONDS)
+            })
+        })
+        ModelImports.start(context, pair("First"))
+        assertTrue(checking.await(10, TimeUnit.SECONDS))
+        ModelImports.cancel()
+        // One file: the new import waits for the other, once the canceled one has ended.
+        val (_, param) = pair("Second")
+        ModelImports.start(context, listOf(param))
+        release.countDown()
+        val until = System.currentTimeMillis() + 10_000
+        while (ModelImports.state.value !is ImportState.Half && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertEquals(ImportState.Half(param, isParam = true), ModelImports.state.value)
+        ModelImports.cancel()
+    }
+
+    @Test
+    fun aCanceledCopyKeepsNothing() {
+        assertThrows(CancellationException::class.java) { ModelImports.importNow(context, pair(), canceled = { true }) }
+        assertNull(store.root.resolve(ModelStore.STAGING).listFiles()?.firstOrNull())
+        assertTrue((ModelImports.runtime as FakeRuntime).asked.isEmpty())
     }
 
     @Test

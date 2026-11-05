@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import com.infinity.comicreader.reader.NativeResampler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -105,15 +106,19 @@ object ModelImports {
         val half = _state.value as? ImportState.Half
         val all = if (half != null) listOf(half.uri) + uris else uris
         _state.value = ImportState.Working("", checking = false)
-        job = scope.launch {
-            val self = coroutineContext[Job]
+        // Started once it is the job: a job canceled since, still ending, no longer reports.
+        val launched = scope.launch(start = CoroutineStart.LAZY) {
+            val me = coroutineContext[Job]
+            val report = { s: ImportState -> if (job === me) _state.value = s }
             val end = try {
-                importNow(app, all) { self?.isActive == false }
+                importNow(app, all, { me?.isActive == false }, report)
             } catch (e: CancellationException) {
                 ImportState.Idle
             }
-            if (_state.value is ImportState.Working) _state.value = end
+            if (job === me && _state.value is ImportState.Working) _state.value = end
         }
+        job = launched
+        launched.start()
     }
 
     /** Stops an import under way, keeping nothing of it. */
@@ -187,8 +192,16 @@ object ModelImports {
         return ended.also { ended = null }
     }
 
-    /** Copies and checks [uris]: the state it ends in. Blocking; throws [CancellationException] once [canceled]. */
-    internal fun importNow(context: Context, uris: List<Uri>, canceled: () -> Boolean = { false }): ImportState {
+    /**
+     * Copies and checks [uris]: the state it ends in; [report] gets the states on the way.
+     * Blocking; throws [CancellationException] once [canceled].
+     */
+    internal fun importNow(
+        context: Context,
+        uris: List<Uri>,
+        canceled: () -> Boolean = { false },
+        report: (ImportState) -> Unit = {}
+    ): ImportState {
         val picked = uris.mapNotNull { uri -> peek(context, uri)?.let { uri to it } }
         if (picked.size != uris.size) return ImportState.Failed(ImportFailure.UNREADABLE)
         if (picked.size == 1) return ImportState.Half(picked[0].first, picked[0].second.isParam)
@@ -202,15 +215,15 @@ object ModelImports {
         val store = ModelStore.of(context)
         val id = newId()
         val dir = store.staging(id)
-        _state.value = ImportState.Working(name, checking = false)
+        report(ImportState.Working(name, checking = false))
         var kept = false
         try {
             if (!dir.mkdirs()) return ImportState.Failed(ImportFailure.SPACE)
             if (dir.usableSpace < param.bytes + bin.bytes + ModelDownloader.SPARE_BYTES) return ImportState.Failed(ImportFailure.SPACE)
             val files = store.userFiles(dir)
             try {
-                copy(context, paramUri, files.param, MAX_PARAM_BYTES)
-                copy(context, binUri, files.bin, MAX_BIN_BYTES)
+                copy(context, paramUri, files.param, MAX_PARAM_BYTES, canceled)
+                copy(context, binUri, files.bin, MAX_BIN_BYTES, canceled)
             } catch (e: TooLarge) {
                 return ImportState.Failed(ImportFailure.TOO_LARGE)
             } catch (e: IOException) {
@@ -220,7 +233,7 @@ object ModelImports {
             val budget = memory(context)
             // A binary or broken .param: ncnn reads text ones only.
             if (!files.param.readText().trimStart().startsWith(MAGIC)) return ImportState.Refused(name, ModelRefusal.NOT_LOADED, 0, budget, 0)
-            _state.value = ImportState.Working(name, checking = true)
+            report(ImportState.Working(name, checking = true))
             val marker = File(store.root, CHECKING)
             marker.writeText(name)
             val result = try {
@@ -298,14 +311,15 @@ object ModelImports {
 
     private class TooLarge : IOException()
 
-    /** Copies [uri] to [to], at most [limit] bytes, else throws [TooLarge]. */
-    private fun copy(context: Context, uri: Uri, to: File, limit: Long) {
+    /** Copies [uri] to [to], at most [limit] bytes, else throws [TooLarge]; throws [CancellationException] once [canceled]. */
+    private fun copy(context: Context, uri: Uri, to: File, limit: Long, canceled: () -> Boolean) {
         val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open $uri")
         input.use { i ->
             to.outputStream().use { o ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (true) {
+                    if (canceled()) throw CancellationException("Import canceled")
                     val n = i.read(buffer)
                     if (n < 0) break
                     total += n

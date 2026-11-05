@@ -295,7 +295,8 @@ class CleanupActivity : AppCompatActivity() {
             workers, CompactWorkers.limit(this, workers)
         )
         val context = currentCoroutineContext()
-        val contents = withContext(AppDispatchers.io) { finder.contents(books) { context.isActive && !stopped } }
+        // Stop holds back reads only: every book is listed, so what is left is counted.
+        val contents = withContext(AppDispatchers.io) { finder.contents(books) { context.isActive } }
         val paused = Thrift.of(Thrift.saving(this), prefs).pausedScans
         compareSimilar(finder, contents, readNew = !paused && contents.unread.size <= AUTO_READS)
     }
@@ -308,7 +309,6 @@ class CleanupActivity : AppCompatActivity() {
      */
     private suspend fun compareSimilar(finder: SimilarFinder, contents: SimilarFinder.Contents, readNew: Boolean) {
         comparing = true
-        stopped = false
         showSimilarBar(getString(R.string.similar_listing), running = true)
         updateEmpty()
         val context = currentCoroutineContext()
@@ -342,7 +342,10 @@ class CleanupActivity : AppCompatActivity() {
         val left = result.total - result.compared
         if (left > 0 && context.isActive) {
             showSimilarBar(getString(R.string.similar_unread, left, result.total), running = false)
-            similarCompare.setOnClickListener { lifecycleScope.launch { compareSimilar(finder, contents.without(deleted), readNew = true) } }
+            similarCompare.setOnClickListener {
+                stopped = false
+                lifecycleScope.launch { compareSimilar(finder, contents.without(deleted), readNew = true) }
+            }
         } else {
             similarBar.visibility = View.GONE
         }

@@ -225,6 +225,57 @@ class CleanupSimilarTest {
         assertEquals("$W × $H pt", first.text(R.id.dimensions))
     }
 
+    /** Launches the search and stops it at once, before it reads any book. */
+    private fun launchStopped(): Pair<CleanupActivity, RecyclerView> {
+        val intent = Intent(context, CleanupActivity::class.java)
+            .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
+            .putExtra(CleanupActivity.EXTRA_ROOT, root.absolutePath)
+        val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
+        activity.findViewById<MaterialButton>(R.id.similar_stop).performClick()
+        settle(activity)
+        val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
+        lay(list)
+        return activity to list
+    }
+
+    @Test
+    fun stoppedWithNothingFoundCountsWhatIsLeftAndCompareGoesOn() {
+        val (activity, list) = launchStopped()
+        assertEquals(0, list.adapter!!.itemCount)
+        assertEquals(context.getString(R.string.similar_unread, 3, 3), activity.findViewById<TextView>(R.id.similar_text).text.toString())
+        // Not "Nothing found": books are left to compare.
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
+        activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
+        settle(activity)
+        lay(list)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_bar).visibility)
+        assertEquals(context.getString(R.string.dupes_similar), list.row(0).text(R.id.title))
+    }
+
+    @Test
+    fun stoppedSearchHeadsWhatItFoundWithHowManyItCompared() {
+        BookIds.init(context)
+        for (book in listOf(tale, retold)) SimilarStore.of(context.cacheDir).put(BookIds.of(book), BookPrints.read(book, "UTF-8", context.cacheDir)!!.entry)
+        val (activity, list) = launchStopped()
+        assertEquals(context.getString(R.string.dupes_similar_partial, 2, 3), list.row(0).text(R.id.title))
+        assertEquals(2, list.row(1).findViewById<LinearLayout>(R.id.columns).childCount)
+        assertEquals(context.getString(R.string.similar_unread, 1, 3), activity.findViewById<TextView>(R.id.similar_text).text.toString())
+    }
+
+    @Test
+    fun similarBookWithBitIdenticalCopiesListsEveryPlaceInItsColumn() {
+        tale.copyTo(File(root, "fourth/Tale.cbz").apply { parentFile!!.mkdirs() })
+        val (_, list) = launch()
+        // The bit-identical group, then the similar books.
+        assertEquals(4, list.adapter!!.itemCount)
+        assertEquals(context.getString(R.string.dupes_identical), list.row(0).text(R.id.title))
+        assertEquals(context.getString(R.string.dupes_similar), list.row(2).text(R.id.title))
+        val columns = list.row(3).findViewById<LinearLayout>(R.id.columns)
+        assertEquals(2, columns.childCount)
+        assertEquals(2, columns.getChildAt(0).findViewById<LinearLayout>(R.id.locations).childCount)
+        assertEquals(1, columns.getChildAt(1).findViewById<LinearLayout>(R.id.locations).childCount)
+    }
+
     private companion object {
         const val W = 120
         const val H = 180

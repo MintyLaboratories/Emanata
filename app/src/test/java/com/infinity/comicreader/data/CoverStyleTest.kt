@@ -55,6 +55,8 @@ class CoverStyleTest {
     @Test
     fun defaultsAreAutoFromTheTop() {
         assertEquals(ThumbFit.AUTO, ThumbFit.of(null))
-        assertEquals(CropAnchor.TOP, CropAnchor.of("smart"))
+        assertEquals(CropAnchor.TOP, CropAnchor.of(null))
+        assertEquals(CropAnchor.TOP, CropAnchor.of("bottom"))
+        assertEquals(CropAnchor.SMART, CropAnchor.of("smart"))
     }
 }

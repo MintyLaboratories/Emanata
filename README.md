@@ -82,7 +82,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
-  (default) or the center of a cover cropped for height.
+  (default) or the center of a cover cropped for height, or (Smart,
+  experimental) its tallest text: a text detector (PaddleOCR's mobile
+  detector on ncnn, shipped in the app; it finds where text is, not what it
+  says) marks the lines of text, and the crop keeps the tallest, with every
+  line of about its size, as near the top (centered across) as that allows.
+  A cover without text keeps its most detailed part when clearly more
+  detailed than its top. Found once per cover and kept.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

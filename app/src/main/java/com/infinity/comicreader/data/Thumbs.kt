@@ -2,8 +2,11 @@ package com.infinity.comicreader.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.util.LruCache
+import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.HiddenPages
@@ -19,6 +22,7 @@ import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.Hashes
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
+import java.util.Locale
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
@@ -59,6 +63,39 @@ object Thumbs {
         val k = key(entry)
         val known = fronts.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { fronts.put(k, it) }
         return Wraparound.Half.entries.getOrNull(known)
+    }
+
+    /** Where the Smart crop anchor looks on each cover, by [key] and the part shown; kept across sessions in [focusStore]. */
+    private val focuses = LruCache<String, CoverFocus>(1024)
+    private const val FOCUS_FILE = "cover-focus.txt"
+
+    @Volatile
+    private var focusStore: FocusStore? = null
+
+    private fun focusStore(context: Context): FocusStore = focusStore ?: synchronized(this) {
+        focusStore ?: FocusStore(File(context.cacheDir, FOCUS_FILE)).also { focusStore = it }
+    }
+
+    /** Finds text on a cover for the Smart crop anchor; null when it cannot. Tests stand in their own. */
+    @Volatile
+    internal var detector: (Context, Bitmap) -> ScoreMap? = { context, bitmap -> TextDetector.shared(context).detect(bitmap) }
+
+    /**
+     * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
+     * cover; without [find], only one found before ([CoverFocus.NONE] when none was).
+     */
+    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true): CoverFocus {
+        val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
+            .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
+        val k = "${key(entry)}|$part"
+        focuses.get(k)?.let { return it }
+        val store = focusStore(context)
+        store.get(k)?.let { focuses.put(k, it); return it }
+        if (!find) return CoverFocus.NONE
+        val focus = CoverArt.focusOf(src, region) { detector(context, it) }
+        store.put(k, focus)
+        focuses.put(k, focus)
+        return focus
     }
 
     /** True once the front half of [file]'s cover was looked for this session, whatever was found. */
@@ -175,9 +212,12 @@ object Thumbs {
         }
         var sided = false
         val cover = try {
-            CoverArt.cover(full, width, height, style, made.innerRatio, rightToLeft) { src ->
-                frontOf(entry, src).also { if (it == null) sided = true }
-            }
+            CoverArt.cover(
+                full, width, height, style, made.innerRatio, rightToLeft,
+                front = { src -> frontOf(entry, src).also { if (it == null) sided = true } },
+                // A quick cover from a first layer uses a focus already found; its full cover finds one.
+                focus = { src, region -> focusOf(context, entry, src, region, find = made.full) }
+            )
         } catch (t: Throwable) {
             return null
         } finally {
@@ -331,6 +371,8 @@ object Thumbs {
         inners.evictAll()
         fronts.evictAll()
         directional.evictAll()
+        focuses.evictAll()
+        focusStore(context).clear()
         runCatching { File(context.cacheDir, DISK_DIR).deleteRecursively() }
     }
 

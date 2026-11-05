@@ -8,6 +8,7 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.Avif
 import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
@@ -100,6 +101,69 @@ class ThumbsTest {
         val wide = Thumbs.load(context, cover(600, 300, "wide.png"), "UTF-8", 200, 300)!!
         assertTrue(Color.red(wide.getPixel(100, 1)) < 230)
         assertEquals(Color.GREEN, wide.getPixel(100, 150))
+    }
+
+    /** Stands in a detector seeing text across rows [top] to [bottom] (shares of the height) of every image; counts its calls. */
+    private fun textAt(top: Double, bottom: Double): IntArray {
+        val calls = intArrayOf(0)
+        Thumbs.detector = { _, bitmap ->
+            calls[0]++
+            val w = bitmap.width
+            val h = bitmap.height
+            ScoreMap(w, h, FloatArray(w * h) { i -> if (i / w in (top * h).toInt() until (bottom * h).toInt() && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+        }
+        return calls
+    }
+
+    private val detector = Thumbs.detector
+
+    @After
+    fun dropDetector() {
+        Thumbs.detector = detector
+    }
+
+    @Test
+    fun smartKeepsTheTallestTextFoundOncePerCover() {
+        val calls = textAt(0.85, 0.92)
+        val entry = cover()
+        val thumb = Thumbs.load(context, entry, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        // The text sits in the blue bottom third: the crop moves down to keep it.
+        assertEquals(Color.BLUE, thumb.getPixel(60, 30))
+        assertEquals(Color.BLUE, thumb.getPixel(60, 58))
+        assertTrue(Color.red(thumb.getPixel(60, 2)) < 128)
+        assertEquals(1, calls[0])
+        // Another size uses the focus found.
+        Thumbs.load(context, entry, "UTF-8", 100, 40, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))
+        assertEquals(1, calls[0])
+    }
+
+    @Test
+    fun smartLooksOnlyWhenItCrops() {
+        val calls = textAt(0.85, 0.92)
+        Thumbs.load(context, cover(), "UTF-8", 200, 300, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))
+        Thumbs.load(context, cover(name = "other.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FIT, CropAnchor.SMART))
+        assertEquals(0, calls[0])
+    }
+
+    /** A [w] x [h] image of [color] at each pixel, as an image book. */
+    private fun image(w: Int, h: Int, name: String, color: (Int, Int) -> Int): BookEntry {
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        for (y in 0 until h) for (x in 0 until w) bitmap.setPixel(x, y, color(x, y))
+        val file = File(context.cacheDir, name)
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
+    }
+
+    @Test
+    fun smartWithoutTextKeepsTheMostDetailedPart() {
+        // Gray above, black and white stripes in the bottom third.
+        val striped = image(300, 450, "striped.png") { _, y -> if (y < 300) Color.GRAY else if ((y / 4) % 2 == 0) Color.WHITE else Color.BLACK }
+        val thumb = Thumbs.load(context, striped, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        val column = (20 until 40).map { Color.green(thumb.getPixel(60, it)) }
+        assertTrue("stripes not shown: $column", column.max() - column.min() > 60)
+        // A blank cover keeps the top.
+        val flat = image(300, 450, "flat.png") { _, y -> if (y < 150) Color.RED else Color.rgb(250, 0, 0) }
+        assertEquals(Color.RED, Thumbs.load(context, flat, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!.getPixel(60, 30))
     }
 
     @Test

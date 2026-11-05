@@ -25,7 +25,10 @@ enum class ThumbFit(val key: String) {
 /** Which part of a cover too tall for its box stays when it is cropped. */
 enum class CropAnchor(val key: String) {
     TOP("top"),
-    CENTER("center");
+    CENTER("center"),
+
+    /** Keeps the cover's tallest text, else its most detailed part ([SmartCrop]); experimental. */
+    SMART("smart");
 
     companion object {
         fun of(key: String?): CropAnchor = entries.firstOrNull { it.key == key } ?: TOP

@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Blur
 import com.infinity.comicreader.reader.Fit
@@ -12,6 +13,7 @@ import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -66,7 +68,8 @@ object CoverArt {
      * typical inner page of shape [innerRatio] ([Wraparound.isWraparound]), shows its
      * front: the half without the barcode ([front], worked out by [frontOf] when asked),
      * else the half a book read [rightToLeft] or not starts on; one inner page wide
-     * from the outer edge, so the spine is left out.
+     * from the outer edge, so the spine is left out. [focus] tells the Smart crop anchor
+     * where to look in the part shown, asked only when it crops.
      */
     fun cover(
         src: Bitmap,
@@ -75,12 +78,38 @@ object CoverArt {
         style: CoverStyle,
         innerRatio: Double? = null,
         rightToLeft: Boolean = false,
-        front: (Bitmap) -> Wraparound.Half? = ::frontOf
+        front: (Bitmap) -> Wraparound.Half? = ::frontOf,
+        focus: (Bitmap, Rect) -> CoverFocus = { _, _ -> CoverFocus.NONE }
     ): Bitmap {
-        if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style)
+        if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style, focus = focus)
         val half = Wraparound.shownFront(front(src), rightToLeft)
         val (left, right) = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
-        return compose(src, width, height, style, Rect(left, 0, right, src.height))
+        return compose(src, width, height, style, Rect(left, 0, right, src.height), focus = focus)
+    }
+
+    /**
+     * Where the Smart crop anchor looks in [region] of [src]: its text, as [detect] finds it on
+     * the region shrunk to [SmartCrop.inputSize] (none without [detect], or when it fails), and
+     * its detail.
+     */
+    fun focusOf(src: Bitmap, region: Rect, detect: ((Bitmap) -> ScoreMap?)?): CoverFocus {
+        val (w, h) = SmartCrop.inputSize(region.width(), region.height()).let { it[0] to it[1] }
+        val plan = Target(w, h, Fit.STRETCH).plan(region.width().toDouble(), region.height().toDouble(), region.left.toDouble(), region.top.toDouble())
+        val small = render(src, plan, false)
+        try {
+            val luma = ByteArray(w * h)
+            val row = IntArray(w)
+            for (y in 0 until h) {
+                small.getPixels(row, 0, w, 0, y, w, 1)
+                Wraparound.luminance(row, w, luma, y * w)
+            }
+            val (rows, columns) = SmartCrop.detail(luma, w, h).let { it[0] to it[1] }
+            val map = detect?.let { runCatching { it(small) }.getOrNull() }
+                ?: return CoverFocus(null, null, rows, columns)
+            return SmartCrop.focus(SmartCrop.boxes(map), map.width, map.height, rows, columns)
+        } finally {
+            small.recycle()
+        }
     }
 
     /** The front half of wraparound [src], from where its barcode is; null when that tells nothing. */
@@ -107,15 +136,26 @@ object CoverArt {
 
     /**
      * [region] of [src] (all of it when null) as a [width] x [height] cover; [fit]
-     * forces the whole region over a blurred copy whatever [style] says. Leaves
-     * [src] as it is.
+     * forces the whole region over a blurred copy whatever [style] says. [focus] is
+     * asked where the Smart crop anchor looks when it crops. Leaves [src] as it is.
      */
-    fun compose(src: Bitmap, width: Int, height: Int, style: CoverStyle, region: Rect? = null, fit: Boolean = false): Bitmap {
+    fun compose(
+        src: Bitmap,
+        width: Int,
+        height: Int,
+        style: CoverStyle,
+        region: Rect? = null,
+        fit: Boolean = false,
+        focus: (Bitmap, Rect) -> CoverFocus = { _, _ -> CoverFocus.NONE }
+    ): Bitmap {
         val r = region ?: Rect(0, 0, src.width, src.height)
         val fill = !fit && style.fills(r.width(), r.height(), width, height)
         val plan = { t: Target -> t.plan(r.width().toDouble(), r.height().toDouble(), r.left.toDouble(), r.top.toDouble()) }
         if (fill) {
-            return render(src, plan(Target(width, height, Fit.COVER, anchorTop = style.anchor == CropAnchor.TOP)), style.linear, style.scaling)
+            val anchored = plan(Target(width, height, Fit.COVER, anchorTop = style.anchor != CropAnchor.CENTER))
+            val crops = anchored.spanW < r.width() || anchored.spanH < r.height()
+            val shown = if (style.anchor == CropAnchor.SMART && crops) smart(anchored, r, focus(src, r)) else anchored
+            return render(src, shown, style.linear, style.scaling)
         }
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
@@ -124,6 +164,17 @@ object CoverArt {
         canvas.drawBitmap(front, ((width - front.width) / 2).toFloat(), ((height - front.height) / 2).toFloat(), null)
         front.recycle()
         return out
+    }
+
+    /** [plan], a crop of region [r], moved along each axis it crops to where [focus] says ([SmartCrop.offset]). */
+    private fun smart(plan: Plan, r: Rect, focus: CoverFocus): Plan {
+        // At scale 1 a whole-pixel start keeps the result a plain crop.
+        fun start(at: Double, span: Double, out: Int) = if (span == out.toDouble()) floor(at) else at
+        val w = r.width().toDouble()
+        val h = r.height().toDouble()
+        val x = if (plan.spanW < w) r.left + start(SmartCrop.offset(focus, w, plan.spanW, vertical = false), plan.spanW, plan.width) else plan.x
+        val y = if (plan.spanH < h) r.top + start(SmartCrop.offset(focus, h, plan.spanH, vertical = true), plan.spanH, plan.height) else plan.y
+        return plan.copy(x = x, y = y)
     }
 
     /** The region filling the box, shrunk, blurred, stretched back and dimmed. */

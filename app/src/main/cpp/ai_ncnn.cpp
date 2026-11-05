@@ -66,10 +66,10 @@ struct Usage {
 };
 
 /**
- * Host memory for feature maps and scratch, pooled: a freed chunk is kept and handed out
- * again for the smallest request it fits; past [KEEP] kept chunks, a request none fits drops
- * the smallest kept one when it is larger than all, else the largest when it is smaller than
- * all. Every chunk it holds, handed out or kept, counts in [usage].
+ * Host memory for feature maps and scratch, pooled: a freed chunk is kept and handed out again
+ * for the smallest request it fits (as ncnn's own pools, which take the first that fits);
+ * at most [KEEP] chunks are kept: a request none fits drops the smallest, a freed chunk past
+ * [KEEP] the one kept longest. Every chunk it holds, handed out or kept, counts in [usage].
  */
 class CountingPool : public ncnn::Allocator {
 public:
@@ -89,12 +89,8 @@ public:
             kept.erase(best);
             return ptr;
         }
-        if (kept.size() >= KEEP) {
-            auto lo = std::min_element(kept.begin(), kept.end());
-            auto hi = std::max_element(kept.begin(), kept.end());
-            if (hi->first < size) drop(lo);
-            else if (lo->first > size) drop(hi);
-        }
+        // None fits: all kept are smaller.
+        if (kept.size() >= KEEP) drop(std::min_element(kept.begin(), kept.end()));
         void* ptr = ncnn::fastMalloc(size);
         if (!ptr) return nullptr;
         out[ptr] = size;
@@ -108,6 +104,7 @@ public:
         if (it == out.end()) return;
         kept.emplace_back(it->second, ptr);
         out.erase(it);
+        while (kept.size() > KEEP) drop(kept.begin());
     }
 
     /** Frees the kept chunks. */

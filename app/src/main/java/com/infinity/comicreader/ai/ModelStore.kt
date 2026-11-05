@@ -7,14 +7,19 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.Properties
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
- * Where catalog models live: one folder per model under [root], named by its id, holding its
+ * Where models live: one folder per catalog model under [root], named by its id, holding its
  * `.param` and `.bin` once downloaded and verified, each with a stamp of the SHA-256 it was
  * verified against (a catalog that changes a file's checksum makes it download again). A file
- * still downloading is a `.part` beside them, kept to resume from.
+ * still downloading is a `.part` beside them, kept to resume from. Imported models
+ * ([UserModel]) live under [userRoot], one folder each holding [USER_PARAM], [USER_BIN] and
+ * what the user named it and the check measured ([USER_INFO]); one being imported waits in
+ * [staging] until taken in (what the app's end leaves there goes at the next start, with the
+ * folders of models the catalog dropped).
  */
 class ModelStore(val root: File) {
     fun dir(model: CatalogModel): File = File(root, model.id)
@@ -36,8 +41,16 @@ class ModelStore(val root: File) {
     fun installed(model: CatalogModel): Boolean = model.files.all { has(model, it) }
 
     /** [model]'s files for [Sessions.open]; null until [installed]. */
-    fun files(model: CatalogModel): ModelFiles? =
-        if (installed(model)) ModelFiles(target(model, model.param), target(model, model.bin)) else null
+    fun files(model: AiModel): ModelFiles? = when (model) {
+        is CatalogModel -> if (installed(model)) ModelFiles(target(model, model.param), target(model, model.bin)) else null
+        is UserModel -> userFiles(userDir(model.id)).takeIf { it.param.isFile && it.bin.isFile }
+    }
+
+    /** True once [model]'s files are in place: downloaded and verified, or imported. */
+    fun installed(model: AiModel): Boolean = when (model) {
+        is CatalogModel -> installed(model)
+        is UserModel -> files(model) != null
+    }
 
     /** Bytes of [model] on disk: files in place and parts. */
     fun bytesHeld(model: CatalogModel): Long =
@@ -52,15 +65,61 @@ class ModelStore(val root: File) {
         return !d.exists() || d.deleteRecursively()
     }
 
-    /** Deletes folders of models no longer in [catalog] (an update dropped or replaced them). */
+    /** Deletes folders of models no longer in [catalog] (an update dropped or replaced them); imported ones stay. */
     fun prune(catalog: Collection<CatalogModel> = ModelCatalog.all) {
-        val ids = catalog.map { it.id }.toSet()
+        val ids = catalog.map { it.id }.toSet() + USER
         root.listFiles()?.filter { it.name !in ids }?.forEach { it.deleteRecursively() }
+    }
+
+    /** Where imported models live. */
+    val userRoot: File get() = File(root, USER)
+
+    /** Imported model [id]'s folder. */
+    fun userDir(id: String): File = File(userRoot, id)
+
+    /** The model files in imported model folder [dir]. */
+    fun userFiles(dir: File): ModelFiles = ModelFiles(File(dir, USER_PARAM), File(dir, USER_BIN))
+
+    /** Where model [id] waits while it is imported. */
+    fun staging(id: String): File = File(File(root, STAGING), id)
+
+    /** The imported models, by name; deletes folders whose [USER_INFO] is missing or does not read. */
+    fun userModels(): List<UserModel> {
+        val out = ArrayList<UserModel>()
+        for (dir in userRoot.listFiles()?.filter { it.isDirectory }.orEmpty()) {
+            val info = File(dir, USER_INFO)
+            val p = runCatching { Properties().apply { info.inputStream().use { load(it) } } }.getOrNull()
+            val files = userFiles(dir)
+            val m = p?.let { UserModel.from(dir, it, files.param, files.bin) }
+            if (m == null) dir.deleteRecursively() else out += m
+        }
+        return out.sortedBy { it.name.lowercase() }
+    }
+
+    /** Takes imported model [m] in: what it says goes beside its files in [staging], and the folder into [userRoot]. */
+    fun saveUser(m: UserModel) {
+        val from = staging(m.id)
+        from.resolve(USER_INFO).outputStream().use { m.toProperties().store(it, null) }
+        userRoot.mkdirs()
+        if (!from.renameTo(userDir(m.id))) throw IOException("Cannot move ${from.name} into ${userRoot.name}")
+    }
+
+    /** Deletes imported model [m]; true when nothing of it is left. */
+    fun delete(m: UserModel): Boolean {
+        val d = userDir(m.id)
+        return !d.exists() || d.deleteRecursively()
     }
 
     companion object {
         const val PART = ".part"
         const val STAMP = ".sha256"
+
+        /** The folder of imported models, the one of models being imported, and the names of an imported model's files. */
+        const val USER = "imported"
+        const val STAGING = "importing"
+        const val USER_PARAM = "model.param"
+        const val USER_BIN = "model.bin"
+        const val USER_INFO = "model.properties"
 
         /** The app's store: not backed up (the files download again) and not cleared with the cache. */
         fun of(context: Context) = ModelStore(File(context.noBackupFilesDir, "ai-models"))

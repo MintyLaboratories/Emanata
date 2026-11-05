@@ -4,7 +4,9 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.appcompat.app.AppCompatDelegate
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.ProcessedStore
+import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -47,6 +49,8 @@ class App : Application() {
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes
         Calibrator.start(this)
+        // Before any chain is read: a pick of an imported model needs it known.
+        runCatching { UserModels.load(ModelStore.of(this)) }
         // Off the main thread: lookups by ID never wait on the database.
         thread(name = "book-index", isDaemon = true) {
             runCatching { BookIds.load() }

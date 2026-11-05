@@ -60,26 +60,22 @@ data class ModelFile(val name: String, val url: String, val bytes: Long, val sha
  * [blurb]: what it does, where known.
  */
 data class CatalogModel(
-    val id: String,
-    val name: String,
-    val step: AiStep,
-    val scale: Int,
+    override val id: String,
+    override val name: String,
+    override val step: AiStep,
+    override val scale: Int,
     val source: ModelSource,
     val param: ModelFile,
     val bin: ModelFile,
-    val pageMs: Long = 0,
+    override val pageMs: Long = 0,
     val blurb: ModelBlurb? = null
-) {
+) : AiModel {
     val files: List<ModelFile> get() = listOf(param, bin)
 
     /** Bytes to download. */
-    val bytes: Long get() = param.bytes + bin.bytes
+    override val bytes: Long get() = param.bytes + bin.bytes
 
-    /** True when a page takes it [ModelCatalog.SLOW_PAGE_MS] or longer: offered only with advanced settings shown. */
-    val slow: Boolean get() = pageMs >= ModelCatalog.SLOW_PAGE_MS
-
-    /** [pageMs] in whole seconds. */
-    val pageSeconds: Long get() = (pageMs + 500) / 1000
+    override val fingerprint: String get() = "${param.sha256.take(16)}:${bin.sha256.take(16)}"
 }
 
 /**
@@ -211,7 +207,7 @@ object ModelCatalog {
     /** The longest [CatalogModel.pageMs] the catalog takes, and the budget of a whole chain ([AiChain.slow]). */
     const val MAX_PAGE_MS = PageLimits.DEFAULT_TIMEOUT_MS * 2 / 3
 
-    /** The [CatalogModel.pageMs] from which a model is slow ([CatalogModel.slow]). */
+    /** The [CatalogModel.pageMs] from which a model is slow ([AiModel.slow]): offered only with advanced settings shown. */
     const val SLOW_PAGE_MS = 10_000L
 
     /** The model Upscale runs until another is chosen: the fastest that works well. */

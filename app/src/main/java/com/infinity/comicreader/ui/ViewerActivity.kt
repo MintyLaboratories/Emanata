@@ -65,6 +65,7 @@ import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookId
@@ -3803,7 +3804,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val picks = aiShown()
         val states = ModelDownloads.state.value.states
         for ((step, id) in aiPickers) {
-            val m = ModelCatalog.byId(picks.id(step))?.takeIf { it.step == step }
+            val m = Models.byId(picks.id(step))?.takeIf { it.step == step }
             val button = view.findViewById<MaterialButton>(id)
             button.text = ModelText.choice(this, m, m != null && aiModels.installed(m), m?.let { states[it.id] })
             val shown = step == AiStep.UPSCALE || !prefs.keepSimple || m != null
@@ -3835,7 +3836,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     /**
      * The models [step] can run, with what they do, the one this book runs checked; slow ones
-     * only while Keep it simple is off, or when running ([ModelCatalog.offered]).
+     * only while Keep it simple is off, or when running; imported ones too ([com.infinity.comicreader.ai.Models.offered]).
      */
     private fun showAiChoices(step: AiStep) {
         val current = aiShown().id(step)

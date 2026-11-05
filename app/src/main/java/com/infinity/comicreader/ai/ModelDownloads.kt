@@ -26,7 +26,8 @@ sealed interface DownloadState {
 
 /**
  * What [ModelDownloads] is doing: the [states] of downloads running, waiting or failed, by
- * model id, and a [generation] that grows whenever a model is installed or deleted.
+ * model id, and a [generation] that grows whenever a model is installed or deleted, imported
+ * ones too.
  */
 data class Downloads(val states: Map<String, DownloadState> = emptyMap(), val generation: Int = 0)
 
@@ -102,6 +103,9 @@ object ModelDownloads {
             }
         }
     }
+
+    /** Says a model was installed or deleted some other way (imported ones): [Downloads.generation] grows. */
+    fun changed() = _state.update { it.copy(generation = it.generation + 1) }
 
     private fun set(id: String, s: DownloadState) = _state.update { it.copy(states = it.states + (id to s)) }
 

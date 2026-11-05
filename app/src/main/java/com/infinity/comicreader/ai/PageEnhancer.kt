@@ -62,7 +62,7 @@ class ReaderAi internal constructor(
     private val store: ProcessedStore,
     private val runtime: InferenceRuntime,
     private val gate: () -> Fallback?,
-    private val download: (CatalogModel) -> Unit,
+    private val download: (AiModel) -> Unit,
     private val threads: Int = NativeResampler.threads,
     private val limits: PageLimits = PageLimits(),
     /** The memory a model may take as it opens ([ModelMemory]). */
@@ -80,15 +80,15 @@ class ReaderAi internal constructor(
     private var used = false
 
     /** Each book's chain by its key ("" for none), until [refresh]. */
-    private val chains = ConcurrentHashMap<String, List<CatalogModel>>()
+    private val chains = ConcurrentHashMap<String, List<AiModel>>()
 
-    /** Each model's milliseconds per megapixel of input as measured here, by catalog id ([rateOf]). */
+    /** Each model's milliseconds per megapixel of input as measured here, by model id ([rateOf]). */
     private val rates = ConcurrentHashMap<String, Double>()
 
     /** How long a page took from start to shown, by chain ([AiChain.signature]), smoothed. */
     private val pageTimes = ConcurrentHashMap<String, Long>()
 
-    /** Models opened so far by catalog id; a model that would not open maps to none. Worker thread only. */
+    /** Models opened so far by model id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
     /** The Book IDs of books whose key holds none ([BookIds.keyOf] made it from the path when the ID could not be read). */
@@ -104,7 +104,7 @@ class ReaderAi internal constructor(
     }
 
     /** The chain the pages of the book keyed [book] go through. */
-    fun chainFor(book: String?): List<CatalogModel> = chains.getOrPut(book.orEmpty()) {
+    fun chainFor(book: String?): List<AiModel> = chains.getOrPut(book.orEmpty()) {
         val own = book?.let { BookIds.parseKey(it) ?: ids[it] }?.let(ownPicks)
         AiChain.forBook(prefs, own)
     }
@@ -117,8 +117,8 @@ class ReaderAi internal constructor(
         return pageTimes[AiChain.signature(chain)] ?: chain.sumOf { (rateOf(it) * REFERENCE_MP).toLong() }
     }
 
-    /** [m]'s milliseconds per megapixel: as measured here, else from the catalog's reference page. */
-    internal fun rateOf(m: CatalogModel): Double = rates[m.id] ?: priorRate(m)
+    /** [m]'s milliseconds per megapixel: as measured here, else from its page time ([AiModel.pageMs]). */
+    internal fun rateOf(m: AiModel): Double = rates[m.id] ?: priorRate(m)
 
     override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean {
         val chain = chainFor(source.bookKey)
@@ -127,7 +127,7 @@ class ReaderAi internal constructor(
     }
 
     /** The key [store] keeps page [index] of [source] by, made by [chain] for [target] at [width] x [height]; null for a book without a key. */
-    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<CatalogModel>): String? =
+    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>): String? =
         source.bookKey?.let {
             ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain))
         }
@@ -199,10 +199,10 @@ class ReaderAi internal constructor(
 
     /**
      * The limits of a page whose models run [steps] of [chain]: [PageLimits.DEFAULT_TIMEOUT_MS],
-     * or for a slower chain [WARM] times what the catalog says it takes on the reference tablet
-     * started cool, up to [MAX_TIMEOUT_MS], so a slow chain picked for a book can finish.
+     * or for a slower chain [WARM] times what its models' page times ([AiModel.pageMs]) say
+     * it takes started cool, up to [MAX_TIMEOUT_MS], so a slow chain picked for a book can finish.
      */
-    internal fun limitsFor(chain: List<CatalogModel>, steps: List<ChainStep>): PageLimits {
+    internal fun limitsFor(chain: List<AiModel>, steps: List<ChainStep>): PageLimits {
         val cool = steps.sumOf { priorRate(chain[it.index]) * it.pixels / 1e6 }
         return limits.copy(timeoutMs = (cool * WARM).toLong().coerceIn(limits.timeoutMs, maxOf(limits.timeoutMs, MAX_TIMEOUT_MS)))
     }
@@ -212,7 +212,7 @@ class ReaderAi internal constructor(
      * its whole input's expected time ([RunStats.fullMs]): its first tile, which carries the
      * GPU's warm-up, counted once, not as the pace of the rest.
      */
-    internal fun learn(m: CatalogModel, pixels: Long, stats: RunStats) {
+    internal fun learn(m: AiModel, pixels: Long, stats: RunStats) {
         val ms = stats.fullMs ?: return
         if (pixels <= 0) return
         val rate = ms / (pixels / 1e6)
@@ -220,15 +220,15 @@ class ReaderAi internal constructor(
     }
 
     /**
-     * Moves [chain]'s measured rates a step back toward the catalog's after a page skipped as
+     * Moves [chain]'s measured rates a step back toward their page times after a page skipped as
      * too slow, so a device that has cooled down tries the chain again after a few pages.
      */
-    private fun forgetSome(chain: List<CatalogModel>) {
+    private fun forgetSome(chain: List<AiModel>) {
         for (m in chain) rates.computeIfPresent(m.id) { _, r -> r + (priorRate(m) - r) * RECOVER }
     }
 
     /** [m] opened, once; null when it does not open. */
-    private fun session(m: CatalogModel, files: ModelFiles, canceled: () -> Boolean): Session? {
+    private fun session(m: AiModel, files: ModelFiles, canceled: () -> Boolean): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
@@ -239,7 +239,7 @@ class ReaderAi internal constructor(
     }
 
     /**
-     * Closes the models open but those of [keep] (catalog ids), after any page in progress,
+     * Closes the models open but those of [keep] (model ids), after any page in progress,
      * freeing their native and GPU memory; they open again when next needed.
      */
     fun closeModels(keep: Set<String> = emptySet()) {
@@ -272,7 +272,7 @@ class ReaderAi internal constructor(
 
         private val WORKER: CoroutineDispatcher by lazy { EXECUTOR.asCoroutineDispatcher() }
 
-        /** Megapixels of the catalog's reference page ([CatalogModel.pageMs]): 1000 x 1500. */
+        /** Megapixels of the page [AiModel.pageMs] is timed on ([AiModel.pageMs]): 1000 x 1500. */
         const val REFERENCE_MP = 1.5
 
         /**
@@ -285,11 +285,11 @@ class ReaderAi internal constructor(
         /** The longest a page may take, however slow its chain. */
         const val MAX_TIMEOUT_MS = 120_000L
 
-        /** Share of the way back to the catalog's rate a measured one moves at each page skipped as too slow. */
+        /** Share of the way back to the rate of its page time a measured rate moves at each page skipped as too slow. */
         const val RECOVER = 0.25
 
         /** [m]'s milliseconds per megapixel on the reference tablet, started cool. */
-        fun priorRate(m: CatalogModel): Double = m.pageMs / REFERENCE_MP
+        fun priorRate(m: AiModel): Double = m.pageMs / REFERENCE_MP
 
         /** Largest page a chain reads, reduced evenly to fit: 32 MB of ARGB. */
         const val MAX_INPUT_PIXELS = 8_000_000L
@@ -298,7 +298,7 @@ class ReaderAi internal constructor(
          * True when [chain] only enlarges and a [size] page shows as [target] no larger than it
          * is: nothing to do. Unknown before an auto-crop finds its box, as the crop may enlarge.
          */
-        internal fun unneeded(chain: List<CatalogModel>, target: Target, size: IntArray): Boolean {
+        internal fun unneeded(chain: List<AiModel>, target: Target, size: IntArray): Boolean {
             if (chain.any { it.scale <= 1 } || (target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0) return false
             val a = target.area(size[0], size[1])
             val w = (a[2] - a[0]).toDouble()
@@ -321,7 +321,8 @@ class ReaderAi internal constructor(
             val models = ModelStore.of(app)
             return ReaderAi(
                 Prefs(app), library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
-                AiConditions.gate(app), { m -> if (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) },
+                AiConditions.gate(app),
+                { m -> if (m is CatalogModel && ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) },
                 memory = { ModelMemory.of(app) }
             )
         }

@@ -901,6 +901,7 @@
     <string name="ai_download_failed_space">Not enough free space</string>
     <string name="ai_model_info">%1$s\n\nBy %2$s, under the %3$s.\nSource: %4$s\nDownloaded unchanged from: %5$s</string>
     <string name="ai_models_used">Models take %1$s</string>
+    <string name="ai_model_details_imported">%1$d× · %2$s · imported</string>
     <string name="pref_page_spacing">Page gap</string>
     <string name="pref_auto_next">Auto next chapter</string>
     <string name="pref_auto_next_desc">Open the next chapter automatically when a chapter ends, without the end-of-chapter prompt</string>

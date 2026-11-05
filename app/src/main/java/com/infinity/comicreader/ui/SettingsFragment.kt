@@ -19,12 +19,14 @@ import androidx.preference.SeekBarPreference
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.Downloads
-import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryData
@@ -480,25 +482,25 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     /**
-     * Fills each AI step's choices from the catalog (none, then its models with their sizes
-     * and what they do; slow ones only while Keep it simple is off, or when chosen), starts
-     * downloading a model as it is chosen, as AI processing is turned on, or (when a
-     * download was cut short with the app) as Settings open, and shows the chain run (hidden
-     * advanced choices too), each choice's download state and the space models take, as they
-     * change.
+     * Fills each AI step's choices (none, then the catalog's models with their sizes and what
+     * they do, slow ones only while Keep it simple is off or when chosen, then the imported
+     * ones, again as they come and go), starts downloading a catalog model as it is chosen, as
+     * AI processing is turned on, or (when a download was cut short with the app) as Settings
+     * open, and shows the chain run (hidden advanced choices too), each choice's download state
+     * and the space models take, as they change.
      */
     private fun setUpAi(prefs: Prefs) {
         val context = requireContext()
         val store = ModelStore.of(context)
         val pickers = AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step))?.let { step to it } }
-        fun chosen(step: AiStep, value: Any?): CatalogModel? =
-            (value as? String)?.let(ModelCatalog::byId)?.takeIf { it.step == step }
+        fun chosen(step: AiStep, value: Any?): AiModel? =
+            (value as? String)?.let(Models::byId)?.takeIf { it.step == step }
         fillAi = { keepSimple ->
             for ((step, pref) in pickers) {
                 val (entries, values) = ModelText.choices(context, step, keepSimple, pref.value)
                 pref.entries = entries.toTypedArray()
                 pref.entryValues = values.toTypedArray()
-                // A model the catalog no longer has reads as none.
+                // A model no longer there (dropped from the catalog, or an imported one deleted) reads as none.
                 if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
             }
         }
@@ -512,7 +514,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             pref.setOnPreferenceChangeListener { _, value ->
                 // Picking the shown default stores it: ListPreference skips an unchanged value.
                 if (value == pref.value) prefs.setAiModel(step, value as String)
-                if (prefs.aiEnabled) chosen(step, value)?.let { ModelDownloads.start(store, it) }
+                if (prefs.aiEnabled) (chosen(step, value) as? CatalogModel)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true
             }
@@ -520,7 +522,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         fillAi(prefs.keepSimple)
         val ai = findPreference<Preference>(Prefs.KEY_AI)
         ai?.setOnPreferenceChangeListener { _, value ->
-            if (value == true) for (step in AiStep.entries) chosen(step, prefs.aiModel(step))?.let { ModelDownloads.start(store, it) }
+            if (value == true) for (step in AiStep.entries) (chosen(step, prefs.aiModel(step)) as? CatalogModel)?.let { ModelDownloads.start(store, it) }
             refreshAi()
             true
         }
@@ -529,8 +531,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             startActivity(android.content.Intent(context, ModelsActivity::class.java))
             true
         }
+        var shownImported = UserModels.all
         suspend fun show(d: Downloads) {
-            val installed = withContext(AppDispatchers.io) { ModelCatalog.all.filter { store.installed(it) } }
+            // Imported models came or went: the pickers list them.
+            if (UserModels.all != shownImported) {
+                shownImported = UserModels.all
+                fillAi(prefs.keepSimple)
+            }
+            val installed = withContext(AppDispatchers.io) { Models.all().filter { store.installed(it) } }
             val used = withContext(AppDispatchers.io) { store.bytesUsed() }
             if (!isAdded) return
             ai?.summary = if (prefs.aiEnabled) ModelText.chain(context, AiChain.chosen(prefs)) else getString(R.string.pref_ai_desc)
@@ -550,7 +558,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // A failed download waits to be chosen again; one the app's end cut short goes on.
         lifecycleScope.launch(AppDispatchers.io) {
             val states = ModelDownloads.state.value.states
-            for (m in AiChain.chosen(prefs)) if (m.id !in states) ModelDownloads.start(store, m)
+            for (m in AiChain.chosen(prefs)) if (m is CatalogModel && m.id !in states) ModelDownloads.start(store, m)
         }
     }
 

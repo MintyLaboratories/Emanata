@@ -8,8 +8,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
-import android.net.Uri
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Debug
@@ -22,11 +22,11 @@ import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloader
-import com.infinity.comicreader.ai.AiStep
-import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.ModelFiles
 import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelMemory
@@ -376,10 +376,11 @@ class AiCheckService : Service() {
 
     private fun importModel(param: File, bin: File, name: String?, step: String?) {
         val memory = ModelMemory.of(this)
+        val reset = resetPeakRss()
         val t0 = SystemClock.elapsedRealtime()
         val state = ModelImports.importNow(this, listOf(Uri.fromFile(param), Uri.fromFile(bin)))
         val ms = SystemClock.elapsedRealtime() - t0
-        val line = JSONObject().put("import", param.name).put("ms", ms).put("memoryMb", memory shr 20).put("peakRssMb", peakRssKb() / 1024)
+        val line = JSONObject().put("import", param.name).put("ms", ms).put("memoryMb", memory shr 20).put("peakRssMb", peakRssKb() / 1024).put("peakReset", reset)
         when (state) {
             is ImportState.Fit -> {
                 line.put("fit", true).put("scale", state.scale).put("pageMs", state.pageMs)
@@ -408,8 +409,9 @@ class AiCheckService : Service() {
             val name = param.relativeTo(dir).path
             val waitedS = coolDown(cool)
             val files = ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin"))
-            val t0 = SystemClock.elapsedRealtime()
             val memory = ModelMemory.of(this)
+            val reset = resetPeakRss()
+            val t0 = SystemClock.elapsedRealtime()
             val opening = try {
                 Sessions.attempt(LibNcnn, files, threads, gpu = true, fp16 = fp16, memoryBytes = memory)
             } catch (t: Throwable) {
@@ -422,7 +424,7 @@ class AiCheckService : Service() {
                 log(
                     JSONObject().put("model", name).put("opened", false).put("refusal", opening.refusal?.name ?: JSONObject.NULL)
                         .put("neededMb", opening.bytes shr 20).put("memoryMb", memory shr 20).put("openMs", openMs).put("waitedS", waitedS)
-                        .put("peakRssMb", peakRssKb() / 1024)
+                        .put("peakRssMb", peakRssKb() / 1024).put("peakReset", reset)
                 )
                 continue
             }
@@ -440,7 +442,7 @@ class AiCheckService : Service() {
                     JSONObject().put("model", name).put("opened", true).put("openMs", openMs).put("waitedS", waitedS)
                         .put("onGpu", s.model.onGpu).put("fp16", s.fp16).put("scale", g.scale).put("trim", g.trim).put("context", g.context)
                         .put("margin", g.margin).put("tile", s.size).put("memoryMb", memory shr 20).put("peakRssMb", peakRssKb() / 1024)
-                        .put("tiles", run.stats.planned).put("tilesRun", run.stats.tiles)
+                        .put("peakReset", reset).put("tiles", run.stats.planned).put("tilesRun", run.stats.tiles)
                         .put("fallback", run.fallback?.name ?: JSONObject.NULL).put("pageMs", pageMs).put("estimatedMs", estimate)
                         .put("tileMs", Stats.summary(tiles.toList())).put("graphicsMb", graphicsKb() / 1024)
                         .put("before", before).put("after", state())
@@ -494,7 +496,13 @@ class AiCheckService : Service() {
         File("/proc/self/status").readLines().first { it.startsWith("VmRSS:") }.split(Regex("\\s+"))[1].toLong()
     }.getOrDefault(0L)
 
-    /** The most resident memory this process has held, in KB. */
+    /**
+     * Starts the process's peak resident memory ([peakRssKb]) again from what it holds now, so
+     * the next reading is one model's; false where the kernel refuses.
+     */
+    private fun resetPeakRss(): Boolean = runCatching { File("/proc/self/clear_refs").writeText("5") }.isSuccess
+
+    /** The most resident memory this process has held since start or [resetPeakRss], in KB. */
     private fun peakRssKb(): Long = runCatching {
         File("/proc/self/status").readLines().first { it.startsWith("VmHWM:") }.split(Regex("\\s+"))[1].toLong()
     }.getOrDefault(0L)

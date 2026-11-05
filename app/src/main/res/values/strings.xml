@@ -246,6 +246,16 @@
         <item quantity="other">%1$d identical copies · %2$s each</item>
     </plurals>
     <string name="dupes_identical">Bit-identical copies (SHA-256 verified)</string>
+    <string name="dupes_similar">Similar books (probable)</string>
+    <string name="dupes_similar_partial">Similar books (probable; %1$d of %2$d books compared)</string>
+    <string name="similar_progress">Comparing pages of books: %1$d / %2$d</string>
+    <string name="similar_listing">Looking for books…</string>
+    <string name="similar_stop">Stop</string>
+    <plurals name="similar_pages">
+        <item quantity="one">%1$d page · %2$s</item>
+        <item quantity="other">%1$d pages · %2$s</item>
+    </plurals>
+    <string name="similar_size">%1$d × %2$d px</string>
     <string name="cleanup_nothing">Nothing found</string>
     <string name="invalid_name">That name is not allowed</string>
     <string name="op_failed">Operation failed</string>

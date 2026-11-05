@@ -20,6 +20,8 @@
     <dimen name="list_side_padding">12dp</dimen>
     <dimen name="dupe_cover_w">96dp</dimen>
     <dimen name="dupe_cover_h">144dp</dimen>
+    <!-- Narrowest column of a similar-books group; more columns than fit scroll sideways. -->
+    <dimen name="similar_column_min_w">220dp</dimen>
 
     <!-- Reader -->
     <dimen name="reader_indicator_min_w">84dp</dimen>

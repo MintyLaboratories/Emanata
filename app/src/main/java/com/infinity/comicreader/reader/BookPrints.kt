@@ -66,11 +66,13 @@ object BookPrints {
     }
 
     /**
-     * The hash of page [index] of [source], from the cheapest small picture of it there is.
-     * Never recycled: a quick preview may still be on its way to the preview store.
+     * The hash of page [index] of [source], from the cheapest small picture of it there is,
+     * decoded as work nobody waits on ([Urgency.later]). Never recycled: a quick preview may
+     * still be on its way to the preview store.
      */
-    private fun hashOf(source: PageSource, index: Int): PageHash =
+    private fun hashOf(source: PageSource, index: Int): PageHash = Urgency.later {
         hashOf(source.keptPreview(index) ?: source.loadPreview(index) ?: source.loadPage(index, HASH_TARGET))
+    }
 
     /** True when [t] says page bytes will never decode; out of memory, read errors and interruptions may pass. */
     internal fun isPermanent(t: Throwable): Boolean = when (t) {

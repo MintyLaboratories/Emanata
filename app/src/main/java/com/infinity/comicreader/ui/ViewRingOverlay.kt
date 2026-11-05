@@ -62,6 +62,12 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The views hidden from accessibility while the ring shows, and how they were. */
     private val hidden = ArrayList<Pair<View, Int>>()
 
+    /** The views whose descendants take no key focus while the ring shows, and how they were. */
+    private val blocked = ArrayList<Pair<ViewGroup, Int>>()
+
+    /** The floating button the ring opened from; key focus returns to it. */
+    private var anchor: View? = null
+
     val isOpen: Boolean get() = root != null
 
     private val density get() = activity.resources.displayMetrics.density
@@ -81,7 +87,13 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             val v = host.getChildAt(i)
             hidden += v to v.importantForAccessibility
             v.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            if (v is ViewGroup) {
+                blocked += v to v.descendantFocusability
+                v.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            }
         }
+        activity.currentFocus?.clearFocus()
+        anchor = fab
         host.addView(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         this.root = root
         this.items = items
@@ -101,6 +113,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         }.also { place(it, cx - fab.width / 2f, cy - fab.height / 2f, fab.width, fab.height) }
 
         lay(items, host.width, host.height)
+        // Keys go to the ring's first button, never to the list beneath.
+        if (!root.isInTouchMode) buttons.values.firstOrNull()?.first?.requestFocus()
         animateIn()
     }
 
@@ -137,6 +151,12 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val host = root.parent as? ViewGroup
         // While it fades, the scrim still takes every touch, so none reaches the list beneath.
         root.setOnTouchListener { _, _ -> true }
+        root.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        root.isFocusable = false
+        for ((v, was) in blocked) v.descendantFocusability = was
+        blocked.clear()
+        if (!root.isInTouchMode) anchor?.requestFocus()
+        anchor = null
         val parts = buttons.values.toList()
         buttons.clear()
         if (!animate || !ValueAnimator.areAnimatorsEnabled()) {

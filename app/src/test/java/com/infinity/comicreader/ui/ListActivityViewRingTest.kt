@@ -24,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -76,8 +77,8 @@ class ListActivityViewRingTest {
         }
     }
 
-    private fun launch(tab: Int = 0): ListActivity {
-        InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+    private fun launch(tab: Int = 0, touch: Boolean = true): ListActivity {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(touch)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         activity.awaitListing()
         if (tab != 0) {
@@ -268,6 +269,20 @@ class ListActivityViewRingTest {
         assertEquals(list.viewRing.button(RingOption.SMALLER)!!.alpha, list.viewRing.label(RingOption.SMALLER)!!.alpha, 0.01f)
         assertTrue(list.viewRing.label(RingOption.SMALLER)!!.alpha < 0.5f)
         assertEquals(1f, list.viewRing.label(RingOption.LARGER)!!.alpha, 0.01f)
+    }
+
+    @Test
+    fun keysReachOnlyTheRingWhileItShows() {
+        val list = launch(touch = false)
+        val rows = list.recycler()
+        val item = rows.getChildAt(rows.childCount - 1)
+        list.openRing()
+        assertSame(list.viewRing.button(RingOption.LAYOUT), list.window.decorView.findFocus())
+        assertFalse(item.requestFocus())
+        assertFalse(rows.hasFocus())
+        list.viewRing.close(animate = false)
+        assertTrue(list.fab().isFocused)
+        assertTrue(item.requestFocus())
     }
 
     @Test

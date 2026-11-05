@@ -11,7 +11,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 
 /** Checking a model to import: it opens as every model does, resembles its input, and is timed. */
 @RunWith(RobolectricTestRunner::class)
@@ -56,6 +59,23 @@ class ModelCheckTest {
         val now = AtomicLong()
         val runtime = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, onRun = { now.addAndGet(60_000) }) })
         assertEquals(ModelCheck.Result.Refused(ModelRefusal.TOO_SLOW), check(runtime, clock = now::get))
+    }
+
+    @Test
+    fun timeWaitingForAPageIsNotCounted() {
+        // A page holds the engine while the clock passes the check's limit.
+        val now = AtomicLong()
+        val held = CountDownLatch(1)
+        val page = thread {
+            TileEngine.exclusive({ false }) {
+                held.countDown()
+                Thread.sleep(300)
+                now.addAndGet(ModelCheck.TIME_LIMIT_MS * 2)
+            }
+        }
+        assertTrue(held.await(10, TimeUnit.SECONDS))
+        assertTrue(check(FakeRuntime(), clock = now::get) is ModelCheck.Result.Fit)
+        page.join()
     }
 
     @Test

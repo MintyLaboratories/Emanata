@@ -55,7 +55,8 @@ internal object ModelCheck {
     }
 
     /**
-     * [files] checked through [runtime] on [threads] CPU threads, within [memoryBytes]. Throws
+     * [files] checked through [runtime] on [threads] CPU threads, within [memoryBytes], holding
+     * the engine throughout ([TileEngine.exclusive]): no page runs between its steps. Throws
      * [CancellationException] once [canceled].
      */
     fun check(
@@ -65,6 +66,13 @@ internal object ModelCheck {
         memoryBytes: Long,
         canceled: () -> Boolean = { false },
         clock: () -> Long = SystemClock::elapsedRealtime
+    ): Result = TileEngine.exclusive(canceled) {
+        // Timed from here: a page the reader is running is waited for, not counted.
+        checkAlone(runtime, files, threads, memoryBytes, canceled, clock)
+    }
+
+    private fun checkAlone(
+        runtime: InferenceRuntime, files: ModelFiles, threads: Int, memoryBytes: Long, canceled: () -> Boolean, clock: () -> Long
     ): Result {
         val deadline = clock() + TIME_LIMIT_MS
         val late = { clock() > deadline }

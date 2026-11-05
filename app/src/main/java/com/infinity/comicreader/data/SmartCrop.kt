@@ -74,8 +74,8 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
 /**
  * The Smart crop anchor: text found by a text detector (where text is, not what it says) and
  * the detail of a cover decide which part of it a crop keeps. The tallest text wins: when the
- * plain anchor (the top; centered across) loses every line of about its size, the crop keeps
- * them all, else the tallest's own line, whole, staying as near the plain anchor as that
+ * plain anchor (the top; centered across) cuts the tallest's line, the crop keeps every line of
+ * about its size, else that line alone, whole, staying as near the plain anchor as that
  * allows. Only text of a title's size counts ([MIN_GLYPH]): credits alone never move a crop. A
  * cover without such text keeps its most detailed part, when far more detailed than the plain
  * anchor's. Free of Android types.
@@ -259,8 +259,8 @@ object SmartCrop {
         val plain = if (vertical) 0.0 else room / 2
         fun start(b: Box) = (if (vertical) b.top else b.left) * length
         fun end(b: Box) = (if (vertical) b.bottom else b.right) * length
-        // Text of the title's size the plain crop keeps whole is reason enough to keep it.
-        if (focus.lines.any { start(it) >= plain && end(it) <= plain + span }) return plain
+        // The tallest text's line the plain crop keeps whole is reason enough to keep it.
+        focus.title?.let { if (start(it) >= plain && end(it) <= plain + span) return plain }
         for (band in listOfNotNull(focus.text, focus.title)) {
             val pad = PAD * span
             val lo = max(0.0, end(band) + pad - span)

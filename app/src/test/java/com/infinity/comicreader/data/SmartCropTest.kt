@@ -115,9 +115,20 @@ class SmartCropTest {
     }
 
     @Test
-    fun theTopStaysWhenItKeepsALineOfTheTitlesSize() {
-        // The tallest line is low, but one nearly as tall sits in the top crop.
+    fun aLineNearlyAsTallInTheTopCropDoesNotHoldItFromTheTallest() {
+        // One nearly as tall sits in the top crop; the tallest, low, cannot stay with it.
         val y = SmartCrop.offset(focus(Box(0.1, 0.8, 0.9, 0.9), Box(0.1, 0.05, 0.9, 0.13)), 1500.0, 1000.0, vertical = true)
+        assertEquals(370.0, y, 1e-9)
+        // When both fit, both stay.
+        val both = SmartCrop.offset(focus(Box(0.1, 0.8, 0.9, 0.9), Box(0.1, 0.3, 0.9, 0.38)), 1500.0, 1000.0, vertical = true)
+        assertEquals(370.0, both, 1e-9)
+        assertTrue(both <= 0.3 * 1500 - 20)
+    }
+
+    @Test
+    fun theTopStaysWhenItKeepsTheTallestLine() {
+        // A peer below is lost, but the tallest's line is whole.
+        val y = SmartCrop.offset(focus(Box(0.1, 0.05, 0.9, 0.15), Box(0.1, 0.8, 0.9, 0.88)), 1500.0, 1000.0, vertical = true)
         assertEquals(0.0, y, 1e-9)
     }
 

@@ -85,9 +85,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (default) or the center of a cover cropped for height, or (Smart,
   experimental) its tallest text: a text detector (PaddleOCR's mobile
   detector on ncnn, shipped in the app; it finds where text is, not what it
-  says) marks the lines of text. When the top (centered across) would lose
-  every line of about the tallest's size, the crop moves just enough to keep
-  them, or at least the tallest's own line. Only title-sized text counts:
+  says) marks the lines of text. When the top (centered across) would cut the
+  tallest text's line, the crop moves just enough to keep every line of about
+  its size, or at least that line. Only title-sized text counts:
   credits alone never move a crop. A cover without such text keeps its most
   detailed part when far more detailed than its top. Found once per cover and
   kept.

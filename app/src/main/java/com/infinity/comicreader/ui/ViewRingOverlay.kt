@@ -200,6 +200,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         button.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(button, M.attr.colorOnSecondaryContainer))
         button.isEnabled = item.enabled
         label.isEnabled = item.enabled
+        // A fade still running from the opening would end at the old alpha.
+        label.animate().cancel()
         button.alpha = if (item.enabled) 1f else DISABLED_ALPHA
         label.alpha = button.alpha
         button.contentDescription = activity.getString(R.string.view_ring_item, item.name, item.value)

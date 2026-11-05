@@ -225,6 +225,20 @@ class ListActivityViewRingTest {
     }
 
     @Test
+    fun aTapWhileOpeningLeavesTheLabelsAsTheirButtons() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 5, 0)
+        val list = launch()
+        assertTrue(list.fab().performLongClick())
+        // Tapped before the labels have faded in.
+        list.viewRing.button(RingOption.SMALLER)!!.performClick()
+        settle(300)
+        assertFalse(list.viewRing.button(RingOption.SMALLER)!!.isEnabled)
+        assertEquals(list.viewRing.button(RingOption.SMALLER)!!.alpha, list.viewRing.label(RingOption.SMALLER)!!.alpha, 0.01f)
+        assertTrue(list.viewRing.label(RingOption.SMALLER)!!.alpha < 0.5f)
+        assertEquals(1f, list.viewRing.label(RingOption.LARGER)!!.alpha, 0.01f)
+    }
+
+    @Test
     fun aLongPressOnSortOpensTheSortPopup() {
         val list = launch()
         list.openRing()

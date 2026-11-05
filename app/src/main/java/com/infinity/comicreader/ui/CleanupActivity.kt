@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Bundle
+import android.text.TextUtils
 import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
@@ -521,7 +522,13 @@ class CleanupActivity : AppCompatActivity() {
                     visibility = if (info.width > 0 && info.height > 0) View.VISIBLE else View.GONE
                     text = getString(R.string.similar_size, info.width, info.height)
                 }
-                bindPlaces(column.findViewById(R.id.locations), book.files, book.places, row)
+                val places = column.findViewById<LinearLayout>(R.id.locations)
+                bindPlaces(places, book.files, book.places, row)
+                // A narrow column wraps a place rather than cut its middle (which only one line can).
+                for (i in 0 until places.childCount) places.getChildAt(i).findViewById<TextView>(R.id.title).apply {
+                    ellipsize = TextUtils.TruncateAt.END
+                    maxLines = 3
+                }
                 columns.addView(column)
                 bindCover(column, book.entry)
             }

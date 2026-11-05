@@ -31,6 +31,9 @@ internal class TextDetector(
     private var broken = false
     private var closing: ScheduledFuture<*>? = null
 
+    /** Counts runs, so a close timed after one run leaves the model to a later one. */
+    private var runs = 0L
+
     /** [src]'s score map; null when the detector cannot run. Blocking; one image at a time. */
     @Synchronized
     fun detect(src: Bitmap): ScoreMap? {
@@ -40,8 +43,15 @@ internal class TextDetector(
         try {
             return m.map(src, MEAN, NORM, bgr = true)
         } finally {
-            closing = closer.schedule({ close() }, idleMs, TimeUnit.MILLISECONDS)
+            val run = ++runs
+            closing = closer.schedule({ closeAfter(run) }, idleMs, TimeUnit.MILLISECONDS)
         }
+    }
+
+    /** Closes the model unless it ran again since [run]. */
+    @Synchronized
+    private fun closeAfter(run: Long) {
+        if (run == runs) close()
     }
 
     /** True while the model is open. */

@@ -1,7 +1,8 @@
 // Runs ncnn models on tiles of ARGB_8888 bitmaps, on the GPU (Vulkan) or the CPU, for
 // AiRuntime.kt's LibNcnn. A model is opened from its .param/.bin files; each run reads a
 // tile of a bitmap (pixels outside it repeat the nearest edge), runs the model, and writes a
-// window of the output into another bitmap. The caller makes every call from one thread that
+// window of the output into another bitmap; or reads a whole bitmap and returns the output's
+// first channel as numbers (a score map). The caller makes every call from one thread that
 // lives as long as the process: the OpenMP runtime fails to start again after the thread that
 // started it ends.
 #include <jni.h>
@@ -417,6 +418,59 @@ Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle,
         }
     }
     return OK;
+}
+
+/**
+ * Runs the model on all of [src], each channel as (8-bit value - [mean]) * [norm], channels in
+ * B, G, R order when [bgr], else R, G, B. Returns the output's first channel, row by row, and
+ * writes its size to [size]; null on failure.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_com_infinity_comicreader_ai_LibNcnn_nMap(JNIEnv* env, jclass, jlong handle, jobject src, jfloatArray mean,
+                                              jfloatArray norm, jboolean bgr, jintArray size) {
+    auto* m = reinterpret_cast<Model*>(handle);
+    float mv[3], nv[3];
+    env->GetFloatArrayRegion(mean, 0, 3, mv);
+    env->GetFloatArrayRegion(norm, 0, 3, nv);
+    ncnn::Mat in;
+    {
+        Pixels s(env, src);
+        if (!s.data) return nullptr;
+        const int w = (int) s.info.width, h = (int) s.info.height;
+        in.create(w, h, 3, (size_t) 4u, &m->blob);
+        if (in.empty()) return nullptr;
+        // Input channel c reads pixel component order[c].
+        const int order[3] = {bgr ? 2 : 0, 1, bgr ? 0 : 2};
+        for (int c = 0; c < 3; c++) {
+            float* out = in.channel(c);
+            const int k = order[c];
+            for (int y = 0; y < h; y++) {
+                const uint8_t* row = s.data + (size_t) y * s.info.stride;
+                for (int x = 0; x < w; x++) *out++ = (row[x * 4 + k] - mv[c]) * nv[c];
+            }
+        }
+    }
+    ncnn::Mat out;
+    {
+        place(m);
+        ncnn::Extractor ex = m->net.create_extractor();
+        ex.set_blob_allocator(&m->blob);
+        ex.set_workspace_allocator(&m->workspace);
+        if (m->gpu) {
+            ex.set_blob_vkallocator(m->blob_vk);
+            ex.set_workspace_vkallocator(m->blob_vk);
+            ex.set_staging_vkallocator(m->staging_vk);
+        }
+        if (ex.input(m->input.c_str(), in) != 0 || ex.extract(m->output.c_str(), out) != 0) return nullptr;
+    }
+    if (out.empty() || out.elempack != 1 || out.w <= 0 || out.h <= 0) return nullptr;
+    const jsize n = (jsize) out.w * out.h;
+    jfloatArray values = env->NewFloatArray(n);
+    if (!values) return nullptr;
+    env->SetFloatArrayRegion(values, 0, n, (const float*) out.channel(0));
+    jint dims[2] = {out.w, out.h};
+    env->SetIntArrayRegion(size, 0, 2, dims);
+    return values;
 }
 
 /**

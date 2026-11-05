@@ -13,6 +13,15 @@ data class Box(val x: Int, val y: Int, val width: Int, val height: Int)
 /** A [width] x [height] size. */
 data class Dims(val width: Int, val height: Int)
 
+/** A one-channel model output: [width] x [height] [values], row by row. */
+class ScoreMap(val width: Int, val height: Int, val values: FloatArray) {
+    init {
+        require(values.size == width * height) { "${values.size} values for $width x $height" }
+    }
+
+    operator fun get(x: Int, y: Int): Float = values[y * width + x]
+}
+
 /**
  * The Vulkan device models run on: its [name], the memory it lets us use in MB, whether it
  * computes in fp16, and the largest buffer one shader may address ([maxBufferBytes]): a
@@ -66,6 +75,13 @@ internal interface TileModel : AutoCloseable {
      * threads' allocations meanwhile included. 0 where not counted.
      */
     fun weightBytes(): Long = 0
+
+    /**
+     * Runs the model on all of [src], each channel as (8-bit value - [mean]) * [norm], fed as
+     * B, G, R when [bgr], else R, G, B: the output's first channel; null on failure, once
+     * closed, or where not supported.
+     */
+    fun map(src: Bitmap, mean: FloatArray, norm: FloatArray, bgr: Boolean): ScoreMap? = null
 }
 
 /** What runs models: [LibNcnn] on the device; JVM tests stand in their own. */
@@ -161,6 +177,17 @@ internal object LibNcnn : InferenceRuntime {
             }
         }
 
+        override fun map(src: Bitmap, mean: FloatArray, norm: FloatArray, bgr: Boolean): ScoreMap? = worker.run {
+            if (handle == 0L) return@run null
+            val values = nMap(handle, src, mean, norm, bgr, size)
+            if (values == null) {
+                Log.w(TAG, "map ${src.width}x${src.height} failed")
+                null
+            } else {
+                ScoreMap(size[0], size[1], values)
+            }
+        }
+
         override fun trim() = worker.run {
             if (handle != 0L) nTrim(handle)
         }
@@ -189,6 +216,9 @@ internal object LibNcnn : InferenceRuntime {
         handle: Long, src: Bitmap, ix: Int, iy: Int, iw: Int, ih: Int, inScale: Float,
         dst: Bitmap?, cx: Int, cy: Int, cw: Int, ch: Int, dx: Int, dy: Int, outScale: Float, size: IntArray
     ): Int
+
+    @JvmStatic
+    private external fun nMap(handle: Long, src: Bitmap, mean: FloatArray, norm: FloatArray, bgr: Boolean, size: IntArray): FloatArray?
 
     @JvmStatic
     private external fun nTrim(handle: Long)

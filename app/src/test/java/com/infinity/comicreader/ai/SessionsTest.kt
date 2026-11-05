@@ -332,6 +332,38 @@ class SessionsTest {
         assertEquals(128, s.size)
     }
 
+    /** [fakeFiles] whose `.bin` is [mb] MB. */
+    private fun heavyFiles(mb: Int): ModelFiles = fakeFiles(tmp.root).also { f ->
+        java.io.RandomAccessFile(f.bin, "rw").use { it.setLength(mb.toLong() shl 20) }
+    }
+
+    @Test
+    fun weightsAsTheyLoadedPastItsMemoryAreRefused() {
+        // A 4 MB file whose weights took 30 MB as they loaded.
+        val runtime = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, weights = 30L shl 20) })
+        val o = Sessions.attempt(runtime, heavyFiles(4), threads = 4, memoryBytes = 25L shl 20)
+        assertEquals(ModelRefusal.MEMORY, o.refusal)
+        assertEquals(30L shl 20, o.bytes)
+        assertTrue((runtime.opened.single() as FakeModel).closed)
+    }
+
+    @Test
+    fun theGpuIsCheckedWithinWhatBothCopiesLeave() {
+        // 20 MB of weights on each: 10 MB of 50 left to check; at 1.5 KB per input pixel a 64 tile fits it, 96 does not.
+        val runtime = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, weights = 20L shl 20) })
+        val s = Sessions.open(runtime, heavyFiles(4), threads = 4, memoryBytes = 50L shl 20)!!
+        assertTrue(s.model.onGpu)
+        assertEquals(64, s.size)
+    }
+
+    @Test
+    fun measuredWeightsStayWithinWhatTheFileCanComeTo() {
+        assertEquals(30L, ModelMemory.weights(30, 10, gpu = false))
+        assertEquals(10L, ModelMemory.weights(0, 10, gpu = false))
+        assertEquals(5L, ModelMemory.weights(0, 10, gpu = true))
+        assertEquals(80L, ModelMemory.weights(1000, 10, gpu = false))
+    }
+
     @Test
     fun aModelMayTakeAnEighthOfMemoryAndHalfOfWhatIsFree() {
         assertEquals(1L shl 30, ModelMemory.budget(8L shl 30, 3L shl 30))

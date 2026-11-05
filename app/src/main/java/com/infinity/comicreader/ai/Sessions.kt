@@ -62,6 +62,17 @@ object ModelMemory {
     /** The budget for [total] bytes of memory, [available] of them free now. */
     fun budget(total: Long, available: Long): Long = min(total / SHARE, available / AVAILABLE_SHARE)
 
+    /** Times its file's size, at most, that a model's weights are taken to hold: ncnn's fast 3x3 convolutions transform them to up to about 7 times. */
+    const val MAX_WEIGHT_GROWTH = 8
+
+    /**
+     * The bytes a model's weights hold: as [measured] while it opened ([TileModel.weightBytes]),
+     * within what its [file] can come to: no less than the file (half of it in fp16 on the
+     * [gpu]), no more than [MAX_WEIGHT_GROWTH] times it, other threads' allocations aside.
+     */
+    fun weights(measured: Long, file: Long, gpu: Boolean): Long =
+        measured.coerceIn(if (gpu) file / 2 else file, max(file, 1L) * MAX_WEIGHT_GROWTH)
+
     /** The budget on this device now. */
     fun of(context: Context): Long {
         val info = ActivityManager.MemoryInfo()
@@ -209,9 +220,11 @@ object TileSizing {
  * A model no GPU setup passes runs on the CPU. Opening runs alone, as a page does ([TileEngine]).
  *
  * Memory: the model's weights and its tiles' working memory stay within the memory it is
- * given ([ModelMemory]). Measuring counts what each run holds and stops before a run that
- * would need more ([ModelProbe.probe]); tiles are sized by the larger of the estimate and the
- * measured bytes per pixel; on the GPU, a size whose check held more is passed over.
+ * given ([ModelMemory]). Weights count as loading them took ([ModelMemory.weights]), the CPU's
+ * and the GPU's copies both while the GPU is checked. Measuring counts what each run holds and
+ * stops before a run that would need more ([ModelProbe.probe]); tiles are sized by the larger
+ * of the estimate and the measured bytes per pixel; on the GPU, a size whose check held more
+ * is passed over.
  */
 internal object Sessions {
     private const val TAG = "AiSessions"
@@ -273,16 +286,22 @@ internal object Sessions {
             return Opening.refused(ModelRefusal.WHOLE_TILE)
         }
         val widest = param?.let(ModelParam::widest) ?: ModelParam.DEFAULT_WIDEST
-        // Weights in fp32, as the CPU holds them; what is left is for tiles.
-        val weights = files.bin.length()
-        if (weights >= memoryBytes) {
-            Log.w(TAG, "$name: weights alone (${weights shr 20} MB) take the ${memoryBytes shr 20} MB a model may")
-            return Opening.refused(ModelRefusal.MEMORY, weights, memoryBytes)
+        val file = files.bin.length()
+        if (file >= memoryBytes) {
+            Log.w(TAG, "$name: weights alone (${file shr 20} MB) take the ${memoryBytes shr 20} MB a model may")
+            return Opening.refused(ModelRefusal.MEMORY, file, memoryBytes)
         }
-        val work = memoryBytes - weights
         val cpu = runtime.open(files, false, threads, false) ?: return Opening.refused(ModelRefusal.NOT_LOADED)
         var keepCpu = false
         try {
+            // Weights as the CPU holds them; what is left is for tiles.
+            val weights = ModelMemory.weights(cpu.weightBytes(), file, gpu = false)
+            Log.i(TAG, "$name: weights take ${weights shr 20} MB on the CPU (file ${file shr 20} MB)")
+            if (weights >= memoryBytes) {
+                Log.w(TAG, "$name: weights alone (${weights shr 20} MB) take the ${memoryBytes shr 20} MB a model may")
+                return Opening.refused(ModelRefusal.MEMORY, weights, memoryBytes)
+            }
+            val work = memoryBytes - weights
             val t0 = SystemClock.elapsedRealtime()
             val probed = try {
                 ModelProbe.probe(cpu, canceled, work)
@@ -300,7 +319,7 @@ internal object Sessions {
                 TilePlan.fits(it, geometry) && it.toLong() * it * TileSizing.bytesPerPixel(widest, geometry.scale, measured) <= work
             }
             if (info != null && reference != null) {
-                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, work, measured, canceled)
+                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, memoryBytes, weights, measured, canceled)
                     ?.let { return Opening(it, null) }
                 Log.w(TAG, "$name: not usable on the GPU, running on the CPU")
             }
@@ -319,20 +338,26 @@ internal object Sessions {
 
     /**
      * The model on the GPU at the first precision and size that passes [ModelProbe.verify]
-     * within [work] bytes; null when none does. [measured]: the CPU's working bytes per input
-     * pixel in fp32, a floor for the estimate.
+     * within [memoryBytes], less the weights of both copies checked side by side (the CPU's
+     * [cpuWeights] and the GPU's); null when none does. [measured]: the CPU's working bytes
+     * per input pixel in fp32, a floor for the estimate.
      */
     private fun onGpu(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, info: GpuInfo, geometry: Geometry, widest: Int,
-        maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, work: Long, measured: Long, canceled: () -> Boolean
+        maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, memoryBytes: Long, cpuWeights: Long, measured: Long,
+        canceled: () -> Boolean
     ): Session? {
         val name = files.param.name
-        val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
         for (half in if (fp16) listOf(true, false) else listOf(false)) {
             val precision = if (half) "fp16" else "fp32"
             val model = runtime.open(files, true, threads, half) ?: return null
             var kept = false
             try {
+                val weights = ModelMemory.weights(model.weightBytes(), files.bin.length(), gpu = true)
+                val work = memoryBytes - cpuWeights - weights
+                Log.i(TAG, "$name: weights take ${weights shr 20} MB on the GPU in $precision, ${max(0L, work) shr 20} MB left to check it")
+                if (work <= 0) continue
+                val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
                 var g = geometry
                 var widenings = 0
                 while (true) {

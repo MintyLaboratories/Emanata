@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * code does: the nearest edge pixel. Like a GPU can, it may round by a pixel's place in its
  * tile ([phaseNoise], [edgeNoise]), go wrong on tiles wider than [breaksAbove], or compute
  * nonsense ([wrong]). Each run holds [bytesPerPixel] of working memory per input pixel
- * ([takePeak]).
+ * ([takePeak]), and its weights [weights] ([weightBytes]).
  */
 internal class FakeModel(
     val scale: Int = 2,
@@ -36,7 +36,9 @@ internal class FakeModel(
     /** Writes mid-gray whatever the input. */
     private val wrong: Boolean = false,
     /** Working bytes a run holds per input pixel; 0: not counted. */
-    private val bytesPerPixel: Long = 0
+    private val bytesPerPixel: Long = 0,
+    /** Bytes its weights took as it opened; 0: not counted. */
+    private val weights: Long = 0
 ) : TileModel {
     val trim: Int get() = if (padded) 0 else reach * scale
     val runs = AtomicInteger()
@@ -102,6 +104,8 @@ internal class FakeModel(
 
     @Synchronized
     override fun takePeak(): Long = peak.also { peak = 0 }
+
+    override fun weightBytes(): Long = weights
 
     override fun close() {
         closed = true

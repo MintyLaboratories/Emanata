@@ -59,6 +59,13 @@ internal interface TileModel : AutoCloseable {
      * counted.
      */
     fun takePeak(): Long = 0
+
+    /**
+     * Bytes its weights took as it opened: the native heap's growth (weights as transformed
+     * for the kernels, often larger than the file) and, on the GPU, its memory's growth; other
+     * threads' allocations meanwhile included. 0 where not counted.
+     */
+    fun weightBytes(): Long = 0
 }
 
 /** What runs models: [LibNcnn] on the device; JVM tests stand in their own. */
@@ -160,6 +167,8 @@ internal object LibNcnn : InferenceRuntime {
 
         override fun takePeak(): Long = worker.run { if (handle != 0L) nPeak(handle) else 0L }
 
+        override fun weightBytes(): Long = worker.run { if (handle != 0L) nWeights(handle) else 0L }
+
         override fun close() = worker.run {
             if (handle != 0L) nClose(handle)
             handle = 0L
@@ -186,6 +195,9 @@ internal object LibNcnn : InferenceRuntime {
 
     @JvmStatic
     private external fun nPeak(handle: Long): Long
+
+    @JvmStatic
+    private external fun nWeights(handle: Long): Long
 
     @JvmStatic
     private external fun nClose(handle: Long)

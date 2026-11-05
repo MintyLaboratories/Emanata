@@ -8,6 +8,8 @@
 #include <android/bitmap.h>
 #include <android/log.h>
 
+#include <malloc.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -159,9 +161,29 @@ private:
     Usage* usage;
 };
 
+/** Bytes this process holds on the native heap. */
+int64_t heapBytes() { return (int64_t) mallinfo().uordblks; }
+
+/** Bytes this process holds in the GPU's memory heaps; 0 where the driver does not tell (no VK_EXT_memory_budget). */
+int64_t gpuBytes() {
+    const ncnn::GpuInfo& info = ncnn::get_gpu_info();
+    if (!info.support_VK_EXT_memory_budget() || !ncnn::vkGetPhysicalDeviceMemoryProperties2KHR) return 0;
+    VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
+    budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+    VkPhysicalDeviceMemoryProperties2KHR p{};
+    p.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2_KHR;
+    p.pNext = &budget;
+    ncnn::vkGetPhysicalDeviceMemoryProperties2KHR(info.physicalDevice(), &p);
+    int64_t sum = 0;
+    for (uint32_t i = 0; i < p.memoryProperties.memoryHeapCount; i++) sum += (int64_t) budget.heapUsage[i];
+    return sum;
+}
+
 struct Model {
     // First, so the allocators counting in it go before it.
     Usage usage;
+    /** What loading the weights took: the native heap's growth, and on the GPU its heaps' growth. */
+    int64_t weights = 0;
     ncnn::Net net;
     bool gpu = false;
     ncnn::VulkanDevice* vkdev = nullptr;
@@ -303,12 +325,16 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring para
         m->net.opt.use_bf16_storage = false;
     }
     std::string p = utf(env, param), b = utf(env, bin);
+    // Other threads' allocations meanwhile count too: an upper bound.
+    const int64_t heap0 = heapBytes();
+    const int64_t gpu0 = m->gpu ? gpuBytes() : 0;
     if (m->net.load_param(p.c_str()) != 0 || m->net.load_model(b.c_str()) != 0 || m->net.input_names().empty() ||
         m->net.output_names().empty()) {
         LOGW("cannot load model %s", p.c_str());
         delete m;
         return 0;
     }
+    m->weights = std::max<int64_t>(0, heapBytes() - heap0) + (m->gpu ? std::max<int64_t>(0, gpuBytes() - gpu0) : 0);
     m->input = m->net.input_names()[0];
     m->output = m->net.output_names()[0];
     return reinterpret_cast<jlong>(m);
@@ -400,6 +426,15 @@ Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle,
 JNIEXPORT jlong JNICALL
 Java_com_infinity_comicreader_ai_LibNcnn_nPeak(JNIEnv*, jclass, jlong handle) {
     return (jlong) reinterpret_cast<Model*>(handle)->usage.take();
+}
+
+/**
+ * The bytes loading the model's weights took: the native heap's growth (weights as ncnn
+ * transforms them for its kernels) and, on the GPU, its memory heaps' growth.
+ */
+JNIEXPORT jlong JNICALL
+Java_com_infinity_comicreader_ai_LibNcnn_nWeights(JNIEnv*, jclass, jlong handle) {
+    return (jlong) reinterpret_cast<Model*>(handle)->weights;
 }
 
 /** Frees the buffers a model keeps between runs; its weights stay. */

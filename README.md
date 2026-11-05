@@ -886,9 +886,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   An upscaling model does not run for a page shown no larger than it is.
   Output is capped at 32 MP, pages must be readable ARGB_8888 and opaque (pixels
   read when the bitmap says it has alpha), and the model's buffers are freed
-  after every page. Every ncnn call runs on one thread that lives as long as the
-  process: its OpenMP runtime aborts when started again. ncnn's threads are
-  placed on the large cores before each CPU run and let go before each GPU run.
+  after every page. Every ncnn call on a model runs on the thread it opened on,
+  which lives as long as the process: its OpenMP runtime aborts when started
+  again. AI pages share one; the covers' text detector has its own, CPU only, so
+  neither waits for the other. Each thread's ncnn threads are placed on the
+  large cores before each CPU run and let go before each GPU run.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the

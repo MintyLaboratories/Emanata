@@ -65,9 +65,12 @@ class ModelStore(val root: File) {
         return !d.exists() || d.deleteRecursively()
     }
 
-    /** Deletes folders of models no longer in [catalog] (an update dropped or replaced them); imported ones stay. */
+    /**
+     * Deletes folders of models no longer in [catalog] (an update dropped or replaced them) and
+     * what an import left; imported models and the marker of a check ([ModelImports.CHECKING]) stay.
+     */
     fun prune(catalog: Collection<CatalogModel> = ModelCatalog.all) {
-        val ids = catalog.map { it.id }.toSet() + USER
+        val ids = catalog.map { it.id }.toSet() + USER + ModelImports.CHECKING
         root.listFiles()?.filter { it.name !in ids }?.forEach { it.deleteRecursively() }
     }
 

@@ -163,14 +163,28 @@ object ModelImports {
         }
     }
 
-    /** The name of a model whose check ended the app, once; null for none. Blocking. */
-    fun crashed(context: Context): String? {
-        if (job?.isActive == true) return null
-        val marker = File(ModelStore.of(context).root, CHECKING)
-        if (!marker.exists()) return null
-        val name = runCatching { marker.readText() }.getOrNull().orEmpty()
+    /** The name of the model whose check ended the app, as [recover] read it; null for none. */
+    private var ended: String? = null
+
+    /**
+     * Reads and deletes the marker of a check that ended the app, keeping the model's name for
+     * [crashed]. At start, before anything cleans the store; a check under way keeps its marker.
+     * Blocking.
+     */
+    @Synchronized
+    fun recover(store: ModelStore) {
+        if (job?.isActive == true) return
+        val marker = File(store.root, CHECKING)
+        if (!marker.exists()) return
+        ended = runCatching { marker.readText() }.getOrNull().orEmpty()
         marker.delete()
-        return name
+    }
+
+    /** The name of a model whose check ended the app, once; null for none. Blocking. */
+    @Synchronized
+    fun crashed(context: Context): String? {
+        recover(ModelStore.of(context))
+        return ended.also { ended = null }
     }
 
     /** Copies and checks [uris]: the state it ends in. Blocking; throws [CancellationException] once [canceled]. */

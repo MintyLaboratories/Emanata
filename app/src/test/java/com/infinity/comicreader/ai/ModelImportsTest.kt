@@ -3,6 +3,7 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.data.RetiredFiles
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +33,7 @@ class ModelImportsTest {
     @Before
     fun setUp() {
         store.root.deleteRecursively()
+        ModelImports.cancel()
         ModelImports.runtime = FakeRuntime()
         ModelImports.memory = { Long.MAX_VALUE }
     }
@@ -123,6 +125,25 @@ class ModelImportsTest {
         File(store.root, ModelImports.CHECKING).writeText("Heavy one")
         assertEquals("Heavy one", ModelImports.crashed(context))
         assertNull(ModelImports.crashed(context))
+    }
+
+    @Test
+    fun aCheckThatEndedTheAppIsToldAfterTheStartCleansTheStore() {
+        store.root.mkdirs()
+        File(store.root, ModelImports.CHECKING).writeText("Heavy one")
+        File(store.root, "dropped-model").mkdirs()
+        RetiredFiles.drop(context)
+        assertFalse("the store is cleaned", File(store.root, "dropped-model").exists())
+        assertEquals("Heavy one", ModelImports.crashed(context))
+        assertNull(ModelImports.crashed(context))
+    }
+
+    @Test
+    fun pruningKeepsTheMarkerOfACheck() {
+        store.root.mkdirs()
+        File(store.root, ModelImports.CHECKING).writeText("Heavy one")
+        store.prune()
+        assertEquals("Heavy one", ModelImports.crashed(context))
     }
 
     @Test

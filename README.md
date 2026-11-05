@@ -528,7 +528,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Files opened from other apps (`content://`) are copied to the cache and opened.
 - Housekeeping: **duplicate file finder** (bit-identical copies, SHA-256
   verified, shown as one cover with every place a copy is; spread two fingers
-  on it to peek), **largest files** list,
+  on it to peek; below them, **similar books** in other files, such as a CBZ
+  re-encoded from JPEG to JPEG XL or WebP: page counts within one and
+  perceptual hashes (dHash) of the cover and pages a quarter, half and three
+  quarters in, shown side by side with format, size and page dimensions,
+  never preselected; pages are read once per book and kept by Book ID; the
+  search shows its progress and can be stopped), **largest files** list,
   reading **statistics** (books read, pages read, time reading, days read,
   streaks; a book is a PDF, a CB* archive, or a folder of loose images, which
   counts once when all its images are read or it is marked read; books read

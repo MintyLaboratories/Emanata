@@ -3,7 +3,9 @@ package com.infinity.comicreader.reader
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -14,6 +16,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -50,6 +53,21 @@ class BookPrintsTest {
             BitmapFactory.decodeFile(f.path, o)
             assertTrue("${o.outWidth} x ${o.outHeight}", maxOf(o.outWidth, o.outHeight) >= Previews.BOX)
         }
+    }
+
+    @Test
+    fun pageThatNeverDecodesIsKeptButFailuresThatMayPassAreNot() {
+        assertTrue(BookPrints.isPermanent(DecodeException("bad")))
+        assertFalse(BookPrints.isPermanent(DecodeException("busy", transient = true)))
+        assertFalse(BookPrints.isPermanent(OutOfMemoryError()))
+        assertFalse(BookPrints.isPermanent(IOException()))
+        assertFalse(BookPrints.isPermanent(InterruptedException()))
+        val entries = pages((1L..8L).toList(), Bitmap.CompressFormat.JPEG, "jpg").toMutableList()
+        // The cover's neighbor, which the first place reads, is not an image.
+        entries[1] = Fixtures.entry("p02.jpg", ByteArray(4096) { (it * 31).toByte() })
+        val read = read(Fixtures.zip(File(temp.root, "Tale.cbz"), *entries.toTypedArray()))!!
+        assertTrue(read.keep)
+        assertNull(read.entry.print.slots[0][1])
     }
 
     private companion object {

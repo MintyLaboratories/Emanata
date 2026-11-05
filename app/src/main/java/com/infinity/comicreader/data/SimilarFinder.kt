@@ -9,14 +9,17 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Finds books probably alike ([SimilarBooks]) among files: each content once (by [idOf]),
  * its [SimilarStore.Entry] from [store], else [read] by up to [workers] threads at once
- * and kept. Free of Android types.
+ * and kept unless the read says not to ([Read.keep]). Free of Android types.
  */
 class SimilarFinder(
     private val store: SimilarStore,
     private val idOf: (File) -> BookId?,
-    private val read: (File, canceled: () -> Boolean) -> SimilarStore.Entry?,
+    private val read: (File, canceled: () -> Boolean) -> Read?,
     private val workers: Int = WORKERS
 ) {
+    /** What was read of a book: its [entry], and whether to [keep] it, which a read that may go better next time is not. */
+    data class Read(val entry: SimilarStore.Entry, val keep: Boolean = true)
+
     /** One content: its [id], its bit-identical [files] in the order given, and what was read of it. */
     data class Book(val id: BookId, val files: List<File>, val entry: SimilarStore.Entry)
 
@@ -52,10 +55,10 @@ class SimilarFinder(
                 val tasks = missing.map { id ->
                     Callable {
                         if (!alive()) return@Callable null
-                        val entry = runCatching { read(byId.getValue(id).first()) { !alive() } }.getOrNull()
-                        if (entry != null) store.put(id, entry)
+                        val got = runCatching { read(byId.getValue(id).first()) { !alive() } }.getOrNull()
+                        if (got != null && got.keep) store.put(id, got.entry)
                         progress(done.incrementAndGet(), ids.size)
-                        entry?.let { id to it }
+                        got?.let { id to it.entry }
                     }
                 }
                 for (future in pool.invokeAll(tasks)) runCatching { future.get() }.getOrNull()?.let { entries[it.first] = it.second }

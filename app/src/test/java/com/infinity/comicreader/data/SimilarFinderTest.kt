@@ -29,11 +29,13 @@ class SimilarFinderTest {
 
     private fun idOf(f: File) = ids[f.name]?.let(::BookId)
 
+    private fun read(f: File) = books[f.name]?.let { SimilarFinder.Read(it) }
+
     @Test
     fun groupsContentsAlikeOnceEachAndKeepsWhatItRead() {
         val reads = Collections.synchronizedList(ArrayList<String>())
         val store = SimilarStore(File(tmp.root, "store.txt"))
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; books[f.name] })
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) })
         val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
         val found = finder.find(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz", "broken.cbz", "unknown.cbz")) { d, t -> progress += d to t }
         val groups = found.groups
@@ -57,7 +59,7 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         store.put(BookId(1), entry(30))
         var alive = true
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> alive = false; books[f.name] }, workers = 1)
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> alive = false; read(f) }, workers = 1)
         val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
         // The read under way when the search stopped is kept and compared; none starts after it.
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
@@ -65,5 +67,17 @@ class SimilarFinderTest {
         assertEquals(3, found.total)
         assertEquals(entry(31), store.get(BookId(2)))
         assertNull(store.get(BookId(3)))
+    }
+
+    @Test
+    fun readThatMayGoBetterIsComparedButNotKept() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val reads = Collections.synchronizedList(ArrayList<String>())
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; books[f.name]?.let { SimilarFinder.Read(it, keep = f.name != "b.cbr") } })
+        assertEquals(1, finder.find(files("a.cbz", "b.cbr")).groups.size)
+        assertNull(store.get(BookId(2)))
+        reads.clear()
+        finder.find(files("a.cbz", "b.cbr"))
+        assertEquals(listOf("b.cbr"), reads.toList())
     }
 }

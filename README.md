@@ -739,7 +739,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   when its models together may run past a page's time. A chosen model
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
-  models an update drops are deleted at the next start). Battery: battery
+  models an update drops are deleted at the next start). **Import a model…**
+  in Models takes your own ncnn model (a `.param` and its `.bin`, converted
+  on a computer, e.g. with pnnx; nothing is converted on the device): the
+  pair is copied into the app, checked as catalog models are and timed on a
+  test page, then named and given its step (1× models remove artifacts or
+  descreen, larger ones upscale), with a warning that heavy models may be too
+  slow to run live; one the engine can't run safely is refused with the
+  reason. Imported models are marked as such (no license is claimed), are
+  offered at their step like catalog ones, and can be deleted. Battery: battery
   saver pauses AI processing unless **Pause AI processing** is off; pages
   processed before still show. In the reader a page shows at once, then its
   processed version takes its place at the same size when ready: the page
@@ -822,7 +830,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   measured (`ModelProbe`): its scale and edge trim from two input sizes, and its
   context by running a busy tile whole and cut and finding how far from the cut
   the output changes by more than 2 codes; tiles keep only pixels that saw all
-  their context. A model whose output still changes 64 pixels from the cut, or
+  their context. Every probe run counts the working memory the model holds
+  (feature maps and scratch, on the GPU and the CPU, through counting
+  allocators in `ai_ncnn.cpp`); a run that would need more than the model's
+  share of memory (`ModelMemory`: an eighth of the device's memory, at most
+  half of what is free, weights included) at the bytes per pixel measured so
+  far is not started and the model is refused: heavy 4× upscalers work at
+  output resolution and would need gigabytes for the largest probe. Tiles are
+  then sized by the larger of the estimate and the measured bytes per pixel,
+  and a GPU tile size whose check held more than its budget is passed over.
+  A model whose output still changes 64 pixels from the cut, or
   whose `.param` has layers mixing the whole tile (global pooling as in
   Real-CUGAN's squeeze-excitation, reductions, per-image normalization), is
   refused. Tiles are the largest size up to 192 (larger when the margins would
@@ -849,6 +866,17 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   after every page. Every ncnn call runs on one thread that lives as long as the
   process: its OpenMP runtime aborts when started again. ncnn's threads are
   placed on the large cores before each CPU run and let go before each GPU run.
+- Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
+  files are told apart by name (else by the `.param`'s first line), copied
+  into a staging folder (at most 4 MB and 512 MB), opened as above within the
+  model memory, run on a small smooth picture whose output, averaged back down,
+  must stay within 24 codes of it on average (else the model expects pixels
+  scaled otherwise, or the files don't belong together), and timed on a
+  synthetic 1000×1500 page (the first six tiles, the first counted once); a
+  page past 120 s, or a check past 2 minutes, is refused. While a check runs a
+  marker names the model, so a check that ends the app is reported next time.
+  A taken-in model keeps its files and what was measured beside them; its
+  processed pages are keyed by its files' checksums like catalog ones.
 - AI in the reader (`ReaderAi`, `AiQueue`): once a page of a book with a chain
   (its own picks in the library, else the global ones) shows plain, it is
   queued; the queue works on the item being read, then the next one, one page

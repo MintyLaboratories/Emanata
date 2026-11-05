@@ -252,8 +252,8 @@ class TileEngineTest {
 
     @Test
     fun aFailedTileFallsBack() {
-        // Measuring takes two runs for the scale and two per pattern for the reach.
-        val probeRuns = 6
+        // Measuring takes two runs for the scale and two per pattern and direction for the reach.
+        val probeRuns = 10
         val model = FakeModel(failAt = probeRuns + 4)
         val s = session(model)
         assertEquals(probeRuns, model.runs.get())

@@ -15,7 +15,8 @@ Run from the repository root:
 
 Downloads the official model (Apache-2.0) from Hugging Face at a pinned revision and checks
 its SHA-256, exports it to ONNX with paddle2onnx, converts that to ncnn with pnnx (fp16
-weights), and writes `app/src/main/assets/text-detector/ppocrv5-mobile-det.ncnn.{param,bin}`.
+weights), and writes `app/src/main/assets/text-detector/ppocrv5-mobile-det.ncnn.{param,bin}`
+and the `NOTICE` (Apache-2.0 §4(b)) stating what changed.
 Weights are unchanged but for fp16 storage. One edit to pnnx's output: its squeeze-and-excite
 reshapes carry size expressions the app's ncnn release cannot evaluate when the model loads;
 they become plain reshapes to 1 x 1 x channels, which is what they compute. Input `in0` is
@@ -43,6 +44,17 @@ NAME = 'ppocrv5-mobile-det.ncnn'
 
 # pnnx's squeeze-and-excite reshape to [1, C, 1, 1], written as an expression on the batch size.
 EXPRESSION_RESHAPE = re.compile(rb'12=0 13=0 6="1,1,//\(\d+,0n\),0n"')
+
+NOTICE = """PP-OCRv5 mobile text detection model (PP-OCRv5_mobile_det) by the PaddlePaddle authors
+Licensed under the Apache License, Version 2.0
+Source: https://github.com/PaddlePaddle/PaddleOCR
+Weights: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det (revision {revision})
+
+Modified for this app by tools/text-detector/convert.py:
+- converted to ONNX (paddle2onnx), then to ncnn (pnnx)
+- weights stored in fp16
+- {edits} squeeze-and-excite reshape layers rewritten from size expressions to plain reshapes to 1 x 1 x channels
+"""
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -79,6 +91,7 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f'{NAME}.param').write_bytes(param)
     shutil.copyfile(work / 'det.ncnn.bin', OUT / f'{NAME}.bin')
+    (OUT / 'NOTICE').write_text(NOTICE.format(revision=REPO.rstrip('/').rsplit('/', 1)[1], edits=edits), newline='\n')
     for f in sorted(OUT.iterdir()):
         print(f'{f.name}: {f.stat().st_size} bytes, SHA-256 {sha256(f)}')
     if not args.work:

@@ -110,6 +110,18 @@ class TextDetectorTest {
     }
 
     @Test
+    fun theModelsNoticeStatesItsRewrittenReshapes() {
+        val dir = File("src/main/assets/${TextDetector.DIR}")
+        val rewritten = Regex("Reshape\\s+\\S+\\s+1 1 \\S+ \\S+ 0=1 1=1 2=-1\\s*$", RegexOption.MULTILINE)
+            .findAll(File(dir, TextDetector.PARAM).readText()).count()
+        assertTrue(rewritten > 0)
+        val notice = File(dir, "NOTICE").readText()
+        assertTrue(notice, notice.contains("$rewritten squeeze-and-excite reshape layers rewritten"))
+        assertTrue(notice.contains("Apache License, Version 2.0"))
+        assertTrue(notice.contains("fp16"))
+    }
+
+    @Test
     fun installsFromTheAssetsOnce() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val files = TextDetector.install(context)!!

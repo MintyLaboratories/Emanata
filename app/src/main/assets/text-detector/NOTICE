@@ -1,0 +1,9 @@
+PP-OCRv5 mobile text detection model (PP-OCRv5_mobile_det) by the PaddlePaddle authors
+Licensed under the Apache License, Version 2.0
+Source: https://github.com/PaddlePaddle/PaddleOCR
+Weights: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det (revision 0d63e78e2b680928f6b1747d76a08db6e645efb7)
+
+Modified for this app by tools/text-detector/convert.py:
+- converted to ONNX (paddle2onnx), then to ncnn (pnnx)
+- weights stored in fp16
+- 8 squeeze-and-excite reshape layers rewritten from size expressions to plain reshapes to 1 x 1 x channels

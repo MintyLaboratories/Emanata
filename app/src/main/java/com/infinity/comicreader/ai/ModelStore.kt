@@ -66,12 +66,14 @@ class ModelStore(val root: File) {
     }
 
     /**
-     * Deletes folders of models no longer in [catalog] (an update dropped or replaced them) and
-     * what an import left; imported models and the marker of a check ([ModelImports.CHECKING]) stay.
+     * Deletes folders of models no longer in [catalog] (an update dropped or replaced them), what
+     * an import left, and imported models' folders that do not read; imported models and the
+     * marker of a check ([ModelImports.CHECKING]) stay. Blocking.
      */
     fun prune(catalog: Collection<CatalogModel> = ModelCatalog.all) {
         val ids = catalog.map { it.id }.toSet() + USER + ModelImports.CHECKING
         root.listFiles()?.filter { it.name !in ids }?.forEach { it.deleteRecursively() }
+        userRoot.listFiles()?.filter { it.isDirectory && userModel(it) == null }?.forEach { it.deleteRecursively() }
     }
 
     /** Where imported models live. */
@@ -86,17 +88,15 @@ class ModelStore(val root: File) {
     /** Where model [id] waits while it is imported. */
     fun staging(id: String): File = File(File(root, STAGING), id)
 
-    /** The imported models, by name; deletes folders whose [USER_INFO] is missing or does not read. */
-    fun userModels(): List<UserModel> {
-        val out = ArrayList<UserModel>()
-        for (dir in userRoot.listFiles()?.filter { it.isDirectory }.orEmpty()) {
-            val info = File(dir, USER_INFO)
-            val p = runCatching { Properties().apply { info.inputStream().use { load(it) } } }.getOrNull()
-            val files = userFiles(dir)
-            val m = p?.let { UserModel.from(dir, it, files.param, files.bin) }
-            if (m == null) dir.deleteRecursively() else out += m
-        }
-        return out.sortedBy { it.name.lowercase() }
+    /** The imported models, by name; folders whose [USER_INFO] is missing or does not read are left out ([prune] deletes them). */
+    fun userModels(): List<UserModel> =
+        userRoot.listFiles()?.filter { it.isDirectory }.orEmpty().mapNotNull(::userModel).sortedBy { it.name.lowercase() }
+
+    /** The imported model in folder [dir]; null when its [USER_INFO] is missing or does not read. */
+    private fun userModel(dir: File): UserModel? {
+        val p = runCatching { Properties().apply { File(dir, USER_INFO).inputStream().use { load(it) } } }.getOrNull() ?: return null
+        val files = userFiles(dir)
+        return UserModel.from(dir, p, files.param, files.bin)
     }
 
     /** Takes imported model [m] in: what it says goes beside its files in [staging], and the folder into [userRoot]. */

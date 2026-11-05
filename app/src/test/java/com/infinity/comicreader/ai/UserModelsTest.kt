@@ -72,15 +72,18 @@ class UserModelsTest {
     }
 
     @Test
-    fun foldersWithoutWhatTheModelIsAreDropped() {
+    fun foldersWithoutWhatTheModelIsAreLeftOutThenPruned() {
         import("user-1", "Kept", AiStep.UPSCALE)
         val broken = store.userDir("user-2").apply { mkdirs() }
         File(broken, ModelStore.USER_PARAM).writeText("7767517")
         val unreadable = store.userDir("user-3").apply { mkdirs() }
         File(unreadable, ModelStore.USER_INFO).writeText("name=x\nstep=nowhere\n")
         assertEquals(listOf("user-1"), store.userModels().map { it.id })
+        assertTrue("reading deletes nothing", broken.exists() && unreadable.exists())
+        store.prune()
         assertFalse(broken.exists())
         assertFalse(unreadable.exists())
+        assertEquals(listOf("user-1"), store.userModels().map { it.id })
     }
 
     @Test

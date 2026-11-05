@@ -6,7 +6,8 @@ import android.graphics.Bitmap
  * [inner] with page previews: every page it loads ([loadPage]) leaves its preview in
  * [store] unless one is there. JPEG and WebP previews are decoded from the page's
  * bytes on the store's writer; other formats are halved once from the full-size decode
- * before any crop or resampling ([Decoders.capturing]), and finished on the writer.
+ * before any crop or resampling ([Decoders.capturing]), and finished on the writer;
+ * none when [Target.capPixels] may have sampled that decode below the preview's size.
  * A source that renders straight at the target size (PDF) leaves one only when it
  * renders a whole page no smaller than its preview ([Previews.isFullSize]), so a small
  * cover never stands in for later renders. Detail loads ([loadDetail]) follow a
@@ -33,7 +34,7 @@ class PreviewingSource(
 
             override fun decoded(full: Bitmap) {
                 captured = true
-                if (!store.wants(key)) return
+                if (!store.wants(key) || shrunkBelowPreview(full, target)) return
                 val size = Previews.sizeOf(full.width, full.height)
                 val step = runCatching { Previews.firstStep(full) }.getOrNull() ?: return
                 val taken = store.putMade(key) {
@@ -70,6 +71,14 @@ class PreviewingSource(
     } catch (t: Throwable) {
         null
     }
+
+    /**
+     * True when [full], decoded for [target], is smaller than a preview and may be its page
+     * sampled down by [Target.capPixels]: a sampled decode keeps more than a quarter of the
+     * cap (an eighth allows for rounding), so a smaller one is the page at its own size.
+     */
+    private fun shrunkBelowPreview(full: Bitmap, target: Target) =
+        !Previews.isFullSize(full.width, full.height) && full.width.toLong() * full.height * 8 > target.capPixels
 
     /** True when a page made to [target] shows all of the page, uncropped and undistorted. */
     private fun isWholePage(target: Target) =

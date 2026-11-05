@@ -148,6 +148,24 @@ class PreviewingSourceTest {
     }
 
     @Test
+    fun decodeCappedBelowPreviewSizeLeavesNoPreviewSoAFullOneCan() {
+        val source = PreviewingSource(EncodedPages(listOf(framedPage(1000, 1500))), store, "book")
+        // Sampled to 1/8 by the cap: 125 x 188.
+        val small = source.loadPage(0, Target(128, 128, capPixels = 65_536))
+        assertTrue(small.height < Previews.BOX)
+        assertNull(store.get(key(0)))
+        source.loadPage(0, Target(600, 600))
+        assertEquals(Previews.BOX, store.get(key(0))!!.height)
+    }
+
+    @Test
+    fun pageSmallerThanAPreviewUnderASmallCapLeavesItsOwn() {
+        val source = PreviewingSource(EncodedPages(listOf(framedPage(40, 60))), store, "book")
+        source.loadPage(0, Target(20, 20, capPixels = 65_536))
+        assertEquals(60, store.get(key(0))!!.height)
+    }
+
+    @Test
     fun quickPreviewIsStoredAndThenServedFromStore() {
         val quick = Bitmap.createBitmap(20, 30, Bitmap.Config.ARGB_8888)
         val inner = EncodedPages(listOf(framedPage(200, 300)), quick)

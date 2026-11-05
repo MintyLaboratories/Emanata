@@ -339,9 +339,8 @@ class CleanupActivity : AppCompatActivity() {
         rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
         forget(deleted)
-        val left = result.total - result.compared
-        if (left > 0 && context.isActive) {
-            showSimilarBar(getString(R.string.similar_unread, left, result.total), running = false)
+        if (result.unread > 0 && context.isActive) {
+            showSimilarBar(getString(R.string.similar_unread, result.unread, result.total), running = false)
             similarCompare.setOnClickListener {
                 stopped = false
                 lifecycleScope.launch { compareSimilar(finder, contents.without(deleted), readNew = true) }
@@ -361,7 +360,7 @@ class CleanupActivity : AppCompatActivity() {
         similarProgress.visibility = if (running) View.VISIBLE else View.GONE
         similarProgress.isIndeterminate = true
         similarStop.visibility = if (running) View.VISIBLE else View.GONE
-        similarStop.isEnabled = true
+        similarStop.isEnabled = !stopped
         similarCompare.visibility = if (running) View.GONE else View.VISIBLE
     }
 

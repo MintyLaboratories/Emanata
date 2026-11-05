@@ -26,8 +26,12 @@ class SimilarFinder(
     /** One content: its [id], its bit-identical [files] in the order given, and what was read of it. */
     data class Book(val id: BookId, val files: List<File>, val entry: SimilarStore.Entry)
 
-    /** The [groups] found, and how many contents were [compared] of the [total] found. */
-    data class Found(val groups: List<List<Book>>, val compared: Int, val total: Int)
+    /**
+     * The [groups] found, how many contents were [compared] of the [total] found, and how
+     * many were left [unread]: not read, as asked or as the search stopped, its read then
+     * under way included (a book that could not be read is neither compared nor unread).
+     */
+    data class Found(val groups: List<List<Book>>, val compared: Int, val total: Int, val unread: Int = 0)
 
     /** The contents among some files: each one's files ([byId], in the order given), and those with nothing kept of them yet ([unread]). */
     class Contents(val byId: Map<BookId, List<File>>, val unread: List<BookId>) {
@@ -68,6 +72,7 @@ class SimilarFinder(
         val missing = ArrayList<BookId>()
         for (id in ids) store.get(id)?.let { entries[id] = it } ?: missing.add(id)
         val done = AtomicInteger(entries.size)
+        val tried = AtomicInteger()
         progress(done.get(), ids.size)
         if (readNew && missing.isNotEmpty() && alive()) {
             val pool = Executors.newFixedThreadPool(workers.coerceIn(1, missing.size)) { r ->
@@ -82,7 +87,9 @@ class SimilarFinder(
                     Callable {
                         gate.pass {
                             if (!alive()) return@pass null
+                            tried.incrementAndGet()
                             val got = runCatching { read(byId.getValue(id).first()) { !alive() } }.getOrNull()
+                            if (got == null && !alive()) tried.decrementAndGet()
                             if (got != null && got.keep) store.put(id, got.entry)
                             progress(done.incrementAndGet(), ids.size)
                             got?.let { id to it.entry }
@@ -95,7 +102,7 @@ class SimilarFinder(
             }
         }
         val books = ids.mapNotNull { id -> entries[id]?.let { Book(id, byId.getValue(id), it) } }
-        return Found(SimilarBooks.groups(books) { it.entry.print }, books.size, ids.size)
+        return Found(SimilarBooks.groups(books) { it.entry.print }, books.size, ids.size, missing.size - tried.get())
     }
 
     companion object {

@@ -42,6 +42,8 @@ class SimilarFinderTest {
         val groups = found.groups
         assertEquals(3, found.compared)
         assertEquals(4, found.total)
+        // The broken one was tried: not left unread.
+        assertEquals(0, found.unread)
         assertEquals(1, groups.size)
         assertEquals(listOf(BookId(1), BookId(2)), groups[0].map { it.id })
         assertEquals(listOf("a.cbz", "a copy.cbz"), groups[0][0].files.map { it.name })
@@ -66,6 +68,7 @@ class SimilarFinderTest {
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
         assertEquals(2, found.compared)
         assertEquals(3, found.total)
+        assertEquals(1, found.unread)
         assertEquals(entry(31), store.get(BookId(2)))
         assertNull(store.get(BookId(3)))
     }
@@ -110,6 +113,7 @@ class SimilarFinderTest {
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
         assertEquals(2, found.compared)
         assertEquals(3, found.total)
+        assertEquals(1, found.unread)
         assertEquals(emptyList<String>(), reads.toList())
     }
 
@@ -132,5 +136,16 @@ class SimilarFinderTest {
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
         // Read after the clear, so kept anew.
         assertEquals(entry(31), SimilarStore(File(tmp.root, "store.txt")).get(BookId(2)))
+    }
+
+    @Test
+    fun aReadCutShortByStopIsLeftUnread() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        var alive = true
+        // Stop comes while b is read, which then gives up.
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> if (f.name == "b.cbr") { alive = false; null } else read(f) }, workers = 1)
+        val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
+        assertEquals(1, found.compared)
+        assertEquals(2, found.unread)
     }
 }

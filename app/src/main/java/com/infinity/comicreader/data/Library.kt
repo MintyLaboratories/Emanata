@@ -19,7 +19,7 @@ enum class LibraryList { FAVORITES, HISTORY, BOOKMARKS }
 
 /**
  * Favorites, read marks, reading history, bookmarks, per-folder layouts (and books' own,
- * from folders packed into them), per-book color adjustments, hidden pages and file name charsets, and reading statistics, persisted
+ * from folders packed into them), per-book color adjustments, hidden pages, covers, spread choices and file name charsets, and reading statistics, persisted
  * as JSON documents in SharedPreferences.
  *
  * Everything kept for a book is kept by its [BookId], so it follows the book moved,
@@ -261,6 +261,23 @@ class Library(context: Context) {
         }
     }
 
+    /** Book [id]'s own spread choices ("Show alone", "Pair with next"), by book index. */
+    fun spreadOverrides(id: BookId?): SpreadOverrides =
+        id?.let { SpreadOverrides.of(readObject(KEY_SPREAD_PAGES).optJSONObject(it.hex)) } ?: SpreadOverrides()
+
+    fun setSpreadOverrides(book: BookRef, overrides: SpreadOverrides) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_SPREAD_PAGES)
+            if (overrides.isEmpty) {
+                if (all.remove(book.id.hex) == null) return@synchronized
+            } else {
+                all.put(book.id.hex, overrides.toJson())
+                keep(book)
+            }
+            sp.edit().putString(KEY_SPREAD_PAGES, all.toString()).apply()
+        }
+    }
+
     // ---------------- solid archives ----------------
     /** True when the reader was told "Not now" for repacking book [id] as CBZ ([setRepackDeclined]): it is not offered again. */
     fun repackDeclined(id: BookId): Boolean = id in readIds(KEY_NO_REPACK)
@@ -494,6 +511,12 @@ class Library(context: Context) {
                 val to = moves.getOrNull(covers.optInt(id.hex, -1)) ?: -1
                 if (to > 0 && to < pageCount) covers.put(id.hex, to) else covers.remove(id.hex)
                 sp.edit().putString(KEY_COVERS, covers.toString()).apply()
+            }
+            val spreads = readObject(KEY_SPREAD_PAGES)
+            spreads.optJSONObject(id.hex)?.let { o ->
+                val moved = SpreadOverrides.of(o).moved(moves, pageCount)
+                if (moved.isEmpty) spreads.remove(id.hex) else spreads.put(id.hex, moved.toJson())
+                sp.edit().putString(KEY_SPREAD_PAGES, spreads.toString()).apply()
             }
             val old = hiddenPages(id)
             val new = old.mapNotNull { h -> moves.getOrNull(h)?.takeIf { it in 0 until pageCount } }.toSortedSet()
@@ -879,7 +902,7 @@ class Library(context: Context) {
         val hidden = hiddenCounts()
         val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
             readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids() +
-            readObject(KEY_AI).ids() + readObject(KEY_COVERS).ids()
+            readObject(KEY_AI).ids() + readObject(KEY_COVERS).ids() + readObject(KEY_SPREAD_PAGES).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
         return all.associateWith { id ->
             Kept(
@@ -1327,6 +1350,9 @@ class Library(context: Context) {
         /** The pages books were given as covers ([coverPage]), by book index. */
         private const val KEY_COVERS = "cover_pages"
 
+        /** Books' own spread choices ([spreadOverrides]). */
+        private const val KEY_SPREAD_PAGES = "spread_pages"
+
         /** Books' own AI chains ([aiPicks]): a model id or [AI_NONE] per step. */
         private const val KEY_AI = "ai_picks"
 
@@ -1352,7 +1378,7 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS)
+        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
         private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
@@ -1361,12 +1387,12 @@ class Library(context: Context) {
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
 
         /** Documents kept by book ID. */
-        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS)
+        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
 
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS
+            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES
         )
 
         /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */

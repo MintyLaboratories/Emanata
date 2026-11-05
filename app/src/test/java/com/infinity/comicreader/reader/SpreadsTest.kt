@@ -445,6 +445,48 @@ class SpreadsTest {
     }
 
     @Test
+    fun aPageShownAloneBreaksItsRun() {
+        val paths = book(run("page", 1..9, pad = 2))
+        assertEquals("[01][02|03][04][05|06][07|08][09]", screens(paths, "page", options = Spreads.Options(alone = setOf(3))))
+        // Merging in one-page reading leaves it alone too.
+        val match = SpreadSeams.Verdict(SpreadSeams.Seam.MATCH, 0.9)
+        val seams = List(paths.size) { if (it == 3) match else null }
+        val a = Spreads.classify(paths)
+        assertEquals(listOf(3, 4), Spreads.merge(a, Spreads.Options(seams = seams))[3].toList())
+        assertEquals(listOf(3), Spreads.merge(a, Spreads.Options(seams = seams, alone = setOf(3)))[3].toList())
+    }
+
+    @Test
+    fun aPagePairedWithTheNextSharesItsScreenAndTheRunAfterStartsOnTheLeft() {
+        val paths = book(run("page", 1..9, pad = 2))
+        assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = Spreads.Options(paired = setOf(2))))
+        // Whatever Shift or seams say of the run after it.
+        val match = SpreadSeams.Verdict(SpreadSeams.Seam.MATCH, 0.9)
+        val seams = List(paths.size) { if (it == 5) match else null }
+        val options = Spreads.Options(shift = true, seams = seams, visited = setOf(5), paired = setOf(2))
+        assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = options))
+        // A cover shown alone by default pairs when asked; pairs that overlap keep the first.
+        assertEquals("[01|02][03|04][05|06][07|08][09]", screens(paths, "page", options = Spreads.Options(paired = setOf(0))))
+        assertEquals("[01][02][03|04][05|06][07|08][09]", screens(paths, "page", options = Spreads.Options(paired = setOf(2, 3, 8))))
+        // Unnumbered pages likewise.
+        val loose = listOf("alpha.jpg", "bravo.jpg", "charlie.jpg", "delta.jpg", "echo.jpg")
+        assertEquals("[alpha][bravo][charlie|delta][echo]", screens(loose, "", options = Spreads.Options(paired = setOf(2))))
+    }
+
+    @Test
+    fun pairsChosenHoldInLandscapeBooksAndOnePageReading() {
+        val paths = book(run("strip", 1..6, pad = 2))
+        val landscape = Spreads.classify(paths, paths.map { wide })
+        assertEquals(listOf(listOf(0), listOf(1, 2), listOf(3), listOf(4), listOf(5)), Spreads.pair(landscape, Spreads.Options(paired = setOf(1))).map { it.toList() })
+        val a = Spreads.classify(book(run("page", 1..5, pad = 2)))
+        val options = Spreads.Options(paired = setOf(2))
+        val views = Spreads.merge(a, options)
+        assertEquals(listOf(listOf(0), listOf(1), listOf(2, 3), listOf(4)), views.map { it.toList() })
+        // Not one picture unless its seam says so.
+        assertTrue(Spreads.joined(views, options).isEmpty())
+    }
+
+    @Test
     fun mostlyWideBookIsReadOneAtATime() {
         val paths = book(run("strip", 1..10, pad = 2))
         val a = Spreads.classify(paths, paths.map { wide })

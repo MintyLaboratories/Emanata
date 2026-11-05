@@ -23,7 +23,10 @@ import java.util.Locale
  * a screen; one match alone tells only near the reader), else from what spreads say (a spread starts on a left page), else the run's
  * first page is a left page; [Options.shift] flips it (a shift from before seams flips
  * the parity without them, [Options.shiftByNames]). In one-page reading, two pages
- * whose seam matches show as one ([merge]).
+ * whose seam matches show as one ([merge]). The reader's own choices come first: a page
+ * shown alone ([Options.alone]) breaks a run like a wide one; a page paired with the next
+ * ([Options.paired]) shares a screen with it, whatever its kind, and the run after them
+ * starts on a left page.
  */
 object Spreads {
 
@@ -113,7 +116,9 @@ object Spreads {
      * reading order, null where not checked. A shift chosen before seams paired pages
      * ([shiftByNames]) flips the pairing names and spreads give, seams unread. [visited]
      * holds the pages the reader has had on screen: a lone seam match settles a run only
-     * within [NEAR] pages of one of them. Pages in [alone] (tall ones) never share a screen.
+     * within [NEAR] pages of one of them. Pages in [alone] (tall ones, and those the reader
+     * chose to show alone) never share a screen. Each page in [paired] shares one with the
+     * next, as the reader chose.
      */
     data class Options(
         val coverAlone: Boolean = true,
@@ -121,7 +126,8 @@ object Spreads {
         val seams: List<SpreadSeams.Verdict?> = emptyList(),
         val shiftByNames: Boolean = false,
         val visited: Set<Int> = emptySet(),
-        val alone: Set<Int> = emptySet()
+        val alone: Set<Int> = emptySet(),
+        val paired: Set<Int> = emptySet()
     ) {
         /** True when the picture runs on from page [i] into the next. */
         fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
@@ -385,40 +391,69 @@ object Spreads {
      */
     fun pair(analysis: Analysis, options: Options = Options()): List<IntArray> {
         val pages = analysis.pages
-        if (analysis.landscape) return pages.indices.map { intArrayOf(it) }
-        val pairable = pairable(pages, options)
-        val segments = segments(pages, pairable)
-        val votes = votes(pages)
+        val forced = forcedPairs(pages.size, options)
         val out = ArrayList<IntArray>(pages.size)
         var at = 0
+        // The pages before [until]: each alone but for the pairs the reader chose.
+        fun fill(until: Int) {
+            while (at < until) {
+                out += if (at in forced) intArrayOf(at, at + 1).also { at += 2 } else intArrayOf(at++)
+            }
+        }
+        if (analysis.landscape) {
+            fill(pages.size)
+            return out
+        }
+        val pairable = pairable(pages, options, forced)
+        val segments = segments(pages, pairable)
+        val votes = votes(pages)
         var previousParity = -1
         var previousGroup = -2
         for (seg in segments) {
-            while (at < seg.pages.first()) out += intArrayOf(at++)
+            fill(seg.pages.first())
+            // Right after a pair the reader chose, a run starts on a left page.
+            val anchored = seg.pages.first() - 2 in forced
             val pairs = if (seg.numbered) {
                 val soft = seg.soft && seg.group == previousGroup
-                val bySeams = if (options.pairsBySeams) seamSide(numberedSeams(seg, pages, options)) else null
-                var parity = bySeams ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
-                if (options.shift) parity = 1 - parity
-                previousParity = if (options.shift) 1 - parity else parity
+                val bySeams = if (options.pairsBySeams && !anchored) seamSide(numberedSeams(seg, pages, options)) else null
+                var parity = if (anchored) Math.floorMod(pages[seg.pages.first()].number, 2L).toInt()
+                else bySeams ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
+                val flip = options.shift && !anchored
+                if (flip) parity = 1 - parity
+                previousParity = if (flip) 1 - parity else parity
                 previousGroup = seg.group
                 pairNumbered(seg.pages, pages, parity)
             } else {
                 previousGroup = -2
-                val offset = (if (options.pairsBySeams) seamSide(positionalSeams(seg, options)) else null) ?: 0
-                pairPositional(seg.pages, if (options.shift) 1 - offset else offset)
+                val offset = (if (options.pairsBySeams && !anchored) seamSide(positionalSeams(seg, options)) else null) ?: 0
+                pairPositional(seg.pages, if (options.shift && !anchored) 1 - offset else offset)
             }
             out += pairs
             at = seg.pages.last() + 1
         }
-        while (at < pages.size) out += intArrayOf(at++)
+        fill(pages.size)
         return out
     }
 
-    /** Pages that may share a screen: story pages, covers too without [Options.coverAlone]; never wide ones, nor [Options.alone]. */
-    private fun pairable(pages: List<Page>, options: Options) = BooleanArray(pages.size) { i ->
+    /**
+     * The first pages of the pairs the reader chose ([Options.paired]) among [count] pages: each
+     * with a next page, none overlapping the one before.
+     */
+    private fun forcedPairs(count: Int, options: Options): Set<Int> {
+        if (options.paired.isEmpty()) return emptySet()
+        val out = HashSet<Int>()
+        for (p in options.paired.sorted()) if (p >= 0 && p + 1 < count && p - 1 !in out) out += p
+        return out
+    }
+
+    /**
+     * Pages that may share a screen: story pages, covers too without [Options.coverAlone]; never
+     * wide ones, nor [Options.alone], nor those of a pair the reader chose ([forced]).
+     */
+    private fun pairable(pages: List<Page>, options: Options, forced: Set<Int>) = BooleanArray(pages.size) { i ->
         val k = pages[i].kind
         when {
+            i in forced || i - 1 in forced -> false
             i == 0 && options.coverAlone -> false
             i in options.alone -> false
             // A wide page is alone whatever its kind, a wraparound cover too.
@@ -431,16 +466,20 @@ object Spreads {
 
     /**
      * The screens of a one-page reader: each page alone, but for two pages that may share
-     * a screen whose seam matches ([Options.seams]), shown as one, first come first.
+     * a screen whose seam matches ([Options.seams]), shown as one, first come first, and the
+     * pairs the reader chose ([Options.paired]).
      */
     fun merge(analysis: Analysis, options: Options): List<IntArray> {
         val pages = analysis.pages
-        if (analysis.landscape || options.seams.none { it?.match == true }) return pages.indices.map { intArrayOf(it) }
-        val pairable = pairable(pages, options)
+        val forced = forcedPairs(pages.size, options)
+        val bySeams = !analysis.landscape && options.seams.any { it?.match == true }
+        if (!bySeams && forced.isEmpty()) return pages.indices.map { intArrayOf(it) }
+        val pairable = pairable(pages, options, forced)
         val out = ArrayList<IntArray>(pages.size)
         var i = 0
         while (i < pages.size) {
-            if (i + 1 < pages.size && pairable[i] && pairable[i + 1] && pages[i].dir == pages[i + 1].dir && options.joins(i)) {
+            val seam = bySeams && i + 1 < pages.size && pairable[i] && pairable[i + 1] && pages[i].dir == pages[i + 1].dir && options.joins(i)
+            if (i in forced || seam) {
                 out += intArrayOf(i, i + 1)
                 i += 2
             } else {

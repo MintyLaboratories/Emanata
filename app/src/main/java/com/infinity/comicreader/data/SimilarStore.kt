@@ -16,8 +16,9 @@ class SimilarStore(private val file: File, private val max: Int = MAX) {
 
     /**
      * What the search keeps of a book: its [print], the [width] x [height] of a page in its
-     * middle (0 when unknown), its [container] (file extension) and the [image] format of
-     * its pages (their extension; empty when unknown).
+     * middle (0 when unknown; in points for a vector book, [SimilarBooks.Print.vector]), its
+     * [container] (file extension) and the [image] format of its pages (their extension;
+     * empty when unknown).
      */
     data class Entry(val print: SimilarBooks.Print, val width: Int, val height: Int, val container: String, val image: String)
 
@@ -103,21 +104,26 @@ class SimilarStore(private val file: File, private val max: Int = MAX) {
             return SimilarStore(file).also { shared = it }
         }
 
-        /** `pages, width, height, container, image` and the places' hashes, tab-separated; places `;`-separated, their pages `,`-separated, `-` for an unreadable one. */
+        /** `pages, width, height, container, image, vector (1 or 0)` and the places' hashes, tab-separated; places `;`-separated, their pages `,`-separated, `-` for an unreadable one. */
         internal fun encode(e: Entry): String =
-            listOf(e.print.pages, e.width, e.height, clean(e.container), clean(e.image)).joinToString("\t") + "\t" +
+            listOf(e.print.pages, e.width, e.height, clean(e.container), clean(e.image), if (e.print.vector) 1 else 0).joinToString("\t") + "\t" +
                 e.print.slots.joinToString(";") { slot -> slot.joinToString(",") { it?.encode() ?: "-" } }
 
         /** The entry [encode] wrote; null for a forgotten book or anything unreadable. */
         internal fun decode(text: String): Entry? {
             val parts = text.split('\t')
-            if (parts.size != 6) return null
+            if (parts.size != 7) return null
             val pages = parts[0].toIntOrNull() ?: return null
-            val slots = parts[5].split(';').map { slot ->
+            val vector = when (parts[5]) {
+                "1" -> true
+                "0" -> false
+                else -> return null
+            }
+            val slots = parts[6].split(';').map { slot ->
                 if (slot.isEmpty()) emptyList() else slot.split(',').map { if (it == "-") null else PageHash.decode(it) ?: return null }
             }
             if (slots.size != SimilarBooks.SLOTS) return null
-            return Entry(SimilarBooks.Print(pages, slots), parts[1].toIntOrNull() ?: 0, parts[2].toIntOrNull() ?: 0, parts[3], parts[4])
+            return Entry(SimilarBooks.Print(pages, slots, vector), parts[1].toIntOrNull() ?: 0, parts[2].toIntOrNull() ?: 0, parts[3], parts[4])
         }
 
         /** [value] without the separators lines use. */

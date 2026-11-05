@@ -575,7 +575,7 @@ class CleanupActivity : AppCompatActivity() {
                 )
                 column.findViewById<TextView>(R.id.dimensions).apply {
                     visibility = if (info.width > 0 && info.height > 0) View.VISIBLE else View.GONE
-                    text = getString(R.string.similar_size, info.width, info.height)
+                    text = getString(if (info.print.vector) R.string.similar_size_pt else R.string.similar_size, info.width, info.height)
                 }
                 val places = column.findViewById<LinearLayout>(R.id.locations)
                 bindPlaces(places, book.files, book.places, row)

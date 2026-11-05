@@ -57,7 +57,7 @@ object BookPrints {
             val size = runCatching { source.pageSize(middle) ?: source.loadedSize(middle) }.getOrNull()
             val image = if (source.isVector) "" else source.pageName(middle)?.let { Formats.ext(it) }.orEmpty()
             val entry = SimilarStore.Entry(
-                SimilarBooks.Print(count, slots), size?.getOrNull(0) ?: 0, size?.getOrNull(1) ?: 0, Formats.ext(file.name), image
+                SimilarBooks.Print(count, slots, source.isVector), size?.getOrNull(0) ?: 0, size?.getOrNull(1) ?: 0, Formats.ext(file.name), image
             )
             return SimilarFinder.Read(entry, keep)
         } finally {

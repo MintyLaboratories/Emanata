@@ -213,6 +213,18 @@ class CleanupSimilarTest {
         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
     }
 
+    @Test
+    fun vectorBooksShowTheirSizeInPoints() {
+        BookIds.init(context)
+        val read = BookPrints.read(tale, "UTF-8", context.cacheDir)!!.entry
+        val pdf = read.copy(print = read.print.copy(vector = true))
+        SimilarStore.of(context.cacheDir).put(BookIds.of(tale), pdf)
+        SimilarStore.of(context.cacheDir).put(BookIds.of(retold), pdf)
+        val (_, list) = launch()
+        val first = list.row(1).findViewById<LinearLayout>(R.id.columns).getChildAt(0)
+        assertEquals("$W × $H pt", first.text(R.id.dimensions))
+    }
+
     private companion object {
         const val W = 120
         const val H = 180

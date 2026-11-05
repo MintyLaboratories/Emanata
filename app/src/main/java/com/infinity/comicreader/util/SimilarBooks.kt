@@ -24,8 +24,24 @@ object SimilarBooks {
     /** Most bits of 128 two pages may differ in and still look alike. */
     const val MAX_DISTANCE = 12
 
-    /** What is compared of a book: its page count and, for each sampled place, the hashes of its pages (null where unreadable). */
-    data class Print(val pages: Int, val slots: List<List<PageHash?>>)
+    /**
+     * Most bits two pages may differ in when either book is rendered from vector pages (PDF)
+     * or short ([SHORT_BOOK]): pages of text in one layout come close to each other, and a
+     * short book's places share pages.
+     */
+    const val STRICT_DISTANCE = 6
+
+    /** Books of fewer pages are compared strictly ([STRICT_DISTANCE]). */
+    const val SHORT_BOOK = 8
+
+    /** Places a strict comparison needs alike, none other. */
+    private const val STRICT_PLACES = 3
+
+    /**
+     * What is compared of a book: its page count, for each sampled place the hashes of its
+     * pages (null where unreadable), and whether its pages are [vector] (rendered, as a PDF's).
+     */
+    data class Print(val pages: Int, val slots: List<List<PageHash?>>, val vector: Boolean = false)
 
     /** The pages of a book of [pageCount] pages sampled for each place, in order: one or two each, none without pages. */
     fun slotPages(pageCount: Int): List<List<Int>> = SHARES.map { share ->
@@ -54,18 +70,23 @@ object SimilarBooks {
     /**
      * True when [a] and [b] are probably one book: page counts at most one apart, two or
      * more places compared, and every compared place alike, or all but one when four are.
+     * When either is vector or short, [STRICT_PLACES] or more places must be compared, all
+     * alike within [STRICT_DISTANCE].
      */
     fun alike(a: Print, b: Print): Boolean {
         if (a.pages <= 0 || b.pages <= 0 || abs(a.pages - b.pages) > 1) return false
+        val strict = a.vector || b.vector || minOf(a.pages, b.pages) < SHORT_BOOK
+        val most = if (strict) STRICT_DISTANCE else MAX_DISTANCE
         var compared = 0
         var matched = 0
         for (i in 0 until minOf(a.slots.size, b.slots.size)) {
             val d = distance(a.slots[i], b.slots[i]) ?: continue
             compared++
-            if (d <= MAX_DISTANCE) matched++
+            if (d <= most) matched++
         }
-        if (matched < 2) return false
         val misses = compared - matched
+        if (strict) return misses == 0 && matched >= STRICT_PLACES
+        if (matched < 2) return false
         return misses == 0 || (compared >= SLOTS && misses <= 1)
     }
 

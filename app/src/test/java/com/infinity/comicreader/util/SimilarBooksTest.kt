@@ -15,8 +15,8 @@ class SimilarBooksTest {
     private fun off(h: PageHash, bits: Int) = h.copy(across = h.across xor ((1L shl bits) - 1))
 
     /** The print of a book of [pageCount] pages whose page i hashes as [page] says. */
-    private fun print(pageCount: Int, page: (Int) -> PageHash?) =
-        SimilarBooks.Print(pageCount, SimilarBooks.slotPages(pageCount).map { slot -> slot.map(page) })
+    private fun print(pageCount: Int, vector: Boolean = false, page: (Int) -> PageHash?) =
+        SimilarBooks.Print(pageCount, SimilarBooks.slotPages(pageCount).map { slot -> slot.map(page) }, vector)
 
     @Test
     fun samplesTheCoverAndPagesAQuarterHalfAndThreeQuartersIn() {
@@ -78,5 +78,22 @@ class SimilarBooksTest {
         val groups = SimilarBooks.groups(listOf("x", "c", "none", "a", "b")) { prints[it] }
         // a-b and b-c are a page apart; a and c, two, join through b.
         assertEquals(listOf(listOf("c", "a", "b")), groups)
+    }
+
+    @Test
+    fun shortBooksAreComparedStrictly() {
+        assertTrue(SimilarBooks.alike(print(40) { hash(it) }, print(40) { off(hash(it), 9) }))
+        assertFalse(SimilarBooks.alike(print(6) { hash(it) }, print(6) { off(hash(it), 9) }))
+        assertTrue(SimilarBooks.alike(print(6) { hash(it) }, print(6) { off(hash(it), 4) }))
+        // No other place is forgiven.
+        assertFalse(SimilarBooks.alike(print(6) { hash(it) }, print(6) { if (it <= 1) hash(it + 500) else hash(it) }))
+    }
+
+    @Test
+    fun vectorBooksAreComparedStrictly() {
+        val pdf = print(40, vector = true) { hash(it) }
+        assertFalse(SimilarBooks.alike(pdf, print(40) { off(hash(it), 9) }))
+        assertTrue(SimilarBooks.alike(pdf, print(40) { off(hash(it), 4) }))
+        assertFalse(SimilarBooks.alike(pdf, print(40) { if (it <= 1) hash(it + 500) else hash(it) }))
     }
 }

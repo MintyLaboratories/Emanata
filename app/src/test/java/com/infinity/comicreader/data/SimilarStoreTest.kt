@@ -68,4 +68,12 @@ class SimilarStoreTest {
         assertNull(store.get(BookId(7)))
         assertNull(SimilarStore(file()).get(BookId(7)))
     }
+
+    @Test
+    fun keepsWhetherABookIsVector() {
+        val pdf = entry(5).let { it.copy(print = it.print.copy(vector = true)) }
+        SimilarStore(file()).put(BookId(3), pdf)
+        assertEquals(pdf, SimilarStore(file()).get(BookId(3)))
+        assertEquals(pdf, SimilarStore.decode(SimilarStore.encode(pdf)))
+    }
 }

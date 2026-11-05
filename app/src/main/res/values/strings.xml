@@ -258,6 +258,7 @@
         <item quantity="other">%1$d pages · %2$s</item>
     </plurals>
     <string name="similar_size">%1$d × %2$d px</string>
+    <string name="similar_size_pt">%1$d × %2$d pt</string>
     <string name="cleanup_nothing">Nothing found</string>
     <string name="invalid_name">That name is not allowed</string>
     <string name="op_failed">Operation failed</string>

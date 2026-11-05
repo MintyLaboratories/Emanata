@@ -14,7 +14,7 @@ import java.util.concurrent.CancellationException
 /**
  * Reads what the similar-books search compares of a book ([SimilarStore.Entry]): the
  * hashes of the pages [SimilarBooks.slotPages] samples, each from its kept preview, a
- * quick preview, or a decode sampled down to a few thousand pixels, whichever comes
+ * quick preview, or a decode sampled down to at most [HASH_CAP_PIXELS], whichever comes
  * first; and the book's formats and middle page's size.
  */
 object BookPrints {

@@ -22,6 +22,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.infinity.comicreader.R
+import com.infinity.comicreader.compact.CompactWorkers
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookIds
@@ -34,6 +35,7 @@ import com.infinity.comicreader.data.SimilarFinder
 import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
+import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.BookPrints
 import com.infinity.comicreader.util.AppDispatchers
@@ -61,7 +63,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CleanupActivity : AppCompatActivity() {
 
     private sealed class Row {
-        class Section(val title: String) : Row()
+        /** A header; [similar] marks the similar-books one. */
+        class Section(val title: String, val similar: Boolean = false) : Row()
 
         /** One file of the largest-files list. */
         class Single(val file: File, val size: Long) : Row()
@@ -86,6 +89,8 @@ class CleanupActivity : AppCompatActivity() {
     private lateinit var similarBar: View
     private lateinit var similarText: TextView
     private lateinit var similarProgress: LinearProgressIndicator
+    private lateinit var similarStop: MaterialButton
+    private lateinit var similarCompare: MaterialButton
     private lateinit var pinch: PinchPeek
 
     private var mode = MODE_DUPES
@@ -132,7 +137,9 @@ class CleanupActivity : AppCompatActivity() {
         similarText = findViewById(R.id.similar_text)
         similarProgress = findViewById(R.id.similar_progress)
         findViewById<TextView>(R.id.cleanup_summary).text = root.absolutePath
-        findViewById<MaterialButton>(R.id.similar_stop).setOnClickListener {
+        similarStop = findViewById(R.id.similar_stop)
+        similarCompare = findViewById(R.id.similar_compare)
+        similarStop.setOnClickListener {
             stopped = true
             it.isEnabled = false
         }
@@ -220,9 +227,10 @@ class CleanupActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
     }
 
-    /** Says nothing was found once the search is over and found nothing, or all of it was deleted. */
+    /** Says nothing was found once the search is over and found nothing, or all of it was deleted; not while books wait to be compared. */
     private fun updateEmpty() {
-        empty.visibility = if (rows.isEmpty() && !comparing && progress.visibility != View.VISIBLE) View.VISIBLE else View.GONE
+        val busy = comparing || similarBar.visibility == View.VISIBLE || progress.visibility == View.VISIBLE
+        empty.visibility = if (rows.isEmpty() && !busy) View.VISIBLE else View.GONE
     }
 
     /**
@@ -264,32 +272,55 @@ class CleanupActivity : AppCompatActivity() {
 
     /**
      * Compares the books among [files] whose pages it can read ([SimilarFinder]) and lists
-     * the groups probably alike below anything listed, under their header. Shows how far it
-     * got meanwhile; Stop, or leaving, compares only what was read by then.
+     * the groups probably alike below anything listed, under their header. Books with nothing
+     * kept of them are read at once only when few ([AUTO_READS]) and battery saver does not
+     * pause scans ([Thrift.pausedScans]); else Compare reads them.
      */
     private suspend fun findSimilar(files: List<File>) {
         val books = files.filter { Formats.typeOf(it.name).let { t -> t == EntryType.ARCHIVE || t == EntryType.PDF } }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath })
         if (books.size < 2) return
         comparing = true
-        similarBar.visibility = View.VISIBLE
-        similarText.setText(R.string.similar_listing)
+        showSimilarBar(getString(R.string.similar_listing), running = true)
         updateEmpty()
         val cacheDir = applicationContext.cacheDir
         val charset = prefs.charset
-        val finder = SimilarFinder(SimilarStore.of(cacheDir), BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) })
+        val workers = SimilarFinder.WORKERS
+        val finder = SimilarFinder(
+            SimilarStore.of(cacheDir), BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) },
+            workers, CompactWorkers.limit(this, workers)
+        )
         val context = currentCoroutineContext()
+        val contents = withContext(AppDispatchers.io) { finder.contents(books) { context.isActive && !stopped } }
+        val paused = Thrift.of(Thrift.saving(this), prefs).pausedScans
+        compareSimilar(finder, contents, readNew = !paused && contents.unread.size <= AUTO_READS)
+    }
+
+    /**
+     * Compares [contents] ([SimilarFinder.find]), reading those with nothing kept when
+     * [readNew], and lists what it found in place of the similar books listed. Shows how far
+     * it got meanwhile; Stop, or leaving, compares only what was read by then. Books left
+     * uncompared are counted on the bar, with Compare to read them.
+     */
+    private suspend fun compareSimilar(finder: SimilarFinder, contents: SimilarFinder.Contents, readNew: Boolean) {
+        comparing = true
+        stopped = false
+        showSimilarBar(getString(R.string.similar_listing), running = true)
+        updateEmpty()
+        val context = currentCoroutineContext()
+        val result = withContext(AppDispatchers.io) {
+            Timing.span("similar books ${contents.byId.size}") { finder.find(contents, { context.isActive && !stopped }, ::onCompared, readNew) }
+        }
         val found = withContext<List<Row>>(AppDispatchers.io) {
-            val result = Timing.span("similar books ${books.size}") { finder.find(books, { context.isActive && !stopped }, ::onCompared) }
             if (result.groups.isEmpty()) return@withContext emptyList()
             val snap = LibrarySnapshot.load(library, prefs)
             val roots = StorageRoots.list(this@CleanupActivity)
-            val title = if (stopped && result.compared < result.total) {
+            val title = if (result.compared < result.total) {
                 getString(R.string.dupes_similar_partial, result.compared, result.total)
             } else {
                 getString(R.string.dupes_similar)
             }
-            listOf(Row.Section(title)) + result.groups.map { group ->
+            listOf(Row.Section(title, similar = true)) + result.groups.map { group ->
                 Row.Similar(
                     group.mapTo(ArrayList()) { b ->
                         SimilarBook(
@@ -301,11 +332,29 @@ class CleanupActivity : AppCompatActivity() {
             }
         }
         comparing = false
-        similarBar.visibility = View.GONE
-        val start = rows.size
+        rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
-        adapter.notifyItemRangeInserted(start, found.size)
+        val left = result.total - result.compared
+        if (left > 0 && context.isActive) {
+            showSimilarBar(getString(R.string.similar_unread, left, result.total), running = false)
+            similarCompare.setOnClickListener { lifecycleScope.launch { compareSimilar(finder, contents, readNew = true) } }
+        } else {
+            similarBar.visibility = View.GONE
+        }
+        adapter.notifyDataSetChanged()
         updateEmpty()
+        updateDeleteButton()
+    }
+
+    /** Shows the similar-books bar saying [text]: with progress and Stop while [running], else with Compare. */
+    private fun showSimilarBar(text: String, running: Boolean) {
+        similarBar.visibility = View.VISIBLE
+        similarText.text = text
+        similarProgress.visibility = if (running) View.VISIBLE else View.GONE
+        similarProgress.isIndeterminate = true
+        similarStop.visibility = if (running) View.VISIBLE else View.GONE
+        similarStop.isEnabled = true
+        similarCompare.visibility = if (running) View.GONE else View.VISIBLE
     }
 
     /** Hears [done] books of [total] compared, from the reading threads. */
@@ -313,6 +362,7 @@ class CleanupActivity : AppCompatActivity() {
         compared = done to total
         if (progressPosted.compareAndSet(false, true)) similarBar.post {
             progressPosted.set(false)
+            if (!comparing) return@post
             val (d, t) = compared
             similarText.text = getString(R.string.similar_progress, d, t)
             similarProgress.isIndeterminate = false
@@ -575,5 +625,8 @@ class CleanupActivity : AppCompatActivity() {
         private const val TYPE_SIMILAR = 3
         private const val MAX_DEPTH = 12
         private const val LARGEST_COUNT = 100
+
+        /** Books with nothing kept of them that a search reads without being asked: a few minutes' work at most. */
+        const val AUTO_READS = 20
     }
 }

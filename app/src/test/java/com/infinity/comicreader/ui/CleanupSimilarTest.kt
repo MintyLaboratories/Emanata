@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Environment
 import android.os.Looper
+import android.os.PowerManager
 import android.view.View
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -76,13 +77,14 @@ class CleanupSimilarTest {
 
     /** Runs the main looper until the similar-books search is over. */
     private fun settle(activity: CleanupActivity) {
+        val stop = activity.findViewById<View>(R.id.similar_stop)
         val bar = activity.findViewById<View>(R.id.similar_bar)
         var rounds = 0
         do {
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
             shadowOf(Looper.getMainLooper()).idle()
-        } while ((bar.visibility == View.VISIBLE || rounds++ < 5) && rounds < 1000)
+        } while (((bar.isShown && stop.isShown) || rounds++ < 5) && rounds < 1000)
     }
 
     private fun launch(): Pair<CleanupActivity, RecyclerView> {
@@ -153,6 +155,38 @@ class CleanupSimilarTest {
         assertTrue(tale.exists())
         assertEquals(0, list.adapter!!.itemCount)
         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
+    }
+
+    @Test
+    fun manyBooksNotReadYetWaitForCompare() {
+        // With the three of setUp, more books than a search reads unasked.
+        for (n in 1..CleanupActivity.AUTO_READS) book("more/Extra %02d.cbz".format(n), listOf(1000L + 2 * n, 1001L + 2 * n), Bitmap.CompressFormat.PNG, "png")
+        val (activity, list) = launch()
+        val bar = activity.findViewById<View>(R.id.similar_bar)
+        assertEquals(View.VISIBLE, bar.visibility)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.similar_compare).visibility)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_stop).visibility)
+        assertEquals(context.getString(R.string.similar_unread, CleanupActivity.AUTO_READS + 3, CleanupActivity.AUTO_READS + 3), activity.findViewById<TextView>(R.id.similar_text).text.toString())
+        assertEquals(0, list.adapter!!.itemCount)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
+        activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
+        settle(activity)
+        lay(list)
+        assertEquals(View.GONE, bar.visibility)
+        assertEquals(context.getString(R.string.dupes_similar), list.row(0).text(R.id.title))
+        assertEquals(2, list.row(1).findViewById<LinearLayout>(R.id.columns).childCount)
+    }
+
+    @Test
+    fun batterySaverWaitsForCompare() {
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val (activity, list) = launch()
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.similar_compare).visibility)
+        assertEquals(0, list.adapter!!.itemCount)
+        activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
+        settle(activity)
+        lay(list)
+        assertEquals(2, list.adapter!!.itemCount)
     }
 
     private companion object {

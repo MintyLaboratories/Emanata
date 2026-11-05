@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
 
 class SimilarFinderTest {
 
@@ -79,5 +80,36 @@ class SimilarFinderTest {
         reads.clear()
         finder.find(files("a.cbz", "b.cbr"))
         assertEquals(listOf("b.cbr"), reads.toList())
+    }
+
+    @Test
+    fun readsNoMoreAtOnceThanTheLimitAllows() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val inside = AtomicInteger()
+        val most = AtomicInteger()
+        val finder = SimilarFinder(store, { f -> BookId(f.name.hashCode().toLong()) }, { f, _ ->
+            most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
+            Thread.sleep(20)
+            inside.decrementAndGet()
+            SimilarFinder.Read(entry(30, shift = f.name.length * 1000))
+        }, workers = 4, limit = { 2 })
+        finder.find((1..12).map { File(tmp.root, "b" + "x".repeat(it) + ".cbz") })
+        assertEquals(2, most.get())
+    }
+
+    @Test
+    fun withoutReadingNewComparesOnlyWhatIsKept() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        store.put(BookId(1), entry(30))
+        store.put(BookId(2), entry(31))
+        val reads = Collections.synchronizedList(ArrayList<String>())
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) })
+        val contents = finder.contents(files("a.cbz", "b.cbr", "c.cbz"))
+        assertEquals(listOf(BookId(3)), contents.unread)
+        val found = finder.find(contents, readNew = false)
+        assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
+        assertEquals(2, found.compared)
+        assertEquals(3, found.total)
+        assertEquals(emptyList<String>(), reads.toList())
     }
 }

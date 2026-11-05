@@ -9,6 +9,7 @@ import com.infinity.comicreader.reader.ArchiveKind
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.PageMoves
 import com.infinity.comicreader.util.Formats
+import com.infinity.comicreader.util.LimitGate
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.BufferedOutputStream
 import java.io.File
@@ -243,7 +244,7 @@ class Compactor(
         // Pages read and not yet converted, and the memory they and their converting take.
         val room = Semaphore(maxWorkers.coerceAtLeast(1) * 2)
         val budget = Budget(memory.coerceAtLeast(1))
-        val gate = Gate(limit)
+        val gate = LimitGate(limit)
         val futures = ArrayList<Future<*>>()
         var done = 0L
         val lock = Any()
@@ -519,27 +520,6 @@ class Compactor(
         fun give(bytes: Long) = synchronized(lock) {
             used -= bytes
             lock.notifyAll()
-        }
-    }
-
-    /** Lets at most [limit] pass at once, the limit read anew as each one comes. */
-    private class Gate(private val limit: () -> Int) {
-        private val lock = Object()
-        private var inside = 0
-
-        fun <T> pass(block: () -> T): T {
-            synchronized(lock) {
-                while (inside >= limit().coerceAtLeast(1)) lock.wait(WAIT_MS)
-                inside++
-            }
-            try {
-                return block()
-            } finally {
-                synchronized(lock) {
-                    inside--
-                    lock.notifyAll()
-                }
-            }
         }
     }
 

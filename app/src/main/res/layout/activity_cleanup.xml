@@ -22,7 +22,7 @@
         android:padding="8dp"
         android:textSize="12sp" />
 
-    <!-- The similar-books search under way: how far, and a way to stop it. -->
+    <!-- The similar-books search: how far it got and a way to stop it, or the books left to compare and a way to start. -->
     <LinearLayout
         android:id="@+id/similar_bar"
         android:layout_width="match_parent"
@@ -60,6 +60,15 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:text="@string/similar_stop" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/similar_compare"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/similar_compare"
+            android:visibility="gone" />
     </LinearLayout>
 
     <FrameLayout

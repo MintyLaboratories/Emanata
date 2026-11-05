@@ -251,6 +251,8 @@
     <string name="similar_progress">Comparing pages of books: %1$d / %2$d</string>
     <string name="similar_listing">Looking for books…</string>
     <string name="similar_stop">Stop</string>
+    <string name="similar_compare">Compare</string>
+    <string name="similar_unread">Similar books: %1$d of %2$d books not compared yet</string>
     <plurals name="similar_pages">
         <item quantity="one">%1$d page · %2$s</item>
         <item quantity="other">%1$d pages · %2$s</item>

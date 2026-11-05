@@ -278,13 +278,17 @@ class BookAdapter(
      * Shows [list]: [BookEntry] rows, optionally between [SectionRow] headers. When the rows
      * are the same as shown, in the same order, only those that changed are redrawn, and
      * of those whose cover stays ([coverId]) only the text: facts found later (page counts,
-     * read marks) never reload or blank a cover. A book whose cover changes is redrawn in the
+     * read marks) never reload or blank a cover. A book whose cover changes, by its entry or
+     * by what the library keeps for it (a cover page given, pages hidden), is redrawn in the
      * same view, its old cover shown until the new one is drawn.
      */
     fun submit(list: List<Any>) {
         val old = ArrayList(items)
+        val oldCovers = ArrayList(shownCovers)
         items.clear()
         items.addAll(list)
+        shownCovers.clear()
+        list.mapTo(shownCovers) { (it as? BookEntry)?.let(::coverId) }
         val same = RowChanges.sameRows(old, list)
         if (!same) onRowsMoved()
         if (redrawAll || !same) {
@@ -295,15 +299,19 @@ class BookAdapter(
         for (i in list.indices) {
             val before = old[i]
             val now = list[i]
-            if (before == now) continue
+            val sameCover = oldCovers.getOrNull(i) == shownCovers[i]
+            if (before == now && sameCover) continue
             val payload = when {
                 before !is BookEntry || now !is BookEntry -> null
-                coverId(before) == coverId(now) -> DETAILS
+                sameCover -> DETAILS
                 else -> COVER
             }
             notifyItemChanged(i + itemOffset, payload)
         }
     }
+
+    /** The [coverId] of each row as last submitted; null for a section. */
+    private val shownCovers = ArrayList<String?>()
 
     /** Pages hidden in each book, as covers skip them ([Thumbs.hiddenTag]). */
     var hiddenPages: () -> Library.Hidden = { Library.Hidden(emptyMap(), emptyMap(), emptyMap()) }

@@ -14,8 +14,10 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.EntryType
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
@@ -106,6 +108,24 @@ class BookAdapterRefreshTest {
         layout()
         events.clear()
         adapter.submit(listOf(book("a.cbz"), book("b.cbz", size = 200)))
+        assertEquals(listOf("changed 1 cover"), events)
+    }
+
+    @Test
+    fun aCoverPageGivenSinceTheLastListRedrawsItsCover() {
+        val id = BookId(0x1234)
+        val b = book("b.cbz").copy(id = id)
+        adapter.submit(listOf(book("a.cbz"), b))
+        layout()
+        events.clear()
+        // Set as cover in the reader: the entry is the same, the library's covers are not.
+        adapter.hiddenPages = { Library.Hidden(emptyMap(), emptyMap(), emptyMap(), mapOf(id to 2)) }
+        adapter.submit(listOf(book("a.cbz"), b))
+        assertEquals(listOf("changed 1 cover"), events)
+        // Given back its first page while read progress arrives: still the cover.
+        adapter.hiddenPages = { Library.Hidden(emptyMap(), emptyMap(), emptyMap()) }
+        events.clear()
+        adapter.submit(listOf(book("a.cbz"), b.copy(pages = 4)))
         assertEquals(listOf("changed 1 cover"), events)
     }
 

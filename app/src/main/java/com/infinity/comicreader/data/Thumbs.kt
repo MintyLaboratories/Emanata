@@ -58,11 +58,27 @@ object Thumbs {
     private val fronts = LruCache<String, Int>(1024)
     private const val NO_FRONT = -1
 
-    /** The front half of wraparound cover [src] of [entry], found once per cover image ([imageKey]). */
-    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap): Wraparound.Half? {
+    /**
+     * The front half of wraparound cover [src] of [entry], each half as wide as an inner page of
+     * [innerRatio]: by its barcode, found once per cover image ([imageKey]), else by its tallest
+     * text ([SmartCrop.textFront]) from each half's focus ([focusOf], with [find]). Null when
+     * neither tells; then [unsure] too when the detector did not run.
+     */
+    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
         val known = fronts.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { fronts.put(k, it) }
-        return Wraparound.Half.entries.getOrNull(known)
+        Wraparound.Half.entries.getOrNull(known)?.let { return it }
+        val (left, right) = Wraparound.Half.entries.map { half ->
+            val columns = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
+            Rect(columns[0], 0, columns[1], src.height)
+        }
+        val l = focusOf(context, entry, src, left, find)
+        val r = focusOf(context, entry, src, right, find)
+        if (!l.keep || !r.keep) {
+            unsure()
+            return null
+        }
+        return SmartCrop.textFront(l, left.width(), r, right.width(), src.height)
     }
 
     /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
@@ -226,7 +242,7 @@ object Thumbs {
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio, rightToLeft,
-                front = { src -> frontOf(context, entry, src).also { if (it == null) sided = true } },
+                front = { src -> frontOf(context, entry, src, made.innerRatio, made.full) { lasting = false }.also { if (it == null) sided = true } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
                 focus = { src, region -> focusOf(context, entry, src, region, find = made.full).also { if (!it.keep) lasting = false } }
             )

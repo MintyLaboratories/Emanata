@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.Box
+import com.infinity.comicreader.reader.Wraparound
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -155,6 +156,17 @@ class SmartCropTest {
         // A blank cover keeps the top, and stays centered across.
         assertEquals(0.0, SmartCrop.offset(CoverFocus.NONE, 1500.0, 1000.0, vertical = true), 1e-9)
         assertEquals(250.0, SmartCrop.offset(CoverFocus.NONE, 1500.0, 1000.0, vertical = false), 1e-9)
+    }
+
+    @Test
+    fun aWraparoundsFrontByTextIsTheHalfWithClearlyTallerLetters() {
+        val none = CoverFocus.NONE
+        fun titled(h: Double) = focus(Box(0.1, 0.1, 0.9, 0.1 + h))
+        assertEquals(Wraparound.Half.LEFT, SmartCrop.textFront(titled(0.1), 600, none, 600, 1000))
+        assertEquals(Wraparound.Half.RIGHT, SmartCrop.textFront(titled(0.1), 600, titled(0.13), 600, 1000))
+        // Too close to tell, or no title either side.
+        assertNull(SmartCrop.textFront(titled(0.1), 600, titled(0.12), 600, 1000))
+        assertNull(SmartCrop.textFront(none, 600, none, 600, 1000))
     }
 
     @Test

@@ -95,8 +95,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as
   the book's own inner pages) show their front: the half without the barcode,
-  else the half the book starts on in its reading direction (right for
-  left-to-right, left for right-to-left), one page wide so the spine stays out.
+  else the half whose title is clearly taller (by the text detector, found
+  once per cover), else the half the book starts on in its reading direction
+  (right for left-to-right, left for right-to-left), one page wide so the
+  spine stays out.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
   Search; the others step aside while searching. Settings → **Toolbar

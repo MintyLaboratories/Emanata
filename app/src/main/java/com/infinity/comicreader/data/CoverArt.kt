@@ -66,7 +66,7 @@ object CoverArt {
     /**
      * [src] as a [width] x [height] cover. A wraparound, judged against its book's
      * typical inner page of shape [innerRatio] ([Wraparound.isWraparound]), shows its
-     * front: the half without the barcode ([front], worked out by [frontOf] when asked),
+     * front: the half [front] tells (the one without the barcode by default, [frontOf]),
      * else the half a book read [rightToLeft] or not starts on; one inner page wide
      * from the outer edge, so the spine is left out. [focus] tells the Smart crop anchor
      * where to look in the part shown, asked only when it crops.

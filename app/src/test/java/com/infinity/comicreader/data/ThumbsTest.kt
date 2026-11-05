@@ -245,6 +245,30 @@ class ThumbsTest {
     }
 
     @Test
+    fun aWraparoundWithoutBarcodeShowsTheHalfWithTheTallerTitle() {
+        // Text seen on blue halves only: the left one, though a left-to-right book starts on the right.
+        val calls = intArrayOf(0)
+        Thumbs.detector = { _, bitmap ->
+            calls[0]++
+            val w = bitmap.width
+            val h = bitmap.height
+            val blue = Color.blue(bitmap.getPixel(w / 2, h / 2)) > 200
+            ScoreMap(w, h, FloatArray(w * h) { i -> if (blue && i / w in h / 10 until h / 4 && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+        }
+        val file = File(context.cacheDir, "titled.png")
+        file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
+        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified(), direction = ReadingDirection.LTR)
+        val thumb = Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(Color.BLUE, thumb.getPixel(5, 100))
+        assertEquals(Color.BLUE, thumb.getPixel(125, 100))
+        assertEquals(2, calls[0])
+        // Chosen from the image: the same either way the book reads.
+        assertFalse(Thumbs.directionMatters(entry))
+        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        assertEquals(2, calls[0])
+    }
+
+    @Test
     fun aCoverThatLooksTheSameEitherWayIsFoundForBothDirections() {
         val book = cover(name = "plain cover.png")
         assertTrue("unknown until made", Thumbs.directionMatters(book))

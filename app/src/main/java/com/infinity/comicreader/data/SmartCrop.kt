@@ -2,6 +2,7 @@ package com.infinity.comicreader.data
 
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.Box
+import com.infinity.comicreader.reader.Wraparound
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -83,7 +84,8 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
 object SmartCrop {
     /**
      * The version of these rules and of the detector: focuses and Smart covers found under
-     * another are found again. Raise it with any change to what a focus holds.
+     * another are found again. Raise it with any change to what a focus holds or how a crop
+     * follows it.
      */
     const val RULES = 2
 
@@ -120,6 +122,9 @@ object SmartCrop {
 
     /** A detailed part replaces the plain anchor's only with at least this much more detail. */
     const val DETAIL_GAIN = 1.5
+
+    /** A wraparound's half is its front by text when its title is at least this many times as tall as the other's. */
+    const val FRONT_MARGIN = 1.25
 
     /** Steps tried along an axis when looking for its most detailed part. */
     private const val STEPS = 64
@@ -285,6 +290,23 @@ object SmartCrop {
             }
         }
         return if (bestDetail >= DETAIL_GAIN * plainDetail) best else plain
+    }
+
+    /**
+     * The front of a wraparound [height] tall from the focus of each half as shown, [left] of
+     * [leftWidth] and [right] of [rightWidth]: the one whose title's letters are at least
+     * [FRONT_MARGIN] times as tall as the other's (a half without a title has none); null
+     * when neither is.
+     */
+    fun textFront(left: CoverFocus, leftWidth: Int, right: CoverFocus, rightWidth: Int, height: Int): Wraparound.Half? {
+        fun glyph(f: CoverFocus, w: Int) = f.title?.let { min(it.width * w, it.height * height) } ?: 0.0
+        val l = glyph(left, leftWidth)
+        val r = glyph(right, rightWidth)
+        return when {
+            l > 0 && l >= FRONT_MARGIN * r -> Wraparound.Half.LEFT
+            r > 0 && r >= FRONT_MARGIN * l -> Wraparound.Half.RIGHT
+            else -> null
+        }
     }
 
     /** The share of [profile] (equal bins over 0..1) between [from] and [to]. */

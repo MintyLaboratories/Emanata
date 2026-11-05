@@ -9,8 +9,9 @@ import java.nio.file.StandardCopyOption
 /**
  * Books' [SimilarStore.Entry] by [BookId], so each book's pages are read for the similar-books
  * search once, however often it runs or wherever the book moves. One text [file], a line per
- * book appended as found (a forgotten one's line says so) and read whole on first use; past
- * [max] books it is rewritten with the [max] / 2 found last. A cache: made again when lost.
+ * book appended as found (a forgotten one's line says so) and read whole on first use, then
+ * held in memory until [release]; past [max] books it is rewritten with the [max] / 2 found
+ * last. A cache: made again when lost.
  */
 class SimilarStore(private val file: File, private val max: Int = MAX) {
 
@@ -27,8 +28,13 @@ class SimilarStore(private val file: File, private val max: Int = MAX) {
     @Synchronized
     fun get(id: BookId): Entry? = entries()[id.value]
 
+    /** Keeps [entry] for book [id]; while nothing is held in memory ([release]), only appended, unread. */
     @Synchronized
     fun put(id: BookId, entry: Entry) {
+        if (known == null && file.isFile) {
+            runCatching { append("${id.hex}\t${encode(entry)}\n") }
+            return
+        }
         val all = entries()
         all.remove(id.value)
         all[id.value] = entry
@@ -44,10 +50,18 @@ class SimilarStore(private val file: File, private val max: Int = MAX) {
         }
     }
 
-    /** Forgets book [id], as when it is deleted. */
+    /** Forgets book [id], as when it is deleted; while nothing is held in memory ([release]), by a line saying so, unread. */
     @Synchronized
     fun forget(id: BookId) {
-        if (entries().remove(id.value) != null) runCatching { append("${id.hex}\t$GONE\n") }
+        val all = known
+        val gone = if (all == null) file.isFile else all.remove(id.value) != null
+        if (gone) runCatching { append("${id.hex}\t$GONE\n") }
+    }
+
+    /** Lets go of the books held in memory; the next use reads them again. */
+    @Synchronized
+    fun release() {
+        known = null
     }
 
     /** Forgets every book. */

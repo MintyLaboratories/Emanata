@@ -180,6 +180,7 @@ class CleanupActivity : AppCompatActivity() {
         super.onDestroy()
         stopped = true
         pinch.overlay.hide()
+        if (isFinishing) SimilarStore.of(applicationContext.cacheDir).release()
     }
 
     /** The book under list point ([x], [y]) and its cover's view; null off a book or for a file no reader opens. */

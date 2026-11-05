@@ -76,4 +76,17 @@ class SimilarStoreTest {
         assertEquals(pdf, SimilarStore(file()).get(BookId(3)))
         assertEquals(pdf, SimilarStore.decode(SimilarStore.encode(pdf)))
     }
+
+    @Test
+    fun releasedStoreStillTakesChangesAndReadsThemBack() {
+        val store = SimilarStore(file())
+        store.put(BookId(1), entry(10))
+        store.put(BookId(2), entry(11))
+        store.release()
+        store.forget(BookId(1))
+        store.put(BookId(3), entry(12))
+        assertNull(store.get(BookId(1)))
+        assertEquals(entry(11), store.get(BookId(2)))
+        assertEquals(entry(12), store.get(BookId(3)))
+    }
 }

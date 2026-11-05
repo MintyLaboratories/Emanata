@@ -70,8 +70,11 @@ internal class TextDetector(
     companion object {
         private const val TAG = "TextDetector"
 
-        /** CPU threads it runs on: covers come one after another, and the model is small. */
-        const val THREADS = 2
+        /**
+         * CPU threads it runs on, of the large cores. On the reference tablet a cover's input took
+         * about as long on one thread as on two, four or the GPU, so one, which costs least.
+         */
+        const val THREADS = 1
 
         /** Closed this long after its last use. */
         const val IDLE_MS = 20_000L

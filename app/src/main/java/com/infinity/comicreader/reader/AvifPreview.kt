@@ -65,6 +65,34 @@ object AvifPreview {
         }
     }
 
+    /**
+     * Whether every image the AVIF file [bytes] codes, its thumbnails aside (the primary
+     * item, a grid's tiles, an alpha plane), is coded lossless ([Av1Lossless]): false once
+     * one is not; null when one cannot be told, or [bytes] stop before its data.
+     */
+    fun codedLossless(bytes: ByteArray): Boolean? {
+        val meta = (findMeta(bytes, bytes.size) as? Found.At)?.box ?: return null
+        val parsed = parseMeta(bytes, meta) ?: return null
+        val coded = parsed.items.values.filter { it.type == "av01" && it.id !in parsed.thumbnails }
+        if (coded.isEmpty()) return null
+        var known = true
+        for (item in coded) {
+            val extent = item.extents.singleOrNull()?.takeIf { item.method == 0 }
+            val from = extent?.get(0) ?: -1
+            val to = if (extent == null) -1 else if (extent[1] == 0L) bytes.size.toLong() else from + extent[1]
+            if (from < 0 || to > bytes.size) {
+                known = false
+                continue
+            }
+            when (Av1Lossless.of(bytes, from.toInt(), to.toInt())) {
+                false -> return false
+                null -> known = false
+                true -> Unit
+            }
+        }
+        return if (known) true else null
+    }
+
     // ------------------------------------------------------------------ boxes
 
     /** A box at [start] whose contents run from [body] to [end] in the file. */

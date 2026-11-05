@@ -22,11 +22,19 @@ data class PageFormat(
             ImageKind.BMP -> PageFormat(kind, true)
             ImageKind.TIFF -> PageFormat(kind, runCatching { Tiff.exact(Tiff.ByteInput(bytes)) }.getOrDefault(false))
             ImageKind.WEBP -> webp(bytes)
-            ImageKind.AVIF -> PageFormat(kind, PageProbe.avifLossless(bytes, anyDepth = true), animated = PageProbe.isoSequence(bytes), layers = AvifPreview.layers(bytes))
+            ImageKind.AVIF -> PageFormat(kind, avifLossless(bytes), animated = PageProbe.isoSequence(bytes), layers = AvifPreview.layers(bytes))
             ImageKind.HEIF -> PageFormat(kind, false, animated = PageProbe.isoSequence(bytes))
             ImageKind.GIF, ImageKind.JXL -> PageFormat(kind, null)
             null -> PageFormat(null, null)
         }
+
+        /**
+         * An AVIF stored to keep its samples ([PageProbe.avifLossless] of any depth) whose
+         * frames are coded lossless ([AvifPreview.codedLossless]). Where its frames do not
+         * tell (a later layer predicted from an earlier one), its storage alone decides.
+         */
+        private fun avifLossless(bytes: ByteArray): Boolean =
+            PageProbe.avifLossless(bytes, anyDepth = true) && AvifPreview.codedLossless(bytes) != false
 
         /** A PNG holding an animation: an `acTL` chunk before its image data. */
         private fun pngAnimated(bytes: ByteArray): Boolean = PageProbe.pngChunk(bytes, "acTL") != null

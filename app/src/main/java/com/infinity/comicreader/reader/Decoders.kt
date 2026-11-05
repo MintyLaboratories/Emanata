@@ -904,11 +904,25 @@ object Decoders {
     /** JPEG XL decodes running at once, bounding that native memory. */
     private val jxlGate = Semaphore(2)
 
+    /** Largest decode only measured, never shown (a page's hash for the similar-books search). */
+    const val MEASURE_CAP_PIXELS = 65_536L
+
+    /**
+     * How a JPEG XL decode capped at [MEASURE_CAP_PIXELS] or less shrinks: point-sampled
+     * natively ([openJxlRegions]), never holding the whole image, when true; else by
+     * jxl-coder's filtered sampled decode, as where libjxl is missing. On by default: about
+     * five times faster on a Snapdragon 8 Gen 1 (API 36) for synthetic 4000 x 6000 pages,
+     * with the same books found alike.
+     */
+    @Volatile
+    var jxlMeasuredByRegions = true
+
     /**
      * Full decode, straight into the bitmap where native code takes the image ([JxlPages]),
      * else by jxl-coder; only past [capPixels] does jxl-coder's sampled decode do the coarse
-     * reduction. A [standIn] for a page drawn in bands is point-sampled natively instead
-     * ([openJxlRegions]), so the whole image is never held.
+     * reduction. A [standIn] for a page drawn in bands, and a decode only measured as
+     * [jxlMeasuredByRegions] says, is point-sampled natively instead ([openJxlRegions]),
+     * so the whole image is never held.
      */
     private fun decodeJxl(bytes: ByteArray, capPixels: Long, standIn: Boolean = false): Bitmap {
         val size = jxlSize(bytes) ?: throw DecodeException("Not a valid JXL image")
@@ -916,7 +930,7 @@ object Decoders {
             throw DecodeException("JXL image is too large (${size[0]} x ${size[1]})")
         }
         val sample = capSample(size[0], size[1], capPixels)
-        if (standIn && sample > 1) {
+        if (sample > 1 && (standIn || (jxlMeasuredByRegions && capPixels <= MEASURE_CAP_PIXELS))) {
             runCatching { openJxlRegions(bytes, size[0], size[1])?.read(0, 0, size[0], size[1], sample) }.getOrNull()?.let { return it }
         }
         jxlGate.acquireUninterruptibly()

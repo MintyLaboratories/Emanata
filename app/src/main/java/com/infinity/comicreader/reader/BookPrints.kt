@@ -19,7 +19,7 @@ import java.util.concurrent.CancellationException
  */
 object BookPrints {
     /** Largest source a page is decoded from for its hash: the decoder's own power-of-two sampling does most of the shrinking. */
-    private const val HASH_CAP_PIXELS = 65_536L
+    private const val HASH_CAP_PIXELS = Decoders.MEASURE_CAP_PIXELS
 
     /** The box a page is drawn into for its hash; a PDF's is rendered this small. */
     private const val HASH_BOX = 128

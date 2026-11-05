@@ -35,6 +35,7 @@ class ImageSourceDetailTest {
     private val platform = Decoders.openRegions
     private val rebuild = Decoders.jpegOf
     private val jxlRegions = Decoders.openJxlRegions
+    private val measuredByRegions = Decoders.jxlMeasuredByRegions
 
     @Before
     fun setUp() {
@@ -62,6 +63,7 @@ class ImageSourceDetailTest {
         Decoders.openRegions = platform
         Decoders.jpegOf = rebuild
         Decoders.openJxlRegions = jxlRegions
+        Decoders.jxlMeasuredByRegions = measuredByRegions
     }
 
     /** A page 100 wide and 20,000 tall, far taller than one bitmap may be, as a PNG. */
@@ -164,5 +166,31 @@ class ImageSourceDetailTest {
         // Without libjxl it is decoded whole.
         Decoders.openJxlRegions = { _, _, _ -> null }
         assertEquals(null, Decoders.regionDetail(jxlHead(100, 20_000), banded))
+    }
+
+    @Test
+    fun aMeasuredJpegXlIsPointSampledNativelyOnlyWhenSet() {
+        val samples = ArrayList<Int>()
+        Decoders.openJxlRegions = { _, w, h ->
+            object : RegionReader {
+                override val width = w
+                override val height = h
+                override fun read(left: Int, top: Int, right: Int, bottom: Int, sample: Int): Bitmap {
+                    samples += sample
+                    return Bitmap.createBitmap((right - left) / sample, (bottom - top) / sample, Bitmap.Config.ARGB_8888)
+                }
+
+                override fun close() = Unit
+            }
+        }
+        val measured = Target(64, 64, capPixels = Decoders.MEASURE_CAP_PIXELS)
+        Decoders.jxlMeasuredByRegions = true
+        assertEquals(64, Decoders.decode(jxlHead(400, 600), measured).height)
+        assertEquals(listOf(2), samples)
+        // A larger cap is no measuring decode: shown, so filtered.
+        runCatching { Decoders.decode(jxlHead(400, 600), Target(64, 64, capPixels = 100_000)) }
+        Decoders.jxlMeasuredByRegions = false
+        runCatching { Decoders.decode(jxlHead(400, 600), measured) }
+        assertEquals(listOf(2), samples)
     }
 }

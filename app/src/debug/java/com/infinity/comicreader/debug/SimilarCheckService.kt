@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SimilarFinder
 import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.reader.BookPrints
+import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.PreviewStore
 import com.infinity.comicreader.reader.Previews
 import com.infinity.comicreader.util.Formats
@@ -32,8 +33,10 @@ import kotlin.concurrent.thread
  * folder, for each worker count asked, rounds interleaved so drift in temperature falls on
  * all alike. Only the shell may start it:
  *
- * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.SimilarCheckService --es dir <path> [--es workers 1,2,3] [--ei rounds 3] [--es start cold|previews]`
+ * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.SimilarCheckService --es dir <path> [--es workers 1,2,3] [--es jxl coder,regions] [--ei rounds 3] [--es start cold|previews]`
  *
+ * `jxl` names how JPEG XL pages shrink for their hashes ([Decoders.jxlMeasuredByRegions]), each
+ * timed in turn (the app's own choice when not given; put back after).
  * Each run reads every book anew into a store of its own (the app's is left alone); `cold`
  * (the default) also deletes the page previews first, `previews` keeps them. Each run logs
  * its time, the groups found, the thermal status before and after, and the battery level;
@@ -49,10 +52,11 @@ class SimilarCheckService : Service() {
         val workers = intent?.getStringExtra("workers")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.ifEmpty { null } ?: listOf(SimilarFinder.WORKERS)
         val rounds = intent?.getIntExtra("rounds", 1)?.coerceAtLeast(1) ?: 1
         val cold = intent?.getStringExtra("start") != "previews"
+        val jxl = intent?.getStringExtra("jxl")?.split(',')?.map { it.trim() }?.filter { it == "coder" || it == "regions" }?.ifEmpty { null }
         thread(name = "similar-check") {
             try {
                 BookIds.init(this)
-                if (dir != null) time(File(dir), workers, rounds, cold)
+                if (dir != null) time(File(dir), workers, jxl, rounds, cold)
             } catch (t: Throwable) {
                 log("failed: ${t.javaClass.simpleName}: ${t.message}")
             } finally {
@@ -63,28 +67,23 @@ class SimilarCheckService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun time(dir: File, workers: List<Int>, rounds: Int, cold: Boolean) {
+    private fun time(dir: File, workers: List<Int>, jxl: List<String>?, rounds: Int, cold: Boolean) {
         val books = dir.walkTopDown().filter { it.isFile && Formats.typeOf(it.name).let { t -> t == EntryType.ARCHIVE || t == EntryType.PDF } }
             .sortedBy { it.path }.toList()
-        log("${books.size} books, workers $workers, $rounds rounds, ${if (cold) "cold" else "previews kept"}")
+        log("${books.size} books, workers $workers, jxl ${jxl ?: "as set"}, $rounds rounds, ${if (cold) "cold" else "previews kept"}")
         val charset = Prefs(this).charset
         val previews = PreviewStore.dirIn(cacheDir)
         val storeFile = File(cacheDir, "similar-check.txt")
-        repeat(rounds) { round ->
-            for (w in workers) {
-                if (cold) PreviewStore.clear(previews)
-                storeFile.delete()
-                val store = SimilarStore(storeFile)
-                val finder = SimilarFinder(store, BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) }, workers = w)
-                val before = thermal()
-                val t = System.nanoTime()
-                val found = finder.find(books)
-                val ms = (System.nanoTime() - t) / 1_000_000
-                log(
-                    "round ${round + 1} workers $w: $ms ms, ${found.groups.size} groups of ${found.groups.sumOf { it.size }}, " +
-                        "${found.compared}/${found.total} compared, thermal $before -> ${thermal()}, battery ${battery()}%"
-                )
+        val setting = Decoders.jxlMeasuredByRegions
+        try {
+            repeat(rounds) { round ->
+                for (mode in jxl ?: listOf(null)) for (w in workers) {
+                    if (mode != null) Decoders.jxlMeasuredByRegions = mode == "regions"
+                    search(books, charset, previews, storeFile, cold, round, w, mode)
+                }
             }
+        } finally {
+            Decoders.jxlMeasuredByRegions = setting
         }
         storeFile.delete()
         Thread.sleep(1000)
@@ -92,6 +91,22 @@ class SimilarCheckService : Service() {
             BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { BitmapFactory.decodeFile(f.path, it) }.let { maxOf(it.outWidth, it.outHeight) }
         }
         log("previews stored: ${sizes.size}, smaller than ${Previews.BOX}: ${sizes.count { it < Previews.BOX }}")
+    }
+
+    /** One timed search of [books] by [w] workers, JPEG XL hashed by [mode] (null: as set). */
+    private fun search(books: List<File>, charset: String, previews: File, storeFile: File, cold: Boolean, round: Int, w: Int, mode: String?) {
+        if (cold) PreviewStore.clear(previews)
+        storeFile.delete()
+        val store = SimilarStore(storeFile)
+        val finder = SimilarFinder(store, BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) }, workers = w)
+        val before = thermal()
+        val t = System.nanoTime()
+        val found = finder.find(books)
+        val ms = (System.nanoTime() - t) / 1_000_000
+        log(
+            "round ${round + 1} workers $w${mode?.let { " jxl $it" }.orEmpty()}: $ms ms, ${found.groups.size} groups of ${found.groups.sumOf { it.size }}, " +
+                "${found.compared}/${found.total} compared, thermal $before -> ${thermal()}, battery ${battery()}%"
+        )
     }
 
     private fun thermal(): Int {

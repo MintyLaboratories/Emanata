@@ -134,8 +134,9 @@ internal class OneThread(name: String) {
 
 /**
  * ncnn with Vulkan, built from source (`src/main/cpp/ai_ncnn.cpp`), in a library loaded on
- * first use. Every call runs on one thread ([OneThread]): the OpenMP runtime inside fails to
- * start again once the thread that started it ends, and aborts the process.
+ * first use. Every call on a model runs on one thread ([OneThread]), the one it opened on: the
+ * OpenMP runtime inside fails to start again once the thread that started it ends, and aborts
+ * the process.
  */
 internal object LibNcnn : InferenceRuntime {
     private const val TAG = "LibNcnn"
@@ -149,13 +150,30 @@ internal object LibNcnn : InferenceRuntime {
 
     override fun gpu(): GpuInfo? = gpuInfo
 
-    override fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? {
-        if (!available) return null
-        val handle = worker.run { nOpen(files.param.path, files.bin.path, gpu && gpuInfo != null, threads, fp16) }
-        return if (handle == 0L) null else Opened(handle, files)
+    override fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? = openOn(worker, files, gpu, threads, fp16)
+
+    /**
+     * The same runtime, CPU only, on a thread of its own: a small model there (the text
+     * detector of covers) neither waits behind AI page tiles nor holds them up.
+     */
+    val cpuLane: InferenceRuntime = object : InferenceRuntime {
+        private val lane = OneThread("ai-ncnn-cpu")
+
+        override val available: Boolean get() = LibNcnn.available
+
+        override fun gpu(): GpuInfo? = null
+
+        override fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? = openOn(lane, files, false, threads, fp16)
     }
 
-    private class Opened(private var handle: Long, private val files: ModelFiles) : TileModel {
+    private fun openOn(on: OneThread, files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? {
+        if (!available) return null
+        val handle = on.run { nOpen(files.param.path, files.bin.path, gpu && gpuInfo != null, threads, fp16) }
+        return if (handle == 0L) null else Opened(handle, files, on)
+    }
+
+    /** A model open on thread [worker]. */
+    private class Opened(private var handle: Long, private val files: ModelFiles, private val worker: OneThread) : TileModel {
         override val onGpu: Boolean = worker.run { nOnGpu(handle) }
         private val size = IntArray(2)
 

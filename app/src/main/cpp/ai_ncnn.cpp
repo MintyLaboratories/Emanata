@@ -246,13 +246,15 @@ constexpr jint FAILED_RUN = -2;
 constexpr jint FAILED_OUTPUT = -3;
 
 /**
- * Places the calling thread and ncnn's workers for [m]: on the large cores for a model on the
- * CPU, anywhere for one on the GPU. The placement is ncnn's, process-wide, so it is set before
- * every run rather than once when a model opens.
+ * Places the calling thread and its OpenMP workers for [m]: on the large cores for a model on
+ * the CPU, anywhere for one on the GPU. ncnn places only the calling thread's team, so what
+ * each thread holds is kept per thread and set before every run rather than once when a model
+ * opens: one thread may run models of both kinds.
  */
 void place(const Model* m) {
+    thread_local int placed = -1;
     const int powersave = m->gpu ? 0 : 2;
-    if (ncnn::get_cpu_powersave() != powersave) ncnn::set_cpu_powersave(powersave);
+    if (placed != powersave && ncnn::set_cpu_powersave(powersave) == 0) placed = powersave;
 }
 
 }  // namespace

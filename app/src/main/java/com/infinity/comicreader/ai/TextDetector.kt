@@ -117,9 +117,9 @@ internal class TextDetector(
         @Volatile
         private var shared: TextDetector? = null
 
-        /** The app's detector, on [LibNcnn]. */
+        /** The app's detector, on [LibNcnn.cpuLane]: apart from AI page tiles. */
         fun shared(context: Context): TextDetector = shared ?: synchronized(this) {
-            shared ?: TextDetector(LibNcnn, { install(context.applicationContext) }).also { shared = it }
+            shared ?: TextDetector(LibNcnn.cpuLane, { install(context.applicationContext) }).also { shared = it }
         }
 
         /**

@@ -194,6 +194,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private lateinit var autoProgress: View
     private lateinit var progress: android.widget.ProgressBar
 
+    /** Jobs besides opening a book that show [progress] until they end ([holdProgress]). */
+    private var progressHolds = 0
+
+    /** True from when a book starts to open until its pages are known, with [progress] shown. */
+    private var opening = false
+
     /** How much of a book on a share is fetched, below [progress]. */
     private lateinit var fetched: TextView
 
@@ -743,6 +749,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         closeSource()
         endDismissed = false
         hideEndCard()
+        opening = true
         progress.visibility = View.VISIBLE
         openJob = lifecycleScope.launch {
             withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, book, prefs.charset, picked, cacheDir) }
@@ -1236,6 +1243,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         refreshFavorites()
         loadAdjustments()
         toolbar.title = chapterLabel(target)
+        opening = true
         progress.visibility = View.VISIBLE
         markedRead = false
         fetchedPercent = -1
@@ -1309,7 +1317,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     throw e
                 }
             }
-            progress.visibility = View.GONE
+            opening = false
+            if (progressHolds == 0) progress.visibility = View.GONE
             fetched.visibility = View.GONE
             if (found != bookId) {
                 bookId = found
@@ -4244,7 +4253,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val hidden = hiddenCount()
         val direction = directionInfo()
         val known = bookComicInfo?.takeIf { it.first === src }
-        progress.visibility = View.VISIBLE
+        holdProgress()
         bookInfoJob = lifecycleScope.launch {
             val facts = try {
                 withContext(AppDispatchers.io) {
@@ -4254,7 +4263,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     Triple(kind, info, f.length())
                 }
             } finally {
-                if (source === src) progress.visibility = View.GONE
+                releaseProgress()
             }
             val (kind, info, size) = facts
             if (isFinishing || source !== src) return@launch
@@ -4435,10 +4444,22 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         attach()
     }
 
+    /** Shows [progress] until a matching [releaseProgress]. */
+    internal fun holdProgress() {
+        progressHolds++
+        progress.visibility = View.VISIBLE
+    }
+
+    /** Hides [progress] once no job holds it and no book is opening. */
+    internal fun releaseProgress() {
+        if (progressHolds > 0) progressHolds--
+        if (progressHolds == 0 && !opening) progress.visibility = View.GONE
+    }
+
     /** Page info: [page]'s name in the book, pixel size, format and size in bytes, read in the background. */
     private fun showPageInfo(page: Int) {
         val src = source ?: return
-        progress.visibility = View.VISIBLE
+        holdProgress()
         lifecycleScope.launch {
             val facts = try {
                 withContext(AppDispatchers.io) {
@@ -4447,7 +4468,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     Triple(bytes?.let { runCatching { PageFormat.of(it) }.getOrNull() }, size, bytes?.size?.toLong())
                 }
             } finally {
-                if (source === src) progress.visibility = View.GONE
+                releaseProgress()
             }
             if (isFinishing || source !== src) return@launch
             val (format, size, bytes) = facts
@@ -4545,7 +4566,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private fun exportPage(share: Boolean, page: Int = currentIndex) {
         val src = source ?: return
         val name = fileSafeName(page)
-        progress.visibility = View.VISIBLE
+        holdProgress()
         lifecycleScope.launch {
             val outcome = withContext(AppDispatchers.io) {
                 runCatching {
@@ -4556,7 +4577,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     }
                 }
             }
-            progress.visibility = View.GONE
+            releaseProgress()
             val uri = outcome.getOrNull()
             when {
                 outcome.isFailure -> toast(R.string.error_load)
@@ -4688,7 +4709,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
 
     private fun startCrop(page: Int = currentIndex) {
         val src = source ?: return
-        progress.visibility = View.VISIBLE
+        holdProgress()
         lifecycleScope.launch {
             val bitmap = withContext(AppDispatchers.io) {
                 try {
@@ -4704,7 +4725,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     out
                 }.getOrNull()
             }
-            progress.visibility = View.GONE
+            releaseProgress()
             if (outFile == null) {
                 toast(R.string.error_load)
                 return@launch

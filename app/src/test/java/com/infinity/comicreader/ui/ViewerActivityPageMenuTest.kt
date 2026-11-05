@@ -190,6 +190,25 @@ class ViewerActivityPageMenuTest {
     }
 
     @Test
+    fun pageInfoLeavesTheSpinnerToAJobStillRunning() {
+        val viewer = launch(book())
+        val progress = viewer.findViewById<View>(R.id.viewer_progress)
+        // A Share or Save still running.
+        viewer.holdProgress()
+        val menu = viewer.menu(2)
+        menu.row(PageAction.PAGE_INFO).performClick()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (ShadowDialog.getLatestDialog() === menu && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            idle()
+        }
+        assertTrue(ShadowDialog.getLatestDialog() !== menu)
+        assertEquals(View.VISIBLE, progress.visibility)
+        viewer.releaseProgress()
+        assertEquals(View.GONE, progress.visibility)
+    }
+
+    @Test
     fun twoPagesAScreenShowAPageAloneOrPairItAndUndoTheChoice() {
         Prefs(context).twoPage = TwoPage.ON
         val book = book()

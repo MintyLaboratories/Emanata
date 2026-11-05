@@ -73,6 +73,10 @@
             app:key="more_actions"
             app:persistent="false"
             app:title="@string/pref_more_actions" />
+        <Preference
+            app:key="page_actions"
+            app:persistent="false"
+            app:title="@string/pref_page_actions" />
         <ListPreference
             app:defaultValue="open"
             app:key="pref_fab_one"

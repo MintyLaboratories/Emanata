@@ -8,6 +8,8 @@
     <item name="toolbar_buttons_list" type="id" />
     <!-- The "Selection menu" setting's list. -->
     <item name="more_actions_list" type="id" />
+    <!-- The "Page menu" setting's list. -->
+    <item name="page_actions_list" type="id" />
     <!-- The location picker's "Add network share…" row. -->
     <item name="location_add" type="id" />
     <!-- The grid of hidden pages, from "Unhide pages…". -->

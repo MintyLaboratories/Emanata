@@ -322,6 +322,11 @@ class Prefs(context: Context) {
         get() = MoreActions.decode(sp.getString(KEY_MORE_ACTIONS, null))
         set(v) = put(KEY_MORE_ACTIONS, v.encode())
 
+    /** The reader's page long-press menu rows, in order. */
+    var pageActions: PageActions
+        get() = PageActions.decode(sp.getString(KEY_PAGE_ACTIONS, null))
+        set(v) = put(KEY_PAGE_ACTIONS, v.encode())
+
     /** What the floating button does with one item selected. */
     var fabOne: FabAction
         get() = FabAction.of(sp.getString(KEY_FAB_ONE, null), FabAction.OPEN)
@@ -700,6 +705,7 @@ class Prefs(context: Context) {
         private const val KEY_COVER_SPACING = "pref_cover_spacing"
         private const val KEY_TOOLBAR_BUTTONS = "pref_toolbar_buttons"
         private const val KEY_MORE_ACTIONS = "pref_more_actions"
+        private const val KEY_PAGE_ACTIONS = "pref_page_actions"
         const val KEY_FAB_ONE = "pref_fab_one"
         const val KEY_FAB_MANY = "pref_fab_many"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
@@ -770,7 +776,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
+            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI, OLD_AI_UPSCALE
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 

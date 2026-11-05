@@ -152,6 +152,7 @@
     <string name="pref_toolbar_buttons">Toolbar buttons</string>
     <string name="toolbar_buttons_none">None</string>
     <string name="pref_more_actions">Selection menu (⋮)</string>
+    <string name="pref_page_actions">Page menu (long-press)</string>
     <string name="pref_fab_one">Button with one item selected</string>
     <string name="pref_fab_many">Button with several items selected</string>
     <string name="pref_handed">Handedness</string>
@@ -775,6 +776,35 @@
     <string name="page_hidden">Page hidden; Book info can bring it back</string>
     <string name="hide_which_page">Hide which page?</string>
     <string name="hide_last_page">The only page shown can\'t be hidden</string>
+    <!-- The reader's page long-press menu: its top row's short labels, then its rows. -->
+    <string name="page_share">Share</string>
+    <string name="page_save">Save</string>
+    <string name="page_crop">Crop</string>
+    <string name="page_bookmark">Bookmark</string>
+    <string name="page_unbookmark">Remove bookmark</string>
+    <string name="page_set_cover">Set as cover</string>
+    <string name="page_reset_cover">Use the first page as cover</string>
+    <string name="page_cover_set">Cover set</string>
+    <string name="page_cover_reset">Cover reset</string>
+    <string name="page_info">Page info</string>
+    <string name="page_show_alone">Show alone</string>
+    <string name="page_pair_next">Pair with next</string>
+    <string name="page_spread_setting">Show alone / Pair with next</string>
+    <string name="page_info_name">Name</string>
+    <string name="page_info_pixels">Pixel size</string>
+    <string name="page_info_pixels_value">%1$d × %2$d</string>
+    <string name="page_info_format">Format</string>
+    <string name="page_info_bytes">File size</string>
+    <string name="page_format_lossless">lossless</string>
+    <string name="page_format_lossy">lossy</string>
+    <string name="page_format_progressive">progressive</string>
+    <string name="page_format_animated">animated</string>
+    <plurals name="page_format_layers">
+        <item quantity="one">layered, %1$d layer</item>
+        <item quantity="other">layered, %1$d layers</item>
+    </plurals>
+    <string name="page_format_pdf">PDF page</string>
+    <string name="page_format_unknown">Unknown</string>
     <string name="info_pages_hidden">%1$d (%2$d hidden)</string>
     <string name="menu_unhide_pages">Unhide pages…</string>
     <string name="unhide_pages_title">Hidden pages</string>

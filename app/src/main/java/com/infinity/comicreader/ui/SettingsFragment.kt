@@ -251,6 +251,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
+        findPreference<Preference>("page_actions")?.let { pref ->
+            pref.summary = PageActionsDialog.summary(requireContext(), prefs)
+            pref.setOnPreferenceClickListener {
+                PageActionsDialog.show(requireContext(), prefs) {
+                    if (isAdded) pref.summary = PageActionsDialog.summary(requireContext(), prefs)
+                }
+                true
+            }
+        }
+
         for ((key, choices) in listOf(Prefs.KEY_FAB_ONE to FabAction.FOR_ONE, Prefs.KEY_FAB_MANY to FabAction.FOR_MANY)) {
             findPreference<ListPreference>(key)?.apply {
                 entries = choices.map { MoreActionsDialog.fabLabel(requireContext(), it) }.toTypedArray()

@@ -11,7 +11,8 @@ import kotlin.math.min
  * of it shown: [title], its tallest text (the line holding it), and [lines], every line of
  * about that size (a title of several lines, the title among them); null and empty where no
  * text of a title's size was found. [rows] and [columns] are its detail (edge energy) along
- * each axis in equal bins, summing to 1 (all zero on a blank cover), for covers without text.
+ * each axis in equal bins, summing to 1 (all zero on a blank cover), for covers without such
+ * text (empty with it).
  * Found once per cover and kept ([encode]), unless not [keep]: its text was looked for but the
  * detector did not run, so it holds detail alone, right for this cover made now only.
  */
@@ -19,12 +20,12 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
     /** Every line of [lines] together; null without any. */
     val text: Box? = if (lines.isEmpty()) null else Box(lines.minOf { it.left }, lines.minOf { it.top }, lines.maxOf { it.right }, lines.maxOf { it.bottom })
 
-    /** A short line of text [decode] reads back. */
+    /** A short line of text [decode] reads back: boxes to 4 decimals, detail a byte a bin (as hex) scaled to its axis' most. */
     fun encode(): String = listOf(
         title?.let(::box).orEmpty(),
         lines.joinToString("/") { box(it) },
-        rows.joinToString(",") { p(it) },
-        columns.joinToString(",") { p(it) }
+        hex(rows),
+        hex(columns)
     ).joinToString(";")
 
     override fun equals(other: Any?): Boolean =
@@ -39,8 +40,21 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
         val NONE = CoverFocus(null, emptyList(), FloatArray(0), FloatArray(0))
 
         private fun q(v: Double): String = "%.4f".format(java.util.Locale.ROOT, v)
-        private fun p(v: Float): String = "%.3f".format(java.util.Locale.ROOT, v)
         private fun box(b: Box): String = listOf(b.left, b.top, b.right, b.bottom).joinToString(",") { q(it) }
+
+        private fun hex(v: FloatArray): String {
+            val most = v.maxOrNull()?.takeIf { it > 0f } ?: return "0".repeat(2 * v.size)
+            return v.joinToString("") { "%02x".format(Math.round(it / most * 255).coerceIn(0, 255)) }
+        }
+
+        /** What [hex] wrote, summing to 1 again (all zero when it was); null when [s] is not that. */
+        private fun unhex(s: String): FloatArray? {
+            if (s.length % 2 != 0) return null
+            val v = FloatArray(s.length / 2) { (s.substring(2 * it, 2 * it + 2).toIntOrNull(16) ?: return null).toFloat() }
+            val sum = v.sum()
+            if (sum > 0f) for (i in v.indices) v[i] /= sum
+            return v
+        }
 
         /** What [encode] wrote; null when [s] is not that. */
         fun decode(s: String?): CoverFocus? {
@@ -49,12 +63,10 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
                 val v = p.split(',').map { it.toDoubleOrNull() ?: return null }
                 return if (v.size == 4) Box(v[0], v[1], v[2], v[3]) else null
             }
-            fun floats(p: String): FloatArray? =
-                if (p.isEmpty()) FloatArray(0) else p.split(',').map { it.toFloatOrNull() ?: return null }.toFloatArray()
             val title = if (parts[0].isEmpty()) null else box(parts[0]) ?: return null
             val lines = if (parts[1].isEmpty()) emptyList() else parts[1].split('/').map { box(it) ?: return null }
             if ((title == null) != lines.isEmpty()) return null
-            return CoverFocus(title, lines, floats(parts[2]) ?: return null, floats(parts[3]) ?: return null)
+            return CoverFocus(title, lines, unhex(parts[2]) ?: return null, unhex(parts[3]) ?: return null)
         }
     }
 }
@@ -191,7 +203,7 @@ object SmartCrop {
     /**
      * The focus of a cover from its text [boxes] on a [w] x [h] map and its detail [rows] and
      * [columns] ([detail]): the tallest text of at least [MIN_GLYPH], the line holding it, and
-     * every line of [SAME_SIZE] or more of its size.
+     * every line of [SAME_SIZE] or more of its size; the detail only without such text.
      */
     fun focus(boxes: List<TextBox>, w: Int, h: Int, rows: FloatArray, columns: FloatArray): CoverFocus {
         val minGlyph = MIN_GLYPH * min(w, h)
@@ -200,7 +212,7 @@ object SmartCrop {
         val peers = big.filter { it.glyph >= SAME_SIZE * tallest.glyph }
         // The tallest text's line: its peers beside it, sharing most of its height.
         val line = peers.filter { overlap(it.top, it.bottom, tallest.top, tallest.bottom) >= 0.5 * min(it.height, tallest.height) }
-        return CoverFocus(union(line, w, h), peers.map { union(listOf(it), w, h) }, rows, columns)
+        return CoverFocus(union(line, w, h), peers.map { union(listOf(it), w, h) }, FloatArray(0), FloatArray(0))
     }
 
     private fun overlap(a0: Double, a1: Double, b0: Double, b1: Double): Double = max(0.0, min(a1, b1) - max(a0, b0))

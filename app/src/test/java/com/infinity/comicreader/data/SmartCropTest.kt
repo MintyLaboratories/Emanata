@@ -173,6 +173,15 @@ class SmartCropTest {
     }
 
     @Test
+    fun aFocusWithTextHoldsNoDetail() {
+        val box = SmartCrop.TextBox(0.0, 0.0, 100.0, 30.0, 0.9f)
+        val f = SmartCrop.focus(listOf(box), 100, 150, flat(), flat())
+        assertNotNull(f.title)
+        assertEquals(0, f.rows.size)
+        assertEquals(0, f.columns.size)
+    }
+
+    @Test
     fun focusSurvivesEncoding() {
         val f = CoverFocus(Box(0.1, 0.2, 0.3, 0.4), listOf(Box(0.1, 0.2, 0.3, 0.4), Box(0.05, 0.4, 0.95, 0.5)), flat(), flat())
         val back = CoverFocus.decode(f.encode())
@@ -180,11 +189,16 @@ class SmartCropTest {
         assertEquals(f.title, back!!.title)
         assertEquals(f.lines, back.lines)
         assertEquals(Box(0.05, 0.2, 0.95, 0.5), back.text)
-        assertEquals(f.rows.size, back.rows.size)
-        assertEquals(f.rows[3], back.rows[3], 1e-3f)
         assertEquals(CoverFocus.NONE, CoverFocus.decode(CoverFocus.NONE.encode()))
-        val untitled = CoverFocus.decode(CoverFocus(null, emptyList(), flat(), flat()).encode())!!
-        assertNull(untitled.title)
+        // Detail to a byte a bin, its share of the axis as before.
+        val rows = FloatArray(SmartCrop.BINS) { (it + 1).toFloat() }.let { v -> FloatArray(v.size) { v[it] / v.sum() } }
+        val untitled = CoverFocus(null, emptyList(), rows, FloatArray(SmartCrop.BINS))
+        val line = untitled.encode()
+        assertTrue(line, line.length <= 2 + 4 * SmartCrop.BINS + 1)
+        val read = CoverFocus.decode(line)!!
+        assertNull(read.title)
+        for (i in rows.indices) assertEquals(rows[i], read.rows[i], rows[i] * 0.03f)
+        assertTrue(read.columns.all { it == 0f })
         assertNull(CoverFocus.decode("nonsense"))
         assertNull(CoverFocus.decode("a,b;;;"))
     }

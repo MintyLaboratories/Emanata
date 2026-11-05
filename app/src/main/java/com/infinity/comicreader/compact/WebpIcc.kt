@@ -15,7 +15,7 @@ object WebpIcc {
         var at = 12
         while (at + 8 <= webp.size) {
             val length = le32(webp, at + 4)
-            if (length < 0 || at + 8 + length > webp.size) return null
+            if (length < 0 || length > webp.size - at - 8) return null
             chunks += type(webp, at) to webp.copyOfRange(at + 8, at + 8 + length)
             at += 8 + length + (length and 1)
         }

@@ -38,12 +38,12 @@ data class PageFormat(
             while (at + 8 <= bytes.size) {
                 val length = (bytes[at + 4].toInt() and 0xFF) or ((bytes[at + 5].toInt() and 0xFF) shl 8) or
                     ((bytes[at + 6].toInt() and 0xFF) shl 16) or ((bytes[at + 7].toInt() and 0xFF) shl 24)
-                if (length < 0) break
                 when (String(bytes, at, 4, Charsets.US_ASCII)) {
                     "VP8L" -> return PageFormat(ImageKind.WEBP, true, animated = animated)
                     "VP8 " -> return PageFormat(ImageKind.WEBP, false, animated = animated)
                     "ANIM" -> animated = true
                 }
+                if (length < 0 || length > bytes.size - at - 8) break
                 at += 8 + length + (length and 1)
             }
             return PageFormat(ImageKind.WEBP, null, animated = animated)

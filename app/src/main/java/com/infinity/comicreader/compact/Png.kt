@@ -76,7 +76,7 @@ object Png {
         val data = ByteArrayOutputStream()
         while (at + 12 <= png.size) {
             val length = be32(png, at)
-            if (length < 0 || at + 12 + length > png.size) return null
+            if (length < 0 || length > png.size - at - 12) return null
             val type = String(png, at + 4, 4, Charsets.ISO_8859_1)
             when (type) {
                 "IHDR" -> {

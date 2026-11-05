@@ -42,11 +42,11 @@ object PageProbe {
         var at = 8
         while (at + 8 <= bytes.size) {
             val length = be32(bytes, at)
-            if (length < 0) return false
             when (type(bytes, at + 4)) {
                 "acTL" -> return false
                 "IDAT", "IEND" -> return true
             }
+            if (length < 0 || length > bytes.size - at - 12) return false
             at += 12 + length
         }
         return false
@@ -75,7 +75,7 @@ object PageProbe {
         var at = 8
         while (at + 8 <= bytes.size) {
             val length = be32(bytes, at)
-            if (length < 0 || at + 12 + length > bytes.size) return null
+            if (length < 0 || length > bytes.size - at - 12) return null
             when (type(bytes, at + 4)) {
                 kind -> return bytes.copyOfRange(at + 8, at + 8 + length)
                 "IDAT", "IEND" -> return null
@@ -94,13 +94,13 @@ object PageProbe {
         var at = 12
         while (at + 8 <= bytes.size) {
             val length = le32(bytes, at + 4)
-            if (length < 0) return false
             when (type(bytes, at)) {
                 "VP8L" -> return true
                 "VP8 ", "ANIM", "ANMF" -> return false
                 "VP8X" -> if (at + 8 < bytes.size && bytes[at + 8].toInt() and (VP8X_ANIMATION or VP8X_ICC) != 0) return false
                 "ICCP" -> return false
             }
+            if (length < 0 || length > bytes.size - at - 8) return false
             at += 8 + length + (length and 1)
         }
         return false

@@ -4444,7 +4444,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 withContext(AppDispatchers.io) {
                     val bytes = runCatching { src.pageBytes(page) }.getOrNull()
                     val size = runCatching { src.pageSize(page) }.getOrNull() ?: bytes?.let { runCatching { Decoders.size(it) }.getOrNull() }
-                    Triple(bytes?.let { PageFormat.of(it) }, size, bytes?.size?.toLong())
+                    Triple(bytes?.let { runCatching { PageFormat.of(it) }.getOrNull() }, size, bytes?.size?.toLong())
                 }
             } finally {
                 if (source === src) progress.visibility = View.GONE

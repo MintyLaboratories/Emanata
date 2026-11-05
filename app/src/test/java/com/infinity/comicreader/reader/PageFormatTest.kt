@@ -45,6 +45,15 @@ class PageFormatTest {
     }
 
     @Test
+    fun aWebpChunkLongerThanTheFileEndsTheWalk() {
+        val bytes = webp("VP8X" to 10, "XTRA" to 16)
+        // The second chunk's length: 0x7FFFFFFF.
+        val at = 12 + 8 + 10 + 4
+        for (i in 0 until 4) bytes[at + i] = if (i == 3) 0x7F else 0xFF.toByte()
+        assertEquals(PageFormat(ImageKind.WEBP, null), PageFormat.of(bytes))
+    }
+
+    @Test
     fun avifTellsItsLayers() {
         assertEquals(0, PageFormat.of(fixture("single.avif")).layers)
         for (name in listOf("layered.avif", "layered-gray.avif", "layered-tiny.avif")) {

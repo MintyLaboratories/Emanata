@@ -54,6 +54,23 @@ class PageProbeTest {
         assertFalse(PageProbe.webpLossless(animation))
     }
 
+    /** A chunk length of 0x7FFFFFFF after a short first chunk, little-endian for WebP, else big-endian. */
+    private fun hugeChunk(little: Boolean): ByteArray =
+        ByteBuffer.allocate(4).order(if (little) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN).putInt(Int.MAX_VALUE).array()
+
+    @Test
+    fun chunkLengthsPastTheEndStopTheWalk() {
+        val webp = "RIFF\u0000\u0000\u0000\u0000WEBPXTRA\u0002\u0000\u0000\u0000\u0000\u0000XTRA".toByteArray(Charsets.ISO_8859_1) +
+            hugeChunk(little = true) + ByteArray(16)
+        assertFalse(PageProbe.webpLossless(webp))
+        assertNull(WebpIcc.embed(webp, ByteArray(4)))
+        val png = Png.encode(pixels(3, 8))
+        val broken = png.copyOf(33) + hugeChunk(little = false) + "teXt".toByteArray() + ByteArray(16)
+        assertFalse(PageProbe.pngPlain(broken))
+        assertNull(PageProbe.pngChunk(broken, "acTL"))
+        assertNull(Png.decode(broken))
+    }
+
     @Test
     fun colorProfilesAreFound() {
         val icc = ByteArray(300) { (it * 7).toByte() }

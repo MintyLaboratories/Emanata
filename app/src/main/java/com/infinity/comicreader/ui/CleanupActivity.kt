@@ -39,6 +39,7 @@ import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Duplicates
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.NaturalOrder
+import com.infinity.comicreader.util.Timing
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -98,7 +99,7 @@ class CleanupActivity : AppCompatActivity() {
     @Volatile
     private var stopped = false
 
-    /** Books compared so far and in all, as the search last said. */
+    /** Books done so far and in all, as the search last said. */
     @Volatile
     private var compared = 0 to 0
 
@@ -278,13 +279,16 @@ class CleanupActivity : AppCompatActivity() {
         val finder = SimilarFinder(SimilarStore.of(cacheDir), BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) })
         val context = currentCoroutineContext()
         val found = withContext<List<Row>>(AppDispatchers.io) {
-            val groups = finder.find(books, { context.isActive && !stopped }, ::onCompared)
-            if (groups.isEmpty()) return@withContext emptyList()
+            val result = Timing.span("similar books ${books.size}") { finder.find(books, { context.isActive && !stopped }, ::onCompared) }
+            if (result.groups.isEmpty()) return@withContext emptyList()
             val snap = LibrarySnapshot.load(library, prefs)
             val roots = StorageRoots.list(this@CleanupActivity)
-            val (done, total) = compared
-            val title = if (done < total) getString(R.string.dupes_similar_partial, done, total) else getString(R.string.dupes_similar)
-            listOf(Row.Section(title)) + groups.map { group ->
+            val title = if (stopped && result.compared < result.total) {
+                getString(R.string.dupes_similar_partial, result.compared, result.total)
+            } else {
+                getString(R.string.dupes_similar)
+            }
+            listOf(Row.Section(title)) + result.groups.map { group ->
                 Row.Similar(
                     group.mapTo(ArrayList()) { b ->
                         SimilarBook(

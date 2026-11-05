@@ -5,6 +5,7 @@ import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.PageHash
 import com.infinity.comicreader.util.SimilarBooks
+import com.infinity.comicreader.util.Timing
 import java.io.File
 
 /**
@@ -26,7 +27,10 @@ object BookPrints {
      * What the search compares of book [file], names read as [charset] says; null when it
      * cannot be opened, has no pages, or [canceled] turned true midway. Blocking.
      */
-    fun read(file: File, charset: String, cacheDir: File, canceled: () -> Boolean = { false }): SimilarStore.Entry? {
+    fun read(file: File, charset: String, cacheDir: File, canceled: () -> Boolean = { false }): SimilarStore.Entry? =
+        Timing.span("book print") { readNow(file, charset, cacheDir, canceled) }
+
+    private fun readNow(file: File, charset: String, cacheDir: File, canceled: () -> Boolean): SimilarStore.Entry? {
         val source = runCatching { PageSources.open(file, charset, cacheDir, canceled, copyNested = false) }.getOrNull() ?: return null
         try {
             val count = source.pageCount

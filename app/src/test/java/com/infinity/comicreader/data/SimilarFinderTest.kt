@@ -35,7 +35,10 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; books[f.name] })
         val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
-        val groups = finder.find(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz", "broken.cbz", "unknown.cbz")) { d, t -> progress += d to t }
+        val found = finder.find(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz", "broken.cbz", "unknown.cbz")) { d, t -> progress += d to t }
+        val groups = found.groups
+        assertEquals(3, found.compared)
+        assertEquals(4, found.total)
         assertEquals(1, groups.size)
         assertEquals(listOf(BookId(1), BookId(2)), groups[0].map { it.id })
         assertEquals(listOf("a.cbz", "a copy.cbz"), groups[0][0].files.map { it.name })
@@ -45,7 +48,7 @@ class SimilarFinderTest {
         assertEquals(4, progress.maxOf { it.first })
         // A second search reads only what it could not keep.
         reads.clear()
-        assertEquals(1, finder.find(files("a.cbz", "b.cbr", "c.cbz", "broken.cbz")).size)
+        assertEquals(1, finder.find(files("a.cbz", "b.cbr", "c.cbz", "broken.cbz")).groups.size)
         assertEquals(listOf("broken.cbz"), reads.toList())
     }
 
@@ -55,9 +58,11 @@ class SimilarFinderTest {
         store.put(BookId(1), entry(30))
         var alive = true
         val finder = SimilarFinder(store, ::idOf, { f, _ -> alive = false; books[f.name] }, workers = 1)
-        val groups = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
+        val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
         // The read under way when the search stopped is kept and compared; none starts after it.
-        assertEquals(listOf(listOf(BookId(1), BookId(2))), groups.map { g -> g.map { it.id } })
+        assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
+        assertEquals(2, found.compared)
+        assertEquals(3, found.total)
         assertEquals(entry(31), store.get(BookId(2)))
         assertNull(store.get(BookId(3)))
     }

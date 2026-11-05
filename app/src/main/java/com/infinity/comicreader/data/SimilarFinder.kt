@@ -20,12 +20,15 @@ class SimilarFinder(
     /** One content: its [id], its bit-identical [files] in the order given, and what was read of it. */
     data class Book(val id: BookId, val files: List<File>, val entry: SimilarStore.Entry)
 
+    /** The [groups] found, and how many contents were [compared] of the [total] found. */
+    data class Found(val groups: List<List<Book>>, val compared: Int, val total: Int)
+
     /**
      * The groups of two or more contents alike among [files], in the order of their first
-     * files. Starts no read once [alive] turns false, and compares what was read by then.
+     * files, with how many contents could be compared. Starts no read once [alive] turns false, and compares what was read by then.
      * [progress] hears contents done of all to compare, from the reading threads.
      */
-    fun find(files: List<File>, alive: () -> Boolean = { true }, progress: (Int, Int) -> Unit = { _, _ -> }): List<List<Book>> {
+    fun find(files: List<File>, alive: () -> Boolean = { true }, progress: (Int, Int) -> Unit = { _, _ -> }): Found {
         val byId = LinkedHashMap<BookId, MutableList<File>>()
         for (f in files) {
             if (!alive()) break
@@ -61,7 +64,7 @@ class SimilarFinder(
             }
         }
         val books = ids.mapNotNull { id -> entries[id]?.let { Book(id, byId.getValue(id), it) } }
-        return SimilarBooks.groups(books) { it.entry.print }
+        return Found(SimilarBooks.groups(books) { it.entry.print }, books.size, ids.size)
     }
 
     companion object {

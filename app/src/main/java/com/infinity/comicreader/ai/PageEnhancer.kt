@@ -64,7 +64,9 @@ class ReaderAi internal constructor(
     private val gate: () -> Fallback?,
     private val download: (CatalogModel) -> Unit,
     private val threads: Int = NativeResampler.threads,
-    private val limits: PageLimits = PageLimits()
+    private val limits: PageLimits = PageLimits(),
+    /** The memory a model may take as it opens ([ModelMemory]). */
+    private val memory: () -> Long = { Long.MAX_VALUE }
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -230,7 +232,7 @@ class ReaderAi internal constructor(
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
-        val s = Sessions.open(runtime, files, threads, canceled = canceled)
+        val s = Sessions.open(runtime, files, threads, memoryBytes = memory(), canceled = canceled)
         if (s == null) Log.w(TAG, "${m.id}: does not open; its books' pages show without AI")
         sessions[m.id] = s
         return s
@@ -319,7 +321,8 @@ class ReaderAi internal constructor(
             val models = ModelStore.of(app)
             return ReaderAi(
                 Prefs(app), library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
-                AiConditions.gate(app), { m -> if (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) }
+                AiConditions.gate(app), { m -> if (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) },
+                memory = { ModelMemory.of(app) }
             )
         }
     }

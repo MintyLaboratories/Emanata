@@ -184,4 +184,44 @@ class ModelProbeTest {
         }
         assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.measure(skewed) }
     }
+
+    @Test
+    fun unfitModelsSayWhy() {
+        assertEquals(ModelRefusal.DOES_NOT_RUN, assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.measure(FakeModel(failAt = 0)) }.reason)
+        val far = FakeModel(scale = 1, reach = 100, taps = intArrayOf(8, 40, 100))
+        assertEquals(ModelRefusal.REACH, assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.measure(far) }.reason)
+        val odd = object : TileModel {
+            override val onGpu = false
+            override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int) = Dims(input.width * 3 / 2, input.height * 3 / 2)
+            override fun trim() {}
+            override fun close() {}
+        }
+        assertEquals(ModelRefusal.SHAPE, assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.measure(odd) }.reason)
+    }
+
+    @Test
+    fun probingCountsWorkingMemoryPerInputPixel() {
+        assertEquals(1000L, ModelProbe.probe(FakeModel(scale = 2, reach = 3, bytesPerPixel = 1000)).bytesPerPixel)
+        assertEquals("not counted", 0L, ModelProbe.probe(FakeModel(scale = 2, reach = 3)).bytesPerPixel)
+    }
+
+    @Test
+    fun aProbeThatWouldPassItsBudgetIsNotRun() {
+        // Reach 40 is measured on a 256 probe, 655 MB at 10 KB per input pixel; 128 needs 164 MB.
+        val model = FakeModel(scale = 1, reach = 40, bytesPerPixel = 10_000)
+        val e = assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.probe(model, budgetBytes = 100L shl 20) }
+        assertEquals(ModelRefusal.MEMORY, e.reason)
+        assertEquals(128L * 128 * 10_000, e.bytes)
+        assertTrue("ran past the first probe", model.inputs.none { it.width > ModelProbe.FIRST_PROBE })
+        val roomy = ModelProbe.probe(FakeModel(scale = 1, reach = 40, bytesPerPixel = 10_000), budgetBytes = 1L shl 30)
+        assertEquals(Geometry(1, 0, 40 + ModelProbe.SAFETY), roomy.geometry)
+    }
+
+    @Test
+    fun aCheckCountsTheMostATileHeld() {
+        val reference = FakeModel(onGpu = false)
+        val g = ModelProbe.measure(reference)
+        val check = ModelProbe.verify(FakeModel(bytesPerPixel = 100), reference, g, 96, 96)
+        assertEquals(96L * 96 * 100, check.peakBytes)
+    }
 }

@@ -21,6 +21,12 @@ import kotlin.random.Random
  * Works for models that pad (output exactly scale times the input) and for ones that do not
  * (output smaller by a fixed trim; their cut changes nothing). Measure on the CPU, in fp32:
  * fp16 rounding differs with a tile's shape and reads as reach.
+ *
+ * Every run counts the working memory the model holds ([TileModel.takePeak]), its buffers
+ * freed before it so each run counts alone. A run whose input would need more than its budget
+ * at the bytes per input pixel of the largest run so far is not started: the model is [Unfit]
+ * for [ModelRefusal.MEMORY]. Heavy upscalers work at output resolution, so their memory grows
+ * with the square of the probe (a 4x ESRGAN-class model needs gigabytes for a 256 probe).
  */
 object ModelProbe {
     /** Output change, in 8-bit codes, that counts; smaller ones do not show as seams. */
@@ -45,8 +51,11 @@ object ModelProbe {
 
     private const val SCALE_LIMIT = 8
 
-    /** Why a model could not be measured. */
-    class Unfit(message: String) : Exception(message)
+    /** Why a model could not be measured or checked: [reason]; for memory, the [bytes] a run would have needed. */
+    class Unfit(val reason: ModelRefusal, message: String, val bytes: Long = 0) : Exception(message)
+
+    /** A model's [geometry], and the most working bytes per input pixel its largest run took ([bytesPerPixel]; 0 where not counted). */
+    class Probed(val geometry: Geometry, val bytesPerPixel: Long)
 
     /** How two outputs differ: the largest and the mean channel difference, in codes. */
     data class Diff(val max: Int, val mean: Double) {
@@ -64,27 +73,32 @@ object ModelProbe {
 
     /**
      * [verify]'s result at one tile size: the model against the reference ([vsReference]) and
-     * its tiles against tiles on a shifted grid ([seams]). It passes when its output is not
+     * its tiles against tiles on a shifted grid ([seams]), and the most working memory one of
+     * its tiles took ([peakBytes]; 0 where not counted). It passes when its output is not
      * wrong and no seams show.
      */
-    class Check(val vsReference: Diff, val seams: Diff) {
+    class Check(val vsReference: Diff, val seams: Diff, val peakBytes: Long = 0) {
         val passes: Boolean get() = !vsReference.wrong && seams.same
 
-        override fun toString() = "against the reference $vsReference; seams $seams"
+        override fun toString() = "against the reference $vsReference; seams $seams; ${peakBytes shr 20} MB"
     }
 
+    /** [model]'s geometry ([probe]). */
+    internal fun measure(model: TileModel, canceled: () -> Boolean = { false }): Geometry = probe(model, canceled).geometry
+
     /**
-     * [model]'s geometry; throws [Unfit] when it fails to run or maps tiles in a way tiles
-     * cannot use, and [CancellationException] once [canceled], checked before every run.
+     * [model]'s geometry and working memory, no run taking more than [budgetBytes]; throws
+     * [Unfit] when it fails to run, maps tiles in a way tiles cannot use or would need more
+     * memory, and [CancellationException] once [canceled], checked before every run.
      */
-    internal fun measure(model: TileModel, canceled: () -> Boolean = { false }): Geometry {
-        val m = Checked(model, canceled)
+    internal fun probe(model: TileModel, canceled: () -> Boolean = { false }, budgetBytes: Long = Long.MAX_VALUE): Probed {
+        val m = Checked(model, canceled, budgetBytes)
         val (scale, trim) = scaleAndTrim(m)
         var size = FIRST_PROBE
         while (true) {
             val reach = Pattern.entries.maxOf { reach(cut(m, size, scale, trim, it)) }
-            if (reach < size / 4) return Geometry(scale, trim, reach + SAFETY)
-            if (size >= MAX_PROBE) throw Unfit("Output changes ${size / 4} or more pixels away from a cut: tiles would show")
+            if (reach < size / 4) return Probed(Geometry(scale, trim, reach + SAFETY), m.perPixel)
+            if (size >= MAX_PROBE) throw Unfit(ModelRefusal.REACH, "Output changes ${size / 4} or more pixels away from a cut: tiles would show")
             size *= 2
         }
     }
@@ -136,7 +150,7 @@ object ModelProbe {
             val at = (shift + margin) * s
             val seams = diff(bw - from, (h - shift) * s - from, { x, y -> a[(y + at) * aw + x + at] }, { x, y -> b[(y + from) * bw + x + from] })
             val tw = first.crop.width
-            return Check(diff(tw, first.crop.height, { x, y -> a[y * aw + x] }, { x, y -> truth[y * tw + x] }), seams)
+            return Check(diff(tw, first.crop.height, { x, y -> a[y * aw + x] }, { x, y -> truth[y * tw + x] }), seams, m.peak)
         } finally {
             shifted.recycle()
             src.recycle()
@@ -148,7 +162,7 @@ object ModelProbe {
         val dst = Bitmap.createBitmap(src.width * geometry.scale, src.height * geometry.scale, Bitmap.Config.ARGB_8888)
         try {
             for (t in TilePlan.tiles(src.width, src.height, size, geometry)) {
-                model.run(src, t.input, dst, t.crop, t.dx, t.dy) ?: throw Unfit("Model does not run")
+                model.run(src, t.input, dst, t.crop, t.dx, t.dy) ?: throw Unfit(ModelRefusal.DOES_NOT_RUN, "Model does not run")
             }
             return pixels(dst)
         } finally {
@@ -197,17 +211,17 @@ object ModelProbe {
     private fun scaleAndTrim(model: TileModel): Pair<Int, Int> {
         val src = content(LARGE, Pattern.NOISE)
         try {
-            val a = model.run(src, Box(0, 0, SMALL, SMALL)) ?: throw Unfit("Model does not run")
-            val b = model.run(src, Box(0, 0, LARGE, LARGE)) ?: throw Unfit("Model does not run")
+            val a = model.run(src, Box(0, 0, SMALL, SMALL)) ?: throw Unfit(ModelRefusal.DOES_NOT_RUN, "Model does not run")
+            val b = model.run(src, Box(0, 0, LARGE, LARGE)) ?: throw Unfit(ModelRefusal.DOES_NOT_RUN, "Model does not run")
             val sx = (b.width - a.width) / (LARGE - SMALL)
             val sy = (b.height - a.height) / (LARGE - SMALL)
             if (sx != sy || sx < 1 || sx > SCALE_LIMIT || (b.width - a.width) % (LARGE - SMALL) != 0) {
-                throw Unfit("Output ${a.width}x${a.height} for $SMALL, ${b.width}x${b.height} for $LARGE")
+                throw Unfit(ModelRefusal.SHAPE, "Output ${a.width}x${a.height} for $SMALL, ${b.width}x${b.height} for $LARGE")
             }
             val lostX = sx * SMALL - a.width
             val lostY = sx * SMALL - a.height
             if (lostX != lostY || lostX < 0 || lostX % 2 != 0 || a.width <= 0) {
-                throw Unfit("Output ${a.width}x${a.height} for $SMALL at scale $sx")
+                throw Unfit(ModelRefusal.SHAPE, "Output ${a.width}x${a.height} for $SMALL at scale $sx")
             }
             return sx to lostX / 2
         } finally {
@@ -218,7 +232,7 @@ object ModelProbe {
     /** All of [model]'s output for the top-left [side] x [side] of [src], as pixels. */
     private fun output(model: TileModel, src: Bitmap, side: Int, scale: Int, trim: Int): IntArray {
         val out = side * scale - 2 * trim
-        if (out <= 0) throw Unfit("No output for $side at scale $scale, trim $trim")
+        if (out <= 0) throw Unfit(ModelRefusal.SHAPE, "No output for $side at scale $scale, trim $trim")
         return run(model, src, Box(0, 0, side, side), Box(0, 0, out, out))
     }
 
@@ -226,7 +240,7 @@ object ModelProbe {
     private fun run(model: TileModel, src: Bitmap, input: Box, crop: Box): IntArray {
         val dst = Bitmap.createBitmap(crop.width, crop.height, Bitmap.Config.ARGB_8888)
         try {
-            model.run(src, input, dst, crop, 0, 0) ?: throw Unfit("Model does not run")
+            model.run(src, input, dst, crop, 0, 0) ?: throw Unfit(ModelRefusal.DOES_NOT_RUN, "Model does not run")
             return pixels(dst)
         } finally {
             dst.recycle()
@@ -273,11 +287,44 @@ object ModelProbe {
         }
     }
 
-    /** [model], refusing to run once [canceled]. */
-    private class Checked(private val model: TileModel, private val canceled: () -> Boolean) : TileModel by model {
+    /**
+     * [model], refusing to run once [canceled], or when its input would need more than
+     * [budgetBytes] at [perPixel]; counts the most each run held ([peak]), its buffers freed
+     * first once the model counts memory at all.
+     */
+    private class Checked(
+        private val model: TileModel,
+        private val canceled: () -> Boolean,
+        private val budgetBytes: Long = Long.MAX_VALUE
+    ) : TileModel by model {
+        /** Working bytes per input pixel of the largest run counted so far; 0 before any. */
+        var perPixel = 0L
+            private set
+
+        /** The most working bytes any run held. */
+        var peak = 0L
+            private set
+
+        private var largest = 0L
+
         override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
             if (canceled()) throw CancellationException("AI model check canceled")
-            return model.run(src, input, dst, crop, dx, dy)
+            val area = input.width.toLong() * input.height
+            val need = area * perPixel
+            if (need > budgetBytes) {
+                throw Unfit(ModelRefusal.MEMORY, "A ${input.width}x${input.height} run needs about ${need shr 20} MB, over ${budgetBytes shr 20} MB", need)
+            }
+            // Counted alone: the buffers earlier runs left are freed first.
+            if (perPixel > 0) model.trim()
+            model.takePeak()
+            val out = model.run(src, input, dst, crop, dx, dy)
+            val held = model.takePeak()
+            peak = max(peak, held)
+            if (held > 0 && area >= largest) {
+                largest = area
+                perPixel = (held + area - 1) / area
+            }
+            return out
         }
     }
 }

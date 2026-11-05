@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * side whose taps would leave the tile (their trim). Reads [src] past its edge as the native
  * code does: the nearest edge pixel. Like a GPU can, it may round by a pixel's place in its
  * tile ([phaseNoise], [edgeNoise]), go wrong on tiles wider than [breaksAbove], or compute
- * nonsense ([wrong]).
+ * nonsense ([wrong]). Each run holds [bytesPerPixel] of working memory per input pixel
+ * ([takePeak]).
  */
 internal class FakeModel(
     val scale: Int = 2,
@@ -33,7 +34,9 @@ internal class FakeModel(
     /** Inverts the output of tiles wider than this, as a feature map past a GPU buffer can. */
     private val breaksAbove: Int = Int.MAX_VALUE,
     /** Writes mid-gray whatever the input. */
-    private val wrong: Boolean = false
+    private val wrong: Boolean = false,
+    /** Working bytes a run holds per input pixel; 0: not counted. */
+    private val bytesPerPixel: Long = 0
 ) : TileModel {
     val trim: Int get() = if (padded) 0 else reach * scale
     val runs = AtomicInteger()
@@ -41,6 +44,7 @@ internal class FakeModel(
     val inside = AtomicInteger()
     var mostInside = 0
     var closed = false
+    private var peak = 0L
     val inputs = ArrayList<Box>()
 
     override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
@@ -51,6 +55,7 @@ internal class FakeModel(
             val i = runs.getAndIncrement()
             onRun(i)
             synchronized(inputs) { inputs += input }
+            synchronized(this) { peak = maxOf(peak, input.width.toLong() * input.height * bytesPerPixel) }
             if (i == failAt) return null
             val n = input.width
             val m = input.height
@@ -94,6 +99,9 @@ internal class FakeModel(
     override fun trim() {
         trims.incrementAndGet()
     }
+
+    @Synchronized
+    override fun takePeak(): Long = peak.also { peak = 0 }
 
     override fun close() {
         closed = true

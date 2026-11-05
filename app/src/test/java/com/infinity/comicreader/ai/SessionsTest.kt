@@ -279,4 +279,62 @@ class SessionsTest {
         val result = runCatching { Session(model, Geometry(2, 0, 30), 64) }
         assertTrue(result.exceptionOrNull() is IllegalArgumentException)
     }
+
+    @Test
+    fun refusalsSayWhy() {
+        assertEquals(ModelRefusal.RUNTIME, Sessions.attempt(FakeRuntime(available = false), fakeFiles(tmp.root), threads = 4).refusal)
+        assertEquals(ModelRefusal.NOT_LOADED, Sessions.attempt(FakeRuntime(make = { _, _ -> null }), fakeFiles(tmp.root), threads = 4).refusal)
+        val pooled = fakeFiles(tmp.root, extra = "Pooling gap 1 1 a b 0=1 4=1\n")
+        assertEquals(ModelRefusal.WHOLE_TILE, Sessions.attempt(FakeRuntime(), pooled, threads = 4).refusal)
+        val broken = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, failAt = 0) })
+        assertEquals(ModelRefusal.DOES_NOT_RUN, Sessions.attempt(broken, fakeFiles(tmp.root), threads = 4).refusal)
+        val opened = Sessions.attempt(FakeRuntime(), fakeFiles(tmp.root), threads = 4)
+        assertNotNull(opened.session)
+        assertNull(opened.refusal)
+    }
+
+    @Test
+    fun weightsTakingAllItsMemoryAreRefused() {
+        val files = fakeFiles(tmp.root)
+        val runtime = FakeRuntime()
+        val o = Sessions.attempt(runtime, files, threads = 4, memoryBytes = files.bin.length())
+        assertEquals(ModelRefusal.MEMORY, o.refusal)
+        assertEquals(files.bin.length(), o.bytes)
+        assertTrue("opened before refusing", runtime.asked.isEmpty())
+    }
+
+    @Test
+    fun measuredMemoryShrinksTiles() {
+        // 32 channels at 2x: estimated 1.5 KB per input pixel; measured 20 KB. 256 MB holds 96 x 96 at that, 100 MB 64 x 64.
+        val runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 20_000) })
+        assertEquals(96, Sessions.open(runtime, fakeFiles(tmp.root, channels = 32), threads = 4)!!.size)
+        assertEquals(64, Sessions.open(runtime, fakeFiles(tmp.root, channels = 32), threads = 4, memoryBytes = 100L shl 20)!!.size)
+    }
+
+    @Test
+    fun aModelNeedingMoreThanItsMemoryIsRefusedBeforeItRuns() {
+        // 1 MB per input pixel: the 32 x 32 probe holds 1 GiB; the 48 x 48 one would need 2.25 GiB.
+        val runtime = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 1L shl 20) })
+        val o = Sessions.attempt(runtime, fakeFiles(tmp.root), threads = 4, memoryBytes = 2L shl 30)
+        assertEquals(ModelRefusal.MEMORY, o.refusal)
+        assertTrue(o.bytes > 2L shl 30)
+        val cpu = runtime.opened.single() as FakeModel
+        assertTrue(cpu.closed)
+        assertTrue(cpu.inputs.all { it.width <= 32 })
+    }
+
+    @Test
+    fun aGpuSizeHoldingMoreThanItsBudgetIsPassedOver() {
+        // On the GPU only, 20 KB per input pixel: a 192 tile holds 703 MiB, past a quarter of 2 GiB; 128 holds 312 MiB.
+        val runtime = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = if (onGpu) 20_000 else 0) })
+        val s = Sessions.open(runtime, fakeFiles(tmp.root), threads = 4)!!
+        assertTrue(s.model.onGpu)
+        assertEquals(128, s.size)
+    }
+
+    @Test
+    fun aModelMayTakeAnEighthOfMemoryAndHalfOfWhatIsFree() {
+        assertEquals(1L shl 30, ModelMemory.budget(8L shl 30, 3L shl 30))
+        assertEquals(512L shl 20, ModelMemory.budget(8L shl 30, 1L shl 30))
+    }
 }

@@ -1,7 +1,68 @@
 package com.infinity.comicreader.ai
 
+import android.app.ActivityManager
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import kotlin.math.max
+import kotlin.math.min
+
+/** Why a model does not open. */
+enum class ModelRefusal {
+    /** The inference library does not load on this device. */
+    RUNTIME,
+
+    /** The files do not load as an ncnn model, or do not belong together. */
+    NOT_LOADED,
+
+    /** Layers mix the whole tile ([ModelParam.wholeTileLayers]): tiles would show. */
+    WHOLE_TILE,
+
+    /** It fails on an RGB tile. */
+    DOES_NOT_RUN,
+
+    /** Its output is not its input enlarged a whole number of times, less a fixed edge. */
+    SHAPE,
+
+    /** Its output depends on content too far away for tiles to share. */
+    REACH,
+
+    /** It needs more memory than the device can spare ([ModelMemory]). */
+    MEMORY
+}
+
+/**
+ * A model opened ([session]), or why not ([refusal]; for memory, the [bytes] it would need,
+ * weights included, and the [limit] it would pass; 0 when unknown).
+ */
+internal class Opening(val session: Session?, val refusal: ModelRefusal?, val bytes: Long = 0, val limit: Long = 0) {
+    companion object {
+        fun refused(why: ModelRefusal, bytes: Long = 0, limit: Long = 0) = Opening(null, why, bytes, limit)
+    }
+}
+
+/**
+ * The memory a model may take: its weights and the working memory of its tiles, on the GPU
+ * and the CPU alike (a phone's GPU shares its RAM). A model needing more is refused: past
+ * this, 4x ESRGAN-class models opened to 2 GB and more and the system ended the app.
+ */
+object ModelMemory {
+    /** The share of the device's memory a model may take. */
+    const val SHARE = 8
+
+    /** The share of the memory available when a model opens that it may take. */
+    const val AVAILABLE_SHARE = 2
+
+    /** The budget for [total] bytes of memory, [available] of them free now. */
+    fun budget(total: Long, available: Long): Long = min(total / SHARE, available / AVAILABLE_SHARE)
+
+    /** The budget on this device now. */
+    fun of(context: Context): Long {
+        val info = ActivityManager.MemoryInfo()
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+        return budget(info.totalMem, info.availMem)
+    }
+}
 
 /** What a model's ncnn `.param` text says about tiling it. */
 object ModelParam {
@@ -74,6 +135,9 @@ object TileSizing {
     /** Estimated working bytes per input pixel of a tile, in fp32. */
     fun bytesPerPixel(widest: Int, scale: Int): Long = widest.toLong() * 4 * 3 * scale * scale
 
+    /** Working bytes per input pixel to plan by: the estimate, or [measured] when that is more. */
+    fun bytesPerPixel(widest: Int, scale: Int, measured: Long): Long = max(bytesPerPixel(widest, scale), measured)
+
     /** Bytes of a [size] tile's largest feature map: [widest] channels at output resolution, [elementBytes] each. */
     fun largestMap(size: Int, widest: Int, scale: Int, elementBytes: Int): Long {
         val side = size.toLong() * scale
@@ -87,10 +151,11 @@ object TileSizing {
     }
 
     /**
-     * Sizes to use, best first, then each smaller one that also fits: all fit [budgetBytes],
-     * keep each feature map within [maxBufferBytes] (at [elementBytes] per value) and leave
-     * [geometry] a core. The best is the largest up to [max], or, when its core keeps less than
-     * [MIN_KEPT] of it, the smallest larger one that keeps that much (else the largest).
+     * Sizes to use, best first, then each smaller one that also fits: all fit [budgetBytes]
+     * (at the estimate's bytes per pixel, or the [measured] ones when more), keep each feature
+     * map within [maxBufferBytes] (at [elementBytes] per value) and leave [geometry] a core.
+     * The best is the largest up to [max], or, when its core keeps less than [MIN_KEPT] of it,
+     * the smallest larger one that keeps that much (else the largest).
      */
     fun candidates(
         budgetBytes: Long,
@@ -98,9 +163,10 @@ object TileSizing {
         geometry: Geometry,
         max: Int = DEFAULT_MAX,
         maxBufferBytes: Long = Long.MAX_VALUE,
-        elementBytes: Int = 4
+        elementBytes: Int = 4,
+        measured: Long = 0
     ): List<Int> {
-        val per = bytesPerPixel(widest, geometry.scale)
+        val per = bytesPerPixel(widest, geometry.scale, measured)
         val fit = SIZES.filter {
             it.toLong() * it * per <= budgetBytes && largestMap(it, widest, geometry.scale, elementBytes) <= maxBufferBytes &&
                 TilePlan.fits(it, geometry)
@@ -118,8 +184,9 @@ object TileSizing {
         geometry: Geometry,
         max: Int = DEFAULT_MAX,
         maxBufferBytes: Long = Long.MAX_VALUE,
-        elementBytes: Int = 4
-    ): Int? = candidates(budgetBytes, widest, geometry, max, maxBufferBytes, elementBytes).firstOrNull()
+        elementBytes: Int = 4,
+        measured: Long = 0
+    ): Int? = candidates(budgetBytes, widest, geometry, max, maxBufferBytes, elementBytes, measured).firstOrNull()
 }
 
 /**
@@ -134,6 +201,11 @@ object TileSizing {
  * - any other seams, or output unlike the CPU's (a feature map past what the GPU addresses,
  *   broken arithmetic): the next smaller size, then fp32.
  * A model no GPU setup passes runs on the CPU. Opening runs alone, as a page does ([TileEngine]).
+ *
+ * Memory: the model's weights and its tiles' working memory stay within the memory it is
+ * given ([ModelMemory]). Measuring counts what each run holds and stops before a run that
+ * would need more ([ModelProbe.probe]); tiles are sized by the larger of the estimate and the
+ * measured bytes per pixel; on the GPU, a size whose check held more is passed over.
  */
 internal object Sessions {
     private const val TAG = "AiSessions"
@@ -148,11 +220,7 @@ internal object Sessions {
     const val MAX_WIDENINGS = 3
 
     /**
-     * [files] opened through [runtime]: on the GPU when [gpu] and one is usable, in fp16 when
-     * [fp16] and the GPU has it and the model passes in it, else on [threads] CPU threads; tiles
-     * at most [maxTile] unless the margins call for more. Null when the model loads or
-     * measures nowhere, mixes the whole tile ([ModelParam.wholeTileLayers]), or no tile fits.
-     * Throws [java.util.concurrent.CancellationException] once [canceled], checked between runs.
+     * [files] opened through [runtime] ([attempt]); null when it does not open.
      */
     fun open(
         runtime: InferenceRuntime,
@@ -161,61 +229,99 @@ internal object Sessions {
         gpu: Boolean = true,
         maxTile: Int = TileSizing.DEFAULT_MAX,
         fp16: Boolean = true,
+        memoryBytes: Long = Long.MAX_VALUE,
         canceled: () -> Boolean = { false }
-    ): Session? = TileEngine.exclusive(canceled) {
-        openAlone(runtime, files, threads, gpu, maxTile, fp16, canceled)
+    ): Session? = attempt(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled).session
+
+    /**
+     * [files] opened through [runtime]: on the GPU when [gpu] and one is usable, in fp16 when
+     * [fp16] and the GPU has it and the model passes in it, else on [threads] CPU threads; tiles
+     * at most [maxTile] unless the margins call for more; weights and working memory within
+     * [memoryBytes]. Refused when the model loads or measures nowhere, mixes the whole tile
+     * ([ModelParam.wholeTileLayers]), or no tile fits its memory. Throws
+     * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
+     */
+    fun attempt(
+        runtime: InferenceRuntime,
+        files: ModelFiles,
+        threads: Int,
+        gpu: Boolean = true,
+        maxTile: Int = TileSizing.DEFAULT_MAX,
+        fp16: Boolean = true,
+        memoryBytes: Long = Long.MAX_VALUE,
+        canceled: () -> Boolean = { false }
+    ): Opening = TileEngine.exclusive(canceled) {
+        openAlone(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled)
     }
 
     private fun openAlone(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, gpu: Boolean, maxTile: Int, fp16: Boolean,
-        canceled: () -> Boolean
-    ): Session? {
-        if (!runtime.available) return null
+        memoryBytes: Long, canceled: () -> Boolean
+    ): Opening {
+        if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val name = files.param.name
         val param = runCatching { files.param.readText() }.getOrNull()
         val whole = param?.let(ModelParam::wholeTileLayers).orEmpty()
         if (whole.isNotEmpty()) {
             Log.w(TAG, "$name: output depends on the whole tile (${whole.joinToString()}), so tiles would show; not opened")
-            return null
+            return Opening.refused(ModelRefusal.WHOLE_TILE)
         }
         val widest = param?.let(ModelParam::widest) ?: ModelParam.DEFAULT_WIDEST
-        val cpu = runtime.open(files, false, threads, false) ?: return null
+        // Weights in fp32, as the CPU holds them; what is left is for tiles.
+        val weights = files.bin.length()
+        if (weights >= memoryBytes) {
+            Log.w(TAG, "$name: weights alone (${weights shr 20} MB) take the ${memoryBytes shr 20} MB a model may")
+            return Opening.refused(ModelRefusal.MEMORY, weights, memoryBytes)
+        }
+        val work = memoryBytes - weights
+        val cpu = runtime.open(files, false, threads, false) ?: return Opening.refused(ModelRefusal.NOT_LOADED)
         var keepCpu = false
         try {
             val t0 = SystemClock.elapsedRealtime()
-            val geometry = try {
-                ModelProbe.measure(cpu, canceled)
+            val probed = try {
+                ModelProbe.probe(cpu, canceled, work)
             } catch (e: ModelProbe.Unfit) {
                 Log.w(TAG, "$name: cannot measure: ${e.message}")
-                return null
+                return Opening.refused(e.reason, if (e.bytes > 0) weights + e.bytes else 0, memoryBytes)
             }
-            Log.i(TAG, "$name: $geometry, measured on the CPU (${SystemClock.elapsedRealtime() - t0} ms)")
-            val size = TileSizing.pick(TileSizing.CPU_BUDGET_BYTES, widest, geometry, maxTile)
+            val geometry = probed.geometry
+            val measured = probed.bytesPerPixel
+            Log.i(TAG, "$name: $geometry, ${measured / 1024} KB per input pixel, measured on the CPU (${SystemClock.elapsedRealtime() - t0} ms)")
+            val size = TileSizing.pick(min(TileSizing.CPU_BUDGET_BYTES, work), widest, geometry, maxTile, measured = measured)
             val info = if (gpu) runtime.gpu() else null
             // The CPU's output to check the GPU's against, in tiles the CPU's memory holds when any does.
-            val reference = size ?: TileSizing.SIZES.lastOrNull { TilePlan.fits(it, geometry) }
+            val reference = size ?: TileSizing.SIZES.lastOrNull {
+                TilePlan.fits(it, geometry) && it.toLong() * it * TileSizing.bytesPerPixel(widest, geometry.scale, measured) <= work
+            }
             if (info != null && reference != null) {
-                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, canceled)?.let { return it }
+                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, work, measured, canceled)
+                    ?.let { return Opening(it, null) }
                 Log.w(TAG, "$name: not usable on the GPU, running on the CPU")
             }
             if (size == null) {
-                Log.w(TAG, "$name: no tile fits $geometry in ${TileSizing.CPU_BUDGET_BYTES shr 20} MB")
-                return null
+                val smallest = TileSizing.SIZES.lastOrNull { TilePlan.fits(it, geometry) }
+                val need = smallest?.let { weights + it.toLong() * it * TileSizing.bytesPerPixel(widest, geometry.scale, measured) } ?: 0
+                Log.w(TAG, "$name: no tile fits $geometry in ${min(TileSizing.CPU_BUDGET_BYTES, work) shr 20} MB")
+                return Opening.refused(ModelRefusal.MEMORY, need, weights + min(TileSizing.CPU_BUDGET_BYTES, work))
             }
             cpu.trim()
-            return Session(cpu, geometry, size).also { keepCpu = true }
+            return Opening(Session(cpu, geometry, size), null).also { keepCpu = true }
         } finally {
             if (!keepCpu) cpu.close()
         }
     }
 
-    /** The model on the GPU at the first precision and size that passes [ModelProbe.verify]; null when none does. */
+    /**
+     * The model on the GPU at the first precision and size that passes [ModelProbe.verify]
+     * within [work] bytes; null when none does. [measured]: the CPU's working bytes per input
+     * pixel in fp32, a floor for the estimate.
+     */
     private fun onGpu(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, info: GpuInfo, geometry: Geometry, widest: Int,
-        maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, canceled: () -> Boolean
+        maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, work: Long, measured: Long, canceled: () -> Boolean
     ): Session? {
         val name = files.param.name
-        val budget = info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE
+        val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
         for (half in if (fp16) listOf(true, false) else listOf(false)) {
             val precision = if (half) "fp16" else "fp32"
             val model = runtime.open(files, true, threads, half) ?: return null
@@ -224,13 +330,18 @@ internal object Sessions {
                 var g = geometry
                 var widenings = 0
                 while (true) {
-                    val sizes = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, if (half) 2 else 4)
+                    val element = if (half) 2 else 4
+                    val sizes = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, element, measured * element / 4)
                     if (sizes.isEmpty()) Log.w(TAG, "$name: no $precision tile fits $g in ${budget shr 20} MB")
                     var noisy = false
                     for (size in sizes) {
                         val t0 = SystemClock.elapsedRealtime()
                         val check = ModelProbe.verify(model, cpu, g, size, cpuSize, canceled)
                         Log.i(TAG, "$name: $precision, $size px tiles, margin ${g.margin}: $check (${SystemClock.elapsedRealtime() - t0} ms)")
+                        if (check.passes && check.peakBytes > budget) {
+                            Log.w(TAG, "$name: $precision, $size px tiles held ${check.peakBytes shr 20} MB, over ${budget shr 20} MB")
+                            continue
+                        }
                         if (check.passes) {
                             model.trim()
                             return Session(model, g, size, half).also { kept = true }

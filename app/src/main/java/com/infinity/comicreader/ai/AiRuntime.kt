@@ -52,6 +52,13 @@ internal interface TileModel : AutoCloseable {
 
     /** Frees the buffers kept between runs, on the GPU and the CPU; the weights stay. */
     fun trim()
+
+    /**
+     * The most bytes of working memory (feature maps and scratch, on the GPU and the CPU; not
+     * the weights) held at once since the last call, which starts counting again; 0 where not
+     * counted.
+     */
+    fun takePeak(): Long = 0
 }
 
 /** What runs models: [LibNcnn] on the device; JVM tests stand in their own. */
@@ -151,6 +158,8 @@ internal object LibNcnn : InferenceRuntime {
             if (handle != 0L) nTrim(handle)
         }
 
+        override fun takePeak(): Long = worker.run { if (handle != 0L) nPeak(handle) else 0L }
+
         override fun close() = worker.run {
             if (handle != 0L) nClose(handle)
             handle = 0L
@@ -174,6 +183,9 @@ internal object LibNcnn : InferenceRuntime {
 
     @JvmStatic
     private external fun nTrim(handle: Long)
+
+    @JvmStatic
+    private external fun nPeak(handle: Long): Long
 
     @JvmStatic
     private external fun nClose(handle: Long)

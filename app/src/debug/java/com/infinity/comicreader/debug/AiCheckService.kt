@@ -25,6 +25,7 @@ import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloader
 import com.infinity.comicreader.ai.ModelFiles
+import com.infinity.comicreader.ai.ModelMemory
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PageLimits
 import com.infinity.comicreader.ai.Session
@@ -74,7 +75,8 @@ import kotlin.math.max
  * - download: per catalog model, deletes it from the app's store, downloads it (stopping once
  *   after `cut` bytes when given, then resuming), checks it is installed, opens it and runs one
  *   page of `size` within the default page time; deletes it again unless `keep`.
- * - survey: per model, how it opens on the GPU (or why not) and one page of `size` at the
+ * - survey: per model, how it opens on the GPU within the device's model memory
+ *   ([ModelMemory]; or why not, with the memory it would need) and one page of `size` at the
  *   tile size it chose, given at most `cap` seconds; a page that would take longer stops early
  *   on its pace ([TileEngine]) and reports its time estimated from the tiles run. Waits for
  *   the thermal headroom to fall below `cool` before each model, up to [COOL_MAX_S].
@@ -365,15 +367,21 @@ class AiCheckService : Service() {
             val waitedS = coolDown(cool)
             val files = ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin"))
             val t0 = SystemClock.elapsedRealtime()
-            val session = try {
-                Sessions.open(LibNcnn, files, threads, gpu = true, fp16 = fp16)
+            val memory = ModelMemory.of(this)
+            val opening = try {
+                Sessions.attempt(LibNcnn, files, threads, gpu = true, fp16 = fp16, memoryBytes = memory)
             } catch (t: Throwable) {
                 log(JSONObject().put("model", name).put("failed", "${t.javaClass.simpleName}: ${t.message}"))
                 continue
             }
             val openMs = SystemClock.elapsedRealtime() - t0
+            val session = opening.session
             if (session == null) {
-                log(JSONObject().put("model", name).put("opened", false).put("openMs", openMs).put("waitedS", waitedS))
+                log(
+                    JSONObject().put("model", name).put("opened", false).put("refusal", opening.refusal?.name ?: JSONObject.NULL)
+                        .put("neededMb", opening.bytes shr 20).put("memoryMb", memory shr 20).put("openMs", openMs).put("waitedS", waitedS)
+                        .put("peakRssMb", peakRssKb() / 1024)
+                )
                 continue
             }
             session.use { s ->
@@ -389,7 +397,8 @@ class AiCheckService : Service() {
                 log(
                     JSONObject().put("model", name).put("opened", true).put("openMs", openMs).put("waitedS", waitedS)
                         .put("onGpu", s.model.onGpu).put("fp16", s.fp16).put("scale", g.scale).put("trim", g.trim).put("context", g.context)
-                        .put("margin", g.margin).put("tile", s.size).put("tiles", run.stats.planned).put("tilesRun", run.stats.tiles)
+                        .put("margin", g.margin).put("tile", s.size).put("memoryMb", memory shr 20).put("peakRssMb", peakRssKb() / 1024)
+                        .put("tiles", run.stats.planned).put("tilesRun", run.stats.tiles)
                         .put("fallback", run.fallback?.name ?: JSONObject.NULL).put("pageMs", pageMs).put("estimatedMs", estimate)
                         .put("tileMs", Stats.summary(tiles.toList())).put("graphicsMb", graphicsKb() / 1024)
                         .put("before", before).put("after", state())
@@ -441,6 +450,11 @@ class AiCheckService : Service() {
     /** Resident memory of this process, in KB. */
     private fun rssKb(): Long = runCatching {
         File("/proc/self/status").readLines().first { it.startsWith("VmRSS:") }.split(Regex("\\s+"))[1].toLong()
+    }.getOrDefault(0L)
+
+    /** The most resident memory this process has held, in KB. */
+    private fun peakRssKb(): Long = runCatching {
+        File("/proc/self/status").readLines().first { it.startsWith("VmHWM:") }.split(Regex("\\s+"))[1].toLong()
     }.getOrDefault(0L)
 
     /** Graphics memory of this process as the system counts it (GPU buffers included), in KB. */

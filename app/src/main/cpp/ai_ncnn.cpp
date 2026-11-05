@@ -9,10 +9,13 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cmath>
+#include <list>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 #include "allocator.h"
 #include "cpu.h"
@@ -44,14 +47,131 @@ void gpu_release() {
     if (--gpu_users == 0) ncnn::destroy_gpu_instance();
 }
 
+/** Bytes a model's allocators hold, and the most they held at once since [take]. */
+struct Usage {
+    std::atomic<int64_t> held{0};
+    std::atomic<int64_t> peak{0};
+
+    void add(int64_t n) {
+        const int64_t now = held += n;
+        int64_t most = peak.load();
+        while (now > most && !peak.compare_exchange_weak(most, now)) {
+        }
+    }
+
+    void sub(int64_t n) { held -= n; }
+
+    /** The most held since the last call; counting starts again from what is held now. */
+    int64_t take() { return peak.exchange(held.load()); }
+};
+
+/**
+ * Host memory for feature maps and scratch, pooled: a freed chunk is kept and handed out
+ * again for the smallest request it fits; past [KEEP] kept chunks, a request none fits drops
+ * the smallest kept one when it is larger than all, else the largest when it is smaller than
+ * all. Every chunk it holds, handed out or kept, counts in [usage].
+ */
+class CountingPool : public ncnn::Allocator {
+public:
+    explicit CountingPool(Usage* usage) : usage(usage) {}
+
+    ~CountingPool() override { clear(); }
+
+    void* fastMalloc(size_t size) override {
+        std::lock_guard<std::mutex> hold(lock);
+        auto best = kept.end();
+        for (auto it = kept.begin(); it != kept.end(); ++it) {
+            if (it->first >= size && (best == kept.end() || it->first < best->first)) best = it;
+        }
+        if (best != kept.end()) {
+            void* ptr = best->second;
+            out[ptr] = best->first;
+            kept.erase(best);
+            return ptr;
+        }
+        if (kept.size() >= KEEP) {
+            auto lo = std::min_element(kept.begin(), kept.end());
+            auto hi = std::max_element(kept.begin(), kept.end());
+            if (hi->first < size) drop(lo);
+            else if (lo->first > size) drop(hi);
+        }
+        void* ptr = ncnn::fastMalloc(size);
+        if (!ptr) return nullptr;
+        out[ptr] = size;
+        usage->add((int64_t) size);
+        return ptr;
+    }
+
+    void fastFree(void* ptr) override {
+        std::lock_guard<std::mutex> hold(lock);
+        auto it = out.find(ptr);
+        if (it == out.end()) return;
+        kept.emplace_back(it->second, ptr);
+        out.erase(it);
+    }
+
+    /** Frees the kept chunks. */
+    void clear() {
+        std::lock_guard<std::mutex> hold(lock);
+        while (!kept.empty()) drop(kept.begin());
+    }
+
+private:
+    static constexpr size_t KEEP = 10;
+
+    void drop(std::list<std::pair<size_t, void*>>::iterator it) {
+        usage->sub((int64_t) it->first);
+        ncnn::fastFree(it->second);
+        kept.erase(it);
+    }
+
+    Usage* usage;
+    std::mutex lock;
+    std::list<std::pair<size_t, void*>> kept;
+    std::unordered_map<void*, size_t> out;
+};
+
+/** ncnn's GPU blob allocator, counting the buffers and images it hands out in [usage]. */
+class CountingVkAllocator : public ncnn::VkBlobAllocator {
+public:
+    CountingVkAllocator(const ncnn::VulkanDevice* vkdev, Usage* usage) : ncnn::VkBlobAllocator(vkdev), usage(usage) {}
+
+    ncnn::VkBufferMemory* fastMalloc(size_t size) override {
+        ncnn::VkBufferMemory* m = ncnn::VkBlobAllocator::fastMalloc(size);
+        if (m) usage->add((int64_t) m->capacity);
+        return m;
+    }
+
+    void fastFree(ncnn::VkBufferMemory* m) override {
+        if (m) usage->sub((int64_t) m->capacity);
+        ncnn::VkBlobAllocator::fastFree(m);
+    }
+
+    ncnn::VkImageMemory* fastMalloc(int w, int h, int c, size_t elemsize, int elempack) override {
+        ncnn::VkImageMemory* m = ncnn::VkBlobAllocator::fastMalloc(w, h, c, elemsize, elempack);
+        if (m) usage->add((int64_t) m->bind_capacity);
+        return m;
+    }
+
+    void fastFree(ncnn::VkImageMemory* m) override {
+        if (m) usage->sub((int64_t) m->bind_capacity);
+        ncnn::VkBlobAllocator::fastFree(m);
+    }
+
+private:
+    Usage* usage;
+};
+
 struct Model {
+    // First, so the allocators counting in it go before it.
+    Usage usage;
     ncnn::Net net;
     bool gpu = false;
     ncnn::VulkanDevice* vkdev = nullptr;
-    ncnn::VkBlobAllocator* blob_vk = nullptr;
+    CountingVkAllocator* blob_vk = nullptr;
     ncnn::VkStagingAllocator* staging_vk = nullptr;
-    ncnn::UnlockedPoolAllocator blob;
-    ncnn::PoolAllocator workspace;
+    CountingPool blob{&usage};
+    CountingPool workspace{&usage};
     std::string input, output;
 
     ~Model() {
@@ -166,7 +286,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring para
     if (gpu && gpu_acquire()) {
         m->gpu = true;
         m->vkdev = ncnn::get_gpu_device();
-        m->blob_vk = new ncnn::VkBlobAllocator(m->vkdev);
+        m->blob_vk = new CountingVkAllocator(m->vkdev, &m->usage);
         m->staging_vk = new ncnn::VkStagingAllocator(m->vkdev);
         m->net.opt.use_vulkan_compute = true;
         m->net.set_vulkan_device(m->vkdev);
@@ -274,6 +394,15 @@ Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle,
         }
     }
     return OK;
+}
+
+/**
+ * The most bytes of feature maps and scratch the model held at once, on the GPU and the CPU,
+ * since the last call; counting starts again from what it holds now.
+ */
+JNIEXPORT jlong JNICALL
+Java_com_infinity_comicreader_ai_LibNcnn_nPeak(JNIEnv*, jclass, jlong handle) {
+    return (jlong) reinterpret_cast<Model*>(handle)->usage.take();
 }
 
 /** Frees the buffers a model keeps between runs; its weights stay. */

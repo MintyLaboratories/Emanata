@@ -12,9 +12,10 @@ import kotlin.math.min
  * about that size (a title of several lines, the title among them); null and empty where no
  * text of a title's size was found. [rows] and [columns] are its detail (edge energy) along
  * each axis in equal bins, summing to 1 (all zero on a blank cover), for covers without text.
- * Found once per cover and kept ([encode]).
+ * Found once per cover and kept ([encode]), unless not [keep]: its text was looked for but the
+ * detector did not run, so it holds detail alone, right for this cover made now only.
  */
-class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, val columns: FloatArray) {
+class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, val columns: FloatArray, val keep: Boolean = true) {
     /** Every line of [lines] together; null without any. */
     val text: Box? = if (lines.isEmpty()) null else Box(lines.minOf { it.left }, lines.minOf { it.top }, lines.maxOf { it.right }, lines.maxOf { it.bottom })
 

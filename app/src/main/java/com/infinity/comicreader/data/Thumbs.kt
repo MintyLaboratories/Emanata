@@ -81,13 +81,17 @@ object Thumbs {
         }
     }
 
-    /** Finds text on a cover for the Smart crop anchor; null when it cannot. Tests stand in their own. */
+    /**
+     * Finds text on a cover for the Smart crop anchor; null when it did not run this time, and an
+     * empty map ([TextDetector.ABSENT]) where it never can. Tests stand in their own.
+     */
     @Volatile
     internal var detector: (Context, Bitmap) -> ScoreMap? = { context, bitmap -> TextDetector.shared(context).detect(bitmap) }
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
-     * cover; without [find], only one found before ([CoverFocus.NONE] when none was).
+     * cover and kept unless the detector did not run ([CoverFocus.keep]); without [find], only
+     * one found before ([CoverFocus.NONE] when none was).
      */
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
@@ -98,6 +102,7 @@ object Thumbs {
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
         val focus = CoverArt.focusOf(src, region) { detector(context, it) }
+        if (!focus.keep) return focus
         store.put(k, focus)
         focuses.put(k, focus)
         return focus
@@ -216,12 +221,14 @@ object Thumbs {
             return null
         }
         var sided = false
+        // A focus found without the detector holds for this cover in memory only.
+        var lasting = true
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio, rightToLeft,
                 front = { src -> frontOf(context, entry, src).also { if (it == null) sided = true } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
-                focus = { src, region -> focusOf(context, entry, src, region, find = made.full) }
+                focus = { src, region -> focusOf(context, entry, src, region, find = made.full).also { if (!it.keep) lasting = false } }
             )
         } catch (t: Throwable) {
             return null
@@ -240,7 +247,7 @@ object Thumbs {
             if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
         memory.put(k, bitmap)
-        runCatching {
+        if (lasting) runCatching {
             disk.parentFile?.mkdirs()
             disk.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
         }

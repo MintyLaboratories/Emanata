@@ -138,6 +138,29 @@ class ThumbsTest {
     }
 
     @Test
+    fun aFocusFoundWithoutTheDetectorIsNeitherKeptNorStored() {
+        var works = false
+        val calls = intArrayOf(0)
+        Thumbs.detector = { _, bitmap ->
+            calls[0]++
+            if (!works) null else ScoreMap(bitmap.width, bitmap.height, FloatArray(bitmap.width * bitmap.height) { i -> if (i / bitmap.width >= bitmap.height * 17 / 20 && i / bitmap.width < bitmap.height * 92 / 100) 0.9f else 0f })
+        }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        // Made from detail alone, and not written to disk.
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
+        assertEquals(1, calls[0])
+        assertNull(File(context.cacheDir, "covers").listFiles()?.firstOrNull())
+        works = true
+        val thumb = Thumbs.load(context, entry, "UTF-8", 100, 50, smart)!!
+        assertEquals(2, calls[0])
+        assertEquals(Color.BLUE, thumb.getPixel(50, 48))
+        assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
+        Thumbs.load(context, entry, "UTF-8", 80, 40, smart)!!
+        assertEquals(2, calls[0])
+    }
+
+    @Test
     fun smartLooksOnlyWhenItCrops() {
         val calls = textAt(0.85, 0.92)
         Thumbs.load(context, cover(), "UTF-8", 200, 300, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))

@@ -34,10 +34,14 @@ internal class TextDetector(
     /** Counts runs, so a close timed after one run leaves the model to a later one. */
     private var runs = 0L
 
-    /** [src]'s score map; null when the detector cannot run. Blocking; one image at a time. */
+    /**
+     * [src]'s score map; [ABSENT] where the runtime does not load, null when the detector did
+     * not run this time. Blocking; one image at a time.
+     */
     @Synchronized
     fun detect(src: Bitmap): ScoreMap? {
-        if (broken || !runtime.available) return null
+        if (!runtime.available) return ABSENT
+        if (broken) return null
         closing?.cancel(false)
         val m = model ?: open() ?: return null
         try {
@@ -85,6 +89,9 @@ internal class TextDetector(
          * about as long on one thread as on two, four or the GPU, so one, which costs least.
          */
         const val THREADS = 1
+
+        /** What [detect] gives where it never runs: a map without text. */
+        val ABSENT = ScoreMap(0, 0, FloatArray(0))
 
         /** Closed this long after its last use. */
         const val IDLE_MS = 20_000L

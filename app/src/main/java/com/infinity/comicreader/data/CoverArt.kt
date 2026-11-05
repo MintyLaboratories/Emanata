@@ -89,8 +89,8 @@ object CoverArt {
 
     /**
      * Where the Smart crop anchor looks in [region] of [src]: its text, as [detect] finds it on
-     * the region shrunk to [SmartCrop.inputSize] (none without [detect], or when it fails), and
-     * its detail.
+     * the region shrunk to [SmartCrop.inputSize] (none without [detect]), and its detail. When
+     * [detect] gives null or fails, detail alone, not to be kept ([CoverFocus.keep]).
      */
     fun focusOf(src: Bitmap, region: Rect, detect: ((Bitmap) -> ScoreMap?)?): CoverFocus {
         val (w, h) = SmartCrop.inputSize(region.width(), region.height()).let { it[0] to it[1] }
@@ -104,8 +104,8 @@ object CoverArt {
                 Wraparound.luminance(row, w, luma, y * w)
             }
             val (rows, columns) = SmartCrop.detail(luma, w, h).let { it[0] to it[1] }
-            val map = detect?.let { runCatching { it(small) }.getOrNull() }
-                ?: return CoverFocus(null, emptyList(), rows, columns)
+            if (detect == null) return CoverFocus(null, emptyList(), rows, columns)
+            val map = runCatching { detect(small) }.getOrNull() ?: return CoverFocus(null, emptyList(), rows, columns, keep = false)
             return SmartCrop.focus(SmartCrop.boxes(map), map.width, map.height, rows, columns)
         } finally {
             small.recycle()

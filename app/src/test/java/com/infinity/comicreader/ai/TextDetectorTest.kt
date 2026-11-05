@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -89,10 +90,10 @@ class TextDetectorTest {
     }
 
     @Test
-    fun missingFilesOrRuntimeFindNothing() {
+    fun missingFilesFindNothingThisTimeAndNoRuntimeNothingEver() {
         assertNull(TextDetector(FakeRuntime(make = { _, _ -> MapModel() }), { null }).detect(image))
         val off = FakeRuntime(available = false, make = { _, _ -> MapModel() })
-        assertNull(TextDetector(off, ::files).detect(image))
+        assertSame(TextDetector.ABSENT, TextDetector(off, ::files).detect(image))
         assertTrue(off.asked.isEmpty())
     }
 

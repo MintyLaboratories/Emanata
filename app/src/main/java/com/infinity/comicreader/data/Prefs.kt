@@ -489,14 +489,14 @@ class Prefs(context: Context) {
         set(v) = put(KEY_AI, v)
 
     /**
-     * The catalog id of [step]'s model; null for none. Only a choice is stored: Upscale
+     * The id of [step]'s model ([com.infinity.comicreader.ai.Models]); null for none. Only a choice is stored: Upscale
      * without one runs [ModelCatalog.DEFAULT_UPSCALE], the others none.
      */
     fun aiModel(step: AiStep): String? =
         sp.getString(aiKey(step), null).let { it ?: if (step == AiStep.UPSCALE) ModelCatalog.DEFAULT_UPSCALE else null }
             ?.takeIf { it != AI_NONE && it.isNotEmpty() }
 
-    /** Sets [step]'s model to catalog id [id], or none for null. */
+    /** Sets [step]'s model to model id [id], or none for null. */
     fun setAiModel(step: AiStep, id: String?) = put(aiKey(step), id ?: AI_NONE)
 
     // ---------------------------------------------------------------- ui state

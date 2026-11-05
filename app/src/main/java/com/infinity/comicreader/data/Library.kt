@@ -1277,7 +1277,7 @@ class Library(context: Context) {
         /** Books' own layouts, from the folders packed into them ([bookLayout]). */
         private const val KEY_BOOK_LAYOUTS = "book_layouts"
 
-        /** Books' own AI chains ([aiPicks]): a catalog id or [AI_NONE] per step. */
+        /** Books' own AI chains ([aiPicks]): a model id or [AI_NONE] per step. */
         private const val KEY_AI = "ai_picks"
 
         /** A step running no model in [KEY_AI]. */

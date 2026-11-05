@@ -147,9 +147,10 @@ object PageProbe {
      * samples exactly: each `av1C` 4:4:4 of 8 bits (none monochrome: gray, or alpha, which
      * decodes premultiplied) and each `colr` an `nclx` with identity matrix coefficients
      * (0), full range, BT.709 or unspecified primaries and the sRGB, BT.709 or unspecified
-     * curve, at least one of each.
+     * curve, at least one of each. With [anyDepth], as any lossless AVIF is stored, its samples
+     * of any depth, in any range, with any profile: 4:4:4 with identity matrix coefficients.
      */
-    fun avifLossless(b: ByteArray): Boolean {
+    fun avifLossless(b: ByteArray, anyDepth: Boolean = false): Boolean {
         if (ImageKind.sniff(b) != ImageKind.AVIF) return false
         val meta = box(b, 0, b.size, "meta") ?: return false
         val iprp = box(b, meta.first + 4, meta.last + 1, "iprp") ?: return false
@@ -165,18 +166,20 @@ object PageProbe {
                     else {
                         // seq_tier_0, high_bitdepth, twelve_bit, monochrome, chroma_subsampling_x, _y, chroma_sample_position.
                         val flags = b[body.first + 2].toInt() and 0xFF
-                        if ((flags and 0x7C) != 0) ok = false
+                        if ((flags and (if (anyDepth) 0x0C else 0x7C)) != 0) ok = false
                     }
                 }
                 "colr" -> {
-                    if (body.last - body.first < 10 || type(b, body.first) != "nclx") ok = false
-                    else {
+                    if (body.last - body.first < 10 || type(b, body.first) != "nclx") {
+                        // A profile beside the nclx changes no sample.
+                        if (!anyDepth || type(b, body.first) == "nclx") ok = false
+                    } else {
                         colors++
                         val primaries = be16(b, body.first + 4)
                         val transfer = be16(b, body.first + 6)
                         val matrix = be16(b, body.first + 8)
                         val full = (b[body.first + 10].toInt() and 0x80) != 0
-                        if (matrix != 0 || !full || primaries !in SRGB_PRIMARIES || transfer !in SRGB_TRANSFERS) ok = false
+                        if (matrix != 0 || !anyDepth && (!full || primaries !in SRGB_PRIMARIES || transfer !in SRGB_TRANSFERS)) ok = false
                     }
                 }
             }

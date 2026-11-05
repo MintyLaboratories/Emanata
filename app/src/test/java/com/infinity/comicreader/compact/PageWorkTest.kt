@@ -252,6 +252,12 @@ class PageWorkTest {
             assertEquals("webp", made.ext)
             assertTrue(made.reencoded)
         }
+        // Stored lossless all the same at 10 or 12 bits, limited range or with a profile; never 4:2:0 nor another matrix.
+        for (page in listOf(avif(30, 20, av1Flags = 0x40), avif(30, 20, av1Flags = 0x60), avif(30, 20, full = false), avif(30, 20, icc = true))) {
+            assertTrue(PageProbe.avifLossless(page, anyDepth = true))
+        }
+        assertFalse(PageProbe.avifLossless(avif(30, 20, av1Flags = 0x0C), anyDepth = true))
+        assertFalse(PageProbe.avifLossless(avif(30, 20, matrix = 1), anyDepth = true))
         // Without its properties.
         assertFalse(PageProbe.avifLossless(iso("avif", 30, 20)))
         assertFalse(PageProbe.avifLossless(avif(30, 20).copyOf(40)))

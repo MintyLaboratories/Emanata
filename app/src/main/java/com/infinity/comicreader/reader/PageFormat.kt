@@ -22,7 +22,7 @@ data class PageFormat(
             ImageKind.BMP -> PageFormat(kind, true)
             ImageKind.TIFF -> PageFormat(kind, runCatching { Tiff.exact(Tiff.ByteInput(bytes)) }.getOrDefault(false))
             ImageKind.WEBP -> webp(bytes)
-            ImageKind.AVIF -> PageFormat(kind, PageProbe.avifLossless(bytes), animated = PageProbe.isoSequence(bytes), layers = AvifPreview.layers(bytes))
+            ImageKind.AVIF -> PageFormat(kind, PageProbe.avifLossless(bytes, anyDepth = true), animated = PageProbe.isoSequence(bytes), layers = AvifPreview.layers(bytes))
             ImageKind.HEIF -> PageFormat(kind, false, animated = PageProbe.isoSequence(bytes))
             ImageKind.GIF, ImageKind.JXL -> PageFormat(kind, null)
             null -> PageFormat(null, null)

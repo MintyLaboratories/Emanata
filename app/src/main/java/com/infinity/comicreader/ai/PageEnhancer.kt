@@ -91,6 +91,12 @@ class ReaderAi internal constructor(
     /** Models opened so far by model id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
+    /** Why each model that did not open last time did not, by model id; gone once it opens. */
+    private val refusals = ConcurrentHashMap<String, ModelRefusal>()
+
+    /** Times in a row each model was refused for memory, by model id. Worker thread only. */
+    private val shortOfMemory = HashMap<String, Int>()
+
     /** The Book IDs of books whose key holds none ([BookIds.keyOf] made it from the path when the ID could not be read). */
     private val ids = ConcurrentHashMap<String, BookId>()
 
@@ -160,7 +166,9 @@ class ReaderAi internal constructor(
         }
         val size = source.pageSize(index)
         if (size != null && unneeded(chain, target, size)) return AiOutcome.Skipped(Fallback.UNNEEDED)
-        val opened = chain.mapIndexed { i, m -> session(m, files[i], canceled) ?: return AiOutcome.Skipped(Fallback.FAILED) }
+        val opened = chain.mapIndexed { i, m ->
+            session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.FAILED)
+        }
         // Nobody waits on it: decoded and resampled on the budget of pages read ahead.
         val input = Urgency.later { Cancellation.during(canceled) { source.loadPage(index, target.detail(size, MAX_INPUT_PIXELS * 4)) } }
         try {
@@ -227,16 +235,37 @@ class ReaderAi internal constructor(
         for (m in chain) rates.computeIfPresent(m.id) { _, r -> r + (priorRate(m) - r) * RECOVER }
     }
 
-    /** [m] opened, once; null when it does not open. */
+    /**
+     * [m] opened, once; null when it does not open ([refusal] says why). A model refused for
+     * memory is not kept refused at first, as what is free changes: its pages are put off and
+     * it is tried again with them, up to [MEMORY_TRIES] times in a row.
+     */
     private fun session(m: AiModel, files: ModelFiles, canceled: () -> Boolean): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
-        val s = Sessions.open(runtime, files, threads, memoryBytes = memory(), canceled = canceled)
-        if (s == null) Log.w(TAG, "${m.id}: does not open; its books' pages show without AI")
-        sessions[m.id] = s
-        return s
+        val o = Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled)
+        val s = o.session
+        if (s != null) {
+            refusals.remove(m.id)
+            shortOfMemory.remove(m.id)
+            sessions[m.id] = s
+            return s
+        }
+        val why = o.refusal ?: ModelRefusal.NOT_LOADED
+        refusals[m.id] = why
+        val tries = if (why == ModelRefusal.MEMORY) shortOfMemory.merge(m.id, 1, Int::plus)!! else MEMORY_TRIES
+        if (tries < MEMORY_TRIES) {
+            Log.w(TAG, "${m.id}: not enough memory free now (${o.bytes shr 20} of ${o.limit shr 20} MB); tried again later")
+        } else {
+            Log.w(TAG, "${m.id}: does not open ($why); its books' pages show without AI")
+            sessions[m.id] = null
+        }
+        return null
     }
+
+    /** Why model [id] did not open when last tried; null when it opened or was not tried. Any thread. */
+    fun refusal(id: String): ModelRefusal? = refusals[id]
 
     /**
      * Closes the models open but those of [keep] (model ids), after any page in progress,
@@ -248,6 +277,7 @@ class ReaderAi internal constructor(
         EXECUTOR.execute {
             val gone = sessions.keys.filter { it !in keep }
             for (id in gone) sessions.remove(id)?.close()
+            shortOfMemory.keys.retainAll(keep)
         }
     }
 
@@ -284,6 +314,9 @@ class ReaderAi internal constructor(
 
         /** The longest a page may take, however slow its chain. */
         const val MAX_TIMEOUT_MS = 120_000L
+
+        /** Times in a row a model refused for memory is tried again before its pages show without it. */
+        const val MEMORY_TRIES = 3
 
         /** Share of the way back to the rate of its page time a measured rate moves at each page skipped as too slow. */
         const val RECOVER = 0.25

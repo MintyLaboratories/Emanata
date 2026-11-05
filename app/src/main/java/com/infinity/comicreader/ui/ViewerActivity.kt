@@ -58,12 +58,14 @@ import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloads
+import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.ReaderAi
@@ -3819,8 +3821,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 else -> R.string.ai_scope_default_off_hint
             }
         )
-        view.findViewById<TextView>(R.id.sheet_ai_hint).text =
-            if ((own != null || prefs.aiEnabled) && AiChain.slow(picks.models)) hint + "\n" + getString(R.string.ai_chain_slow) else hint
+        val running = own != null || prefs.aiEnabled
+        val notes = listOfNotNull(hint, getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(picks.models) }) +
+            if (running) refused(picks.models) else emptyList()
+        view.findViewById<TextView>(R.id.sheet_ai_hint).text = notes.joinToString("\n")
+    }
+
+    /** A line for each of [models] the reader's AI could not open, saying why. */
+    private fun refused(models: List<AiModel>): List<String> = models.mapNotNull { m ->
+        when (readerAi.refusal(m.id) ?: return@mapNotNull null) {
+            ModelRefusal.MEMORY -> getString(R.string.ai_model_short_of_memory, m.name)
+            else -> getString(R.string.ai_model_does_not_open, m.name)
+        }
     }
 
     /** The label above each advanced step's picker. */

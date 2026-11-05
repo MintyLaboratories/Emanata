@@ -11,6 +11,7 @@ import com.infinity.comicreader.reader.Target
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -216,6 +217,49 @@ class ReaderAiTest {
         ai.know(b.bookKey, book)
         assertFalse(ai.enhances(b))
         assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+    }
+
+    @Test
+    fun aModelShortOfMemoryPutsPagesOffAndOpensOnceMemoryIsFree() {
+        install(upscale)
+        // 100 KB per input pixel: measuring needs more than 128 MB; a 64 tile fits a quarter of the GPU.
+        var memory = 128L shl 20
+        val heavy = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
+        val reader = ReaderAi(
+            prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), heavy,
+            { stop }, { downloads += it.id }, threads = 2, memory = { memory }
+        )
+        try {
+            val b = bookOf()
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            assertEquals(ModelRefusal.MEMORY, reader.refusal(upscale.id))
+            memory = 64L shl 30
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+            assertNull(reader.refusal(upscale.id))
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun aModelShortOfMemoryTimeAfterTimeIsLeftOut() {
+        install(upscale)
+        val heavy = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
+        val reader = ReaderAi(
+            prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), heavy,
+            { stop }, { downloads += it.id }, threads = 2, memory = { 128L shl 20 }
+        )
+        try {
+            val b = bookOf()
+            repeat(ReaderAi.MEMORY_TRIES - 1) { assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later) }
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
+            val opens = heavy.asked.size
+            assertTrue(reader.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Skipped)
+            assertEquals("not opened again", opens, heavy.asked.size)
+            assertEquals(ModelRefusal.MEMORY, reader.refusal(upscale.id))
+        } finally {
+            reader.close()
+        }
     }
 
     @Test

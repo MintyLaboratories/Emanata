@@ -14,7 +14,7 @@ class FocusStoreTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun focus(top: Double) = CoverFocus(Box(0.1, top, 0.9, top + 0.1), Box(0.1, top, 0.9, top + 0.1), FloatArray(4) { 0.25f }, FloatArray(4) { 0.25f })
+    private fun focus(top: Double) = CoverFocus(Box(0.1, top, 0.9, top + 0.1), listOf(Box(0.1, top, 0.9, top + 0.1)), FloatArray(4) { 0.25f }, FloatArray(4) { 0.25f })
 
     @Test
     fun keepsFocusesAcrossInstances() {

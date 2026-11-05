@@ -72,6 +72,7 @@ class SmartCropTest {
         assertEquals(0.75, title.top, 1e-9)
         assertEquals(0.95, title.right, 1e-9)
         assertEquals(0.85, title.bottom, 1e-9)
+        assertEquals(3, f.lines.size)
         val text = f.text!!
         assertEquals(0.75, text.top, 1e-9)
         assertEquals(0.95, text.bottom, 1e-9)
@@ -91,8 +92,8 @@ class SmartCropTest {
         assertEquals(0.75, SmartCrop.focus(boxes, 200, 400, flat(), flat()).title!!.left, 1e-9)
     }
 
-    private fun focus(title: Box?, text: Box? = title, rows: FloatArray = flat(), columns: FloatArray = flat()) =
-        CoverFocus(title, text, rows, columns)
+    private fun focus(title: Box?, vararg others: Box, rows: FloatArray = flat(), columns: FloatArray = flat()) =
+        CoverFocus(title, listOfNotNull(title) + others, rows, columns)
 
     @Test
     fun titleAtTheTopKeepsTheTop() {
@@ -108,9 +109,16 @@ class SmartCropTest {
 
     @Test
     fun aTitleTooTallWithItsPeersKeepsItsOwnLine() {
-        // Lines from 100 to 1400 cannot all stay in 1000; the title line (1200..1350) does.
-        val y = SmartCrop.offset(focus(Box(0.1, 0.8, 0.9, 0.9), Box(0.1, 1 / 15.0, 0.9, 14 / 15.0)), 1500.0, 1000.0, vertical = true)
+        // Lines from 100 to 1350 cannot all stay in 1000; the title line (1200..1350) does.
+        val y = SmartCrop.offset(focus(Box(0.1, 0.8, 0.9, 0.9), Box(0.0, 1 / 15.0, 0.05, 1100 / 1500.0)), 1500.0, 1000.0, vertical = true)
         assertEquals(370.0, y, 1e-9)
+    }
+
+    @Test
+    fun theTopStaysWhenItKeepsALineOfTheTitlesSize() {
+        // The tallest line is low, but one nearly as tall sits in the top crop.
+        val y = SmartCrop.offset(focus(Box(0.1, 0.8, 0.9, 0.9), Box(0.1, 0.05, 0.9, 0.13)), 1500.0, 1000.0, vertical = true)
+        assertEquals(0.0, y, 1e-9)
     }
 
     @Test
@@ -166,15 +174,16 @@ class SmartCropTest {
 
     @Test
     fun focusSurvivesEncoding() {
-        val f = CoverFocus(Box(0.1, 0.2, 0.3, 0.4), Box(0.05, 0.2, 0.95, 0.5), flat(), flat())
+        val f = CoverFocus(Box(0.1, 0.2, 0.3, 0.4), listOf(Box(0.1, 0.2, 0.3, 0.4), Box(0.05, 0.4, 0.95, 0.5)), flat(), flat())
         val back = CoverFocus.decode(f.encode())
         assertNotNull(back)
         assertEquals(f.title, back!!.title)
-        assertEquals(f.text, back.text)
+        assertEquals(f.lines, back.lines)
+        assertEquals(Box(0.05, 0.2, 0.95, 0.5), back.text)
         assertEquals(f.rows.size, back.rows.size)
         assertEquals(f.rows[3], back.rows[3], 1e-3f)
         assertEquals(CoverFocus.NONE, CoverFocus.decode(CoverFocus.NONE.encode()))
-        val untitled = CoverFocus.decode(CoverFocus(null, null, flat(), flat()).encode())!!
+        val untitled = CoverFocus.decode(CoverFocus(null, emptyList(), flat(), flat()).encode())!!
         assertNull(untitled.title)
         assertNull(CoverFocus.decode("nonsense"))
         assertNull(CoverFocus.decode("a,b;;;"))

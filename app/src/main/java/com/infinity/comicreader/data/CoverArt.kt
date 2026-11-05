@@ -105,7 +105,7 @@ object CoverArt {
             }
             val (rows, columns) = SmartCrop.detail(luma, w, h).let { it[0] to it[1] }
             val map = detect?.let { runCatching { it(small) }.getOrNull() }
-                ?: return CoverFocus(null, null, rows, columns)
+                ?: return CoverFocus(null, emptyList(), rows, columns)
             return SmartCrop.focus(SmartCrop.boxes(map), map.width, map.height, rows, columns)
         } finally {
             small.recycle()

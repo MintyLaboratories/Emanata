@@ -85,10 +85,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (default) or the center of a cover cropped for height, or (Smart,
   experimental) its tallest text: a text detector (PaddleOCR's mobile
   detector on ncnn, shipped in the app; it finds where text is, not what it
-  says) marks the lines of text, and the crop keeps the tallest, with every
-  line of about its size, as near the top (centered across) as that allows.
-  A cover without text keeps its most detailed part when clearly more
-  detailed than its top. Found once per cover and kept.
+  says) marks the lines of text. When the top (centered across) would lose
+  every line of about the tallest's size, the crop moves just enough to keep
+  them, or at least the tallest's own line. Only title-sized text counts:
+  credits alone never move a crop. A cover without such text keeps its most
+  detailed part when far more detailed than its top. Found once per cover and
+  kept.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

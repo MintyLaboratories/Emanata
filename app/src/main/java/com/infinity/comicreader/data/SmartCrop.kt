@@ -8,30 +8,34 @@ import kotlin.math.min
 
 /**
  * Where the Smart crop anchor ([CropAnchor.SMART]) looks on a cover, as fractions of the part
- * of it shown: [title], its tallest text (the line holding it), and [text], every line of about
- * that size (a title of several lines); null where no text was found. [rows] and [columns] are
- * its detail (edge energy) along each axis in equal bins, summing to 1 (all zero on a blank
- * cover), for covers without text. Found once per cover and kept ([encode]).
+ * of it shown: [title], its tallest text (the line holding it), and [lines], every line of
+ * about that size (a title of several lines, the title among them); null and empty where no
+ * text of a title's size was found. [rows] and [columns] are its detail (edge energy) along
+ * each axis in equal bins, summing to 1 (all zero on a blank cover), for covers without text.
+ * Found once per cover and kept ([encode]).
  */
-class CoverFocus(val title: Box?, val text: Box?, val rows: FloatArray, val columns: FloatArray) {
+class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, val columns: FloatArray) {
+    /** Every line of [lines] together; null without any. */
+    val text: Box? = if (lines.isEmpty()) null else Box(lines.minOf { it.left }, lines.minOf { it.top }, lines.maxOf { it.right }, lines.maxOf { it.bottom })
+
     /** A short line of text [decode] reads back. */
     fun encode(): String = listOf(
         title?.let(::box).orEmpty(),
-        text?.let(::box).orEmpty(),
+        lines.joinToString("/") { box(it) },
         rows.joinToString(",") { p(it) },
         columns.joinToString(",") { p(it) }
     ).joinToString(";")
 
     override fun equals(other: Any?): Boolean =
-        other is CoverFocus && title == other.title && text == other.text && rows.contentEquals(other.rows) && columns.contentEquals(other.columns)
+        other is CoverFocus && title == other.title && lines == other.lines && rows.contentEquals(other.rows) && columns.contentEquals(other.columns)
 
-    override fun hashCode(): Int = ((title.hashCode() * 31 + text.hashCode()) * 31 + rows.contentHashCode()) * 31 + columns.contentHashCode()
+    override fun hashCode(): Int = ((title.hashCode() * 31 + lines.hashCode()) * 31 + rows.contentHashCode()) * 31 + columns.contentHashCode()
 
-    override fun toString(): String = "CoverFocus(title=$title, text=$text)"
+    override fun toString(): String = "CoverFocus(title=$title, lines=$lines)"
 
     companion object {
         /** A focus with nothing to go by: Smart then crops as Top does. */
-        val NONE = CoverFocus(null, null, FloatArray(0), FloatArray(0))
+        val NONE = CoverFocus(null, emptyList(), FloatArray(0), FloatArray(0))
 
         private fun q(v: Double): String = "%.4f".format(java.util.Locale.ROOT, v)
         private fun p(v: Float): String = "%.3f".format(java.util.Locale.ROOT, v)
@@ -41,25 +45,27 @@ class CoverFocus(val title: Box?, val text: Box?, val rows: FloatArray, val colu
         fun decode(s: String?): CoverFocus? {
             val parts = s?.split(';')?.takeIf { it.size == 4 } ?: return null
             fun box(p: String): Box? {
-                if (p.isEmpty()) return null
                 val v = p.split(',').map { it.toDoubleOrNull() ?: return null }
                 return if (v.size == 4) Box(v[0], v[1], v[2], v[3]) else null
             }
             fun floats(p: String): FloatArray? =
                 if (p.isEmpty()) FloatArray(0) else p.split(',').map { it.toFloatOrNull() ?: return null }.toFloatArray()
             val title = if (parts[0].isEmpty()) null else box(parts[0]) ?: return null
-            val text = if (parts[1].isEmpty()) null else box(parts[1]) ?: return null
-            return CoverFocus(title, text, floats(parts[2]) ?: return null, floats(parts[3]) ?: return null)
+            val lines = if (parts[1].isEmpty()) emptyList() else parts[1].split('/').map { box(it) ?: return null }
+            if ((title == null) != lines.isEmpty()) return null
+            return CoverFocus(title, lines, floats(parts[2]) ?: return null, floats(parts[3]) ?: return null)
         }
     }
 }
 
 /**
  * The Smart crop anchor: text found by a text detector (where text is, not what it says) and
- * the detail of a cover decide which part of it a crop keeps. The tallest text wins: the crop
- * keeps it, and every line of about its size, whole, staying as near the plain anchor (the top;
- * centered across) as that allows. A cover without text keeps its most detailed part, when
- * clearly more detailed than the plain anchor's. Free of Android types.
+ * the detail of a cover decide which part of it a crop keeps. The tallest text wins: when the
+ * plain anchor (the top; centered across) loses every line of about its size, the crop keeps
+ * them all, else the tallest's own line, whole, staying as near the plain anchor as that
+ * allows. Only text of a title's size counts ([MIN_GLYPH]): credits alone never move a crop. A
+ * cover without such text keeps its most detailed part, when far more detailed than the plain
+ * anchor's. Free of Android types.
  */
 object SmartCrop {
     /** The detector's input: its longer side at most this, both sides multiples of [STRIDE]. */
@@ -78,8 +84,11 @@ object SmartCrop {
     /** The detector marks a shrunk core of each line; its box grows by this times area / perimeter (DB's unclip). */
     const val UNCLIP = 1.5
 
-    /** Text smaller than this share of the cover's shorter side is not a title: credits, prices, barcode digits. */
-    const val MIN_GLYPH = 0.025
+    /**
+     * Text whose line ([TextBox.glyph], grown) is thinner than this share of the cover's shorter
+     * side is not a title: creators' names, subtitles, prices.
+     */
+    const val MIN_GLYPH = 0.12
 
     /** Lines whose text is at least this share of the tallest's size belong with it. */
     const val SAME_SIZE = 0.7
@@ -91,7 +100,7 @@ object SmartCrop {
     const val BINS = 32
 
     /** A detailed part replaces the plain anchor's only with at least this much more detail. */
-    const val DETAIL_GAIN = 1.15
+    const val DETAIL_GAIN = 1.5
 
     /** Steps tried along an axis when looking for its most detailed part. */
     private const val STEPS = 64
@@ -180,11 +189,11 @@ object SmartCrop {
     fun focus(boxes: List<TextBox>, w: Int, h: Int, rows: FloatArray, columns: FloatArray): CoverFocus {
         val minGlyph = MIN_GLYPH * min(w, h)
         val big = boxes.filter { it.glyph >= minGlyph }
-        val tallest = big.maxByOrNull { it.glyph } ?: return CoverFocus(null, null, rows, columns)
+        val tallest = big.maxByOrNull { it.glyph } ?: return CoverFocus(null, emptyList(), rows, columns)
         val peers = big.filter { it.glyph >= SAME_SIZE * tallest.glyph }
         // The tallest text's line: its peers beside it, sharing most of its height.
         val line = peers.filter { overlap(it.top, it.bottom, tallest.top, tallest.bottom) >= 0.5 * min(it.height, tallest.height) }
-        return CoverFocus(union(line, w, h), union(peers, w, h), rows, columns)
+        return CoverFocus(union(line, w, h), peers.map { union(listOf(it), w, h) }, rows, columns)
     }
 
     private fun overlap(a0: Double, a1: Double, b0: Double, b1: Double): Double = max(0.0, min(a1, b1) - max(a0, b0))
@@ -229,19 +238,19 @@ object SmartCrop {
         val room = length - span
         if (room <= 0) return 0.0
         val plain = if (vertical) 0.0 else room / 2
+        fun start(b: Box) = (if (vertical) b.top else b.left) * length
+        fun end(b: Box) = (if (vertical) b.bottom else b.right) * length
+        // Text of the title's size the plain crop keeps whole is reason enough to keep it.
+        if (focus.lines.any { start(it) >= plain && end(it) <= plain + span }) return plain
         for (band in listOfNotNull(focus.text, focus.title)) {
-            val a = (if (vertical) band.top else band.left) * length
-            val b = (if (vertical) band.bottom else band.right) * length
             val pad = PAD * span
-            val lo = max(0.0, b + pad - span)
-            val hi = min(room, a - pad)
+            val lo = max(0.0, end(band) + pad - span)
+            val hi = min(room, start(band) - pad)
             if (lo <= hi) return plain.coerceIn(lo, hi)
         }
         focus.title?.let { band ->
             // Too large to keep whole even alone: its middle stays.
-            val a = (if (vertical) band.top else band.left) * length
-            val b = (if (vertical) band.bottom else band.right) * length
-            return ((a + b - span) / 2).coerceIn(0.0, room)
+            return ((start(band) + end(band) - span) / 2).coerceIn(0.0, room)
         }
         val profile = if (vertical) focus.rows else focus.columns
         if (profile.isEmpty() || profile.all { it == 0f }) return plain

@@ -56,6 +56,9 @@ import kotlin.concurrent.thread
  * of AI page tiles (`lane shared`). With `busy`, that thread meanwhile runs the detector on the
  * GPU over and over, as AI tiles keep it busy; its runs and their median time are logged at the
  * end.
+ *
+ * With `--es mode crops`, every book under `dir` instead goes through [CoverCropSurvey] with the
+ * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`.
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -69,11 +72,14 @@ class CoverFocusCheckService : Service() {
         val marked = intent?.getBooleanExtra("marked", false) ?: false
         val shared = intent?.getStringExtra("lane") == "shared"
         val busy = intent?.getBooleanExtra("busy", false) ?: false
+        val crops = intent?.getStringExtra("mode") == "crops"
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
                 if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
+                } else if (crops) {
+                    survey(File(dir), marked)
                 } else {
                     run(File(dir), count, setups, reps, marked, shared, busy)
                 }
@@ -110,6 +116,20 @@ class CoverFocusCheckService : Service() {
             load?.stop()
         }
         (detectors.values + app).forEach { it.close() }
+    }
+
+    private fun survey(dir: File, marked: Boolean) {
+        val files = TextDetector.install(this) ?: run {
+            log(JSONObject().put("failed", "no model"))
+            return
+        }
+        val app = TextDetector(LibNcnn.cpuLane, { files })
+        try {
+            val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
+            CoverCropSurvey(this, { app.detect(it) }, cropsDir, ::log).run(dir)
+        } finally {
+            app.close()
+        }
     }
 
     /** Runs the detector on the GPU on the AI tiles' thread until [stop], which logs its runs. */

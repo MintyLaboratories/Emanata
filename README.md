@@ -792,11 +792,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   test page, then named and given its step (1× models remove artifacts or
   descreen, larger ones upscale), with a warning that heavy models may be too
   slow to run live. A model taking over 30 s a page, or whose output differs
-  strongly from the page (a restyle such as sepia, or a model expecting other
-  pixel scaling), is imported only after **Import anyway** (Cancel drops it);
-  one past the reader's 120 s a page, or one the engine can't run safely, is
-  refused with the reason. Imported models are marked as such (no license is claimed), are
-  offered at their step like catalog ones, and can be deleted. Battery: battery
+  strongly from the page (a restyle such as sepia, a model expecting other
+  pixel scaling, or files that don't belong together), is imported only after
+  **Import anyway** (Cancel drops it); one past the reader's 120 s a page, or
+  one the engine can't run safely, is refused with the reason. Imported
+  models are marked as such (no license is claimed), are offered at their
+  step like catalog ones, and can be deleted. Battery: battery
   saver pauses AI processing unless **Pause AI processing** is off; pages
   processed before still show. In the reader a page shows at once, then its
   processed version takes its place at the same size when ready: the page
@@ -931,7 +932,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   it). A page past 120 s (the most the reader gives one), or a check past 2
   minutes (counted once no reader page holds the engine), is refused; a page
   past 30 s, or output over 24 codes from the picture on average (a restyle,
-  or pixels scaled otherwise), is warned of, imported only on "Import anyway".
+  pixels scaled otherwise, or mismatched files), is warned of, imported only
+  on **Import anyway**.
   While a check runs a marker names the model, read at the next start before
   the model folder is cleaned, so a check that ends the app is reported.
   A taken-in model keeps its files and what was measured beside them; its
@@ -953,10 +955,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   sooner than the queue's first back-off (15 s), before its pages show
   without it until the reader closes its models (left, or its book's chain
   changed); pages it skipped are tried again once the reader returns. The AI
-  sheet says which model did not open and why. A page's time is 30 s, or for a slower chain
-  2.5x the catalog's cool time for its input (warmth, and the background
-  priority of the AI thread), up to 120 s; each model keeps
-  back what the models after it are expected to take, and a chain expected to
+  sheet says which model did not open and why. A page's time is 30 s, or for
+  a slower chain 2.5x the catalog's cool time for its input (warmth, and the
+  background priority of the AI thread), up to 120 s; each model keeps back
+  what the models after it are expected to take, and a chain expected to
   run past its time at the rates measured on the device falls back before any
   model runs (a run cut short after four tiles or more counts as its whole
   input: its first tile once, the rest at their pace; one cut shorter teaches

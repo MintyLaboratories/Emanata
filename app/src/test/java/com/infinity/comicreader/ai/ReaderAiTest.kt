@@ -251,7 +251,9 @@ class ReaderAiTest {
         )
         try {
             val b = bookOf()
-            repeat(ReaderAi.MEMORY_TRIES - 1) { assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later) }
+            // One try, put off; one retry, then left out.
+            assertEquals(2, ReaderAi.MEMORY_TRIES)
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
             val opens = heavy.asked.size
             assertTrue(reader.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Skipped)

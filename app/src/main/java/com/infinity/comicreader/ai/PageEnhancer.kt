@@ -238,7 +238,7 @@ class ReaderAi internal constructor(
     /**
      * [m] opened, once; null when it does not open ([refusal] says why). A model refused for
      * memory is not kept refused at first, as what is free changes: its pages are put off and
-     * it is tried again with them, up to [MEMORY_TRIES] times in a row.
+     * it is tried once more with them ([MEMORY_TRIES] tries in a row in all).
      */
     private fun session(m: AiModel, files: ModelFiles, canceled: () -> Boolean): Session? {
         used = true
@@ -315,8 +315,8 @@ class ReaderAi internal constructor(
         /** The longest a page may take, however slow its chain. */
         const val MAX_TIMEOUT_MS = 120_000L
 
-        /** Times in a row a model refused for memory is tried again before its pages show without it. */
-        const val MEMORY_TRIES = 3
+        /** Times in a row a model refused for memory is tried, the first included, before its pages show without it: one retry. */
+        const val MEMORY_TRIES = 2
 
         /** Share of the way back to the rate of its page time a measured rate moves at each page skipped as too slow. */
         const val RECOVER = 0.25

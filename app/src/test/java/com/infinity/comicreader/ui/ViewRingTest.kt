@@ -5,6 +5,7 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.TabView
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -187,5 +188,68 @@ class ViewRingTest {
         val again = RingGeometry.place(angles, 356f, 700f, bounds, 56f, p.radius, 36f, 4f, wider)
         assertEquals(p.radius, again.radius, 0f)
         assertTrue(again.boxes.all { it.within(bounds) })
+    }
+
+    @Test
+    fun theNearestAngleWinsAtAnyDistanceAndAroundTheCircle() {
+        val right = RingGeometry.angles(5, left = false)
+        assertEquals(listOf(90.0, 67.5, 45.0, 22.5, 0.0), right)
+        // Straight up, near and far.
+        assertEquals(0, RingGeometry.nearest(right, 0f, -10f))
+        assertEquals(0, RingGeometry.nearest(right, 0.5f, -5000f))
+        assertEquals(2, RingGeometry.nearest(right, 100f, -100f))
+        // Straight down is nearer 0 than 90; down-left is nearer 90 across 180.
+        assertEquals(4, RingGeometry.nearest(right, 1f, 100f))
+        assertEquals(0, RingGeometry.nearest(right, -100f, -10f))
+        val left = RingGeometry.angles(5, left = true)
+        assertEquals(4, RingGeometry.nearest(left, -100f, 1f))
+        assertEquals(4, RingGeometry.nearest(left, -100f, 30f))
+        assertEquals(-1, RingGeometry.nearest(emptyList(), 1f, 1f))
+    }
+
+    private val all = { _: Int -> true }
+
+    @Test
+    fun aFingerThatStaysOnTheHubOrWithinTheSlopIsATap() {
+        val g = RingGesture(RingGeometry.angles(5, left = true), hub = 28f, slop = 8f, x0 = 0f, y0 = 0f)
+        assertFalse(g.move(20f, 0f, all))
+        assertFalse(g.move(-27f, 0f, all))
+        assertFalse(g.dragging)
+        // Pressed at the hub's edge: a few pixels out is still within the slop.
+        val edge = RingGesture(RingGeometry.angles(5, left = true), hub = 28f, slop = 8f, x0 = -26f, y0 = 0f)
+        assertFalse(edge.move(-31f, 0f, all))
+        assertFalse(edge.dragging)
+        assertEquals(-1, edge.picked)
+    }
+
+    @Test
+    fun draggingPicksByAngleAndBackOnTheHubPicksNone() {
+        val g = RingGesture(RingGeometry.angles(5, left = true), hub = 28f, slop = 8f, x0 = 0f, y0 = 0f)
+        assertTrue(g.move(0f, -100f, all))
+        assertTrue(g.dragging)
+        assertEquals(0, g.picked)
+        // The same button again changes nothing.
+        assertFalse(g.move(3f, -300f, all))
+        assertTrue(g.move(-100f, -100f, all))
+        assertEquals(2, g.picked)
+        assertTrue(g.move(-5000f, 10f, all))
+        assertEquals(4, g.picked)
+        assertTrue(g.move(5f, 5f, all))
+        assertEquals(-1, g.picked)
+        // Dragging stays dragging back on the hub.
+        assertTrue(g.dragging)
+    }
+
+    @Test
+    fun aGrayedButtonIsNeverPicked() {
+        val g = RingGesture(RingGeometry.angles(5, left = false), hub = 28f, slop = 8f, x0 = 0f, y0 = 0f)
+        val notTwo = { i: Int -> i != 2 }
+        assertFalse(g.move(100f, -100f, notTwo))
+        assertTrue(g.dragging)
+        assertEquals(-1, g.picked)
+        assertTrue(g.move(0f, -100f, notTwo))
+        assertEquals(0, g.picked)
+        assertTrue(g.move(100f, -100f, notTwo))
+        assertEquals(-1, g.picked)
     }
 }

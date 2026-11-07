@@ -5,7 +5,9 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.TabView
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -242,7 +244,47 @@ internal object RingGeometry {
         return listOf(out) + listOf(0.0, 90.0, 180.0, 270.0, norm(angle + 180)).filter { apart(it) > AXIS }.distinct().sortedBy { apart(it) }
     }
 
+    /** The index of the angle in [angles] nearest, around the circle, to the direction [dx], [dy] from the hub; ties go to the first. */
+    fun nearest(angles: List<Double>, dx: Float, dy: Float): Int {
+        val at = Math.toDegrees(atan2(-dy.toDouble(), dx.toDouble()))
+        fun apart(a: Double) = abs(((a - at) % 360 + 540) % 360 - 180)
+        return angles.indices.minByOrNull { apart(angles[it]) } ?: -1
+    }
+
     private const val EPS = 0.01f
     private const val AXIS = 1e-6
     private const val STEPS = 32
+}
+
+/**
+ * A finger still down after the long press that opened the ring, given as offsets from the
+ * hub's center (y grows downward), starting at [x0], [y0]. It stays a tap (the ring stays
+ * open on lifting) while it keeps within [slop] of that start or within the hub's [hub]
+ * radius; once past both it drags for good, and then picks the button at [angles] it points
+ * at, at any distance beyond the hub, if [enabled]; back on the hub it picks none.
+ */
+internal class RingGesture(
+    private val angles: List<Double>,
+    private val hub: Float,
+    private val slop: Float,
+    private val x0: Float,
+    private val y0: Float
+) {
+    var dragging = false
+        private set
+
+    /** The index of the picked button, or -1. */
+    var picked = -1
+        private set
+
+    /** Follows the finger to [dx], [dy]; true when [picked] changed. */
+    fun move(dx: Float, dy: Float, enabled: (Int) -> Boolean): Boolean {
+        val out = hypot(dx, dy) > hub
+        if (!dragging && (!out || hypot(dx - x0, dy - y0) <= slop)) return false
+        dragging = true
+        val p = if (!out) -1 else RingGeometry.nearest(angles, dx, dy).takeIf { it >= 0 && enabled(it) } ?: -1
+        if (p == picked) return false
+        picked = p
+        return true
+    }
 }

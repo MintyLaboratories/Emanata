@@ -66,7 +66,9 @@ class ReaderAi internal constructor(
     private val threads: Int = NativeResampler.threads,
     private val limits: PageLimits = PageLimits(),
     /** The memory a model may take as it opens ([ModelMemory]). */
-    private val memory: () -> Long = { Long.MAX_VALUE }
+    private val memory: () -> Long = { Long.MAX_VALUE },
+    /** Milliseconds on a clock that never jumps. */
+    private val clock: () -> Long = SystemClock::elapsedRealtime
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -96,6 +98,9 @@ class ReaderAi internal constructor(
 
     /** Times in a row each model was refused for memory, by model id. Worker thread only. */
     private val shortOfMemory = HashMap<String, Int>()
+
+    /** When each model was last refused for memory ([clock]), by model id. Worker thread only. */
+    private val shortOfMemoryAt = HashMap<String, Long>()
 
     /** The Book IDs of books whose key holds none ([BookIds.keyOf] made it from the path when the ID could not be read). */
     private val ids = ConcurrentHashMap<String, BookId>()
@@ -238,22 +243,27 @@ class ReaderAi internal constructor(
     /**
      * [m] opened, once; null when it does not open ([refusal] says why). A model refused for
      * memory is not kept refused at first, as what is free changes: its pages are put off and
-     * it is tried once more with them ([MEMORY_TRIES] tries in a row in all).
+     * it is tried once more with them no sooner than [AiQueue.BACKOFF_MS] later ([MEMORY_TRIES]
+     * tries in a row in all), then left out until [closeModels] closes it.
      */
     private fun session(m: AiModel, files: ModelFiles, canceled: () -> Boolean): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
+        // Put off again, untried, until the back-off since its last refusal has passed: a page turn or wake-up skips the queue's.
+        shortOfMemoryAt[m.id]?.let { if (clock() - it < AiQueue.BACKOFF_MS) return null }
         val o = Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled)
         val s = o.session
         if (s != null) {
             refusals.remove(m.id)
             shortOfMemory.remove(m.id)
+            shortOfMemoryAt.remove(m.id)
             sessions[m.id] = s
             return s
         }
         val why = o.refusal ?: ModelRefusal.NOT_LOADED
         refusals[m.id] = why
+        if (why == ModelRefusal.MEMORY) shortOfMemoryAt[m.id] = clock()
         val tries = if (why == ModelRefusal.MEMORY) shortOfMemory.merge(m.id, 1, Int::plus)!! else MEMORY_TRIES
         if (tries < MEMORY_TRIES) {
             Log.w(TAG, "${m.id}: not enough memory free now (${o.bytes shr 20} of ${o.limit shr 20} MB); tried again later")
@@ -278,6 +288,7 @@ class ReaderAi internal constructor(
             val gone = sessions.keys.filter { it !in keep }
             for (id in gone) sessions.remove(id)?.close()
             shortOfMemory.keys.retainAll(keep)
+            shortOfMemoryAt.keys.retainAll(keep)
         }
     }
 

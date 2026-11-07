@@ -8,6 +8,7 @@ import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -224,16 +225,14 @@ class ReaderAiTest {
         install(upscale)
         // 100 KB per input pixel: measuring needs more than 128 MB; a 64 tile fits a quarter of the GPU.
         var memory = 128L shl 20
-        val heavy = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
-        val reader = ReaderAi(
-            prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), heavy,
-            { stop }, { downloads += it.id }, threads = 2, memory = { memory }
-        )
+        var now = 1_000_000L
+        val reader = shortReader(heavyRuntime(), { memory }, { now })
         try {
             val b = bookOf()
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
             assertEquals(ModelRefusal.MEMORY, reader.refusal(upscale.id))
             memory = 64L shl 30
+            now += AiQueue.BACKOFF_MS
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
             assertNull(reader.refusal(upscale.id))
         } finally {
@@ -241,24 +240,82 @@ class ReaderAiTest {
         }
     }
 
+    /** A reader whose models are each refused for memory until [memory] grows, on a clock read from [now]. */
+    private fun shortReader(heavy: FakeRuntime, memory: () -> Long, now: () -> Long) = ReaderAi(
+        prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), heavy,
+        { stop }, { downloads += it.id }, threads = 2, memory = memory, clock = now
+    )
+
+    private fun heavyRuntime() = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
+
     @Test
     fun aModelShortOfMemoryTimeAfterTimeIsLeftOut() {
         install(upscale)
-        val heavy = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
-        val reader = ReaderAi(
-            prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), heavy,
-            { stop }, { downloads += it.id }, threads = 2, memory = { 128L shl 20 }
-        )
+        val heavy = heavyRuntime()
+        var now = 1_000_000L
+        val reader = shortReader(heavy, { 128L shl 20 }, { now })
         try {
             val b = bookOf()
-            // One try, put off; one retry, then left out.
+            // One try, put off; one retry after the back-off, then left out.
             assertEquals(2, ReaderAi.MEMORY_TRIES)
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            now += AiQueue.BACKOFF_MS
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
             val opens = heavy.asked.size
+            now += AiQueue.BACKOFF_MS
             assertTrue(reader.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Skipped)
             assertEquals("not opened again", opens, heavy.asked.size)
             assertEquals(ModelRefusal.MEMORY, reader.refusal(upscale.id))
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun aModelShortOfMemoryIsNotTriedAgainWithinTheBackOff() {
+        install(upscale)
+        val heavy = heavyRuntime()
+        var now = 1_000_000L
+        val reader = shortReader(heavy, { 128L shl 20 }, { now })
+        try {
+            val b = bookOf()
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            val opens = heavy.asked.size
+            // A page turn or wake-up asks again at once: put off, untried, its retry kept.
+            now += AiQueue.BACKOFF_MS - 1
+            assertTrue(reader.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Later)
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            assertEquals("not opened within the back-off", opens, heavy.asked.size)
+            now += 1
+            assertTrue("the one retry", reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
+            assertTrue(heavy.asked.size > opens)
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun closingModelsGivesAModelLeftOutForMemoryAFreshTryAndRetry() {
+        install(upscale)
+        val heavy = heavyRuntime()
+        var now = 1_000_000L
+        var memory = 128L shl 20
+        val reader = shortReader(heavy, { memory }, { now })
+        try {
+            val b = bookOf()
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            now += AiQueue.BACKOFF_MS
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
+            reader.closeModels()
+            // Runs after the close: one thread does all AI work.
+            runBlocking(reader.worker) {}
+            val opens = heavy.asked.size
+            assertTrue("tried afresh, put off", reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            assertTrue(heavy.asked.size > opens)
+            memory = 64L shl 30
+            now += AiQueue.BACKOFF_MS
+            assertTrue("its retry", reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+            assertNull(reader.refusal(upscale.id))
         } finally {
             reader.close()
         }

@@ -949,10 +949,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page would show no larger, `AiPages.chain`) and resampled to exactly the
   plain page's size and crop, so it swaps in without a jump; it replaces the
   plain page in the page cache. A model refused for memory as it opens (what
-  is free changes) puts its pages off and is tried once more with them (after
-  the queue's back-off) before its pages show without it until the reader
-  closes its models; the AI sheet says which
-  model did not open and why. A page's time is 30 s, or for a slower chain
+  is free changes) puts its pages off and is tried once more with them, no
+  sooner than the queue's first back-off (15 s), before its pages show
+  without it until the reader closes its models (left, or its book's chain
+  changed); pages it skipped are tried again once the reader returns. The AI
+  sheet says which model did not open and why. A page's time is 30 s, or for a slower chain
   2.5x the catalog's cool time for its input (warmth, and the background
   priority of the AI thread), up to 120 s; each model keeps
   back what the models after it are expected to take, and a chain expected to

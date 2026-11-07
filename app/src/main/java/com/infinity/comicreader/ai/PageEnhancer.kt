@@ -279,7 +279,8 @@ class ReaderAi internal constructor(
 
     /**
      * Closes the models open but those of [keep] (model ids), after any page in progress,
-     * freeing their native and GPU memory; they open again when next needed.
+     * freeing their native and GPU memory; they open again when next needed, those that
+     * would not open tried afresh.
      */
     fun closeModels(keep: Set<String> = emptySet()) {
         // No model was ever asked for: nothing is open, and no thread need start.

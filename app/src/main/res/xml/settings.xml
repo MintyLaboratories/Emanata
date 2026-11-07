@@ -445,6 +445,11 @@
                 android:name="advanced"
                 android:value="true" />
         </ListPreference>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_similar_shares"
+            app:summary="@string/pref_similar_shares_desc"
+            app:title="@string/pref_similar_shares" />
         <ListPreference
             app:defaultValue="2:3"
             app:entries="@array/cover_shape_entries"

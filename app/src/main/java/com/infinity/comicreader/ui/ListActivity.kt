@@ -3191,14 +3191,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 if (currentDir?.let { library.isFavoriteFolder(it.absolutePath) } == true)
                     R.string.menu_remove_favorite else R.string.menu_add_favorite
             )
-        // Shares are too slow to search for duplicates.
+        // Shares are slow to search for duplicates: only when the settings ask, never for the largest files.
         val local = currentDir !is RemoteFile
+        val dupesHere = local || (prefs.similarShares && currentDir?.let { !Remotes.isOrphan(it.absolutePath) } == true)
         menu.findItem(R.id.menu_new_folder)?.isVisible = browsing
         menu.findItem(R.id.menu_continue)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
         menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
         updateClearItems(menu)
-        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && dupesHere
         menu.findItem(R.id.menu_large)?.isVisible = browsing && local
         menu.findItem(R.id.menu_search_deep)?.apply {
             isVisible = browsing

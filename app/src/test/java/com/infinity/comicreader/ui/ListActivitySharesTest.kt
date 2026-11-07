@@ -190,6 +190,12 @@ class ListActivitySharesTest {
         val menu = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).menu
         assertTrue(menu.findItem(R.id.menu_new_folder).isVisible)
         assertFalse(menu.findItem(R.id.menu_dupes).isVisible)
+        // Once the settings include shares in the similar search, duplicates are; the largest files never are.
+        Prefs(context).similarShares = true
+        activity.invalidateOptionsMenu()
+        idle()
+        assertTrue(menu.findItem(R.id.menu_dupes).isVisible)
+        assertFalse(menu.findItem(R.id.menu_large).isVisible)
     }
 
     @Test

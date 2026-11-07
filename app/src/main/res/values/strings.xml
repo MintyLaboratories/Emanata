@@ -115,6 +115,8 @@
     <string name="retry">Retry</string>
     <string name="pref_network_cache">Network cache</string>
     <string name="pref_network_timeout">Network timeout</string>
+    <string name="pref_similar_shares">Include network shares in similar search</string>
+    <string name="pref_similar_shares_desc">Find duplicate files also works in share folders, reading books there read-only, one at a time. Skipped on a metered connection.</string>
     <string name="pref_network_cache_desc">Space for PDFs and images fetched from network shares, and pages unpacked from solid archives there; the least recently read go first</string>
     <string name="share_fetching">Fetching from the share… %1$d%%</string>
     <string name="network_waiting">Waiting for network location…</string>

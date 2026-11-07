@@ -285,6 +285,11 @@ class Prefs(context: Context) {
         get() = timeoutMsOf(str(KEY_NETWORK_TIMEOUT, ""))
         set(v) = put(KEY_NETWORK_TIMEOUT, (v / 1000).toString())
 
+    /** Find duplicate files offers share folders, and the similar-books search reads books there. */
+    var similarShares: Boolean
+        get() = bool(KEY_SIMILAR_SHARES, false)
+        set(v) = put(KEY_SIMILAR_SHARES, v)
+
     /** How [tab] (one of the `TAB_*` names) shows its entries. */
     fun view(tab: String): TabView {
         val def = TabView.defaultFor(tab)
@@ -694,6 +699,7 @@ class Prefs(context: Context) {
         const val KEY_NETWORK_CACHE = "pref_network_cache"
         private const val DEFAULT_NETWORK_CACHE_MB = "2048"
         const val KEY_NETWORK_TIMEOUT = "pref_network_timeout"
+        const val KEY_SIMILAR_SHARES = "pref_similar_shares"
         private const val MIN_NETWORK_TIMEOUT_S = 5L
         private const val MAX_NETWORK_TIMEOUT_S = 600L
 
@@ -777,7 +783,8 @@ class Prefs(context: Context) {
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
-            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI, OLD_AI_UPSCALE
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI, OLD_AI_UPSCALE,
+            KEY_SIMILAR_SHARES
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */

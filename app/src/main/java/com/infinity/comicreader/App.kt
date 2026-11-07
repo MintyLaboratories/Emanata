@@ -16,6 +16,7 @@ import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.net.Listings
+import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
@@ -45,6 +46,7 @@ class App : Application() {
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         Remotes.init(this)
+        Metered.init(this)
         Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes

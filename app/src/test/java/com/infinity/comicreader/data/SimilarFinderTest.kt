@@ -36,7 +36,7 @@ class SimilarFinderTest {
     fun groupsContentsAlikeOnceEachAndKeepsWhatItRead() {
         val reads = Collections.synchronizedList(ArrayList<String>())
         val store = SimilarStore(File(tmp.root, "store.txt"))
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> reads += f.name; read(f) })
         val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
         val found = finder.find(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz", "broken.cbz", "unknown.cbz")) { d, t -> progress += d to t }
         val groups = found.groups
@@ -62,7 +62,7 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         store.put(BookId(1), entry(30))
         var alive = true
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> alive = false; read(f) }, workers = 1)
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> alive = false; read(f) }, workers = 1)
         val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
         // The read under way when the search stopped is kept and compared; none starts after it.
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
@@ -77,7 +77,7 @@ class SimilarFinderTest {
     fun readThatMayGoBetterIsComparedButNotKept() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val reads = Collections.synchronizedList(ArrayList<String>())
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; books[f.name]?.let { SimilarFinder.Read(it, keep = f.name != "b.cbr") } })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> reads += f.name; books[f.name]?.let { SimilarFinder.Read(it, keep = f.name != "b.cbr") } })
         assertEquals(1, finder.find(files("a.cbz", "b.cbr")).groups.size)
         assertNull(store.get(BookId(2)))
         reads.clear()
@@ -90,7 +90,7 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val inside = AtomicInteger()
         val most = AtomicInteger()
-        val finder = SimilarFinder(store, { f -> BookId(f.name.hashCode().toLong()) }, { f, _ ->
+        val finder = SimilarFinder(store, { f -> BookId(f.name.hashCode().toLong()) }, { f, _, _ ->
             most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
             Thread.sleep(20)
             inside.decrementAndGet()
@@ -106,7 +106,7 @@ class SimilarFinderTest {
         store.put(BookId(1), entry(30))
         store.put(BookId(2), entry(31))
         val reads = Collections.synchronizedList(ArrayList<String>())
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> reads += f.name; read(f) })
         val contents = finder.contents(files("a.cbz", "b.cbr", "c.cbz"))
         assertEquals(listOf(BookId(3)), contents.unread)
         val found = finder.find(contents, readNew = false)
@@ -120,7 +120,7 @@ class SimilarFinderTest {
     @Test
     fun contentsWithoutDeletedFilesDropEmptiedOnes() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> read(f) })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> read(f) })
         val contents = finder.contents(files("a.cbz", "a copy.cbz", "b.cbr", "c.cbz"))
         val left = contents.without(setOf(File(tmp.root, "a.cbz").absolutePath, File(tmp.root, "b.cbr").absolutePath))
         assertEquals(listOf(BookId(1), BookId(3)), left.byId.keys.toList())
@@ -131,7 +131,7 @@ class SimilarFinderTest {
     @Test
     fun clearingTheStoreMidwayStillComparesWhatWasRead() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> if (f.name == "a.cbz") store.clear(); read(f) }, workers = 1)
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> if (f.name == "a.cbz") store.clear(); read(f) }, workers = 1)
         val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"))
         assertEquals(listOf(listOf(BookId(1), BookId(2))), found.groups.map { g -> g.map { it.id } })
         // Read after the clear, so kept anew.
@@ -143,7 +143,7 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         var alive = true
         // Stop comes while b is read, which then gives up.
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> if (f.name == "b.cbr") { alive = false; null } else read(f) }, workers = 1)
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> if (f.name == "b.cbr") { alive = false; null } else read(f) }, workers = 1)
         val found = finder.find(files("a.cbz", "b.cbr", "c.cbz"), { alive })
         assertEquals(1, found.compared)
         assertEquals(2, found.unread)
@@ -153,7 +153,7 @@ class SimilarFinderTest {
     fun progressCountsBooksHashedOfThoseToHash() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         store.put(BookId(1), entry(30))
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> read(f) }, workers = 1)
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> read(f) }, workers = 1)
         val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
         finder.find(files("a.cbz", "b.cbr", "c.cbz")) { d, t -> progress += d to t }
         // The kept book is not to hash: two to hash, both hashed.
@@ -167,7 +167,7 @@ class SimilarFinderTest {
         val most = AtomicInteger()
         val threads = Collections.synchronizedSet(HashSet<String>())
         val ids = (1..6).associate { "s$it.cbz" to BookId(100L + it) } + (1..6).associate { "d$it.cbz" to BookId(200L + it) }
-        val finder = SimilarFinder(store, { ids[it.name] }, { f, _ ->
+        val finder = SimilarFinder(store, { ids[it.name] }, { f, _, _ ->
             if (f.name.startsWith("s")) {
                 most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
                 threads += Thread.currentThread().name
@@ -188,7 +188,7 @@ class SimilarFinderTest {
         val ids = (1..4).associate { "s$it.cbz" to BookId(100L + it) } + mapOf("d1.cbz" to BookId(201))
         var wanted = true
         val canceledMidway = AtomicInteger()
-        val finder = SimilarFinder(store, { ids[it.name] }, { f, canceled ->
+        val finder = SimilarFinder(store, { ids[it.name] }, { f, canceled, _ ->
             // The connection turns metered while the second share book is read: its next page is not.
             if (f.name == "s2.cbz") {
                 wanted = false
@@ -207,10 +207,30 @@ class SimilarFinderTest {
     }
 
     @Test
+    fun shareBooksDecodeOnlyInTurnWithDeviceBooks() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val inside = AtomicInteger()
+        val most = AtomicInteger()
+        val ids = (1..4).associate { "s$it.cbz" to BookId(100L + it) } + (1..4).associate { "d$it.cbz" to BookId(200L + it) }
+        fun work() {
+            most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
+            Thread.sleep(5)
+            inside.decrementAndGet()
+        }
+        val finder = SimilarFinder(store, { ids[it.name] }, { f, _, pace ->
+            // A share book's pages wait on the network outside their turn, then decode in it.
+            if (f.name.startsWith("s")) repeat(3) { Thread.sleep(2); pace.run { work() } } else work()
+            SimilarFinder.Read(entry(30, shift = ids.getValue(f.name).value.toInt() * 1000))
+        }, workers = 3, limit = { 1 }, remote = { it.name.startsWith("s") })
+        assertEquals(8, finder.find(files(*ids.keys.toTypedArray())).compared)
+        assertEquals(1, most.get())
+    }
+
+    @Test
     fun withoutShareReadsShareBooksAreCountedApart() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val reads = Collections.synchronizedList(ArrayList<String>())
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) }, remote = { it.name == "b.cbr" })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> reads += f.name; read(f) }, remote = { it.name == "b.cbr" })
         val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
         val found = finder.find(finder.contents(files("a.cbz", "b.cbr", "c.cbz")), progress = { d, t -> progress += d to t }, readShares = false)
         assertEquals(listOf("a.cbz", "c.cbz"), reads.sorted())
@@ -225,7 +245,7 @@ class SimilarFinderTest {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val reads = Collections.synchronizedList(ArrayList<String>())
         // Both files hold the same content: the copy reads as a.cbz does.
-        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(if (f.name == "a copy.cbz") File(tmp.root, "a.cbz") else f) }, remote = { it.name == "a.cbz" })
+        val finder = SimilarFinder(store, ::idOf, { f, _, _ -> reads += f.name; read(if (f.name == "a copy.cbz") File(tmp.root, "a.cbz") else f) }, remote = { it.name == "a.cbz" })
         val found = finder.find(finder.contents(files("a.cbz", "a copy.cbz", "b.cbr")), readShares = false)
         assertEquals(listOf("a copy.cbz", "b.cbr"), reads.sorted())
         assertEquals(0, found.unreadShares)

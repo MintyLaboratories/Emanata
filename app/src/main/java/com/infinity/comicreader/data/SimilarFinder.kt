@@ -15,17 +15,30 @@ import java.util.concurrent.atomic.AtomicInteger
  * of them at once (read anew before each book, as the device warms up or saves power),
  * and kept unless the read says not to ([Read.keep]). Books only on a share ([remote])
  * are read beside them by [shareWorkers] threads of their own, as share reads wait on the
- * network more than they work. Free of Android types.
+ * network more than they work: only their device work, run through the [Pace] given to
+ * [read], counts in [limit]. Free of Android types.
  */
 class SimilarFinder(
     private val store: SimilarStore,
     private val idOf: (File) -> BookId?,
-    private val read: (File, canceled: () -> Boolean) -> Read?,
+    private val read: (File, canceled: () -> Boolean, pace: Pace) -> Read?,
     private val workers: Int = WORKERS,
     private val limit: () -> Int = { workers },
     private val remote: (File) -> Boolean = { false },
     private val shareWorkers: Int = SHARE_WORKERS
 ) {
+    /** Runs a read's device work (a page's decode and hash) as heat and battery allow. */
+    interface Pace {
+        fun <T> run(work: () -> T): T
+
+        companion object {
+            /** Runs work at once: the read already holds its turn. */
+            val FREE = object : Pace {
+                override fun <T> run(work: () -> T): T = work()
+            }
+        }
+    }
+
     /** What was read of a book: its [entry], and whether to [keep] it, which a read that may go better next time is not. */
     data class Read(val entry: SimilarStore.Entry, val keep: Boolean = true)
 
@@ -100,6 +113,9 @@ class SimilarFinder(
         progress(0, toRead)
         if (toRead > 0 && alive()) {
             val gate = LimitGate(limit)
+            val gated = object : Pace {
+                override fun <T> run(work: () -> T): T = gate.pass(work)
+            }
             fun task(id: BookId, onShare: Boolean) = Callable {
                 val going = if (onShare) { -> alive() && sharesAlive() } else alive
                 val readOne = readOne@{
@@ -108,7 +124,7 @@ class SimilarFinder(
                     if (onShare) triedShares.incrementAndGet()
                     val files = byId.getValue(id)
                     val file = files.firstOrNull { !remote(it) } ?: files.first()
-                    val got = runCatching { read(file) { !going() } }.getOrNull()
+                    val got = runCatching { read(file, { !going() }, if (onShare) gated else Pace.FREE) }.getOrNull()
                     if (got == null && !going()) {
                         tried.decrementAndGet()
                         if (onShare) triedShares.decrementAndGet()
@@ -117,7 +133,7 @@ class SimilarFinder(
                     progress(done.incrementAndGet(), toRead)
                     got?.let { id to it.entry }
                 }
-                // Share reads wait on the network: the device's heat and battery hold back device reads only.
+                // Share reads wait on the network: only their pages' device work waits for a turn.
                 if (onShare) readOne() else gate.pass(readOne)
             }
             val pools = ArrayList<ExecutorService>()

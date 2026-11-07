@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.graphics.Bitmap
 import com.infinity.comicreader.data.SimilarFinder
 import com.infinity.comicreader.data.SimilarStore
+import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.PageHash
 import com.infinity.comicreader.util.SimilarBooks
@@ -30,13 +31,20 @@ object BookPrints {
      * What the search compares of book [file], names read as [charset] says; null when it
      * cannot be opened, has no pages, or [canceled] turned true before every page was read.
      * A book on a share is read in place only, never fetched or streamed whole
-     * ([PageSources.open]); [canceled] is asked between its pages. Kept
-     * ([SimilarFinder.Read.keep]) only when each page hashed or will never decode. Blocking.
+     * ([PageSources.open]); [canceled] is asked between its pages. Each page's decode runs
+     * through [pace]. Kept ([SimilarFinder.Read.keep]) only when each page hashed or will
+     * never decode. Blocking.
      */
-    fun read(file: File, charset: String, cacheDir: File, canceled: () -> Boolean = { false }): SimilarFinder.Read? =
-        Timing.span("book print") { readNow(file, charset, cacheDir, canceled) }
+    fun read(
+        file: File,
+        charset: String,
+        cacheDir: File,
+        canceled: () -> Boolean = { false },
+        pace: SimilarFinder.Pace = SimilarFinder.Pace.FREE
+    ): SimilarFinder.Read? =
+        Timing.span("book print") { readNow(file, charset, cacheDir, canceled, pace) }
 
-    private fun readNow(file: File, charset: String, cacheDir: File, canceled: () -> Boolean): SimilarFinder.Read? {
+    private fun readNow(file: File, charset: String, cacheDir: File, canceled: () -> Boolean, pace: SimilarFinder.Pace): SimilarFinder.Read? {
         val source = runCatching { PageSources.open(file, charset, cacheDir, canceled, copyNested = false, inPlaceOnly = true) }.getOrNull() ?: return null
         try {
             val count = source.pageCount
@@ -46,7 +54,7 @@ object BookPrints {
             for (index in SimilarBooks.pagesToRead(count)) {
                 if (canceled()) return null
                 hashes[index] = try {
-                    hashOf(source, index)
+                    hashOf(source, index, file is RemoteFile, pace)
                 } catch (t: Throwable) {
                     if (!isPermanent(t)) keep = false
                     null
@@ -68,11 +76,17 @@ object BookPrints {
 
     /**
      * The hash of page [index] of [source], from the cheapest small picture of it there is,
-     * decoded as work nobody waits on ([Urgency.later]). Never recycled: a quick preview may
-     * still be on its way to the preview store.
+     * decoded as work nobody waits on ([Urgency.later]), through [pace] unless kept. On a share
+     * ([remote]) the page's bytes are read before its turn, so a turn is never held waiting on
+     * the network; the reads that follow find them kept ([com.infinity.comicreader.net.RemoteChannel]).
+     * AVIF pages are left to their quick preview, which reads only the start. Never recycled:
+     * a quick preview may still be on its way to the preview store.
      */
-    private fun hashOf(source: PageSource, index: Int): PageHash = Urgency.later {
-        hashOf(source.keptPreview(index) ?: source.loadPreview(index) ?: source.loadPage(index, HASH_TARGET))
+    private fun hashOf(source: PageSource, index: Int, remote: Boolean, pace: SimilarFinder.Pace): PageHash = Urgency.later {
+        val kept = source.keptPreview(index)
+        if (kept != null) return@later hashOf(kept)
+        if (remote && !Formats.ext(source.pageName(index).orEmpty()).equals("avif", ignoreCase = true)) source.pageBytes(index)
+        pace.run { hashOf(source.loadPreview(index) ?: source.loadPage(index, HASH_TARGET)) }
     }
 
     /** True when [t] says page bytes will never decode; out of memory, read errors and interruptions may pass. */

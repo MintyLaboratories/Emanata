@@ -371,7 +371,7 @@ class CleanupActivity : AppCompatActivity() {
             if (f is RemoteFile && (stopped || !unmetered())) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
         }
         val finder = SimilarFinder(
-            SimilarStore.of(cacheDir), idOf, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) },
+            SimilarStore.of(cacheDir), idOf, { f, canceled, pace -> BookPrints.read(f, charset, cacheDir, canceled, pace) },
             workers, CompactWorkers.limit(this, workers), remote = { it is RemoteFile }
         )
         val result = withContext(AppDispatchers.io) {

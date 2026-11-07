@@ -104,7 +104,7 @@ class SimilarCheckService : Service() {
         storeFile.delete()
         val store = SimilarStore(storeFile)
         val finder = SimilarFinder(
-            store, BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) }, workers = w, remote = { it is RemoteFile }
+            store, BookIds::find, { f, canceled, pace -> BookPrints.read(f, charset, cacheDir, canceled, pace) }, workers = w, remote = { it is RemoteFile }
         )
         val before = thermal()
         val t = System.nanoTime()

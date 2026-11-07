@@ -263,7 +263,10 @@
     <string name="similar_stop">Stop</string>
     <string name="similar_compare">Compare</string>
     <string name="similar_unread">Similar books: %1$d of %2$d books not compared yet</string>
-    <string name="similar_metered">Similar books: %1$d books on shares not compared. Skipped on a metered connection</string>
+    <plurals name="similar_metered">
+        <item quantity="one">Similar books: %1$d book on a share not compared. Skipped on a metered connection</item>
+        <item quantity="other">Similar books: %1$d books on shares not compared. Skipped on a metered connection</item>
+    </plurals>
     <plurals name="similar_pages">
         <item quantity="one">%1$d page · %2$s</item>
         <item quantity="other">%1$d pages · %2$s</item>

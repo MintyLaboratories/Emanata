@@ -141,7 +141,7 @@ class CleanupSharesTest {
         val bar = activity.findViewById<View>(R.id.similar_bar)
         assertEquals(View.VISIBLE, bar.visibility)
         // The two copies sharing a size are not read for the exact-copy check either.
-        val notes = listOf(context.resources.getQuantityString(R.plurals.dupes_metered, 2, 2), context.getString(R.string.similar_metered, 4))
+        val notes = listOf(context.resources.getQuantityString(R.plurals.dupes_metered, 2, 2), context.resources.getQuantityString(R.plurals.similar_metered, 4, 4))
         assertEquals(notes.joinToString("\n"), activity.findViewById<TextView>(R.id.similar_text).text.toString())
         assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_compare).visibility)
         assertEquals(0, list.adapter!!.itemCount)

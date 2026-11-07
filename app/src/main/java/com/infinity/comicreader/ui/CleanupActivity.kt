@@ -409,7 +409,7 @@ class CleanupActivity : AppCompatActivity() {
         } else {
             val notes = listOfNotNull(
                 getString(R.string.similar_unread, result.unread + unknown.get(), result.total + unknown.get()).takeIf { waiting > 0 },
-                getString(R.string.similar_metered, skipped).takeIf { skipped > 0 }
+                resources.getQuantityString(R.plurals.similar_metered, skipped, skipped).takeIf { skipped > 0 }
             )
             val compare = { ->
                 stopped = false

@@ -33,6 +33,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
@@ -89,9 +90,12 @@ class ModelImportWarningTest {
         idle()
     }
 
+    /** The model manager, open. */
+    private var manager: ActivityController<ModelsActivity>? = null
+
     /** The model manager open, with a restyling model checked: its warning shown. */
     private fun warned(): Pair<ImportState.Fit, AlertDialog> {
-        Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
+        manager = Robolectric.buildActivity(ModelsActivity::class.java).setup()
         ModelImports.start(context, pair("Sepia tone"))
         until { (ModelImports.state.value as? ImportState.Fit)?.warned == true }
         val fit = ModelImports.state.value as ImportState.Fit
@@ -138,12 +142,40 @@ class ModelImportWarningTest {
     @Test
     fun backCancelsToo() {
         val (fit, dialog) = warned()
-        dialog.cancel()
+        dialog.onBackPressed()
         idle()
         assertEquals(ImportState.Idle, ModelImports.state.value)
         assertFalse(dialog.isShowing)
         until { !store.staging(fit.id).exists() }
         assertFalse(store.staging(fit.id).exists())
+    }
+
+    @Test
+    fun rotatingKeepsTheWarningAndTheModel() {
+        val (fit, dialog) = warned()
+        manager!!.recreate()
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(fit, ModelImports.state.value)
+        assertTrue(store.staging(fit.id).isDirectory)
+        val again = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(again !== dialog && again.isShowing)
+        assertEquals("Import Sepia tone anyway?", again.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString())
+    }
+
+    @Test
+    fun rotatingOnceAcceptedKeepsTheNamingAndTheModel() {
+        val (fit, dialog) = warned()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
+        val named = ShadowDialog.getLatestDialog() as AlertDialog
+        manager!!.recreate()
+        idle()
+        assertEquals(fit.copy(accepted = true), ModelImports.state.value)
+        assertTrue(store.staging(fit.id).isDirectory)
+        val again = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(again !== named && again.isShowing)
+        assertNotNull("the naming dialog", again.findViewById(R.id.import_name))
     }
 
     @Test

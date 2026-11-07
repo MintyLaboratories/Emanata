@@ -18,9 +18,13 @@ import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.SortKey
+import com.infinity.comicreader.data.SortLevel
+import com.infinity.comicreader.data.TabSort
 import com.infinity.comicreader.net.AesGcmBox
 import com.infinity.comicreader.net.DavUrl
 import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.SecretBox
 import com.infinity.comicreader.net.ShareStore
@@ -78,6 +82,8 @@ class ListActivitySharesTest {
 
     @After
     fun tearDown() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
@@ -154,6 +160,36 @@ class ListActivitySharesTest {
         assertEquals(listOf("Loose.cbz", "Series"), rows(activity.findViewById(R.id.recycler)).sorted())
         idle()
         assertEquals(0L, fake.bytesRead)
+    }
+
+    @Test
+    fun onAMeteredConnectionShareBooksAreNotReadForPageCountsAndANoteSaysSo() {
+        ShareStore(context).put(FakeRemoteFs.share().copy(thumbnails = false))
+        Remotes.init(context)
+        Prefs(context).setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true) }
+        Metered.forget()
+        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertEquals(listOf("Loose.cbz", "Series"), rows(activity.findViewById(R.id.recycler)).sorted())
+        idle()
+        assertEquals(0L, fake.bytesRead)
+        val note = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+        assertEquals(activity.getString(R.string.facts_metered), note?.text?.toString())
+
+        // Unmetered, the next listing reads them.
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
+        openSheet(activity)
+        row("Device").performClick()
+        idle()
+        openSheet(activity)
+        row("Share A").performClick()
+        idle()
+        assertTrue(fake.bytesRead > 0)
     }
 
     @Test

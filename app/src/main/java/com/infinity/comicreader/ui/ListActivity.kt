@@ -1677,7 +1677,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
      * goes on undisturbed. It waits while the library is out of sight, as while a book
      * is read, so it never competes with the reader for the share or the battery, and
      * while battery saver pauses background scans. Books and folders on shares are skipped
-     * on a metered connection ([Metered]), to be read on a later listing.
+     * on a metered connection ([Metered]), to be read on a later listing; a note says so.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
@@ -1699,10 +1699,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             val books = candidates.filter { unknown(it) }
             val charset = prefs.charset
             var shownAt = SystemClock.uptimeMillis()
+            var metered = false
             for ((i, e) in books.withIndex()) {
                 withStarted {}
                 awaitScans()
-                if (Remotes.isRemote(e.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) continue
+                if (Remotes.isRemote(e.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) {
+                    metered = true
+                    continue
+                }
                 val read = withContext(AppDispatchers.io) {
                     runCatching {
                         // The ID first: on a share, its reads of the book's ends start the facts' reads too.
@@ -1716,14 +1720,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 shownAt = now
                 applyFilterAndSort(resort = false)
             }
-            if (folders.isEmpty()) return@launch
             for (f in folders) {
                 withStarted {}
                 awaitScans()
-                if (Remotes.isRemote(f.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) continue
+                if (Remotes.isRemote(f.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) {
+                    metered = true
+                    continue
+                }
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
-            applyFilterAndSort()
+            if (folders.isNotEmpty()) applyFilterAndSort()
+            if (metered) Snackbar.make(recycler, R.string.facts_metered, Snackbar.LENGTH_LONG).show()
         }
     }
 

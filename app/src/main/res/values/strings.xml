@@ -101,6 +101,7 @@
     <string name="network_wait">Wait</string>
     <string name="network_open_device">Open device</string>
     <string name="share_answering">%1$s is answering now</string>
+    <string name="facts_metered">Share books not read for this sort: skipped on a metered connection</string>
     <string name="share_open">Open</string>
     <string name="share_remove_title">Remove network share?</string>
     <string name="share_remove_msg">%1$s leaves the locations.</string>

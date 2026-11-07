@@ -1720,6 +1720,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 shownAt = now
                 applyFilterAndSort(resort = false)
             }
+            // Facts read before the books skipped last show too.
+            if (metered) applyFilterAndSort(resort = false)
             for (f in folders) {
                 withStarted {}
                 awaitScans()

@@ -112,6 +112,7 @@ import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
+import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.RemoteStat
@@ -1675,7 +1676,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
      * reorder the list once all are in. Work already running for the same listing
      * goes on undisturbed. It waits while the library is out of sight, as while a book
      * is read, so it never competes with the reader for the share or the battery, and
-     * while battery saver pauses background scans.
+     * while battery saver pauses background scans. Books and folders on shares are skipped
+     * on a metered connection ([Metered]), to be read on a later listing.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
@@ -1700,6 +1702,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             for ((i, e) in books.withIndex()) {
                 withStarted {}
                 awaitScans()
+                if (Remotes.isRemote(e.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) continue
                 val read = withContext(AppDispatchers.io) {
                     runCatching {
                         // The ID first: on a share, its reads of the book's ends start the facts' reads too.
@@ -1717,6 +1720,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             for (f in folders) {
                 withStarted {}
                 awaitScans()
+                if (Remotes.isRemote(f.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) continue
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
             applyFilterAndSort()

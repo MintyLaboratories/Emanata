@@ -48,7 +48,7 @@ class ModelCheckTest {
 
     @Test
     fun aSlowPageIsWarnedOfAPagePastTheReadersLimitRefused() {
-        val slow = ModelCheck.SLOW_PAGE_MS
+        val slow = ModelCheck.WARN_PAGE_MS
         val most = ReaderAi.MAX_TIMEOUT_MS
         assertEquals(30_000L, slow)
         assertEquals(120_000L, most)

@@ -187,7 +187,7 @@ object ModelText {
     /** What the user weighs before importing fit model [s] anyway: a paragraph per warning, its time rounded up. */
     fun warnings(context: Context, s: ImportState.Fit): String = s.warnings.sorted().joinToString("\n\n") { w ->
         when (w) {
-            ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, (s.pageMs + 999) / 1000, ModelCheck.SLOW_PAGE_MS / 1000)
+            ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, (s.pageMs + 999) / 1000, ModelCheck.WARN_PAGE_MS / 1000)
             ImportWarning.UNLIKE -> context.getString(R.string.ai_import_warn_unlike)
         }
     }

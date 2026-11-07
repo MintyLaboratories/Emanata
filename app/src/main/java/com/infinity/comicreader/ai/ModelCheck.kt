@@ -24,7 +24,7 @@ import kotlin.math.abs
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
  *   their pace; stopping sooner once the page would take longer than
  *   [ReaderAi.MAX_TIMEOUT_MS], the most the reader gives a page: such a model is refused,
- *   as none of its pages could show. Past [SLOW_PAGE_MS] it is fit with a warning
+ *   as none of its pages could show. Past [WARN_PAGE_MS] it is fit with a warning
  *   ([ImportWarning.SLOW]). One measurement at whatever heat the device has then (its
  *   thermal headroom is kept beside it): a rough figure.
  * All within [TIME_LIMIT_MS], else the model is refused as too slow.
@@ -39,7 +39,7 @@ internal object ModelCheck {
     const val UNLIKE_MEAN = 24.0
 
     /** The page time past which a model is warned of as slow. */
-    const val SLOW_PAGE_MS = 30_000L
+    const val WARN_PAGE_MS = 30_000L
 
     /** Tiles timed at least. */
     const val TIMED_TILES = TileEngine.PACE_AFTER + 2
@@ -113,12 +113,12 @@ internal object ModelCheck {
     /**
      * A model of [scale] whose page takes [pageMs] here, timed at [headroom], its output [unlike]
      * its input by that many codes: refused past [ReaderAi.MAX_TIMEOUT_MS], else fit, warned of
-     * past [SLOW_PAGE_MS] and [UNLIKE_MEAN].
+     * past [WARN_PAGE_MS] and [UNLIKE_MEAN].
      */
     internal fun judge(scale: Int, pageMs: Long, unlike: Double, headroom: Float = Float.NaN): Result {
         if (pageMs > ReaderAi.MAX_TIMEOUT_MS) return Result.Refused(ModelRefusal.TOO_SLOW, pageMs = pageMs)
         val warnings = buildSet {
-            if (pageMs > SLOW_PAGE_MS) add(ImportWarning.SLOW)
+            if (pageMs > WARN_PAGE_MS) add(ImportWarning.SLOW)
             if (unlike > UNLIKE_MEAN) add(ImportWarning.UNLIKE)
         }
         return Result.Fit(scale, pageMs, headroom, warnings)

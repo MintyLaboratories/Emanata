@@ -43,7 +43,7 @@ enum class ImportFailure {
 
 /** What a fit model's check found that the user weighs before taking it in ([ModelCheck]). */
 enum class ImportWarning {
-    /** A page takes longer than [ModelCheck.SLOW_PAGE_MS] here. */
+    /** A page takes longer than [ModelCheck.WARN_PAGE_MS] here. */
     SLOW,
 
     /** Its output differs strongly from its input: a deliberate restyle, or a model expecting pixels scaled otherwise. */

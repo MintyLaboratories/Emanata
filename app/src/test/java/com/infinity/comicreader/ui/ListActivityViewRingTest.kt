@@ -35,6 +35,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowChoreographer
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
@@ -638,5 +639,35 @@ class ListActivityViewRingTest {
         assertTrue(list.viewRing.isOpen)
         assertFalse(list.viewRing.following)
         assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+    }
+
+    /** Where [v] stands once it has flown out of the hub. */
+    private fun home(v: View) = center(v).let { (x, y) -> (x - v.translationX) to (y - v.translationY) }
+
+    @Test
+    fun aButtonLitWhileFlyingOutLandsAsItGrows() {
+        val list = launch()
+        // Frames only as the clock moves, so animations show their middle.
+        ShadowChoreographer.setPaused(true)
+        val looper = shadowOf(Looper.getMainLooper())
+        val (x, y) = center(list.fab())
+        val finger = Finger(list, x, y)
+        var waited = 0L
+        while (!list.viewRing.isOpen && waited < 2 * longPress) {
+            looper.idleFor(Duration.ofMillis(10))
+            waited += 10
+        }
+        assertTrue(list.viewRing.isOpen)
+        val larger = list.viewRing.button(RingOption.LARGER)!!
+        assertTrue(hypot(larger.translationX, larger.translationY) > 0f)
+        val (tx, ty) = home(larger)
+        finger.moveTo(tx, ty, steps = 2)
+        assertTrue(larger.isPressed)
+        // Landed and grown with the growth, ahead of the fly-out's own end; one frame per idle.
+        repeat(9) { looper.idleFor(Duration.ofMillis(16)) }
+        assertEquals(0f, larger.translationX, 0.5f)
+        assertEquals(0f, larger.translationY, 0.5f)
+        assertEquals(1.15f, larger.scaleX, 0.01f)
+        finger.lift()
     }
 }

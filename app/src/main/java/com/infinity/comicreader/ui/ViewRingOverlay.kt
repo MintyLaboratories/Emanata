@@ -281,11 +281,14 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         root?.postDelayed(linger, ViewConfiguration.getLongPressTimeout().toLong())
     }
 
+    /** Grows [button] when lit, back when not; one still flying out of the hub lands on the way. */
     private fun grow(button: View, on: Boolean) {
         button.isPressed = on
         val scale = if (on) LIT_SCALE else 1f
         if (ValueAnimator.areAnimatorsEnabled()) {
-            button.animate().scaleX(scale).scaleY(scale).setStartDelay(0).setDuration(LIT_MS).start()
+            // Taking over the scale alone would leave the fly-out to move a grown button.
+            button.animate().translationX(0f).translationY(0f).scaleX(scale).scaleY(scale)
+                .setStartDelay(0).setDuration(LIT_MS).start()
         } else {
             button.scaleX = scale
             button.scaleY = scale

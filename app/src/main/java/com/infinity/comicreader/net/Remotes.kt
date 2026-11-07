@@ -397,7 +397,7 @@ object Remotes {
      * Opens the file at [path] as a stream read to its end, as a copy reads it: in growing
      * runs from [STREAM_START_BYTES], the next fetched while one is read ([RemoteChannel]).
      */
-    fun wholeStream(path: String): InputStream = Channels.newInputStream(RemoteChannel(open(path), minBlock = STREAM_START_BYTES))
+    fun wholeStream(path: String): InputStream = Channels.newInputStream(RemoteChannel(open(path), minBlock = STREAM_START_BYTES, toEnd = true))
 
     /** The whole file at [path], asked for at once ([RemoteInput.readFully]); for small files such as loose images. */
     fun readBytes(path: String): ByteArray = open(path).use { input ->

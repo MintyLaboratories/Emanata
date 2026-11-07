@@ -222,13 +222,17 @@ class RemoteChannelTest {
     }
 
     @Test
-    fun onAMeteredConnectionOnlyExpectedSpansComeAhead() {
+    fun onAMeteredConnectionOnlyExpectedSpansAndWholeFileReadsComeAhead() {
         Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
         Metered.forget()
         val big = ByteArray(100_000) { (it * 13).toByte() }
         val streamed = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
         assertArrayEquals(big, drain(streamed, 500))
         assertEquals(0, streamed.aheads)
+        // A whole-file fetch reads every byte anyway: the next runs still come while one is written.
+        val whole = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now, toEnd = true)
+        assertArrayEquals(big, drain(whole, 500))
+        assertTrue(whole.aheads > 0)
         val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 16_384, background = now)
         channel.expect(10_000, 60_000)
         channel.position(10_000)

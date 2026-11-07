@@ -97,7 +97,7 @@ object RemoteCache {
         hold(part.path)
         try {
             // Read front to back in growing runs, the next fetched while one is written.
-            RemoteChannel(Remotes.open(file.path), minBlock = CHUNK_BYTES).use { input ->
+            RemoteChannel(Remotes.open(file.path), minBlock = CHUNK_BYTES, toEnd = true).use { input ->
                 // A size the listing left out comes with the file.
                 val size = if (stat.size >= 0) stat.size else input.size()
                 if (size > limitBytes) throw TooLargeException(size, limitBytes)

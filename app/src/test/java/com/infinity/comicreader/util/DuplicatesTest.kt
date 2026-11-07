@@ -68,4 +68,35 @@ class DuplicatesTest {
         val groups = Duplicates.find(sequenceOf(file("x.cbz", content), file("y.cbz", content))) { false }
         assertTrue(groups.isEmpty())
     }
+
+    @Test
+    fun filesAreReadThroughTheBytesGivenInSmallPieces() {
+        val content = Random(5).nextBytes(300_000)
+        val a = file("far/a.cbz", content)
+        val b = file("far/b.cbz", content)
+        val read = java.util.concurrent.atomic.AtomicLong()
+        // As a share answers: at most 7000 bytes a read.
+        val open = { f: File ->
+            val local = Duplicates.local(f)
+            object : Duplicates.Bytes by local {
+                override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
+                    local.read(position, buffer, offset, minOf(count, 7000)).also { if (it > 0) read.addAndGet(it.toLong()) }
+            }
+        }
+        val groups = Duplicates.find(sequenceOf(a, b), open = open)
+        assertEquals(listOf(a, b), groups.single().files)
+        assertEquals(Duplicates.fullHash(a), Duplicates.fullHash(b, open))
+        assertTrue(read.get() >= 2 * 300_000L)
+    }
+
+    @Test
+    fun aFullHashStopsWhenAsked() {
+        val a = file("stop/a.cbz", Random(6).nextBytes(3_000_000))
+        try {
+            Duplicates.fullHash(a, alive = { false })
+            org.junit.Assert.fail("hashed while stopped")
+        } catch (e: java.io.IOException) {
+            // Expected.
+        }
+    }
 }

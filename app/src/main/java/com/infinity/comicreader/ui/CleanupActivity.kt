@@ -261,7 +261,7 @@ class CleanupActivity : AppCompatActivity() {
 
     /** The bit-identical groups among [files] under their header; empty when there are none. */
     private fun findDuplicates(files: List<File>, alive: () -> Boolean): List<Row> {
-        val groups = Duplicates.find(files.asSequence(), alive)
+        val groups = Duplicates.find(files.asSequence(), alive = alive)
         if (groups.isEmpty()) return emptyList()
         val snap = LibrarySnapshot.load(library, prefs)
         val roots = StorageRoots.list(this)

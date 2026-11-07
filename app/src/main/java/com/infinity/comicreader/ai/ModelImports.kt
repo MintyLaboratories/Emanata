@@ -135,8 +135,11 @@ object ModelImports {
      */
     fun start(context: Context, uris: List<Uri>) {
         val app = context.applicationContext
+        val store = ModelStore.of(app)
         val half = _state.value as? ImportState.Half
         val all = if (half != null) listOf(half.uri) + uris else uris
+        // A fit model not saved, replaced: its files go.
+        (_state.value as? ImportState.Fit)?.let { fit -> scope.launch { store.staging(fit.id).deleteRecursively() } }
         _state.value = ImportState.Working("", checking = false)
         // Started once it is the job: a job canceled since, still ending, no longer reports.
         val launched = scope.launch(start = CoroutineStart.LAZY) {
@@ -147,7 +150,12 @@ object ModelImports {
             } catch (e: CancellationException) {
                 ImportState.Idle
             }
-            if (job === me && _state.value is ImportState.Working) _state.value = end
+            if (job === me && _state.value is ImportState.Working) {
+                _state.value = end
+            } else if (end is ImportState.Fit) {
+                // Canceled after the check's last look: nobody will save or drop it.
+                store.staging(end.id).deleteRecursively()
+            }
         }
         job = launched
         launched.start()

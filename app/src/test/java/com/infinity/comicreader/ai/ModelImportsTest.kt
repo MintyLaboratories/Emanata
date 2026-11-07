@@ -112,6 +112,33 @@ class ModelImportsTest {
     }
 
     @Test
+    fun aModelCanceledAfterItsCheckKeepsNothing() {
+        // Canceled as the checked model closes: past the check's last look at it.
+        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, onClose = { ModelImports.cancel() }) })
+        ModelImports.start(context, pair())
+        val staged = store.staging("x").parentFile!!
+        val until = System.currentTimeMillis() + 20_000
+        while (!staged.exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        while (staged.list().orEmpty().isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertEquals(emptyList<String>(), staged.list().orEmpty().toList())
+        assertEquals(ImportState.Idle, ModelImports.state.value)
+    }
+
+    @Test
+    fun aFitModelReplacedByAnotherImportKeepsNothing() {
+        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
+        ModelImports.start(context, pair("Sepia"))
+        val until = System.currentTimeMillis() + 20_000
+        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        val fit = ModelImports.state.value as ImportState.Fit
+        val (_, param) = pair("Second")
+        ModelImports.start(context, listOf(param))
+        while (store.staging(fit.id).exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertFalse(store.staging(fit.id).exists())
+        ModelImports.cancel()
+    }
+
+    @Test
     fun oneFileWaitsForTheOther() {
         val (bin, param) = pair()
         assertEquals(ImportState.Half(param, isParam = true), ModelImports.importNow(context, listOf(param)))

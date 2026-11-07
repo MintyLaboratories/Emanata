@@ -38,7 +38,9 @@ internal class FakeModel(
     /** Working bytes a run holds per input pixel; 0: not counted. */
     private val bytesPerPixel: Long = 0,
     /** Bytes its weights took as it opened; 0: not counted. */
-    private val weights: Long = 0
+    private val weights: Long = 0,
+    /** Called as it closes. */
+    private val onClose: () -> Unit = {}
 ) : TileModel {
     val trim: Int get() = if (padded) 0 else reach * scale
     val runs = AtomicInteger()
@@ -109,6 +111,7 @@ internal class FakeModel(
 
     override fun close() {
         closed = true
+        onClose()
     }
 
     companion object {

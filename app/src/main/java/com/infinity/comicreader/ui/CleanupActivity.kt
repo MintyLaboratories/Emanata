@@ -277,7 +277,7 @@ class CleanupActivity : AppCompatActivity() {
     private fun isLink(f: File): Boolean = if (f is RemoteFile) f.stat()?.isLink == true else Files.isSymbolicLink(f.toPath())
 
     /**
-     * [f]'s bytes for [Duplicates]: a share's file read in place.
+     * [f]'s bytes for [Duplicates]: a share's file read in place, each piece asked for at once.
      * Fails for a share file that comes only whole ([Remotes.seekable]), and for one while the
      * connection is metered ([Metered], asked before each piece), which [meteredFiles] counts.
      */
@@ -296,7 +296,7 @@ class CleanupActivity : AppCompatActivity() {
             override val length: Long get() = input.length
             override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
                 unmetered()
-                return input.read(position, buffer, offset, count)
+                return input.readFully(position, buffer, offset, count)
             }
             override fun close() = input.close()
         }

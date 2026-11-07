@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -18,6 +19,7 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
@@ -159,6 +161,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** The quick view options a long press on the grid/list button fans out. */
     internal val viewRing = ViewRingOverlay(this)
+
+    /** Where the finger on [fab] is in the window, while one is down. */
+    private var fabFinger: Pair<Float, Float>? = null
+
+    /** Whether [fab]'s touches go to the view ring till the finger lifts. */
+    private var ringFollows = false
 
     /** The items selected: selecting swaps the toolbar for [selectionBar] and shows [selectionActions]. */
     internal val selection = Selection()
@@ -454,6 +462,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
         fab.setOnClickListener { onFabClick() }
         fab.setOnLongClickListener { openViewRing() }
+        fab.setOnTouchListener { v, e -> onFabTouch(v, e) }
         viewRing.onTap = ::onRingTap
         viewRing.onLongTap = ::onRingLongTap
         setUpSelection()
@@ -2000,6 +2009,30 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private fun openViewRing(): Boolean {
         if (fabShows != SelectionActions.Fab.GRID_LIST || viewRing.isOpen) return false
         viewRing.open(fab, ringItems())
+        // A finger still down may drag to a button; the button itself lets go of it.
+        fabFinger?.let { (x, y) ->
+            ringFollows = true
+            viewRing.follow(x, y)
+            val now = SystemClock.uptimeMillis()
+            MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { fab.onTouchEvent(it) }.recycle()
+        }
+        return true
+    }
+
+    /** Notes where the finger on [v] is; once the ring follows it, its moves go to the ring until it lifts. */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun onFabTouch(v: View, e: MotionEvent): Boolean {
+        val at = IntArray(2).also { v.getLocationInWindow(it) }
+        val x = at[0] + e.getX(0)
+        val y = at[1] + e.getY(0)
+        val end = e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) ringFollows = false
+        fabFinger = if (end) null else x to y
+        if (!ringFollows) return false
+        if (end) ringFollows = false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> viewRing.drag(e.actionMasked, x, y)
+        }
         return true
     }
 

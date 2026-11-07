@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.os.Looper
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
@@ -378,5 +380,218 @@ class ListActivityViewRingTest {
         list.fab().onInitializeAccessibilityNodeInfo(info)
         val long = info.actionList.firstOrNull { it.id == AccessibilityNodeInfo.ACTION_LONG_CLICK }
         assertEquals(context.getString(R.string.view_ring_open), long?.label?.toString())
+    }
+
+    // ------------------------------------------------------------------ dragging from the long press
+
+    /** One finger on the window, down at [x], [y] until [lift]ed. */
+    private class Finger(val list: ListActivity, var x: Float, var y: Float) {
+        private val down = SystemClock.uptimeMillis()
+
+        init {
+            send(MotionEvent.ACTION_DOWN)
+        }
+
+        private fun send(action: Int) {
+            val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+            list.window.decorView.dispatchTouchEvent(e)
+            e.recycle()
+        }
+
+        /** Slides to [tx], [ty] in a few moves. */
+        fun moveTo(tx: Float, ty: Float, steps: Int = 6) {
+            val fx = x
+            val fy = y
+            for (i in 1..steps) {
+                x = fx + (tx - fx) * i / steps
+                y = fy + (ty - fy) * i / steps
+                send(MotionEvent.ACTION_MOVE)
+            }
+        }
+
+        fun lift() = send(MotionEvent.ACTION_UP)
+    }
+
+    private fun Finger.moveTo(v: View) = center(v).let { (cx, cy) -> moveTo(cx, cy) }
+
+    private val longPress get() = ViewConfiguration.getLongPressTimeout().toLong()
+
+    /** Holds a finger on the grid/list button until the ring opens and has fanned out. */
+    private fun ListActivity.pressAndHold(): Finger {
+        val (x, y) = center(fab())
+        val finger = Finger(this, x, y)
+        settle(longPress)
+        settle(300)
+        assertTrue(viewRing.isOpen)
+        assertTrue(viewRing.following)
+        return finger
+    }
+
+    private fun launchHanded(left: Boolean): ListActivity {
+        prefs.leftHanded = left
+        return launch().also { settle() }
+    }
+
+    private fun ListActivity.columnsShown() = (recycler().layoutManager as GridLayoutManager).spanCount
+
+    private fun liftingWhereTheLongPressFiredLeavesTheRingOpenForTaps(left: Boolean) {
+        val list = launchHanded(left)
+        val finger = list.pressAndHold()
+        finger.lift()
+        settle()
+        assertTrue(list.viewRing.isOpen)
+        assertFalse(list.viewRing.following)
+        assertFalse(list.fab().isPressed)
+        list.tap(RingOption.LAYOUT)
+        assertFalse(prefs.view(Prefs.TAB_BROWSE).grid)
+        assertTrue(list.viewRing.isOpen)
+        // A long press on Sort still opens the Sort popup.
+        assertTrue(list.viewRing.button(RingOption.SORT)!!.performLongClick())
+        settle()
+        assertFalse(list.viewRing.isOpen)
+        assertTrue((ShadowDialog.getLatestDialog() as AlertDialog).isShowing)
+        assertFalse(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
+    }
+
+    @Test
+    fun liftingWhereTheLongPressFiredLeavesTheRingOpenForTaps() = liftingWhereTheLongPressFiredLeavesTheRingOpenForTaps(left = false)
+
+    @Test
+    fun liftingWhereTheLongPressFiredLeavesTheRingOpenForTapsLeftHanded() = liftingWhereTheLongPressFiredLeavesTheRingOpenForTaps(left = true)
+
+    @Test
+    fun aWiggleOnTheButtonStaysATap() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        val r = list.fab().width / 4f
+        finger.moveTo(finger.x - r, finger.y - r)
+        finger.lift()
+        settle()
+        assertTrue(list.viewRing.isOpen)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+    }
+
+    private fun draggingToAButtonAndLiftingRunsItAndCloses(left: Boolean) {
+        val list = launchHanded(left)
+        val columns = prefs.view(Prefs.TAB_BROWSE).columns
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.LARGER)!!)
+        assertTrue(list.viewRing.button(RingOption.LARGER)!!.isPressed)
+        finger.moveTo(list.viewRing.button(RingOption.DETAIL)!!)
+        assertTrue(list.viewRing.button(RingOption.DETAIL)!!.isPressed)
+        assertFalse(list.viewRing.button(RingOption.LARGER)!!.isPressed)
+        finger.lift()
+        settle()
+        assertEquals(DetailDisplay.DENSE, prefs.view(Prefs.TAB_BROWSE).detail)
+        // Only the button lifted on ran.
+        assertEquals(columns, prefs.view(Prefs.TAB_BROWSE).columns)
+        assertFalse(list.viewRing.isOpen)
+        assertFalse(list.fab().isPressed)
+    }
+
+    @Test
+    fun draggingToAButtonAndLiftingRunsItAndCloses() = draggingToAButtonAndLiftingRunsItAndCloses(left = false)
+
+    @Test
+    fun draggingToAButtonAndLiftingRunsItAndClosesLeftHanded() = draggingToAButtonAndLiftingRunsItAndCloses(left = true)
+
+    private fun draggingBackToTheHubAndLiftingCancels(left: Boolean) {
+        val list = launchHanded(left)
+        val finger = list.pressAndHold()
+        val (hx, hy) = center(list.fab())
+        finger.moveTo(list.viewRing.button(RingOption.LAYOUT)!!)
+        assertTrue(list.viewRing.button(RingOption.LAYOUT)!!.isPressed)
+        finger.moveTo(hx + 2, hy - 2)
+        assertFalse(list.viewRing.button(RingOption.LAYOUT)!!.isPressed)
+        finger.lift()
+        settle()
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        assertFalse(list.viewRing.isOpen)
+    }
+
+    @Test
+    fun draggingBackToTheHubAndLiftingCancels() = draggingBackToTheHubAndLiftingCancels(left = false)
+
+    @Test
+    fun draggingBackToTheHubAndLiftingCancelsLeftHanded() = draggingBackToTheHubAndLiftingCancels(left = true)
+
+    private fun farOutsideTheRingPicksByAngle(left: Boolean) {
+        val list = launchHanded(left)
+        val shown = list.columnsShown()
+        val finger = list.pressAndHold()
+        val (hx, hy) = center(list.fab())
+        val (bx, by) = center(list.viewRing.button(RingOption.LARGER)!!)
+        // Three times as far out as the button, along its direction: off the screen.
+        finger.moveTo(hx + (bx - hx) * 3, hy + (by - hy) * 3)
+        assertTrue(list.viewRing.button(RingOption.LARGER)!!.isPressed)
+        finger.lift()
+        settle()
+        assertFalse(list.viewRing.isOpen)
+        assertEquals(shown - 1, prefs.view(Prefs.TAB_BROWSE).columns)
+    }
+
+    @Test
+    fun farOutsideTheRingPicksByAngle() = farOutsideTheRingPicksByAngle(left = false)
+
+    @Test
+    fun farOutsideTheRingPicksByAngleLeftHanded() = farOutsideTheRingPicksByAngle(left = true)
+
+    @Test
+    fun aGrayedButtonIsNeitherLitNorRun() {
+        prefs.setGridSize(Prefs.TAB_BROWSE, 6, 0)
+        val list = launch()
+        val finger = list.pressAndHold()
+        assertFalse(list.viewRing.button(RingOption.SMALLER)!!.isEnabled)
+        finger.moveTo(list.viewRing.button(RingOption.SMALLER)!!)
+        assertFalse(list.viewRing.button(RingOption.SMALLER)!!.isPressed)
+        finger.lift()
+        settle()
+        assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
+        assertFalse(list.viewRing.isOpen)
+    }
+
+    @Test
+    fun liftingOnSortFlipsItsDirection() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.SORT)!!)
+        finger.lift()
+        settle()
+        assertTrue(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
+        assertFalse(list.viewRing.isOpen)
+        assertNull(ShadowDialog.getLatestDialog())
+    }
+
+    @Test
+    fun lingeringOnSortOpensTheSortPopup() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.SORT)!!)
+        settle(longPress)
+        assertFalse(list.viewRing.isOpen)
+        assertTrue((ShadowDialog.getLatestDialog() as AlertDialog).isShowing)
+        // Moving on and lifting afterward change nothing.
+        finger.moveTo(finger.x - 50, finger.y)
+        finger.lift()
+        settle()
+        assertFalse(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
+    }
+
+    @Test
+    fun passingOverSortWithoutLingeringOpensNothing() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.SORT)!!)
+        // Less than the linger, with no idling that runs animations to their end.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(longPress / 2))
+        assertTrue(list.viewRing.isOpen)
+        finger.moveTo(list.viewRing.button(RingOption.DETAIL)!!)
+        settle(longPress)
+        assertTrue(list.viewRing.isOpen)
+        assertNull(ShadowDialog.getLatestDialog())
+        finger.lift()
+        settle()
+        assertEquals(DetailDisplay.DENSE, prefs.view(Prefs.TAB_BROWSE).detail)
+        assertFalse(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
     }
 }

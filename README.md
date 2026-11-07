@@ -196,7 +196,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     Sort (flips the first level's direction; long press opens the Sort popup),
     plus Folders first in Browse or Sections in Favorites. A tap applies at
     once and the ring stays open; the X in the button's place, a tap outside
-    or Back closes it. TalkBack reads each button's setting and value.
+    or Back closes it. Or keep the finger down and drag: the button it points
+    toward lights up (at any distance, with a tick), lifting there applies it
+    and closes the ring, lifting back on the X cancels, and resting on Sort
+    opens the Sort popup. TalkBack reads each button's setting and value.
   - Several items are one operation, one item at a time: Move and Copy pick
     them all up at once (from the device and shares alike), Delete asks once
     for all, Share sends them all in one share action. File operations work on

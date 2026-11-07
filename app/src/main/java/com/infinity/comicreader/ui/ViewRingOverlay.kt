@@ -11,7 +11,10 @@ import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
@@ -36,6 +39,10 @@ import kotlin.math.roundToInt
  * the setting and calls [refresh]); a long press runs [onLongTap] where an item has a
  * [Item.longLabel]. The hub in the button's place, a tap on the scrim, or Back ([close])
  * closes it.
+ *
+ * The finger that opened it may also drag without lifting ([follow], [drag]): the button it
+ * points at lights up, lifting there runs [onTap] and closes the ring, lifting on the hub
+ * only closes it, and lingering on a button with a [Item.longLabel] runs [onLongTap].
  */
 internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
@@ -74,7 +81,22 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The floating button the ring opened from; key focus returns to it. */
     private var anchor: View? = null
 
+    /** The host's place in the window, and the hub's radius. */
+    private var hostX = 0
+    private var hostY = 0
+    private var hubRadius = 0f
+
+    /** The finger still down from the long press that opened the ring, if any. */
+    private var gesture: RingGesture? = null
+
+    /** The button the dragging finger lights up. */
+    private var lit: RingOption? = null
+    private val linger = Runnable { onLinger() }
+
     val isOpen: Boolean get() = root != null
+
+    /** Whether [drag] follows a finger. */
+    val following: Boolean get() = gesture != null
 
     private val density get() = activity.resources.displayMetrics.density
 
@@ -108,6 +130,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val origin = IntArray(2).also { host.getLocationInWindow(it) }
         cx = at[0] - origin[0] + fab.width / 2f
         cy = at[1] - origin[1] + fab.height / 2f
+        hostX = origin[0]
+        hostY = origin[1]
+        hubRadius = fab.width / 2f
         bounds = bounds(host, origin)
         hub = (fab as? FloatingActionButton).let { main ->
             FloatingActionButton(activity).apply {
@@ -129,6 +154,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     fun refresh(items: List<Item>) {
         val root = root ?: return
         if (items.map { it.option } != this.items.map { it.option }) {
+            unfollow()
             for ((button, label) in buttons.values) {
                 root.removeView(button)
                 root.removeView(label)
@@ -149,6 +175,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     @SuppressLint("ClickableViewAccessibility")
     fun close(animate: Boolean = true) {
         val root = root ?: return
+        unfollow()
         this.root = null
         hub = null
         for ((v, was) in hidden) v.importantForAccessibility = was
@@ -171,10 +198,81 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         for (child in root.children()) child.isEnabled = false
         for ((button, label) in parts) {
             button.animate().translationX(-button.tag(TAG_DX)).translationY(-button.tag(TAG_DY))
-                .scaleX(SCALE_FROM).scaleY(SCALE_FROM).alpha(0f).setDuration(CLOSE_MS).start()
-            label.animate().alpha(0f).setDuration(CLOSE_MS / 2).start()
+                .scaleX(SCALE_FROM).scaleY(SCALE_FROM).alpha(0f).setStartDelay(0).setDuration(CLOSE_MS).start()
+            label.animate().alpha(0f).setStartDelay(0).setDuration(CLOSE_MS / 2).start()
         }
         root.animate().alpha(0f).setDuration(CLOSE_MS).withEndAction { host?.removeView(root) }.start()
+    }
+
+    /** Follows the finger that opened the ring, still down at [x], [y] in the window; [drag] gets its moves. */
+    fun follow(x: Float, y: Float) {
+        if (!isOpen) return
+        val slop = ViewConfiguration.get(activity).scaledTouchSlop.toFloat()
+        gesture = RingGesture(angles(), hubRadius, slop, x - hostX - cx, y - hostY - cy)
+    }
+
+    /**
+     * The followed finger's [action] (move, up or cancel) at [x], [y] in the window. Till it
+     * drags, it is a tap and the ring stays open; once dragging, lifting runs [onTap] on the
+     * lit button and closes the ring, or only closes it when none is lit.
+     */
+    fun drag(action: Int, x: Float, y: Float) {
+        val g = gesture ?: return
+        val enabled = { i: Int -> items.getOrNull(i)?.enabled == true }
+        val moved = g.move(x - hostX - cx, y - hostY - cy, enabled)
+        when (action) {
+            MotionEvent.ACTION_MOVE -> if (moved) light(items.getOrNull(g.picked)?.option, tick = true)
+            MotionEvent.ACTION_UP -> {
+                unfollow()
+                if (!g.dragging) return
+                items.getOrNull(g.picked)?.let { if (isOpen) onTap(it.option) }
+                close()
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                unfollow()
+                if (g.dragging) close()
+            }
+        }
+    }
+
+    /** Stops following the finger and lights nothing. */
+    private fun unfollow() {
+        gesture = null
+        light(null, tick = false)
+    }
+
+    /** Lights [option]'s button up (pressed and grown), none when null; lingering on one with a long press counts as one. */
+    private fun light(option: RingOption?, tick: Boolean) {
+        root?.removeCallbacks(linger)
+        if (option == lit) return
+        lit?.let { buttons[it]?.first }?.let { grow(it, false) }
+        lit = option
+        option?.let { buttons[it]?.first }?.let { grow(it, true) }
+        if (option != null && items.firstOrNull { it.option == option }?.longLabel != null) {
+            root?.postDelayed(linger, ViewConfiguration.getLongPressTimeout().toLong())
+        }
+        // Without the flag that ignores it, the system's touch feedback setting applies.
+        if (tick) hub?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    private fun grow(button: View, on: Boolean) {
+        button.isPressed = on
+        val scale = if (on) LIT_SCALE else 1f
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            button.animate().scaleX(scale).scaleY(scale).setStartDelay(0).setDuration(LIT_MS).start()
+        } else {
+            button.scaleX = scale
+            button.scaleY = scale
+        }
+    }
+
+    /** The finger stayed on a lit button with a long press: that runs instead, and the finger is let go. */
+    private fun onLinger() {
+        val option = lit ?: return
+        if (gesture == null || !isOpen) return
+        unfollow()
+        hub?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        onLongTap(option)
     }
 
     private fun ViewGroup.children() = (0 until childCount).map { getChildAt(it) }
@@ -349,6 +447,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         const val OPEN_MS = 200L
         const val CLOSE_MS = 150L
         const val STAGGER_MS = 20L
+        const val LIT_SCALE = 1.15f
+        const val LIT_MS = 100L
         val TAG_DX = R.id.view_ring_dx
         val TAG_DY = R.id.view_ring_dy
     }

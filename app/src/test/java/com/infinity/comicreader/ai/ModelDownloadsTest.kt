@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import com.infinity.comicreader.net.Metered
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -18,6 +19,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -90,6 +92,24 @@ class ModelDownloadsTest {
         while (!condition(ModelDownloads.state.value)) {
             assertTrue("timed out waiting for $what: ${ModelDownloads.state.value}", System.currentTimeMillis() < end)
             Thread.sleep(10)
+        }
+    }
+
+    @Test
+    fun aDownloadGivenNoClientUsesTheStandIn() {
+        val asked = AtomicInteger()
+        ModelDownloads.client = { OkHttpClient.Builder().addInterceptor { asked.incrementAndGet(); throw IOException("refused") }.build() }
+        try {
+            val m = model("dl-stand-in")
+            ModelDownloads.start(store, m)
+            val end = System.currentTimeMillis() + 5_000
+            while (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed && System.currentTimeMillis() < end) Thread.sleep(10)
+            assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Failed)
+            assertTrue(asked.get() > 0)
+            assertEquals(0, server.requestCount)
+            ModelDownloads.cancel(m.id)
+        } finally {
+            ModelDownloads.client = { ModelDownloader.defaultClient }
         }
     }
 

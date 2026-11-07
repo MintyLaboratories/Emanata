@@ -18,6 +18,7 @@ import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
 import org.junit.Assert.assertEquals
@@ -26,6 +27,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -39,6 +41,10 @@ import java.io.RandomAccessFile
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsAiTest {
+
+    /** Picking a model starts its download: kept off the network and ended with the test. */
+    @get:Rule
+    val downloads = OfflineDownloads()
 
     private lateinit var context: Context
     private lateinit var store: ModelStore

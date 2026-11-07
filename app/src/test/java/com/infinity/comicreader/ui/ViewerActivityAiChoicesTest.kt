@@ -11,6 +11,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
@@ -35,6 +36,10 @@ class ViewerActivityAiChoicesTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    /** Picking a model starts its download: kept off the network and ended with the test. */
+    @get:Rule
+    val downloads = OfflineDownloads()
 
     private val context = ApplicationProvider.getApplicationContext<Application>()
     private lateinit var prefs: Prefs

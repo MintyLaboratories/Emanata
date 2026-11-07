@@ -408,7 +408,7 @@ class CleanupActivity : AppCompatActivity() {
             similarBar.visibility = View.GONE
         } else {
             val notes = listOfNotNull(
-                getString(R.string.similar_unread, result.unread + unknown.get(), result.total + unknown.get()).takeIf { waiting > 0 },
+                getString(R.string.similar_unread, waiting, result.total + unknown.get()).takeIf { waiting > 0 },
                 resources.getQuantityString(R.plurals.similar_metered, skipped, skipped).takeIf { skipped > 0 }
             )
             val compare = { ->

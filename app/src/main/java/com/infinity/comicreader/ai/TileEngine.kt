@@ -27,7 +27,10 @@ enum class Fallback {
     PAUSED,
 
     /** The model failed on a tile, or was closed. */
-    FAILED
+    FAILED,
+
+    /** A model of its chain would not open ([ReaderAi]): tried again once the reader's models close. */
+    UNOPENED
 }
 
 /** Bounds on one page's run: [timeoutMs] for all its tiles, at most [maxOutputPixels] of output. */

@@ -199,6 +199,30 @@ class AiQueueTest {
     }
 
     @Test
+    fun resumingTriesAgainOnlyThePagesSkippedForAModelThatWouldNotOpen() {
+        val w = Work()
+        w.outcomes["a"] = { AiOutcome.Skipped(Fallback.UNOPENED) }
+        w.outcomes["b"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
+        val q = w.queue()
+        q.want(listOf("a", "b", "c"))
+        idleUntil { w.delivered.contains("c") }
+        q.pause()
+        w.outcomes.remove("a")
+        w.outcomes.remove("b")
+        q.resume()
+        idleUntil { w.delivered.contains("a") }
+        Thread.sleep(20)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("a", "b", "c", "a"), w.started)
+        // Once done it stays done across another pause.
+        q.pause()
+        q.resume()
+        Thread.sleep(20)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(4, w.started.size)
+    }
+
+    @Test
     fun aPageFinishingAfterItWasDroppedIsLeftForTheGc() {
         val w = Work()
         val gate = CountDownLatch(1)

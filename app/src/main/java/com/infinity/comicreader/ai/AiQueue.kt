@@ -29,6 +29,8 @@ sealed class AiOutcome {
  * off ([AiOutcome.Later]) holds the whole queue back for a back-off that doubles each time in
  * a row, from [backoffMs] up to [maxBackoffMs], so a hot or saving device is asked seldom; a
  * page wanted first in its place is tried at once (one kept on disk shows meanwhile).
+ * A page skipped for a model that would not open ([Fallback.UNOPENED]) is tried again at
+ * [resume], as the reader's models close while it is out of sight.
  * Work runs on [worker]; [deliver] runs on [scope]'s thread (the main one), as do all calls.
  */
 internal class AiQueue<K : Any>(
@@ -41,6 +43,9 @@ internal class AiQueue<K : Any>(
 ) {
     private var wanted: List<K> = emptyList()
     private val finished = HashSet<K>()
+
+    /** The pages of [finished] skipped for a model that would not open. */
+    private val unopened = HashSet<K>()
     private var running: K? = null
     private var job: Job? = null
     private var wait: Job? = null
@@ -73,6 +78,7 @@ internal class AiQueue<K : Any>(
     /** Forgets what was done and skipped, as when the chain changes: every page wanted is worked on again. */
     fun reset() {
         finished.clear()
+        unopened.clear()
         stop()
         wait?.cancel()
         wait = null
@@ -91,6 +97,7 @@ internal class AiQueue<K : Any>(
     /** Works on [key] again when wanted, as when its page was decoded afresh after leaving the cache. */
     fun forget(key: K) {
         finished -= key
+        unopened -= key
     }
 
     /**
@@ -103,10 +110,12 @@ internal class AiQueue<K : Any>(
         stop()
     }
 
-    /** Goes on from [pause] with the pages wanted. */
+    /** Goes on from [pause] with the pages wanted, those skipped for a model that would not open tried again. */
     fun resume() {
         if (!paused) return
         paused = false
+        finished -= unopened
+        unopened.clear()
         next()
     }
 
@@ -148,7 +157,10 @@ internal class AiQueue<K : Any>(
                     backoffs = 0
                     deliver(key, outcome)
                 }
-                is AiOutcome.Skipped -> finished += key
+                is AiOutcome.Skipped -> {
+                    finished += key
+                    if (outcome.why == Fallback.UNOPENED) unopened += key
+                }
                 AiOutcome.Later -> {
                     putOff = key
                     val ms = (backoffMs shl backoffs.coerceAtMost(MAX_DOUBLINGS)).coerceAtMost(maxBackoffMs)

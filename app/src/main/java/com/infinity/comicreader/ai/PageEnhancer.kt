@@ -172,7 +172,7 @@ class ReaderAi internal constructor(
         val size = source.pageSize(index)
         if (size != null && unneeded(chain, target, size)) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val opened = chain.mapIndexed { i, m ->
-            session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.FAILED)
+            session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
         // Nobody waits on it: decoded and resampled on the budget of pages read ahead.
         val input = Urgency.later { Cancellation.during(canceled) { source.loadPage(index, target.detail(size, MAX_INPUT_PIXELS * 4)) } }

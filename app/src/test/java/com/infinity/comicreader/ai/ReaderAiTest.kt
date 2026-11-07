@@ -190,7 +190,7 @@ class ReaderAiTest {
         assertTrue(model.closed)
         val opens = runtime.opened.size
         // A page asked for after closing, as one already queued: no model opens again.
-        assertEquals(Fallback.FAILED, (ai.enhance(b, 1, target, 40, 60) { false } as AiOutcome.Skipped).why)
+        assertEquals(Fallback.UNOPENED, (ai.enhance(b, 1, target, 40, 60) { false } as AiOutcome.Skipped).why)
         assertEquals(opens, runtime.opened.size)
     }
 
@@ -260,7 +260,7 @@ class ReaderAiTest {
             assertEquals(2, ReaderAi.MEMORY_TRIES)
             assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
             now += AiQueue.BACKOFF_MS
-            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Skipped)
+            assertEquals(Fallback.UNOPENED, (reader.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
             val opens = heavy.asked.size
             now += AiQueue.BACKOFF_MS
             assertTrue(reader.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Skipped)

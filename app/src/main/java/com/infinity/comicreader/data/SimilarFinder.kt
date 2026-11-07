@@ -73,16 +73,17 @@ class SimilarFinder(
      * The groups of two or more of [contents] alike, in the order of their first files,
      * with how many could be compared: those with something kept, and with [readNew] the
      * others, read first (those only on shares only with [readShares]; of a content on the
-     * device and on a share, the device copy). Starts no read once [alive] turns false, and
-     * compares what was read by then. [progress] hears books read of all to read, from the
-     * reading threads.
+     * device and on a share, the device copy). Starts no read once [alive] turns false, nor a
+     * share read once [sharesAlive] does, and compares what was read by then. [progress] hears
+     * books read of all to read, from the reading threads.
      */
     fun find(
         contents: Contents,
         alive: () -> Boolean = { true },
         progress: (Int, Int) -> Unit = { _, _ -> },
         readNew: Boolean = true,
-        readShares: Boolean = true
+        readShares: Boolean = true,
+        sharesAlive: () -> Boolean = { true }
     ): Found {
         val byId = contents.byId
         val ids = byId.keys.toList()
@@ -100,14 +101,15 @@ class SimilarFinder(
         if (toRead > 0 && alive()) {
             val gate = LimitGate(limit)
             fun task(id: BookId, onShare: Boolean) = Callable {
+                val going = if (onShare) { -> alive() && sharesAlive() } else alive
                 val readOne = readOne@{
-                    if (!alive()) return@readOne null
+                    if (!going()) return@readOne null
                     tried.incrementAndGet()
                     if (onShare) triedShares.incrementAndGet()
                     val files = byId.getValue(id)
                     val file = files.firstOrNull { !remote(it) } ?: files.first()
-                    val got = runCatching { read(file) { !alive() } }.getOrNull()
-                    if (got == null && !alive()) {
+                    val got = runCatching { read(file) { !going() } }.getOrNull()
+                    if (got == null && !going()) {
                         tried.decrementAndGet()
                         if (onShare) triedShares.decrementAndGet()
                     }

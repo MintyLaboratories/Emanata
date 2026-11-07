@@ -183,6 +183,30 @@ class SimilarFinderTest {
     }
 
     @Test
+    fun shareReadsStopOnceSharesAreNoLongerWantedAndThoseLeftAreCountedApart() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val ids = (1..4).associate { "s$it.cbz" to BookId(100L + it) } + mapOf("d1.cbz" to BookId(201))
+        var wanted = true
+        val canceledMidway = AtomicInteger()
+        val finder = SimilarFinder(store, { ids[it.name] }, { f, canceled ->
+            // The connection turns metered while the second share book is read: its next page is not.
+            if (f.name == "s2.cbz") {
+                wanted = false
+                if (canceled()) canceledMidway.incrementAndGet()
+                null
+            } else {
+                SimilarFinder.Read(entry(30, shift = ids.getValue(f.name).value.toInt() * 1000))
+            }
+        }, workers = 1, remote = { it.name.startsWith("s") })
+        val found = finder.find(finder.contents(files("s1.cbz", "s2.cbz", "s3.cbz", "s4.cbz", "d1.cbz")), sharesAlive = { wanted })
+        assertEquals(1, canceledMidway.get())
+        // s1 and d1 read; s2 stopped part way and s3, s4 never started: all three counted as shares left.
+        assertEquals(2, found.compared)
+        assertEquals(3, found.unread)
+        assertEquals(3, found.unreadShares)
+    }
+
+    @Test
     fun withoutShareReadsShareBooksAreCountedApart() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val reads = Collections.synchronizedList(ArrayList<String>())

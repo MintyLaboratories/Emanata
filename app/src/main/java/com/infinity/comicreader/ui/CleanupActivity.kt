@@ -348,9 +348,9 @@ class CleanupActivity : AppCompatActivity() {
      * (device books by up to [SimilarFinder.WORKERS] threads as heat and battery allow, share
      * books one at a time beside them), and lists what it found in place of the similar books
      * listed. Shows books hashed of those to hash meanwhile; Stop, or leaving, compares only
-     * what was read by then. On a metered connection ([Metered]) share books are not read, not
-     * even for their IDs, and the bar says so. Books left uncompared otherwise are counted on
-     * the bar, with Compare to read them.
+     * what was read by then. On a metered connection ([Metered], asked again between pages)
+     * share books are not read, not even for their IDs, and the bar says so. Books left
+     * uncompared otherwise are counted on the bar, with Compare to read them.
      */
     private suspend fun compareSimilar(books: List<File>, readNew: Boolean) {
         comparing = true
@@ -361,11 +361,14 @@ class CleanupActivity : AppCompatActivity() {
         val charset = prefs.charset
         val workers = SimilarFinder.WORKERS
         val left = books.filter { it.absolutePath !in deleted }
-        val metered = left.any { it is RemoteFile } && withContext(AppDispatchers.io) { Metered.skipsOptional() }
+        val meteredSeen = AtomicBoolean(false)
+        // Share reads go on while the connection is unmetered, asked at most once a second ([Metered]).
+        val unmetered = { (!Metered.skipsOptional()).also { if (!it) meteredSeen.set(true) } }
+        val metered = left.any { it is RemoteFile } && withContext(AppDispatchers.io) { !unmetered() }
         // A share book's ID not known yet is read from it, unless metered or stopped: then it is counted as not compared.
         val unknown = AtomicInteger()
         val idOf = { f: File ->
-            if (f is RemoteFile && (metered || stopped)) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
+            if (f is RemoteFile && (stopped || !unmetered())) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
         }
         val finder = SimilarFinder(
             SimilarStore.of(cacheDir), idOf, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) },
@@ -375,7 +378,10 @@ class CleanupActivity : AppCompatActivity() {
             // Stop holds back reads only: every book is listed, so what is left is counted.
             val contents = finder.contents(left) { context.isActive }
             Timing.span("similar books ${contents.byId.size}") {
-                finder.find(contents, { context.isActive && !stopped }, { done, total -> onProgress(R.string.similar_progress, done, total) }, readNew, readShares = !metered)
+                finder.find(
+                    contents, { context.isActive && !stopped }, { done, total -> onProgress(R.string.similar_progress, done, total) }, readNew,
+                    readShares = !metered, sharesAlive = unmetered
+                )
             }
         }
         val found = withContext<List<Row>>(AppDispatchers.io) {
@@ -401,7 +407,7 @@ class CleanupActivity : AppCompatActivity() {
         rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
         forget(deleted)
-        val skipped = if (metered) result.unreadShares + unknown.get() else 0
+        val skipped = if (meteredSeen.get()) result.unreadShares + unknown.get() else 0
         val waiting = result.unread + unknown.get() - skipped
         if (!context.isActive) {
             comparing = false

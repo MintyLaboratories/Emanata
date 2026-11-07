@@ -565,10 +565,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { ModelDownloads.state.collect { show(it) } }
         }
-        // A failed download waits to be chosen again; one the app's end cut short goes on.
+        // A failed download waits to be chosen again; one the app's end cut short goes on, unless on a metered connection.
         lifecycleScope.launch(AppDispatchers.io) {
-            val states = ModelDownloads.state.value.states
-            for (m in AiChain.chosen(prefs)) if (m is CatalogModel && m.id !in states) ModelDownloads.start(store, m)
+            val state = ModelDownloads.state.value
+            for (m in AiChain.chosen(prefs)) if (m is CatalogModel && ModelDownloads.mayStartBySelf(state, m.id)) ModelDownloads.start(store, m, optional = true)
         }
     }
 

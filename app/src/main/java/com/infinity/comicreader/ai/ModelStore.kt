@@ -141,7 +141,10 @@ enum class DownloadFailure {
     MISMATCH,
 
     /** Not enough free space for what is left. */
-    SPACE
+    SPACE,
+
+    /** Not started: nobody asked for it, and the connection is metered ([com.infinity.comicreader.net.Metered]). */
+    METERED
 }
 
 /** Thrown by [ModelDownloader.download] when a download cannot finish. */

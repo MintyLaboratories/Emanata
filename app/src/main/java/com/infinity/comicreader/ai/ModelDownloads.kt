@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.os.SystemClock
 import android.util.Log
+import com.infinity.comicreader.net.Metered
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,11 +50,19 @@ object ModelDownloads {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val jobs = HashMap<String, Job>()
 
-    /** Downloads [model] into [store] unless it is installed or already on its way. */
-    fun start(store: ModelStore, model: CatalogModel, client: OkHttpClient = ModelDownloader.defaultClient) {
+    /**
+     * Downloads [model] into [store] unless it is installed or already on its way. One nobody
+     * asked for ([optional]: started or resumed by the app itself) is not started on a metered
+     * connection ([Metered]): it shows as failed for that ([DownloadFailure.METERED]) instead.
+     */
+    fun start(store: ModelStore, model: CatalogModel, client: OkHttpClient = ModelDownloader.defaultClient, optional: Boolean = false) {
         if (store.installed(model)) return
         synchronized(jobs) {
             if (jobs[model.id]?.isActive == true) return
+            if (optional && Metered.skipsOptional()) {
+                set(model.id, DownloadState.Failed(DownloadFailure.METERED))
+                return
+            }
             set(model.id, DownloadState.Running(store.bytesHeld(model), model.bytes))
             // The job's own entry is checked under the lock, which this block holds until it is stored.
             jobs[model.id] = scope.launch {
@@ -102,6 +111,13 @@ object ModelDownloads {
                 _state.update { it.copy(states = if (asked) it.states else it.states - model.id, generation = it.generation + 1) }
             }
         }
+    }
+
+    /** True when [state] leaves the app free to start [id]'s download by itself: none failed, or one skipped as [DownloadFailure.METERED]. */
+    fun mayStartBySelf(state: Downloads, id: String): Boolean = when (val s = state.states[id]) {
+        null -> true
+        is DownloadState.Failed -> s.failure == DownloadFailure.METERED
+        else -> false
     }
 
     /** Says a model was installed or deleted some other way (imported ones): [Downloads.generation] grows. */

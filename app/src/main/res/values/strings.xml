@@ -936,6 +936,7 @@
     <string name="ai_model_downloading">%1$s · downloading %2$d%%</string>
     <string name="ai_model_failed">%1$s · download failed; choose it again to retry</string>
     <string name="ai_model_missing">%1$s · not downloaded</string>
+    <string name="ai_model_metered">%1$s · download skipped on a metered connection; choose it again to download</string>
     <string name="ai_chain">Chosen: %1$s</string>
     <string name="ai_chain_slow">Together these are slow: each page takes longer and more battery, and on a warm or slower device some may show without AI processing</string>
     <string name="ai_model_short_of_memory">%1$s couldn\'t open: not enough memory is free. Pages show without it until it opens; closing other apps helps</string>
@@ -962,6 +963,7 @@
     <string name="ai_download_failed_server">The server refused the download</string>
     <string name="ai_download_failed_mismatch">The download did not match its checksum and was discarded</string>
     <string name="ai_download_failed_space">Not enough free space</string>
+    <string name="ai_download_failed_metered">Skipped on a metered connection. Tap Download to download anyway</string>
     <string name="ai_model_info">%1$s\n\nBy %2$s, under the %3$s.\nSource: %4$s\nDownloaded unchanged from: %5$s</string>
     <string name="ai_models_used">Models take %1$s</string>
     <string name="ai_import">Import a model…</string>

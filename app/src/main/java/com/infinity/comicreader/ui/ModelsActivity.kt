@@ -135,6 +135,7 @@ object ModelText {
             DownloadFailure.SERVER -> R.string.ai_download_failed_server
             DownloadFailure.MISMATCH -> R.string.ai_download_failed_mismatch
             DownloadFailure.SPACE -> R.string.ai_download_failed_space
+            DownloadFailure.METERED -> R.string.ai_download_failed_metered
         }
     )
 
@@ -143,6 +144,7 @@ object ModelText {
         m == null -> context.getString(R.string.ai_none)
         installed -> m.name
         state is DownloadState.Running -> context.getString(R.string.ai_model_downloading, m.name, state.percent)
+        state is DownloadState.Failed && state.failure == DownloadFailure.METERED -> context.getString(R.string.ai_model_metered, m.name)
         state is DownloadState.Failed -> context.getString(R.string.ai_model_failed, m.name)
         else -> context.getString(R.string.ai_model_missing, m.name)
     }

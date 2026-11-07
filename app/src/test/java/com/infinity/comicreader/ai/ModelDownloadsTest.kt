@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import com.infinity.comicreader.net.Metered
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -59,6 +60,8 @@ class ModelDownloadsTest {
 
     @After
     fun tearDown() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
         gate.countDown()
         server.shutdown()
     }
@@ -111,6 +114,28 @@ class ModelDownloadsTest {
         waitFor("failure") { it.states[m.id] is DownloadState.Failed }
         assertEquals(DownloadFailure.SERVER, (ModelDownloads.state.value.states[m.id] as DownloadState.Failed).failure)
         assertFalse(store.installed(m))
+    }
+
+    @Test
+    fun anOptionalDownloadIsSkippedOnAMeteredConnectionAndAnAskedOneIsNot() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        val m = model("dl-metered")
+        ModelDownloads.start(store, m, optional = true)
+        assertEquals(DownloadState.Failed(DownloadFailure.METERED), ModelDownloads.state.value.states[m.id])
+        assertEquals(0, requests.get())
+        // The app may try again by itself, as it may not after another failure.
+        assertTrue(ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id))
+        assertFalse(ModelDownloads.mayStartBySelf(Downloads(mapOf(m.id to DownloadState.Failed(DownloadFailure.SERVER))), m.id))
+        ModelDownloads.start(store, m)
+        waitFor("install") { m.id !in it.states && store.installed(m) }
+    }
+
+    @Test
+    fun anOptionalDownloadRunsUnmetered() {
+        val m = model("dl-unmetered")
+        ModelDownloads.start(store, m, optional = true)
+        waitFor("install") { m.id !in it.states && store.installed(m) }
     }
 
     @Test

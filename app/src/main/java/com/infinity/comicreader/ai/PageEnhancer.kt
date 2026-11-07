@@ -355,7 +355,7 @@ class ReaderAi internal constructor(
             return ReaderAi(
                 Prefs(app), library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
                 AiConditions.gate(app),
-                { m -> if (m is CatalogModel && ModelDownloads.state.value.states[m.id] !is DownloadState.Failed) ModelDownloads.start(models, m) },
+                { m -> if (m is CatalogModel && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
                 memory = { ModelMemory.of(app) }
             )
         }

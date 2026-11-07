@@ -124,6 +124,10 @@ class ModelDownloadsTest {
         ModelDownloads.start(store, m, optional = true)
         assertEquals(DownloadState.Failed(DownloadFailure.METERED), ModelDownloads.state.value.states[m.id])
         assertEquals(0, requests.get())
+        // Asked again for each page: the state stays the same object, so nobody hears a change.
+        val skipped = ModelDownloads.state.value
+        ModelDownloads.start(store, m, optional = true)
+        assertTrue(skipped === ModelDownloads.state.value)
         // The app may try again by itself, as it may not after another failure.
         assertTrue(ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id))
         assertFalse(ModelDownloads.mayStartBySelf(Downloads(mapOf(m.id to DownloadState.Failed(DownloadFailure.SERVER))), m.id))

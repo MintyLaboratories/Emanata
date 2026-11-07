@@ -42,6 +42,7 @@ import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.ImportFailure
 import com.infinity.comicreader.ai.ImportState
+import com.infinity.comicreader.ai.ImportWarning
 import com.infinity.comicreader.ai.ModelBlurb
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelCheck
@@ -165,7 +166,7 @@ object ModelText {
     fun imported(context: Context, m: UserModel): String =
         context.getString(R.string.ai_model_info_imported, details(context, m), m.pageSeconds)
 
-    /** Why an import was refused, in a sentence. */
+    /** Why an import was refused, in a sentence; a page time rounded up, so one just past a limit never reads as at it. */
     fun refusal(context: Context, r: ImportState.Refused): String = when (r.why) {
         ModelRefusal.RUNTIME -> context.getString(R.string.ai_refused_runtime)
         ModelRefusal.NOT_LOADED -> context.getString(R.string.ai_refused_not_loaded)
@@ -176,10 +177,17 @@ object ModelText {
         ModelRefusal.MEMORY ->
             if (r.bytes > 0 && r.limit > 0) context.getString(R.string.ai_refused_memory, size(context, r.bytes), size(context, r.limit))
             else context.getString(R.string.ai_refused_memory_unknown)
-        ModelRefusal.UNLIKE -> context.getString(R.string.ai_refused_unlike)
         ModelRefusal.TOO_SLOW ->
-            if (r.pageMs > 0) context.getString(R.string.ai_refused_too_slow, (r.pageMs + 500) / 1000, ReaderAi.MAX_TIMEOUT_MS / 1000)
+            if (r.pageMs > 0) context.getString(R.string.ai_refused_too_slow, (r.pageMs + 999) / 1000, ReaderAi.MAX_TIMEOUT_MS / 1000)
             else context.getString(R.string.ai_refused_too_slow_check, (ModelCheck.TIME_LIMIT_MS / 1000))
+    }
+
+    /** What the user weighs before importing fit model [s] anyway: a paragraph per warning, its time rounded up. */
+    fun warnings(context: Context, s: ImportState.Fit): String = s.warnings.sorted().joinToString("\n\n") { w ->
+        when (w) {
+            ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, (s.pageMs + 999) / 1000, ModelCheck.SLOW_PAGE_MS / 1000)
+            ImportWarning.UNLIKE -> context.getString(R.string.ai_import_warn_unlike)
+        }
     }
 
     /** Why picked files were not taken in, in a sentence. */
@@ -199,8 +207,9 @@ object ModelText {
  * deletes. With Keep it simple on, slow catalog models show only once downloaded or
  * downloading. Imported models (marked so, no license) after them, deleted after asking.
  * "Import a model…" takes the user's own: its two files picked ([ModelImports]), copied and
- * checked with progress, then named and given a step, or refused with the reason. A model's
- * row opens what is known of it.
+ * checked with progress, then named and given a step, or refused with the reason; a slow
+ * model, or one whose output differs strongly from its input, is imported only once the user
+ * picks "Import anyway" (Cancel, or Back, drops it). A model's row opens what is known of it.
  */
 class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore
@@ -384,7 +393,7 @@ class ModelsActivity : AppCompatActivity() {
                     .setCancelable(false)
                     .show()
             }
-            is ImportState.Fit -> fitDialog(s)
+            is ImportState.Fit -> if (s.warned) warningDialog(s) else fitDialog(s)
             is ImportState.Refused -> AlertDialog.Builder(this)
                 .setTitle(getString(R.string.ai_import_refused, s.name))
                 .setMessage(ModelText.refusal(this, s))
@@ -404,6 +413,19 @@ class ModelsActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Asks whether to import a fit model with warnings anyway; Cancel, or Back, drops it. */
+    private fun warningDialog(s: ImportState.Fit): AlertDialog = AlertDialog.Builder(this)
+        .setTitle(getString(R.string.ai_import_warn_title, s.suggested))
+        .setMessage(ModelText.warnings(this, s))
+        .setPositiveButton(R.string.ai_import_anyway) { _, _ -> ModelImports.accept() }
+        .setNegativeButton(R.string.cancel) { _, _ -> ModelImports.dismiss(this) }
+        .setOnCancelListener { ModelImports.dismiss(this) }
+        .create()
+        .apply {
+            setCanceledOnTouchOutside(false)
+            show()
+        }
 
     /** Asks for a checked model's name and step, warning that heavy models may be too slow. */
     private fun fitDialog(s: ImportState.Fit): AlertDialog {

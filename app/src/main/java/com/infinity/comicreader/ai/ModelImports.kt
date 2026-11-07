@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
@@ -40,6 +41,15 @@ enum class ImportFailure {
     STORAGE
 }
 
+/** What a fit model's check found that the user weighs before taking it in ([ModelCheck]). */
+enum class ImportWarning {
+    /** A page takes longer than [ModelCheck.SLOW_PAGE_MS] here. */
+    SLOW,
+
+    /** Its output differs strongly from its input: a deliberate restyle, or a model expecting pixels scaled otherwise. */
+    UNLIKE
+}
+
 /** Where an import is. */
 sealed interface ImportState {
     /** Nothing under way. */
@@ -51,8 +61,23 @@ sealed interface ImportState {
     /** Copying the files, then checking the model ([checking]) named [name] for now. */
     data class Working(val name: String, val checking: Boolean) : ImportState
 
-    /** Checked and fit: waits for a name and a step ([ModelImports.save]); [suggested] is the file's name; [pageMs] timed at thermal [headroom]. */
-    data class Fit(val id: String, val suggested: String, val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN) : ImportState
+    /**
+     * Checked and fit: with [warnings] not yet [accepted] ([ModelImports.accept]), waits for the
+     * user to import it anyway or cancel; then for a name and a step ([ModelImports.save]).
+     * [suggested] is the file's name; [pageMs] timed at thermal [headroom].
+     */
+    data class Fit(
+        val id: String,
+        val suggested: String,
+        val scale: Int,
+        val pageMs: Long,
+        val headroom: Float = Float.NaN,
+        val warnings: Set<ImportWarning> = emptySet(),
+        val accepted: Boolean = false
+    ) : ImportState {
+        /** Waits for the user to weigh its [warnings]. */
+        val warned: Boolean get() = warnings.isNotEmpty() && !accepted
+    }
 
     /** The check refused it: [why]; for memory, the [bytes] it would need and the [limit] it would pass; for time, the [pageMs] a page would take (0: unknown). */
     data class Refused(val name: String, val why: ModelRefusal, val bytes: Long, val limit: Long, val pageMs: Long) : ImportState
@@ -68,7 +93,9 @@ sealed interface ImportState {
  * Imports the user's own models, one at a time, in the app's process: an ncnn `.param` and
  * `.bin` picked through the system's file picker, copied into the store's staging folder
  * (no conversion), then checked ([ModelCheck]) on this device's engine within its model
- * memory ([ModelMemory]). A fit model waits for the user to name it and pick its step, then
+ * memory ([ModelMemory]). A fit model with warnings (slow, or output unlike its input) waits
+ * for the user to import it anyway ([accept]) or cancel ([dismiss]); then every fit model
+ * waits for the user to name it and pick its step, then
  * moves among the imported models ([UserModels]). While a check runs, a marker names the
  * model, so a check that ends the app is told of next time ([crashed]).
  */
@@ -143,9 +170,15 @@ object ModelImports {
         }
     }
 
-    /** Takes the fit model in as [name] at [step]; it must suit its scale ([steps]). */
+    /** Takes the fit model's warnings as weighed: it goes on to be named. */
+    fun accept() {
+        _state.update { s -> (s as? ImportState.Fit)?.copy(accepted = true) ?: s }
+    }
+
+    /** Takes the fit model in as [name] at [step], once its warnings are accepted; it must suit its scale ([steps]). */
     fun save(context: Context, name: String, step: AiStep) {
         val fit = _state.value as? ImportState.Fit ?: return
+        if (fit.warned) return
         require(step in steps(fit.scale)) { "$step does not suit ${fit.scale}x" }
         val store = ModelStore.of(context)
         _state.value = ImportState.Working(name, checking = false)
@@ -247,7 +280,7 @@ object ModelImports {
                 marker.delete()
             }
             return when (result) {
-                is ModelCheck.Result.Fit -> ImportState.Fit(id, name, result.scale, result.pageMs, result.headroom).also { kept = true }
+                is ModelCheck.Result.Fit -> ImportState.Fit(id, name, result.scale, result.pageMs, result.headroom, result.warnings).also { kept = true }
                 is ModelCheck.Result.Refused -> ImportState.Refused(name, result.why, result.bytes, result.limit, result.pageMs)
             }
         } finally {

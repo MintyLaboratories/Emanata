@@ -30,10 +30,7 @@ enum class ModelRefusal {
     /** It needs more memory than the device can spare ([ModelMemory]). */
     MEMORY,
 
-    /** Its output does not resemble its input: scaled differently, or files that do not belong together. */
-    UNLIKE,
-
-    /** It would take longer than a page may, or checking it took too long. */
+    /** It would take longer than the reader ever gives a page, or checking it took too long. */
     TOO_SLOW
 }
 

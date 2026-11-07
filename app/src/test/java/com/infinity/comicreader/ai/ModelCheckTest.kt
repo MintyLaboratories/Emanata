@@ -38,10 +38,42 @@ class ModelCheckTest {
     }
 
     @Test
-    fun outputUnlikeItsInputIsRefused() {
-        // Right on the CPU, so it measures; nonsense on the GPU's check, so it runs on the CPU, which is nonsense too.
+    fun outputUnlikeItsInputIsFitWithAWarning() {
+        // Mid-gray whatever the input: a restyle, or pixels scaled otherwise.
         val runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
-        assertEquals(ModelCheck.Result.Refused(ModelRefusal.UNLIKE), check(runtime))
+        val r = check(runtime) as ModelCheck.Result.Fit
+        assertEquals(setOf(ImportWarning.UNLIKE), r.warnings)
+        assertEquals(emptySet<ImportWarning>(), (check(FakeRuntime()) as ModelCheck.Result.Fit).warnings)
+    }
+
+    @Test
+    fun aSlowPageIsWarnedOfAPagePastTheReadersLimitRefused() {
+        val slow = ModelCheck.SLOW_PAGE_MS
+        val most = ReaderAi.MAX_TIMEOUT_MS
+        assertEquals(30_000L, slow)
+        assertEquals(120_000L, most)
+        assertEquals(ModelCheck.Result.Fit(2, slow, warnings = emptySet()), ModelCheck.judge(2, slow, 0.0))
+        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, slow + 1, 0.0) as ModelCheck.Result.Fit).warnings)
+        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, most, 0.0) as ModelCheck.Result.Fit).warnings)
+        assertEquals(ModelCheck.Result.Refused(ModelRefusal.TOO_SLOW, pageMs = most + 1), ModelCheck.judge(2, most + 1, 0.0))
+        // Refused however like its input.
+        assertEquals(ModelRefusal.TOO_SLOW, (ModelCheck.judge(1, most + 1, 99.0) as ModelCheck.Result.Refused).why)
+    }
+
+    @Test
+    fun outputPastTheDifferenceLimitIsWarnedOf() {
+        val limit = ModelCheck.UNLIKE_MEAN
+        assertEquals(24.0, limit, 0.0)
+        assertEquals(emptySet<ImportWarning>(), (ModelCheck.judge(1, 1000, limit) as ModelCheck.Result.Fit).warnings)
+        assertEquals(setOf(ImportWarning.UNLIKE), (ModelCheck.judge(1, 1000, limit + 0.1) as ModelCheck.Result.Fit).warnings)
+    }
+
+    @Test
+    fun aSlowRestylingModelGetsBothWarnings() {
+        val r = ModelCheck.judge(2, 45_000, 60.0, headroom = 0.4f) as ModelCheck.Result.Fit
+        assertEquals(setOf(ImportWarning.SLOW, ImportWarning.UNLIKE), r.warnings)
+        assertEquals(45_000L, r.pageMs)
+        assertEquals(0.4f, r.headroom, 0f)
     }
 
     @Test

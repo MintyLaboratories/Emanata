@@ -76,6 +76,42 @@ class ModelImportsTest {
     }
 
     @Test
+    fun aModelWithWarningsIsNamedOnlyOnceAccepted() {
+        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
+        ModelImports.start(context, pair("Sepia"))
+        val until = System.currentTimeMillis() + 20_000
+        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        val fit = ModelImports.state.value as ImportState.Fit
+        assertEquals(setOf(ImportWarning.UNLIKE), fit.warnings)
+        assertTrue(fit.warned)
+        // Not saved while its warnings wait.
+        ModelImports.save(context, "Sepia", AiStep.UPSCALE)
+        assertEquals(fit, ModelImports.state.value)
+        ModelImports.accept()
+        val accepted = ModelImports.state.value as ImportState.Fit
+        assertFalse(accepted.warned)
+        assertEquals(fit.copy(accepted = true), accepted)
+        ModelImports.save(context, "Sepia", AiStep.UPSCALE)
+        while (ModelImports.state.value !is ImportState.Imported && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertEquals("Sepia", (ModelImports.state.value as ImportState.Imported).model.name)
+    }
+
+    @Test
+    fun aModelWithWarningsCanceledKeepsNothing() {
+        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
+        ModelImports.start(context, pair("Sepia"))
+        val until = System.currentTimeMillis() + 20_000
+        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        val fit = ModelImports.state.value as ImportState.Fit
+        assertTrue(store.staging(fit.id).isDirectory)
+        ModelImports.dismiss(context)
+        assertEquals(ImportState.Idle, ModelImports.state.value)
+        while (store.staging(fit.id).exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertFalse(store.staging(fit.id).exists())
+        assertTrue(UserModels.all.isEmpty())
+    }
+
+    @Test
     fun oneFileWaitsForTheOther() {
         val (bin, param) = pair()
         assertEquals(ImportState.Half(param, isParam = true), ModelImports.importNow(context, listOf(param)))

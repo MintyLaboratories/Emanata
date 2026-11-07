@@ -978,6 +978,10 @@
     <string name="ai_import_steps_keep">Models that keep the size remove artifacts or descreen; only enlarging ones upscale.</string>
     <string name="ai_import_heavy">Heavy models may be too slow to run live: a page not done in time shows without AI processing, and slow models cost more battery and heat.</string>
     <string name="ai_import_save">Import</string>
+    <string name="ai_import_warn_title">Import %1$s anyway?</string>
+    <string name="ai_import_warn_slow">A page would take about %1$d s on this device, more than %2$d s: pages wait long for it, and it costs more battery and heat.</string>
+    <string name="ai_import_warn_unlike">Its output differs strongly from the page: it could be a deliberate restyle, such as sepia, or a model expecting different pixel scaling.</string>
+    <string name="ai_import_anyway">Import anyway</string>
     <string name="ai_import_discard">Discard</string>
     <string name="ai_import_done">Imported %1$s</string>
     <string name="ai_import_refused">%1$s can\'t be used</string>
@@ -991,8 +995,7 @@
     <string name="ai_refused_reach">Its output depends on parts of the picture too far away to run in tiles without visible seams</string>
     <string name="ai_refused_memory">Running it here would take about %1$s of memory, more than the %2$s a model may take on this device</string>
     <string name="ai_refused_memory_unknown">It needs more memory than a model may take on this device</string>
-    <string name="ai_refused_unlike">Its output doesn\'t resemble its input: it may expect pixels scaled differently, or the .param and .bin don\'t belong together</string>
-    <string name="ai_refused_too_slow">It would take about %1$d s per page on this device, longer than a page may take (%2$d s)</string>
+    <string name="ai_refused_too_slow">It would take about %1$d s per page on this device, longer than the reader ever gives a page (%2$d s), so none of its pages could show</string>
     <string name="ai_refused_too_slow_check">Checking it took over %1$d s: it would be far too slow to run here</string>
     <string name="ai_import_failed_pair">Pick one .param file and one .bin file</string>
     <string name="ai_import_failed_unreadable">The files can\'t be read</string>

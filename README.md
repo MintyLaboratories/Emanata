@@ -788,8 +788,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   pair is copied into the app, checked as catalog models are and timed on a
   test page, then named and given its step (1× models remove artifacts or
   descreen, larger ones upscale), with a warning that heavy models may be too
-  slow to run live; one the engine can't run safely is refused with the
-  reason. Imported models are marked as such (no license is claimed), are
+  slow to run live. A model taking over 30 s a page, or whose output differs
+  strongly from the page (a restyle such as sepia, or a model expecting other
+  pixel scaling), is imported only after **Import anyway** (Cancel drops it);
+  one past the reader's 120 s a page, or one the engine can't run safely, is
+  refused with the reason. Imported models are marked as such (no license is claimed), are
   offered at their step like catalog ones, and can be deleted. Battery: battery
   saver pauses AI processing unless **Pause AI processing** is off; pages
   processed before still show. In the reader a page shows at once, then its
@@ -919,12 +922,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the
   model memory, run on a small smooth picture whose output, averaged back down,
-  must stay within 24 codes of it on average (else the model expects pixels
-  scaled otherwise, or the files don't belong together), and timed on a
-  synthetic 1000×1500 page (whole while it takes at most 20 s, else from its
-  first six tiles, the first counted once; one measurement at the device's heat
-  then, its thermal headroom kept beside it); a page past 120 s, or a check
-  past 2 minutes (counted once no reader page holds the engine), is refused.
+  is compared with it, and timed on a synthetic 1000×1500 page (whole while it
+  takes at most 20 s, else from its first six tiles, the first counted once;
+  one measurement at the device's heat then, its thermal headroom kept beside
+  it). A page past 120 s (the most the reader gives one), or a check past 2
+  minutes (counted once no reader page holds the engine), is refused; a page
+  past 30 s, or output over 24 codes from the picture on average (a restyle,
+  or pixels scaled otherwise), is warned of, imported only on "Import anyway".
   While a check runs a marker names the model, read at the next start before
   the model folder is cleaned, so a check that ends the app is reported.
   A taken-in model keeps its files and what was measured beside them; its

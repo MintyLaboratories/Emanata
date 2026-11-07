@@ -15,17 +15,18 @@ import kotlin.math.abs
 /**
  * Checks a model the user imports before it is taken in: it opens as every model does
  * ([Sessions.attempt]: scale, edge trim, context, memory, the GPU against the CPU), then
- * - its output must resemble its input: a smooth picture with a few hard shapes, run through
- *   it and averaged back down to the input's size, may differ from it by at most
- *   [UNLIKE_MEAN] codes on average (a model expecting pixels scaled otherwise, or files that
- *   do not belong together, give something else);
+ * - its output is compared with its input: a smooth picture with a few hard shapes, run
+ *   through it and averaged back down to the input's size; past [UNLIKE_MEAN] codes on
+ *   average it is fit with a warning ([ImportWarning.UNLIKE]: a deliberate restyle, or a
+ *   model expecting pixels scaled otherwise);
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
  *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
  *   their pace; stopping sooner once the page would take longer than
- *   [ReaderAi.MAX_TIMEOUT_MS], the most the reader gives a page: such a model is refused.
- *   One measurement at whatever heat the device has then (its thermal headroom is kept
- *   beside it): a rough figure.
+ *   [ReaderAi.MAX_TIMEOUT_MS], the most the reader gives a page: such a model is refused,
+ *   as none of its pages could show. Past [SLOW_PAGE_MS] it is fit with a warning
+ *   ([ImportWarning.SLOW]). One measurement at whatever heat the device has then (its
+ *   thermal headroom is kept beside it): a rough figure.
  * All within [TIME_LIMIT_MS], else the model is refused as too slow.
  */
 internal object ModelCheck {
@@ -34,8 +35,11 @@ internal object ModelCheck {
     /** The longest a check may take. */
     const val TIME_LIMIT_MS = 120_000L
 
-    /** Mean difference, in codes, past which output does not resemble its input. */
+    /** Mean difference, in codes, past which output is warned of as unlike its input. */
     const val UNLIKE_MEAN = 24.0
+
+    /** The page time past which a model is warned of as slow. */
+    const val SLOW_PAGE_MS = 30_000L
 
     /** Tiles timed at least. */
     const val TIMED_TILES = TileEngine.PACE_AFTER + 2
@@ -50,8 +54,11 @@ internal object ModelCheck {
     private const val LIKE_SIDE = 96
 
     sealed interface Result {
-        /** Fit to take in: [scale] times larger out than in, about [pageMs] for a page here, timed at thermal [headroom] (NaN: unknown). */
-        data class Fit(val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN) : Result
+        /**
+         * Fit to take in: [scale] times larger out than in, about [pageMs] for a page here, timed
+         * at thermal [headroom] (NaN: unknown); [warnings] for the user to weigh first.
+         */
+        data class Fit(val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN, val warnings: Set<ImportWarning> = emptySet()) : Result
 
         /**
          * Refused for [why]; for memory, the [bytes] it would need and the [limit] it would
@@ -92,17 +99,29 @@ internal object ModelCheck {
             session.use { s ->
                 val unlike = unlikeness(s, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 Log.i(TAG, "${files.param.name}: output differs from its input by $unlike on average")
-                if (unlike > UNLIKE_MEAN) return Result.Refused(ModelRefusal.UNLIKE)
                 val heat = headroom()
                 val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
-                if (ms > ReaderAi.MAX_TIMEOUT_MS) return Result.Refused(ModelRefusal.TOO_SLOW, pageMs = ms)
-                return Result.Fit(s.geometry.scale, ms, heat)
+                return judge(s.geometry.scale, ms, unlike, heat)
             }
         } catch (e: CancellationException) {
             if (!canceled() && late()) return Result.Refused(ModelRefusal.TOO_SLOW)
             throw e
         }
+    }
+
+    /**
+     * A model of [scale] whose page takes [pageMs] here, timed at [headroom], its output [unlike]
+     * its input by that many codes: refused past [ReaderAi.MAX_TIMEOUT_MS], else fit, warned of
+     * past [SLOW_PAGE_MS] and [UNLIKE_MEAN].
+     */
+    internal fun judge(scale: Int, pageMs: Long, unlike: Double, headroom: Float = Float.NaN): Result {
+        if (pageMs > ReaderAi.MAX_TIMEOUT_MS) return Result.Refused(ModelRefusal.TOO_SLOW, pageMs = pageMs)
+        val warnings = buildSet {
+            if (pageMs > SLOW_PAGE_MS) add(ImportWarning.SLOW)
+            if (unlike > UNLIKE_MEAN) add(ImportWarning.UNLIKE)
+        }
+        return Result.Fit(scale, pageMs, headroom, warnings)
     }
 
     /** How far [s]'s output, averaged back to its input's size, is from its input, in codes; null when it fails. */

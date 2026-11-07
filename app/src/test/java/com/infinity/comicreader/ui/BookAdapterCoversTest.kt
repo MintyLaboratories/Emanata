@@ -126,7 +126,8 @@ class BookAdapterCoversTest {
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
         recycler = RecyclerView(activity).apply { layoutManager = LinearLayoutManager(activity) }
-        activity.setContentView(FrameLayout(activity).apply { addView(recycler) })
+        // The window's own layout keeps the list at [layout]'s size: a row it cut off would give its cover's place away.
+        activity.setContentView(FrameLayout(activity).apply { addView(recycler, FrameLayout.LayoutParams(WIDTH, HEIGHT)) })
         adapter = BookAdapter(grid = false, prefs = Prefs(context), onClick = {}, onLongClick = {}, onStarClick = {})
         adapter.covers = fake
         recycler.adapter = adapter
@@ -142,10 +143,10 @@ class BookAdapterCoversTest {
 
     private fun layout() {
         recycler.measure(
-            View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(4000, View.MeasureSpec.EXACTLY)
+            View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY)
         )
-        recycler.layout(0, 0, 1000, 4000)
+        recycler.layout(0, 0, WIDTH, HEIGHT)
     }
 
     /** Runs the main looper until [done], for up to two seconds. */
@@ -244,5 +245,11 @@ class BookAdapterCoversTest {
 
         assertNotNull("made while the slow covers are still stuck", drawn(0))
         assertEquals(fake.started.toString(), 4, fake.started.size)
+    }
+
+    private companion object {
+        /** The list's size, larger than the window's, so all eight rows show. */
+        const val WIDTH = 1000
+        const val HEIGHT = 4000
     }
 }

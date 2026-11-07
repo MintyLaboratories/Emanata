@@ -97,12 +97,17 @@ class ModelImportWarningTest {
     private fun warned(): Pair<ImportState.Fit, AlertDialog> {
         manager = Robolectric.buildActivity(ModelsActivity::class.java).setup()
         ModelImports.start(context, pair("Sepia tone"))
-        until { (ModelImports.state.value as? ImportState.Fit)?.warned == true }
+        // The check's thread sets the state before the main thread hears of it: wait for the dialog too.
+        until { (ModelImports.state.value as? ImportState.Fit)?.warned == true && warning() != null }
         val fit = ModelImports.state.value as ImportState.Fit
-        idle()
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        assertTrue(dialog.isShowing)
-        return fit to dialog
+        val dialog = warning()
+        assertNotNull("the warning", dialog)
+        return fit to dialog!!
+    }
+
+    /** The latest dialog when it is the warning, showing; else null. */
+    private fun warning(): AlertDialog? = (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf {
+        it.isShowing && it.getButton(AlertDialog.BUTTON_POSITIVE)?.text?.toString() == context.getString(R.string.ai_import_anyway)
     }
 
     @Test

@@ -20,6 +20,8 @@ import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SimilarFinder
 import com.infinity.comicreader.data.SimilarStore
+import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.BookPrints
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.PreviewStore
@@ -34,6 +36,9 @@ import kotlin.concurrent.thread
  * all alike. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.SimilarCheckService --es dir <path> [--es workers 1,2,3] [--es jxl coder,regions] [--ei rounds 3] [--es start cold|previews]`
+ *
+ * `dir` may be a share folder (`/net/<id>/…`): its books are read in place, read only, by
+ * [SimilarFinder.SHARE_WORKERS] threads, as Find duplicate files reads them.
  *
  * `jxl` names how JPEG XL pages shrink for their hashes ([Decoders.jxlMeasuredByRegions]), each
  * timed in turn (the app's own choice when not given; put back after).
@@ -56,7 +61,7 @@ class SimilarCheckService : Service() {
         thread(name = "similar-check") {
             try {
                 BookIds.init(this)
-                if (dir != null) time(File(dir), workers, jxl, rounds, cold)
+                if (dir != null) time(Remotes.file(dir), workers, jxl, rounds, cold)
             } catch (t: Throwable) {
                 log("failed: ${t.javaClass.simpleName}: ${t.message}")
             } finally {
@@ -98,7 +103,9 @@ class SimilarCheckService : Service() {
         if (cold) PreviewStore.clear(previews)
         storeFile.delete()
         val store = SimilarStore(storeFile)
-        val finder = SimilarFinder(store, BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) }, workers = w)
+        val finder = SimilarFinder(
+            store, BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) }, workers = w, remote = { it is RemoteFile }
+        )
         val before = thermal()
         val t = System.nanoTime()
         val found = finder.find(books)

@@ -30,6 +30,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.shape.MaterialShapeDrawable
 import com.infinity.comicreader.R
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -92,6 +93,11 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The button the dragging finger lights up. */
     private var lit: RingOption? = null
     private val linger = Runnable { onLinger() }
+
+    /** The followed finger's touch slop, and where it was, from the hub, when its linger on [lit] began to count. */
+    private var slop = 0f
+    private var stillX = 0f
+    private var stillY = 0f
 
     val isOpen: Boolean get() = root != null
 
@@ -207,7 +213,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** Follows the finger that opened the ring, still down at [x], [y] in the window; [drag] gets its moves. */
     fun follow(x: Float, y: Float) {
         if (!isOpen) return
-        val slop = ViewConfiguration.get(activity).scaledTouchSlop.toFloat()
+        slop = ViewConfiguration.get(activity).scaledTouchSlop.toFloat()
         gesture = RingGesture(angles(), hubRadius, slop, x - hostX - cx, y - hostY - cy)
     }
 
@@ -219,9 +225,15 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     fun drag(action: Int, x: Float, y: Float) {
         val g = gesture ?: return
         val enabled = { i: Int -> items.getOrNull(i)?.enabled == true }
-        val moved = g.move(x - hostX - cx, y - hostY - cy, enabled)
+        val dx = x - hostX - cx
+        val dy = y - hostY - cy
+        val moved = g.move(dx, dy, enabled)
         when (action) {
-            MotionEvent.ACTION_MOVE -> if (moved) light(items.getOrNull(g.picked)?.option, tick = true)
+            MotionEvent.ACTION_MOVE -> when {
+                moved -> light(items.getOrNull(g.picked)?.option, tick = true, dx, dy)
+                // As with a long press, a finger that moves past the slop has not lingered yet.
+                lingers() && hypot(dx - stillX, dy - stillY) > slop -> countLinger(dx, dy)
+            }
             MotionEvent.ACTION_UP -> {
                 unfollow()
                 if (!g.dragging) return
@@ -241,18 +253,30 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         light(null, tick = false)
     }
 
-    /** Lights [option]'s button up (pressed and grown), none when null; lingering on one with a long press counts as one. */
-    private fun light(option: RingOption?, tick: Boolean) {
-        root?.removeCallbacks(linger)
+    /**
+     * Lights [option]'s button up (pressed and grown), none when null, with the finger at [dx],
+     * [dy] from the hub; lingering on one with a long press counts as one.
+     */
+    private fun light(option: RingOption?, tick: Boolean, dx: Float = 0f, dy: Float = 0f) {
         if (option == lit) return
+        root?.removeCallbacks(linger)
         lit?.let { buttons[it]?.first }?.let { grow(it, false) }
         lit = option
         option?.let { buttons[it]?.first }?.let { grow(it, true) }
-        if (option != null && items.firstOrNull { it.option == option }?.longLabel != null) {
-            root?.postDelayed(linger, ViewConfiguration.getLongPressTimeout().toLong())
-        }
+        if (lingers()) countLinger(dx, dy)
         // Without the flag that ignores it, the system's touch feedback setting applies.
         if (tick) hub?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    /** Whether the lit button has a long press. */
+    private fun lingers() = lit.let { o -> o != null && items.firstOrNull { it.option == o }?.longLabel != null }
+
+    /** Counts the linger on the lit button from now, with the finger at [dx], [dy] from the hub. */
+    private fun countLinger(dx: Float, dy: Float) {
+        stillX = dx
+        stillY = dy
+        root?.removeCallbacks(linger)
+        root?.postDelayed(linger, ViewConfiguration.getLongPressTimeout().toLong())
     }
 
     private fun grow(button: View, on: Boolean) {

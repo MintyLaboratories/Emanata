@@ -594,4 +594,27 @@ class ListActivityViewRingTest {
         assertEquals(DetailDisplay.DENSE, prefs.view(Prefs.TAB_BROWSE).detail)
         assertFalse(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
     }
+
+    @Test
+    fun movingOnWithinSortKeepsItFromLingering() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        val (hx, hy) = center(list.fab())
+        val (sx, sy) = center(list.viewRing.button(RingOption.SORT)!!)
+        finger.moveTo(sx, sy)
+        val slop = ViewConfiguration.get(list).scaledTouchSlop
+        val step = 2f * slop / hypot(sx - hx, sy - hy)
+        // Outward along Sort's direction, past the slop every tenth of a second, for twice the linger.
+        for (i in 1..(2 * longPress / 100).toInt()) {
+            finger.moveTo(hx + (sx - hx) * (1 + i * step), hy + (sy - hy) * (1 + i * step), steps = 1)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        }
+        assertTrue(list.viewRing.isOpen)
+        assertNull(ShadowDialog.getLatestDialog())
+        // Within the slop, it lingers.
+        finger.moveTo(finger.x + slop / 2f, finger.y, steps = 1)
+        settle(longPress)
+        assertFalse(list.viewRing.isOpen)
+        assertTrue((ShadowDialog.getLatestDialog() as AlertDialog).isShowing)
+    }
 }

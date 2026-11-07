@@ -195,6 +195,15 @@ class ModelImportWarningTest {
     }
 
     @Test
+    fun theNamingSaysTheSecondsTheWarningSaid() {
+        val slow = ImportState.Fit("user-1", "Slow", 2, 30_400, warnings = setOf(ImportWarning.SLOW))
+        assertTrue(ModelText.warnings(context, slow).contains("about 31 s"))
+        assertEquals(31L, ModelText.pageSeconds(slow.copy(accepted = true)))
+        assertEquals("not warned of: to the nearest", 30L, ModelText.pageSeconds(slow.copy(warnings = emptySet())))
+        assertEquals(30L, ModelText.pageSeconds(slow.copy(pageMs = 29_600, warnings = setOf(ImportWarning.UNLIKE))))
+    }
+
+    @Test
     fun aModelPastTheReadersLimitIsRefusedSayingSo() {
         val text = ModelText.refusal(context, ImportState.Refused("Glacial", ModelRefusal.TOO_SLOW, 0, 0, 150_000))
         assertTrue(text, text.contains("about 150 s") && text.contains("120 s") && text.contains("none of its pages could show"))

@@ -184,10 +184,16 @@ object ModelText {
             else context.getString(R.string.ai_refused_too_slow_check, (ModelCheck.TIME_LIMIT_MS / 1000))
     }
 
-    /** What the user weighs before importing fit model [s] anyway: a paragraph per warning, its time rounded up. */
+    /**
+     * Fit model [s]'s page time in whole seconds: rounded up when warned of as slow, so one
+     * just past the limit never reads as at it, and the naming after says the same; else to the nearest.
+     */
+    fun pageSeconds(s: ImportState.Fit): Long = if (ImportWarning.SLOW in s.warnings) (s.pageMs + 999) / 1000 else (s.pageMs + 500) / 1000
+
+    /** What the user weighs before importing fit model [s] anyway: a paragraph per warning. */
     fun warnings(context: Context, s: ImportState.Fit): String = s.warnings.sorted().joinToString("\n\n") { w ->
         when (w) {
-            ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, (s.pageMs + 999) / 1000, ModelCheck.WARN_PAGE_MS / 1000)
+            ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, pageSeconds(s), ModelCheck.WARN_PAGE_MS / 1000)
             ImportWarning.UNLIKE -> context.getString(R.string.ai_import_warn_unlike)
         }
     }
@@ -432,7 +438,7 @@ class ModelsActivity : AppCompatActivity() {
     /** Asks for a checked model's name and step, warning that heavy models may be too slow. */
     private fun fitDialog(s: ImportState.Fit): AlertDialog {
         val view = layoutInflater.inflate(R.layout.dialog_import_model, null)
-        val seconds = (s.pageMs + 500) / 1000
+        val seconds = ModelText.pageSeconds(s)
         view.findViewById<TextView>(R.id.import_found).text =
             if (s.scale == 1) getString(R.string.ai_import_found_keeps, seconds) else getString(R.string.ai_import_found_enlarges, s.scale, seconds)
         val name = view.findViewById<TextInputEditText>(R.id.import_name)

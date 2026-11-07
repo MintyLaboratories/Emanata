@@ -502,6 +502,20 @@ class ResamplerTest {
     }
 
     @Test
+    fun theCallerTakesTheFirstBandHoweverQuickTheOthers() {
+        val caller = Thread.currentThread().id
+        repeat(200) {
+            val first = java.util.concurrent.atomic.AtomicLong(-1)
+            // Instant bands: workers just started could take them all.
+            Resampler.inBands(64, 4, { false }) { _, y0, _ ->
+                if (y0 == 0) first.set(Thread.currentThread().id)
+                true
+            }
+            assertEquals(caller, first.get())
+        }
+    }
+
+    @Test
     fun workersGrowWhenMoreAreWanted() {
         val wanted = AtomicInteger(1)
         val workers = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()

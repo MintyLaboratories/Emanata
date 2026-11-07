@@ -182,9 +182,9 @@ object Resampler {
     /**
      * Runs [work] over output rows 0 until [dstH] in bands, on up to [threads] workers at
      * once, each passing its own index below [threads]; [work] returns false to stop every
-     * worker. The calling thread is worker 0; before each of its bands it starts more
-     * workers on [Dispatchers.Default] until [wanted] of them run, so their count can grow
-     * mid-job but never shrinks. Polls [canceled] before each band and throws
+     * worker. The calling thread is worker 0; with each band it takes, before working it,
+     * it starts more workers on [Dispatchers.Default] until [wanted] of them run, so their
+     * count can grow mid-job but never shrinks, and the first band is always its own. Polls [canceled] before each band and throws
      * [CancellationException] once it returns true or [work] stopped.
      */
     fun inBands(
@@ -200,9 +200,9 @@ object Resampler {
         val loop = { worker: Int, before: () -> Unit ->
             try {
                 while (!stopped.get()) {
-                    before()
                     val b = next.getAndIncrement()
                     if (b >= bands) break
+                    before()
                     if (canceled() || !work(worker, bandStart(dstH, bands, b), bandStart(dstH, bands, b + 1))) stopped.set(true)
                 }
             } catch (t: Throwable) {

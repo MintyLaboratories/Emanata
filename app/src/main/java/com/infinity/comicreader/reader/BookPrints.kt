@@ -29,14 +29,15 @@ object BookPrints {
     /**
      * What the search compares of book [file], names read as [charset] says; null when it
      * cannot be opened, has no pages, or [canceled] turned true before every page was read.
-     * Kept ([SimilarFinder.Read.keep]) only when each page hashed or will never decode.
-     * Blocking.
+     * A book on a share is read in place only, never fetched or streamed whole
+     * ([PageSources.open]); [canceled] is asked between its pages. Kept
+     * ([SimilarFinder.Read.keep]) only when each page hashed or will never decode. Blocking.
      */
     fun read(file: File, charset: String, cacheDir: File, canceled: () -> Boolean = { false }): SimilarFinder.Read? =
         Timing.span("book print") { readNow(file, charset, cacheDir, canceled) }
 
     private fun readNow(file: File, charset: String, cacheDir: File, canceled: () -> Boolean): SimilarFinder.Read? {
-        val source = runCatching { PageSources.open(file, charset, cacheDir, canceled, copyNested = false) }.getOrNull() ?: return null
+        val source = runCatching { PageSources.open(file, charset, cacheDir, canceled, copyNested = false, inPlaceOnly = true) }.getOrNull() ?: return null
         try {
             val count = source.pageCount
             if (count <= 0) return null

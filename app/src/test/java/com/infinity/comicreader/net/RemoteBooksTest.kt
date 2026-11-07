@@ -213,6 +213,32 @@ class RemoteBooksTest {
     }
 
     @Test
+    fun inPlaceOnlyOpensWhatReadsInPlaceAndNeverFetchesOrStreams() {
+        Fixtures.zip(File(share, "a.cbz"), *pages)
+        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*bigPages(4, 9), solid = true))
+        File(share, "book.pdf").writeBytes("%PDF-1.4\n".toByteArray() + ByteArray(4096))
+        PageSources.open(remote("a.cbz"), "UTF-8", cacheDir, inPlaceOnly = true).use { assertEquals(3, it.pageCount) }
+        for (name in listOf("s.cbr", "book.pdf")) {
+            try {
+                PageSources.open(remote(name), "UTF-8", cacheDir, inPlaceOnly = true).close()
+                fail("$name opened in place only")
+            } catch (e: IOException) {
+                // Expected: it would be streamed or fetched whole.
+            }
+        }
+        assertEquals(0, copies())
+        assertEquals(0, RemoteCache.pagesIn(cacheDir).list()?.size ?: 0)
+        fake.seekable = false
+        try {
+            PageSources.open(remote("a.cbz"), "UTF-8", cacheDir, inPlaceOnly = true).close()
+            fail("a book from a share sending files only whole")
+        } catch (e: IOException) {
+            // Expected.
+        }
+        assertEquals(0, copies())
+    }
+
+    @Test
     fun aLooseImageIsFetched() {
         File(share, "page.png").writeBytes(ByteArray(100))
         PageSources.open(remote("page.png"), "UTF-8", cacheDir).use { assertEquals(1, it.pageCount) }

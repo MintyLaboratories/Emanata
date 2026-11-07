@@ -49,13 +49,15 @@ interface ArchiveReader : Closeable {
         /**
          * Reader for [file] as [kind] (by default from its leading bytes), or null when it
          * is not an archive. One on a share is read in place, through a [RemoteChannel];
-         * on a server that sends files only whole ([Remotes.seekable]) it throws.
+         * on a server that sends files only whole ([Remotes.seekable]) it throws. For one read
+         * [sampled] (a few pages apart), nothing comes ahead past an entry ([RemoteChannel]).
          */
         fun open(
             file: File,
             charsetName: String,
-            kind: ArchiveKind? = ArchiveKind.detect(file)
-        ): ArchiveReader? = if (file is RemoteFile) inPlace(file, charsetName, kind) else when (kind) {
+            kind: ArchiveKind? = ArchiveKind.detect(file),
+            sampled: Boolean = false
+        ): ArchiveReader? = if (file is RemoteFile) inPlace(file, charsetName, kind, sampled) else when (kind) {
             ArchiveKind.ZIP -> ZipReader(file, charsetName)
             ArchiveKind.RAR -> RarReader(file)
             ArchiveKind.SEVEN_ZIP -> SevenZipReader(file)
@@ -63,11 +65,11 @@ interface ArchiveReader : Closeable {
             ArchiveKind.PDF, null -> null
         }
 
-        private fun inPlace(file: RemoteFile, charsetName: String, kind: ArchiveKind?): ArchiveReader? {
+        private fun inPlace(file: RemoteFile, charsetName: String, kind: ArchiveKind?, sampled: Boolean): ArchiveReader? {
             if (kind == null || kind == ArchiveKind.PDF) return null
             // A server sending files only whole would send this one again for each seek.
             if (!Remotes.seekable(file.path)) throw IOException("Not readable in place: ${file.name}")
-            val channel = RemoteChannel.open(file.path)
+            val channel = RemoteChannel.open(file.path, entriesAhead = !sampled)
             return when (kind) {
                 ArchiveKind.ZIP -> ChannelZipReader(channel, charsetName)
                 ArchiveKind.RAR -> RarReader.inPlace(channel)

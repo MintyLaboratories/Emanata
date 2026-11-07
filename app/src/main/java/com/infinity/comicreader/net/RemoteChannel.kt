@@ -42,7 +42,9 @@ class RemoteChannel(
     private val sharedBlock: Int = SHARED_BLOCK_BYTES,
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
     /** True when the file is read front to back to its end (a whole-file fetch or copy): what comes ahead is read anyway. */
-    private val toEnd: Boolean = false
+    private val toEnd: Boolean = false,
+    /** False when a few entries are read apart (pages sampled for a hash): nothing comes ahead past an entry's end. */
+    private val entriesAhead: Boolean = true
 ) : SeekableByteChannel {
     private var position = 0L
 
@@ -307,7 +309,7 @@ class RemoteChannel(
         val spanEnd = span?.end ?: -1
         val inSpan = spanEnd > run.end
         // Past a span's end more comes only for entries read in a row: one page read whole (a cover) wants no more.
-        val inRow = span != null && !inSpan && !shared && followsRead(span)
+        val inRow = entriesAhead && span != null && !inSpan && !shared && followsRead(span)
         if (!inSpan && !inRow && (span != null || run.bytes.size < aheadFrom || window < aheadFrom)) return
         if (!inSpan && !toEnd && Metered.skipsOptional()) return
         val limit = if (inSpan) spanEnd else size
@@ -445,10 +447,11 @@ class RemoteChannel(
 
         /**
          * Opens the file at [path] on its share as a channel, starting from its ends when just
-         * read for its Book ID ([FileEnds]) and its time is known to be the same.
+         * read for its Book ID ([FileEnds]) and its time is known to be the same; [entriesAhead]
+         * as the channel's.
          */
         @Throws(IOException::class)
-        fun open(path: String): RemoteChannel = RemoteChannel(Remotes.open(path)).also { channel ->
+        fun open(path: String, entriesAhead: Boolean = true): RemoteChannel = RemoteChannel(Remotes.open(path), entriesAhead = entriesAhead).also { channel ->
             val modified = Remotes.cachedStat(path)?.modified ?: return@also
             for ((start, bytes) in FileEnds.of(path, channel.size, modified)) channel.seed(start, bytes)
         }

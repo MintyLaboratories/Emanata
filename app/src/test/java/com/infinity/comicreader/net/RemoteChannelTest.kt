@@ -332,6 +332,19 @@ class RemoteChannelTest {
     }
 
     @Test
+    fun entriesReadApartFetchNothingAheadPastTheirEnds() {
+        val big = ByteArray(100_000) { (it * 5).toByte() }
+        val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 16_384, background = now, entriesAhead = false)
+        for (start in listOf(1_000L, 11_100L)) {
+            channel.expect(start, 10_000)
+            channel.position(start)
+            assertEquals(10_000, channel.read(ByteBuffer.allocate(10_000)))
+        }
+        assertEquals(0, channel.aheads)
+        channel.close()
+    }
+
+    @Test
     fun aRunFetchedAheadButNotReadIsLetGo() {
         val big = ByteArray(100_000) { (it * 5).toByte() }
         val input = Bytes(big)

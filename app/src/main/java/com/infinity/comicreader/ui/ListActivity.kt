@@ -168,6 +168,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** Whether [fab]'s touches go to the view ring till the finger lifts. */
     private var ringFollows = false
 
+    /** [fab]'s place in the window, read on each of its touches. */
+    private val fabAt = IntArray(2)
+
     /** The items selected: selecting swaps the toolbar for [selectionBar] and shows [selectionActions]. */
     internal val selection = Selection()
 
@@ -2022,9 +2025,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** Notes where the finger on [v] is; once the ring follows it, its moves go to the ring until it lifts. */
     @SuppressLint("ClickableViewAccessibility")
     private fun onFabTouch(v: View, e: MotionEvent): Boolean {
-        val at = IntArray(2).also { v.getLocationInWindow(it) }
-        val x = at[0] + e.getX(0)
-        val y = at[1] + e.getY(0)
+        v.getLocationInWindow(fabAt)
+        val x = fabAt[0] + e.getX(0)
+        val y = fabAt[1] + e.getY(0)
         val end = e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL
         if (e.actionMasked == MotionEvent.ACTION_DOWN) ringFollows = false
         fabFinger = if (end) null else x to y

@@ -148,4 +148,63 @@ class SimilarFinderTest {
         assertEquals(1, found.compared)
         assertEquals(2, found.unread)
     }
+
+    @Test
+    fun progressCountsBooksHashedOfThoseToHash() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        store.put(BookId(1), entry(30))
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> read(f) }, workers = 1)
+        val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
+        finder.find(files("a.cbz", "b.cbr", "c.cbz")) { d, t -> progress += d to t }
+        // The kept book is not to hash: two to hash, both hashed.
+        assertEquals(listOf(0 to 2, 1 to 2, 2 to 2), progress.toList())
+    }
+
+    @Test
+    fun shareBooksAreReadByTheirOwnThreadOneAtATimeBesideDeviceBooks() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val inside = AtomicInteger()
+        val most = AtomicInteger()
+        val threads = Collections.synchronizedSet(HashSet<String>())
+        val ids = (1..6).associate { "s$it.cbz" to BookId(100L + it) } + (1..6).associate { "d$it.cbz" to BookId(200L + it) }
+        val finder = SimilarFinder(store, { ids[it.name] }, { f, _ ->
+            if (f.name.startsWith("s")) {
+                most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
+                threads += Thread.currentThread().name
+                Thread.sleep(10)
+                inside.decrementAndGet()
+            }
+            SimilarFinder.Read(entry(30, shift = ids.getValue(f.name).value.toInt() * 1000))
+        }, workers = 3, limit = { 0 }, remote = { it.name.startsWith("s") })
+        val found = finder.find(files(*ids.keys.toTypedArray()))
+        assertEquals(12, found.compared)
+        assertEquals(1, most.get())
+        assertEquals(1, threads.size)
+    }
+
+    @Test
+    fun withoutShareReadsShareBooksAreCountedApart() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val reads = Collections.synchronizedList(ArrayList<String>())
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(f) }, remote = { it.name == "b.cbr" })
+        val progress = Collections.synchronizedList(ArrayList<Pair<Int, Int>>())
+        val found = finder.find(finder.contents(files("a.cbz", "b.cbr", "c.cbz")), progress = { d, t -> progress += d to t }, readShares = false)
+        assertEquals(listOf("a.cbz", "c.cbz"), reads.sorted())
+        assertEquals(2, found.compared)
+        assertEquals(1, found.unread)
+        assertEquals(1, found.unreadShares)
+        assertEquals(0 to 2, progress.first())
+    }
+
+    @Test
+    fun aContentOnTheDeviceAndAShareIsReadFromTheDevice() {
+        val store = SimilarStore(File(tmp.root, "store.txt"))
+        val reads = Collections.synchronizedList(ArrayList<String>())
+        // Both files hold the same content: the copy reads as a.cbz does.
+        val finder = SimilarFinder(store, ::idOf, { f, _ -> reads += f.name; read(if (f.name == "a copy.cbz") File(tmp.root, "a.cbz") else f) }, remote = { it.name == "a.cbz" })
+        val found = finder.find(finder.contents(files("a.cbz", "a copy.cbz", "b.cbr")), readShares = false)
+        assertEquals(listOf("a copy.cbz", "b.cbr"), reads.sorted())
+        assertEquals(0, found.unreadShares)
+        assertEquals(1, found.groups.size)
+    }
 }

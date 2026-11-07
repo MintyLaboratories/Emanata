@@ -249,11 +249,12 @@
     <string name="dupes_identical">Bit-identical copies (SHA-256 verified)</string>
     <string name="dupes_similar">Similar books (probable)</string>
     <string name="dupes_similar_partial">Similar books (probable; %1$d of %2$d books compared)</string>
-    <string name="similar_progress">Comparing pages of books: %1$d / %2$d</string>
+    <string name="similar_progress">Hashing pages of books: %1$d / %2$d</string>
     <string name="similar_listing">Looking for books…</string>
     <string name="similar_stop">Stop</string>
     <string name="similar_compare">Compare</string>
     <string name="similar_unread">Similar books: %1$d of %2$d books not compared yet</string>
+    <string name="similar_metered">Similar books: %1$d books on shares not compared. Skipped on a metered connection</string>
     <plurals name="similar_pages">
         <item quantity="one">%1$d page · %2$s</item>
         <item quantity="other">%1$d pages · %2$s</item>

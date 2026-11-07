@@ -1,0 +1,152 @@
+package com.infinity.comicreader.ui
+
+import android.Manifest
+import android.app.Application
+import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Looper
+import android.view.View
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.SimilarStore
+import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.SyntheticArt
+import com.infinity.comicreader.testing.Xxh3Port
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
+import java.io.File
+
+/** Find duplicate files in a share folder: read only, share books hashed unless the connection is metered. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class CleanupSharesTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private lateinit var context: Application
+    private lateinit var dir: File
+    private lateinit var fake: FakeRemoteFs
+
+    private fun page(seed: Long, format: Bitmap.CompressFormat, quality: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(SyntheticArt.art(W, H, seed), W, H, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().also { bitmap.compress(format, quality, it) }.toByteArray()
+    }
+
+    private fun book(path: String, seeds: List<Long>, format: Bitmap.CompressFormat, ext: String, quality: Int = 90): File {
+        val file = File(dir, path).apply { parentFile!!.mkdirs() }
+        val pages = seeds.mapIndexed { i, seed -> Fixtures.entry("p%02d.$ext".format(i + 1), page(seed, format, quality)) }
+        return Fixtures.zip(file, *pages.toTypedArray())
+    }
+
+    @Before
+    fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+        shadowOf(context).grantPermissions(Manifest.permission.READ_EXTERNAL_STORAGE)
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        SimilarStore.of(context.cacheDir).clear()
+        BookIds.hasher = Xxh3Port
+        dir = tmp.newFolder("share")
+        val seeds = (1L..8L).toList()
+        book("first/Tale.cbz", seeds, Bitmap.CompressFormat.PNG, "png")
+        book("second/Tale retold.cbz", seeds + 99L, Bitmap.CompressFormat.JPEG, "jpg", quality = 80)
+        book("third/Other.cbz", (101L..108L).toList(), Bitmap.CompressFormat.WEBP, "webp")
+        File(dir, "first/Tale.cbz").copyTo(File(dir, "fourth/Tale.cbz").apply { parentFile!!.mkdirs() })
+        fake = FakeRemoteFs(dir)
+        Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
+    }
+
+    @After
+    fun tearDown() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
+        Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+    }
+
+    private fun settle(activity: CleanupActivity) {
+        val stop = activity.findViewById<View>(R.id.similar_stop)
+        val bar = activity.findViewById<View>(R.id.similar_bar)
+        var rounds = 0
+        do {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+            shadowOf(Looper.getMainLooper()).idle()
+        } while (((bar.isShown && stop.isShown) || rounds++ < 5) && rounds < 1000)
+    }
+
+    private fun launch(): Pair<CleanupActivity, RecyclerView> {
+        val intent = Intent(context, CleanupActivity::class.java)
+            .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
+            .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
+        val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
+        settle(activity)
+        val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
+        list.measure(View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY))
+        list.layout(0, 0, 1600, 2400)
+        return activity to list
+    }
+
+    private fun RecyclerView.row(position: Int): View = findViewHolderForAdapterPosition(position)!!.itemView
+
+    private fun View.text(id: Int) = findViewById<TextView>(id).text.toString()
+
+    @Test
+    fun shareBooksAreHashedAndListedReadOnly() {
+        val (activity, list) = launch()
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_bar).visibility)
+        // The bit-identical copies, then the similar books.
+        assertEquals(context.getString(R.string.dupes_identical), list.row(0).text(R.id.title))
+        assertEquals(context.getString(R.string.dupes_similar), list.row(2).text(R.id.title))
+        val columns = list.row(3).findViewById<LinearLayout>(R.id.columns)
+        assertEquals(2, columns.childCount)
+        // Nothing on a share can be ticked or deleted.
+        val place = list.row(1).findViewById<LinearLayout>(R.id.locations).getChildAt(0)
+        assertEquals(View.GONE, place.findViewById<CheckBox>(R.id.check).visibility)
+        place.performClick()
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.cleanup_delete).visibility)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.cleanup_select).visibility)
+        assertTrue(File(dir, "fourth/Tale.cbz").exists())
+    }
+
+    @Test
+    fun onAMeteredConnectionShareBooksAreNotReadAndTheBarSaysWhy() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        val (activity, list) = launch()
+        val bar = activity.findViewById<View>(R.id.similar_bar)
+        assertEquals(View.VISIBLE, bar.visibility)
+        assertEquals(context.getString(R.string.similar_metered, 4), activity.findViewById<TextView>(R.id.similar_text).text.toString())
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_compare).visibility)
+        // Only the bit-identical copies (a search the user asked for); no similar books.
+        assertEquals(2, list.adapter!!.itemCount)
+        assertNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
+    }
+
+    private companion object {
+        const val W = 120
+        const val H = 180
+    }
+}

@@ -37,6 +37,9 @@ import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.RemoteFile
+import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.BookPrints
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Duplicates
@@ -52,13 +55,15 @@ import java.io.File
 import java.nio.file.Files
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Housekeeping: finds duplicate files or lists the largest files below a folder,
  * and lets you delete them. Bit-identical copies (same SHA-256) show as one cover,
  * which a two-finger spread peeks into, with every place a copy is. Books probably
  * alike in other files ([SimilarFinder]) follow side by side, found with progress
- * and a way to stop; none of them is ever selected for you.
+ * and a way to stop; none of them is ever selected for you. In a share folder
+ * ([Prefs.similarShares]) everything is read only and nothing can be deleted.
  */
 class CleanupActivity : AppCompatActivity() {
 
@@ -105,9 +110,12 @@ class CleanupActivity : AppCompatActivity() {
     @Volatile
     private var stopped = false
 
-    /** Books done so far and in all, as the search last said. */
+    /** Books hashed so far and all to hash, as the search last said. */
     @Volatile
     private var compared = 0 to 0
+
+    /** True in a share folder: nothing is selected or deleted. */
+    private var readOnly = false
 
     /** Every file deleted here, so a search under way when they went lists none of them. */
     private val deleted = HashSet<String>()
@@ -122,9 +130,8 @@ class CleanupActivity : AppCompatActivity() {
         setContentView(R.layout.activity_cleanup)
 
         mode = if (intent.getStringExtra(EXTRA_MODE) == MODE_LARGE) MODE_LARGE else MODE_DUPES
-        val root = File(
-            intent.getStringExtra(EXTRA_ROOT) ?: android.os.Environment.getExternalStorageDirectory().absolutePath
-        )
+        val root = Remotes.file(intent.getStringExtra(EXTRA_ROOT) ?: android.os.Environment.getExternalStorageDirectory().absolutePath)
+        readOnly = root is RemoteFile
 
         val toolbar = findViewById<MaterialToolbar>(R.id.cleanup_toolbar)
         setSupportActionBar(toolbar)
@@ -139,7 +146,8 @@ class CleanupActivity : AppCompatActivity() {
         similarBar = findViewById(R.id.similar_bar)
         similarText = findViewById(R.id.similar_text)
         similarProgress = findViewById(R.id.similar_progress)
-        findViewById<TextView>(R.id.cleanup_summary).text = root.absolutePath
+        findViewById<TextView>(R.id.cleanup_summary).text =
+            if (readOnly) Crumbs.of(root.absolutePath, StorageRoots.list(this)).joinToString(" / ") { it.label } else root.absolutePath
         similarStop = findViewById(R.id.similar_stop)
         similarCompare = findViewById(R.id.similar_compare)
         similarStop.setOnClickListener {
@@ -158,8 +166,9 @@ class CleanupActivity : AppCompatActivity() {
             )
         }
 
-        selectButton.visibility = if (mode == MODE_DUPES) View.VISIBLE else View.GONE
+        selectButton.visibility = if (mode == MODE_DUPES && !readOnly) View.VISIBLE else View.GONE
         selectButton.setOnClickListener { selectExtras() }
+        deleteButton.visibility = if (readOnly) View.GONE else View.VISIBLE
         deleteButton.setOnClickListener { confirmDelete() }
         updateDeleteButton()
 
@@ -244,9 +253,23 @@ class CleanupActivity : AppCompatActivity() {
     private fun walk(root: File, alive: () -> Boolean): Sequence<File> =
         root.walkTopDown()
             .maxDepth(MAX_DEPTH)
-            .onEnter { !it.name.startsWith(".") && it.name != "Android" && !Files.isSymbolicLink(it.toPath()) }
+            .onEnter { !it.name.startsWith(".") && it.name != "Android" && !isLink(it) }
             .takeWhile { alive() }
-            .filter { it.isFile && Formats.typeOf(it.name) != EntryType.OTHER && !Files.isSymbolicLink(it.toPath()) }
+            .filter { it.isFile && Formats.typeOf(it.name) != EntryType.OTHER && !isLink(it) }
+
+    /** True for a symbolic link, on the device or on a share (as its listing says). */
+    private fun isLink(f: File): Boolean = if (f is RemoteFile) f.stat()?.isLink == true else Files.isSymbolicLink(f.toPath())
+
+    /** [f]'s bytes for [Duplicates]: a share's file read in place. */
+    private fun bytesOf(f: File): Duplicates.Bytes {
+        if (f !is RemoteFile) return Duplicates.local(f)
+        val input = Remotes.open(f.path)
+        return object : Duplicates.Bytes {
+            override val length: Long get() = input.length
+            override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int) = input.read(position, buffer, offset, count)
+            override fun close() = input.close()
+        }
+    }
 
     private fun findLargest(root: File, alive: () -> Boolean): List<Row> =
         walk(root, alive).map { it to it.length() }
@@ -261,7 +284,7 @@ class CleanupActivity : AppCompatActivity() {
 
     /** The bit-identical groups among [files] under their header; empty when there are none. */
     private fun findDuplicates(files: List<File>, alive: () -> Boolean): List<Row> {
-        val groups = Duplicates.find(files.asSequence(), alive = alive)
+        val groups = Duplicates.find(files.asSequence(), ::bytesOf, alive)
         if (groups.isEmpty()) return emptyList()
         val snap = LibrarySnapshot.load(library, prefs)
         val roots = StorageRoots.list(this)
@@ -277,50 +300,58 @@ class CleanupActivity : AppCompatActivity() {
     /**
      * Compares the books among [files] whose pages it can read ([SimilarFinder]) and lists
      * the groups probably alike below anything listed, under their header. Books with nothing
-     * kept of them are read at once only when few ([AUTO_READS]) and battery saver does not
-     * pause scans ([Thrift.pausedScans]); else Compare reads them.
+     * kept of them are hashed first, unasked, unless battery saver pauses scans
+     * ([Thrift.pausedScans]): then Compare reads them.
      */
     private suspend fun findSimilar(files: List<File>) {
         val books = files.filter { Formats.typeOf(it.name).let { t -> t == EntryType.ARCHIVE || t == EntryType.PDF } }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath })
         if (books.size < 2) return
-        comparing = true
-        showSimilarBar(getString(R.string.similar_listing), running = true)
-        updateEmpty()
-        val cacheDir = applicationContext.cacheDir
-        val charset = prefs.charset
-        val workers = SimilarFinder.WORKERS
-        val finder = SimilarFinder(
-            SimilarStore.of(cacheDir), BookIds::find, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) },
-            workers, CompactWorkers.limit(this, workers)
-        )
-        val context = currentCoroutineContext()
-        // Stop holds back reads only: every book is listed, so what is left is counted.
-        val contents = withContext(AppDispatchers.io) { finder.contents(books) { context.isActive } }
         val paused = Thrift.of(Thrift.saving(this), prefs).pausedScans
-        compareSimilar(finder, contents, readNew = !paused && contents.unread.size <= AUTO_READS)
+        compareSimilar(books, readNew = !paused)
     }
 
     /**
-     * Compares [contents] ([SimilarFinder.find]), reading those with nothing kept when
-     * [readNew], and lists what it found in place of the similar books listed. Shows how far
-     * it got meanwhile; Stop, or leaving, compares only what was read by then. Books left
-     * uncompared are counted on the bar, with Compare to read them.
+     * Compares [books] ([SimilarFinder.find]), hashing those with nothing kept when [readNew]
+     * (device books by up to [SimilarFinder.WORKERS] threads as heat and battery allow, share
+     * books one at a time beside them), and lists what it found in place of the similar books
+     * listed. Shows books hashed of those to hash meanwhile; Stop, or leaving, compares only
+     * what was read by then. On a metered connection ([Metered]) share books are not read, not
+     * even for their IDs, and the bar says so. Books left uncompared otherwise are counted on
+     * the bar, with Compare to read them.
      */
-    private suspend fun compareSimilar(finder: SimilarFinder, contents: SimilarFinder.Contents, readNew: Boolean) {
+    private suspend fun compareSimilar(books: List<File>, readNew: Boolean) {
         comparing = true
         showSimilarBar(getString(R.string.similar_listing), running = true)
         updateEmpty()
         val context = currentCoroutineContext()
+        val cacheDir = applicationContext.cacheDir
+        val charset = prefs.charset
+        val workers = SimilarFinder.WORKERS
+        val left = books.filter { it.absolutePath !in deleted }
+        val metered = left.any { it is RemoteFile } && withContext(AppDispatchers.io) { Metered.skipsOptional() }
+        // A share book's ID not known yet is read from it, unless metered or stopped: then it is counted as not compared.
+        val unknown = AtomicInteger()
+        val idOf = { f: File ->
+            if (f is RemoteFile && (metered || stopped)) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
+        }
+        val finder = SimilarFinder(
+            SimilarStore.of(cacheDir), idOf, { f, canceled -> BookPrints.read(f, charset, cacheDir, canceled) },
+            workers, CompactWorkers.limit(this, workers), remote = { it is RemoteFile }
+        )
         val result = withContext(AppDispatchers.io) {
-            Timing.span("similar books ${contents.byId.size}") { finder.find(contents, { context.isActive && !stopped }, ::onCompared, readNew) }
+            // Stop holds back reads only: every book is listed, so what is left is counted.
+            val contents = finder.contents(left) { context.isActive }
+            Timing.span("similar books ${contents.byId.size}") {
+                finder.find(contents, { context.isActive && !stopped }, ::onCompared, readNew, readShares = !metered)
+            }
         }
         val found = withContext<List<Row>>(AppDispatchers.io) {
             if (result.groups.isEmpty()) return@withContext emptyList()
             val snap = LibrarySnapshot.load(library, prefs)
             val roots = StorageRoots.list(this@CleanupActivity)
-            val title = if (result.compared < result.total) {
-                getString(R.string.dupes_similar_partial, result.compared, result.total)
+            val title = if (result.compared < result.total + unknown.get()) {
+                getString(R.string.dupes_similar_partial, result.compared, result.total + unknown.get())
             } else {
                 getString(R.string.dupes_similar)
             }
@@ -339,14 +370,22 @@ class CleanupActivity : AppCompatActivity() {
         rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
         forget(deleted)
-        if (result.unread > 0 && context.isActive) {
-            showSimilarBar(getString(R.string.similar_unread, result.unread, result.total), running = false)
-            similarCompare.setOnClickListener {
-                stopped = false
-                lifecycleScope.launch { compareSimilar(finder, contents.without(deleted), readNew = true) }
+        val skipped = if (metered) result.unreadShares + unknown.get() else 0
+        val waiting = result.unread + unknown.get() - skipped
+        when {
+            !context.isActive -> similarBar.visibility = View.GONE
+            waiting > 0 -> {
+                showSimilarBar(getString(R.string.similar_unread, result.unread + unknown.get(), result.total + unknown.get()), running = false)
+                similarCompare.setOnClickListener {
+                    stopped = false
+                    lifecycleScope.launch { compareSimilar(books, readNew = true) }
+                }
             }
-        } else {
-            similarBar.visibility = View.GONE
+            skipped > 0 -> {
+                showSimilarBar(getString(R.string.similar_metered, skipped), running = false)
+                similarCompare.visibility = View.GONE
+            }
+            else -> similarBar.visibility = View.GONE
         }
         adapter.notifyDataSetChanged()
         updateEmpty()
@@ -364,10 +403,10 @@ class CleanupActivity : AppCompatActivity() {
         similarCompare.visibility = if (running) View.GONE else View.VISIBLE
     }
 
-    /** Hears [done] books of [total] compared, from the reading threads. */
+    /** Hears [done] books hashed of [total] to hash, from the reading threads. */
     private fun onCompared(done: Int, total: Int) {
         compared = done to total
-        if (progressPosted.compareAndSet(false, true)) similarBar.post {
+        if (total > 0 && progressPosted.compareAndSet(false, true)) similarBar.post {
             progressPosted.set(false)
             if (!comparing) return@post
             val (d, t) = compared
@@ -383,6 +422,7 @@ class CleanupActivity : AppCompatActivity() {
     /** Ticks every copy except the first in each bit-identical group, so one copy of each is kept; similar books are left alone. */
     private fun selectExtras() {
         selected.clear()
+        if (readOnly) return
         for (row in rows) if (row is Row.Group) row.files.drop(1).forEach { selected.add(it.absolutePath) }
         adapter.notifyDataSetChanged()
         updateDeleteButton()
@@ -532,6 +572,12 @@ class CleanupActivity : AppCompatActivity() {
             }
             val check = v.findViewById<CheckBox>(R.id.check)
             check.isChecked = f.absolutePath in selected
+            check.visibility = if (readOnly) View.GONE else View.VISIBLE
+            if (readOnly) {
+                v.setOnClickListener(null)
+                v.isClickable = false
+                return
+            }
             v.setOnClickListener {
                 toggle(f, row)
                 check.isChecked = f.absolutePath in selected
@@ -633,8 +679,5 @@ class CleanupActivity : AppCompatActivity() {
         private const val TYPE_SIMILAR = 3
         private const val MAX_DEPTH = 12
         private const val LARGEST_COUNT = 100
-
-        /** Books with nothing kept of them that a search reads without being asked: a few minutes' work at most. */
-        const val AUTO_READS = 20
     }
 }

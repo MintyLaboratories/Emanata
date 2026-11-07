@@ -159,23 +159,16 @@ class CleanupSimilarTest {
     }
 
     @Test
-    fun manyBooksNotReadYetWaitForCompare() {
-        // With the three of setUp, more books than a search reads unasked.
-        for (n in 1..CleanupActivity.AUTO_READS) book("more/Extra %02d.cbz".format(n), listOf(1000L + 2 * n, 1001L + 2 * n), Bitmap.CompressFormat.PNG, "png")
+    fun manyBooksNotHashedYetAreHashedWithoutAsking() {
+        // With the three of setUp, more books than the old limit on reads unasked (20).
+        for (n in 1..21) book("more/Extra %02d.cbz".format(n), listOf(1000L + 2 * n, 1001L + 2 * n), Bitmap.CompressFormat.PNG, "png")
         val (activity, list) = launch()
-        val bar = activity.findViewById<View>(R.id.similar_bar)
-        assertEquals(View.VISIBLE, bar.visibility)
-        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.similar_compare).visibility)
-        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_stop).visibility)
-        assertEquals(context.getString(R.string.similar_unread, CleanupActivity.AUTO_READS + 3, CleanupActivity.AUTO_READS + 3), activity.findViewById<TextView>(R.id.similar_text).text.toString())
-        assertEquals(0, list.adapter!!.itemCount)
-        assertEquals(View.GONE, activity.findViewById<View>(R.id.cleanup_empty).visibility)
-        activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
-        settle(activity)
-        lay(list)
-        assertEquals(View.GONE, bar.visibility)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_bar).visibility)
         assertEquals(context.getString(R.string.dupes_similar), list.row(0).text(R.id.title))
         assertEquals(2, list.row(1).findViewById<LinearLayout>(R.id.columns).childCount)
+        // Every book was hashed and kept.
+        BookIds.init(context)
+        assertNotNull(SimilarStore.of(context.cacheDir).get(BookIds.of(File(root, "more/Extra 21.cbz"))))
     }
 
     @Test

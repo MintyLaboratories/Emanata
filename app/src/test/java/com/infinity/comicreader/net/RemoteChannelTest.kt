@@ -148,6 +148,8 @@ class RemoteChannelTest {
     @After
     fun spendThrift() {
         RemoteChannel.thrifty = false
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
         RemoteChannel.heapRoom = heapRoom
         RemoteChannel.heapMax = heapMax
     }
@@ -217,6 +219,22 @@ class RemoteChannelTest {
         val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
         assertArrayEquals(big, drain(channel, 500))
         assertEquals(0, channel.aheads)
+    }
+
+    @Test
+    fun onAMeteredConnectionOnlyExpectedSpansComeAhead() {
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        val big = ByteArray(100_000) { (it * 13).toByte() }
+        val streamed = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
+        assertArrayEquals(big, drain(streamed, 500))
+        assertEquals(0, streamed.aheads)
+        val channel = RemoteChannel(Bytes(big), minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(10_000, 60_000)
+        channel.position(10_000)
+        channel.read(ByteBuffer.allocate(10))
+        assertTrue(channel.aheads > 0)
+        channel.close()
     }
 
     @Test

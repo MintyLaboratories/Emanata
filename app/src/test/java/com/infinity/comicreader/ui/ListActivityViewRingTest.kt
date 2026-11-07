@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Environment
 import android.os.Looper
 import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -34,6 +35,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowChoreographer
 import org.robolectric.shadows.ShadowDialog
@@ -52,6 +54,7 @@ class ListActivityViewRingTest {
     private lateinit var context: Application
     private lateinit var prefs: Prefs
     private lateinit var dir: File
+    private lateinit var controller: ActivityController<ListActivity>
 
     @Before
     fun setUp() {
@@ -83,7 +86,8 @@ class ListActivityViewRingTest {
 
     private fun launch(tab: Int = 0, touch: Boolean = true): ListActivity {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(touch)
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        val activity = controller.get()
         activity.awaitListing()
         if (tab != 0) {
             activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
@@ -639,6 +643,69 @@ class ListActivityViewRingTest {
         assertTrue(list.viewRing.isOpen)
         assertFalse(list.viewRing.following)
         assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+    }
+
+    @Test
+    fun stoppingMidDragOnSortOpensNoPopupLater() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.SORT)!!)
+        controller.pause().stop()
+        assertFalse(list.viewRing.isOpen)
+        settle(longPress)
+        assertNull(ShadowDialog.getLatestDialog())
+        finger.lift()
+        settle()
+        assertFalse(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+    }
+
+    @Test
+    fun layingTheRingOutAgainLetsGoOfTheFinger() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.LAYOUT)!!)
+        val others = ViewRing.options(Prefs.TAB_FAVORITES).map { ViewRingOverlay.Item(it, R.drawable.ic_sort, "Name", "Value") }
+        list.viewRing.refresh(others)
+        assertFalse(list.viewRing.following)
+        for (o in ViewRing.options(Prefs.TAB_FAVORITES)) assertFalse("$o", list.viewRing.button(o)!!.isPressed)
+        finger.moveTo(list.viewRing.button(RingOption.SECTIONS)!!)
+        finger.lift()
+        settle()
+        // Neither the ring nor the grid/list button took the lift.
+        assertTrue(list.viewRing.isOpen)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        assertTrue(prefs.groupFavorites)
+    }
+
+    @Test
+    fun liftingOnTheHubAfterADragIsNoTapOnTheButton() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        val (hx, hy) = center(list.fab())
+        finger.moveTo(list.viewRing.button(RingOption.DETAIL)!!)
+        finger.moveTo(hx, hy)
+        finger.lift()
+        settle()
+        assertFalse(list.viewRing.isOpen)
+        // The grid/list button's own tap would have switched to a list.
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        assertTrue(list.recycler().layoutManager is GridLayoutManager)
+        assertFalse(list.fab().isPressed)
+    }
+
+    @Test
+    fun lightingAButtonTicksWithinTheSystemSetting() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        val hub = shadowOf(list.viewRing.hub()!!)
+        assertEquals(-1, hub.lastHapticFeedbackPerformed())
+        finger.moveTo(list.viewRing.button(RingOption.LARGER)!!)
+        // Robolectric records only the call without flags, the one the system setting governs.
+        assertEquals(HapticFeedbackConstants.CLOCK_TICK, hub.lastHapticFeedbackPerformed())
+        finger.moveTo(list.viewRing.button(RingOption.SORT)!!)
+        settle(longPress)
+        assertEquals(HapticFeedbackConstants.LONG_PRESS, hub.lastHapticFeedbackPerformed())
     }
 
     /** Where [v] stands once it has flown out of the hub. */

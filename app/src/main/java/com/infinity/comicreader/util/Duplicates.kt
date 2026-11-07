@@ -43,9 +43,21 @@ object Duplicates {
     private const val HASH = "SHA-256"
     private const val QUICK_BYTES = 64 * 1024
 
-    /** The groups of two or more identical [files], read through [open], most wasted space first; stops early once [alive] turns false. */
-    fun find(files: Sequence<File>, open: (File) -> Bytes = ::local, alive: () -> Boolean = { true }): List<Group> {
+    /**
+     * The groups of two or more identical [files], read through [open], most wasted space
+     * first; stops early once [alive] turns false. A file [open] fails for is left out.
+     * [progress] hears files checked of those sharing a size with another.
+     */
+    fun find(
+        files: Sequence<File>,
+        open: (File) -> Bytes = ::local,
+        alive: () -> Boolean = { true },
+        progress: (Int, Int) -> Unit = { _, _ -> }
+    ): List<Group> {
         val bySize = files.filter { it.length() > 0 }.groupBy { it.length() }.filter { it.value.size > 1 }
+        val total = bySize.values.sumOf { it.size }
+        var done = 0
+        progress(0, total)
         val groups = ArrayList<Group>()
         for ((size, same) in bySize) {
             if (!alive()) break
@@ -58,6 +70,8 @@ object Duplicates {
                     .values
                     .forEach { groups.add(Group(size, it.sortedWith(compareBy(NaturalOrder) { f -> f.absolutePath }))) }
             }
+            done += same.size
+            progress(done, total)
         }
         groups.sortByDescending { it.wasted }
         return groups

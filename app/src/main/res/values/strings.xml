@@ -249,6 +249,9 @@
         <item quantity="other">%1$d identical copies · %2$s each</item>
     </plurals>
     <string name="dupes_identical">Bit-identical copies (SHA-256 verified)</string>
+    <string name="dupes_checking">Checking for exact copies…</string>
+    <string name="dupes_progress">Checking for exact copies: %1$d / %2$d files</string>
+    <string name="dupes_stopped">Exact copies: stopped before every file was checked</string>
     <string name="dupes_similar">Similar books (probable)</string>
     <string name="dupes_similar_partial">Similar books (probable; %1$d of %2$d books compared)</string>
     <string name="similar_progress">Hashing pages of books: %1$d / %2$d</string>

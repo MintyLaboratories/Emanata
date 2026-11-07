@@ -65,8 +65,23 @@ class DuplicatesTest {
     @Test
     fun stopsWhenNoLongerWanted() {
         val content = Random(5).nextBytes(100)
-        val groups = Duplicates.find(sequenceOf(file("x.cbz", content), file("y.cbz", content))) { false }
+        val groups = Duplicates.find(sequenceOf(file("x.cbz", content), file("y.cbz", content)), alive = { false })
         assertTrue(groups.isEmpty())
+    }
+
+    @Test
+    fun progressCountsFilesSharingASizeAndFilesThatFailToOpenAreLeftOut() {
+        val small = Random(7).nextBytes(1000)
+        val large = Random(8).nextBytes(5000)
+        val unread = file("p/3.cbz", small)
+        val files = listOf(file("p/1.cbz", small), file("p/2.cbz", small), unread, file("p/4.cbz", large), file("p/5.cbz", large), file("p/6.cbz", Random(9).nextBytes(77)))
+        val heard = ArrayList<Pair<Int, Int>>()
+        val open = { f: File -> if (f == unread) throw java.io.IOException("Skipped") else Duplicates.local(f) }
+        val groups = Duplicates.find(files.asSequence(), open, progress = { done, total -> heard += done to total })
+        assertEquals(listOf(listOf(files[3], files[4]), listOf(files[0], files[1])), groups.map { it.files })
+        assertEquals(0 to 5, heard.first())
+        assertEquals(5 to 5, heard.last())
+        assertEquals(3, heard.size)
     }
 
     @Test

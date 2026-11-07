@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Metered
@@ -67,6 +68,7 @@ class CleanupSharesTest {
         context = ApplicationProvider.getApplicationContext()
         shadowOf(context).grantPermissions(Manifest.permission.READ_EXTERNAL_STORAGE)
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        Prefs(context).similarShares = true
         SimilarStore.of(context.cacheDir).clear()
         BookIds.hasher = Xxh3Port
         dir = tmp.newFolder("share")
@@ -142,6 +144,34 @@ class CleanupSharesTest {
         assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_compare).visibility)
         // Only the bit-identical copies (a search the user asked for); no similar books.
         assertEquals(2, list.adapter!!.itemCount)
+        assertNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
+    }
+
+    @Test
+    fun theExactCopyCheckShowsProgressAndStops() {
+        // Reads of the files' first bytes wait: the check is under way.
+        fake.slowReads = 0L..0L
+        fake.slow = java.util.concurrent.CountDownLatch(1)
+        val intent = Intent(context, CleanupActivity::class.java)
+            .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
+            .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
+        val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
+        var rounds = 0
+        while (fake.held.get() == 0 && rounds++ < 500) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+        val text = activity.findViewById<TextView>(R.id.similar_text)
+        val stop = activity.findViewById<View>(R.id.similar_stop)
+        assertTrue(text.text.startsWith(context.getString(R.string.dupes_checking).removeSuffix("…")))
+        assertEquals(View.VISIBLE, stop.visibility)
+        stop.performClick()
+        fake.slow!!.countDown()
+        settle(activity)
+        // Stopped: nothing more read, and the bar says so; the similar books are left to Compare.
+        assertTrue(text.text.toString().startsWith(context.getString(R.string.dupes_stopped)))
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.similar_compare).visibility)
         assertNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
     }
 

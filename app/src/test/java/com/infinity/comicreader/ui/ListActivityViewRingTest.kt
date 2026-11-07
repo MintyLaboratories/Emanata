@@ -410,6 +410,9 @@ class ListActivityViewRingTest {
         }
 
         fun lift() = send(MotionEvent.ACTION_UP)
+
+        /** The system takes the finger away. */
+        fun cancel() = send(MotionEvent.ACTION_CANCEL)
     }
 
     private fun Finger.moveTo(v: View) = center(v).let { (cx, cy) -> moveTo(cx, cy) }
@@ -616,5 +619,24 @@ class ListActivityViewRingTest {
         settle(longPress)
         assertFalse(list.viewRing.isOpen)
         assertTrue((ShadowDialog.getLatestDialog() as AlertDialog).isShowing)
+    }
+
+    @Test
+    fun aCancelWhileDraggingClosesWithoutRunning() {
+        val list = launch()
+        val finger = list.pressAndHold()
+        finger.moveTo(list.viewRing.button(RingOption.LAYOUT)!!)
+        finger.cancel()
+        settle()
+        assertFalse(list.viewRing.isOpen)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        // Before any drag, a cancel leaves the ring open for taps.
+        settle(300)
+        val again = list.pressAndHold()
+        again.cancel()
+        settle()
+        assertTrue(list.viewRing.isOpen)
+        assertFalse(list.viewRing.following)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
     }
 }

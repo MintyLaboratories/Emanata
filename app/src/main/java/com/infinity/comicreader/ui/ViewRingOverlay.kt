@@ -224,6 +224,12 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
      */
     fun drag(action: Int, x: Float, y: Float) {
         val g = gesture ?: return
+        // A cancel's place is not the finger's: views pass it on unmoved into their own frame.
+        if (action == MotionEvent.ACTION_CANCEL) {
+            unfollow()
+            if (g.dragging) close()
+            return
+        }
         val enabled = { i: Int -> items.getOrNull(i)?.enabled == true }
         val dx = x - hostX - cx
         val dy = y - hostY - cy
@@ -239,10 +245,6 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
                 if (!g.dragging) return
                 items.getOrNull(g.picked)?.let { if (isOpen) onTap(it.option) }
                 close()
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                unfollow()
-                if (g.dragging) close()
             }
         }
     }

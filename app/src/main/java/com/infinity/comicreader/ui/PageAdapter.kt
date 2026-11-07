@@ -320,6 +320,10 @@ class PageAdapter(
         /** True once the decode has a decoder ([decodeThreads]) and runs. */
         @Volatile
         var started = false
+
+        /** True once the decode made a bitmap and put it in the cache; set before [deferred] completes. */
+        @Volatile
+        var decoded = false
     }
 
     /** A page decoded for one exact [target]; the same page at another size is another entry. */
@@ -358,6 +362,9 @@ class PageAdapter(
 
     /** True while any decode has not finished and been put away. */
     internal val decoding: Boolean get() = pending.isNotEmpty()
+
+    /** How many decodes have not completed yet; [decoding] also counts those not put away. */
+    internal val running: Int get() = pending.values.count { it.deferred.isActive }
 
     /** Returns once no decode is under way ([decoding]): at once when none is, and once released. */
     internal suspend fun awaitIdle() {
@@ -1259,9 +1266,9 @@ class PageAdapter(
 
     /** Starts (or joins) the background decode for [key]. Main thread only. */
     private fun request(key: PageKey): Pending {
-        // Only a running decode is joined: a finished one is merely not forgotten yet, and
-        // a transient failure must run again.
-        pending[key]?.takeIf { it.deferred.isActive }?.let { return it }
+        // Joins a decode still running, or one whose bitmap landed after the caller missed it
+        // in the cache; a failed or canceled decode runs again.
+        pending[key]?.takeIf { it.deferred.isActive || (it.decoded && !it.deferred.isCancelled) }?.let { return it }
         val pageIndex = key.page
         val chapter = strip.chapterOf(pageIndex)
         val seg = chapter.value
@@ -1289,6 +1296,7 @@ class PageAdapter(
                 if (bitmap != null && bitmap.width > 0) {
                     cache.put(key, bitmap)
                     aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
+                    entry.decoded = true
                 }
                 bitmap
             }

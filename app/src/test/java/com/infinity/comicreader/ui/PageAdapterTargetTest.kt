@@ -11,6 +11,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.util.ReadProbe
+import com.infinity.comicreader.util.ReadProbes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -36,6 +38,20 @@ class PageAdapterTargetTest {
         val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()
         override fun loadPage(index: Int, target: Target): Bitmap {
             requests += index to target
+            val plan = target.plan(2000.0, 3000.0)
+            return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+    }
+
+    /** Like [RecordingSource], but every decode waits for [gate]. */
+    private class HeldSource(override val pageCount: Int) : PageSource {
+        val requests: MutableList<Pair<Int, Target>> = CopyOnWriteArrayList()
+        val gate = CountDownLatch(1)
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            requests += index to target
+            gate.await(5, TimeUnit.SECONDS)
             val plan = target.plan(2000.0, 3000.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         }
@@ -131,6 +147,39 @@ class PageAdapterTargetTest {
         rv.layOut(1848, 2960)
         idle()
         assertEquals(1, source.requests.size)
+        adapter.release()
+    }
+
+    @Test
+    fun aDecodeEndingBetweenTheCacheCheckAndTheRequestIsJoined() {
+        val source = HeldSource(1)
+        val adapter = adapter(source)
+        val rv = recycler(adapter, 1848, 2960)
+        idle { source.requests.isNotEmpty() }
+        // The decode is let go once the rebind found the cache without it, and is done before it asks for one.
+        var armed = true
+        var ended = false
+        ReadProbes.current = object : ReadProbe {
+            override fun shown(view: View, page: Int, exact: Boolean) {
+                if (!armed || page != PageLayout.NONE) return
+                armed = false
+                source.gate.countDown()
+                val deadline = System.currentTimeMillis() + 3_000
+                while (adapter.running > 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+                ended = adapter.running == 0
+            }
+        }
+        try {
+            adapter.notifyItemChanged(0)
+            rv.layOut(1848, 2960)
+        } finally {
+            ReadProbes.current = null
+        }
+        idle()
+        assertTrue(ended)
+        assertEquals(1, source.requests.size)
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        assertEquals(1848, shownBitmap(image).width)
         adapter.release()
     }
 

@@ -52,8 +52,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -116,6 +118,9 @@ class CleanupActivity : AppCompatActivity() {
 
     /** What the bar says of the exact-copy check once the search is over; null when it read everything. */
     private var dupesNote: String? = null
+
+    /** Share files the exact-copy check left unread on a metered connection. */
+    private val meteredFiles: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** True in a share folder: nothing is selected or deleted. */
     private var readOnly = false
@@ -231,7 +236,11 @@ class CleanupActivity : AppCompatActivity() {
             comparing = true
             showSimilarBar(getString(R.string.dupes_checking), running = true)
             val found = withContext(AppDispatchers.io) { findDuplicates(files) { isActive && !stopped } }
-            if (stopped) dupesNote = getString(R.string.dupes_stopped)
+            dupesNote = when {
+                meteredFiles.isNotEmpty() -> resources.getQuantityString(R.plurals.dupes_metered, meteredFiles.size, meteredFiles.size)
+                stopped -> getString(R.string.dupes_stopped)
+                else -> null
+            }
             show(found)
             if (!findSimilar(files)) endBar(emptyList())
         }
@@ -267,13 +276,28 @@ class CleanupActivity : AppCompatActivity() {
     /** True for a symbolic link, on the device or on a share (as its listing says). */
     private fun isLink(f: File): Boolean = if (f is RemoteFile) f.stat()?.isLink == true else Files.isSymbolicLink(f.toPath())
 
-    /** [f]'s bytes for [Duplicates]: a share's file read in place. */
+    /**
+     * [f]'s bytes for [Duplicates]: a share's file read in place.
+     * Fails for a share file that comes only whole ([Remotes.seekable]), and for one while the
+     * connection is metered ([Metered], asked before each piece), which [meteredFiles] counts.
+     */
     private fun bytesOf(f: File): Duplicates.Bytes {
         if (f !is RemoteFile) return Duplicates.local(f)
+        val unmetered = {
+            if (Metered.skipsOptional()) {
+                meteredFiles += f.absolutePath
+                throw IOException("Metered: ${f.name}")
+            }
+        }
+        unmetered()
+        if (!Remotes.seekable(f.path)) throw IOException("Comes only whole: ${f.name}")
         val input = Remotes.open(f.path)
         return object : Duplicates.Bytes {
             override val length: Long get() = input.length
-            override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int) = input.read(position, buffer, offset, count)
+            override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int {
+                unmetered()
+                return input.read(position, buffer, offset, count)
+            }
             override fun close() = input.close()
         }
     }

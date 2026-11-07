@@ -140,11 +140,50 @@ class CleanupSharesTest {
         val (activity, list) = launch()
         val bar = activity.findViewById<View>(R.id.similar_bar)
         assertEquals(View.VISIBLE, bar.visibility)
-        assertEquals(context.getString(R.string.similar_metered, 4), activity.findViewById<TextView>(R.id.similar_text).text.toString())
+        // The two copies sharing a size are not read for the exact-copy check either.
+        val notes = listOf(context.resources.getQuantityString(R.plurals.dupes_metered, 2, 2), context.getString(R.string.similar_metered, 4))
+        assertEquals(notes.joinToString("\n"), activity.findViewById<TextView>(R.id.similar_text).text.toString())
         assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_compare).visibility)
-        // Only the bit-identical copies (a search the user asked for); no similar books.
-        assertEquals(2, list.adapter!!.itemCount)
+        assertEquals(0, list.adapter!!.itemCount)
+        assertEquals(0L, fake.bytesRead)
         assertNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
+    }
+
+    @Test
+    fun aConnectionTurningMeteredStopsTheExactCopyCheckBetweenPieces() {
+        val big = kotlin.random.Random(5).nextBytes(BIG)
+        File(dir, "fifth/Large.cbz").apply { parentFile!!.mkdirs() }.writeBytes(big)
+        File(dir, "sixth/Large.cbz").apply { parentFile!!.mkdirs() }.writeBytes(big)
+        // The full hash's piece covering the second MB waits while the connection turns metered.
+        fake.slowReads = (1L shl 20)..(1L shl 20)
+        fake.slow = java.util.concurrent.CountDownLatch(1)
+        val intent = Intent(context, CleanupActivity::class.java)
+            .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
+            .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
+        val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
+        var rounds = 0
+        while (fake.held.get() == 0 && rounds++ < 500) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        assertEquals(1, fake.held.get())
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true) }
+        Metered.forget()
+        fake.slow!!.countDown()
+        settle(activity)
+        // Both large copies are counted; the first stopped part way, the second never read past its quick hash.
+        val text = activity.findViewById<TextView>(R.id.similar_text).text.toString()
+        val counted = listOf(2, 4).map { context.resources.getQuantityString(R.plurals.dupes_metered, it, it) }
+        assertTrue(text, counted.any { text.startsWith(it) })
+        assertTrue(fake.bytesRead < 2L * BIG)
+    }
+
+    @Test
+    fun shareFilesThatComeOnlyWholeAreLeftOutOfTheExactCopyCheck() {
+        fake.seekable = false
+        val (_, list) = launch()
+        assertEquals(0L, fake.bytesRead)
+        assertEquals(0, list.adapter!!.itemCount)
     }
 
     @Test
@@ -178,5 +217,6 @@ class CleanupSharesTest {
     private companion object {
         const val W = 120
         const val H = 180
+        const val BIG = 5 shl 19
     }
 }

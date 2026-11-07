@@ -252,6 +252,10 @@
     <string name="dupes_checking">Checking for exact copies…</string>
     <string name="dupes_progress">Checking for exact copies: %1$d / %2$d files</string>
     <string name="dupes_stopped">Exact copies: stopped before every file was checked</string>
+    <plurals name="dupes_metered">
+        <item quantity="one">Exact copies: %1$d file on a share not checked. Skipped on a metered connection</item>
+        <item quantity="other">Exact copies: %1$d files on shares not checked. Skipped on a metered connection</item>
+    </plurals>
     <string name="dupes_similar">Similar books (probable)</string>
     <string name="dupes_similar_partial">Similar books (probable; %1$d of %2$d books compared)</string>
     <string name="similar_progress">Hashing pages of books: %1$d / %2$d</string>

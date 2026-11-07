@@ -180,6 +180,11 @@ class CleanupActivity : AppCompatActivity() {
         deleteButton.setOnClickListener { confirmDelete() }
         updateDeleteButton()
 
+        // Share folders are offered only while the setting is on: one reopened after it was turned off reads nothing.
+        if (readOnly && !prefs.similarShares) {
+            finish()
+            return
+        }
         scan(root)
     }
 

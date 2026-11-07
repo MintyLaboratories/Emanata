@@ -187,6 +187,21 @@ class CleanupSharesTest {
     }
 
     @Test
+    fun withTheSettingOffAShareFolderClosesUnread() {
+        Prefs(context).similarShares = false
+        val intent = Intent(context, CleanupActivity::class.java)
+            .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
+            .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
+        val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        Thread.sleep(100)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(activity.isFinishing)
+        assertEquals(0, fake.lists)
+        assertEquals(0L, fake.bytesRead)
+    }
+
+    @Test
     fun theExactCopyCheckShowsProgressAndStops() {
         // Reads of the files' first bytes wait: the check is under way.
         fake.slowReads = 0L..0L

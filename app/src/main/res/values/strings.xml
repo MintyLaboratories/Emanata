@@ -996,7 +996,7 @@
     <string name="ai_import_save">Import</string>
     <string name="ai_import_warn_title">Import %1$s anyway?</string>
     <string name="ai_import_warn_slow">A page would take about %1$d s on this device, more than %2$d s: pages wait long for it, and it costs more battery and heat.</string>
-    <string name="ai_import_warn_unlike">Its output differs strongly from the page: it could be a deliberate restyle, such as sepia, or a model expecting different pixel scaling.</string>
+    <string name="ai_import_warn_unlike">Its output differs strongly from the page: it could be a deliberate restyle, such as sepia, a model expecting different pixel scaling, or a .param and .bin that don\'t belong together.</string>
     <string name="ai_import_anyway">Import anyway</string>
     <string name="ai_import_discard">Discard</string>
     <string name="ai_import_done">Imported %1$s</string>

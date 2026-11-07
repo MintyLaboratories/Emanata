@@ -17,8 +17,8 @@ import kotlin.math.abs
  * ([Sessions.attempt]: scale, edge trim, context, memory, the GPU against the CPU), then
  * - its output is compared with its input: a smooth picture with a few hard shapes, run
  *   through it and averaged back down to the input's size; past [UNLIKE_MEAN] codes on
- *   average it is fit with a warning ([ImportWarning.UNLIKE]: a deliberate restyle, or a
- *   model expecting pixels scaled otherwise);
+ *   average it is fit with a warning ([ImportWarning.UNLIKE]: a deliberate restyle, a
+ *   model expecting pixels scaled otherwise, or a `.param` and `.bin` not of one model);
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
  *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at

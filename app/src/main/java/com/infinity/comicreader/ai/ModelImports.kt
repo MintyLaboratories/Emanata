@@ -46,7 +46,7 @@ enum class ImportWarning {
     /** A page takes longer than [ModelCheck.WARN_PAGE_MS] here. */
     SLOW,
 
-    /** Its output differs strongly from its input: a deliberate restyle, or a model expecting pixels scaled otherwise. */
+    /** Its output differs strongly from its input: a deliberate restyle, a model expecting pixels scaled otherwise, or mismatched files. */
     UNLIKE
 }
 

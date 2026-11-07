@@ -160,7 +160,7 @@ class CleanupSimilarTest {
 
     @Test
     fun manyBooksNotHashedYetAreHashedWithoutAsking() {
-        // With the three of setUp, more books than the old limit on reads unasked (20).
+        // With the three of setUp, 21+ books unhashed.
         for (n in 1..21) book("more/Extra %02d.cbz".format(n), listOf(1000L + 2 * n, 1001L + 2 * n), Bitmap.CompressFormat.PNG, "png")
         val (activity, list) = launch()
         assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_bar).visibility)

@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
+import com.infinity.comicreader.reader.Wraparound
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -28,9 +29,10 @@ class BookFactsCache(context: Context) {
         synchronized(store) {
             if (store.loaded != null) return
             val map = ConcurrentHashMap<Long, BookFacts>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES), null, null, null, null, null).use { c ->
+            store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES, COVER, COVER_RULES), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) {
-                    map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)))
+                    val cover = if (c.getInt(6) == SmartCrop.RULES) decodeCover(c.getInt(5)) else null
+                    map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)), cover)
                 }
             }
             store.loaded = map
@@ -38,14 +40,14 @@ class BookFactsCache(context: Context) {
     }
 
     /**
-     * Stores [facts] of book [id], keeping what its pages were found to be ([Slices])
-     * when [facts] do not say. Blocking.
+     * Stores [facts] of book [id], keeping what its pages were found to be ([Slices]) and
+     * what its cover told ([BookFacts.cover]) when [facts] do not say. Blocking.
      */
     fun put(id: BookId, facts: BookFacts) {
         load()
         synchronized(store) {
-            val slices = facts.slices ?: store.loaded?.get(id.value)?.slices
-            write(id, if (slices == facts.slices) facts else facts.copy(slices = slices))
+            val known = store.loaded?.get(id.value)
+            write(id, facts.copy(slices = facts.slices ?: known?.slices, cover = facts.cover ?: known?.cover))
         }
     }
 
@@ -58,15 +60,26 @@ class BookFactsCache(context: Context) {
         }
     }
 
+    /** Sets what book [id]'s cover told of its reading direction on its stored facts; nothing without any. Blocking. */
+    fun keepCover(id: BookId, front: CoverFront) {
+        load()
+        synchronized(store) {
+            val known = store.loaded?.get(id.value) ?: return
+            if (known.cover != front) write(id, known.copy(cover = front))
+        }
+    }
+
     /** Stores [facts] of book [id] as they are, in memory and on disk. */
     private fun write(id: BookId, facts: BookFacts) {
         store.loaded?.put(id.value, facts)
-        val row = ContentValues(5).apply {
+        val row = ContentValues(7).apply {
             put(ID, id.value)
             put(PAGES, facts.pages)
             put(YEAR, facts.year)
             put(DIRECTION, facts.detected?.encode() ?: 0)
             put(SLICES, encodeSlices(facts.slices))
+            put(COVER, encodeCover(facts.cover))
+            put(COVER_RULES, SmartCrop.RULES)
         }
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -98,7 +111,8 @@ class BookFactsCache(context: Context) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE $TABLE ($ID INTEGER PRIMARY KEY, $PAGES INTEGER NOT NULL, " +
-                    "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0, $SLICES INTEGER NOT NULL DEFAULT $UNCHECKED)"
+                    "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0, $SLICES INTEGER NOT NULL DEFAULT $UNCHECKED, " +
+                    "$COVER INTEGER NOT NULL DEFAULT $UNCHECKED, $COVER_RULES INTEGER NOT NULL DEFAULT 0)"
             )
         }
 
@@ -117,17 +131,27 @@ class BookFactsCache(context: Context) {
         private const val YEAR = "year"
         private const val DIRECTION = "direction"
         private const val SLICES = "slices"
+        private const val COVER = "cover"
 
-        /** [SLICES] of a book not checked for slices; 0 is one whose pages are not. */
+        /** The [SmartCrop.RULES] [COVER] was found by; covers found by others are looked at again. */
+        private const val COVER_RULES = "cover_rules"
+
+        /** [SLICES] of a book not checked for slices, [COVER] of one whose cover was not looked at; 0 is one whose pages are not, or whose cover tells nothing. */
         private const val UNCHECKED = -1
 
         /** Of the table and what its numbers mean ([DirectionDetection.Detected.encode]); another starts it over. */
-        private const val VERSION = 6
+        private const val VERSION = 7
 
         private fun encodeSlices(checked: Slices.Checked?): Int = checked?.let { it.found?.encode() ?: 0 } ?: UNCHECKED
 
         private fun decodeSlices(value: Int): Slices.Checked? =
             if (value == 0) Slices.Checked(null) else DirectionDetection.Detected.decode(value)?.let { Slices.Checked(it) }
+
+        /** A [CoverFront] as one number: its page times 3 plus 0 for no half, else 1 + the half's ordinal. */
+        private fun encodeCover(front: CoverFront?): Int = front?.let { it.page * 3 + (it.half?.ordinal?.plus(1) ?: 0) } ?: UNCHECKED
+
+        private fun decodeCover(value: Int): CoverFront? =
+            if (value < 0) null else CoverFront(value / 3, Wraparound.Half.entries.getOrNull(value % 3 - 1))
         private val LOCK = Any()
 
         /** Shared by every instance: one process, one database (a new one when its file moves, as between tests). */

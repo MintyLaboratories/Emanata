@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
+import com.infinity.comicreader.reader.Wraparound
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -127,5 +128,23 @@ class BookFactsCacheTest {
         cache.load()
         assertTrue(cache.isLoaded)
         assertEquals(BookFacts(-1, 0), cache.get(a))
+    }
+
+    @Test
+    fun coversAreKeptWithFactsAndThroughRereads() {
+        val cache = BookFactsCache(context)
+        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT))
+        assertNull(cache.get(a))
+        cache.put(a, BookFacts(5, 0))
+        cache.put(b, BookFacts(5, 0))
+        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT))
+        cache.keepCover(b, CoverFront(2, null))
+        // Facts read again do not say what the cover told.
+        cache.put(a, BookFacts(6, 2020))
+        BookFactsCache.reset()
+        val read = BookFactsCache(context).apply { load() }
+        assertEquals(BookFacts(6, 2020, cover = CoverFront(0, Wraparound.Half.RIGHT)), read.get(a))
+        assertEquals(CoverFront(2, null), read.get(b)?.cover)
+        assertNull(read.get(c))
     }
 }

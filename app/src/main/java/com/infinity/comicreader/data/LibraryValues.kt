@@ -3,6 +3,7 @@ package com.infinity.comicreader.data
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
+import com.infinity.comicreader.reader.Wraparound
 import com.infinity.comicreader.util.Formats
 import java.io.File
 import java.nio.file.Files
@@ -85,14 +86,16 @@ object FolderSize {
 
 /**
  * What a book's contents tell: its page count (-1 unknown), its ComicInfo year (0 none),
- * the reading direction they suggest (null when nothing does) and whether its pages are
- * [slices] of one strip (null until checked), which outrank [detected] as in the reader.
+ * the reading direction they suggest (null when nothing does), whether its pages are
+ * [slices] of one strip (null until checked), which outrank [detected] as in the reader,
+ * and what its wraparound [cover] tells of its direction (null until looked at).
  */
 data class BookFacts(
     val pages: Int,
     val year: Int,
     val detected: DirectionDetection.Detected? = null,
-    val slices: Slices.Checked? = null
+    val slices: Slices.Checked? = null,
+    val cover: CoverFront? = null
 ) {
     /** The direction found: top to bottom for slices, else [detected]'s. */
     val direction: ReadingDirection? get() = slices?.found?.direction ?: detected?.direction
@@ -100,6 +103,13 @@ data class BookFacts(
     /** The page count with [hidden] pages left out, at least one; -1 unknown. */
     fun shownPages(hidden: Int): Int = if (pages > 0) (pages - hidden).coerceAtLeast(1) else pages
 }
+
+/**
+ * What the cover of a book, its page at book index [page], tells of its reading direction:
+ * the front [half] its barcode and its tallest text agree on ([Wraparound.Fronts.agreed]);
+ * null [half] when it tells nothing, as when it is no wraparound.
+ */
+data class CoverFront(val page: Int, val half: Wraparound.Half?)
 
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found

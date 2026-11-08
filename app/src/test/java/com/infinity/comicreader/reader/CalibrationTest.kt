@@ -184,7 +184,7 @@ class CalibrationTest {
             .apply { tuning?.let { put("tuning", it.toJson()) }; saver?.let { put("powerSave", it) } }
         assertTrue(Calibration.chosen(kept(false), pick))
         assertTrue(Calibration.chosen(kept(null), pick))
-        // A forced run under battery saver: the next run out of saver replaces it, margin or not.
+        // A run measured under battery saver: the next run out of saver replaces it, margin or not.
         assertFalse(Calibration.chosen(kept(true), pick))
         // Before any calibration, or with another tuning in effect.
         assertFalse(Calibration.chosen(null, pick))
@@ -431,7 +431,7 @@ class CalibrationTest {
         assertEquals(Calibration.LIGHT, Calibration.heatStatus(0, thermalKnown = null, batteryTenthsC = 405))
         assertEquals(Calibration.HOT, Calibration.heatStatus(2, thermalKnown = null, batteryTenthsC = 300))
         // The battery's status is waited out like the thermal one.
-        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = Calibration.heatStatus(0, null, 425), powerSave = false, forced = false))
+        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = Calibration.heatStatus(0, null, 425), powerSave = false, underSaver = false))
     }
 
     @Test
@@ -463,21 +463,18 @@ class CalibrationTest {
 
     @Test
     fun aForcedRunGoesOnUnderBatterySaverAndOffTheCharger() {
-        assertEquals("battery saver on", Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, forced = false))
-        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, forced = true))
-        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = 2, powerSave = false, forced = true))
-        assertEquals("app busy", Calibration.waitReason(busy = true, thermalStatus = 0, powerSave = true, forced = true))
-        assertNull(Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, forced = false))
+        assertEquals("battery saver on", Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, underSaver = false))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = true, underSaver = true))
+        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = 2, powerSave = false, underSaver = true))
+        assertEquals("app busy", Calibration.waitReason(busy = true, thermalStatus = 0, powerSave = true, underSaver = true))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, underSaver = false))
         // After a wait for heat, light throttling is waited out too.
-        assertEquals("too warm (thermal status 1)", Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, forced = false, cooling = true))
-        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = false, forced = false, cooling = true))
-        var asked = false
-        assertNull(Calibration.stopReason(held = false, reading = false, inFront = true, forced = true) { asked = true; false })
-        assertFalse(asked)
-        assertEquals("not charging", Calibration.stopReason(held = false, reading = false, inFront = true, forced = false) { false })
-        assertEquals("reading", Calibration.stopReason(held = false, reading = true, inFront = true, forced = true) { true })
-        assertEquals("app not in front", Calibration.stopReason(held = false, reading = false, inFront = false, forced = true) { true })
-        assertEquals("held off by a check", Calibration.stopReason(held = true, reading = false, inFront = true, forced = true) { true })
+        assertEquals("too warm (thermal status 1)", Calibration.waitReason(busy = false, thermalStatus = 1, powerSave = false, underSaver = false, cooling = true))
+        assertNull(Calibration.waitReason(busy = false, thermalStatus = 0, powerSave = false, underSaver = false, cooling = true))
+        assertNull(Calibration.stopReason(held = false, reading = false, inFront = true))
+        assertEquals(Calibration.READING, Calibration.stopReason(held = false, reading = true, inFront = true))
+        assertEquals(Calibration.AWAY, Calibration.stopReason(held = false, reading = false, inFront = false))
+        assertEquals("held off by a check", Calibration.stopReason(held = true, reading = false, inFront = true))
     }
 
     @Test
@@ -554,6 +551,25 @@ class CalibrationTest {
 
         override fun awaitFair(): Boolean = fair()
         override fun stillFair(): Boolean = still()
+    }
+
+    @Test
+    fun progressSaysWhatIsTimedInWhichRoundAndHowFar() {
+        val a = pixels(1, true)
+        val b = pixels(4, true)
+        val missing = jxl(2, true)
+        val seen = ArrayList<CalibrationProgress>()
+        var disturbed = 1
+        val probe = FakeProbe(mapOf(a to listOf(10.0), b to listOf(20.0)), still = { disturbed-- <= 0 })
+        CalibrationRun(probe, listOf(a, b, missing), rounds = 2, warmup = 1, burst = 1, warm = false, progress = { seen += it }).run()!!
+        // Before each candidate's sample, retries not again: the warm-up round shows as round 1 too; reversed every other round; the one that cannot run drops out of the total.
+        assertEquals(listOf(a, b, missing, b, a, a, b), seen.dropLast(1).map { it.candidate })
+        assertEquals(listOf(1, 1, 1, 1, 1, 2, 2), seen.dropLast(1).map { it.round })
+        assertEquals(listOf(0, 0, 0, 0, 1, 2, 3), seen.dropLast(1).map { it.done })
+        assertEquals(listOf(6, 6, 6, 4, 4, 4, 4), seen.dropLast(1).map { it.total })
+        assertTrue(seen.all { it.timing })
+        // Done at the end.
+        assertEquals(CalibrationProgress(timing = true, done = 4, total = 4, candidate = null, round = 2), seen.last())
     }
 
     @Test
@@ -662,7 +678,7 @@ class CalibrationTest {
         val off = CalibrationRun(SaverProbe({ true }, { false }), listOf(a), rounds = 2)
         assertNotNull(off.run())
         assertFalse(off.sawPowerSave)
-        // On for a sample a forced run keeps: recorded.
+        // On for a sample a run measuring under saver keeps: recorded.
         var on = false
         val kept = CalibrationRun(SaverProbe({ true.also { on = !on } }, { on }), listOf(a), rounds = 2)
         assertNotNull(kept.run())

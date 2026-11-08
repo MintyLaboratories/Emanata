@@ -380,27 +380,31 @@ object Calibration {
 
     /**
      * Why a calibration run cannot go on now, or null: a check or benchmark holds it off,
-     * the reader or another app is in front, or, unless [forced], the device is off the
-     * charger ([charging], asked only then).
+     * the reader ([READING]) or another app ([AWAY]) is in front.
      */
-    fun stopReason(held: Boolean, reading: Boolean, inFront: Boolean, forced: Boolean, charging: () -> Boolean): String? = when {
+    fun stopReason(held: Boolean, reading: Boolean, inFront: Boolean): String? = when {
         held -> "held off by a check"
-        reading -> "reading"
-        !inFront -> "app not in front"
-        !forced && !charging() -> "not charging"
+        reading -> READING
+        !inFront -> AWAY
         else -> null
     }
+
+    /** Why a run stopped when a book opened ([stopReason]). */
+    const val READING = "reading"
+
+    /** Why a run stopped when the app was left ([stopReason]). */
+    const val AWAY = "app not in front"
 
     /**
      * What a calibration run waits out before timing, or null: app work, heat (thermal
      * status [HOT] or above, [heatStatus]; [LIGHT] or above while [cooling], after a wait for
-     * heat, as some chips throttle there already), or, unless [forced], battery saver, whose
-     * clock caps skew timings.
+     * heat, as some chips throttle there already), or, unless the user chose to measure
+     * [underSaver], battery saver, whose clock caps skew timings.
      */
-    fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, forced: Boolean, cooling: Boolean = false): String? = when {
+    fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, underSaver: Boolean, cooling: Boolean = false): String? = when {
         busy -> "app busy"
         thermalStatus >= if (cooling) LIGHT else HOT -> "$TOO_WARM (thermal status $thermalStatus)"
-        powerSave && !forced -> "battery saver on"
+        powerSave && !underSaver -> "battery saver on"
         else -> null
     }
 
@@ -672,6 +676,7 @@ internal interface CalibrationProbe {
  * Two shortcuts, off by default and for debug comparisons only: [warmOnce] warms only in
  * the first round; [winners], when given, ends the run once what it makes of the timings so
  * far (the tuning they pick) stays the same over a round, from round [minRounds] on.
+ * [progress] hears where the run is before each sample it tries and once at its end.
  */
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
@@ -683,7 +688,8 @@ internal class CalibrationRun(
     private val retries: Int = Calibration.RETRIES,
     private val warmOnce: Boolean = false,
     private val winners: ((List<Timing>) -> Any?)? = null,
-    private val minRounds: Int = 3
+    private val minRounds: Int = 3,
+    private val progress: ((CalibrationProgress) -> Unit)? = null
 ) {
     /** Why the last [run] stopped first; null when it finished. */
     var why: String? = null
@@ -716,6 +722,7 @@ internal class CalibrationRun(
             val order = if (round % 2 == 0) candidates else candidates.asReversed()
             for (c in order) {
                 if (c in missing) continue
+                progress?.invoke(where(samples, missing, c, round))
                 while (true) {
                     if (stopped()) return stop("stopped")
                     if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
@@ -743,8 +750,18 @@ internal class CalibrationRun(
                 said = now
             }
         }
+        progress?.invoke(where(samples, missing, null, roundsRun).let { it.copy(done = it.total) })
         return timings(samples, missing)
     }
+
+    /** Where the run is, about to sample [next] in [round] (from 0, warm-up rounds counted): samples kept of those it means to keep. */
+    private fun where(samples: Map<Candidate, List<RunTime>>, missing: Set<Candidate>, next: Candidate?, round: Int) = CalibrationProgress(
+        timing = true,
+        done = samples.values.sumOf { it.size },
+        total = (candidates.size - missing.size) * rounds,
+        candidate = next,
+        round = (round - warmup + 1).coerceIn(1, rounds)
+    )
 
     /** Each candidate's median times over [samples] and their spread; those [missing] or never sampled left out. */
     private fun timings(samples: Map<Candidate, List<RunTime>>, missing: Set<Candidate>): List<Timing> =

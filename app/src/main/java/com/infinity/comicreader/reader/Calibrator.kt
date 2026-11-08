@@ -29,30 +29,34 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 /**
  * Per-device calibration on the device ([Calibration] chooses): once per system build and
- * calibration version ([Calibration.VERSION]), while the app is in front but not reading
- * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
- * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
- * keeps the winners ([Tuning]) in a file that is not backed up. Each sample follows a rest
- * as long as a third of the one before ([Calibration.restMs]), as page decodes at reading
- * pace do. It starts once the app is
- * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws
- * and encodes its pages, off the timed path. A timing during which the app decoded anything ([working]) or another
- * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
- * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and, where the
- * thermal status shows it, ends a run that heats up (battery temperature, the fallback, is
- * too slow to: [Calibration.heatStatus]). Until the first calibration ends, the [Tuning.defaults] apply; after a
- * system update the previous winners apply until new ones are established. A forced run
- * ([recalibrate]) goes on under battery saver, whose clock caps may skew it: it is kept
- * marked so, and the next automatic run out of saver replaces it. Benchmarks and checks
- * [hold] it off. Never shown to the user.
+ * calibration version ([Calibration.VERSION]), when the user lets it (the calibration
+ * screen, the library's banner: [CalibrationPrompts.offer]), while the app is in front but
+ * not reading ([Reading]), cool and otherwise idle, it times resampling, JPEG XL decoding
+ * and platform JPEG decoding setups on synthetic pages and keeps the winners ([Tuning]) in
+ * a file that is not backed up. No charger is needed, the user having started it; battery
+ * saver, whose clock caps may skew it, is waited out unless the user chose to measure under
+ * it, which keeps the result marked so until the next run out of saver replaces it. Each
+ * sample follows a rest as long as a third of the one before ([Calibration.restMs]), as
+ * page decodes at reading pace do. It starts once the app is idle (waiting
+ * [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws and
+ * encodes its pages, off the timed path. A timing during which the app decoded anything
+ * ([working]) or another of its threads used the CPU ([Calibration.othersBusy]) is made
+ * again; the app's drawing ([UiCpu]) is left out of CPU times. Heat is waited out before
+ * timing starts and, where the thermal status shows it, ends a run that heats up (battery
+ * temperature, the fallback, is too slow to: [Calibration.heatStatus]). Until the first
+ * calibration ends, the [Tuning.defaults] apply; after a system update the previous winners
+ * apply until new ones are established. A run sent to the background ([background]) starts
+ * again when the app is back after the reader or another app stopped it. Benchmarks and
+ * checks [hold] it off.
  */
-object Calibrator {
+object Calibrator : CalibrationControl {
     private const val TAG = "Calibration"
 
     /** The tuning in effect. */
@@ -67,7 +71,7 @@ object Calibrator {
 
     /** True while a calibration runs. */
     @Volatile
-    var running: Boolean = false
+    override var running: Boolean = false
         private set
 
     /** How the last run ended: "ended true", or "ended false: " and why; null before any. */
@@ -78,6 +82,10 @@ object Calibrator {
     /** Called on the calibrating thread when a run ends, with whether it finished. */
     @Volatile
     var onEnded: ((Boolean) -> Unit)? = null
+
+    /** Whether calibration can run here: where the native code cannot load (the JVM), it has nothing to time. */
+    @Volatile
+    var canRun: () -> Boolean = { LibPixels.loaded }
 
     /** An activity calibration never runs under: the reader, whose page turns it would slow and skew. */
     interface Reading
@@ -95,6 +103,10 @@ object Calibrator {
 
     private val resumed = AtomicInteger()
 
+    /** When the app's last screen in front left it ([SystemClock.elapsedRealtime]). */
+    @Volatile
+    private var pausedAt = 0L
+
     /** True while one of the app's screens is in front. */
     val inFront: Boolean get() = resumed.get() > 0
 
@@ -109,28 +121,64 @@ object Calibrator {
     @Volatile
     private var pageFingerprint: String? = null
 
-    /** The run in progress (0: none); -1 once a forced run drops it. */
+    /** The run in progress (0: none); -1 once dropped. */
     @Volatile
     private var current = 0
 
     private var runs = 0
 
-    /** A forced run waits for the one it dropped to end. */
+    /** A dropping run waits for the one it dropped to end. */
     private var again = false
 
+    @Volatile
+    override var loaded: Boolean = false
+        private set
+
+    @Volatile
+    override var progress: CalibrationProgress = CalibrationProgress()
+        private set
+
+    @Volatile
+    override var lastEnd: CalibrationEnd? = null
+        private set
+
+    /** The fingerprint the user kept the old calibration for ([skip]). */
+    @Volatile
+    private var skippedFor: String? = null
+
+    @Volatile
+    private var declined = false
+
+    @Volatile
+    private var shownOnce = false
+
+    /** True once the user sent the run to the background ([background]) until it ends. */
+    @Volatile
+    private var inBackground = false
+
+    /** Runs started again in the background this launch ([BACKGROUND_TRIES]). */
+    private var backgroundTries = 0
+
+    /** True while the user is stopping the run ([cancel]). */
+    @Volatile
+    private var canceling = false
+
+    private val listeners = CopyOnWriteArraySet<() -> Unit>()
+
     /**
-     * Applies the kept tuning, or else the [Tuning.defaults], and calibrates when due as
-     * activities come to the front. What is kept is read off the main thread; until then nothing is due.
+     * Applies the kept tuning, or else the [Tuning.defaults], and tracks which of the app's
+     * screens are in front. What is kept is read off the main thread; until then nothing is due.
      */
     fun start(app: Application) {
         this.app = app
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 resumed.incrementAndGet()
-                if (activity is Reading) reading.incrementAndGet() else if (due()) begin(force = false)
+                if (activity is Reading) reading.incrementAndGet() else resumeInBackground()
             }
 
             override fun onActivityPaused(activity: Activity) {
+                pausedAt = SystemClock.elapsedRealtime()
                 resumed.decrementAndGet()
                 if (activity is Reading) reading.decrementAndGet()
             }
@@ -145,14 +193,77 @@ object Calibrator {
             kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
             tuning = (Tuning.of(kept?.optJSONObject("tuning")) ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors()))
                 .also { it.apply() }
+            skippedFor = runCatching { skipFile(app).readText().trim() }.getOrNull()
             pageFingerprint = Calibration.pageFingerprint(appVersion(app), Build.FINGERPRINT)
             fingerprint = Calibration.fingerprint(Calibration.VERSION, Build.FINGERPRINT)
-            if (resumed.get() > reading.get() && due()) begin(force = false)
+            loaded = true
+            changed()
         }
     }
 
     /** True when this system build and calibration version have no calibration yet, or only one made under battery saver; false until what is kept is read. */
     fun due(): Boolean = Calibration.due(kept, fingerprint)
+
+    override val calibrated: Boolean get() = kept != null
+
+    override fun offer(saverOn: Boolean): CalibrationOffer = CalibrationPrompts.offer(
+        loaded = loaded, canRun = canRun(), running = running, declined = declined, shown = shownOnce,
+        kept = kept, fingerprint = fingerprint, skippedFor = skippedFor, saverOn = saverOn
+    )
+
+    override fun estimateSeconds(): Int = CalibrationPrompts.estimateSeconds(kept)
+
+    override fun start(underSaver: Boolean) {
+        if (running) return
+        inBackground = false
+        begin(Mode(underSaver = underSaver))
+    }
+
+    @Synchronized
+    override fun cancel() {
+        inBackground = false
+        if (!running) return
+        canceling = true
+        current = -1
+    }
+
+    override fun background() {
+        inBackground = true
+        backgroundTries = 0
+    }
+
+    override fun skip() {
+        val f = fingerprint ?: return
+        skippedFor = f
+        if (::app.isInitialized) thread(name = "calibration-skip", isDaemon = true) { runCatching { skipFile(app).writeText(f) } }
+        changed()
+    }
+
+    override fun decline() {
+        declined = true
+        changed()
+    }
+
+    override fun shown() {
+        shownOnce = true
+    }
+
+    override fun listen(listener: () -> Unit) {
+        listeners += listener
+    }
+
+    override fun unlisten(listener: () -> Unit) {
+        listeners -= listener
+    }
+
+    private fun changed() = listeners.forEach { runCatching { it() } }
+
+    /** A screen other than the reader came to the front: a run sent to the background that the reader or another app stopped starts again, a few times a launch at most. */
+    private fun resumeInBackground() {
+        if (!inBackground || running || !due() || backgroundTries >= BACKGROUND_TRIES) return
+        backgroundTries++
+        begin(Mode(underSaver = lastMode.underSaver))
+    }
 
     /** Runs [block] as app work no calibration timing may overlap: one it overlaps is made again. */
     inline fun <T> working(block: () -> T): T {
@@ -176,9 +287,8 @@ object Calibrator {
     }
 
     /**
-     * Calibrates now, charging or not and under battery saver too (debug builds'
-     * Recalibrate); still only in front, not reading, cool and idle. A run already waiting or
-     * timing is dropped for this one.
+     * Calibrates now, under battery saver too (debug builds' Recalibrate); still only in
+     * front, not reading, cool and idle. A run already waiting or timing is dropped for this one.
      */
     fun recalibrate() = recalibrate(BURST, warm = true)
 
@@ -190,11 +300,11 @@ object Calibrator {
      * builds compare run shapes with it. Kept with the result.
      */
     fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = -1) {
-        shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(-1, 5_000))
-        begin(force = true)
+        inBackground = false
+        begin(Mode(underSaver = true, shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(-1, 5_000))), drop = true)
     }
 
-    /** How a run samples ([CalibrationRun], [recalibrate]); automatic runs take the default. */
+    /** How a run samples ([CalibrationRun], [recalibrate]); runs the user starts take the default. */
     private data class Shape(
         val burst: Int = BURST,
         val warm: Boolean = true,
@@ -203,29 +313,36 @@ object Calibrator {
         val gapMs: Long = -1
     )
 
-    /** How forced runs sample. */
-    @Volatile
-    private var shape = Shape()
+    /** How a run goes: timing under battery saver too when [underSaver], sampling as [shape] says. */
+    private data class Mode(val underSaver: Boolean, val shape: Shape = Shape())
 
+    /** The latest run's mode: the one a dropping run starts with once the dropped one ends. */
+    @Volatile
+    private var lastMode = Mode(underSaver = false)
+
+    /** Starts a run in [mode] unless one is running; with [drop], drops that one and starts once it ends. */
     @Synchronized
-    private fun begin(force: Boolean) {
+    private fun begin(mode: Mode, drop: Boolean = false) {
         if (!::app.isInitialized) return
+        lastMode = mode
         if (running) {
-            if (force) {
+            if (drop) {
                 current = -1
                 again = true
             }
             return
         }
-        if (!force && (!charging(app) || powerSave(app))) return
         running = true
+        lastEnd = null
+        progress = CalibrationProgress()
         val id = ++runs
         current = id
         val dropped = { current != id }
+        changed()
         thread(name = "calibration", isDaemon = true) {
             var why: String? = "stopped"
             try {
-                if (!dropped()) why = calibrate(force, dropped)
+                if (!dropped()) why = calibrate(mode, dropped)
             } catch (t: Throwable) {
                 why = "failed: ${t.javaClass.simpleName}: ${t.message}"
                 Log.w(TAG, "Calibration failed", t)
@@ -235,30 +352,37 @@ object Calibrator {
         }
     }
 
-    /** A run ended, finished unless [why] says why not: a dropped one without reporting it, then the forced run that dropped it starts. */
+    /** A run ended, finished unless [why] says why not: a dropped one without reporting it (the user's [cancel] as canceled), then the run that dropped it starts. */
     @Synchronized
     private fun ended(dropped: Boolean, why: String?) {
         running = false
         current = 0
-        if (dropped) Log.i(TAG, "dropped for a new run") else {
+        if (dropped) {
+            Log.i(TAG, if (canceling) "canceled" else "dropped for a new run")
+            if (canceling) lastEnd = CalibrationEnd(ok = false, why = "canceled", canceled = true)
+        } else {
             val line = if (why == null) "ended true" else "ended false: $why"
             outcome = line
             Log.i(TAG, line)
+            lastEnd = CalibrationEnd(ok = why == null, why = why)
+            if (why == null) inBackground = false
             onEnded?.invoke(why == null)
         }
+        canceling = false
         if (again) {
             again = false
-            begin(force = true)
+            begin(lastMode)
         }
+        changed()
     }
 
     /** One calibration: null when it finished and its winners apply, else why not. */
-    private fun calibrate(force: Boolean, dropped: () -> Boolean): String? {
+    private fun calibrate(mode: Mode, dropped: () -> Boolean): String? {
         val f = fingerprint ?: return "not ready"
         val pages = pageFingerprint ?: return "not ready"
         val started = SystemClock.elapsedRealtime()
-        val s = if (force) shape else Shape()
-        val probe = DeviceProbe(app, force, dropped, pages, s.gapMs)
+        val s = mode.shape
+        val probe = DeviceProbe(app, mode.underSaver, dropped, pages, s.gapMs)
         try {
             // Nothing is drawn before the app is found idle.
             if (!probe.awaitFair()) return probe.why ?: "not fair"
@@ -274,7 +398,11 @@ object Calibrator {
             val wasChosen = Calibration.chosen(kept, before)
             val run = CalibrationRun(
                 probe, candidates, burst = s.burst, warm = s.warm, warmOnce = s.warmOnce,
-                winners = if (s.early) { t -> Calibration.tuning(t, before, chosen = wasChosen) } else null
+                winners = if (s.early) { t -> Calibration.tuning(t, before, chosen = wasChosen) } else null,
+                progress = { p ->
+                    progress = p
+                    changed()
+                }
             )
             val t0 = SystemClock.elapsedRealtime()
             probe.timing()
@@ -287,7 +415,7 @@ object Calibrator {
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
                 .put("tookMs", tookMs).put("totalMs", SystemClock.elapsedRealtime() - started).put("settleMs", settleMs).put("prepMs", probe.prepMs)
                 .put("tuning", chosen.toJson())
-                .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", run.sawPowerSave)
+                .put("timings", Calibration.timingsJson(timings)).put("underSaver", mode.underSaver).put("powerSave", run.sawPowerSave)
                 .put("thermal", probe.thermal).put("heat", probe.heatSource).put("batteryTemp", probe.batteryTemp / 10.0)
                 .put("page", probe.page).put("target", probe.target).put("jxlPage", probe.decodePage).put("jpegPage", probe.decodePage)
                 .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
@@ -308,6 +436,35 @@ object Calibrator {
 
     private fun file(context: Context) = File(context.noBackupFilesDir, "calibration.json")
 
+    /** Holds the fingerprint the user kept the old calibration for ([skip]). */
+    private fun skipFile(context: Context) = File(context.noBackupFilesDir, "calibration-skip.txt")
+
+    /** Battery saver, heat and battery level now, as a run the user starts is gated on ([CalibrationPrompts.gate]). */
+    fun readings(context: Context): DeviceReadings {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val b = battery(context)
+        val tenths = b?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
+        val reported = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else null
+        val level = b?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = b?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        return DeviceReadings(
+            saverOn = pm?.isPowerSaveMode == true,
+            thermalStatus = Calibration.heatStatus(reported, thermalKnown(pm), tenths),
+            batteryPercent = if (level >= 0 && scale > 0) level * 100 / scale else null
+        )
+    }
+
+    /**
+     * Whether the device's thermal status is real: true where it reports thermal headroom
+     * (a thermal HAL answers), false where there is no thermal status (before Android 10),
+     * null where it cannot be told.
+     */
+    private fun thermalKnown(pm: PowerManager?): Boolean? = when {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> false
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm?.getThermalHeadroom(0)?.isNaN() == false -> true
+        else -> null
+    }
+
     /** What the method is made of, as text: [Calibration.method] and how automatic runs sample, on which pages ([Calibration.VERSION]). */
     internal fun method(): String = listOf(
         Calibration.method(), Shape(), "${PAGE_W}x$PAGE_H", "${DECODE_W}x$DECODE_H", DeviceProbe.PAGE_QUALITIES, IDLE_WINDOW_MS
@@ -320,8 +477,6 @@ object Calibrator {
         val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
         "$code@${info.lastUpdateTime}"
     }.getOrDefault("?")
-
-    private fun charging(context: Context): Boolean = battery(context)?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)?.let { it != 0 } ?: false
 
     /** The battery's last broadcast state; null when there is none. */
     private fun battery(context: Context): Intent? = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -336,8 +491,6 @@ object Calibrator {
         return size.x to size.y
     }
 
-    private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
-
     /**
      * Times setups on this device: resampling a 2000 x 3000 synthetic page to the screen's
      * portrait size, JPEG XL and platform JPEG decodes of a 4000 x 6000 one, 4K class as image
@@ -346,7 +499,7 @@ object Calibrator {
      */
     private class DeviceProbe(
         private val context: Context,
-        private val force: Boolean,
+        private val underSaver: Boolean,
         private val dropped: () -> Boolean,
         private val pageFingerprint: String,
         private val gapMs: Long = -1
@@ -431,22 +584,11 @@ object Calibrator {
 
         // The device's state as last read ([refresh]).
         private var checkedAt: Long? = null
-        private var charging = false
         private var saver = false
         private var status = 0
 
-        /**
-         * Whether the device's thermal status is real: true where it reports thermal headroom
-         * (a thermal HAL answers), false where there is no thermal status (before Android 10),
-         * null where it cannot be told.
-         */
-        private val thermalKnown: Boolean? by lazy {
-            when {
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> false
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm?.getThermalHeadroom(0)?.isNaN() == false -> true
-                else -> null
-            }
-        }
+        /** Whether the device's thermal status is real ([Calibrator.thermalKnown]). */
+        private val thermalKnown: Boolean? by lazy { thermalKnown(pm) }
 
         /** What the heat signal is: "thermal", "battery", or "both" ([Calibration.heatStatus]). */
         val heatSource: String get() = when (thermalKnown) { true -> "thermal"; false -> "battery"; null -> "both" }
@@ -482,9 +624,9 @@ object Calibrator {
             return stopNow()?.let { no(it) } ?: true
         }
 
-        /** Why the run must stop now, or null: dropped, or [Calibration.stopReason] but for charging, read where it is waited for. */
+        /** Why the run must stop now, or null: dropped, or [Calibration.stopReason]; the app switching screens counts as in front ([switching]). */
         private fun stopNow(): String? = if (dropped()) "dropped" else
-            Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = true) { true }
+            Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0 || switching())
 
         /** True when the JPEG XL page was made and native decodes are there. */
         val hasJxl: Boolean get() = jxl != null && jxlOut != null
@@ -588,8 +730,13 @@ object Calibrator {
             while (true) {
                 if (dropped()) return no("dropped")
                 refresh()
-                Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging })
+                Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0 || switching())
                     ?.let { return no(it) }
+                if (resumed.get() == 0) {
+                    // Between one of the app's screens and the next: no sample, but no stop either.
+                    SystemClock.sleep(STEP_MS)
+                    continue
+                }
                 val wait = hindrance() ?: if (settle()) null else "app not idle"
                 if (wait == null) {
                     rest()
@@ -664,13 +811,15 @@ object Calibrator {
         /** In front and not reading. */
         private fun inFront() = resumed.get() > 0 && reading.get() == 0
 
-        /** Reads charging, battery saver and heat again when due ([Calibration.refreshDue]). */
+        /** True while no screen of the app is in front, but one left it under [SWITCH_MS] ago: the next is likely coming. */
+        private fun switching() = resumed.get() == 0 && SystemClock.elapsedRealtime() - pausedAt < SWITCH_MS
+
+        /** Reads battery saver and heat again when due ([Calibration.refreshDue]). */
         private fun refresh() {
             val now = SystemClock.elapsedRealtime()
             if (!Calibration.refreshDue(checkedAt, now)) return
             checkedAt = now
             val b = battery(context)
-            charging = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
             val tenths = b?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
             tenths?.let { batteryTemp = maxOf(batteryTemp, it) }
             saver = pm?.isPowerSaveMode == true
@@ -681,7 +830,7 @@ object Calibrator {
 
         /** What timing now would be skewed by ([Calibration.waitReason]); null when nothing. */
         private fun hindrance(): String? =
-            Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, forced = force, cooling = cooling)
+            Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, underSaver = underSaver, cooling = cooling)
 
         /** True when no idle check is due ([IdleChecks]) or the app is found idle ([idle]) within the time the check may take. */
         private fun settle(): Boolean {
@@ -752,5 +901,11 @@ object Calibrator {
     private const val DECODE_H = 6000
 
     private const val WAIT_MS = 1_000L
+
+    /** How long a run takes the app as still in front after its screen in front left it ([DeviceProbe.switching]). */
+    private const val SWITCH_MS = 1_500L
+
+    /** How often a launch starts a run sent to the background again ([resumeInBackground]). */
+    private const val BACKGROUND_TRIES = 3
     private const val IDLE_WINDOW_MS = 300L
 }

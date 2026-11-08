@@ -179,37 +179,39 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     CBZ** (the last for CBR, CB7 and CBT; books on the device; a folder gives
     every book inside it and its subfolders; each off, saying why, where nothing
     selected can be written, or where each book's mark says it had that done
-    already); they run whether or not the device is charging
-    and Peek (off by default). Settings → **Selection menu (⋮)** shows, hides and
-    reorders them like the toolbar buttons.
-  - The floating button: the list/grid toggle with nothing selected (if
-    shown; Settings → **Grid/list button tap** makes its tap any view ring
-    action instead, its icon that action's, grayed at its end; Folders first
-    and Sections toggle the layout outside their tab), **Open** with one (continues a book, enters a folder), **Move** with
-    several; Settings → **Button with one / several items selected** picks
-    another action or none. Each action has its own icon and color from the
-    theme's roles: toggle primary container, Open secondary container, Move
-    tertiary container, Copy secondary, Delete error container.
-  - **View ring:** a long press on the list/grid toggle fans round buttons on
-    a quarter arc from the button toward the screen's inside (mirrored when
+    already; they run whether or not the device is charging), and Peek (off by
+    default). Settings → **Selection menu (⋮)** shows, hides and reorders them
+    like the toolbar buttons.
+  - The floating button: the list/grid toggle with nothing selected (if shown;
+    Settings → **Grid/list button tap** makes its tap any view ring action
+    instead, its icon that action's, grayed at its end; Folders first and
+    Sections toggle the layout outside their tab), **Open** with one (continues
+    a book, enters a folder), **Move** with several; Settings → **Button with
+    one / several items selected** picks another action or none. Each action
+    has its own icon and color from the theme's roles: toggle primary
+    container, Open secondary container, Move tertiary container, Copy
+    secondary, Delete error container. Without the button, its settings are
+    grayed.
+  - **View ring:** a long press on the list/grid toggle fans round buttons on a
+    quarter arc from the button toward the screen's inside (mirrored when
     left-handed), each labeled with its setting and what a tap does,
     "current→next" (the current part muted): Smaller and Larger (grid columns,
     and rows when set; list density; at the end grayed, showing the size
     alone), Details (Hidden, Comfortable, Dense in turn), Sort (flips the first
-    level's direction; long press opens the Sort popup), Folders first
-    (Browse only) and Sections (Favorites only) by default; Layout (grid or
-    list) and Title lines (each title display in turn) on request. Settings →
-    **View ring options** picks them and their order, 3 to 6 in each tab;
-    Folders first and Sections count only in their own. A label wraps onto two lines or takes a shorter form ("Dir.
-    LTR→RTL") where the full one does not fit; "…" only as a last resort. The
-    ring is two thirds the size it once was, larger only where its labels
-    cannot clear each other otherwise. A tap applies at once and the ring
-    stays open; the X in the button's place, a tap outside or Back closes it.
-    Or keep the finger down and drag: the button it points toward lights up
-    (at any distance, with a tick), lifting there applies it and closes the
-    ring, lifting back on the X cancels, and resting on Sort opens the Sort
-    popup. TalkBack reads each button's setting, value and what a tap makes
-    it, in full words.
+    level's direction; long press opens the Sort popup), Folders first (Browse
+    only) and Sections (Favorites only) by default; Layout (grid or list) and
+    Title lines (each title display in turn) on request. Settings → **View ring
+    options** picks them and their order, 3 to 6 in each tab; Folders first and
+    Sections count only in their own. A label wraps onto two lines or takes a
+    shorter form ("Dir. LTR→RTL") where the full one does not fit; "…" only as
+    a last resort. The buttons sit 75 dp apart center to center (closer on a
+    tight screen), at least 91 dp from the X; the ring grows only where even
+    the shortest labels cannot clear each other. A tap applies at once and the ring stays open; the X in the
+    button's place, a tap outside or Back closes it. Or keep the finger down
+    and drag: the button it points toward lights up (at any distance, with a
+    tick), lifting there applies it and closes the ring, lifting back on the X
+    cancels, and resting on Sort opens the Sort popup. TalkBack reads each
+    button's setting, value and what a tap makes it, in full words.
   - Several items are one operation, one item at a time: Move and Copy pick
     them all up at once (from the device and shares alike), Delete asks once
     for all, Share sends them all in one share action. File operations work on

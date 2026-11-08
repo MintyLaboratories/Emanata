@@ -17,6 +17,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/space_2"
             android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:accessibilityLiveRegion="polite"
             android:visibility="gone" />
 
         <com.google.android.material.materialswitch.MaterialSwitch

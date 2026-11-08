@@ -74,6 +74,24 @@ class ConvertEstimateTest {
     }
 
     @Test
+    fun aFolderOfBooksDoneBeforeStaysQuickPastTheListingBudget() {
+        val listed = List(5) { book(40).copy(done = true) }
+        // Marks read, pages not listed.
+        val unlisted = List(195) { BookPlan(100 * mb, done = true) }
+        val times = ConvertEstimate(WorkRates()).forecast(ConvertOp.COMPACT, listed + unlisted)
+        assertEquals(200 * ConvertEstimate.SKIP_SECONDS, times.sum(), 1e-6)
+        // Marks not read either: done as often as those read.
+        val unread = List(195) { BookPlan(100 * mb, done = null) }
+        assertEquals(200 * ConvertEstimate.SKIP_SECONDS, ConvertEstimate(WorkRates()).forecast(ConvertOp.COMPACT, listed + unread).sum(), 1e-6)
+        // Half of those read done: an unread book counts half its work.
+        val half = ConvertEstimate(WorkRates()).forecast(ConvertOp.COMPACT, listOf(book(40), book(40).copy(done = true), book(40).copy(done = null)))
+        assertEquals((half[0] + half[1]) / 2, half[2], 1e-6)
+        // None read: each counts in full.
+        val blind = ConvertEstimate(WorkRates()).forecast(ConvertOp.COMPACT, listOf(book(40), BookPlan(book(40).bytes, done = null)))
+        assertTrue(blind[1] > 1)
+    }
+
+    @Test
     fun anUpscaleStepWithNoRecordUsesItsOwnSeed() {
         val seconds = ConvertEstimate(WorkRates()).forecast(ConvertOp.upscale("model-a"), listOf(book(10))).single()
         assertTrue(seconds > 10 * 2.0)

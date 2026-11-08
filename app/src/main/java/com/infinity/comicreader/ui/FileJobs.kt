@@ -279,17 +279,21 @@ internal class FileJobs(
 
     /**
      * What is known of the books at [paths] for [how] without decoding anything: each book's
-     * size, and for as long as [PLAN_MS] lasts, whether its mark says it had this done and the
-     * pages its archive lists; stops listing once not [alive]. Blocking.
+     * size; for as long as [markMs] lasts, whether its mark says it had this done (only the
+     * archive's end is read); and for as long as [listMs] lasts, the pages its archive lists.
+     * Stops reading once not [alive]. Blocking.
      */
-    fun planBooks(paths: List<String>, how: Rebuild, alive: () -> Boolean = { true }): List<BookPlan> {
-        val until = System.nanoTime() + PLAN_MS * 1_000_000
+    fun planBooks(paths: List<String>, how: Rebuild, alive: () -> Boolean = { true }, listMs: Long = PLAN_MS, markMs: Long = MARK_MS): List<BookPlan> {
+        val start = System.nanoTime()
+        fun within(ms: Long) = System.nanoTime() - start <= ms * 1_000_000
         return paths.map { path ->
             val book = File(path)
-            val plan = BookPlan(book.length(), ConvertRates.location(path), Container.of(book.name, false))
-            if (System.nanoTime() > until || !alive()) return@map plan
+            val unread = BookPlan(book.length(), ConvertRates.location(path), Container.of(book.name, false), done = null)
+            if (!within(markMs) || !alive()) return@map unread
+            if (how.doneIn(OutputMarks.verified(book, BookIds.xxh3))) return@map unread.copy(done = true)
+            val plan = unread.copy(done = false)
+            if (!within(listMs) || !alive()) return@map plan
             runCatching {
-                if (how.doneIn(OutputMarks.verified(book, BookIds.xxh3))) return@runCatching plan.copy(done = true)
                 val entries = ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset))?.use { it.entries } ?: return@runCatching plan
                 // Left as it is: its pages are in archives inside it.
                 if (entries.any { Formats.isArchiveName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }) return@runCatching plan.copy(done = true)
@@ -354,7 +358,7 @@ internal class FileJobs(
         // Repacking copies every file as it is: no page is made anew.
         val pages = if (how == Rebuild.REPACK) null else pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
         val rates = ConvertRates.get(app)
-        plan(p, forecast) { ConvertEstimate(rates).forecast(how.op, planBooks(paths, how) { p.alive }) }
+        plan(p, forecast) { ConvertEstimate(rates).forecast(how.op, planBooks(paths, how, alive = { p.alive })) }
         recover()
         val seen = settled(chosen)
         // One operation at a time: whatever is there was left by one that ended early.
@@ -692,6 +696,9 @@ internal class FileJobs(
 
         /** How long listing books for an estimate may take: books past it are taken to hold pages as those listed do. */
         const val PLAN_MS = 1_500L
+
+        /** How long reading books' marks for an estimate may take: books past it are taken to be done as often as those read. */
+        const val MARK_MS = 8_000L
 
         /** libjxl and the platform's codecs; null where libjxl is missing. */
         fun platformPages(): PageWork? = if (runCatching { LibJxl.available }.getOrDefault(false)) PageWork(LibJxl, AndroidImages) else null

@@ -25,26 +25,28 @@ data class PagePlan(val format: ImageKind?, val bytes: Long)
  * A book as known before the work, without decoding anything: its [bytes], where it is
  * ([WorkRates.DEVICE] or a share), how its files are held, its [pages] when listed (null when
  * not: the pages of the books listed stand in), and [done] when its mark says it had this done
- * already (it is skipped).
+ * already (it is skipped); null when its mark was not read (the share of books read done
+ * stands in).
  */
 data class BookPlan(
     val bytes: Long,
     val location: String = WorkRates.DEVICE,
     val container: Container = Container.ZIP,
     val pages: List<PagePlan>? = null,
-    val done: Boolean = false
+    val done: Boolean? = false
 )
 
 /**
  * How long Convert work takes, from this device's [rates]: each book reads, converts its
  * pages (reading overlaps converting, so the slower of the two counts), writes its new file
  * and reads it back, plus its action's time per book. A book not listed is taken to hold
- * pages as those listed do, by bytes; with none listed, medium JPEGs.
+ * pages as those listed do, by bytes; with none listed, medium JPEGs. A book whose mark was
+ * not read is taken to be done as often as those read were.
  */
 class ConvertEstimate(private val rates: WorkRates) {
     /** Seconds each of [books] takes for [op], in order. */
     fun forecast(op: ConvertOp, books: List<BookPlan>): List<Double> {
-        val listed = books.filter { it.pages != null && !it.done }
+        val listed = books.filter { it.pages != null && it.done == false }
         val pageBytes = listed.sumOf { b -> b.pages!!.sumOf { it.bytes.coerceAtLeast(0) } }
         val bookBytes = listed.sumOf { it.bytes.coerceAtLeast(0) }
         val step = op.step
@@ -55,12 +57,19 @@ class ConvertEstimate(private val rates: WorkRates) {
             else -> rates.secondsPerPage(step, ImageKind.JPEG, SizeClass.MEDIUM) / TYPICAL_PAGE_BYTES
         }
         val pageShare = if (bookBytes > 0) (pageBytes.toDouble() / bookBytes).coerceIn(0.0, 1.0) else 1.0
-        return books.map { seconds(op, it, perByte, pageShare) }
+        val read = books.filter { it.done != null }
+        val doneShare = if (read.isEmpty()) 0.0 else read.count { it.done == true }.toDouble() / read.size
+        return books.map { book ->
+            when (book.done) {
+                true -> SKIP_SECONDS
+                false -> seconds(op, book, perByte, pageShare)
+                null -> doneShare * SKIP_SECONDS + (1 - doneShare) * seconds(op, book, perByte, pageShare)
+            }
+        }
     }
 
-    /** Seconds [book] takes for [op]; [perByte] and [pageShare] stand in for pages not listed. */
+    /** Seconds [book] takes for [op] when not done; [perByte] and [pageShare] stand in for pages not listed. */
     private fun seconds(op: ConvertOp, book: BookPlan, perByte: Double, pageShare: Double): Double {
-        if (book.done) return SKIP_SECONDS
         val bytes = book.bytes.coerceAtLeast(0).toDouble()
         val read = bytes / rates.readRate(book.location, book.container)
         val step = op.step

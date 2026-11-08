@@ -61,6 +61,16 @@ class CalibrationPromptsTest {
     }
 
     @Test
+    fun aSkipIsKeptOnlyWhenARunIsDue() {
+        assertEquals(now, CalibrationPrompts.skipFor(kept(older), now))
+        assertEquals(now, CalibrationPrompts.skipFor(kept(now, saver = true), now))
+        assertEquals(now, CalibrationPrompts.skipFor(null, now))
+        // Up to date (Keep on a Recalibrate screen): nothing to skip, so a later run under saver is still offered for replacing.
+        assertEquals(null, CalibrationPrompts.skipFor(kept(now), now))
+        assertEquals(null, CalibrationPrompts.skipFor(kept(older), null))
+    }
+
+    @Test
     fun nothingWhileUnknownRunningDeclinedOrUnable() {
         assertEquals(CalibrationOffer.NONE, offer(null, loaded = false))
         assertEquals(CalibrationOffer.NONE, offer(null, fingerprint = null))

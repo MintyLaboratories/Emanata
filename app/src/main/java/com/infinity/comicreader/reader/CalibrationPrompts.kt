@@ -81,7 +81,7 @@ interface CalibrationControl {
     /** Lets the run go on unseen: while the app is in front and idle, starting again when back after the reader or another app stopped it. */
     fun background()
 
-    /** Keeps the calibration in effect until the system build changes or the user recalibrates. */
+    /** Keeps the calibration in effect until the system build changes or the user recalibrates ([start]); nothing when no run is due. */
     fun skip()
 
     /** Offers nothing more until the app starts again. */
@@ -126,6 +126,9 @@ object CalibrationPrompts {
         saverOn && kept.optString("fingerprint") == fingerprint -> CalibrationOffer.NONE
         else -> CalibrationOffer.BANNER
     }
+
+    /** What [CalibrationControl.skip] keeps the calibration for: [fingerprint] when a run is [due][Calibration.due] for it, else null (nothing to skip). */
+    fun skipFor(kept: JSONObject?, fingerprint: String?): String? = fingerprint?.takeIf { Calibration.due(kept, it) }
 
     /**
      * Whether a run the user starts may go: heat ([thermalStatus] at [Calibration.HOT] or

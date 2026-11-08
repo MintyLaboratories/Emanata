@@ -200,9 +200,10 @@ object Calibrator : CalibrationControl {
 
     override fun estimateSeconds(): Int = CalibrationPrompts.estimateSeconds(kept)
 
-    /** Starts a run the user asked for; one asked for while the last is being canceled starts once that one ends. */
+    /** Starts a run the user asked for, which also ends a [skip]; one asked for while the last is being canceled starts once that one ends. */
     override fun start(underSaver: Boolean) {
         inBackground = false
+        unskip()
         begin(Mode(underSaver = underSaver), restart = true)
     }
 
@@ -216,11 +217,19 @@ object Calibrator : CalibrationControl {
         backgroundTries = 0
     }
 
+    /** Keeps the calibration in effect for this system build and calibration version; nothing when no run is due ([CalibrationPrompts.skipFor]). */
     override fun skip() {
-        val f = fingerprint ?: return
+        val f = CalibrationPrompts.skipFor(kept, fingerprint) ?: return
         skippedFor = f
         if (::app.isInitialized) thread(name = "calibration-skip", isDaemon = true) { runCatching { skipFile(app).writeText(f) } }
         changed()
+    }
+
+    /** A run the user asked for ends what [skip] kept. */
+    private fun unskip() {
+        if (skippedFor == null) return
+        skippedFor = null
+        if (::app.isInitialized) thread(name = "calibration-skip", isDaemon = true) { runCatching { skipFile(app).delete() } }
     }
 
     override fun decline() {

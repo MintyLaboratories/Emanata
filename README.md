@@ -853,9 +853,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   and keeps the setup that is fast without wasting battery. **Cancel** keeps
   what is in effect (the defaults the first time) and asks again at the next
   launch, **Keep old calibration** (not on the first run) keeps the previous one
-  until the next system update, **Continue in background** lets it run unseen
-  while the app is open and idle. After a system update a banner in the
-  library offers it again ("Optimize for this device (~N s)": Start, Later,
+  until the next system update or Recalibrate, **Continue in background** lets
+  it run unseen while the app is open and idle. After a system update a banner
+  in the library offers it again ("Optimize for this device (~N s)": Start, Later,
   Skip); **Settings → Performance → Recalibrate** runs it any time. No charger
   needed; too warm or under 20 % battery, it says so and stops; with battery
   saver on it offers saver's settings or **Measure anyway** (replaced by the

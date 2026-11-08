@@ -115,18 +115,24 @@ object OutputMarks {
     /**
      * The comment for a new archive from its source's [kept] comment (bytes as they were):
      * its human text as it is, then, on its own last line, one block of every block's chain
-     * in order with [added] after it, over a central directory of hash [directory]. The
-     * oldest entries are dropped first when the comment would pass [MAX_COMMENT]; human text
-     * alone when even the newest entry does not fit, or [directory] is null (not located).
+     * in order with [added] after it, over a central directory of hash [directory]. When no
+     * entry of [added] changes pages, the chain moves to [directory] only if every block
+     * verified over the source's central directory hash [source] (null: unknown); else it
+     * stays stale, keeping a stale block's hash. The oldest entries are dropped first when
+     * the comment would pass [MAX_COMMENT]; human text alone when even the newest entry does
+     * not fit, or [directory] is null (not located).
      */
-    fun comment(kept: ByteArray, added: List<Entry>, directory: Long?): ByteArray {
+    fun comment(kept: ByteArray, added: List<Entry>, directory: Long?, source: Long? = null): ByteArray {
         val found = String(kept, Charsets.ISO_8859_1)
         val text = withoutBlocks(found)
         if (directory != null) {
-            val chain = appended(blocks(found).flatMap { it.entries }, added)
+            val blocks = blocks(found)
+            val stale = if (added.none { it.changesPages }) blocks.lastOrNull { it.hash != source } else null
+            val over = stale?.hash ?: directory
+            val chain = appended(blocks.flatMap { it.entries }, added)
             val lead = if (text.isEmpty()) "" else text + "\n"
             for (from in chain.indices) {
-                val joined = lead + block(chain.subList(from, chain.size), directory)
+                val joined = lead + block(chain.subList(from, chain.size), over)
                 if (joined.length <= MAX_COMMENT) return joined.toByteArray(Charsets.ISO_8859_1)
             }
         }
@@ -266,15 +272,17 @@ object OutputMarks {
      * source's [kept] comment and the entries of [operations] (in order) over its central
      * directory, then reads it back: true when the block is there, verifies and ends with
      * the last operation's entry; false when only the human text was written (too long, or
-     * the directory not located). Throws when [zip] is no ZIP or already has a comment.
+     * the directory not located) or a stale chain stayed stale. [source] is the source's
+     * central directory hash, needed only when no operation changes pages ([comment]).
+     * Throws when [zip] is no ZIP or already has a comment.
      */
-    fun write(zip: File, kept: ByteArray, operations: List<Operation>, hash: Xxh3): Boolean {
+    fun write(zip: File, kept: ByteArray, operations: List<Operation>, hash: Xxh3, source: Long? = null): Boolean {
         require(operations.isNotEmpty()) { "No operation" }
         FileChannel.open(zip.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE).use { channel ->
             val raw = tailBytes(channel) ?: throw IOException("No ZIP end in ${zip.name}")
             if (raw.comment.isNotEmpty()) throw IOException("${zip.name} has a comment")
             val directory = directoryHash(channel, raw, hash)
-            val text = comment(kept, operations.map { it.entry }, directory)
+            val text = comment(kept, operations.map { it.entry }, directory, source)
             val out = ByteBuffer.allocate(2 + text.size).order(ByteOrder.LITTLE_ENDIAN)
             out.putShort(text.size.toShort()).put(text).flip()
             channel.position(raw.end + 20)

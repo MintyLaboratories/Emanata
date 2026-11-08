@@ -224,6 +224,31 @@ class OutputMarksTest {
     }
 
     @Test
+    fun aPageKeepingEntryMovesOnlyAVerifiedChainToTheNewHash() {
+        val source = 0x1111111111111111L
+        val stale = 0x2222222222222222L
+        val now = 0x3333333333333333L
+        val embed = entries("Emanata:embed:v1")
+        fun comment(kept: String, added: List<Entry>, source: Long?) =
+            String(OutputMarks.comment(kept.toByteArray(Charsets.ISO_8859_1), added, now, source), Charsets.ISO_8859_1)
+        fun hex(h: Long) = "%016x".format(h)
+        assertEquals("verified before: moved",
+            "[i: A:compact:v1, Emanata:embed:v1 | ${hex(now)}]", comment("[i: A:compact:v1 | ${hex(source)}]", embed, source))
+        assertEquals("stale before: stays stale",
+            "[i: A:compact:v1, Emanata:embed:v1 | ${hex(stale)}]", comment("[i: A:compact:v1 | ${hex(stale)}]", embed, source))
+        assertEquals("one stale block of several keeps the merged chain stale",
+            "[i: A:compact:v1, B:tag:v1, Emanata:embed:v1 | ${hex(stale)}]",
+            comment("[i: A:compact:v1 | ${hex(stale)}]\n[i: B:tag:v1 | ${hex(source)}]", embed, source))
+        assertEquals("the source's hash unknown: stays stale",
+            "[i: A:compact:v1, Emanata:embed:v1 | ${hex(source)}]", comment("[i: A:compact:v1 | ${hex(source)}]", embed, null))
+        assertEquals("no chain before: a new one",
+            "Notes\n[i: Emanata:embed:v1 | ${hex(now)}]", comment("Notes", embed, null))
+        assertEquals("an entry changing pages takes the stale history to the new hash",
+            "[i: A:compact:v1, Emanata:compatible:v1 | ${hex(now)}]", comment("[i: A:compact:v1 | ${hex(stale)}]", entries("Emanata:compatible:v1"), source))
+        assertNull(OutputMarks.done(entries("A:compact:v1, Emanata:compatible:v1")).compactedBy)
+    }
+
+    @Test
     fun theOldestEntriesGoFirstWhenTheCommentWouldBeTooLong() {
         val all = OutputMarks.block(entries("A:x:v1, B:y:v2, Emanata:compact:v1"), 0L).length
         val room = OutputMarks.block(entries("B:y:v2, Emanata:compact:v1"), 0L).length

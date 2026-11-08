@@ -585,10 +585,10 @@ object Calibration {
     /** The longest a run tries at its start for the app to go idle ([IdleChecks]) before it waits as for any sample. */
     const val SETTLE_MS = 3_000L
 
-    /** True when charging, battery saver and heat, last read at [checkedAt] (null: never), are due to be read again at [now]: each read is a call to the system. */
+    /** True when battery saver and heat, last read at [checkedAt] (null: never), are due to be read again at [now]: each read is a call to the system. */
     fun refreshDue(checkedAt: Long?, now: Long): Boolean = checkedAt == null || now - checkedAt >= CHECK_MS
 
-    /** How often a run reads charging, battery saver and heat again ([refreshDue]). */
+    /** How often a run reads battery saver and heat again ([refreshDue]). */
     const val CHECK_MS = 1_000L
 
     /** The median of [xs]; NaN when empty. */
@@ -660,7 +660,7 @@ internal interface CalibrationProbe {
     /** Why [awaitFair] last said no; null when unknown. */
     val why: String? get() = null
 
-    /** True while battery saver is on (only a forced run times under it). */
+    /** True while battery saver is on (only a run the user let measure under it times then). */
     val powerSave: Boolean get() = false
 }
 

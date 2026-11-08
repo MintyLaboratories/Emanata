@@ -121,4 +121,14 @@ class DirectionDetectionTest {
         assertEquals(1..all.size, all.min()..all.max())
         assertEquals(all.size, all.toSet().size)
     }
+
+    @Test
+    fun storedNumbersStayPut() {
+        val bump = "stored numbers changed: bump BookFactsCache.VERSION"
+        assertEquals(bump, 1, Detected(ReadingDirection.LTR, Source.COMIC_INFO).encode())
+        assertEquals(bump, 5, Detected(ReadingDirection.RTL, Source.COVER).encode())
+        assertEquals(bump, 8, Detected(ReadingDirection.RTL, Source.PUBLISHER).encode())
+        assertEquals(bump, 12, Detected(ReadingDirection.TTB, Source.SHAPE).encode())
+        assertEquals(bump, 15, Detected(ReadingDirection.TTB, Source.SEAMS).encode())
+    }
 }

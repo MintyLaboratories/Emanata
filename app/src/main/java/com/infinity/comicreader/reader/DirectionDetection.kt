@@ -22,16 +22,26 @@ object DirectionDetection {
 
     /** A detected [direction], from [source]; [detail] names the publisher when that decided. */
     data class Detected(val direction: ReadingDirection, val source: Source, val detail: String? = null) {
-        /** One number for storage: 0 never occurs, so it can stand for "nothing detected". */
-        fun encode(): Int = 1 + direction.ordinal + DIRECTIONS * source.key
+        /**
+         * One number for storage: 0 never occurs, so it can stand for "nothing detected".
+         * Fixed codes, not enum order: changing them needs a new [com.infinity.comicreader.data.BookFactsCache] version.
+         */
+        fun encode(): Int = 1 + code(direction) + DIRECTIONS * source.key
 
         companion object {
-            private val DIRECTIONS = ReadingDirection.entries.size
+            private const val DIRECTIONS = 3
+
+            private fun code(direction: ReadingDirection): Int = when (direction) {
+                ReadingDirection.LTR -> 0
+                ReadingDirection.RTL -> 1
+                ReadingDirection.TTB -> 2
+            }
 
             /** The detection [encode] gave [value]; null for 0 or anything unknown. */
             fun decode(value: Int): Detected? {
                 if (value <= 0) return null
-                val direction = ReadingDirection.entries[(value - 1) % DIRECTIONS]
+                val code = (value - 1) % DIRECTIONS
+                val direction = ReadingDirection.entries.firstOrNull { code(it) == code } ?: return null
                 val source = Source.entries.firstOrNull { it.key == (value - 1) / DIRECTIONS } ?: return null
                 return Detected(direction, source)
             }

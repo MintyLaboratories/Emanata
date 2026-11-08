@@ -99,7 +99,8 @@ object FileWork {
      * of [total] bytes of it (0 when it counts none); putting them [into] the folder so named,
      * if anywhere. Waiting its turn until [started] by [clock]; [stoppable] while canceling can
      * stop the step under way; finished once [outcome] is set. Its [id] is its place in the
-     * queue, and among the operation stack's bubbles ([nextOrder]).
+     * queue, and among the operation stack's bubbles ([nextOrder]). A Convert job's [plan] is
+     * the seconds each item is expected to take ([ConvertEstimate]).
      */
     data class Status(
         val kind: Kind,
@@ -112,7 +113,8 @@ object FileWork {
         val index: Int = 0,
         val count: Int = 1,
         val id: Long = 0,
-        val into: String? = null
+        val into: String? = null,
+        val plan: List<Double>? = null
     ) {
         /** True until its turn comes. */
         val waiting: Boolean get() = started == null && outcome == null
@@ -130,6 +132,15 @@ object FileWork {
                 if (count <= 1) return part
                 return ((index.coerceIn(0, count) + (part ?: 0f)) / count).coerceIn(0f, 1f)
             }
+
+        /** Seconds left at [now] (by [clock]) while it runs to a [plan], refined by how fast it went so far ([ConvertEstimate.remaining]); else null. */
+        fun secondsLeft(now: Long): Double? {
+            val planned = plan?.takeIf { it.isNotEmpty() } ?: return null
+            val start = started?.takeIf { outcome == null } ?: return null
+            val part = if (total > 0) done.coerceIn(0, total).toDouble() / total else 0.0
+            val at = if (count <= 1) 0 else index
+            return ConvertEstimate.remaining(planned, at, part, (now - start).coerceAtLeast(0) / 1000.0)
+        }
     }
 
     /** What an operation's work hears from and tells the runner. */
@@ -144,6 +155,9 @@ object FileWork {
 
         /** Starts on item [name], [index] (from 0) of [count]: its progress counts from nothing. */
         fun item(name: String, index: Int, count: Int)
+
+        /** Tells the seconds each item is expected to take ([Status.plan]). */
+        fun plan(seconds: List<Double>) {}
     }
 
     private class Op(val id: Long, val count: Int, val unrun: () -> Int, val work: (Progress) -> Outcome) {
@@ -236,6 +250,10 @@ object FileWork {
                 override fun item(name: String, index: Int, count: Int) {
                     reported = 0L
                     edit(flow, op.id) { it.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true) }
+                }
+
+                override fun plan(seconds: List<Double>) {
+                    edit(flow, op.id) { it.copy(plan = seconds) }
                 }
             }
             outcome = try {

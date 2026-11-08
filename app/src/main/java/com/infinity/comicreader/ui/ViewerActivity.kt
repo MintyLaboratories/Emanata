@@ -161,6 +161,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.BitSet
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.stream.Collectors
 import kotlin.math.abs
 
@@ -1396,20 +1397,24 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * "Repack as CBZ" or "Not now" for solid archive [book], with In place as Compact shares
-     * it. Not now, or the note dismissed, is kept for the book: not offered again.
+     * "Repack as CBZ" or "Not now" for solid archive [book], with how long it takes and In
+     * place as Compact shares it. Not now, or the note dismissed, is kept for the book: not
+     * offered again.
      */
     private fun askRepack(book: BookRef) {
         var answered = false
         val view = FileActions.compactOptions(this, prefs, skipHidden = false)
         val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place)
+        val jobs = FileJobs(this, library, prefs)
+        val forecast = jobs.forecast(listOf(book.path), FileJobs.Rebuild.REPACK)
+        TimeText.show(view.findViewById(R.id.convert_estimate), lifecycleScope, forecast)
         repackAsk = AlertDialog.Builder(this)
             .setTitle(getString(R.string.repack_title_one, File(book.path).name))
             .setMessage(R.string.repack_note)
             .setView(view)
             .setPositiveButton(R.string.more_repack) { _, _ ->
                 answered = true
-                repack(File(book.path), inPlace.isChecked)
+                repack(jobs, File(book.path), inPlace.isChecked, forecast)
             }
             .setNegativeButton(R.string.repack_not_now, null)
             .setOnDismissListener {
@@ -1422,9 +1427,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /**
      * Queues repacking [book] as CBZ, beside it or [inPlace], and leaves the reader for the
      * library, where the operation shows: the book is let go first, as a rebuild leaves
-     * books open in the reader alone; its place is kept, and follows the new file.
+     * books open in the reader alone; its place is kept, and follows the new file. Each book
+     * is expected to take what [forecast] says.
      */
-    private fun repack(book: File, inPlace: Boolean) {
+    private fun repack(jobs: FileJobs, book: File, inPlace: Boolean, forecast: Future<List<Double>>) {
         if (file != book) return
         prefs.compactInPlace = inPlace
         stopAutoScroll()
@@ -1433,7 +1439,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         openJob?.cancel()
         closeSource()
         file = null
-        FileActions.startRebuild(FileJobs(this, library, prefs), listOf(book.absolutePath), FileJobs.Rebuild.REPACK, inPlace)
+        FileActions.startRebuild(jobs, listOf(book.absolutePath), FileJobs.Rebuild.REPACK, inPlace, forecast = forecast)
         toast(R.string.repack_started)
         finish()
     }

@@ -18,19 +18,28 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.files.BookMeter
+import com.infinity.comicreader.files.BookPlan
+import com.infinity.comicreader.files.Container
+import com.infinity.comicreader.files.ConvertEstimate
+import com.infinity.comicreader.files.ConvertOp
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.DeviceSpace
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileProblem
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Node
+import com.infinity.comicreader.files.PagePlan
 import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.ArchiveJunk
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
+import com.infinity.comicreader.util.Formats
 import kotlinx.coroutines.asExecutor
 import java.io.File
 import java.io.IOException
@@ -249,16 +258,16 @@ internal class FileJobs(
         return ended(failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone) } ?: FileWork.Outcome.Done(first, sourceLeft, gone, done))
     }
 
-    /** What a rebuild makes of each book, the operation it runs as, the word naming a new file beside it, and the mark it leaves. */
-    enum class Rebuild(val kind: FileWork.Kind, val suffix: String, val mark: OutputMarks.Operation) {
+    /** What a rebuild makes of each book, the operation it runs as, the word naming a new file beside it, the mark it leaves, and its action as rates know it. */
+    enum class Rebuild(val kind: FileWork.Kind, val suffix: String, val mark: OutputMarks.Operation, val op: ConvertOp) {
         /** Pages made smaller losslessly. */
-        COMPACT(FileWork.Kind.COMPACT, SUFFIX_COMPACTED, OutputMarks.Operation.COMPACT),
+        COMPACT(FileWork.Kind.COMPACT, SUFFIX_COMPACTED, OutputMarks.Operation.COMPACT, ConvertOp.COMPACT),
 
         /** Pages in formats few readers open made ones every reader opens. */
-        COMPATIBLE(FileWork.Kind.COMPATIBLE, SUFFIX_COMPATIBLE, OutputMarks.Operation.COMPATIBLE),
+        COMPATIBLE(FileWork.Kind.COMPATIBLE, SUFFIX_COMPATIBLE, OutputMarks.Operation.COMPATIBLE, ConvertOp.COMPATIBLE),
 
         /** Every file copied as it is into a CBZ: a solid archive made quick to open at any page. */
-        REPACK(FileWork.Kind.REPACK, SUFFIX_REPACKED, OutputMarks.Operation.REPACK);
+        REPACK(FileWork.Kind.REPACK, SUFFIX_REPACKED, OutputMarks.Operation.REPACK, ConvertOp.REPACK);
 
         /** True when [done] says a book had this done already, at the current version. */
         fun doneIn(done: OutputMarks.Done): Boolean = when (this) {
@@ -266,6 +275,52 @@ internal class FileJobs(
             COMPATIBLE -> done.compatible
             REPACK -> done.repacked
         }
+    }
+
+    /**
+     * What is known of the books at [paths] for [how] without decoding anything: each book's
+     * size, and for as long as [PLAN_MS] lasts, whether its mark says it had this done and the
+     * pages its archive lists; stops listing once not [alive]. Blocking.
+     */
+    fun planBooks(paths: List<String>, how: Rebuild, alive: () -> Boolean = { true }): List<BookPlan> {
+        val until = System.nanoTime() + PLAN_MS * 1_000_000
+        return paths.map { path ->
+            val book = File(path)
+            val plan = BookPlan(book.length(), ConvertRates.location(path), Container.of(book.name, false))
+            if (System.nanoTime() > until || !alive()) return@map plan
+            runCatching {
+                if (how.doneIn(OutputMarks.verified(book, BookIds.xxh3))) return@runCatching plan.copy(done = true)
+                val entries = ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset))?.use { it.entries } ?: return@runCatching plan
+                // Left as it is: its pages are in archives inside it.
+                if (entries.any { Formats.isArchiveName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }) return@runCatching plan.copy(done = true)
+                plan.copy(
+                    pages = entries.filter { Formats.isImageName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }
+                        .map { PagePlan(ConvertEstimate.formatOf(it.path), it.size) }
+                )
+            }.getOrDefault(plan)
+        }
+    }
+
+    /** What is known of the folders at [folders] to pack: their images and the files packed with them. Blocking. */
+    fun planFolders(folders: List<String>): List<BookPlan> = folders.map { path ->
+        val contents = PackFolders.of(File(path))
+        val files = contents.images + contents.extras
+        val pages = contents.images.map { PagePlan(ConvertEstimate.formatOf(it.name), it.length()) }
+        BookPlan(files.sumOf { it.length() }, ConvertRates.location(path), Container.FOLDER, pages)
+    }
+
+    /** The seconds rebuilding each of [paths] as [how] takes ([ConvertEstimate]), worked out beside the queue, listing while [alive]. */
+    fun forecast(paths: List<String>, how: Rebuild, alive: () -> Boolean = { true }): CompletableFuture<List<Double>> =
+        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(how.op, planBooks(paths, how, alive)) }, AppDispatchers.io.asExecutor())
+
+    /** The seconds packing each of [folders] takes, [compacted] or not, worked out beside the queue. */
+    fun forecastPack(folders: List<String>, compacted: Boolean): CompletableFuture<List<Double>> =
+        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(packOp(compacted), planFolders(folders)) }, AppDispatchers.io.asExecutor())
+
+    /** Tells [p] the plan [forecast] gives, else the one [make] works out now; nothing when neither can. */
+    private fun plan(p: FileWork.Progress, forecast: Future<List<Double>>?, make: () -> List<Double>) {
+        val plan = forecast?.let { runCatching { it.get() }.getOrNull() } ?: runCatching(make).getOrNull()
+        plan?.let(p::plan)
     }
 
     /** [rebuild] compacting books, or with [compatible] making them compatible. */
@@ -283,7 +338,9 @@ internal class FileJobs(
      * Goes on past one that fails; one no longer what was [chosen] ([look]) is left alone, as
      * is one whose mark says it had this done already ([OutputMarks]) unless pages are left
      * out. Everything kept for each book follows its new file, which takes the book's place
-     * when [inPlace]; [skipHidden] leaves its hidden pages out.
+     * when [inPlace]; [skipHidden] leaves its hidden pages out. Tells the seconds each book
+     * is expected to take as [forecast] says (worked out now without one), and learns this
+     * device's speeds from each book it works through ([ConvertRates]).
      */
     fun rebuild(
         paths: List<String>,
@@ -291,10 +348,13 @@ internal class FileJobs(
         inPlace: Boolean,
         skipHidden: Boolean,
         chosen: Future<List<Result<Node?>>>,
-        p: FileWork.Progress
+        p: FileWork.Progress,
+        forecast: Future<List<Double>>? = null
     ): FileWork.Outcome {
         // Repacking copies every file as it is: no page is made anew.
         val pages = if (how == Rebuild.REPACK) null else pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, paths.size)
+        val rates = ConvertRates.get(app)
+        plan(p, forecast) { ConvertEstimate(rates).forecast(how.op, planBooks(paths, how) { p.alive }) }
         recover()
         val seen = settled(chosen)
         // One operation at a time: whatever is there was left by one that ended early.
@@ -358,13 +418,19 @@ internal class FileJobs(
                             handover?.let(handovers::remove)
                         }
                     }
+                    val meter = BookMeter(rates, how.op.step, ConvertRates.location(path), Container.of(book.name, false))
                     val request = Compactor.Request(
                         book, convert, inPlace, how.suffix, hidden, smallerOnly = how == Rebuild.COMPACT,
                         cost = pages?.let { it::memoryFor } ?: { it.size.toLong() }, placer = placer,
-                        always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, marks = listOf(how.mark)
+                        always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, marks = listOf(how.mark),
+                        meter = meter
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
-                    when (val result = compactor.run(request, open, progress)) {
+                    val began = System.nanoTime()
+                    val result = compactor.run(request, open, progress)
+                    // A book holding archives was only listed.
+                    if (!(result is Compactor.Result.Unchanged && result.why == Compactor.Why.NESTED)) meter.book(how.op.key, (System.nanoTime() - began) / 1e9)
+                    when (result) {
                         is Compactor.Result.Unchanged -> {
                             unchanged++
                             if (result.why == Compactor.Why.NESTED) nested++
@@ -389,6 +455,7 @@ internal class FileJobs(
             }
         } finally {
             scratch.deleteRecursively()
+            ConvertRates.save(app)
         }
         return failure?.let { FileWork.Outcome.Failed(it, done + unchanged, paths.size, gone, summary()) }
             ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary())
@@ -404,6 +471,9 @@ internal class FileJobs(
      */
     fun pack(plans: List<PackPlan>, compacted: Boolean, chosen: Future<List<Result<Node?>>>, p: FileWork.Progress): FileWork.Outcome {
         val pages = if (compacted) pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, plans.size) else null
+        val rates = ConvertRates.get(app)
+        val op = packOp(compacted)
+        plan(p, null) { ConvertEstimate(rates).forecast(op, planFolders(plans.map { it.folder })) }
         val seen = settled(chosen)
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
         val workers = CompactWorkers.max()
@@ -473,14 +543,18 @@ internal class FileJobs(
                         // Past the reader's wait: the folder holds nothing the library still needs.
                         removed = removeFolder(dir, files, stats, contents.unusual.toSet(), unusualFiles)
                     }
+                    val meter = BookMeter(rates, op.step, ConvertRates.location(plan.folder), Container.FOLDER)
                     val request = Compactor.Request(
                         dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
                         dotFolders = plan.unusualToo, keepBoth = ::keepBoth,
                         // Compacted as Compact would: not offered Compact again.
-                        marks = if (compacted) listOf(OutputMarks.Operation.PACK, OutputMarks.Operation.COMPACT) else listOf(OutputMarks.Operation.PACK)
+                        marks = if (compacted) listOf(OutputMarks.Operation.PACK, OutputMarks.Operation.COMPACT) else listOf(OutputMarks.Operation.PACK),
+                        meter = meter
                     )
+                    val began = System.nanoTime()
                     val result = compactor.run(request, { FolderReader(files, dir) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")
+                    meter.book(op.key, (System.nanoTime() - began) / 1e9)
                     if (result.file.name != plan.name) keptBoth += result.file.name
                     done++
                     saved += result.before - result.after
@@ -502,6 +576,7 @@ internal class FileJobs(
             }
         } finally {
             scratch.deleteRecursively()
+            ConvertRates.save(app)
         }
         return failure?.let { FileWork.Outcome.Failed(it, done, plans.size, gone, summary()) }
             ?: FileWork.Outcome.Done(last, gone = gone, count = done, summary = summary())
@@ -612,6 +687,12 @@ internal class FileJobs(
     }
 
     private companion object {
+        /** Packing's action, [compacted] or not. */
+        fun packOp(compacted: Boolean) = if (compacted) ConvertOp.PACK_COMPACTED else ConvertOp.PACK
+
+        /** How long listing books for an estimate may take: books past it are taken to hold pages as those listed do. */
+        const val PLAN_MS = 1_500L
+
         /** libjxl and the platform's codecs; null where libjxl is missing. */
         fun platformPages(): PageWork? = if (runCatching { LibJxl.available }.getOrDefault(false)) PageWork(LibJxl, AndroidImages) else null
 

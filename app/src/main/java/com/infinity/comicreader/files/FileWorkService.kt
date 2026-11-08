@@ -16,6 +16,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ui.ListActivity
+import com.infinity.comicreader.ui.TimeText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,9 +27,9 @@ import kotlinx.coroutines.launch
 /**
  * Keeps the app running while file operations wait or run ([FileWork]), so a copy goes on
  * with the app in the background or the screen off: a foreground service (data sync)
- * showing the progress of the one under way and how many wait, with Cancel while canceling
- * can stop it, and a partial wake lock that lapses after [WAKE_MS] without progress. Stops
- * as the last one ends.
+ * showing the progress of the one under way, its time left when known, and how many wait,
+ * with Cancel while canceling can stop it, and a partial wake lock that lapses after
+ * [WAKE_MS] without progress. Stops as the last one ends.
  */
 class FileWorkService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -121,7 +122,7 @@ class FileWorkService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(iconOf(status?.kind))
             .setContentTitle(getString(titleOf(status?.kind)))
-            .setContentText(status?.let { nameOf(this, it) })
+            .setContentText(status?.let { textOf(this, it, FileWork.clock()) })
             .setSubText(if (more > 0) resources.getQuantityString(R.plurals.file_more_waiting, more, more) else null)
             .setContentIntent(open)
             .setOngoing(true)
@@ -189,6 +190,13 @@ class FileWorkService : Service() {
         /** What [status] works on: the item's name, and which of how many when there are several. */
         fun nameOf(context: Context, status: FileWork.Status): String =
             if (status.count > 1) context.getString(R.string.file_item_of, status.name, status.index + 1, status.count) else status.name
+
+        /** The notification's text for [status] at [now] (by [FileWork.clock]): what it works on ([nameOf]), then its time left when known. */
+        fun textOf(context: Context, status: FileWork.Status, now: Long): String {
+            val name = nameOf(context, status)
+            val left = status.secondsLeft(now) ?: return name
+            return context.getString(R.string.op_with_left, name, TimeText.left(context, left))
+        }
 
         /** Starts the service for the operation just queued; ignored where Android refuses it. */
         fun start(context: Context) {

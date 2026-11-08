@@ -266,6 +266,45 @@ class ListActivityStackTest {
     }
 
     @Test
+    fun theCardAndTheBubbleTellTheTimeLeftOfAJobWithAPlan() {
+        val activity = launch()
+        val at = Semaphore(0)
+        val go = Semaphore(0)
+        FileWork.start(FileWork.Kind.COMPACT, "Book A.cbz") { p ->
+            p.plan(listOf(600.0))
+            p.report(0, 100)
+            at.release()
+            go.acquire()
+            FileWork.Outcome.Done(null)
+        }
+        at.acquire()
+        idle()
+        val button = activity.stack.buttons().single().second
+        val expected = context.getString(R.string.left_minutes, 10)
+        assertTrue(button.contentDescription.toString(), button.contentDescription.toString().endsWith(expected))
+        button.performClick()
+        idle()
+        val left = activity.stack.cardView()!!.findViewById<TextView>(R.id.op_left)
+        assertEquals(View.VISIBLE, left.visibility)
+        assertEquals(expected, left.text.toString())
+        go.release()
+        waitFor { FileWork.operations.value.isEmpty() }
+    }
+
+    @Test
+    fun aJobWithoutAPlanTellsNoTimeLeft() {
+        val activity = launch()
+        val go = Semaphore(0)
+        held(go)
+        idle()
+        activity.stack.buttons().single().second.performClick()
+        idle()
+        assertEquals(View.GONE, activity.stack.cardView()!!.findViewById<TextView>(R.id.op_left).visibility)
+        go.release()
+        waitFor { FileWork.operations.value.isEmpty() }
+    }
+
+    @Test
     fun theCountListsWhatIsFoldedToPasteOrCancel() {
         val activity = launch()
         val from = File(shelf, "from").apply { mkdirs() }

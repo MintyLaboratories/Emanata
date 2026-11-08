@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact and Make compatible: In place, and for Compact Skip hidden pages, each with its note, under the dialog's message. -->
+<!-- A rebuild: how long it takes, In place, and for Compact Skip hidden pages, each with its note, under the dialog's message. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
@@ -10,6 +10,14 @@
         android:orientation="vertical"
         android:paddingHorizontal="?attr/dialogPreferredPadding"
         android:paddingTop="@dimen/space_1">
+
+        <TextView
+            android:id="@+id/convert_estimate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_2"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:visibility="gone" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/compact_in_place"

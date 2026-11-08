@@ -215,7 +215,7 @@ internal class OperationStack(
         val status = (bubble as? Bubble.Work)?.status
         val look: Any = if (status != null) listOf(status.id, status.kind, status.waiting, folded) else bubble to folded
         if (was?.look != look) bindLook(view, bubble, folded)
-        val said: Any? = status?.let { listOf(it.waiting, it.count, it.into, it.name.takeIf { _ -> it.kind == FileWork.Kind.RENAME }, percent(it)) }
+        val said: Any? = status?.let { listOf(it.waiting, it.count, it.into, it.name.takeIf { _ -> it.kind == FileWork.Kind.RENAME }, percent(it), left(it)) }
         if (status != null && (was?.look != look || was.said != said)) view.findViewById<View>(R.id.op_button).contentDescription = describe(status)
         val steps = status?.takeIf { it.running }?.fraction?.let { (it * STEPS).toInt() }
         if (status != null && status.running && (was?.look != look || was.ring != steps)) show(ring, status.fraction)
@@ -224,6 +224,9 @@ internal class OperationStack(
 
     /** How far [status] is, in whole percent; null while waiting or when nothing tells. */
     private fun percent(status: FileWork.Status): Int? = if (status.waiting) null else status.fraction?.let { (it * 100).toInt() }
+
+    /** The time left of [status] as shown ([TimeText.left]); null unless it runs to a plan. */
+    private fun left(status: FileWork.Status): String? = status.secondsLeft(FileWork.clock())?.let { TimeText.left(activity, it) }
 
     /** Sets [view]'s colors, icon, actions and folded count for [bubble]. */
     private fun bindLook(view: View, bubble: Bubble, folded: Int) {
@@ -331,7 +334,8 @@ internal class OperationStack(
         val what = what(status)
         if (status.waiting) return activity.getString(R.string.op_described, what, activity.getString(R.string.op_waiting))
         val percent = percent(status) ?: return what
-        return activity.getString(R.string.op_described, what, activity.getString(R.string.op_percent, percent))
+        val described = activity.getString(R.string.op_described, what, activity.getString(R.string.op_percent, percent))
+        return left(status)?.let { activity.getString(R.string.op_described, described, it) } ?: described
     }
 
     // ------------------------------------------------------------------ card
@@ -402,6 +406,10 @@ internal class OperationStack(
         } else {
             amount.visibility = View.GONE
         }
+        val leftView = content.findViewById<TextView>(R.id.op_left)
+        val leftText = if (status.running) left(status) else null
+        leftView.text = leftText
+        leftView.visibility = if (leftText != null) View.VISIBLE else View.GONE
         // Cancel only while it can stop the step under way.
         content.findViewById<Button>(R.id.op_cancel).visibility = if (status.waiting || status.stoppable) View.VISIBLE else View.GONE
     }

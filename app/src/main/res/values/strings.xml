@@ -694,6 +694,19 @@
     <!-- A bubble's description: what it does, then how far, as "Copying 3 items, 40%". -->
     <string name="op_described">%1$s, %2$s</string>
     <string name="op_percent">%1$d%%</string>
+    <!-- How long a Convert action takes, in its confirmation dialog, from speeds measured on this device. -->
+    <string name="takes_estimating">Estimating how long this takes…</string>
+    <string name="takes_under_minute">Takes under a minute</string>
+    <string name="takes_minutes">Takes about %1$d min</string>
+    <string name="takes_hours">Takes about %1$d h</string>
+    <string name="takes_hours_minutes">Takes about %1$d h %2$d min</string>
+    <!-- The time left of a Convert action under way, on its bubble's card and notification. -->
+    <string name="left_under_minute">Under a minute left</string>
+    <string name="left_minutes">About %1$d min left</string>
+    <string name="left_hours">About %1$d h left</string>
+    <string name="left_hours_minutes">About %1$d h %2$d min left</string>
+    <!-- A notification's text: what it works on, then the time left. -->
+    <string name="op_with_left">%1$s · %2$s</string>
     <string name="op_folded_badge">+%1$d</string>
     <!-- Pack, from the selection's ⋮ menu for folders of loose images. -->
     <string name="more_pack">Pack</string>

@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The file operations of the library's selection, on the device and on shares: Rename,
@@ -146,9 +148,9 @@ internal class FileActions(
     /**
      * Rebuilds the books at [paths] as [how] says once confirmed: compacts them losslessly,
      * makes their pages in formats few readers open ones every reader opens, or repacks
-     * them as CBZ. The dialog warns, and offers In place (remembered, shared by all three)
-     * and, for Compact, Skip hidden pages (off each time). One queued operation, a book at
-     * a time; [onConfirmed] runs as it is queued.
+     * them as CBZ. The dialog says how long it takes ([TimeText]), warns, and offers In place
+     * (remembered, shared by all three) and, for Compact, Skip hidden pages (off each time).
+     * One queued operation, a book at a time; [onConfirmed] runs as it is queued.
      */
     fun rebuild(paths: List<String>, how: FileJobs.Rebuild, onConfirmed: () -> Unit = {}) {
         val first = paths.firstOrNull() ?: return
@@ -161,6 +163,10 @@ internal class FileActions(
         val view = compactOptions(activity, prefs, skipHidden = how == FileJobs.Rebuild.COMPACT)
         val inPlace = view.findViewById<MaterialSwitch>(R.id.compact_in_place)
         val skip = view.findViewById<MaterialSwitch>(R.id.compact_skip_hidden)
+        // Books are listed for it only while the dialog shows, or once confirmed.
+        val asked = AtomicBoolean(true)
+        val forecast = jobs.forecast(paths, how) { asked.get() }
+        TimeText.show(view.findViewById(R.id.convert_estimate), activity.lifecycleScope, forecast)
         AlertDialog.Builder(activity)
             .setTitle(title)
             .setMessage(
@@ -181,11 +187,12 @@ internal class FileActions(
                 prefs.compactInPlace = inPlace.isChecked
                 onConfirmed()
                 val skipHidden = how == FileJobs.Rebuild.COMPACT && skip.isChecked
-                startRebuild(jobs, paths, how, inPlace.isChecked, skipHidden)
+                startRebuild(jobs, paths, how, inPlace.isChecked, skipHidden, forecast)
                 // Asked once, as the first operation starts: operations show their progress there while the app is away.
                 notificationAsk.once()
             }
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> asked.set(false) }
+            .setOnCancelListener { asked.set(false) }
             .show()
     }
 
@@ -193,7 +200,8 @@ internal class FileActions(
 
     /**
      * Packs [folders], each holding images only, into a `.cbz` beside it once confirmed: its
-     * images as they are, or with [compacted] made smaller losslessly (warned as Compact is).
+     * images as they are, or with [compacted] made smaller losslessly (warned as Compact is),
+     * saying how long it takes ([TimeText]).
      * Asks once for all holding unusual files ([PackFolders.isUnusual]) whether to pack them
      * too, and once for all whose `.cbz` name is taken: Replace, Keep both, or Skip them. One
      * queued operation, a folder at a time; [onConfirmed] runs as the dialog is confirmed.
@@ -204,9 +212,12 @@ internal class FileActions(
         else activity.resources.getQuantityString(R.plurals.pack_title, folders.size, folders.size)
         val message = activity.getString(if (folders.size == 1) R.string.pack_message_one else R.string.pack_message) +
             if (compacted) "\n\n" + activity.getString(R.string.compact_warning) else ""
+        val view = activity.layoutInflater.inflate(R.layout.dialog_estimate, null)
+        TimeText.show(view.findViewById(R.id.convert_estimate), activity.lifecycleScope, jobs.forecastPack(folders.map { it.absolutePath }, compacted))
         AlertDialog.Builder(activity)
             .setTitle(title)
             .setMessage(message)
+            .setView(view)
             .setPositiveButton(if (compacted) R.string.more_pack_compacted else R.string.more_pack) { _, _ ->
                 onConfirmed()
                 activity.lifecycleScope.launch { planPack(folders, compacted) }
@@ -609,11 +620,21 @@ internal class FileActions(
             return view
         }
 
-        /** Queues rebuilding the books at [paths] as [how] says through [jobs], in place when [inPlace]. */
-        fun startRebuild(jobs: FileJobs, paths: List<String>, how: FileJobs.Rebuild, inPlace: Boolean, skipHidden: Boolean = false) {
+        /**
+         * Queues rebuilding the books at [paths] as [how] says through [jobs], in place when
+         * [inPlace], each book expected to take what [forecast] says (worked out as it starts without one).
+         */
+        fun startRebuild(
+            jobs: FileJobs,
+            paths: List<String>,
+            how: FileJobs.Rebuild,
+            inPlace: Boolean,
+            skipHidden: Boolean = false,
+            forecast: Future<List<Double>>? = null
+        ) {
             val first = paths.firstOrNull() ?: return
             val chosen = jobs.look(paths)
-            FileWork.start(how.kind, File(first).name, paths.size) { p -> jobs.rebuild(paths, how, inPlace, skipHidden, chosen, p) }
+            FileWork.start(how.kind, File(first).name, paths.size) { p -> jobs.rebuild(paths, how, inPlace, skipHidden, chosen, p, forecast) }
         }
     }
 }

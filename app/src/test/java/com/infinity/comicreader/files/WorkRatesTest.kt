@@ -140,6 +140,23 @@ class WorkRatesTest {
     }
 
     @Test
+    fun lossyWebpIsKeptApartFromWebpCompactConverts() {
+        val rates = WorkRates()
+        assertTrue(rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.MEDIUM, lossy = true) < 0.1)
+        assertTrue(rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.MEDIUM) > 0.1)
+        val meter = BookMeter(rates, Step.COMPACT, WorkRates.DEVICE, Container.ZIP) { true }
+        repeat(50) { meter.page(webp("VP8 "), 0.02) }
+        repeat(50) { meter.page(webp("VP8L"), 3.0) }
+        assertEquals(0.02, rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.SMALL, lossy = true), 0.05)
+        assertEquals(3.0, rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.SMALL), 0.3)
+        // The flag means nothing for other formats.
+        assertEquals(rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.SMALL), rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.SMALL, lossy = true), 0.0)
+    }
+
+    /** A WebP whose first chunk is [chunk]. */
+    private fun webp(chunk: String) = "RIFF".toByteArray() + ByteArray(4) + "WEBP$chunk".toByteArray() + byteArrayOf(10, 0, 0, 0) + ByteArray(10)
+
+    @Test
     fun containersAndSizeClassesByName() {
         assertEquals(Container.ZIP, Container.of("A.cbz", false))
         assertEquals(Container.RAR, Container.of("A.CBR", false))

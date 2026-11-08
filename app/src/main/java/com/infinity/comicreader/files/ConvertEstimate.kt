@@ -1,5 +1,6 @@
 package com.infinity.comicreader.files
 
+import com.infinity.comicreader.compact.PageProbe
 import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.util.Formats
 import kotlin.math.roundToInt
@@ -18,8 +19,11 @@ data class ConvertOp(val key: String, val step: Step?) {
     }
 }
 
-/** A page as known before the work: its [format], by its name, and its [bytes]. */
-data class PagePlan(val format: ImageKind?, val bytes: Long)
+/**
+ * A page as known before the work: its [format], by its name, its [bytes], and [lossy] for a
+ * WebP its first bytes say Compact leaves as it is ([WorkRates.secondsPerPage]).
+ */
+data class PagePlan(val format: ImageKind?, val bytes: Long, val lossy: Boolean = false)
 
 /**
  * A book as known before the work, without decoding anything: its [bytes], where it is
@@ -83,7 +87,7 @@ class ConvertEstimate(private val rates: WorkRates) {
     }
 
     private fun convertSeconds(step: Step, pages: List<PagePlan>): Double =
-        pages.sumOf { rates.secondsPerPage(step, it.format, SizeClass.of(it.bytes)) }
+        pages.sumOf { rates.secondsPerPage(step, it.format, SizeClass.of(it.bytes), it.lossy) }
 
     companion object {
         /** A book whose mark says it had this done: its mark checked, nothing more. */
@@ -114,6 +118,25 @@ class ConvertEstimate(private val rates: WorkRates) {
             val ratio = (elapsed / done).coerceIn(MIN_RATIO, MAX_RATIO)
             val weight = done / (done + PRIOR_SECONDS)
             return left * (weight * ratio + (1 - weight))
+        }
+
+        /** The bytes [lossyWebp] needs of a WebP. */
+        const val WEBP_HEAD = 64
+
+        /** How many WebP pages of a book [lossyWebp] is asked about. */
+        const val WEBP_SAMPLES = 3
+
+        /**
+         * Whether the WebP pages among [names] are ones Compact leaves as they are (lossy,
+         * [com.infinity.comicreader.compact.PageProbe.webpLossless]), by the first bytes ([head])
+         * of the first, middle and last of them: as most of those read say; false when none was read.
+         */
+        fun lossyWebp(names: List<String>, head: (Int) -> ByteArray?): Boolean {
+            val webp = names.indices.filter { formatOf(names[it]) == ImageKind.WEBP }
+            if (webp.isEmpty()) return false
+            val picks = listOf(webp.first(), webp[webp.size / 2], webp.last()).distinct().take(WEBP_SAMPLES)
+            val said = picks.mapNotNull { i -> runCatching { head(i) }.getOrNull()?.let { !PageProbe.webpLossless(it) } }
+            return said.isNotEmpty() && said.count { it } * 2 >= said.size
         }
 
         /** The format a page named [name] holds, by its extension; null for one of none known. */

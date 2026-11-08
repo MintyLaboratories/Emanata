@@ -37,12 +37,14 @@ import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.ArchiveJunk
 import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.reader.ImageKind
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.Formats
 import kotlinx.coroutines.asExecutor
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.FileAlreadyExistsException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
@@ -294,23 +296,26 @@ internal class FileJobs(
             val plan = unread.copy(done = false)
             if (!within(listMs) || !alive()) return@map plan
             runCatching {
-                val entries = ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset))?.use { it.entries } ?: return@runCatching plan
-                // Left as it is: its pages are in archives inside it.
-                if (entries.any { Formats.isArchiveName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }) return@runCatching plan.copy(done = true)
-                plan.copy(
-                    pages = entries.filter { Formats.isImageName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }
-                        .map { PagePlan(ConvertEstimate.formatOf(it.path), it.size) }
-                )
+                ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset))?.use { reader ->
+                    val entries = reader.entries
+                    // Left as it is: its pages are in archives inside it.
+                    if (entries.any { Formats.isArchiveName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }) return@use plan.copy(done = true)
+                    val pages = entries.filter { Formats.isImageName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }
+                    // Only where reading a page unpacks no other.
+                    val lossy = how == Rebuild.COMPACT && reader.randomAccess &&
+                        ConvertEstimate.lossyWebp(pages.map { it.path }) { i -> reader.read(pages[i]) { head(it) } }
+                    plan.copy(pages = pages.map { pagePlan(it.path, it.size, lossy) })
+                } ?: plan
             }.getOrDefault(plan)
         }
     }
 
     /**
-     * What is known of the folders at [folders] to pack: for as long as [listMs] lasts, their
-     * images and the files packed with them; past it, only the bytes of the files in them.
-     * Stops reading once not [alive]. Blocking.
+     * What is known of the folders at [folders] to pack, [compacted] or not: for as long as
+     * [listMs] lasts, their images and the files packed with them; past it, only the bytes of
+     * the files in them. Stops reading once not [alive]. Blocking.
      */
-    fun planFolders(folders: List<String>, alive: () -> Boolean = { true }, listMs: Long = PLAN_MS): List<BookPlan> {
+    fun planFolders(folders: List<String>, compacted: Boolean = false, alive: () -> Boolean = { true }, listMs: Long = PLAN_MS): List<BookPlan> {
         val start = System.nanoTime()
         return folders.map { path ->
             val location = ConvertRates.location(path)
@@ -318,17 +323,36 @@ internal class FileJobs(
                 !alive() -> BookPlan(0, location, Container.FOLDER, done = null)
                 System.nanoTime() - start > listMs * 1_000_000 ->
                     BookPlan(File(path).listFiles()?.sumOf { if (it.isFile) it.length() else 0L } ?: 0L, location, Container.FOLDER)
-                else -> planFolder(path)
+                else -> planFolder(path, compacted)
             }
         }
     }
 
-    /** What is known of the folder at [path] to pack: its images and the files packed with them. */
-    private fun planFolder(path: String): BookPlan {
+    /** What is known of the folder at [path] to pack, [compacted] or not: its images and the files packed with them. */
+    private fun planFolder(path: String, compacted: Boolean): BookPlan {
         val contents = PackFolders.of(File(path))
         val files = contents.images + contents.extras
-        val pages = contents.images.map { PagePlan(ConvertEstimate.formatOf(it.name), it.length()) }
+        val lossy = compacted && ConvertEstimate.lossyWebp(contents.images.map { it.name }) { i -> contents.images[i].inputStream().use(::head) }
+        val pages = contents.images.map { pagePlan(it.name, it.length(), lossy) }
         return BookPlan(files.sumOf { it.length() }, ConvertRates.location(path), Container.FOLDER, pages)
+    }
+
+    /** A page named [name] of [size] bytes, a WebP [lossy] as the book's sampled pages say. */
+    private fun pagePlan(name: String, size: Long, lossy: Boolean): PagePlan {
+        val format = ConvertEstimate.formatOf(name)
+        return PagePlan(format, size, lossy && format == ImageKind.WEBP)
+    }
+
+    /** The first bytes of [input] that [ConvertEstimate.lossyWebp] reads. */
+    private fun head(input: InputStream): ByteArray {
+        val buf = ByteArray(ConvertEstimate.WEBP_HEAD)
+        var n = 0
+        while (n < buf.size) {
+            val r = input.read(buf, n, buf.size - n)
+            if (r < 0) break
+            n += r
+        }
+        return buf.copyOf(n)
     }
 
     /** The seconds rebuilding each of [paths] as [how] takes ([ConvertEstimate]), worked out beside the queue, listing while [alive]. */
@@ -337,7 +361,7 @@ internal class FileJobs(
 
     /** The seconds packing each of [folders] takes, [compacted] or not, worked out beside the queue, listing while [alive]. */
     fun forecastPack(folders: List<String>, compacted: Boolean, alive: () -> Boolean = { true }): CompletableFuture<List<Double>> =
-        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(packOp(compacted), planFolders(folders, alive)) }, AppDispatchers.io.asExecutor())
+        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(packOp(compacted), planFolders(folders, compacted, alive)) }, AppDispatchers.io.asExecutor())
 
     /** Tells [p] the plan [forecast] gives, else the one [make] works out now; nothing when neither can. */
     private fun plan(p: FileWork.Progress, forecast: Future<List<Double>>?, make: () -> List<Double>) {
@@ -495,7 +519,7 @@ internal class FileJobs(
         val pages = if (compacted) pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, plans.size) else null
         val rates = ConvertRates.get(app)
         val op = packOp(compacted)
-        plan(p, null) { ConvertEstimate(rates).forecast(op, planFolders(plans.map { it.folder }, alive = { p.alive })) }
+        plan(p, null) { ConvertEstimate(rates).forecast(op, planFolders(plans.map { it.folder }, compacted, alive = { p.alive })) }
         val seen = settled(chosen)
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
         val workers = CompactWorkers.max()

@@ -2,6 +2,7 @@ package com.infinity.comicreader.files
 
 import com.infinity.comicreader.reader.ImageKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -111,6 +112,26 @@ class ConvertEstimateTest {
         assertTrue(early < 171 * 3 && early > 171)
         assertEquals(0.0, ConvertEstimate.remaining(plan, 3, 0.0, 500.0), 1e-9)
         assertEquals(0.0, ConvertEstimate.remaining(emptyList(), 0, 0.0, 5.0), 0.0)
+    }
+
+    @Test
+    fun lossyWebpPagesAreToldByTheirFirstBytes() {
+        fun webp(chunk: String) = "RIFF".toByteArray() + ByteArray(4) + "WEBP$chunk".toByteArray() + byteArrayOf(10, 0, 0, 0) + ByteArray(10)
+        val names = List(10) { "%02d.webp".format(it) }
+        val asked = ArrayList<Int>()
+        assertTrue(ConvertEstimate.lossyWebp(names) { asked += it; webp("VP8 ") })
+        // The first, middle and last only.
+        assertEquals(listOf(0, 5, 9), asked)
+        assertFalse(ConvertEstimate.lossyWebp(names) { webp("VP8L") })
+        assertFalse(ConvertEstimate.lossyWebp(listOf("01.jpg")) { webp("VP8 ") })
+        // Unreadable: taken as converted.
+        assertFalse(ConvertEstimate.lossyWebp(names) { null })
+        // A book of lossy WebP takes a glance per page.
+        val lossy = BookPlan(200 * mb, pages = List(100) { PagePlan(ImageKind.WEBP, 2 * mb, lossy = true) })
+        val lossless = lossy.copy(pages = List(100) { PagePlan(ImageKind.WEBP, 2 * mb) })
+        val times = ConvertEstimate(WorkRates()).forecast(ConvertOp.COMPACT, listOf(lossy, lossless))
+        assertTrue(times[0] < 10)
+        assertTrue(times[1] > 10 * times[0])
     }
 
     @Test

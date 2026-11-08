@@ -87,10 +87,13 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
 
     private val tallies = HashMap<String, Tally>()
 
-    /** Seconds of wall time one page of [format] in [size] takes for [step]. */
+    /**
+     * Seconds of wall time one page of [format] in [size] takes for [step]; [lossy] for a WebP
+     * Compact leaves as it is (lossy, animated, or with a profile), kept apart from those it converts.
+     */
     @Synchronized
-    fun secondsPerPage(step: Step, format: ImageKind?, size: SizeClass): Double =
-        blended(pageKey(step, format, size), PRIOR_PAGES, pageSeed(step, format, size))
+    fun secondsPerPage(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean = false): Double =
+        blended(pageKey(step, format, size, lossy), PRIOR_PAGES, pageSeed(step, format, size, lossy))
 
     /** Bytes a second read from a book in [container] at [location]. */
     @Synchronized
@@ -104,8 +107,9 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     @Synchronized
     fun bookSeconds(op: String): Double = blended(bookKey(op), PRIOR_BOOKS, BOOK_SECONDS)
 
-    /** One page of [format], [bytes] long, took [seconds] for [step]. */
-    fun page(step: Step, format: ImageKind?, bytes: Long, seconds: Double) = add(pageKey(step, format, SizeClass.of(bytes)), 1.0, seconds, CAP_PAGES)
+    /** One page of [format], [bytes] long ([lossy] as [secondsPerPage] says), took [seconds] for [step]. */
+    fun page(step: Step, format: ImageKind?, bytes: Long, seconds: Double, lossy: Boolean = false) =
+        add(pageKey(step, format, SizeClass.of(bytes), lossy), 1.0, seconds, CAP_PAGES)
 
     /** [bytes] of a book in [container] at [location] read in [seconds]. */
     fun read(location: String, container: Container, bytes: Long, seconds: Double) = add(readKey(location, container), bytes.toDouble(), seconds, CAP_BYTES)
@@ -143,12 +147,12 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     }
 
     /** The seed of a page figure: from a measured size class of the same step and format, else the default scaled by the device's speed. */
-    private fun pageSeed(step: Step, format: ImageKind?, size: SizeClass): Double {
+    private fun pageSeed(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean): Double {
         val near = SizeClass.entries.filter { it != size }.mapNotNull { other ->
-            tallies[pageKey(step, format, other)]?.takeIf { it.amount >= PRIOR_PAGES }?.let { other to it }
+            tallies[pageKey(step, format, other, lossy)]?.takeIf { it.amount >= PRIOR_PAGES }?.let { other to it }
         }.maxByOrNull { it.second.amount }
         if (near != null) return near.second.seconds / near.second.amount * size.scale / near.first.scale
-        return defaultSeconds(step, format) * size.scale * seeds.speed().coerceIn(MIN_SPEED, MAX_SPEED)
+        return defaultSeconds(step, format, lossy) * size.scale * seeds.speed().coerceIn(MIN_SPEED, MAX_SPEED)
     }
 
     private fun readSeed(location: String, container: Container): Double {
@@ -212,11 +216,11 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
          * side; a PNG of flat colors 2.9 s, converting alone as its pixels take the memory of
          * four); formats a step leaves as they are take a glance.
          */
-        fun defaultSeconds(step: Step, format: ImageKind?): Double = when (step) {
+        fun defaultSeconds(step: Step, format: ImageKind?, lossy: Boolean = false): Double = when (step) {
             Step.COMPACT -> when (format) {
                 ImageKind.JPEG -> 0.25
                 ImageKind.PNG, ImageKind.BMP, ImageKind.TIFF -> 3.0
-                ImageKind.WEBP -> 1.0
+                ImageKind.WEBP -> if (lossy) GLANCE else 1.0
                 ImageKind.JXL -> 5.0
                 else -> GLANCE
             }
@@ -229,7 +233,10 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
             else -> UNKNOWN_STEP
         }
 
-        private fun pageKey(step: Step, format: ImageKind?, size: SizeClass) = "page/${step.key}/${format?.name?.lowercase(Locale.ROOT) ?: "other"}/${size.key}"
+        private fun pageKey(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean): String {
+            val name = format?.name?.lowercase(Locale.ROOT) ?: "other"
+            return "page/${step.key}/$name${if (lossy && format == ImageKind.WEBP) "-lossy" else ""}/${size.key}"
+        }
         private fun readKey(location: String, container: Container) = "read/$location/${container.key}"
         private fun writeKey(location: String) = "write/$location"
         private fun bookKey(op: String) = "book/$op"

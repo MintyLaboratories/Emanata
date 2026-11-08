@@ -401,8 +401,8 @@
             app:key="pref_startup_tab"
             app:title="@string/pref_startup_tab"
             app:useSimpleSummaryProvider="true" />
-        <!-- No default here: an older version's home folder decides it (see Prefs.startupLocation). -->
         <ListPreference
+            app:defaultValue="last"
             app:entries="@array/startup_location_entries"
             app:entryValues="@array/startup_location_values"
             app:key="pref_startup_location"

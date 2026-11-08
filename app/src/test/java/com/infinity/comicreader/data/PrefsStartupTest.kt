@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,24 +71,6 @@ class PrefsStartupTest {
     @Test
     fun theStartupResumeAsksByDefault() {
         assertEquals(ResumeMode.ASK, Prefs(context).startupResume)
-    }
-
-    @Test
-    fun anOlderHomeFolderIsACustomLocation() {
-        ui().edit().putString("home_path", "/home").commit()
-        val prefs = Prefs(context)
-        assertEquals(StartupLocation.CUSTOM, prefs.startupLocation)
-        assertEquals("/home", prefs.startupPath)
-    }
-
-    @Test
-    fun writingMovesTheOlderHomeFolder() {
-        ui().edit().putString("home_path", "/home").commit()
-        val prefs = Prefs(context)
-        prefs.startupLocation = StartupLocation.FIRST_FAVORITE
-        assertFalse(ui().contains("home_path"))
-        assertEquals(StartupLocation.FIRST_FAVORITE, prefs.startupLocation)
-        assertEquals("/home", prefs.startupPath)
     }
 
     @Test

@@ -529,41 +529,20 @@ class Prefs(context: Context) {
 
     private fun gridCoverKey(landscape: Boolean) = if (landscape) "grid_cover_landscape" else "grid_cover_portrait"
 
-    /** One of [StartupLocation]'s choices; a home folder set by an older version counts as custom. */
+    /** One of [StartupLocation]'s choices. */
     var startupLocation: String
-        get() = sp.getString(KEY_STARTUP_LOCATION, null)
-            ?: if (legacyHome != null) StartupLocation.CUSTOM else StartupLocation.LAST
-        set(v) {
-            dropLegacyHome()
-            put(KEY_STARTUP_LOCATION, v)
-        }
+        get() = sp.getString(KEY_STARTUP_LOCATION, null) ?: StartupLocation.LAST
+        set(v) = put(KEY_STARTUP_LOCATION, v)
 
     /** The folder of the custom startup location. */
     var startupPath: String?
-        get() = sp.getString(KEY_STARTUP_PATH, null) ?: legacyHome
-        set(v) {
-            dropLegacyHome()
-            put(KEY_STARTUP_PATH, v)
-        }
+        get() = sp.getString(KEY_STARTUP_PATH, null)
+        set(v) = put(KEY_STARTUP_PATH, v)
 
     /** Makes [path] the custom startup location. */
     fun setStartupFolder(path: String) {
-        dropLegacyHome()
         sp.edit().putString(KEY_STARTUP_PATH, path).putString(KEY_STARTUP_LOCATION, StartupLocation.CUSTOM).apply()
     }
-
-    /** Moves an older version's home folder into the startup settings before they are written. */
-    private fun dropLegacyHome() {
-        val home = legacyHome ?: return
-        val e = sp.edit()
-        if (!sp.contains(KEY_STARTUP_PATH)) e.putString(KEY_STARTUP_PATH, home)
-        if (!sp.contains(KEY_STARTUP_LOCATION)) e.putString(KEY_STARTUP_LOCATION, StartupLocation.CUSTOM)
-        e.apply()
-        ui.edit().remove("home_path").apply()
-    }
-
-    /** The home folder older versions kept with the browsing state. */
-    private val legacyHome: String? get() = ui.getString("home_path", null)
 
     /** Settings sections the user folded away, by key. */
     var collapsedSettings: Set<String>

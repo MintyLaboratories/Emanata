@@ -586,7 +586,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     /** Shows the custom folder in the summary; choosing Custom asks for the folder first. */
     private fun setUpStartupLocation(pref: ListPreference, prefs: Prefs) {
-        if (pref.value == null) pref.value = prefs.startupLocation
         val summary = Preference.SummaryProvider<ListPreference> { p ->
             val path = prefs.startupPath
             if (p.value == StartupLocation.CUSTOM && path != null) {

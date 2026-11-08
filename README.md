@@ -94,11 +94,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as
-  the book's own inner pages) show their front: the half without the barcode,
-  else the half whose title is clearly taller (by the text detector, found
-  once per cover), else the half the book starts on in its reading direction
-  (right for left-to-right, left for right-to-left), one page wide so the
-  spine stays out.
+  the book's own inner pages) show their front, one page wide so the spine
+  stays out: the half without the barcode, else the half whose title is
+  clearly taller (by the text detector, found once per cover). When neither
+  tells, the whole cover shows, fitted over a blurred copy of itself.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
   Search; the others step aside while searching. Settings → **Toolbar
@@ -621,8 +620,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shape only, and loose images in a folder (one chapter each) are not checked.
   It then reads a
   book right to left from, in order: ComicInfo
-  `Manga=YesAndRightToLeft`; a wraparound cover's front half (found by its
-  barcode); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
+  `Manga=YesAndRightToLeft`; a wraparound cover's front half, only when its
+  barcode and its tallest title agree on it (kept per book); a manga publisher in ComicInfo `Publisher` or a bracketed tag in the
   file or page names (`[Kodansha Comics]`). Manga-style page names
   (`c001 (v01) - p000`) do not decide on their own, as western scans use them
   too. A short note on open says why ("Right-to-left (from ComicInfo)").

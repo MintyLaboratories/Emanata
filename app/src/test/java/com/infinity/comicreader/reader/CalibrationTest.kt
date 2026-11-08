@@ -14,6 +14,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = android.app.Application::class)
 class CalibrationTest {
+    private companion object {
+        const val PINNED_V3 = "ba2b68cf"
+    }
+
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
     private val allBig = CpuCores(intArrayOf(800, 800, 800, 800, 800, 800, 1024, 1024))
 
@@ -290,6 +294,15 @@ class CalibrationTest {
         assertFalse(Calibration.sameVersion(org.json.JSONObject().put("fingerprint", Calibration.fingerprint(v * 10 + 1, "b"))))
         assertFalse(Calibration.sameVersion(org.json.JSONObject()))
         assertFalse(Calibration.sameVersion(null))
+    }
+
+    @Test
+    fun theMethodIsPinnedToItsVersion() {
+        // Never edit a pinned hash: a change to the method bumps Calibration.VERSION and pins its hash beside the others.
+        val pinned = mapOf(3 to PINNED_V3)
+        val hash = "%08x".format(Calibrator.method().hashCode())
+        assertEquals("The calibration method changed: bump Calibration.VERSION and pin $hash for it", pinned[Calibration.VERSION], hash)
+        assertEquals(pinned.size, pinned.values.toSet().size)
     }
 
     @Test

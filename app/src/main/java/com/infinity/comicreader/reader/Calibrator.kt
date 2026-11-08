@@ -305,6 +305,11 @@ object Calibrator {
 
     private fun file(context: Context) = File(context.noBackupFilesDir, "calibration.json")
 
+    /** What the method is made of, as text: [Calibration.method] and how automatic runs sample, on which pages ([Calibration.VERSION]). */
+    internal fun method(): String = listOf(
+        Calibration.method(), Shape(), "${PAGE_W}x$PAGE_H", "${DECODE_W}x$DECODE_H", DeviceProbe.PAGE_QUALITIES, IDLE_WINDOW_MS
+    ).joinToString("|")
+
     /** The installed app's version code and install time: a new one after every update, for the pages it draws and encodes ([Calibration.pageFingerprint]). */
     @Suppress("DEPRECATION")
     private fun appVersion(context: Context): String = runCatching {
@@ -706,6 +711,9 @@ object Calibrator {
         companion object {
             private const val JXL_NAME = "page-${DECODE_W}x$DECODE_H-q91"
             private const val JPEG_NAME = "page-${DECODE_W}x$DECODE_H-q90"
+
+            /** The encoded pages' formats and qualities, for [method]. */
+            const val PAGE_QUALITIES = "jxl q91 hare, jpeg q90"
             private const val STEP_MS = 50L
 
             /** The longest [release] waits for pages still being made. */

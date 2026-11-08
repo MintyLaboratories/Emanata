@@ -114,8 +114,37 @@ object Calibration {
      */
     const val TOLERANCE = 0.20
 
-    /** Bumped whenever the setups timed or the method change: every device then calibrates again ([fingerprint]). */
+    /**
+     * Bumped whenever the setups timed or the method change: every device then calibrates
+     * again ([fingerprint]). A test pins a hash of what the method is made of ([method],
+     * [Calibrator.method]) to each version.
+     */
     const val VERSION = 3
+
+    /** Rounds a run times every setup in ([CalibrationRun]). */
+    const val ROUNDS = 5
+
+    /** How many times over a run may make its samples again before it stops ([CalibrationRun]). */
+    const val RETRIES = 10
+
+    /**
+     * What this object's part of the method is made of, as text: the setups timed on a few
+     * kinds of chips, the rules that pick among them, and the bounds that judge samples fair.
+     */
+    fun method(): String {
+        val chips = listOf(
+            CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024), capacities = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)),
+            CpuCores(intArrayOf(435, 435, 435, 435, 435, 435, 1024, 1024), capacities = intArrayOf(435, 435, 435, 435, 435, 435, 1024, 1024)),
+            CpuCores(intArrayOf(765, 765, 765, 765, 765, 765, 1024, 1024)),
+            CpuCores(IntArray(0))
+        )
+        val setups = chips.joinToString(";") { c -> candidates(c, 8, gpu = true, jxl = true, jpeg = true).joinToString(",") { it.key } }
+        return listOf(
+            setups, TOLERANCE, STAY_MARGIN, JPEG_MARGIN, JPEG_THREADED, CPU_NOISE_SHARE, CPU_NOISE_MS, coreWeight(435, 1024),
+            OTHERS_SHARE, OTHERS_FLOOR_MS, HOUSEKEEPING.sorted(), REST_MS, LIGHT, HOT, BATTERY_LIGHT_C, BATTERY_HOT_C,
+            SPREAD_MADS, ROUNDS, RETRIES
+        ).joinToString("|")
+    }
 
     /**
      * [cpuMs] weighed by the cores it ran on, as an energy proxy: each core's share of the
@@ -636,11 +665,11 @@ internal interface CalibrationProbe {
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
     private val candidates: List<Candidate>,
-    private val rounds: Int = 5,
+    private val rounds: Int = Calibration.ROUNDS,
     private val warmup: Int = 0,
     private val burst: Int = 3,
     private val warm: Boolean = true,
-    private val retries: Int = 10,
+    private val retries: Int = Calibration.RETRIES,
     private val warmOnce: Boolean = false,
     private val winners: ((List<Timing>) -> Any?)? = null,
     private val minRounds: Int = 3

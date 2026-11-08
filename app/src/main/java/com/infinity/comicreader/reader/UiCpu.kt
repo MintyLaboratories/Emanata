@@ -8,7 +8,9 @@ import java.io.File
  * nanoseconds where the kernel keeps them (schedstat), else in clock ticks (stat).
  */
 internal class UiCpu(private val tasks: File, private val mainTid: Int) {
-    private var tids: List<Int> = emptyList()
+    /** The UI threads found by the last [scan]. */
+    var tids: List<Int> = emptyList()
+        private set
 
     /** Finds the UI threads again; once is enough, as they live as long as the process. */
     fun scan() {
@@ -27,7 +29,7 @@ internal class UiCpu(private val tasks: File, private val mainTid: Int) {
 
     companion object {
         /** Linux clock ticks per second, as Android's kernels count them. */
-        private const val TICK_NS = 10_000_000L
+        const val TICK_NS = 10_000_000L
 
         /** True for the names of threads that draw: RenderThread and its helpers. */
         fun isUi(comm: String): Boolean {

@@ -101,6 +101,18 @@ class WraparoundTest {
     }
 
     @Test
+    fun onlyBarcodeAndTextTogetherSetTheDirection() {
+        val left = Wraparound.Half.LEFT
+        val right = Wraparound.Half.RIGHT
+        assertEquals(left, Wraparound.Fronts(left, left).agreed)
+        assertEquals(right, Wraparound.Fronts(right, right).agreed)
+        assertNull(Wraparound.Fronts(left, right).agreed)
+        assertNull(Wraparound.Fronts(right, null).agreed)
+        assertNull(Wraparound.Fronts(null, left).agreed)
+        assertNull(Wraparound.Fronts(null, null).agreed)
+    }
+
+    @Test
     fun theFrontIsOnePageWideFromTheOuterEdge() {
         // 2100 wide: two 1000-wide pages and a 100-wide spine.
         assertArrayEquals(intArrayOf(1100, 2100), Wraparound.frontColumns(2100, 1500, Wraparound.Half.RIGHT, 1000.0 / 1500))

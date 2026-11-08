@@ -6,7 +6,8 @@ import java.util.Locale
 /**
  * Works out a book's reading direction from what it carries, strongest signal first:
  *  1. ComicInfo `Manga=YesAndRightToLeft`;
- *  2. a wraparound cover: the front half on the left reads right to left, on the right left to right;
+ *  2. a wraparound cover whose barcode and tallest text name the same front half
+ *     ([Wraparound.Fronts.agreed]): on the left it reads right to left, on the right left to right;
  *  3. a manga publisher, from ComicInfo `Publisher` or a bracketed tag in the file or page names.
  * Null when nothing tells. Manga-style page names (`c001 (v01) - p000`) never decide
  * alone: western scans use them too. Free of Android types.
@@ -51,7 +52,8 @@ object DirectionDetection {
     /**
      * The direction of the book [fileName] with pages [pageNames] and [info]. [cover] is
      * asked only when the stronger signals say nothing: it gives the front half of a
-     * wraparound first page, or null when there is none or it cannot tell.
+     * wraparound first page that its barcode and tallest text agree on, or null when there
+     * is none, either tells nothing, or they disagree.
      */
     fun detect(
         info: ComicInfo?,
@@ -74,7 +76,7 @@ object DirectionDetection {
     /** True when [contents] already decides, so the cover need not be looked at. */
     fun outranksCover(contents: Detected?): Boolean = contents?.source == Source.COMIC_INFO
 
-    /** [contents] with the wraparound cover's [front] half in its place among the signals. */
+    /** [contents] with the wraparound cover's agreed [front] half ([Wraparound.Fronts.agreed]) in its place among the signals. */
     fun withCover(contents: Detected?, front: Wraparound.Half?): Detected? = when {
         outranksCover(contents) -> contents
         front == Wraparound.Half.LEFT -> Detected(ReadingDirection.RTL, Source.COVER)

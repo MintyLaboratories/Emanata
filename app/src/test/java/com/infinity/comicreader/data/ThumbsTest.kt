@@ -266,6 +266,17 @@ class ThumbsTest {
         assertFalse(Thumbs.directionMatters(entry))
         Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertEquals(2, calls[0])
+        // The text alone sets no direction.
+        assertTrue(Thumbs.frontKnown(file))
+        assertNull(Thumbs.knownFront(file))
+    }
+
+    @Test
+    fun aWraparoundWithABarcodeLeavesItsDirectionToTheReader() {
+        // Whether the text agrees is looked at only when the book is read.
+        val entry = wraparound(true, "coded.png")
+        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertFalse(Thumbs.frontKnown(entry.file))
     }
 
     @Test

@@ -54,31 +54,26 @@ object Thumbs {
         return (max / 8L).toInt().coerceIn(8 * 1024 * 1024, 96 * 1024 * 1024)
     }
 
-    /** Each wraparound's front half, by [imageKey]; [NO_FRONT] when its barcode tells nothing. */
+    /** Each wraparound's front half by its barcode, by [imageKey]; [NO_FRONT] when that tells nothing. */
+    private val barcodes = LruCache<String, Int>(1024)
+
+    /** Each wraparound's front half that sets reading direction ([Wraparound.Fronts.agreed]), by [imageKey]; [NO_FRONT] for none. */
     private val fronts = LruCache<String, Int>(1024)
     private const val NO_FRONT = -1
 
     /**
      * The front half of wraparound cover [src] of [entry], each half as wide as an inner page of
      * [innerRatio]: by its barcode, found once per cover image ([imageKey]), else by its tallest
-     * text ([SmartCrop.textFront]) from each half's focus ([focusOf], with [find]). Null when
-     * neither tells; then [unsure] too when the detector did not run.
+     * text ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when
+     * neither tells; then [unsure] too when the detector did not run. Without a barcode the
+     * cover sets no reading direction, which [knownFront] then tells.
      */
     private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
-        val known = fronts.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { fronts.put(k, it) }
+        val known = barcodes.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { barcodes.put(k, it) }
         Wraparound.Half.entries.getOrNull(known)?.let { return it }
-        val (left, right) = Wraparound.Half.entries.map { half ->
-            val columns = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
-            Rect(columns[0], 0, columns[1], src.height)
-        }
-        val l = focusOf(context, entry, src, left, find)
-        val r = focusOf(context, entry, src, right, find)
-        if (!l.keep || !r.keep) {
-            unsure()
-            return null
-        }
-        return SmartCrop.textFront(l, left.width(), r, right.width(), src.height)
+        fronts.put(k, NO_FRONT)
+        return CoverArt.textFront(src, innerRatio, { s, region -> focusOf(context, entry, s, region, find) }, unsure)
     }
 
     /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
@@ -124,13 +119,13 @@ object Thumbs {
         return focus
     }
 
-    /** True once the front half of [file]'s cover was looked for this session, whatever was found. */
+    /** True once this session settled whether [file]'s cover sets its reading direction, whatever was found. */
     fun frontKnown(file: File): Boolean = fronts.get(key(file)) != null
 
-    /** The front half of [file]'s wraparound cover as found this session; null when unknown or none. */
+    /** The front half of [file]'s wraparound cover that sets reading direction ([Wraparound.Fronts.agreed]) as found this session; null when unknown or none. */
     fun knownFront(file: File): Wraparound.Half? = fronts.get(key(file))?.let { Wraparound.Half.entries.getOrNull(it) }
 
-    /** Remembers [front] as what [file]'s cover shows, so neither covers nor the reader scan it again. */
+    /** Remembers [front] as the half of [file]'s cover that sets reading direction ([knownFront]), so the reader looks at it once. */
     fun rememberFront(file: File, front: Wraparound.Half?) {
         fronts.put(key(file), front?.ordinal ?: NO_FRONT)
     }
@@ -417,6 +412,7 @@ object Thumbs {
         memory.evictAll()
         quicks.evictAll()
         inners.evictAll()
+        barcodes.evictAll()
         fronts.evictAll()
         directional.evictAll()
         focuses.evictAll()

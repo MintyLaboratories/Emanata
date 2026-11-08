@@ -87,6 +87,27 @@ object CoverArt {
         return compose(src, width, height, style, Rect(left, 0, right, src.height), focus = focus)
     }
 
+    /** `[left, right]` halves of wraparound [src] as shown, each one inner page of [innerRatio] wide from its outer edge. */
+    fun halves(src: Bitmap, innerRatio: Double?): List<Rect> = Wraparound.Half.entries.map { half ->
+        Wraparound.frontColumns(src.width, src.height, half, innerRatio).let { Rect(it[0], 0, it[1], src.height) }
+    }
+
+    /**
+     * The front half of wraparound [src] by its tallest text ([SmartCrop.textFront]), from
+     * [focus] of each of its [halves]. Null when the text does not tell, and when either focus
+     * was found without the detector ([CoverFocus.keep]): then [unsure] too.
+     */
+    fun textFront(src: Bitmap, innerRatio: Double?, focus: (Bitmap, Rect) -> CoverFocus, unsure: () -> Unit = {}): Wraparound.Half? {
+        val (left, right) = halves(src, innerRatio)
+        val l = focus(src, left)
+        val r = focus(src, right)
+        if (!l.keep || !r.keep) {
+            unsure()
+            return null
+        }
+        return SmartCrop.textFront(l, left.width(), r, right.width(), src.height)
+    }
+
     /**
      * Where the Smart crop anchor looks in [region] of [src]: its text, as [detect] finds it on
      * the region shrunk to [SmartCrop.inputSize] (none without [detect]), and its detail. When

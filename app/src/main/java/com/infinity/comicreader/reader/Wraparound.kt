@@ -76,6 +76,15 @@ object Wraparound {
     fun shownFront(barcodeFront: Half?, rightToLeft: Boolean): Half = barcodeFront ?: if (rightToLeft) Half.LEFT else Half.RIGHT
 
     /**
+     * What names a wraparound's front: the half without the barcode ([barcode]) and the half
+     * with the taller title ([text]), each null when it tells nothing.
+     */
+    data class Fronts(val barcode: Half?, val text: Half?) {
+        /** The half that sets reading direction: only one both name. */
+        val agreed: Half? get() = barcode?.takeIf { it == text }
+    }
+
+    /**
      * `[left, right]` columns of [half] of a [width] x [height] wraparound: from the
      * outer edge, as wide as one inner page of [innerRatio] at this height, so a spine
      * between the halves is left out; never more than half the width.

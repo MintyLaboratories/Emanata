@@ -50,6 +50,18 @@ class DirectionDetectionTest {
     }
 
     @Test
+    fun aCoverWhoseBarcodeAndTextDisagreeOrStandAloneTellsNothing() {
+        val tagged = "Series B v01 [Kodansha Comics].cbz"
+        fun cover(barcode: Wraparound.Half?, text: Wraparound.Half?) = Wraparound.Fronts(barcode, text).agreed
+        assertEquals(Detected(ReadingDirection.LTR, Source.COVER), detect(file = tagged, cover = cover(Wraparound.Half.RIGHT, Wraparound.Half.RIGHT)))
+        val publisher = Detected(ReadingDirection.RTL, Source.PUBLISHER, "Kodansha")
+        assertEquals(publisher, detect(file = tagged, cover = cover(Wraparound.Half.RIGHT, Wraparound.Half.LEFT)))
+        assertEquals(publisher, detect(file = tagged, cover = cover(Wraparound.Half.RIGHT, null)))
+        assertEquals(publisher, detect(file = tagged, cover = cover(null, Wraparound.Half.RIGHT)))
+        assertNull(detect(cover = cover(Wraparound.Half.LEFT, null)))
+    }
+
+    @Test
     fun coverAddedLaterKeepsItsRank() {
         val publisher = DirectionDetection.fromContents(null, "Series B v01 [Kodansha Comics].cbz", plainPages)
         assertEquals(Source.PUBLISHER, publisher?.source)

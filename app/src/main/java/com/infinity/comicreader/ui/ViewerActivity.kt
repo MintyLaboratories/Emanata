@@ -1578,7 +1578,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /**
      * Once the book shows, finishes what [detectBeforeOpen] left: a ComicInfo too costly to
      * read first (read with the library's facts, through its own file handle, and kept for
-     * them), then a wraparound cover's front half. The book turns to the direction found
+     * them), then a wraparound cover's front half its barcode and text agree on. The book turns to the direction found
      * while the reader is still where it opened and has not chosen one; otherwise the
      * finding waits for the next open.
      */
@@ -1606,7 +1606,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 val front = if (Thumbs.frontKnown(book)) {
                     Thumbs.knownFront(book)
                 } else {
-                    runCatching { BookDirection.coverFront(src) }.getOrNull().also {
+                    val app = applicationContext
+                    runCatching { BookDirection.coverFront(src) { Thumbs.detector(app, it) } }.getOrNull().also {
                         ensureActive()
                         Thumbs.rememberFront(book, it)
                     }

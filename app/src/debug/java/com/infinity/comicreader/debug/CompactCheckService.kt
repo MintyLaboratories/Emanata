@@ -25,9 +25,9 @@ import com.infinity.comicreader.compact.Pixels
 import com.infinity.comicreader.compact.Png
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.reader.ArchiveReader
-import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.ui.FileJobs
 import com.infinity.comicreader.ui.TimeText
 import com.infinity.comicreader.util.Formats

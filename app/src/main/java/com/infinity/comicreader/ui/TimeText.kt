@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import android.view.View
 import android.widget.TextView
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.infinity.comicreader.R
@@ -35,10 +36,10 @@ internal object TimeText {
      */
     fun show(line: TextView, scope: LifecycleCoroutineScope, forecast: Future<List<Double>>) {
         line.setText(R.string.takes_estimating)
-        line.visibility = android.view.View.VISIBLE
+        line.visibility = View.VISIBLE
         scope.launch {
             val seconds = withContext(AppDispatchers.io) { runCatching { forecast.get().sum() }.getOrNull() }
-            if (seconds == null) line.visibility = android.view.View.GONE else line.text = takes(line.context, seconds)
+            if (seconds == null) line.visibility = View.GONE else line.text = takes(line.context, seconds)
         }
     }
 }

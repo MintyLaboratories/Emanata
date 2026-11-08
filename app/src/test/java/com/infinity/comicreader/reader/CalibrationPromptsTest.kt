@@ -16,8 +16,11 @@ class CalibrationPromptsTest {
     private val now = Calibration.fingerprint(Calibration.VERSION, "brand/device:16/BUILD2")
     private val older = Calibration.fingerprint(Calibration.VERSION, "brand/device:16/BUILD1")
 
-    private fun kept(fingerprint: String, saver: Boolean = false, totalMs: Long? = null) =
-        JSONObject().put("fingerprint", fingerprint).put("powerSave", saver).apply { totalMs?.let { put("totalMs", it) } }
+    private fun kept(fingerprint: String, saver: Boolean = false) = JSONObject().put("fingerprint", fingerprint).put("powerSave", saver)
+
+    private fun took(tookMs: Long, timingWaitMs: Long = 0, redoneMs: Long = 0, prepMs: Long = 0, settleMs: Long = 0) = kept(now)
+        .put("tookMs", tookMs).put("timingWaitMs", timingWaitMs).put("redoneMs", redoneMs).put("prepMs", prepMs).put("settleMs", settleMs)
+        .put("totalMs", settleMs + prepMs + tookMs)
 
     private fun offer(
         kept: JSONObject?,
@@ -99,9 +102,16 @@ class CalibrationPromptsTest {
     fun theEstimateIsTheLastRunRoundedUpToFiveSeconds() {
         assertEquals(CalibrationPrompts.DEFAULT_SECONDS, CalibrationPrompts.estimateSeconds(null))
         assertEquals(CalibrationPrompts.DEFAULT_SECONDS, CalibrationPrompts.estimateSeconds(kept(now)))
-        assertEquals(20, CalibrationPrompts.estimateSeconds(kept(now, totalMs = 17_400)))
-        assertEquals(20, CalibrationPrompts.estimateSeconds(kept(now, totalMs = 20_000)))
-        assertEquals(5, CalibrationPrompts.estimateSeconds(kept(now, totalMs = 900)))
+        assertEquals(20, CalibrationPrompts.estimateSeconds(took(13_400, prepMs = 2_000, settleMs = 2_000)))
+        assertEquals(20, CalibrationPrompts.estimateSeconds(took(20_000)))
+        assertEquals(5, CalibrationPrompts.estimateSeconds(took(900)))
+    }
+
+    @Test
+    fun theEstimateLeavesOutWaits() {
+        // Two minutes cooling before timing and a minute's waits during it: still about the run itself.
+        assertEquals(40, CalibrationPrompts.estimateSeconds(took(95_000, timingWaitMs = 60_000, redoneMs = 2_000, prepMs = 4_000, settleMs = 120_000)))
+        assertEquals(5, CalibrationPrompts.estimateSeconds(took(1_000, timingWaitMs = 5_000)))
     }
 
     @Test

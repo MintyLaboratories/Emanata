@@ -663,6 +663,28 @@ class CalibrationTest {
         assertEquals(13 * 4, warmed.order.size)
     }
 
+    @Test
+    fun timeOnSamplesMadeAgainIsCounted() {
+        val a = pixels(1, true)
+        var n = 0
+        // The first sample is disturbed; each run takes 5 ms.
+        val probe = object : CalibrationProbe {
+            override fun time(candidate: Candidate): RunTime {
+                Thread.sleep(5)
+                return RunTime(5.0, 5.0)
+            }
+            override fun awaitFair() = true
+            override fun stillFair() = n++ > 0
+        }
+        val run = CalibrationRun(probe, listOf(a), rounds = 1, burst = 1, warm = false)
+        assertNotNull(run.run())
+        assertEquals(1, run.redone)
+        assertTrue("${run.redoneMs}", run.redoneMs in 5L..500L)
+        val clean = CalibrationRun(FakeProbe(mapOf(a to listOf(10.0))), listOf(a), rounds = 1)
+        assertNotNull(clean.run())
+        assertEquals(0L, clean.redoneMs)
+    }
+
     /** Times every run 10 ms; [still] and [saver] script the device's state. */
     private class SaverProbe(val still: () -> Boolean, val saver: () -> Boolean) : CalibrationProbe {
         override fun time(candidate: Candidate) = RunTime(10.0, 20.0)

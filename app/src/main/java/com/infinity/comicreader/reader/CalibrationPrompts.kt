@@ -142,9 +142,16 @@ object CalibrationPrompts {
         else -> CalibrationGate.GO
     }
 
-    /** About how long a run takes, in whole seconds rounded up to 5: as the last one kept took in all, else [DEFAULT_SECONDS]. */
+    /**
+     * About how long a run takes, in whole seconds rounded up to 5, from the last one kept, else
+     * [DEFAULT_SECONDS]: its timing without the waits for a fair moment and the samples made
+     * again, plus preparing its pages and settling at most [Calibration.SETTLE_MS]. Waits for
+     * heat or a busy app are the device's state then, not the run's length.
+     */
     fun estimateSeconds(kept: JSONObject?): Int {
-        val ms = kept?.optLong("totalMs", 0L)?.takeIf { it > 0 } ?: return DEFAULT_SECONDS
+        val took = kept?.optLong("tookMs", 0L)?.takeIf { it > 0 } ?: return DEFAULT_SECONDS
+        val timing = (took - kept.optLong("timingWaitMs") - kept.optLong("redoneMs")).coerceAtLeast(0)
+        val ms = timing + kept.optLong("prepMs") + kept.optLong("settleMs").coerceIn(0, Calibration.SETTLE_MS)
         return (ceil(ms / 5000.0).toInt() * 5).coerceAtLeast(5)
     }
 

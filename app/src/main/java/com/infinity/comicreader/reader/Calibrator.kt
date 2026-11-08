@@ -389,6 +389,7 @@ object Calibrator : CalibrationControl {
                 }
             )
             val t0 = SystemClock.elapsedRealtime()
+            val waitedBefore = probe.waitedMs
             probe.timing()
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
             val tookMs = SystemClock.elapsedRealtime() - t0
@@ -405,7 +406,7 @@ object Calibrator : CalibrationControl {
                 .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
                 .put("rounds", run.roundsRun).put("redone", run.redone).put("disturbedBy", JSONObject(probe.disturbedBy as Map<*, *>))
                 .put("cappedSamples", probe.cappedSamples).put("capsKHz", probe.caps?.let { JSONArray(it.toList()) })
-                .put("restMs", probe.restMs)
+                .put("restMs", probe.restMs).put("timingWaitMs", probe.waitedMs - waitedBefore).put("redoneMs", run.redoneMs)
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -555,7 +556,8 @@ object Calibrator : CalibrationControl {
         private var lastSampleMs = 0.0
 
         /** Time spent waiting for fair moments so far. */
-        private var waitedMs = 0L
+        var waitedMs = 0L
+            private set
 
         /** True once a run of a setup began: heat then ends the run ([Calibration.giveUp]). */
         private var timing = false

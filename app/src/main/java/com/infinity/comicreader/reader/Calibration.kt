@@ -703,6 +703,10 @@ internal class CalibrationRun(
     var redone: Int = 0
         private set
 
+    /** Time the last [run] spent on samples it made again, in ms. */
+    var redoneMs: Long = 0
+        private set
+
     /** Rounds the last [run] went through, warm-up rounds included. */
     var roundsRun: Int = 0
         private set
@@ -714,6 +718,7 @@ internal class CalibrationRun(
         why = null
         sawPowerSave = false
         redone = 0
+        redoneMs = 0
         roundsRun = 0
         val samples = candidates.associateWith { ArrayList<RunTime>() }
         val missing = HashSet<Candidate>()
@@ -727,6 +732,7 @@ internal class CalibrationRun(
                     if (stopped()) return stop("stopped")
                     if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
                     val saver = probe.powerSave
+                    val sampledFrom = System.nanoTime()
                     val t = sample(c, warm && (!warmOnce || round == 0))
                     if (t == null) {
                         missing += c
@@ -739,6 +745,7 @@ internal class CalibrationRun(
                         }
                         break
                     }
+                    redoneMs += (System.nanoTime() - sampledFrom) / 1_000_000
                     if (++redone > mostRedone) return stop("disturbed $redone times")
                 }
             }

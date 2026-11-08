@@ -199,8 +199,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     level's direction; long press opens the Sort popup), Folders first
     (Browse only) and Sections (Favorites only) by default; Layout (grid or
     list) and Title lines (each title display in turn) on request. Settings →
-    **View ring options** picks 3 to 6 and their order; a tab shows those that
-    apply to it. A label wraps onto two lines or takes a shorter form ("Dir.
+    **View ring options** picks them and their order, 3 to 6 in each tab;
+    Folders first and Sections count only in their own. A label wraps onto two lines or takes a shorter form ("Dir.
     LTR→RTL") where the full one does not fit; "…" only as a last resort. The
     ring is two thirds the size it once was, larger only where its labels
     cannot clear each other otherwise. A tap applies at once and the ring

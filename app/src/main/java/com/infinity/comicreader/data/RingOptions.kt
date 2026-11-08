@@ -39,8 +39,8 @@ enum class RingOption(val key: String) {
 }
 
 /**
- * The view ring's options in [order], each [shown] or not; [MIN] to [MAX] are shown. Stored
- * as `smaller,larger,…,-layout`: a leading `-` marks a hidden one.
+ * The view ring's options in [order], each [shown] or not; every tab shows [MIN] to [MAX] of
+ * them ([fits]). Stored as `smaller,larger,…,-layout`: a leading `-` marks a hidden one.
  */
 data class RingOptions(val order: List<RingOption>, val shown: Set<RingOption>) {
 
@@ -52,10 +52,10 @@ data class RingOptions(val order: List<RingOption>, val shown: Set<RingOption>) 
 
     fun encode(): String = order.joinToString(",") { if (it in shown) it.key else "-${it.key}" }
 
-    /** [option] shown or hidden; unchanged when that would leave [MIN]..[MAX] shown. */
+    /** [option] shown or hidden; unchanged when a tab would then show fewer than [MIN] or more than [MAX] ([fits]). */
     fun with(option: RingOption, show: Boolean): RingOptions {
         val next = if (show) shown + option else shown - option
-        return if (next.size in MIN..MAX) copy(shown = next) else this
+        return if (fits(next)) copy(shown = next) else this
     }
 
     /** The option at [from] moved to [to], the others closing up. */
@@ -67,6 +67,9 @@ data class RingOptions(val order: List<RingOption>, val shown: Set<RingOption>) 
     companion object {
         const val MIN = 3
         const val MAX = 6
+
+        /** Whether every tab shows [MIN]..[MAX] of [shown]: a tab's own option counts in its tab only. */
+        fun fits(shown: Set<RingOption>): Boolean = Prefs.TABS.all { tab -> shown.count { it.appliesTo(tab) } in MIN..MAX }
 
         /**
          * Smaller, Larger, Details, Sort, Folders first (Browse) and Sections (Favorites)
@@ -80,7 +83,7 @@ data class RingOptions(val order: List<RingOption>, val shown: Set<RingOption>) 
             setOf(RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT, RingOption.FOLDERS_FIRST, RingOption.SECTIONS)
         )
 
-        /** Reads [encode]'s text; unknown names and repeats are dropped, options it lacks follow, hidden; [DEFAULT] unless [MIN]..[MAX] are shown. */
+        /** Reads [encode]'s text; unknown names and repeats are dropped, options it lacks follow, hidden; [DEFAULT] unless it [fits]. */
         fun decode(text: String?): RingOptions {
             if (text.isNullOrBlank()) return DEFAULT
             val order = ArrayList<RingOption>()
@@ -93,7 +96,7 @@ data class RingOptions(val order: List<RingOption>, val shown: Set<RingOption>) 
                 if (!hidden) shown.add(option)
             }
             for (option in RingOption.entries) if (option !in order) order.add(option)
-            return if (shown.size in MIN..MAX) RingOptions(order, shown) else DEFAULT
+            return if (fits(shown)) RingOptions(order, shown) else DEFAULT
         }
     }
 }

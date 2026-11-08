@@ -7,9 +7,9 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.RingOption
 
 /**
- * The "View ring options" setting: a checkbox per action to put it on the ring, 3 to 6 of
- * them, and a handle to drag it into place ([OrderDialog]); and the "Grid/list button tap"
- * choices. Every change is written at once.
+ * The "View ring options" setting: a checkbox per action to put it on the ring, 3 to 6 in
+ * each tab, and a handle to drag it into place ([OrderDialog]); and the "Grid/list button
+ * tap" choices. Every change is written at once.
  */
 object RingOptionsDialog {
 

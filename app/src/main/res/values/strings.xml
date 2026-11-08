@@ -403,7 +403,7 @@
     <!-- Settings: the grid/list button's tap and the view ring's options. -->
     <string name="pref_fab_tap">Grid/list button tap</string>
     <string name="pref_view_ring">View ring options</string>
-    <string name="view_ring_pick">Pick 3 to 6. Folders first shows in Browse only, Sections in Favorites only.</string>
+    <string name="view_ring_pick">Each tab shows 3 to 6. Folders first shows in Browse only, Sections in Favorites only.</string>
     <string name="view_ring_folders_first_tab">Folders first (Browse)</string>
     <string name="view_ring_sections_tab">Sections (Favorites)</string>
     <string name="select_all">Select all</string>

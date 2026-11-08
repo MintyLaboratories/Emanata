@@ -66,9 +66,25 @@ class RingOptionsTest {
         assertEquals(listOf(RingOption.SORT, RingOption.SMALLER, RingOption.LAYOUT, RingOption.LARGER), read.order.take(4))
         assertEquals(setOf(RingOption.SORT, RingOption.SMALLER, RingOption.LARGER), read.shown)
         assertEquals(RingOption.entries.toSet(), read.order.toSet())
-        // Fewer than three or more than six shown: the default.
+        // A tab showing fewer than three or more than six: the default.
         assertEquals(RingOptions.DEFAULT, RingOptions.decode("sort,smaller"))
+        assertEquals(RingOptions.DEFAULT, RingOptions.decode("sort,smaller,folders_first,sections"))
         assertEquals(RingOptions.DEFAULT, RingOptions.decode(RingOption.entries.joinToString(",") { it.key }))
+    }
+
+    @Test
+    fun everyTabShowsThreeToSixCountingTabOnlyOnesInTheirTabOnly() {
+        val general = listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT, RingOption.LAYOUT)
+        val tabOnly = setOf(RingOption.FOLDERS_FIRST, RingOption.SECTIONS)
+        // Five everywhere and each tab's own: six in Browse and Favorites, five in History and Bookmarks.
+        assertTrue(RingOptions.fits(general.toSet() + tabOnly))
+        // A seventh in Browse and Favorites.
+        assertFalse(RingOptions.fits(general.toSet() + tabOnly + RingOption.TITLE_LINES))
+        // Six everywhere, with no tab's own.
+        assertTrue(RingOptions.fits(general.toSet() + RingOption.TITLE_LINES))
+        // Two in History and Bookmarks.
+        assertFalse(RingOptions.fits(general.take(2).toSet() + tabOnly))
+        assertTrue(RingOptions.fits(general.take(3).toSet() + tabOnly))
     }
 
     @Test

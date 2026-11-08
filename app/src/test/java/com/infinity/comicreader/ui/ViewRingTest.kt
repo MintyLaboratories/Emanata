@@ -28,15 +28,15 @@ class ViewRingTest {
 
     @Test
     fun theRingFollowsTheChosenOptionsInTheirOrder() {
-        // Three, one of them Browse's own: the other tabs show two.
-        val three = RingOptions.DEFAULT.moved(4, 0).with(RingOption.LARGER, false).with(RingOption.DETAIL, false).with(RingOption.SECTIONS, false)
-        assertEquals(listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), three.visible)
-        assertEquals(listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), ViewRing.options(Prefs.TAB_BROWSE, three))
-        assertEquals(listOf(RingOption.SMALLER, RingOption.SORT), ViewRing.options(Prefs.TAB_HISTORY, three))
-        // Six with Layout and Title lines: Sections and Folders first each in their tab.
-        val six = RingOptions.DEFAULT.with(RingOption.DETAIL, false).with(RingOption.FOLDERS_FIRST, false).with(RingOption.LAYOUT, true).with(RingOption.TITLE_LINES, true)
-        assertEquals(6, six.visible.size)
-        // No seventh, and no fewer than three.
+        // Three in History, Browse's and Favorites' own added in their tab.
+        val three = RingOptions.DEFAULT.moved(3, 0).with(RingOption.LARGER, false)
+        assertEquals(listOf(RingOption.SORT, RingOption.SMALLER, RingOption.DETAIL), ViewRing.options(Prefs.TAB_HISTORY, three))
+        assertEquals(listOf(RingOption.SORT, RingOption.SMALLER, RingOption.DETAIL, RingOption.FOLDERS_FIRST), ViewRing.options(Prefs.TAB_BROWSE, three))
+        // Six in Browse and in Favorites with Layout and Title lines: each tab's own counts there only.
+        val six = RingOptions.DEFAULT.with(RingOption.DETAIL, false).with(RingOption.LAYOUT, true).with(RingOption.TITLE_LINES, true)
+        assertEquals(7, six.visible.size)
+        for (tab in listOf(Prefs.TAB_BROWSE, Prefs.TAB_FAVORITES)) assertEquals(tab, 6, ViewRing.options(tab, six).size)
+        // No seventh in a tab, and no fewer than three.
         assertEquals(six, six.with(RingOption.DETAIL, true))
         assertEquals(three, three.with(RingOption.SORT, false))
         assertEquals(

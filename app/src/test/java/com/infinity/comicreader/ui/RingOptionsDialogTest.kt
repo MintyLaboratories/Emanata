@@ -23,7 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** Settings → View ring options: 3 to 6 checked, a box past either end springs back; and the button's tap choices. */
+/** Settings → View ring options: 3 to 6 per tab, a box past either end springs back; and the button's tap choices. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class RingOptionsDialogTest {
@@ -48,27 +48,32 @@ class RingOptionsDialogTest {
     }
 
     @Test
-    fun aSeventhOrAThirdFromLastSpringsBack() {
+    fun aSeventhOrASecondInATabSpringsBack() {
         val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
         val dialog: AlertDialog = RingOptionsDialog.show(activity, prefs)
         idle()
         val list = dialog.findViewById<RecyclerView>(R.id.view_ring_list)!!
         val order = prefs.ringOptions.order
         val layout = order.indexOf(RingOption.LAYOUT)
-        // Six shown: a seventh is refused.
+        val titles = order.indexOf(RingOption.TITLE_LINES)
+        // Browse and Favorites show five each: a sixth fits, Folders first and Sections counting in their own tab only.
         list.box(layout).performClick()
         idle()
-        assertEquals(RingOptions.DEFAULT, prefs.ringOptions)
-        assertFalse(list.box(layout).isChecked)
-        // Down to three, and no further.
-        for (o in listOf(RingOption.SECTIONS, RingOption.FOLDERS_FIRST, RingOption.DETAIL)) list.box(order.indexOf(o)).performClick()
+        assertTrue(list.box(layout).isChecked)
+        assertEquals(RingOptions.DEFAULT.with(RingOption.LAYOUT, true), prefs.ringOptions)
+        // A seventh in Browse is refused.
+        list.box(titles).performClick()
         idle()
-        assertEquals(listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.SORT), prefs.ringOptions.visible)
+        assertFalse(list.box(titles).isChecked)
+        assertEquals(7, prefs.ringOptions.visible.size)
+        // Down to three in History and Bookmarks, and no further.
+        for (o in listOf(RingOption.LAYOUT, RingOption.DETAIL)) list.box(order.indexOf(o)).performClick()
+        idle()
+        assertEquals(listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.SORT), prefs.ringOptions.forTab(Prefs.TAB_HISTORY))
         list.box(order.indexOf(RingOption.SORT)).performClick()
         idle()
         assertTrue(list.box(order.indexOf(RingOption.SORT)).isChecked)
-        assertEquals(3, prefs.ringOptions.visible.size)
-        assertEquals("Smaller, Larger, Sort", RingOptionsDialog.summary(activity, prefs))
+        assertEquals("Smaller, Larger, Sort, Folders first (Browse), Sections (Favorites)", RingOptionsDialog.summary(activity, prefs))
     }
 
     @Test

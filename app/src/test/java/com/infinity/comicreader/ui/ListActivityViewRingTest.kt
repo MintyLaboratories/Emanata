@@ -371,12 +371,12 @@ class ListActivityViewRingTest {
 
     @Test
     fun theRingShowsTheThreeToSixChosenInTheirOrder() {
-        prefs.ringOptions = RingOptions.DEFAULT.moved(4, 0).with(RingOption.LARGER, false).with(RingOption.DETAIL, false).with(RingOption.SECTIONS, false)
+        prefs.ringOptions = RingOptions.DEFAULT.moved(3, 0).with(RingOption.LARGER, false).with(RingOption.FOLDERS_FIRST, false)
         val list = launch()
         list.openRing()
-        assertEquals(setOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), list.ringShows().toSet())
+        assertEquals(setOf(RingOption.SORT, RingOption.SMALLER, RingOption.DETAIL), list.ringShows().toSet())
         // In order from the top of the arc inward: the first highest.
-        val tops = listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT).map { center(list.viewRing.button(it)!!).second }
+        val tops = listOf(RingOption.SORT, RingOption.SMALLER, RingOption.DETAIL).map { center(list.viewRing.button(it)!!).second }
         assertEquals(tops.sorted(), tops)
         list.viewRing.close(animate = false)
 

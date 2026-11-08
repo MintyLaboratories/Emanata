@@ -67,8 +67,9 @@ enum class Container(val key: String) {
 /**
  * This device's speeds at Convert work, learned from real jobs: seconds of wall time per page
  * by [Step], format and [SizeClass] (pages convert side by side, each charged its share);
- * seconds per byte read by location and [Container], and written by location; and each
- * action's time per book beyond those (opening, checking, putting the new file in place).
+ * seconds per byte read by location and [Container], and written by location and action; the
+ * bytes each action writes per byte of book; and each action's time per book beyond those
+ * (opening, checking, putting the new file in place).
  * Each figure blends what was measured with its seed, the seed counting as a few units
  * measured, so a first job leans on the seed and later ones on what they measured; only the
  * most recent work counts ([CAP_PAGES], [CAP_BYTES], [CAP_BOOKS]). Locations are [DEVICE] or
@@ -82,7 +83,7 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
      */
     class Seeds(val speed: () -> Double = { 1.0 }, val shareRead: (String) -> Double? = { null })
 
-    /** [amount] units done in [seconds]. */
+    /** [amount] units done in [seconds] (for the bytes written per byte of book, [amount] bytes of book and [seconds] bytes written). */
     private class Tally(var amount: Double, var seconds: Double)
 
     private val tallies = HashMap<String, Tally>()
@@ -99,9 +100,13 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     @Synchronized
     fun readRate(location: String, container: Container): Double = 1 / blended(readKey(location, container), PRIOR_BYTES, 1 / readSeed(location, container))
 
-    /** Bytes a second written (and read back) at [location]. */
+    /** Bytes a second action [op] writes (and reads back) at [location]: Pack's copies read their loose images as they write. */
     @Synchronized
-    fun writeRate(location: String): Double = 1 / blended(writeKey(location), PRIOR_BYTES, 1 / writeSeed(location))
+    fun writeRate(location: String, op: String): Double = 1 / blended(writeKey(location, op), PRIOR_BYTES, 1 / writeSeed(location))
+
+    /** Bytes action [op] writes per byte of book. */
+    @Synchronized
+    fun outputShare(op: String): Double = blended(outputKey(op), PRIOR_BYTES, OUTPUT_SHARES[op] ?: 1.0)
 
     /** Seconds per book of action [op] beyond reading, converting and writing. */
     @Synchronized
@@ -114,8 +119,13 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     /** [bytes] of a book in [container] at [location] read in [seconds]. */
     fun read(location: String, container: Container, bytes: Long, seconds: Double) = add(readKey(location, container), bytes.toDouble(), seconds, CAP_BYTES)
 
-    /** [bytes] written and read back at [location] in [seconds]. */
-    fun written(location: String, bytes: Long, seconds: Double) = add(writeKey(location), bytes.toDouble(), seconds, CAP_BYTES)
+    /** [bytes] written and read back by action [op] at [location] in [seconds]. */
+    fun written(location: String, op: String, bytes: Long, seconds: Double) = add(writeKey(location, op), bytes.toDouble(), seconds, CAP_BYTES)
+
+    /** Action [op] wrote [written] bytes for a book of [bytes]. */
+    fun output(op: String, bytes: Long, written: Long) {
+        if (written >= 0) add(outputKey(op), bytes.toDouble(), written.toDouble(), CAP_BYTES)
+    }
 
     /** A book of action [op] took [seconds] beyond reading, converting and writing. */
     fun book(op: String, seconds: Double) = add(bookKey(op), 1.0, seconds, CAP_BOOKS)
@@ -124,7 +134,7 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     @Synchronized
     fun forgetShare(id: String) {
         val loc = share(id)
-        tallies.keys.removeAll { it.startsWith("read/$loc/") || it == "write/$loc" }
+        tallies.keys.removeAll { it.startsWith("read/$loc/") || it.startsWith("write/$loc/") }
     }
 
     @Synchronized
@@ -238,8 +248,9 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
             return "page/${step.key}/$name${if (lossy && format == ImageKind.WEBP) "-lossy" else ""}/${size.key}"
         }
         private fun readKey(location: String, container: Container) = "read/$location/${container.key}"
-        private fun writeKey(location: String) = "write/$location"
+        private fun writeKey(location: String, op: String) = "write/$location/$op"
         private fun bookKey(op: String) = "book/$op"
+        private fun outputKey(op: String) = "out/$op"
 
         /** Calibration's 2000x3000 JPEG decode, and the CPU time of its JPEG XL decode, on the reference device (Snapdragon 8 Gen 1 class, Android 16). */
         const val REF_JPEG_MS = 27.0
@@ -265,6 +276,9 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
 
         /** Seconds per book beyond reading, converting and writing, before any is measured. */
         const val BOOK_SECONDS = 0.3
+
+        /** Bytes each action writes per byte of book before any is measured; 1 for others. */
+        val OUTPUT_SHARES = mapOf("compact" to 0.8, "pack-compacted" to 0.8, "compatible" to 1.3)
 
         /** How many units a seed counts as. */
         private const val PRIOR_PAGES = 3.0

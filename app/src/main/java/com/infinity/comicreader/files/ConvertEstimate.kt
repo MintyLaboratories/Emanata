@@ -43,7 +43,8 @@ data class BookPlan(
 /**
  * How long Convert work takes, from this device's [rates]: each book reads, converts its
  * pages (reading overlaps converting, so the slower of the two counts), writes its new file
- * and reads it back, plus its action's time per book. A book not listed is taken to hold
+ * (as many bytes per byte of book as its action writes) and reads it back, plus its action's
+ * time per book. A book not listed is taken to hold
  * pages as those listed do, by bytes; with none listed, medium JPEGs. A book whose mark was
  * not read is taken to be done as often as those read were.
  */
@@ -82,7 +83,7 @@ class ConvertEstimate(private val rates: WorkRates) {
             book.pages != null -> convertSeconds(step, book.pages)
             else -> bytes * pageShare * perByte
         }
-        val write = bytes / rates.writeRate(book.location)
+        val write = bytes * rates.outputShare(op.key) / rates.writeRate(book.location, op.key)
         return maxOf(read, convert) + write + rates.bookSeconds(op.key)
     }
 

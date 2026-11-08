@@ -464,7 +464,8 @@ internal class FileJobs(
                             handover?.let(handovers::remove)
                         }
                     }
-                    val meter = BookMeter(rates, how.op.step, ConvertRates.location(path), Container.of(book.name, false))
+                    val meter = BookMeter(rates, how.op, ConvertRates.location(path), Container.of(book.name, false))
+                    val bytes = book.length()
                     val request = Compactor.Request(
                         book, convert, inPlace, how.suffix, hidden, smallerOnly = how == Rebuild.COMPACT,
                         cost = pages?.let { it::memoryFor } ?: { it.size.toLong() }, placer = placer,
@@ -475,7 +476,7 @@ internal class FileJobs(
                     val began = System.nanoTime()
                     val result = compactor.run(request, open, progress)
                     // A book holding archives was only listed.
-                    if (!(result is Compactor.Result.Unchanged && result.why == Compactor.Why.NESTED)) meter.book(how.op.key, (System.nanoTime() - began) / 1e9)
+                    if (!(result is Compactor.Result.Unchanged && result.why == Compactor.Why.NESTED)) meter.book(bytes, (System.nanoTime() - began) / 1e9)
                     when (result) {
                         is Compactor.Result.Unchanged -> {
                             unchanged++
@@ -589,7 +590,7 @@ internal class FileJobs(
                         // Past the reader's wait: the folder holds nothing the library still needs.
                         removed = removeFolder(dir, files, stats, contents.unusual.toSet(), unusualFiles)
                     }
-                    val meter = BookMeter(rates, op.step, ConvertRates.location(plan.folder), Container.FOLDER)
+                    val meter = BookMeter(rates, op, ConvertRates.location(plan.folder), Container.FOLDER)
                     val request = Compactor.Request(
                         dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
                         dotFolders = plan.unusualToo, keepBoth = ::keepBoth,
@@ -600,7 +601,7 @@ internal class FileJobs(
                     val began = System.nanoTime()
                     val result = compactor.run(request, { FolderReader(files, dir) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")
-                    meter.book(op.key, (System.nanoTime() - began) / 1e9)
+                    meter.book(stats.sumOf { it.first }, (System.nanoTime() - began) / 1e9)
                     if (result.file.name != plan.name) keptBoth += result.file.name
                     done++
                     saved += result.before - result.after

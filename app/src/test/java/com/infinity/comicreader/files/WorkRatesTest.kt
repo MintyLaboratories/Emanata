@@ -65,15 +65,30 @@ class WorkRatesTest {
         // Other containers and locations keep their seeds.
         assertEquals(WorkRates.DEVICE_READ, rates.readRate(WorkRates.DEVICE, Container.ZIP), 1.0)
         assertEquals(WorkRates.SHARE_READ, rates.readRate(WorkRates.share("a"), Container.ZIP), 1.0)
-        repeat(20) { rates.written(WorkRates.DEVICE, 64 * mb, 1.0) }
-        assertEquals(64.0 * mb, rates.writeRate(WorkRates.DEVICE), 0.03 * 64 * mb)
+        repeat(20) { rates.written(WorkRates.DEVICE, "compact", 64 * mb, 1.0) }
+        assertEquals(64.0 * mb, rates.writeRate(WorkRates.DEVICE, "compact"), 0.03 * 64 * mb)
+        // Pack's copies, reading loose images as they write, are kept apart.
+        assertEquals(WorkRates.DEVICE_WRITE, rates.writeRate(WorkRates.DEVICE, "pack"), 1.0)
     }
+
+    @Test
+    fun theBytesEachActionWritesPerByteOfBookAreLearned() {
+        val rates = WorkRates()
+        assertEquals(0.8, rates.outputShare("compact"), 1e-9)
+        assertEquals(1.0, rates.outputShare("repack"), 1e-9)
+        repeat(20) { rates.output("compact", 100 * mb, 55 * mb) }
+        assertEquals(0.55, rates.outputShare("compact"), 0.01)
+        // A book left as it was wrote nothing.
+        rates.output("repack", 100 * mb, 0)
+        assertTrue(rates.outputShare("repack") < 0.5)
+    }
+
 
     @Test
     fun aSharesMeasuredSpeedSeedsItsReadsAndWrites() {
         val rates = WorkRates(WorkRates.Seeds(shareRead = { id -> if (id == "a") 10e6 else null }))
         assertEquals(10e6, rates.readRate(WorkRates.share("a"), Container.ZIP), 1.0)
-        assertEquals(10e6 * WorkRates.SHARE_WRITE_SHARE, rates.writeRate(WorkRates.share("a")), 1.0)
+        assertEquals(10e6 * WorkRates.SHARE_WRITE_SHARE, rates.writeRate(WorkRates.share("a"), "compact"), 1.0)
         assertEquals(WorkRates.SHARE_READ, rates.readRate(WorkRates.share("b"), Container.ZIP), 1.0)
         // A solid archive unpacks slower than a fast share reads.
         val fast = WorkRates(WorkRates.Seeds(shareRead = { 500e6 }))
@@ -115,26 +130,29 @@ class WorkRatesTest {
     @Test
     fun aBooksMeterFeedsTheRatesAndTellsTheTimeBeyondItsParts() {
         val rates = WorkRates()
-        val meter = BookMeter(rates, Step.COMPACT, WorkRates.DEVICE, Container.ZIP) { true }
+        val meter = BookMeter(rates, ConvertOp.COMPACT, WorkRates.DEVICE, Container.ZIP) { true }
         val jpegPage = ByteArray(2 * mb.toInt()).also { it[0] = 0xFF.toByte(); it[1] = 0xD8.toByte(); it[2] = 0xFF.toByte() }
         repeat(20) { meter.page(jpegPage, 1.0) }
         meter.read(40 * mb, 4.0)
-        meter.written(40 * mb, 2.0)
+        meter.written(30 * mb, 2.0)
         assertTrue(rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.MEDIUM) > 0.8)
         // Converting (20 s) outlasted reading (4 s), which ran beside it.
         assertEquals(3.0, meter.beyond(25.0), 1e-9)
         assertEquals(0.0, meter.beyond(10.0), 0.0)
+        repeat(30) { meter.book(40 * mb, 25.0) }
+        assertEquals(3.0, rates.bookSeconds("compact"), 0.3)
+        assertEquals(0.75, rates.outputShare("compact"), 0.02)
     }
 
     @Test
     fun nothingIsLearnedWhileTheAppIsNotInFront() {
         val rates = WorkRates()
         val before = rates.encode()
-        val meter = BookMeter(rates, Step.COMPACT, WorkRates.DEVICE, Container.ZIP) { false }
+        val meter = BookMeter(rates, ConvertOp.COMPACT, WorkRates.DEVICE, Container.ZIP) { false }
         meter.page(ByteArray(64), 9.0)
         meter.read(mb, 1.0)
         meter.written(mb, 1.0)
-        meter.book("compact", 20.0)
+        meter.book(mb, 20.0)
         assertEquals(before, rates.encode())
         assertEquals(10.0, meter.beyond(20.0), 1e-9)
     }
@@ -144,7 +162,7 @@ class WorkRatesTest {
         val rates = WorkRates()
         assertTrue(rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.MEDIUM, lossy = true) < 0.1)
         assertTrue(rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.MEDIUM) > 0.1)
-        val meter = BookMeter(rates, Step.COMPACT, WorkRates.DEVICE, Container.ZIP) { true }
+        val meter = BookMeter(rates, ConvertOp.COMPACT, WorkRates.DEVICE, Container.ZIP) { true }
         repeat(50) { meter.page(webp("VP8 "), 0.02) }
         repeat(50) { meter.page(webp("VP8L"), 3.0) }
         assertEquals(0.02, rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.SMALL, lossy = true), 0.05)

@@ -21,7 +21,7 @@ class ConvertEstimateTest {
         val plan = book(100)
         val seconds = ConvertEstimate(rates).forecast(ConvertOp.COMPACT, listOf(plan)).single()
         val convert = 100 * WorkRates.defaultSeconds(Step.COMPACT, ImageKind.JPEG)
-        val expected = convert + plan.bytes / WorkRates.DEVICE_WRITE + WorkRates.BOOK_SECONDS
+        val expected = convert + plan.bytes * WorkRates.OUTPUT_SHARES.getValue("compact") / WorkRates.DEVICE_WRITE + WorkRates.BOOK_SECONDS
         assertEquals(expected, seconds, 1e-6)
     }
 
@@ -49,9 +49,9 @@ class ConvertEstimateTest {
         val rates = WorkRates(WorkRates.Seeds(shareRead = { 1e6 }))
         val device = ConvertEstimate(rates).forecast(ConvertOp.COMPACT, listOf(book(100))).single()
         val share = ConvertEstimate(rates).forecast(ConvertOp.COMPACT, listOf(book(100, location = WorkRates.share("a")))).single()
-        // 200 MB at 1 MB/s read, and as much again written there at 0.6 MB/s.
+        // 200 MB at 1 MB/s read, and 0.8 of it written there at 0.6 MB/s.
         assertTrue(share > 10 * device)
-        assertEquals(200.0 * mb / 1e6 + 200.0 * mb / 0.6e6, share, 30.0)
+        assertEquals(200.0 * mb / 1e6 + 0.8 * 200.0 * mb / 0.6e6, share, 30.0)
     }
 
     @Test
@@ -112,6 +112,15 @@ class ConvertEstimateTest {
         assertTrue(early < 171 * 3 && early > 171)
         assertEquals(0.0, ConvertEstimate.remaining(plan, 3, 0.0, 500.0), 1e-9)
         assertEquals(0.0, ConvertEstimate.remaining(emptyList(), 0, 0.0, 5.0), 0.0)
+    }
+
+    @Test
+    fun theWriteCountsTheBytesTheActionWrites() {
+        val rates = WorkRates()
+        val before = ConvertEstimate(rates).forecast(ConvertOp.REPACK, listOf(book(100))).single()
+        repeat(50) { rates.output("repack", 100 * mb, 25 * mb) }
+        val after = ConvertEstimate(rates).forecast(ConvertOp.REPACK, listOf(book(100))).single()
+        assertTrue(after < before)
     }
 
     @Test

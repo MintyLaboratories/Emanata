@@ -81,14 +81,15 @@ object ConvertRates {
 }
 
 /**
- * Feeds one book's timings ([Compactor.Meter]) to [rates] for [step] at [location] in
- * [container], and keeps what they add up to, so the time the book took beyond them can be
- * learned ([book]). Only while the app is [inFront]: its background-priority workers run
- * several times slower once it is not, and estimates are shown with the app in front.
+ * Feeds one book's timings ([Compactor.Meter]) for action [op] at [location] in [container]
+ * to [rates], and keeps what they add up to, so the time the book took beyond them ([book])
+ * and the bytes it wrote can be learned. Only while the app is [inFront]: its
+ * background-priority workers run several times slower once it is not, and estimates are
+ * shown with the app in front.
  */
 class BookMeter(
     private val rates: WorkRates,
-    private val step: Step?,
+    private val op: ConvertOp,
     private val location: String,
     private val container: Container,
     private val inFront: () -> Boolean = { Calibrator.inFront }
@@ -96,9 +97,10 @@ class BookMeter(
     private var read = 0.0
     private var convert = 0.0
     private var write = 0.0
+    private var written = 0L
 
     override fun page(bytes: ByteArray, seconds: Double) {
-        val s = step ?: return
+        val s = op.step ?: return
         val kind = ImageKind.sniff(bytes, minOf(bytes.size, ImageKind.HEADER_BYTES))
         val lossy = kind == ImageKind.WEBP && !PageProbe.webpLossless(bytes)
         if (inFront()) rates.page(s, kind, bytes.size.toLong(), seconds, lossy)
@@ -111,16 +113,21 @@ class BookMeter(
     }
 
     override fun written(bytes: Long, seconds: Double) {
-        if (inFront()) rates.written(location, bytes, seconds)
-        synchronized(this) { write += seconds }
+        if (inFront()) rates.written(location, op.key, bytes, seconds)
+        synchronized(this) {
+            write += seconds
+            written += bytes
+        }
     }
 
     /** Seconds of the book's [wall] time beyond its parts, as [ConvertEstimate] adds them. */
     @Synchronized
     fun beyond(wall: Double): Double = (wall - (maxOf(read, convert) + write)).coerceAtLeast(0.0)
 
-    /** The book took [wall] seconds for action [op]: learns the time beyond its parts. */
-    fun book(op: String, wall: Double) {
-        if (inFront()) rates.book(op, beyond(wall))
+    /** The book, of [bytes], took [wall] seconds: learns the time beyond its parts, and the bytes written per byte of book. */
+    fun book(bytes: Long, wall: Double) {
+        if (!inFront()) return
+        rates.book(op.key, beyond(wall))
+        rates.output(op.key, bytes, synchronized(this) { written })
     }
 }

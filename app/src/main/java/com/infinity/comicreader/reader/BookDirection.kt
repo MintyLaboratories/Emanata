@@ -6,6 +6,7 @@ import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
+import com.infinity.comicreader.data.CoverFront
 import com.infinity.comicreader.util.Formats
 import java.io.File
 
@@ -103,22 +104,39 @@ object BookDirection {
      * The front half of a wraparound first page, judged against the book's inner pages, that
      * sets reading direction: the one its barcode and its tallest text both name
      * ([Wraparound.Fronts.agreed]), the text found by [detect] (none without it). Null when it
-     * is not one, when either tells nothing, or when they disagree. Blocking: the page is
-     * decoded, and looked at for text only once its barcode tells.
+     * is not one, when either tells nothing, or when they disagree; then [unsure] too when it
+     * could not tell this time: the page did not decode, or the detector did not run. Blocking:
+     * the page is decoded, and looked at for text only once its barcode tells.
      */
-    fun coverFront(source: PageSource, detect: ((Bitmap) -> ScoreMap?)?): Wraparound.Half? {
+    fun coverFront(source: PageSource, detect: ((Bitmap) -> ScoreMap?)?, unsure: () -> Unit = {}): Wraparound.Half? {
         if (source.pageCount == 0 || source.isVector) return null
         val size = source.pageSize(0) ?: return null
         if (!Wraparound.isCandidate(size[0], size[1])) return null
         val ratio = innerRatio(source)
         if (!Wraparound.isWraparound(size[0], size[1], ratio)) return null
-        val page = runCatching { source.loadPage(0, Target(0, Wraparound.SCAN_HEIGHT, Fit.SHRINK)) }.getOrNull() ?: return null
+        val page = runCatching { source.loadPage(0, Target(0, Wraparound.SCAN_HEIGHT, Fit.SHRINK)) }.getOrNull() ?: run {
+            unsure()
+            return null
+        }
         return try {
             val barcode = CoverArt.frontOf(page) ?: return null
-            val text = CoverArt.textFront(page, ratio, { src, region -> CoverArt.focusOf(src, region, detect) })
+            val text = CoverArt.textFront(page, ratio, { src, region -> CoverArt.focusOf(src, region, detect) }, unsure)
             Wraparound.Fronts(barcode, text).agreed
         } finally {
             page.recycle()
         }
+    }
+
+    /**
+     * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]
+     * when looked at before, else found now and handed to [keep], unless it could not tell this
+     * time, which leaves it to be looked at again. Blocking.
+     */
+    fun coverFrontOnce(source: PageSource, known: CoverFront?, detect: ((Bitmap) -> ScoreMap?)?, keep: (CoverFront) -> Unit): Wraparound.Half? {
+        if (known != null) return known.half
+        var told = true
+        val half = coverFront(source, detect) { told = false }
+        if (told) keep(CoverFront(HiddenPages.bookIndex(source, 0), half))
+        return half
     }
 }

@@ -7,8 +7,10 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
+import com.infinity.comicreader.data.CoverFront
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -68,9 +70,9 @@ class BookDirectionCoverTest {
     @Test
     fun aBarcodeAloneTellsNothing() {
         assertNull(book().use { BookDirection.coverFront(it, null) })
-        assertNull(book().use { BookDirection.coverFront(it) { TextDetector.ABSENT } })
+        assertNull(book().use { BookDirection.coverFront(it, { TextDetector.ABSENT }) })
         // The detector did not run.
-        assertNull(book().use { BookDirection.coverFront(it) { null } })
+        assertNull(book().use { BookDirection.coverFront(it, { null }) })
     }
 
     @Test
@@ -78,5 +80,35 @@ class BookDirectionCoverTest {
         val calls = IntArray(1)
         assertNull(book(barcode = false).use { BookDirection.coverFront(it, titleOn(Color.RED, calls)) })
         assertEquals(0, calls[0])
+    }
+
+    @Test
+    fun aDetectorThatDidNotRunLeavesTheCoverToBeLookedAtAgain() {
+        val kept = ArrayList<CoverFront>()
+        val title = titleOn(Color.RED)
+        var runs: (Bitmap) -> ScoreMap? = { null }
+        val detect: (Bitmap) -> ScoreMap? = { runs(it) }
+        book().use { src ->
+            assertNull(BookDirection.coverFrontOnce(src, null, detect) { kept += it })
+            runs = { throw IllegalStateException("no model") }
+            assertNull(BookDirection.coverFrontOnce(src, null, detect) { kept += it })
+            assertTrue(kept.isEmpty())
+            runs = title
+            assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(src, null, detect) { kept += it })
+        }
+        assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT)), kept)
+    }
+
+    @Test
+    fun whatACoverToldIsKeptAndNotLookedAtAgain() {
+        val kept = ArrayList<CoverFront>()
+        val calls = IntArray(1)
+        // Without a barcode, no text is looked for, and that it tells nothing is kept.
+        book(barcode = false).use { assertNull(BookDirection.coverFrontOnce(it, null, titleOn(Color.RED, calls)) { f -> kept += f }) }
+        assertEquals(listOf(CoverFront(0, null)), kept)
+        // A cover looked at before is not decoded again.
+        book().use { assertEquals(Wraparound.Half.LEFT, BookDirection.coverFrontOnce(it, CoverFront(0, Wraparound.Half.LEFT), titleOn(Color.RED, calls)) { f -> kept += f }) }
+        assertEquals(0, calls[0])
+        assertEquals(1, kept.size)
     }
 }

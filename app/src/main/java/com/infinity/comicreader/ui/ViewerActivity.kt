@@ -153,6 +153,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1560,20 +1561,32 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
         if (!BookDirection.hasCover(book)) return
-        val coverPending = Thumbs.knownFront(book, HiddenPages.bookIndex(src, 0)) == null && !DirectionDetection.outranksCover(contents.detected)
+        val coverPending = knownCover(book, src) == null && !DirectionDetection.outranksCover(contents.detected)
         if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }
 
     /**
      * What decides the direction before the first page shows, without decoding a page:
-     * the library's facts of the book when it has them, else its cheap contents, then the
-     * cover's front half when this session already found it. Blocking.
+     * the library's facts of the book when it has them, else its cheap contents, then what its
+     * cover told when looked at before ([knownCover]). Blocking.
      */
     private fun detectBeforeOpen(target: File, src: PageSource, siblings: List<File>): BookDirection.Contents {
         if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
         factsCache.load()
         val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(BookIds.known(target)))
-        return contents.copy(detected = DirectionDetection.withCover(contents.detected, Thumbs.knownFront(target, HiddenPages.bookIndex(src, 0))?.half))
+        return contents.copy(detected = DirectionDetection.withCover(contents.detected, knownCover(target, src)?.half))
+    }
+
+    /** What [book]'s cover, the first page of [src], told of reading direction before: this session, else as kept with its facts; null when never looked at. */
+    private fun knownCover(book: File, src: PageSource): CoverFront? {
+        val page = HiddenPages.bookIndex(src, 0)
+        return Thumbs.knownFront(book, page) ?: factsCache.get(BookIds.known(book))?.cover?.takeIf { it.page == page }
+    }
+
+    /** Keeps what [book]'s cover told, for this session and with the library's facts of it, so later opens need no look. Blocking. */
+    private fun keepCover(book: File, front: CoverFront) {
+        Thumbs.rememberFront(book, front)
+        BookIds.known(book)?.let { factsCache.keepCover(it, front) }
     }
 
     /**
@@ -1604,15 +1617,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     }
                 }
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
-                val page = HiddenPages.bookIndex(src, 0)
-                val known = Thumbs.knownFront(book, page)
-                val front = if (known != null) known.half else {
-                    val app = applicationContext
-                    runCatching { BookDirection.coverFront(src) { Thumbs.detector(app, it) } }.getOrNull().also {
-                        ensureActive()
-                        Thumbs.rememberFront(book, CoverFront(page, it))
-                    }
-                }
+                val app = applicationContext
+                val front = runCatching {
+                    BookDirection.coverFrontOnce(src, knownCover(book, src), { Thumbs.detector(app, it) }) { if (isActive) keepCover(book, it) }
+                }.getOrNull()
+                ensureActive()
                 DirectionDetection.withCover(contents, front)
             }
             if (source !== src || file != book || choices != directionChoices || currentIndex != openedAt) return@launch

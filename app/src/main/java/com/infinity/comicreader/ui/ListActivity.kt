@@ -221,6 +221,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private var relistOnResume = false
 
     private lateinit var filterChip: Chip
+    private lateinit var calibration: CalibrationBanner
     private lateinit var peek: PeekOverlay
     private lateinit var pinch: PinchPeek
 
@@ -403,6 +404,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
         stack.setLeftHanded(prefs.leftHanded)
         filterChip = findViewById(R.id.filter_chip)
+        calibration = CalibrationBanner(this, findViewById(R.id.calibration_banner)) {
+            hasWindowFocus() && hasStorageAccess() && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
         filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
         filterChip.setOnCloseIconClickListener {
             prefs.setFilter(tabName(), LibraryFilter.NONE)
@@ -524,6 +528,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         showPluggedDrive()
         if (left) return
         if (!hasStorageAccess()) return
+        calibration.update()
         if (!resumedOnce) {
             // Right after onCreate's listing, or after access was granted to start up with.
             resumedOnce = true
@@ -538,6 +543,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         listsChangedAway = false
     }
 
+    /** The first calibration's screen waits for the library to show, dialogs over it gone. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) calibration.update()
+    }
+
     override fun onStart() {
         super.onStart()
         // What changed elsewhere shows before the first frame, whatever the settings feed brings.
@@ -545,6 +556,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         showCurrentContent()
         adapter.stopped = false
         storageWatcher.start()
+        calibration.start()
         NetPolicy.listen(netChanged)
         adapter.retryHeld()
     }
@@ -553,6 +565,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         viewRing.close(animate = false)
         adapter.stopped = true
         storageWatcher.stop()
+        calibration.stop()
         NetPolicy.unlisten(netChanged)
         super.onStop()
     }

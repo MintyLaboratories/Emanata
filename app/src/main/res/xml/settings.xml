@@ -579,6 +579,15 @@
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory
+        app:key="section_performance"
+        app:title="@string/pref_cat_performance">
+        <Preference
+            app:key="pref_recalibrate"
+            app:persistent="false"
+            app:title="@string/pref_recalibrate" />
+    </com.infinity.comicreader.ui.CollapsibleCategory>
+
+    <com.infinity.comicreader.ui.CollapsibleCategory
         app:key="section_data"
         app:title="@string/pref_cat_data">
         <Preference

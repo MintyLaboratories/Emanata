@@ -370,6 +370,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        findPreference<Preference>("pref_recalibrate")?.apply {
+            summary = getString(R.string.pref_recalibrate_desc, CalibrationScreenActivity.control.estimateSeconds())
+            setOnPreferenceClickListener {
+                startActivity(CalibrationScreenActivity.intent(requireContext()))
+                true
+            }
+        }
+
         findPreference<Preference>("pref_forget_missing")?.setOnPreferenceClickListener {
             startActivity(android.content.Intent(requireContext(), MissingBooksActivity::class.java))
             true

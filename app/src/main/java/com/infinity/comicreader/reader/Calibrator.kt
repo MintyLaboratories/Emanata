@@ -287,7 +287,7 @@ object Calibrator {
                 .put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", run.sawPowerSave)
                 .put("thermal", probe.thermal).put("heat", probe.heatSource).put("batteryTemp", probe.batteryTemp / 10.0)
-                .put("page", probe.page).put("target", probe.target).put("jpegPage", probe.jpegPage)
+                .put("page", probe.page).put("target", probe.target).put("jxlPage", probe.decodePage).put("jpegPage", probe.decodePage)
                 .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
                 .put("rounds", run.roundsRun).put("redone", run.redone).put("disturbedBy", JSONObject(probe.disturbedBy as Map<*, *>))
                 .put("cappedSamples", probe.cappedSamples).put("capsKHz", probe.caps?.let { JSONArray(it.toList()) })
@@ -331,10 +331,10 @@ object Calibrator {
     private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
     /**
-     * Times setups on this device: resampling and JPEG XL decodes on a 2000 x 3000 synthetic
-     * page shrunk to the screen's portrait size, platform JPEG decodes on a 4000 x 6000 one.
-     * Encoded pages are kept in the cache for [pageFingerprint] (this install and system
-     * build, whose drawing and encoders make them).
+     * Times setups on this device: resampling a 2000 x 3000 synthetic page to the screen's
+     * portrait size, JPEG XL and platform JPEG decodes of a 4000 x 6000 one, 4K class as image
+     * decode timings use. Encoded pages are kept in the cache for [pageFingerprint] (this
+     * install and system build, whose drawing and encoders make them).
      */
     private class DeviceProbe(
         private val context: Context,
@@ -483,41 +483,41 @@ object Calibrator {
         }
 
         /**
-         * Draws the page and makes its target, the page shrunk to fit the whole screen held
-         * upright ([Calibration.target]), as the reader shows it; makes the JPEG XL page
-         * (quality 91) and the 4K JPEG page (quality 90, as most scans), each once per
-         * [pageFingerprint]; deletes pages kept from earlier setups. Stops between steps once
-         * the run must stop ([stopNow]).
+         * Draws the resampling page and makes its target, the page shrunk to fit the whole
+         * screen held upright ([Calibration.target]), as the reader shows it; makes the 4K
+         * JPEG XL page (quality 91) and JPEG page (quality 90, as most scans) from one drawing,
+         * each once per [pageFingerprint]; deletes pages kept from earlier setups. Stops
+         * between steps once the run must stop ([stopNow]).
          */
         private fun prepare() {
             val (sw, sh) = screenSize(context)
             val (w, h) = Calibration.target(sw, sh, PAGE_W, PAGE_H)
-            val page = SyntheticPage.draw(PAGE_W, PAGE_H)
-            src = page
+            src = SyntheticPage.draw(PAGE_W, PAGE_H)
             dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            if (stopNow() != null) return
-            if (JxlPages.kernel != null) {
-                jxl = Calibration.cachedPage(cache, JXL_NAME, "jxl", pageFingerprint) {
-                    JxlCoder.encode(page, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
+            var drawn: Bitmap? = null
+            fun big() = drawn ?: SyntheticPage.draw(DECODE_W, DECODE_H).also { drawn = it }
+            try {
+                if (stopNow() != null) return
+                if (JxlPages.kernel != null) {
+                    jxl = Calibration.cachedPage(cache, JXL_NAME, "jxl", pageFingerprint) {
+                        JxlCoder.encode(big(), JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
+                    }
+                    if (jxl != null) jxlOut = Bitmap.createBitmap(DECODE_W, DECODE_H, Bitmap.Config.ARGB_8888)
                 }
-                if (jxl != null) jxlOut = Bitmap.createBitmap(PAGE_W, PAGE_H, Bitmap.Config.ARGB_8888)
-            }
-            if (stopNow() != null) return
-            jpeg = Calibration.cachedPage(cache, JPEG_NAME, "jpg", pageFingerprint) {
-                val big = SyntheticPage.draw(JPEG_W, JPEG_H)
-                try {
-                    ByteArrayOutputStream().also { big.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
-                } finally {
-                    big.recycle()
+                if (stopNow() != null) return
+                jpeg = Calibration.cachedPage(cache, JPEG_NAME, "jpg", pageFingerprint) {
+                    ByteArrayOutputStream().also { big().compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
                 }
+            } finally {
+                drawn?.recycle()
             }
             cache.listFiles()?.filter { f -> !f.name.startsWith(JXL_NAME) && !f.name.startsWith(JPEG_NAME) }?.forEach { it.delete() }
         }
 
-        /** The page and its target, as `WxH`. */
+        /** The resampling page, its target, and the decode pages, as `WxH`. */
         val page: String get() = "${PAGE_W}x$PAGE_H"
         val target: String get() = dst?.let { "${it.width}x${it.height}" } ?: "?"
-        val jpegPage: String get() = "${JPEG_W}x$JPEG_H"
+        val decodePage: String get() = "${DECODE_W}x$DECODE_H"
 
         private val cache: File get() = File(context.cacheDir, "calibration")
 
@@ -704,8 +704,8 @@ object Calibrator {
         }
 
         companion object {
-            private const val JXL_NAME = "page-${PAGE_W}x$PAGE_H-q91"
-            private const val JPEG_NAME = "page-${JPEG_W}x$JPEG_H-q90"
+            private const val JXL_NAME = "page-${DECODE_W}x$DECODE_H-q91"
+            private const val JPEG_NAME = "page-${DECODE_W}x$DECODE_H-q90"
             private const val STEP_MS = 50L
 
             /** The longest [release] waits for pages still being made. */
@@ -720,9 +720,9 @@ object Calibrator {
     private const val PAGE_W = 2000
     private const val PAGE_H = 3000
 
-    /** The platform JPEG page: 4K class, as image decode timings use. */
-    private const val JPEG_W = 4000
-    private const val JPEG_H = 6000
+    /** The JPEG XL and platform JPEG page: 4K class, as image decode timings use. */
+    private const val DECODE_W = 4000
+    private const val DECODE_H = 6000
 
     private const val WAIT_MS = 1_000L
     private const val IDLE_WINDOW_MS = 300L

@@ -895,13 +895,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   setups or the method change; app updates alone don't recalibrate), while the
   app is in front but not reading, charging, cool and otherwise idle, it times
   the resampler on 1, 2, one-per-large-core and one-per-core workers and on the
-  GPU, and native JPEG XL decodes on 2, one-per-large-core and one-per-core
-  threads, on a synthetic 2000x3000 page, and platform JPEG decodes pinned and
-  not on a synthetic 4000x6000 one. It starts once the app is idle (waiting 3 s
-  at most), then draws and encodes its pages on a thread of their own;
-  each sample follows 100 ms of rest, as decodes at reading pace do (back to
-  back, the run's own load lowers the large cores' clock caps and skews setups
-  unevenly);
+  GPU on a synthetic 2000x3000 page, native JPEG XL decodes on 2,
+  one-per-large-core and one-per-core threads and platform JPEG decodes pinned
+  and not on a synthetic 4000x6000 one (4K class, as image decode timings
+  use). It starts once the app is idle (waiting 3 s at most), then draws and
+  encodes its pages on a thread of their own; each sample follows 100 ms of
+  rest, as decodes at reading pace do (back to back, the run's own load lowers
+  the large cores' clock caps and skews setups unevenly);
   heat is checked before timing starts (thermal status, or battery temperature
   where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
   throttling) and, by thermal status, ends a run that heats up (battery

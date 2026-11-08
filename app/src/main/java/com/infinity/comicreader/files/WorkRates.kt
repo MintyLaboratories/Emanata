@@ -216,8 +216,8 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
 
         /**
          * How much slower than the reference device this one decodes, from calibration's
-         * platform JPEG decode of its synthetic 4000x6000 page ([jpegMs]) and the CPU time of its
-         * JPEG XL decode of its 2000x3000 one ([jxlCpuMs]); 1 when neither is known.
+         * platform JPEG decode ([jpegMs]) and the CPU time of its JPEG XL decode ([jxlCpuMs]) of its
+         * synthetic 4000x6000 pages; 1 when neither is known.
          */
         fun speedOf(jpegMs: Double?, jxlCpuMs: Double?): Double {
             val ratios = listOfNotNull(jpegMs?.takeIf { it > 0 }?.div(REF_JPEG_MS), jxlCpuMs?.takeIf { it > 0 }?.div(REF_JXL_CPU_MS))
@@ -260,9 +260,9 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         private fun outputKey(op: String) = "out/$op"
         private const val BACK_KEY = "away"
 
-        /** Calibration's 4000x6000 JPEG decode, and the CPU time of its 2000x3000 JPEG XL decode, on the reference device (Snapdragon 8 Gen 1 class, Android 16). */
+        /** Calibration's 4000x6000 JPEG decode, and the CPU time of its 4000x6000 JPEG XL decode, on the reference device (Snapdragon 8 Gen 1 class, Android 16). */
         const val REF_JPEG_MS = 93.0
-        const val REF_JXL_CPU_MS = 190.0
+        const val REF_JXL_CPU_MS = 790.0
         private const val MIN_SPEED = 0.25
         private const val MAX_SPEED = 8.0
 

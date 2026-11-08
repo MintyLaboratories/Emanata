@@ -115,19 +115,10 @@ class DirectionDetectionTest {
             assertEquals(d, Detected.decode(d.encode()))
         }
         assertNull(Detected.decode(0))
+        assertNull(Detected.decode(-1))
         assertNull(Detected.decode(99))
-        // Retired: page names.
-        assertNull(Detected.decode(7))
-    }
-
-    @Test
-    fun storedNumbersStayAsBeforeTopToBottom() {
-        assertEquals(1, Detected(ReadingDirection.LTR, Source.COMIC_INFO).encode())
-        assertEquals(2, Detected(ReadingDirection.RTL, Source.COMIC_INFO).encode())
-        assertEquals(4, Detected(ReadingDirection.RTL, Source.COVER).encode())
-        assertEquals(6, Detected(ReadingDirection.RTL, Source.PUBLISHER).encode())
-        val slices = Detected(ReadingDirection.TTB, Source.SHAPE)
-        assertEquals(slices, Detected.decode(slices.encode()))
-        assertNull(Detected.decode(64 + 3))
+        val all = ReadingDirection.entries.flatMap { d -> Source.entries.map { Detected(d, it).encode() } }
+        assertEquals(1..all.size, all.min()..all.max())
+        assertEquals(all.size, all.toSet().size)
     }
 }

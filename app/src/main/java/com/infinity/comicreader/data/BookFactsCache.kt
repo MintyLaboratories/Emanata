@@ -102,7 +102,7 @@ class BookFactsCache(context: Context) {
             )
         }
 
-        /** Older rows lack what newer versions read, so every book is read again. */
+        /** A cache: every book is read again. */
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             db.execSQL("DROP TABLE IF EXISTS $TABLE")
             onCreate(db)
@@ -121,11 +121,8 @@ class BookFactsCache(context: Context) {
         /** [SLICES] of a book not checked for slices; 0 is one whose pages are not. */
         private const val UNCHECKED = -1
 
-        /**
-         * 2 added the detected direction; 3 drops directions from page names alone or
-         * since-dropped publishers; 4 added slices; 5 keys books by [BookId].
-         */
-        private const val VERSION = 5
+        /** Of the table and what its numbers mean ([DirectionDetection.Detected.encode]); another starts it over. */
+        private const val VERSION = 6
 
         private fun encodeSlices(checked: Slices.Checked?): Int = checked?.let { it.found?.encode() ?: 0 } ?: UNCHECKED
 

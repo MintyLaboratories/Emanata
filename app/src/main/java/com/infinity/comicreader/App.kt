@@ -36,10 +36,7 @@ class App : Application() {
         super.onCreate()
         Timing.enabled = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val prefs = Prefs(this)
-        Library(this).apply {
-            forgetPathKeyedBooks()
-            publishNameCharsets()
-        }
+        Library(this).publishNameCharsets()
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
         Remotes.init(this)

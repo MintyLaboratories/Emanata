@@ -1134,24 +1134,7 @@ class Library(context: Context) {
 
     private fun JSONObject.ids(): Set<BookId> = keys().asSequence().mapNotNullTo(HashSet()) { BookId.parse(it) }
 
-    // ---------------- upgrade ----------------
-    /**
-     * Drops what versions before Book IDs kept by book path: books start afresh under
-     * their IDs. Favorite folders and folder layouts stay. Does nothing once done.
-     */
-    fun forgetPathKeyedBooks() {
-        synchronized(LOCK) {
-            if (sp.getInt(KEY_KEYED, 0) >= KEYED_BY_ID) return@synchronized
-            val e = sp.edit()
-            for (k in PATH_KEYED_BOOK_DOCS) e.remove(k)
-            val folders = readStringList(KEY_FAVORITES).filter { isFolderPath(it) }
-            e.putString(KEY_FAVORITES, JSONArray(folders).toString())
-            e.putInt(KEY_KEYED, KEYED_BY_ID)
-            e.apply()
-        }
-    }
-
-    /** True for a favorite token naming a folder, not a book kept by path before Book IDs. */
+    /** True for a favorite token naming a folder, not a book kept by path (as upstream's backups keep them). */
     private fun isFolderPath(token: String) = isFolderToken(token) && !Formats.isOpenable(token.substringAfterLast('/'))
 
     // ---------------- backup ----------------
@@ -1166,7 +1149,7 @@ class Library(context: Context) {
     /**
      * Replaces the stored documents with those in [data]. Only known keys of the
      * right JSON type are taken, and of those only rows of a book with a valid ID or of a
-     * folder; everything else (as a backup made before Book IDs keeps by path) is ignored.
+     * folder; everything else (as upstream's backups keep books by path) is ignored.
      * A backup with history or bookmarks but no hidden pages counts every page, so every
      * page is shown again.
      */
@@ -1178,7 +1161,6 @@ class Library(context: Context) {
             val e = sp.edit()
             for (k in ARRAY_KEYS) data.optJSONArray(k)?.let { e.putString(k, sanitizeArray(k, it).toString()) }
             for (k in OBJECT_KEYS) data.optJSONObject(k)?.let { e.putString(k, sanitizeObject(k, it).toString()) }
-            e.putInt(KEY_KEYED, KEYED_BY_ID)
             e.apply()
             publishNameCharsets()
         }
@@ -1346,10 +1328,6 @@ class Library(context: Context) {
         /** A book's size in bytes, in its [KEY_BOOKS] entry. */
         private const val SIZE = "size"
 
-        /** What books are kept by: [KEYED_BY_ID] once [forgetPathKeyedBooks] ran. */
-        private const val KEY_KEYED = "keyed_by"
-        private const val KEYED_BY_ID = 1
-
         /** What a favorite book is stored as, before its ID's hex digits. */
         private const val BOOK_TOKEN = "id:"
 
@@ -1373,10 +1351,6 @@ class Library(context: Context) {
             KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES
         )
 
-        /** Documents older versions kept by book path, dropped once ([forgetPathKeyedBooks]). */
-        private val PATH_KEYED_BOOK_DOCS = listOf(
-            KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_ADJUST, KEY_HIDDEN, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_CHARSETS
-        )
         private val LOCK = Any()
 
         private fun tokenOf(id: BookId) = BOOK_TOKEN + id.hex

@@ -178,7 +178,7 @@ class LibraryBookIdsTest {
     }
 
     @Test
-    fun aBackupKeptByPathRestoresOnlyFolders() {
+    fun anUpstreamBackupKeptByPathRestoresOnlyFolders() {
         val old = JSONObject()
             .put("favorites", JSONArray().put("/storage/emulated/0/Comics").put("/storage/emulated/0/Comics/a.cbz"))
             .put("read", JSONArray().put("/storage/emulated/0/Comics/a.cbz"))
@@ -190,24 +190,6 @@ class LibraryBookIdsTest {
         assertTrue(library.hiddenAll().isEmpty())
         // A path left in favorites reads as a folder, as one that is not there shows; a book's is dropped.
         assertEquals(listOf("/storage/emulated/0/Comics"), library.favorites())
-    }
-
-    @Test
-    fun upgradingForgetsBooksKeptByPathOnce() {
-        val sp = context.getSharedPreferences("library", Context.MODE_PRIVATE)
-        sp.edit()
-            .putString("favorites", JSONArray().put("/storage/emulated/0/Comics").put("/storage/emulated/0/Comics/a.cbz").toString())
-            .putString("read", JSONArray().put("/storage/emulated/0/Comics/a.cbz").toString())
-            .putString("series", JSONObject().put("/storage/emulated/0/Comics", JSONObject().put("dir", "rtl")).toString())
-            .commit()
-        library.forgetPathKeyedBooks()
-        assertEquals(listOf("/storage/emulated/0/Comics"), library.favorites())
-        assertNull(sp.getString("read", null))
-        assertTrue(library.folderLayout("/storage/emulated/0/Comics") != null)
-        // Once done, books kept by ID since are left be.
-        library.setRead(a, true)
-        library.forgetPathKeyedBooks()
-        assertTrue(library.isRead(a.id))
     }
 
     @Test

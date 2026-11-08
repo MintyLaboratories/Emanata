@@ -1,0 +1,123 @@
+package com.infinity.comicreader.files
+
+import android.content.Context
+import androidx.annotation.VisibleForTesting
+import com.infinity.comicreader.compact.Compactor
+import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeeds
+import com.infinity.comicreader.reader.Calibrator
+import com.infinity.comicreader.reader.ImageKind
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * This device's [WorkRates], kept in a small file that is not backed up (speeds belong to the
+ * device), read once and written after each Convert job. Seeds come from calibration's decode
+ * timings ([Calibrator]) and each share's measured read speed ([ShareSpeeds]).
+ */
+object ConvertRates {
+    @Volatile
+    private var loaded: WorkRates? = null
+
+    /** The rates, read from disk the first time. Blocking. */
+    fun get(context: Context): WorkRates = loaded ?: synchronized(this) {
+        loaded ?: run {
+            val text = runCatching { file(context).readText() }.getOrDefault("")
+            WorkRates.decode(text, seeds()).also { loaded = it }
+        }
+    }
+
+    /** Writes what was measured to disk. Blocking. */
+    fun save(context: Context) {
+        val rates = loaded ?: return
+        synchronized(this) {
+            val out = file(context)
+            val tmp = File(out.path + ".tmp")
+            runCatching {
+                tmp.writeText(rates.encode())
+                if (!tmp.renameTo(out)) tmp.delete()
+            }
+        }
+    }
+
+    /** Where [path] is, as rates tell locations apart: a share, or the device. */
+    fun location(path: String): String = Remotes.idOf(path)?.let(WorkRates::share) ?: WorkRates.DEVICE
+
+    /** Seeds from calibration and the shares' measured speeds, read as each figure is asked for. */
+    private fun seeds() = WorkRates.Seeds(
+        speed = { calibrationSpeed(Calibrator.kept) },
+        shareRead = { id -> ShareSpeeds.estimate(id)?.bytesPerSecond?.toDouble() }
+    )
+
+    /** How much slower than the reference device this one decoded in the calibration [kept] ([WorkRates.speedOf]). */
+    internal fun calibrationSpeed(kept: JSONObject?): Double {
+        val timings = kept?.optJSONArray("timings") ?: return 1.0
+        var jpeg: Double? = null
+        var jxl: Double? = null
+        for (i in 0 until timings.length()) {
+            val t = timings.optJSONObject(i) ?: continue
+            val setup = t.optString("setup")
+            when {
+                setup.startsWith("jpeg/") -> t.optDouble("wallMs").takeIf { it > 0 }?.let { jpeg = minOf(jpeg ?: it, it) }
+                setup.startsWith("jxl/") && !setup.endsWith("/gpu") -> t.optDouble("cpuMs").takeIf { it > 0 }?.let { jxl = minOf(jxl ?: it, it) }
+            }
+        }
+        return WorkRates.speedOf(jpeg, jxl)
+    }
+
+    private fun file(context: Context) = File(context.applicationContext.noBackupFilesDir, FILE)
+
+    /** Forgets the rates in memory, the file too; for tests. */
+    @VisibleForTesting
+    fun reset(context: Context? = null) {
+        synchronized(this) {
+            loaded = null
+            context?.let { file(it).delete() }
+        }
+    }
+
+    private const val FILE = "convert_rates.txt"
+}
+
+/**
+ * Feeds one book's timings ([Compactor.Meter]) to [rates] for [step] at [location] in
+ * [container], and keeps what they add up to, so the time the book took beyond them can be
+ * learned ([book]). Only while the app is [inFront]: its background-priority workers run
+ * several times slower once it is not, and estimates are shown with the app in front.
+ */
+class BookMeter(
+    private val rates: WorkRates,
+    private val step: Step?,
+    private val location: String,
+    private val container: Container,
+    private val inFront: () -> Boolean = { Calibrator.inFront }
+) : Compactor.Meter {
+    private var read = 0.0
+    private var convert = 0.0
+    private var write = 0.0
+
+    override fun page(bytes: ByteArray, seconds: Double) {
+        val s = step ?: return
+        if (inFront()) rates.page(s, ImageKind.sniff(bytes, minOf(bytes.size, ImageKind.HEADER_BYTES)), bytes.size.toLong(), seconds)
+        synchronized(this) { convert += seconds }
+    }
+
+    override fun read(bytes: Long, seconds: Double) {
+        if (inFront()) rates.read(location, container, bytes, seconds)
+        synchronized(this) { read += seconds }
+    }
+
+    override fun written(bytes: Long, seconds: Double) {
+        if (inFront()) rates.written(location, bytes, seconds)
+        synchronized(this) { write += seconds }
+    }
+
+    /** Seconds of the book's [wall] time beyond its parts, as [ConvertEstimate] adds them. */
+    @Synchronized
+    fun beyond(wall: Double): Double = (wall - (maxOf(read, convert) + write)).coerceAtLeast(0.0)
+
+    /** The book took [wall] seconds for action [op]: learns the time beyond its parts. */
+    fun book(op: String, wall: Double) {
+        if (inFront()) rates.book(op, beyond(wall))
+    }
+}

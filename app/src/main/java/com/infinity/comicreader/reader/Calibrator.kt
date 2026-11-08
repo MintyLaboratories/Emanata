@@ -87,6 +87,9 @@ object Calibrator {
 
     private val resumed = AtomicInteger()
 
+    /** True while one of the app's screens is in front. */
+    val inFront: Boolean get() = resumed.get() > 0
+
     private val reading = AtomicInteger()
 
     private lateinit var app: Application

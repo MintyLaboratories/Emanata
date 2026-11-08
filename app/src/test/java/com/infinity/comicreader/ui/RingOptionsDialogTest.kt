@@ -5,7 +5,10 @@ import android.os.Looper
 import android.widget.CheckBox
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.Preference
+import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
+import androidx.preference.SwitchPreferenceCompat
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
@@ -74,6 +77,21 @@ class RingOptionsDialogTest {
         idle()
         assertTrue(list.box(order.indexOf(RingOption.SORT)).isChecked)
         assertEquals("Smaller, Larger, Sort, Folders first (Browse), Sections (Favorites)", RingOptionsDialog.summary(activity, prefs))
+    }
+
+    @Test
+    fun bothSettingsNeedTheGridListButton() {
+        val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        idle()
+        val fragment = activity.supportFragmentManager.findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
+        val button = fragment.findPreference<SwitchPreferenceCompat>("pref_list_quickfab")!!
+        val ring = listOf("pref_fab_tap", "view_ring").map { fragment.findPreference<Preference>(it)!! }
+        assertTrue(button.isChecked)
+        for (p in ring) assertTrue(p.key, p.isEnabled)
+        button.performClick()
+        idle()
+        assertFalse(button.isChecked)
+        for (p in ring) assertFalse(p.key, p.isEnabled)
     }
 
     @Test

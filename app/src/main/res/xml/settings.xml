@@ -67,10 +67,12 @@
             app:title="@string/pref_list_quickfab" />
         <ListPreference
             app:defaultValue="layout"
+            app:dependency="pref_list_quickfab"
             app:key="pref_fab_tap"
             app:title="@string/pref_fab_tap"
             app:useSimpleSummaryProvider="true" />
         <Preference
+            app:dependency="pref_list_quickfab"
             app:key="view_ring"
             app:persistent="false"
             app:title="@string/pref_view_ring" />

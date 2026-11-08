@@ -415,6 +415,32 @@ class CalibrationTest {
     }
 
     @Test
+    fun theAppIsCheckedForIdleAtTheStartAndAfterADisturbedSample() {
+        val checks = IdleChecks()
+        // The start tries for a while.
+        assertEquals(Calibration.SETTLE_MS, checks.due())
+        checks.checked(idle = false)
+        // Not idle by then: each later wait tries once.
+        assertEquals(0L, checks.due())
+        checks.checked(idle = true)
+        // Found idle: samples check during themselves, with no idle check before.
+        assertNull(checks.due())
+        assertNull(checks.due())
+        // A disturbed sample: the next one waits for idle, with one try.
+        checks.disturbed()
+        assertEquals(0L, checks.due())
+        checks.checked(idle = true)
+        assertNull(checks.due())
+    }
+
+    @Test
+    fun deviceStateIsReadAgainAtMostOnceASecond() {
+        assertTrue(Calibration.refreshDue(null, 0L))
+        assertFalse(Calibration.refreshDue(10_000L, 10_000L + Calibration.CHECK_MS - 1))
+        assertTrue(Calibration.refreshDue(10_000L, 10_000L + Calibration.CHECK_MS))
+    }
+
+    @Test
     fun theTargetIsThePageFitToTheScreenHeldUpright() {
         assertEquals(1848 to 2772, Calibration.target(1848, 2960, 2000, 3000))
         assertEquals(1848 to 2772, Calibration.target(2960, 1848, 2000, 3000))

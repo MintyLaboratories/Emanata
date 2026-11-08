@@ -38,7 +38,7 @@ import kotlin.concurrent.thread
  * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
  * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
  * keeps the winners ([Tuning]) in a file that is not backed up. It starts once the app is
- * idle (waiting [SETTLE_MS] at most before it waits as for any sample), its pages drawn and
+ * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), its pages drawn and
  * encoded meanwhile. A timing during which the app decoded anything ([working]) or another
  * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
  * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and ends a
@@ -393,14 +393,11 @@ object Calibrator {
         /** True once the run waited for heat: it waits for light throttling to end too. */
         private var cooling = false
 
-        /** True once the app was found idle at the start; later samples check the app's other threads during each ([stillFair]). */
-        private var idleSeen = false
-
-        /** True once the start has waited for the app to go idle ([SETTLE_MS]). */
-        private var settled = false
+        /** When the app is checked for idle before a sample; samples check the app's other threads during each ([stillFair]). */
+        private val idleChecks = IdleChecks()
 
         // The device's state as last read ([refresh]).
-        private var checkedAt = Long.MIN_VALUE
+        private var checkedAt: Long? = null
         private var charging = false
         private var saver = false
         private var status = 0
@@ -548,7 +545,7 @@ object Calibrator {
                 refresh()
                 Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging })
                     ?.let { return no(it) }
-                val wait = hindrance() ?: if (idleSeen) null else if (settle()) null else "app not idle"
+                val wait = hindrance() ?: if (settle()) null else "app not idle"
                 if (wait == null) {
                     if (gapMs > 0) SystemClock.sleep(gapMs)
                     begin()
@@ -579,7 +576,9 @@ object Calibrator {
         /** Nothing held, left, read or decoded since the sample began, nothing to wait out, and the app's other threads quiet. */
         override fun stillFair(): Boolean {
             refresh()
-            return holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null && othersQuiet()
+            val fair = holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null && othersQuiet()
+            if (!fair) idleChecks.disturbed()
+            return fair
         }
 
         /**
@@ -606,10 +605,10 @@ object Calibrator {
         /** In front and not reading. */
         private fun inFront() = resumed.get() > 0 && reading.get() == 0
 
-        /** Reads charging, battery saver and heat again when last read over [CHECK_MS] ago. */
+        /** Reads charging, battery saver and heat again when due ([Calibration.refreshDue]). */
         private fun refresh() {
             val now = SystemClock.elapsedRealtime()
-            if (checkedAt != Long.MIN_VALUE && now - checkedAt < CHECK_MS) return
+            if (!Calibration.refreshDue(checkedAt, now)) return
             checkedAt = now
             val b = battery(context)
             charging = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
@@ -625,20 +624,16 @@ object Calibrator {
         private fun hindrance(): String? =
             Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, forced = force, cooling = cooling)
 
-        /**
-         * True once the app is idle ([idle]): the first time, tries for up to [SETTLE_MS] (what
-         * brought the app to the front settling), later once.
-         */
+        /** True when no idle check is due ([IdleChecks]) or the app is found idle ([idle]) within the time the check may take. */
         private fun settle(): Boolean {
-            val until = SystemClock.elapsedRealtime() + if (settled) 0L else SETTLE_MS
-            settled = true
+            val tryMs = idleChecks.due() ?: return true
+            val until = SystemClock.elapsedRealtime() + tryMs
+            var idle: Boolean
             do {
-                if (idle()) {
-                    idleSeen = true
-                    return true
-                }
-            } while (!dropped() && SystemClock.elapsedRealtime() < until)
-            return false
+                idle = idle()
+            } while (!idle && !dropped() && SystemClock.elapsedRealtime() < until)
+            idleChecks.checked(idle)
+            return idle
         }
 
         /** True when the app's threads but calibration's own and the UI's used under a tenth of a core over a short while: nothing else of the app is busy. */
@@ -672,11 +667,6 @@ object Calibrator {
     private const val JPEG_W = 4000
     private const val JPEG_H = 6000
 
-    /** The longest a run waits at its start for the app to go idle before it waits as for any sample. */
-    private const val SETTLE_MS = 3_000L
     private const val WAIT_MS = 1_000L
     private const val IDLE_WINDOW_MS = 300L
-
-    /** How often charging, battery saver and heat are read again: each read is a call to the system. */
-    private const val CHECK_MS = 1_000L
 }

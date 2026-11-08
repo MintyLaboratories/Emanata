@@ -452,6 +452,15 @@ object Calibration {
     /** The longest a calibration run waits for fair moments in all before it tries another time. */
     const val GIVE_UP_MS = 120_000L
 
+    /** The longest a run tries at its start for the app to go idle ([IdleChecks]) before it waits as for any sample. */
+    const val SETTLE_MS = 3_000L
+
+    /** True when charging, battery saver and heat, last read at [checkedAt] (null: never), are due to be read again at [now]: each read is a call to the system. */
+    fun refreshDue(checkedAt: Long?, now: Long): Boolean = checkedAt == null || now - checkedAt >= CHECK_MS
+
+    /** How often a run reads charging, battery saver and heat again ([refreshDue]). */
+    const val CHECK_MS = 1_000L
+
     /** The median of [xs]; NaN when empty. */
     internal fun median(xs: List<Double>): Double {
         if (xs.isEmpty()) return Double.NaN
@@ -473,6 +482,35 @@ object Calibration {
     private const val SPREAD_MADS = 3.0
 
     fun timingsJson(timings: List<Timing>): JSONArray = JSONArray().apply { timings.forEach { put(it.toJson()) } }
+}
+
+/**
+ * When a calibration run checks that the app is idle before a sample: at its start, trying
+ * for up to [Calibration.SETTLE_MS] (what brought the app to the front settling); then no
+ * more, as each sample checks the app's other threads itself; again, with one try, before
+ * the sample after one something disturbed, so redone samples never run back to back.
+ */
+internal class IdleChecks {
+    private var seen = false
+    private var tried = false
+
+    /** How long to keep trying for idle before the next sample, in ms: null when no check is due, 0 for one try. */
+    fun due(): Long? = when {
+        seen -> null
+        tried -> 0L
+        else -> Calibration.SETTLE_MS
+    }
+
+    /** A check ended, finding the app [idle] or not. */
+    fun checked(idle: Boolean) {
+        tried = true
+        if (idle) seen = true
+    }
+
+    /** A sample was disturbed: the next one checks for idle first. */
+    fun disturbed() {
+        seen = false
+    }
 }
 
 /** What a calibration run needs of the device. */

@@ -33,6 +33,8 @@ class TaskCpuTest {
         File(tasks, "101/comm").writeText("other\n")
         assertEquals("DefaultDispatch", cpu.name(101))
         assertEquals("", cpu.name(999))
+        // Live thread ids, without reading times.
+        assertEquals(setOf(100, 101), cpu.tids())
     }
 
     @Test

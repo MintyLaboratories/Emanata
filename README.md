@@ -898,7 +898,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   GPU, and native JPEG XL decodes on 2, one-per-large-core and one-per-core
   threads, on a synthetic 2000x3000 page, and platform JPEG decodes pinned and
   not on a synthetic 4000x6000 one. It starts once the app is idle (waiting 3 s
-  at most), the pages drawn and encoded meanwhile on a thread of their own;
+  at most), then draws and encodes its pages on a thread of their own;
   heat is checked before timing starts (thermal status, or battery temperature
   where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
   throttling) and ends a run that heats up. Pages read ahead get the same

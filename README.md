@@ -553,7 +553,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   beyond those shown, and the next chapter in a strip), automatic
   model or detector downloads, or any network use you didn't start (all of
   them by default). Opening a book, a search, Download and Compare always
-  run. **Warn before opening a large book on a metered connection** (on, 100
+  run; Find duplicate files counts reading share files as hashing, and its
+  Compare reads them anyway. **Warn before opening a large book on a metered connection** (on, 100
   MB by default) asks before a larger book on a share opens: Open anyway or
   Cancel. Each share has a **Speed**: Auto, Fast or Slow. Auto measures the
   share's real reads (median throughput of long reads, timed while any is

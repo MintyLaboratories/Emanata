@@ -128,6 +128,10 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
     @Volatile
     private var skippedWhy: NetPolicy.Why? = null
 
+    /** True once Compare was tapped: the exact-copy check reads share files whatever [NetPolicy] says. */
+    @Volatile
+    private var dupesAsked = false
+
     /** True in a share folder: nothing is selected or deleted. */
     private var readOnly = false
 
@@ -240,8 +244,15 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
 
     // ------------------------------------------------------------------ scanning
 
-    private fun scan(root: File) {
+    /**
+     * Lists what the mode looks for below [root]. Duplicates: the exact copies, then the similar
+     * books; [asked] (a Compare tap) reads share files whatever [NetPolicy] says.
+     */
+    private fun scan(root: File, asked: Boolean = false) {
         progress.visibility = View.VISIBLE
+        dupesAsked = asked
+        skippedFiles.clear()
+        skippedWhy = null
         lifecycleScope.launch {
             if (mode == MODE_LARGE) {
                 show(withContext(AppDispatchers.io) { findLargest(root) { isActive } })
@@ -259,7 +270,11 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
                 else -> null
             }
             show(found)
-            if (!findSimilar(files)) endBar(emptyList())
+            val again = { ->
+                stopped = false
+                scan(root, asked = true)
+            }
+            if (!findSimilar(files, asked, again.takeIf { skippedFiles.isNotEmpty() })) endBar(emptyList(), again.takeIf { skippedFiles.isNotEmpty() })
         }
     }
 
@@ -302,7 +317,7 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
     private fun bytesOf(f: File): Duplicates.Bytes {
         if (f !is RemoteFile) return Duplicates.local(f)
         val unmetered = {
-            NetPolicy.whyNotAt(NetWork.HASHING, f.path)?.let { why ->
+            if (!dupesAsked) NetPolicy.whyNotAt(NetWork.HASHING, f.path)?.let { why ->
                 skippedFiles += f.absolutePath
                 if (skippedWhy != NetPolicy.Why.METERED) skippedWhy = why
                 throw IOException("Skipped: ${f.name}")
@@ -351,14 +366,15 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
      * Compares the books among [files] whose pages it can read ([SimilarFinder]) and lists
      * the groups probably alike below anything listed, under their header. Books with nothing
      * kept of them are hashed first, unasked, unless battery saver pauses scans
-     * ([Thrift.pausedScans]): then Compare reads them. False when there are not two books to compare.
+     * ([Thrift.pausedScans]): then Compare reads them. [asked] and [again] as [compareSimilar] takes
+     * them. False when there are not two books to compare.
      */
-    private suspend fun findSimilar(files: List<File>): Boolean {
+    private suspend fun findSimilar(files: List<File>, asked: Boolean, again: (() -> Unit)?): Boolean {
         val books = files.filter { Formats.typeOf(it.name).let { t -> t == EntryType.ARCHIVE || t == EntryType.PDF } }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath })
         if (books.size < 2) return false
         val paused = Thrift.of(Thrift.saving(this), prefs).pausedScans
-        compareSimilar(books, readNew = !paused)
+        compareSimilar(books, readNew = !paused || asked, asked, again)
         return true
     }
 
@@ -370,9 +386,10 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
      * what was read by then. While hashing is skipped on a metered connection or a slow share
      * ([NetPolicy], asked again between pages) books there are not read, not even for their IDs,
      * and the bar says so, unless [asked] (a Compare tap). Books left uncompared otherwise are
-     * counted on the bar, with Compare to read them.
+     * counted on the bar, with Compare to read them; Compare does [again] instead when given
+     * (share files the exact-copy check left unread: the whole search runs again).
      */
-    private suspend fun compareSimilar(books: List<File>, readNew: Boolean, asked: Boolean = false) {
+    private suspend fun compareSimilar(books: List<File>, readNew: Boolean, asked: Boolean = false, again: (() -> Unit)? = null) {
         comparing = true
         showSimilarBar(getString(R.string.similar_listing), running = true)
         updateEmpty()
@@ -447,12 +464,12 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
                     if (why == NetPolicy.Why.METERED) R.plurals.similar_metered else R.plurals.similar_slow, skipped, skipped
                 ).takeIf { skipped > 0 }
             )
-            val compare = { ->
+            val compare = again ?: { ->
                 stopped = false
                 lifecycleScope.launch { compareSimilar(books, readNew = true, asked = true) }
                 Unit
             }
-            endBar(notes, compare.takeIf { waiting + skipped > 0 })
+            endBar(notes, compare.takeIf { again != null || waiting + skipped > 0 })
         }
         adapter.notifyDataSetChanged()
         updateEmpty()

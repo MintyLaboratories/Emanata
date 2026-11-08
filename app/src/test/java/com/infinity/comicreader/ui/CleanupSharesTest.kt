@@ -19,6 +19,7 @@ import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import com.infinity.comicreader.testing.Xxh3Port
@@ -154,6 +155,29 @@ class CleanupSharesTest {
         settle(activity)
         assertTrue(fake.bytesRead > 0)
         assertNotNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
+        // The exact copies are checked too.
+        relayout(list)
+        assertEquals(context.getString(R.string.dupes_identical), list.row(0).text(R.id.title))
+        assertEquals(View.GONE, bar.visibility)
+    }
+
+    private fun relayout(list: RecyclerView) {
+        list.measure(View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY))
+        list.layout(0, 0, 1600, 2400)
+    }
+
+    @Test
+    fun onASlowShareTheExactCopyCheckWaitsForCompare() {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { fake }
+        val (activity, list) = launch()
+        val counted = context.resources.getQuantityString(R.plurals.dupes_slow, 2, 2)
+        assertTrue(activity.findViewById<TextView>(R.id.similar_text).text.toString().startsWith(counted))
+        val compare = activity.findViewById<View>(R.id.similar_compare)
+        assertEquals(View.VISIBLE, compare.visibility)
+        compare.performClick()
+        settle(activity)
+        relayout(list)
+        assertEquals(context.getString(R.string.dupes_identical), list.row(0).text(R.id.title))
     }
 
     @Test

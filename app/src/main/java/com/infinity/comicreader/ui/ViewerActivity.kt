@@ -78,6 +78,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CopyMatch
+import com.infinity.comicreader.data.CoverFront
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FolderLayout
@@ -1559,7 +1560,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
         if (!BookDirection.hasCover(book)) return
-        val coverPending = !Thumbs.frontKnown(book) && !DirectionDetection.outranksCover(contents.detected)
+        val coverPending = Thumbs.knownFront(book, HiddenPages.bookIndex(src, 0)) == null && !DirectionDetection.outranksCover(contents.detected)
         if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }
 
@@ -1572,7 +1573,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
         factsCache.load()
         val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(BookIds.known(target)))
-        return contents.copy(detected = DirectionDetection.withCover(contents.detected, Thumbs.knownFront(target)))
+        return contents.copy(detected = DirectionDetection.withCover(contents.detected, Thumbs.knownFront(target, HiddenPages.bookIndex(src, 0))?.half))
     }
 
     /**
@@ -1603,13 +1604,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                     }
                 }
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
-                val front = if (Thumbs.frontKnown(book)) {
-                    Thumbs.knownFront(book)
-                } else {
+                val page = HiddenPages.bookIndex(src, 0)
+                val known = Thumbs.knownFront(book, page)
+                val front = if (known != null) known.half else {
                     val app = applicationContext
                     runCatching { BookDirection.coverFront(src) { Thumbs.detector(app, it) } }.getOrNull().also {
                         ensureActive()
-                        Thumbs.rememberFront(book, it)
+                        Thumbs.rememberFront(book, CoverFront(page, it))
                     }
                 }
                 DirectionDetection.withCover(contents, front)

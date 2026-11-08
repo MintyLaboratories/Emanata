@@ -12,6 +12,7 @@ import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.Avif
 import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.Wraparound
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -245,17 +246,69 @@ class ThumbsTest {
         // Not from the reading direction: one cover either way.
         assertSame(thumb, Thumbs.inMemory(context, entry.copy(direction = ReadingDirection.LTR), 130, 200, CoverStyle(ThumbFit.FILL)))
         assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
-        // Nor does it set the direction.
-        assertTrue(Thumbs.frontKnown(file))
-        assertNull(Thumbs.knownFront(file))
+    }
+
+    /** A book of [wraparound]'s cover, its barcode on the left when [barcode], and two inner pages half as wide; its facts stored. */
+    private fun wrapBook(barcode: Boolean, name: String): Pair<BookEntry, BookId> {
+        val cover = if (barcode) wraparound(true, "$name.png").file.readBytes() else bands(1300, 1000, 650, Color.WHITE, Color.WHITE, Color.RED)
+        val file = Fixtures.zip(
+            File(context.cacheDir, name), Fixtures.entry("00.png", cover), Fixtures.entry("01.png", png(Color.GRAY)), Fixtures.entry("02.png", png(Color.GRAY))
+        )
+        BookIds.init(context)
+        val id = BookIds.find(file)!!
+        BookFactsCache.reset()
+        BookFactsCache(context).put(id, BookFacts(3, 0))
+        return BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified(), id = id) to id
+    }
+
+    /** Stands in a detector seeing a title on halves whose middle is [color]. */
+    private fun titleOn(color: Int) {
+        Thumbs.detector = { _, bitmap ->
+            val w = bitmap.width
+            val h = bitmap.height
+            val titled = bitmap.getPixel(w / 2, h / 2) == color
+            ScoreMap(w, h, FloatArray(w * h) { i -> if (titled && i / w in h / 10 until h / 4 && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+        }
     }
 
     @Test
-    fun aWraparoundWithABarcodeLeavesItsDirectionToTheReader() {
-        // Whether the text agrees is looked at only when the book is read.
-        val entry = wraparound(true, "coded.png")
-        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertFalse(Thumbs.frontKnown(entry.file))
+    fun aWraparoundWhoseBarcodeAndTitleAgreeSetsTheDirection() {
+        titleOn(Color.RED)
+        val (book, id) = wrapBook(true, "agreed.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
+        // For the reader this session, and with the book's facts for later ones.
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT), BookFactsCache(context).get(id)?.cover)
+        // Another cover page is another image.
+        assertNull(Thumbs.knownFront(book.file, 1))
+    }
+
+    @Test
+    fun aWraparoundWhoseTitleIsOnTheBarcodesSideShowsTheBarcodesFrontAndSetsNoDirection() {
+        titleOn(Color.WHITE)
+        val (book, id) = wrapBook(true, "disagreed.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
+        assertEquals(CoverFront(0, null), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, null), BookFactsCache(context).get(id)?.cover)
+    }
+
+    @Test
+    fun aWraparoundWithoutBarcodeSetsNoDirection() {
+        titleOn(Color.RED)
+        val (book, _) = wrapBook(false, "uncoded.cbz")
+        Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(CoverFront(0, null), Thumbs.knownFront(book.file, 0))
+    }
+
+    @Test
+    fun aBarcodeWhoseTitleWasNotLookedForLeavesTheDirectionOpen() {
+        Thumbs.detector = { _, _ -> null }
+        val (book, id) = wrapBook(true, "unlooked.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
+        assertNull(Thumbs.knownFront(book.file, 0))
+        assertNull(BookFactsCache(context).get(id)?.cover)
+        // The barcode alone decides what shows: that cover is kept.
+        assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
     }
 
     @Test
@@ -278,8 +331,6 @@ class ThumbsTest {
         assertEquals(2, calls[0])
         Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertEquals(2, calls[0])
-        // The text alone sets no direction.
-        assertNull(Thumbs.knownFront(file))
     }
 
     @Test
@@ -534,9 +585,9 @@ class ThumbsTest {
         )
         val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
         assertFalse(Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!.full)
-        assertFalse(Thumbs.frontKnown(file))
+        assertNull(Thumbs.knownFront(file, 0))
         Thumbs.load(context, book, "UTF-8", 100, 150)!!
-        assertTrue(Thumbs.frontKnown(file))
+        assertEquals(CoverFront(0, null), Thumbs.knownFront(file, 0))
     }
 
     @Test

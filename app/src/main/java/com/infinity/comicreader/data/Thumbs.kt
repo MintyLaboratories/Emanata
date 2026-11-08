@@ -57,26 +57,46 @@ object Thumbs {
     /** Each wraparound's front half by its barcode on its full image, by [imageKey]; [NO_FRONT] when that tells nothing. */
     private val barcodes = LruCache<String, Int>(1024)
 
-    /** Each wraparound's front half that sets reading direction ([Wraparound.Fronts.agreed]), by [imageKey]; [NO_FRONT] for none. */
-    private val fronts = LruCache<String, Int>(1024)
     private const val NO_FRONT = -1
+
+    /** What each book's cover told of its reading direction this session ([knownFront]), by [frontKey], for the library and the reader alike. */
+    private val fronts = LruCache<String, CoverFront>(1024)
 
     /**
      * The front half [src], the wraparound cover of [entry], shows ([Wraparound.Fronts.shown]):
      * by its barcode, found once per cover image ([imageKey]), else by its tallest text
      * ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when neither
-     * tells; then [unsure] too when the detector did not run. Without a barcode the cover sets
-     * no reading direction, which [knownFront] then tells. Only a full image ([find]), never a
-     * smaller first layer, settles what its barcode tells.
+     * tells; then [unsure] too when the detector did not run.
+     *
+     * A book's full cover image ([find]), its page at book index [page], also settles what it tells
+     * of reading direction ([settle]): the half its barcode and text agree on, none without a
+     * barcode; left open when the text was not looked at. A smaller first layer settles nothing,
+     * not even what its barcode tells.
      */
-    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
+    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, page: Int?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
         val known = barcodes.get(k)
         val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
         else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
-        barcode?.let { return it }
-        if (find) fronts.put(k, NO_FRONT)
-        return CoverArt.textFront(src, innerRatio, { s, region -> focusOf(context, entry, s, region, find) }, unsure)
+        val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find) }
+        val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page)) == null
+        if (barcode == null) {
+            if (open) settle(context, entry, CoverFront(page!!, null))
+            return CoverArt.textFront(src, innerRatio, focus, unsure)
+        }
+        if (open) {
+            var read = true
+            val text = CoverArt.textFront(src, innerRatio, focus) { read = false }
+            if (read) settle(context, entry, CoverFront(page!!, Wraparound.Fronts(barcode, text).agreed))
+        }
+        return barcode
+    }
+
+    /** Keeps what book [entry]'s cover told of its reading direction: for this session ([knownFront]) and with its facts ([BookFactsCache.keepCover]). */
+    private fun settle(context: Context, entry: BookEntry, front: CoverFront) {
+        val id = idOf(entry)
+        fronts.put(frontKey(key(entry), id, front.page), front)
+        if (id != null) runCatching { BookFactsCache(context).keepCover(id, front) }
     }
 
     /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
@@ -122,16 +142,16 @@ object Thumbs {
         return focus
     }
 
-    /** True once this session settled whether [file]'s cover sets its reading direction, whatever was found. */
-    fun frontKnown(file: File): Boolean = fronts.get(key(file)) != null
+    /** What book [file]'s cover, its page at book index [page], told of its reading direction this session, by the library or the reader; null when not looked at. */
+    fun knownFront(file: File, page: Int): CoverFront? = fronts.get(frontKey(key(file), BookIds.known(file), page))
 
-    /** The front half of [file]'s wraparound cover that sets reading direction ([Wraparound.Fronts.agreed]) as found this session; null when unknown or none. */
-    fun knownFront(file: File): Wraparound.Half? = fronts.get(key(file))?.let { Wraparound.Half.entries.getOrNull(it) }
-
-    /** Remembers [front] as the half of [file]'s cover that sets reading direction ([knownFront]), so the reader looks at it once. */
-    fun rememberFront(file: File, front: Wraparound.Half?) {
-        fronts.put(key(file), front?.ordinal ?: NO_FRONT)
+    /** Remembers what book [file]'s cover told ([knownFront]), so it is looked at once. */
+    fun rememberFront(file: File, front: CoverFront) {
+        fronts.put(frontKey(key(file), BookIds.known(file), front.page), front)
     }
+
+    /** What [knownFront] is kept by: the book's [key], the book index of its cover page and its own file name charset ([nameTag]). */
+    private fun frontKey(bookKey: String, id: BookId?, page: Int): String = "$bookKey|c$page" + nameTag(id)
 
     /** Quick covers ([loadFirst]) by their cover's key; a few screens' worth. */
     private val quicks = object : LruCache<String, Bitmap>(QUICK_BYTES) {
@@ -216,6 +236,8 @@ object Thumbs {
 
         val hidden = Library(context).hiddenAll()
         if (canceled()) return null
+        // A book's cover page by book index, which the reader looks up what it told by; none for a folder or a loose image.
+        val coverPage = if (entry.isDir || entry.type == EntryType.IMAGE) null else coverPage(hidden, idOf(entry), entry.file.absolutePath)
         val made = generate(entry, charset, context.cacheDir, width, height, hidden, canceled, quickFirst) ?: return null
         val full = made.bitmap
         if (canceled()) {
@@ -227,7 +249,7 @@ object Thumbs {
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio,
-                front = { src -> frontOf(context, entry, src, made.innerRatio, made.full) { lasting = false } },
+                front = { src -> frontOf(context, entry, src, made.innerRatio, coverPage, made.full) { lasting = false } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
                 focus = { src, region -> focusOf(context, entry, src, region, find = made.full).also { if (!it.keep) lasting = false } }
             )
@@ -316,8 +338,10 @@ object Thumbs {
      * ([hiddenTag]) and the book's own file name charset, which may reorder its pages
      * ([NameCharset.overrides]). Empty when neither does.
      */
-    private fun imageTag(context: Context, entry: BookEntry): String =
-        hiddenTag(entry, Library(context).hiddenAll()) + idOf(entry)?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
+    private fun imageTag(context: Context, entry: BookEntry): String = hiddenTag(entry, Library(context).hiddenAll()) + nameTag(idOf(entry))
+
+    /** The book [id]'s own file name charset, which may reorder its pages ([NameCharset.overrides]); empty without one. */
+    private fun nameTag(id: BookId?): String = id?.let { NameCharset.overrides[it] }?.let { "|n$it" }.orEmpty()
 
     /**
      * The book index of the cover of a book hiding [hidden]: the page it was [given] as cover

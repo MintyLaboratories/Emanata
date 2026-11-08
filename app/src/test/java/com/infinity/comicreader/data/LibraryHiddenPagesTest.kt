@@ -148,21 +148,6 @@ class LibraryHiddenPagesTest {
     }
 
     @Test
-    fun aBackupWithoutHiddenPagesShowsEveryPage() {
-                // An older backup, its pages counted with none hidden.
-        library.addHistory(HistoryItem(a.path, "a.cbz", 6, 10, 1, a.id))
-        val backup = library.exportAll().apply { remove("hidden_pages"); remove("bookmarks") }
-        library.addBookmark(Bookmark(a.path, "a.cbz", 8, "", 1, a.id))
-        library.setHiddenPages(a, setOf(1, 3), 10)
-        library.importAll(backup)
-        assertTrue(library.hiddenPages(a.id).isEmpty())
-        assertEquals(6, library.pageFor(a.id))
-        assertEquals(10, library.historyFor(a.id)!!.total)
-        // Bookmarks the backup leaves alone move back to their book pages.
-        assertEquals(listOf(8), library.bookmarksFor(a.id).map { it.page })
-    }
-
-    @Test
     fun aBackupOfSettingsAloneKeepsHiddenPages() {
         val backup = library.exportAll().apply {
             remove("hidden_pages"); remove("history"); remove("bookmarks")

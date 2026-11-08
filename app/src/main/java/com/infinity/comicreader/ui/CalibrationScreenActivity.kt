@@ -23,17 +23,19 @@ import com.infinity.comicreader.reader.CalibrationControl
 import com.infinity.comicreader.reader.CalibrationGate
 import com.infinity.comicreader.reader.CalibrationPrompts
 import com.infinity.comicreader.reader.Calibrator
+import com.infinity.comicreader.reader.Candidate
 import com.infinity.comicreader.reader.DeviceReadings
 
 /**
  * The calibration screen: while calibration runs, the app stays behind it, the screen kept
- * on, with the Panel Tuner page ([PanelTunerView]), what is being timed and the choices:
+ * on, with the Panel Tuner page ([PanelTunerView]) moving, what is being timed and the choices:
  * Cancel (this run only: what is in effect stays, and the offer comes again at the next
  * launch), Keep old calibration (until the system build changes or the user recalibrates;
  * only when there is an old one) and Continue in background. Before a run, heat and a low
  * battery stop it with a plain word ([CalibrationPrompts.gate]); battery saver asks whether
  * to switch it off (the run starts once it is off) or to measure anyway. A run the reader or
- * another app stopped starts again when this screen is back; one that failed says so.
+ * another app stopped starts again when this screen is back; one that failed says so. Out
+ * of a run the page holds still and the screen may turn off.
  */
 class CalibrationScreenActivity : AppCompatActivity() {
     enum class State { RUNNING, SAVER, HOT, LOW_BATTERY, FAILED }
@@ -79,7 +81,6 @@ class CalibrationScreenActivity : AppCompatActivity() {
         saverAccepted = savedInstanceState?.getBoolean(STATE_SAVER_ACCEPTED) ?: false
         started = savedInstanceState?.getBoolean(STATE_STARTED) ?: false
         still = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 && intent.getBooleanExtra(EXTRA_STILL, false)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_calibration)
         page = findViewById(R.id.calibration_page)
         title = findViewById(R.id.calibration_title)
@@ -95,7 +96,7 @@ class CalibrationScreenActivity : AppCompatActivity() {
         saverSettings = findViewById(R.id.calibration_saver_settings)
         close = findViewById(R.id.calibration_close)
         if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) wide()
-        page.held = still
+        page.held = true
 
         cancel.setOnClickListener {
             control.cancel()
@@ -208,6 +209,8 @@ class CalibrationScreenActivity : AppCompatActivity() {
     private fun show(s: State) {
         state = s
         val running = s == State.RUNNING
+        if (running) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         progressBox.visibility = if (running) View.VISIBLE else View.GONE
         cancel.visibility = if (running || s == State.SAVER) View.VISIBLE else View.GONE
         keep.visibility = if (running && control.calibrated) View.VISIBLE else View.GONE
@@ -240,6 +243,12 @@ class CalibrationScreenActivity : AppCompatActivity() {
                 text.text = "$why $after"
             }
         }
+        holdPage()
+    }
+
+    /** The page moves only during a run, and holds still while a setup it may skew is timed ([holdsFor]). */
+    private fun holdPage() {
+        page.held = still || state != State.RUNNING || control.progress.candidate?.let(::holdsFor) == true
     }
 
     private fun showProgress() {
@@ -255,7 +264,6 @@ class CalibrationScreenActivity : AppCompatActivity() {
             step.text = c?.let { SetupNames.of(resources, it) } ?: ""
             round.text = getString(R.string.calibration_round, p.round, Calibration.ROUNDS)
         }
-        page.held = still || (HOLD_FOR_GPU && c?.gpu == true)
     }
 
     /** Battery saver's own settings, or the system's where there are none. */
@@ -284,6 +292,9 @@ class CalibrationScreenActivity : AppCompatActivity() {
          * a slower one count as fast ([com.infinity.comicreader.reader.Calibration.pick]).
          */
         const val HOLD_FOR_GPU = false
+
+        /** Whether the page holds still while [c] is timed. */
+        fun holdsFor(c: Candidate): Boolean = HOLD_FOR_GPU && c.gpu
 
         private const val STATE_SAVER_ACCEPTED = "saver_accepted"
         private const val STATE_STARTED = "started"

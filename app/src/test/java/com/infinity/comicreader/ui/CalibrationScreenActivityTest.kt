@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -56,6 +57,15 @@ class CalibrationScreenActivityTest {
 
     private fun CalibrationScreenActivity.shows(id: Int) = findViewById<View>(id).visibility == View.VISIBLE
     private fun CalibrationScreenActivity.text(id: Int) = findViewById<TextView>(id).text.toString()
+    private fun CalibrationScreenActivity.keepsScreenOn() = window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+
+    /** True when the page moves once shown (Robolectric's windows stay hidden: the view is told by hand). */
+    private fun CalibrationScreenActivity.pageMoves(): Boolean {
+        val page = findViewById<PanelTunerView>(R.id.calibration_page)
+        page.onVisibilityAggregated(true)
+        return page.playing
+    }
+
     private fun CalibrationScreenActivity.tap(id: Int) {
         findViewById<View>(id).performClick()
         idle()
@@ -73,8 +83,9 @@ class CalibrationScreenActivityTest {
         assertFalse(a.shows(R.id.calibration_keep))
         assertFalse(a.shows(R.id.calibration_close))
         assertEquals("Getting ready", a.text(R.id.calibration_step))
-        // The screen stays on while it runs.
-        assertTrue(a.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
+        // The screen stays on and the page moves while it runs.
+        assertTrue(a.keepsScreenOn())
+        assertTrue(a.pageMoves())
     }
 
     @Test
@@ -144,6 +155,8 @@ class CalibrationScreenActivityTest {
         assertFalse(a.shows(R.id.calibration_progress))
         assertFalse(a.shows(R.id.calibration_background))
         assertTrue(a.shows(R.id.calibration_close))
+        assertFalse(a.keepsScreenOn())
+        assertFalse(a.pageMoves())
         // Not started again on its own.
         assertEquals(1, fake.starts.size)
         a.tap(R.id.calibration_close)
@@ -188,9 +201,14 @@ class CalibrationScreenActivityTest {
         assertTrue(a.shows(R.id.calibration_cancel))
         assertFalse(a.shows(R.id.calibration_background))
         assertFalse(a.shows(R.id.calibration_progress))
+        // Waiting for an answer: the screen may turn off and the page holds still.
+        assertFalse(a.keepsScreenOn())
+        assertFalse(a.pageMoves())
         a.tap(R.id.calibration_anyway)
         assertEquals(listOf(true), fake.starts)
         assertEquals(CalibrationScreenActivity.State.RUNNING, a.state)
+        assertTrue(a.keepsScreenOn())
+        assertTrue(a.pageMoves())
     }
 
     @Test
@@ -238,6 +256,8 @@ class CalibrationScreenActivityTest {
         assertTrue(a.shows(R.id.calibration_close))
         assertFalse(a.shows(R.id.calibration_cancel))
         assertFalse(a.shows(R.id.calibration_anyway))
+        assertFalse(a.keepsScreenOn())
+        assertFalse(a.pageMoves())
         a.onBackPressedDispatcher.onBackPressed()
         assertEquals(1, fake.declined)
         assertTrue(a.isFinishing)
@@ -250,6 +270,8 @@ class CalibrationScreenActivityTest {
         assertTrue(fake.starts.isEmpty())
         assertEquals(CalibrationScreenActivity.State.LOW_BATTERY, a.state)
         assertEquals("Measuring needs at least 20 % battery. Try again once it is charged.", a.text(R.id.calibration_text))
+        assertFalse(a.keepsScreenOn())
+        assertFalse(a.pageMoves())
         a.tap(R.id.calibration_close)
         assertEquals(1, fake.declined)
         assertTrue(a.isFinishing)

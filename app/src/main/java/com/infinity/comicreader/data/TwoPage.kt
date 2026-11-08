@@ -12,8 +12,5 @@ enum class TwoPage(val key: String) {
     companion object {
         /** The mode stored as [key]; off when unknown. */
         fun of(key: String?): TwoPage = entries.firstOrNull { it.key == key } ?: OFF
-
-        /** The mode an older on/off switch meant. */
-        fun of(on: Boolean): TwoPage = if (on) ON else OFF
     }
 }

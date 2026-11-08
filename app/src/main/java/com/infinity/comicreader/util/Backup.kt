@@ -63,10 +63,9 @@ object Backup {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return false
         if (root.optString("app") !in APPS || root.optInt("version", 0) !in 1..VERSION) return false
         val lib = root.optJSONObject("library") ?: return false
+        val upstream = root.optString("app") == UpstreamBackup.APP
 
-        val library = Library(context)
-        library.importAll(lib)
-
+        val prefs = Prefs(context)
         root.optJSONObject("prefs")?.let { p ->
             val values = HashMap<String, Any>()
             p.keys().forEach { k ->
@@ -74,10 +73,11 @@ object Backup {
                     is Boolean, is Int, is String -> values[k] = v
                 }
             }
-            val prefs = Prefs(context)
             prefs.importAll(values)
-            if (root.optString("app") == UpstreamBackup.APP) UpstreamBackup.restore(values, prefs)
+            if (upstream) UpstreamBackup.restore(values, prefs)
         }
+        // Upstream's folder layouts are judged against the defaults just restored.
+        Library(context).importAll(if (upstream) UpstreamBackup.library(lib, ReaderLayout.of(prefs)) else lib)
         root.optJSONArray("likeness")?.let { importLikeness(LikenessStore(context), it) }
         root.optJSONObject("shares")?.let { s ->
             val store = ShareStore(context)
@@ -85,8 +85,6 @@ object Backup {
             // A share whose password cannot be sealed here is skipped; the rest still restore.
             for (share in ShareBackup.import(s, deviceId)) runCatching { store.put(ShareBackup.merged(share, here[share.id])) }
         }
-        // Folder layouts of older versions, judged against the defaults just restored.
-        library.migrateFolderLayouts(ReaderLayout.of(Prefs(context)))
         return true
     }
 

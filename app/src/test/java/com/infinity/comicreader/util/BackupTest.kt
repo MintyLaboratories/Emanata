@@ -114,19 +114,19 @@ class BackupTest {
     }
 
     @Test
-    fun restoredLegacyFolderLayoutsAreSortedAgainstTheRestoredDefaults() {
-        fun legacy(fit: String) = JSONObject().put("mode", "paged").put("dir", "rtl").put("fit", fit).put("two", false)
+    fun upstreamFolderLayoutsAreSortedAgainstTheRestoredDefaults() {
+        fun upstream(fit: String) = JSONObject().put("mode", "paged").put("dir", "rtl").put("fit", fit).put("two", false)
         val json = JSONObject()
-            .put("app", "Emanata")
+            .put("app", "ComicReader")
             .put("version", 1)
-            .put("library", JSONObject().put("series", JSONObject().put("/books/a", legacy("width")).put("/books/b", legacy("height"))))
+            .put("library", JSONObject().put("series", JSONObject().put("/books/a", upstream("width")).put("/books/b", upstream("height"))))
             .put("prefs", JSONObject().put("pref_fit", "width"))
             .toString()
         assertTrue(Backup.import(context, json))
         val library = Library(context)
         assertEquals(FolderLayout.Direction("rtl"), library.folderLayout("/books/a"))
         assertTrue(library.folderLayout("/books/b") is FolderLayout.Frozen)
-        assertFalse(FolderLayout.isLegacy(JSONObject(context.getSharedPreferences("library", Context.MODE_PRIVATE).getString("series", "{}")!!).getJSONObject("/books/b")))
+        assertTrue(JSONObject(context.getSharedPreferences("library", Context.MODE_PRIVATE).getString("series", "{}")!!).getJSONObject("/books/b").has("all"))
     }
 
     @Test

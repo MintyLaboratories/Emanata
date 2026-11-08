@@ -681,8 +681,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Apply to: This folder / All books** at the top of the reader settings:
   *This folder* keeps the whole layout (paged or continuous, direction, fit,
   two-page, spreads, auto-crop, page gap) for the book's folder; *All books* changes the defaults and
-  keeps only a direction chosen for the folder. Layouts
-  remembered by older versions that matched the defaults keep only their direction.
+  keeps only a direction chosen for the folder.
 - **Book info:** file, folder, format (from the file's leading bytes, e.g.
   "CBZ (ZIP)", or "CBR (actually ZIP)" for a misnamed one), size, pages (and how
   many are hidden), the

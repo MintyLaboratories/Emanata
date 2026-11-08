@@ -5,15 +5,17 @@ import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Adjustments
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Upstream's settings read into today's. */
+/** Upstream's settings and folder layouts read into today's. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class UpstreamBackupTest {
@@ -139,5 +141,53 @@ class UpstreamBackupTest {
         val p = restored("pref_fit" to "width", "pref_fullscreen" to false)
         assertEquals("width", p.fit)
         assertFalse(p.fullscreen)
+    }
+
+    private val defaults = ReaderLayout(fit = "width", autoCrop = true, spacing = 8)
+
+    private fun folder(mode: String = "paged", fit: String = "width", two: Boolean = false) =
+        JSONObject().put("mode", mode).put("dir", "rtl").put("fit", fit).put("two", two)
+
+    @Test
+    fun aFolderMatchingTheDefaultsKeepsOnlyItsDirection() {
+        assertEquals(FolderLayout.Direction("rtl"), UpstreamBackup.folderLayout(folder(), defaults))
+    }
+
+    @Test
+    fun aFolderThatDiffersKeepsItsLayoutWithTheDefaultsFilledIn() {
+        assertEquals(
+            FolderLayout.Frozen(ReaderLayout("paged", "rtl", "width", TwoPage.ON, autoCrop = true, spacing = 8)),
+            UpstreamBackup.folderLayout(folder(two = true), defaults)
+        )
+        assertTrue(UpstreamBackup.folderLayout(folder(fit = "screen"), defaults) is FolderLayout.Frozen)
+    }
+
+    @Test
+    fun topToBottomFoldersReadTopToBottom() {
+        // Vertical paged one page a screen; the long strip was one column that never cropped.
+        assertEquals(
+            FolderLayout.Frozen(ReaderLayout("paged", "ttb", "width", TwoPage.ON, autoCrop = true, spacing = 8)),
+            UpstreamBackup.folderLayout(folder(mode = "vertical", two = true), defaults)
+        )
+        assertEquals(
+            FolderLayout.Frozen(ReaderLayout("continuous", "ttb", "width", autoCrop = false, spacing = 8)),
+            UpstreamBackup.folderLayout(folder(mode = "longstrip"), defaults)
+        )
+        val column = ReaderLayout("continuous", "ttb", "width")
+        assertEquals(FolderLayout.Direction("ttb"), UpstreamBackup.folderLayout(folder(mode = "longstrip"), column))
+    }
+
+    @Test
+    fun theLibraryKeepsAllButFolderLayoutsAsTheyAre() {
+        val library = JSONObject()
+            .put("favorites", org.json.JSONArray().put("/books"))
+            .put("series", JSONObject().put("/a", folder()).put("/b", folder(fit = "screen")))
+        val out = UpstreamBackup.library(library, defaults)
+        assertEquals("/books", out.getJSONArray("favorites").getString(0))
+        val series = out.getJSONObject("series")
+        assertEquals(FolderLayout.Direction("rtl"), FolderLayout.decode(series.getJSONObject("/a")))
+        assertTrue(FolderLayout.decode(series.getJSONObject("/b")) is FolderLayout.Frozen)
+        // The backup read is left as it was.
+        assertEquals("width", library.getJSONObject("series").getJSONObject("/a").getString("fit"))
     }
 }

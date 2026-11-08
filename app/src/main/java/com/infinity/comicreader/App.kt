@@ -10,7 +10,6 @@ import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
-import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.files.FileWork
@@ -39,7 +38,6 @@ class App : Application() {
         val prefs = Prefs(this)
         Library(this).apply {
             forgetPathKeyedBooks()
-            migrateFolderLayouts(ReaderLayout.of(prefs))
             publishNameCharsets()
         }
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)

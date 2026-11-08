@@ -1,9 +1,10 @@
 package com.infinity.comicreader.data
 
 import com.infinity.comicreader.reader.TapZones
+import org.json.JSONObject
 
 /**
- * Backups made by upstream ComicReader, read into today's settings.
+ * Backups made by upstream ComicReader, read into today's settings and folder layouts.
  * Upstream kept books by path; [Library.importAll] keeps only their folders.
  */
 object UpstreamBackup {
@@ -65,6 +66,40 @@ object UpstreamBackup {
     }
 
     /**
+     * [library] with upstream's folder layouts (mode, direction, fit and two-page, all kept
+     * whenever a direction was chosen) in today's form: one whose mode, fit and two-page
+     * match [defaults] keeps only its direction; one that differs keeps its whole layout.
+     */
+    fun library(library: JSONObject, defaults: ReaderLayout): JSONObject {
+        val series = library.optJSONObject(SERIES) ?: return library
+        val out = JSONObject()
+        for (k in series.keys()) {
+            val o = series.optJSONObject(k) ?: continue
+            out.put(k, folderLayout(o, defaults).encode())
+        }
+        return JSONObject(library.toString()).put(SERIES, out)
+    }
+
+    /** Upstream's layout [o] for a folder, as [library] reads it. */
+    internal fun folderLayout(o: JSONObject, defaults: ReaderLayout): FolderLayout {
+        val old = o.optString("mode")
+        val (mode, dir) = when (old) {
+            VERTICAL -> ReaderLayout.MODE_PAGED to ReaderLayout.DIR_TTB
+            LONGSTRIP -> ReaderLayout.MODE_CONTINUOUS to ReaderLayout.DIR_TTB
+            else -> ReaderLayout.modeOf(old) to ReaderLayout.dirOf(o.optString("dir"))
+        }
+        val layout = defaults.copy(
+            mode = mode,
+            dir = dir,
+            fit = o.optString("fit", "screen").ifEmpty { "screen" },
+            twoPage = if (o.optBoolean("two")) TwoPage.ON else TwoPage.OFF,
+            autoCrop = old != LONGSTRIP && defaults.autoCrop
+        )
+        val same = layout.mode == defaults.mode && layout.fit == defaults.fit && layout.twoPage == defaults.twoPage
+        return if (same) FolderLayout.Direction(dir) else FolderLayout.Frozen(layout)
+    }
+
+    /**
      * Upstream's sort ("name", "size", "date" or "type"), ascending unless [descending]:
      * dates are when files were added, and "type" ascending put images before archives.
      */
@@ -81,4 +116,7 @@ object UpstreamBackup {
     /** Upstream's modes that read top to bottom: one page a screen, and one column. */
     private const val VERTICAL = "vertical"
     private const val LONGSTRIP = "longstrip"
+
+    /** Where upstream's backup keeps folder layouts, by folder path. */
+    private const val SERIES = "series"
 }

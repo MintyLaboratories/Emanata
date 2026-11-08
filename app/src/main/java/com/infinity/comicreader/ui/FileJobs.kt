@@ -477,7 +477,7 @@ internal class FileJobs(
                         dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
                         dotFolders = plan.unusualToo, keepBoth = ::keepBoth,
                         // Compacted as Compact would: not offered Compact again.
-                        marks = if (compacted) listOf(OutputMarks.Operation.COMPACT) else emptyList()
+                        marks = if (compacted) listOf(OutputMarks.Operation.PACK, OutputMarks.Operation.COMPACT) else listOf(OutputMarks.Operation.PACK)
                     )
                     val result = compactor.run(request, { FolderReader(files, dir) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")

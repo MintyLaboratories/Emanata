@@ -182,14 +182,16 @@ class FileJobsPackTest {
         assertTrue(outcome.summary!!.saved > 0)
         assertFalse(dir.exists())
         assertEquals("marked as compacted", "Emanata", OutputMarks.verified(cbz, BookIds.xxh3).compactedBy)
+        assertTrue(ZipFile(cbz).use { it.comment }.startsWith("[i: Emanata:pack:v1, Emanata:compact:v1 | "))
     }
 
     @Test
-    fun packAsItIsLeavesNoMark() {
+    fun packAsItIsMarksOnlyPacking() {
         val dir = folder("Loose", 2)
         pack(plan(dir)) as FileWork.Outcome.Done
         val cbz = File(tmp.root, "Loose.cbz")
         assertEquals(OutputMarks.Done.NOTHING, OutputMarks.verified(cbz, BookIds.xxh3))
+        assertTrue(ZipFile(cbz).use { it.comment }.startsWith("[i: Emanata:pack:v1 | "))
     }
 
     @Test

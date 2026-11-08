@@ -363,15 +363,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Library, on by default), opening one on the device offers **Repack as CBZ**
   (with In place) or **Not now**, kept for that book by its Book ID. Repacking
   from there closes the reader; the operation shows in the library.
-- Compact, Make compatible, Repack as CBZ and Pack compacted mark their new
-  file with one block at the end of its ZIP archive comment: the file's
+- Compact, Make compatible, Repack as CBZ, Pack and Pack compacted mark their
+  new file with one block at the end of its ZIP archive comment: the file's
   history as a chain, oldest first, and one hash, e.g.
   `[i: OtherTool:compact-max:v2, Emanata:compatible:v1 | 9f86d081884c7d65]`.
   Entries are `Tool:action:vN` (tool and action letters, digits, `.`, `_`,
   `-`), separated by commas, `|` before the hash; spaces or tabs may stand
   around every separator and inside the brackets. Emanata's actions:
   `compact` (`compact-partial` when hidden pages were skipped), `compatible`,
-  `repack` (Pack compacted writes `compact`); a version
+  `repack`, `pack` (Pack compacted writes `pack` then `compact`); a version
   per action, raised when its output would improve, so books made by an older
   version are offered it again. The hash is the XXH3-64 of the central
   directory in 16 hex digits (read in either case), which changes with any

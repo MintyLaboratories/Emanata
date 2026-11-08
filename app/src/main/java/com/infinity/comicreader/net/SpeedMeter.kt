@@ -3,9 +3,11 @@ package com.infinity.comicreader.net
 /**
  * Estimates one share's speed from its real reads: throughput from long reads, timed while at
  * least one is under way (reads in flight together share the link, so their union counts, not
- * each one), and first-byte latency from short reads made while no long read is under way. Each
- * is the median of its last [KEPT] samples, so one read waiting for a sleeping disk to spin up
- * does not count; until [MIN_SAMPLES] are in, [seed] (the estimate kept from before) stands in.
+ * each one), and first-byte latency from short reads made while no long read is under way, one
+ * sample per run of short reads in flight together (they wait on the same disk: the quickest
+ * answer counts). Each is the median of its last [KEPT] samples, so one wait for a sleeping disk
+ * to spin up does not count; until [MIN_SAMPLES] are in, [seed] (the estimate kept from before)
+ * stands in.
  */
 class SpeedMeter(private val clock: () -> Long, private val seed: Estimate? = null) {
 
@@ -23,11 +25,17 @@ class SpeedMeter(private val clock: () -> Long, private val seed: Estimate? = nu
     private var busyMs = 0L
     private var bytes = 0L
 
+    /** Short reads in flight, the quickest answer among those of the run, and whether a long read overlapped it. */
+    private var shorts = 0
+    private var quickest: Long? = null
+    private var shared = false
+
     /** A long read starts. */
     @Synchronized
     fun bulkStarted() {
         tick()
         active++
+        if (shorts > 0) shared = true
     }
 
     /** A long read ended with [got] bytes (0 when it failed). */
@@ -50,10 +58,35 @@ class SpeedMeter(private val clock: () -> Long, private val seed: Estimate? = nu
         mark = now
     }
 
-    /** A short read took [ms] to answer; not counted while a long read shares the link. */
+    /** A short read starts. */
     @Synchronized
+    fun shortStarted() {
+        if (shorts == 0) {
+            quickest = null
+            shared = false
+        }
+        shorts++
+        if (active > 0) shared = true
+    }
+
+    /**
+     * A short read ended, answering after [ms] (null: it failed). The run of short reads in flight
+     * together gives one sample once the last ends; none when a long read shared the link meanwhile.
+     */
+    @Synchronized
+    fun shortEnded(ms: Long?) {
+        if (shorts == 0) return
+        if (active > 0) shared = true
+        if (ms != null && ms >= 0) quickest = quickest?.let { minOf(it, ms) } ?: ms
+        if (--shorts > 0) return
+        val sample = quickest
+        if (!shared && sample != null) keep(firsts, sample)
+    }
+
+    /** A short read alone took [ms] to answer ([shortStarted], [shortEnded]). */
     fun firstByte(ms: Long) {
-        if (active == 0 && ms >= 0) keep(firsts, ms)
+        shortStarted()
+        shortEnded(ms)
     }
 
     private fun keep(samples: ArrayDeque<Long>, value: Long) {

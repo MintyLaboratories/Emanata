@@ -57,6 +57,46 @@ class SpeedMeterTest {
     }
 
     @Test
+    fun shortReadsWaitingTogetherOnOneSpinUpCountOnce() {
+        // A folder's cover reads after an idle spell: all wait for the same disk to spin up.
+        repeat(2) {
+            repeat(6) { meter.shortStarted() }
+            repeat(6) { i -> meter.shortEnded(18_000L + i) }
+            meter.firstByte(6)
+            meter.firstByte(5)
+        }
+        assertEquals(6L, meter.estimate()!!.firstByteMs)
+        assertFalse(meter.slow())
+    }
+
+    @Test
+    fun aRunOfShortReadsCountsItsQuickestAnswerAndNotFailures() {
+        meter.shortStarted()
+        meter.shortStarted()
+        meter.shortStarted()
+        meter.shortEnded(null)
+        meter.shortEnded(40)
+        meter.shortEnded(30)
+        meter.firstByte(20)
+        meter.firstByte(50)
+        assertEquals(30L, meter.estimate()!!.firstByteMs)
+        // A run every read of which failed gives no sample.
+        meter.shortStarted()
+        meter.shortEnded(null)
+        assertEquals(30L, meter.estimate()!!.firstByteMs)
+    }
+
+    @Test
+    fun aLongReadStartingDuringARunOfShortReadsSpoilsIt() {
+        meter.shortStarted()
+        meter.bulkStarted()
+        meter.bulkEnded(0)
+        meter.shortEnded(3_000)
+        repeat(3) { meter.firstByte(7) }
+        assertEquals(7L, meter.estimate()!!.firstByteMs)
+    }
+
+    @Test
     fun readsInFlightTogetherCountTheirUnion() {
         repeat(3) {
             // Two reads of 2 MB, both under way for the same second: 4 MB/s, not 2.

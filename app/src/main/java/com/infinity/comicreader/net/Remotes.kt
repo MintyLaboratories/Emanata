@@ -374,7 +374,8 @@ object Remotes {
         private inline fun timed(count: Int, block: () -> Int): Int {
             val meter = ShareSpeeds.meter(shareId)
             val bulk = count >= SpeedMeter.BULK_BYTES
-            if (bulk) meter.bulkStarted()
+            val short = count <= SpeedMeter.SHORT_BYTES
+            if (bulk) meter.bulkStarted() else if (short) meter.shortStarted()
             val start = ShareSpeeds.clock()
             var got = -1
             try {
@@ -382,7 +383,7 @@ object Remotes {
                 return got
             } finally {
                 if (bulk) meter.bulkEnded(got.coerceAtLeast(0).toLong())
-                else if (count <= SpeedMeter.SHORT_BYTES && got > 0) meter.firstByte(ShareSpeeds.clock() - start)
+                else if (short) meter.shortEnded(if (got > 0) ShareSpeeds.clock() - start else null)
                 ShareSpeeds.measured(shareId)
             }
         }

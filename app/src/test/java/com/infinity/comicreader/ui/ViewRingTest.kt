@@ -283,6 +283,22 @@ class ViewRingTest {
     }
 
     @Test
+    fun growingTakesTheSmallestRadiusThatClearsTheLabels() {
+        val bounds = RingGeometry.Box(8f, 8f, 1840f, 2950f)
+        val angles = RingGeometry.angles(6, left = true)
+        val want = RingGeometry.radius(6, 75f, 91f)
+        val tall = List(6) { 200f to 160f }
+        fun arrange(grow: Float) = RingGeometry.arrange(angles, 1780f, 2880f, bounds, 56f, want, 64f, 36f, 4f, tall, grow)
+        assertTrue(arrange(1f).overlap > 0f)
+        val grown = arrange(3f)
+        assertTrue("${grown.radius}", grown.radius > want)
+        assertClear(angles, 1780f, 2880f, bounds, grown)
+        // One step smaller, the labels overlap.
+        val top = minOf(want * 3f, angles.minOf { RingGeometry.room(it, 1780f, 2880f, bounds, 0f, 0f, 56f, 56f) })
+        assertTrue(RingGeometry.place(angles, 1780f, 2880f, bounds, 56f, grown.radius - (top - want) / 32, 36f, 4f, tall).overlap > 0f)
+    }
+
+    @Test
     fun theNearestAngleWinsAtAnyDistanceAndAroundTheCircle() {
         val right = RingGeometry.angles(5, left = false)
         assertEquals(listOf(90.0, 67.5, 45.0, 22.5, 0.0), right)

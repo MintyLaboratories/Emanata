@@ -191,8 +191,8 @@ internal object RingGeometry {
      * [want] that keeps the buttons within [bounds] and, down to buttons [spacing] apart center
      * to center, the labels outward, clear of each other and of every button ([pad] apart).
      * Where no radius does and [grow] is above 1, the smallest radius up to [grow] times
-     * [want] that keeps the labels clear, outward where one does. Else the one whose labels
-     * overlap least, the fewest of them aside ([place]).
+     * [want] that keeps the labels clear, aside or not. Else the one whose labels overlap
+     * least, the fewest of them aside ([place]).
      */
     fun arrange(
         angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, want: Float,
@@ -211,17 +211,12 @@ internal object RingGeometry {
         }
         val top = min(want * grow, max(buttons, button))
         if (best.overlap == 0f || top <= most) return best
-        var clear: Placement? = null
         for (s in 1..STEPS) {
             val p = place(angles, cx, cy, bounds, button, most + (top - most) * s / STEPS, reach, pad, labels)
-            if (p.overlap > 0f) {
-                if (clear == null && better(p, best)) best = p
-                continue
-            }
-            if (clear == null || p.aside < clear.aside) clear = p
-            if (p.aside == 0) break
+            if (p.overlap == 0f) return p
+            if (better(p, best)) best = p
         }
-        return clear ?: best
+        return best
     }
 
     /**

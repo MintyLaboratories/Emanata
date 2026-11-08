@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -75,8 +76,8 @@ class ViewRingLabelsTest {
 
     private fun center(v: View): Triple<Float, Float, Float> = box(v).let { Triple((it.left + it.right) / 2, (it.top + it.bottom) / 2, v.width / 2f) }
 
-    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label. */
-    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6) {
+    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label, and that the radius is at most [most] times the one asked for. */
+    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6, most: Float = 1f) {
         val what = "$qualifiers at $scale${if (left) ", left-handed" else ""}"
         RuntimeEnvironment.setQualifiers(qualifiers)
         RuntimeEnvironment.setFontScale(scale)
@@ -90,6 +91,8 @@ class ViewRingLabelsTest {
         val options = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)
         assertEquals(what, count, options.size)
         val screen = box(list.window.decorView)
+        val want = RingGeometry.radius(options.size, 75f, 91f) * list.resources.displayMetrics.density
+        assertTrue("$what: radius ${ring.ringRadius / want} of the one asked for", ring.ringRadius <= want * most + 0.5f)
         val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
         val labels = options.map { it to ring.label(it)!! }
         for ((o, label) in labels) {
@@ -112,14 +115,22 @@ class ViewRingLabelsTest {
     @Test
     fun aPhonesLongestLabelsFitAtEveryFontScale() {
         for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", scale, left)
-        // At twice the font size, the default ring's five.
+        // At twice the font size, the default ring's five: short forms before the ring grows, and then no larger than the first ring.
         prefs.ringOptions = RingOptions.DEFAULT
-        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left, count = 5)
+        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left, count = 5, most = 1.5f)
+    }
+
+    @Test
+    @Ignore("Unmet: on a 400 dp phone at twice the font size, six of the longest labels overlap a button by about 2 dp with the ring at its tightest spacing; cutting labels with an ellipsis to clear them loses whole values")
+    fun aPhonesSixLongestLabelsFitAtTwiceTheFontSize() {
+        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left)
     }
 
     @Test
     fun aTabletsLongestLabelsFitAtEveryFontScale() {
-        for (scale in listOf(1.0f, 1.3f, 2.0f)) for (left in listOf(false, true)) check("w924dp-h1480dp-xhdpi", scale, left)
+        for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check("w924dp-h1480dp-xhdpi", scale, left)
+        // At twice the font size, short forms before the ring grows, and then no larger than the first ring.
+        for (left in listOf(false, true)) check("w924dp-h1480dp-xhdpi", 2.0f, left, most = 1.5f)
     }
 
     @Test

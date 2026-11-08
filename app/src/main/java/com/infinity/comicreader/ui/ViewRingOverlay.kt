@@ -393,13 +393,15 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     }
 
     /**
-     * Gives each label the most wanted of its [shapes] and keeps the labels laid out by [lay]
-     * clear of each other ([RingGeometry.fit], shortening [all] where need be). Returns the
-     * labels' placement.
+     * Gives each label the most wanted of its [shapes] (only its last, the shortest, when
+     * [shortest]) and keeps the labels laid out by [lay] clear of each other
+     * ([RingGeometry.fit], shortening [all] where need be). Returns the labels' placement.
      */
-    private fun fitLabels(all: Boolean = false, lay: (List<Pair<Float, Float>>) -> RingGeometry.Placement): RingGeometry.Placement {
+    private fun fitLabels(
+        all: Boolean = false, shortest: Boolean = false, lay: (List<Pair<Float, Float>>) -> RingGeometry.Placement
+    ): RingGeometry.Placement {
         val pairs = buttons.values.toList()
-        val usable = pairs.mapIndexed { i, (_, label) -> shapes(label, items[i]) }
+        val usable = pairs.mapIndexed { i, (_, label) -> shapes(label, items[i]).let { if (shortest) listOf(it.last()) else it } }
         val (placed, pick) = RingGeometry.fit(usable.map { shapes -> shapes.map { it.size } }, all, lay)
         for ((i, pair) in pairs.withIndex()) {
             val shape = usable[i][pick[i]]
@@ -429,7 +431,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /**
      * Lays [items] out around the hub: as wide as the spacing asks, but small enough that the
      * buttons and their labels stay within [bounds], labels clear of every button and of each
-     * other ([RingGeometry.arrange]).
+     * other ([RingGeometry.arrange]), each the fullest form that lets them. Only where even
+     * the shortest forms overlap does the ring grow: to the smallest radius that clears those,
+     * where labels then take the fullest forms that still fit.
      */
     private fun lay(items: List<Item>) {
         val root = root ?: return
@@ -461,10 +465,12 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val angles = angles()
         val want = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density)
         val spacing = size + LABEL_GAP_DP * density
-        fun arrange(grow: Float, all: Boolean = false) =
-            fitLabels(all) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
-        // Shorter labels first; a larger ring only where even those overlap; at last as large as the room allows, every label short.
-        val placed = arrange(1f).takeIf { it.overlap == 0f } ?: arrange(GROW).takeIf { it.overlap == 0f } ?: arrange(Float.MAX_VALUE, all = true)
+        fun arrange(grow: Float, shortest: Boolean = false) =
+            fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
+        val placed = arrange(1f).takeIf { it.overlap == 0f } ?: run {
+            val grown = arrange(GROW, shortest = true).takeIf { it.overlap == 0f } ?: arrange(Float.MAX_VALUE, shortest = true)
+            fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), grown.radius, reach(), pad(), it) }
+        }
         radius = placed.radius
         for ((i, pair) in buttons.values.withIndex()) {
             val (button, label) = pair
@@ -584,7 +590,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         const val SPACING_DP = 75f
         const val MIN_RADIUS_DP = 91f
 
-        /** How much larger the ring grows first where its labels cannot clear each other: back to the first ring's size. */
+        /** How much larger the ring grows first where even its shortest labels cannot clear each other. */
         const val GROW = 1.5f
         const val LABEL_GAP_DP = 8f
         const val LABEL_MAX_DP = 320f

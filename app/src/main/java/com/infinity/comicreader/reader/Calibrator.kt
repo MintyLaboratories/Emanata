@@ -38,8 +38,8 @@ import kotlin.concurrent.thread
  * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
  * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
  * keeps the winners ([Tuning]) in a file that is not backed up. It starts once the app is
- * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), its pages drawn and
- * encoded meanwhile. A timing during which the app decoded anything ([working]) or another
+ * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws
+ * and encodes its pages, off the timed path. A timing during which the app decoded anything ([working]) or another
  * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
  * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and ends a
  * run that heats up. Until the first calibration ends, the [Tuning.defaults] apply; after a
@@ -255,11 +255,11 @@ object Calibrator {
         val s = if (force) shape else Shape()
         val probe = DeviceProbe(app, force, dropped, pages, s.gapMs)
         try {
-            // The pages are drawn and encoded while the app settles.
-            probe.prepareAhead()
+            // Nothing is drawn before the app is found idle.
             if (!probe.awaitFair()) return probe.why ?: "not fair"
             val settleMs = SystemClock.elapsedRealtime() - started
-            if (!probe.awaitPages()) return "dropped"
+            probe.prepareAhead()
+            if (!probe.awaitPages()) return probe.why ?: "stopped"
             val cores = CpuCores.device
             // Platform JPEG is timed only where there are large cores to pin it to.
             val candidates = Calibration.candidates(
@@ -434,19 +434,25 @@ object Calibrator {
                     Log.w(TAG, "Calibration pages failed", t)
                 } finally {
                     prepMs = SystemClock.elapsedRealtime() - started
+                    // A run that stopped without waiting for the pages left them to this thread.
+                    if (released) recycle()
                 }
             }
         }
 
-        /** Waits for the pages ([prepareAhead]); false when the run was dropped meanwhile. */
+        /** Waits for the pages ([prepareAhead]); false, saying [why], when the run must stop meanwhile ([stopNow]). */
         fun awaitPages(): Boolean {
-            val t = preparing ?: return !dropped()
-            while (t.isAlive) {
-                if (dropped()) return false
+            val t = preparing
+            while (t != null && t.isAlive) {
+                stopNow()?.let { return no(it) }
                 t.join(STEP_MS)
             }
-            return !dropped()
+            return stopNow()?.let { no(it) } ?: true
         }
+
+        /** Why the run must stop now, or null: dropped, or [Calibration.stopReason] but for charging, read where it is waited for. */
+        private fun stopNow(): String? = if (dropped()) "dropped" else
+            Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = true) { true }
 
         /** True when the JPEG XL page was made and native decodes are there. */
         val hasJxl: Boolean get() = jxl != null && jxlOut != null
@@ -463,7 +469,8 @@ object Calibrator {
          * Draws the page and makes its target, the page shrunk to fit the whole screen held
          * upright ([Calibration.target]), as the reader shows it; makes the JPEG XL page
          * (quality 91) and the 4K JPEG page (quality 90, as most scans), each once per
-         * [pageFingerprint]; deletes pages kept from earlier setups.
+         * [pageFingerprint]; deletes pages kept from earlier setups. Stops between steps once
+         * the run must stop ([stopNow]).
          */
         private fun prepare() {
             val (sw, sh) = screenSize(context)
@@ -471,14 +478,14 @@ object Calibrator {
             val page = SyntheticPage.draw(PAGE_W, PAGE_H)
             src = page
             dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            if (dropped()) return
+            if (stopNow() != null) return
             if (JxlPages.kernel != null) {
                 jxl = Calibration.cachedPage(cache, JXL_NAME, "jxl", pageFingerprint) {
                     JxlCoder.encode(page, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
                 }
                 if (jxl != null) jxlOut = Bitmap.createBitmap(PAGE_W, PAGE_H, Bitmap.Config.ARGB_8888)
             }
-            if (dropped()) return
+            if (stopNow() != null) return
             jpeg = Calibration.cachedPage(cache, JPEG_NAME, "jpg", pageFingerprint) {
                 val big = SyntheticPage.draw(JPEG_W, JPEG_H)
                 try {
@@ -649,9 +656,24 @@ object Calibrator {
             return Calibration.othersMs(before, tasks.snapshot()) { it in ours } < IDLE_WINDOW_MS / 10.0
         }
 
+        /** True once the run ended ([release]): pages still being made are then the preparing thread's to recycle. */
+        @Volatile
+        private var released = false
+
+        /**
+         * Ends the run: closes the core ledger and recycles the pages, waiting a little for
+         * one still being made, which stops at its next step ([prepare]); one that takes longer
+         * recycles them itself.
+         */
         fun release() {
-            preparing?.join()
+            released = true
+            val t = preparing
+            t?.join(RELEASE_WAIT_MS)
             if (LibPixels.loaded) LibPixels.ledger(false)
+            if (t == null || !t.isAlive) recycle()
+        }
+
+        private fun recycle() {
             src?.recycle()
             dst?.recycle()
             jxlOut?.recycle()
@@ -661,6 +683,9 @@ object Calibrator {
             private const val JXL_NAME = "page-${PAGE_W}x$PAGE_H-q91"
             private const val JPEG_NAME = "page-${JPEG_W}x$JPEG_H-q90"
             private const val STEP_MS = 50L
+
+            /** The longest [release] waits for pages still being made. */
+            private const val RELEASE_WAIT_MS = 500L
 
             /** How [disturbedBy] names threads that ended during a sample. */
             private const val GONE = "(ended threads)"

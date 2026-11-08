@@ -2418,8 +2418,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             linear = prefs.linearLight,
             pageScaling = prefs.pageScaling,
             zoomScaling = prefs.zoomScaling,
-            preload = applied.thrift.readAhead(prefs.preload, pagesPerScreen()),
-            behind = PageAdapter.screenBehind && prefs.preload > 0 && !applied.thrift.lessReadAhead,
+            preload = pagesAhead(),
+            behind = PageAdapter.screenBehind && pagesAhead() > 0 && !applied.thrift.lessReadAhead,
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
@@ -2472,6 +2472,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         // An open preview strip follows the new layout.
         if (seekPanel.visibility == View.VISIBLE) seekPreviews?.show(seekCells(src), item)
         onPageChanged()
+    }
+
+    /**
+     * Pages decoded ahead of those shown: none for a book on a share where read-ahead is skipped
+     * now ([NetPolicy]: a metered connection or a slow share), else as set and battery saver allows.
+     */
+    private fun pagesAhead(): Int {
+        val held = file?.let { !NetPolicy.mayAt(NetWork.READ_AHEAD, it.path) } == true
+        return if (held) 0 else applied.thrift.readAhead(prefs.preload, pagesPerScreen())
     }
 
     // ------------------------------------------------------- seamless chapter roll

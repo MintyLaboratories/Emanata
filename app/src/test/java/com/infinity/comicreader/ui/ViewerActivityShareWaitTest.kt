@@ -15,10 +15,12 @@ import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -111,6 +113,19 @@ class ViewerActivityShareWaitTest {
     private fun ViewerActivity.progress() = findViewById<View>(R.id.viewer_progress)
 
     private fun ViewerActivity.pages() = findViewById<ViewPager2>(R.id.viewer_pager)
+
+    @Test
+    fun onAShareWhereReadAheadIsSkippedNoPageIsDecodedAhead() {
+        fun ahead(speed: ShareSpeed): Int {
+            Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = speed))) { fake }
+            val viewer = launch()
+            await { viewer.pages().adapter != null }
+            val adapter = viewer.pages().adapter as PageAdapter
+            return PageAdapter::class.java.getDeclaredField("preload").apply { isAccessible = true }.getInt(adapter)
+        }
+        assertEquals(0, ahead(ShareSpeed.SLOW))
+        assertTrue(ahead(ShareSpeed.FAST) > 0)
+    }
 
     @Test
     fun aBookOpeningSlowlySaysSoAfterTwoSecondsUntilItOpens() {

@@ -549,7 +549,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Metered connections and slow shares** (Settings → Network): **Skip on
   metered connections** picks which optional network work waits while the
   connection costs by the byte (mobile data always does): covers from
-  shares, similar-books hashing on shares, read-ahead on shares, automatic
+  shares, similar-books hashing on shares, read-ahead on shares (pages
+  beyond those shown, and the next chapter in a strip), automatic
   model or detector downloads, or any network use you didn't start (all of
   them by default). Opening a book, a search, Download and Compare always
   run. **Warn before opening a large book on a metered connection** (on, 100

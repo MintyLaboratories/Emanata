@@ -522,6 +522,24 @@ class ThumbsTest {
     }
 
     @Test
+    fun aWraparoundsFirstLayerSettlesNothingItsFullImageDoes() {
+        // A layered wraparound twice its inner pages' width; the first layer is too small to trust for a barcode.
+        Avif.codec = FakeAvifCodec(
+            FakeAvifCodec.info(1300, 1000), listOf(FakeAvifCodec.info(325, 250), FakeAvifCodec.info(1300, 1000)), listOf(Color.RED, Color.BLUE)
+        )
+        val avif = javaClass.classLoader!!.getResourceAsStream("avif/layered.avif")!!.use { it.readBytes() }
+        val file = Fixtures.zip(
+            File(context.cacheDir, "layered-wrap.cbz"),
+            Fixtures.entry("01.avif", avif), Fixtures.entry("02.png", png(Color.WHITE)), Fixtures.entry("03.png", png(Color.WHITE))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+        assertFalse(Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!.full)
+        assertFalse(Thumbs.frontKnown(file))
+        Thumbs.load(context, book, "UTF-8", 100, 150)!!
+        assertTrue(Thumbs.frontKnown(file))
+    }
+
+    @Test
     fun aCoverWithoutLayersIsWholeAtOnce() {
         val first = Thumbs.loadFirst(context, rgbBook("plain.cbz"), "UTF-8", 100, 150)!!
         assertTrue(first.full)

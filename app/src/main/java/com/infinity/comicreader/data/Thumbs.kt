@@ -54,7 +54,7 @@ object Thumbs {
         return (max / 8L).toInt().coerceIn(8 * 1024 * 1024, 96 * 1024 * 1024)
     }
 
-    /** Each wraparound's front half by its barcode, by [imageKey]; [NO_FRONT] when that tells nothing. */
+    /** Each wraparound's front half by its barcode on its full image, by [imageKey]; [NO_FRONT] when that tells nothing. */
     private val barcodes = LruCache<String, Int>(1024)
 
     /** Each wraparound's front half that sets reading direction ([Wraparound.Fronts.agreed]), by [imageKey]; [NO_FRONT] for none. */
@@ -66,13 +66,16 @@ object Thumbs {
      * by its barcode, found once per cover image ([imageKey]), else by its tallest text
      * ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when neither
      * tells; then [unsure] too when the detector did not run. Without a barcode the cover sets
-     * no reading direction, which [knownFront] then tells.
+     * no reading direction, which [knownFront] then tells. Only a full image ([find]), never a
+     * smaller first layer, settles what its barcode tells.
      */
     private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
-        val known = barcodes.get(k) ?: (CoverArt.frontOf(src)?.ordinal ?: NO_FRONT).also { barcodes.put(k, it) }
-        Wraparound.Half.entries.getOrNull(known)?.let { return it }
-        fronts.put(k, NO_FRONT)
+        val known = barcodes.get(k)
+        val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
+        else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
+        barcode?.let { return it }
+        if (find) fronts.put(k, NO_FRONT)
         return CoverArt.textFront(src, innerRatio, { s, region -> focusOf(context, entry, s, region, find) }, unsure)
     }
 

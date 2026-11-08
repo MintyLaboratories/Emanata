@@ -34,8 +34,11 @@ enum class MoreAction(val key: String) {
         /** Shown unless turned off: all but Peek. */
         val SHOWN_BY_DEFAULT: Set<MoreAction> = entries.toSet() - PEEK
 
-        /** The items the menu holds together under "Repack ›" when two or more of them apply. */
-        val REPACK_GROUP: Set<MoreAction> = setOf(COMPACT, MAKE_COMPATIBLE, REPACK_CBZ)
+        /** The items that write each book selected anew. */
+        val REBUILDS: Set<MoreAction> = setOf(COMPACT, MAKE_COMPATIBLE, REPACK_CBZ)
+
+        /** The items that write a new book, which the menu holds together under "Convert ›" when two or more of them apply. */
+        val CONVERT_GROUP: Set<MoreAction> = setOf(PACK, PACK_COMPACTED, COMPACT, MAKE_COMPATIBLE, REPACK_CBZ)
     }
 }
 

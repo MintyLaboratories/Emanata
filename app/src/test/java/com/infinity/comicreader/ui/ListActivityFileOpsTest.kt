@@ -177,7 +177,7 @@ class ListActivityFileOpsTest {
         idle()
     }
 
-    /** The ⋮ menu's items for what is selected, those under "Repack ›" in its place. */
+    /** The ⋮ menu's items for what is selected, those under "Convert ›" in its place. */
     private fun ListActivity.moreItems(): List<MoreAction> {
         bar(R.id.selection_more).performClick()
         idle()
@@ -185,7 +185,7 @@ class ListActivityFileOpsTest {
         return (0 until menu.childCount).flatMap { i ->
             when (val tag = menu.getChildAt(i).tag) {
                 is MoreAction -> listOf(tag)
-                ListActivity.MORE_REPACK_TAG -> {
+                ListActivity.MORE_CONVERT_TAG -> {
                     menu.getChildAt(i).performClick()
                     val sub = moreMenu!!
                     val inner = (0 until sub.childCount).mapNotNull { sub.getChildAt(it).tag as? MoreAction }
@@ -197,11 +197,11 @@ class ListActivityFileOpsTest {
         }
     }
 
-    /** The ⋮ menu's row for [action], opening "Repack ›" when it is there. */
+    /** The ⋮ menu's row for [action], opening "Convert ›" when it is there. */
     private fun ListActivity.moreRow(action: MoreAction): View {
         fun rows() = moreMenu!!.let { menu -> (0 until menu.childCount).map { menu.getChildAt(it) } }
         rows().firstOrNull { it.tag == action }?.let { return it }
-        rows().first { it.tag == ListActivity.MORE_REPACK_TAG }.performClick()
+        rows().first { it.tag == ListActivity.MORE_CONVERT_TAG }.performClick()
         return rows().first { it.tag == action }
     }
 
@@ -312,6 +312,25 @@ class ListActivityFileOpsTest {
         assertEquals(
             listOf(MoreAction.MARK_ALL_UNREAD, MoreAction.MARK_UNREAD, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE, MoreAction.REPACK_CBZ, MoreAction.PACK, MoreAction.PACK_COMPACTED),
             activity.moreItems()
+        )
+    }
+
+    @Test
+    fun everyActionThatWritesANewBookSitsUnderConvert() {
+        val activity = launch()
+        activity.select(other.absolutePath)
+        activity.bar(R.id.selection_more).performClick()
+        idle()
+        val main = activity.moreMenu!!
+        val tags = (0 until main.childCount).map { main.getChildAt(it).tag }
+        for (action in MoreAction.CONVERT_GROUP) assertFalse("$action under Convert", action in tags)
+        val convert = (0 until main.childCount).map { main.getChildAt(it) }.single { it.tag == ListActivity.MORE_CONVERT_TAG }
+        assertEquals("Convert ›", convert.findViewById<android.widget.TextView>(R.id.more_action_label).text.toString())
+        convert.performClick()
+        val sub = activity.moreMenu!!
+        assertEquals(
+            listOf(ListActivity.MORE_BACK_TAG, MoreAction.COMPACT, MoreAction.MAKE_COMPATIBLE, MoreAction.REPACK_CBZ, MoreAction.PACK, MoreAction.PACK_COMPACTED),
+            (0 until sub.childCount).map { sub.getChildAt(it).tag }
         )
     }
 
@@ -483,7 +502,7 @@ class ListActivityFileOpsTest {
         activity.bar(R.id.selection_more).performClick()
         idle()
         val menu = activity.moreMenu!!
-        val repack = (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == ListActivity.MORE_REPACK_TAG }
+        val repack = (0 until menu.childCount).map { menu.getChildAt(it) }.first { it.tag == ListActivity.MORE_CONVERT_TAG }
         assertFalse(repack.isEnabled)
         assertEquals(activity.getString(R.string.rebuild_why_read_only), repack.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
         repack.performClick()

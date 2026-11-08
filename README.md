@@ -172,13 +172,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     unread, Mark all as read / unread (folders), Set as startup folder (one
     folder), Show in folder (except from that folder itself), Book info (one
     book, without opening it), Filename charset (one book, advanced),
-    **Repack ›**, a submenu holding **Losslessly compact**, **Make compatible**
-    and **Repack as CBZ** (the last for CBR, CB7 and CBT; books on the device;
-    a folder gives every book inside it and its subfolders; each off, saying
-    why, where nothing selected can be written, or where each book's mark says
-    it had that done already), **Pack** and **Pack compacted**
-    (folders on the device; off, saying why, unless each holds images only, or
-    when books are selected too)
+    **Convert ›**, a submenu holding every action that writes a new book (a lone
+    one shows as itself): **Pack** and **Pack compacted** (folders on the
+    device; off, saying why, unless each holds images only, or when books are
+    selected too), **Losslessly compact**, **Make compatible** and **Repack as
+    CBZ** (the last for CBR, CB7 and CBT; books on the device; a folder gives
+    every book inside it and its subfolders; each off, saying why, where nothing
+    selected can be written, or where each book's mark says it had that done
+    already); they run whether or not the device is charging
     and Peek (off by default). Settings → **Selection menu (⋮)** shows, hides and
     reorders them like the toolbar buttons.
   - The floating button: the list/grid toggle with nothing selected (if

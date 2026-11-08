@@ -2306,8 +2306,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /**
      * The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮
-     * button. Two or more of Compact, Make compatible and Repack as CBZ go together under
-     * "Repack ›", a submenu shown in its place. Pack and Pack compacted stay off until every
+     * button. Two or more of the items that write a new book (Pack, Pack compacted, Compact,
+     * Make compatible, Repack as CBZ) go together under "Convert ›", a submenu shown in its
+     * place; a lone one shows as itself. Pack and Pack compacted stay off until every
      * folder selected is found to hold images only ([PackFolders]), else say why; the
      * rebuilds turn off, saying why, where no book can be written or each one's mark says
      * it had that done already ([OutputMarks]).
@@ -2353,12 +2354,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             sub.visibility = if (toSub) View.VISIBLE else View.GONE
             refit()
         }
-        val group = actions.filter { it in MoreAction.REPACK_GROUP }.takeIf { it.size >= 2 }.orEmpty()
+        val group = actions.filter { it in MoreAction.CONVERT_GROUP }.takeIf { it.size >= 2 }.orEmpty()
         for (action in actions) {
             if (action in group) {
                 if (action != group.first()) continue
-                row(main, MORE_REPACK_TAG, R.drawable.ic_archive, getString(R.string.more_repack_group)) { swap(toSub = true) }
-                row(sub, MORE_BACK_TAG, R.drawable.ic_chevron_left, getString(R.string.more_repack_back)) { swap(toSub = false) }
+                row(main, MORE_CONVERT_TAG, R.drawable.ic_archive, getString(R.string.more_convert_group)) { swap(toSub = true) }
+                row(sub, MORE_BACK_TAG, R.drawable.ic_chevron_left, getString(R.string.more_convert_back)) { swap(toSub = false) }
                 for (inner in group) {
                     row(sub, inner, MoreActionsDialog.iconOf(inner), getString(MoreActionsDialog.labelOf(inner))) {
                         hideMore()
@@ -2390,7 +2391,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         popup.setOnDismissListener { if (morePopup === popup) morePopup = null }
         popup.showAsDropDown(anchor, (anchor.width - box.measuredWidth) / 2, -(anchor.height + box.measuredHeight + gap))
         morePopup = popup
-        val rebuilds = actions.filter { it in MoreAction.REPACK_GROUP }
+        val rebuilds = actions.filter { it in MoreAction.REBUILDS }
         if (packs.isEmpty() && rebuilds.isEmpty()) return
         val entries = selection.entries
         val books = entries.any { !it.isDir }
@@ -2415,9 +2416,9 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             }
             if (morePopup !== popup) return@launch
             for ((action, why) in reasons) offMore(action, why)
-            // Every item under "Repack ›" off for one reason: the row itself, so no submenu opens with nothing to tap.
+            // Every item under "Convert ›" off for one reason: the row itself, so no submenu opens with nothing to tap.
             val inside = group.map { reasons[it] }
-            if (inside.isNotEmpty() && inside.all { it != null } && inside.distinct().size == 1) offMore(MORE_REPACK_TAG, inside.first())
+            if (inside.isNotEmpty() && inside.all { it != null } && inside.distinct().size == 1) offMore(MORE_CONVERT_TAG, inside.first())
             refit()
         }
     }
@@ -2445,7 +2446,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** True when the new file of [entry]'s rebuild can be written where it goes: in the folder itself, or beside the book. Blocking. */
     private fun writable(entry: BookEntry): Boolean = (if (entry.isDir) entry.file else entry.file.parentFile)?.let(canWrite) == true
 
-    /** Turns ⋮ menu item [tag] (a [MoreAction] or [MORE_REPACK_TAG]) off saying [why] (nothing while it is not known), or on again when null; in the menu or its submenu. */
+    /** Turns ⋮ menu item [tag] (a [MoreAction] or [MORE_CONVERT_TAG]) off saying [why] (nothing while it is not known), or on again when null; in the menu or its submenu. */
     private fun offMore(tag: Any, why: String?) {
         val item = listOfNotNull(moreMain, moreSub).flatMap { list -> (0 until list.childCount).map { list.getChildAt(it) } }.firstOrNull { it.tag == tag } ?: return
         item.isEnabled = why == null
@@ -2481,8 +2482,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private fun onMoreAction(action: MoreAction) {
         val entries = selection.entries
         val one = entries.singleOrNull()
-        val asks = action in MoreAction.REPACK_GROUP ||
-            action == MoreAction.PACK || action == MoreAction.PACK_COMPACTED ||
+        val asks = action in MoreAction.CONVERT_GROUP ||
             action == MoreAction.REMOVE_FROM_HISTORY || action == MoreAction.REMOVE_BOOKMARK
         if (!asks) endSelection()
         when (action) {
@@ -3452,8 +3452,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         /** How far the selection's ⋮ menu floats above the list. */
         private const val MORE_ELEVATION_DP = 8f
 
-        /** Tags of the ⋮ menu's "Repack ›" row and of its submenu's way back. */
-        const val MORE_REPACK_TAG = "repack"
+        /** Tags of the ⋮ menu's "Convert ›" row and of its submenu's way back. */
+        const val MORE_CONVERT_TAG = "convert"
         const val MORE_BACK_TAG = "back"
 
         /** Books selected beyond this are not read for their marks as the ⋮ menu opens; their rebuild still leaves alone those done. */

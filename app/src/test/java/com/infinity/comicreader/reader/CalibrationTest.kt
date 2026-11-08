@@ -283,6 +283,16 @@ class CalibrationTest {
     }
 
     @Test
+    fun onlyACalibrationOfThisVersionCountsAsTheSameVersion() {
+        val v = Calibration.VERSION
+        assertTrue(Calibration.sameVersion(org.json.JSONObject().put("fingerprint", Calibration.fingerprint(v, "brand/device:16/BUILD1"))))
+        assertFalse(Calibration.sameVersion(org.json.JSONObject().put("fingerprint", Calibration.fingerprint(v - 1, "brand/device:16/BUILD1"))))
+        assertFalse(Calibration.sameVersion(org.json.JSONObject().put("fingerprint", Calibration.fingerprint(v * 10 + 1, "b"))))
+        assertFalse(Calibration.sameVersion(org.json.JSONObject()))
+        assertFalse(Calibration.sameVersion(null))
+    }
+
+    @Test
     fun cpuTimeIsWeighedByTheCapacityOfTheCoresItRanOn() {
         val caps = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)
         // All on the fastest core: as is.

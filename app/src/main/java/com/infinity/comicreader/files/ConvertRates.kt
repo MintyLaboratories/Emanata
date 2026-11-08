@@ -5,6 +5,7 @@ import androidx.annotation.VisibleForTesting
 import com.infinity.comicreader.compact.Compactor
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeeds
+import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.ImageKind
 import org.json.JSONObject
@@ -52,8 +53,13 @@ object ConvertRates {
         shareRead = { id -> ShareSpeeds.estimate(id)?.bytesPerSecond?.toDouble() }
     )
 
-    /** How much slower than the reference device this one decoded in the calibration [kept] ([WorkRates.speedOf]). */
+    /**
+     * How much slower than the reference device this one decoded in the calibration [kept]
+     * ([WorkRates.speedOf]); 1 for one made by another calibration version, whose pages differ
+     * ([Calibration.sameVersion]).
+     */
     internal fun calibrationSpeed(kept: JSONObject?): Double {
+        if (!Calibration.sameVersion(kept)) return 1.0
         val timings = kept?.optJSONArray("timings") ?: return 1.0
         var jpeg: Double? = null
         var jxl: Double? = null

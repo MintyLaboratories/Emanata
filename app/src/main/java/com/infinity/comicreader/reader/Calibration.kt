@@ -296,6 +296,9 @@ object Calibration {
      */
     fun fingerprint(version: Int, system: String): String = "v$version|$system"
 
+    /** True when [kept], a calibration kept, was made by this calibration [VERSION] (on any system build): only then are its timings comparable with this version's. */
+    fun sameVersion(kept: JSONObject?): Boolean = kept?.optString("fingerprint")?.startsWith(fingerprint(VERSION, "")) == true
+
     /** What calibration's encoded pages are kept for: this install of the [app] on this [system] build, whose drawing and encoders make them. */
     fun pageFingerprint(app: String, system: String): String = "$app|$system"
 

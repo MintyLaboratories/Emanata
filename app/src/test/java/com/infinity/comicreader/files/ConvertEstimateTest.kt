@@ -124,6 +124,17 @@ class ConvertEstimateTest {
     }
 
     @Test
+    fun awayTheTimeLeftRunsAtItsPaceAndMeasuresFromWhereItCameOrWent() {
+        val plan = listOf(60.0, 60.0, 60.0)
+        // Away, four times as long: the plan's 90 s left take 360 s.
+        assertEquals(360.0, ConvertEstimate.remaining(plan, 1, 0.5, 0.0, pace = 4.0), 1e-9)
+        // Away since item 1 began, on pace: 30 s planned took 120 s.
+        assertEquals(360.0, ConvertEstimate.remaining(plan, 1, 0.5, 120.0, pace = 4.0, fromIndex = 1, fromPart = 0.0, fromPace = 4.0), 1e-9)
+        // Back in front after that: the plan's pace again.
+        assertEquals(90.0, ConvertEstimate.remaining(plan, 1, 0.5, 0.0, pace = 1.0, fromIndex = 1, fromPart = 0.5, fromPace = 1.0), 1e-9)
+    }
+
+    @Test
     fun lossyWebpPagesAreToldByTheirFirstBytes() {
         fun webp(chunk: String) = "RIFF".toByteArray() + ByteArray(4) + "WEBP$chunk".toByteArray() + byteArrayOf(10, 0, 0, 0) + ByteArray(10)
         val names = List(10) { "%02d.webp".format(it) }

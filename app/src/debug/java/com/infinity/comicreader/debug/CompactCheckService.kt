@@ -219,7 +219,8 @@ class CompactCheckService : Service() {
         val t = System.nanoTime()
         val forecast = if (pack) jobs.forecastPack(items, how == "pack-compacted") else jobs.forecast(items, rebuild)
         val plan = forecast.get()
-        log("estimate $how of ${items.size} in ${ms(t)} ms: %.1f s (%s); per book %s".format(plan.sum(), TimeText.takes(this, plan.sum()), plan.joinToString { "%.1f".format(it) }))
+        val away = plan.sum() * ConvertRates.slowdown()
+        log("estimate $how of ${items.size} in ${ms(t)} ms: %.1f s, away %.1f s (%s); per book %s".format(plan.sum(), away, TimeText.takes(this, plan.sum(), away), plan.joinToString { "%.1f".format(it) }))
         val chosen = jobs.look(items)
         val name = File(items.first()).name
         val kind = if (pack) FileWork.Kind.PACK else rebuild.kind
@@ -244,7 +245,8 @@ class CompactCheckService : Service() {
             if (at - logged >= LOG_EVERY_MS * 1_000_000) {
                 logged = at
                 status.secondsLeft(FileWork.clock())?.let {
-                    log("at %.0f s: item %d of %d, %.0f%%, left %.1f s (%s)".format(at / 1e9, status.index + 1, status.count, 100 * (status.fraction ?: 0f), it, TimeText.left(this, it)))
+                    val where = if (FileWork.inFront()) "front" else "away"
+                    log("at %.0f s ($where): item %d of %d, %.0f%%, left %.1f s (%s)".format(at / 1e9, status.index + 1, status.count, 100 * (status.fraction ?: 0f), it, TimeText.left(this, it)))
                 }
             }
             Thread.sleep(POLL_MS)

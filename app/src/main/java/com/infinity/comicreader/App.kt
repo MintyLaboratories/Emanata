@@ -12,6 +12,7 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.net.Listings
@@ -47,6 +48,8 @@ class App : Application() {
         NetPolicy.rules = prefs.netRules
         Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
+        FileWork.inFront = { Calibrator.inFront }
+        FileWork.slowdown = ConvertRates::slowdown
         RemoteCache.limitBytes = prefs.networkCacheBytes
         Calibrator.start(this)
         // Before any chain is read: a pick of an imported model needs it known.

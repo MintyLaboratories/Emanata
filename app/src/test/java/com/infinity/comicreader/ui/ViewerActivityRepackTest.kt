@@ -15,7 +15,9 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.OpenBooks
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.files.WorkRates
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Fixtures.entry
 import com.infinity.comicreader.testing.bookId
@@ -61,11 +63,13 @@ class ViewerActivityRepackTest {
         library = Library(context)
         dir = tmp.newFolder("shelf")
         FileWork.reset()
+        ConvertRates.reset(context)
     }
 
     @After
     fun tearDown() {
         controllers.forEach { if (!it.get().isDestroyed) it.pause().stop().destroy() }
+        ConvertRates.reset(context)
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -169,5 +173,25 @@ class ViewerActivityRepackTest {
         assertFalse(book.exists())
         assertNotEquals(0, cbz.length())
         assertFalse("not offered for the CBZ", library.repackDeclined(bookId(cbz)))
+    }
+
+    @Test
+    fun theOfferSaysHowLongRepackingTakes() {
+        val book = solid()
+        // Reading this device's RARs as slow as three minutes for this book.
+        val perByte = 180.0 / book.length()
+        File(context.noBackupFilesDir, "convert_rates.txt").writeText("read/device/rar=1e12,${1e12 * perByte}")
+        ConvertRates.reset()
+        launch(book)
+        val dialog = offer() ?: throw AssertionError("no offer")
+        val line = dialog.findViewById<TextView>(R.id.convert_estimate)!!
+        repeat(300) {
+            idle()
+            if (line.text.toString() != context.getString(R.string.takes_estimating)) return@repeat
+            Thread.sleep(10)
+        }
+        assertEquals(View.VISIBLE, line.visibility)
+        val away = context.getString(R.string.span_minutes, (3 * WorkRates.BACK_SLOWDOWN).toInt())
+        assertEquals(context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, 3), away), line.text.toString())
     }
 }

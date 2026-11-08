@@ -700,6 +700,11 @@
     <string name="takes_minutes">Takes about %1$d min</string>
     <string name="takes_hours">Takes about %1$d h</string>
     <string name="takes_hours_minutes">Takes about %1$d h %2$d min</string>
+    <string name="takes_away">%1$s, %2$s with the app away</string>
+    <string name="span_under_minute">under a minute</string>
+    <string name="span_minutes">about %1$d min</string>
+    <string name="span_hours">about %1$d h</string>
+    <string name="span_hours_minutes">about %1$d h %2$d min</string>
     <!-- The time left of a Convert action under way, on its bubble's card and notification. -->
     <string name="left_under_minute">Under a minute left</string>
     <string name="left_minutes">About %1$d min left</string>

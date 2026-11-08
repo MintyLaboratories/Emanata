@@ -28,6 +28,9 @@ object ConvertRates {
         }
     }
 
+    /** How many times longer work takes with the app away ([WorkRates.slowdown]); the default before the rates are read. */
+    fun slowdown(): Double = loaded?.slowdown() ?: WorkRates.BACK_SLOWDOWN
+
     /** Writes what was measured to disk. Blocking. */
     fun save(context: Context) {
         val rates = loaded ?: return
@@ -83,9 +86,9 @@ object ConvertRates {
 /**
  * Feeds one book's timings ([Compactor.Meter]) for action [op] at [location] in [container]
  * to [rates], and keeps what they add up to, so the time the book took beyond them ([book])
- * and the bytes it wrote can be learned. Only while the app is [inFront]: its
- * background-priority workers run several times slower once it is not, and estimates are
- * shown with the app in front.
+ * and the bytes it wrote can be learned. With the app [inFront] each figure learns; with it
+ * away, its background-priority workers run slower, and only how much slower than the
+ * figures say is learned ([WorkRates.slowdown]).
  */
 class BookMeter(
     private val rates: WorkRates,
@@ -104,16 +107,19 @@ class BookMeter(
         val kind = ImageKind.sniff(bytes, minOf(bytes.size, ImageKind.HEADER_BYTES))
         val lossy = kind == ImageKind.WEBP && !PageProbe.webpLossless(bytes)
         if (inFront()) rates.page(s, kind, bytes.size.toLong(), seconds, lossy)
+        else rates.away(rates.secondsPerPage(s, kind, SizeClass.of(bytes.size.toLong()), lossy), seconds)
         synchronized(this) { convert += seconds }
     }
 
     override fun read(bytes: Long, seconds: Double) {
         if (inFront()) rates.read(location, container, bytes, seconds)
+        else rates.away(bytes / rates.readRate(location, container), seconds)
         synchronized(this) { read += seconds }
     }
 
     override fun written(bytes: Long, seconds: Double) {
         if (inFront()) rates.written(location, op.key, bytes, seconds)
+        else rates.away(bytes / rates.writeRate(location, op.key), seconds)
         synchronized(this) {
             write += seconds
             written += bytes
@@ -126,8 +132,8 @@ class BookMeter(
 
     /** The book, of [bytes], took [wall] seconds: learns the time beyond its parts, and the bytes written per byte of book. */
     fun book(bytes: Long, wall: Double) {
-        if (!inFront()) return
-        rates.book(op.key, beyond(wall))
+        val extra = beyond(wall)
+        if (inFront()) rates.book(op.key, extra) else rates.away(rates.bookSeconds(op.key), extra)
         rates.output(op.key, bytes, synchronized(this) { written })
     }
 }

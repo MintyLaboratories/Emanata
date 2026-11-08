@@ -5,6 +5,7 @@ import android.view.View
 import android.widget.TextView
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.infinity.comicreader.R
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.Span
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.launch
@@ -29,17 +30,29 @@ internal object TimeText {
         }
     }
 
+    /** "About 12 min" for [seconds], as part of a sentence. */
+    fun span(context: Context, seconds: Double): String = text(context, seconds, R.string.span_under_minute, R.string.span_minutes, R.string.span_hours, R.string.span_hours_minutes)
+
+    /**
+     * How long work of [seconds] with the app in front takes ([takes]), and [away] seconds
+     * with it away when that reads otherwise: "Takes about 12 min, about 40 min with the app away".
+     */
+    fun takes(context: Context, seconds: Double, away: Double): String {
+        val front = takes(context, seconds)
+        return if (Span.of(away) == Span.of(seconds)) front else context.getString(R.string.takes_away, front, span(context, away))
+    }
+
     /**
      * Shows in [line] that the time is being estimated, then how long the work [forecast]
-     * gives takes once known (in [scope], so a screen gone hears nothing); hidden when it
-     * cannot be estimated.
+     * gives takes once known, with the app in front and away ([ConvertRates.slowdown]); in
+     * [scope], so a screen gone hears nothing. Hidden when it cannot be estimated.
      */
     fun show(line: TextView, scope: LifecycleCoroutineScope, forecast: Future<List<Double>>) {
         line.setText(R.string.takes_estimating)
         line.visibility = View.VISIBLE
         scope.launch {
             val seconds = withContext(AppDispatchers.io) { runCatching { forecast.get().sum() }.getOrNull() }
-            if (seconds == null) line.visibility = View.GONE else line.text = takes(line.context, seconds)
+            if (seconds == null) line.visibility = View.GONE else line.text = takes(line.context, seconds, seconds * ConvertRates.slowdown())
         }
     }
 }

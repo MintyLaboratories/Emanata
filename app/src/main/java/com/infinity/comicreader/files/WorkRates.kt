@@ -65,11 +65,12 @@ enum class Container(val key: String) {
 }
 
 /**
- * This device's speeds at Convert work, learned from real jobs: seconds of wall time per page
- * by [Step], format and [SizeClass] (pages convert side by side, each charged its share);
- * seconds per byte read by location and [Container], and written by location and action; the
- * bytes each action writes per byte of book; and each action's time per book beyond those
- * (opening, checking, putting the new file in place).
+ * This device's speeds at Convert work, learned from real jobs with the app in front: seconds
+ * of wall time per page by [Step], format and [SizeClass] (pages convert side by side, each
+ * charged its share); seconds per byte read by location and [Container], and written by
+ * location and action; the bytes each action writes per byte of book; and each action's time
+ * per book beyond those (opening, checking, putting the new file in place). Work done with
+ * the app away counts only as how much slower it ran ([slowdown]).
  * Each figure blends what was measured with its seed, the seed counting as a few units
  * measured, so a first job leans on the seed and later ones on what they measured; only the
  * most recent work counts ([CAP_PAGES], [CAP_BYTES], [CAP_BOOKS]). Locations are [DEVICE] or
@@ -112,6 +113,10 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     @Synchronized
     fun bookSeconds(op: String): Double = blended(bookKey(op), PRIOR_BOOKS, BOOK_SECONDS)
 
+    /** How many times longer work takes with the app away than these figures say. */
+    @Synchronized
+    fun slowdown(): Double = blended(BACK_KEY, PRIOR_BACK, BACK_SLOWDOWN)
+
     /** One page of [format], [bytes] long ([lossy] as [secondsPerPage] says), took [seconds] for [step]. */
     fun page(step: Step, format: ImageKind?, bytes: Long, seconds: Double, lossy: Boolean = false) =
         add(pageKey(step, format, SizeClass.of(bytes), lossy), 1.0, seconds, CAP_PAGES)
@@ -129,6 +134,9 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
 
     /** A book of action [op] took [seconds] beyond reading, converting and writing. */
     fun book(op: String, seconds: Double) = add(bookKey(op), 1.0, seconds, CAP_BOOKS)
+
+    /** Work these figures put at [expected] seconds took [seconds] with the app away. */
+    fun away(expected: Double, seconds: Double) = add(BACK_KEY, expected, seconds, CAP_BACK)
 
     @Synchronized
     private fun add(key: String, amount: Double, seconds: Double, cap: Double) {
@@ -244,6 +252,7 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         private fun writeKey(location: String, op: String) = "write/$location/$op"
         private fun bookKey(op: String) = "book/$op"
         private fun outputKey(op: String) = "out/$op"
+        private const val BACK_KEY = "away"
 
         /** Calibration's 2000x3000 JPEG decode, and the CPU time of its JPEG XL decode, on the reference device (Snapdragon 8 Gen 1 class, Android 16). */
         const val REF_JPEG_MS = 27.0
@@ -273,14 +282,19 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         /** Bytes each action writes per byte of book before any is measured; 1 for others. */
         val OUTPUT_SHARES = mapOf("compact" to 0.8, "pack-compacted" to 0.8, "compatible" to 1.3)
 
+        /** How many times longer work takes with the app away, before any is measured: its workers' share of the CPU drops. */
+        const val BACK_SLOWDOWN = 4.0
+
         /** How many units a seed counts as. */
         private const val PRIOR_PAGES = 3.0
         private const val PRIOR_BYTES = 32.0 * 1024 * 1024
         private const val PRIOR_BOOKS = 2.0
+        private const val PRIOR_BACK = 60.0
 
         /** The most recent work kept: pages, bytes, books per figure. */
         const val CAP_PAGES = 300.0
         const val CAP_BYTES = 2.0 * 1024 * 1024 * 1024
         const val CAP_BOOKS = 50.0
+        const val CAP_BACK = 3600.0
     }
 }

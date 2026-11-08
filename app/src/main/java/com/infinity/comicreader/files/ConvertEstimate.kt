@@ -41,10 +41,10 @@ data class BookPlan(
 )
 
 /**
- * How long Convert work takes, from this device's [rates]: each book reads, converts its
- * pages (reading overlaps converting, so the slower of the two counts), writes its new file
- * (as many bytes per byte of book as its action writes) and reads it back, plus its action's
- * time per book. A book not listed is taken to hold
+ * How long Convert work takes with the app in front, from this device's [rates]: each book
+ * reads, converts its pages (reading overlaps converting, so the slower of the two counts),
+ * writes its new file (as many bytes per byte of book as its action writes) and reads it
+ * back, plus its action's time per book. A book not listed is taken to hold
  * pages as those listed do, by bytes; with none listed, medium JPEGs. A book whose mark was
  * not read is taken to be done as often as those read were.
  */
@@ -105,20 +105,37 @@ class ConvertEstimate(private val rates: WorkRates) {
         private const val MAX_RATIO = 10.0
 
         /**
-         * Seconds left of a job planned as [plan] (seconds per item), now at item [index] with
-         * [part] (0 to 1) of it done, [elapsed] seconds after it started: the plan's seconds left,
-         * scaled by how fast this job went so far against its plan, that measure counting more
-         * the more planned work it covers ([PRIOR_SECONDS]).
+         * Seconds left of a job planned as [plan] (seconds per item with the app in front), now
+         * at item [index] with [part] (0 to 1) of it done, running [pace] times as long as
+         * planned (the app away, [WorkRates.slowdown]): the plan's seconds left at that pace,
+         * scaled by how fast this job went against its plan for the [elapsed] seconds since it
+         * stood at item [fromIndex] with [fromPart] done, at [fromPace]; that measure counting
+         * more the more planned work it covers ([PRIOR_SECONDS]).
          */
-        fun remaining(plan: List<Double>, index: Int, part: Double, elapsed: Double): Double {
+        fun remaining(
+            plan: List<Double>,
+            index: Int,
+            part: Double,
+            elapsed: Double,
+            pace: Double = 1.0,
+            fromIndex: Int = 0,
+            fromPart: Double = 0.0,
+            fromPace: Double = pace
+        ): Double {
             if (plan.isEmpty()) return 0.0
-            val i = index.coerceIn(0, plan.size)
-            val done = plan.subList(0, i).sum() + (plan.getOrNull(i) ?: 0.0) * part.coerceIn(0.0, 1.0)
-            val left = (plan.sum() - done).coerceAtLeast(0.0)
-            if (done <= 0 || elapsed <= 0) return left
-            val ratio = (elapsed / done).coerceIn(MIN_RATIO, MAX_RATIO)
-            val weight = done / (done + PRIOR_SECONDS)
+            val done = doneAt(plan, index, part)
+            val left = (plan.sum() - done).coerceAtLeast(0.0) * pace
+            val expected = (done - doneAt(plan, fromIndex, fromPart)) * fromPace
+            if (expected <= 0 || elapsed <= 0) return left
+            val ratio = (elapsed / expected).coerceIn(MIN_RATIO, MAX_RATIO)
+            val weight = expected / (expected + PRIOR_SECONDS)
             return left * (weight * ratio + (1 - weight))
+        }
+
+        /** Planned seconds of [plan] done at item [index] with [part] of it done. */
+        private fun doneAt(plan: List<Double>, index: Int, part: Double): Double {
+            val i = index.coerceIn(0, plan.size)
+            return plan.subList(0, i).sum() + (plan.getOrNull(i) ?: 0.0) * part.coerceIn(0.0, 1.0)
         }
 
         /** The bytes [lossyWebp] needs of a WebP. */

@@ -83,7 +83,6 @@ class WorkRatesTest {
         assertTrue(rates.outputShare("repack") < 0.5)
     }
 
-
     @Test
     fun aSharesMeasuredSpeedSeedsItsReadsAndWrites() {
         val rates = WorkRates(WorkRates.Seeds(shareRead = { id -> if (id == "a") 10e6 else null }))
@@ -135,16 +134,18 @@ class WorkRatesTest {
     }
 
     @Test
-    fun nothingIsLearnedWhileTheAppIsNotInFront() {
+    fun withTheAppAwayOnlyHowMuchSlowerItRanIsLearned() {
         val rates = WorkRates()
-        val before = rates.encode()
+        assertEquals(WorkRates.BACK_SLOWDOWN, rates.slowdown(), 0.0)
+        val page = rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.MEDIUM)
         val meter = BookMeter(rates, ConvertOp.COMPACT, WorkRates.DEVICE, Container.ZIP) { false }
-        meter.page(ByteArray(64), 9.0)
-        meter.read(mb, 1.0)
-        meter.written(mb, 1.0)
-        meter.book(mb, 20.0)
-        assertEquals(before, rates.encode())
-        assertEquals(10.0, meter.beyond(20.0), 1e-9)
+        val jpegPage = ByteArray(2 * mb.toInt()).also { it[0] = 0xFF.toByte(); it[1] = 0xD8.toByte(); it[2] = 0xFF.toByte() }
+        // Pages twice as slow as the figures say.
+        repeat(20000) { meter.page(jpegPage, 2 * page) }
+        meter.read(mb, 2 * mb / rates.readRate(WorkRates.DEVICE, Container.ZIP))
+        assertEquals(page, rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.MEDIUM), 1e-9)
+        assertEquals(WorkRates.DEVICE_READ, rates.readRate(WorkRates.DEVICE, Container.ZIP), 1.0)
+        assertEquals(2.0, rates.slowdown(), 0.1)
     }
 
     @Test

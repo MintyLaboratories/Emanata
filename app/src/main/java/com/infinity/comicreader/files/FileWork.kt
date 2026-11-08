@@ -100,7 +100,8 @@ object FileWork {
      * if anywhere. Waiting its turn until [started] by [clock]; [stoppable] while canceling can
      * stop the step under way; finished once [outcome] is set. Its [id] is its place in the
      * queue, and among the operation stack's bubbles ([nextOrder]). A Convert job's [plan] is
-     * the seconds each item is expected to take ([ConvertEstimate]).
+     * the seconds each item is expected to take with the app in front ([ConvertEstimate]), and
+     * its own speed is measured [since] the plan was set or the app came or went.
      */
     data class Status(
         val kind: Kind,
@@ -114,7 +115,8 @@ object FileWork {
         val count: Int = 1,
         val id: Long = 0,
         val into: String? = null,
-        val plan: List<Double>? = null
+        val plan: List<Double>? = null,
+        val since: Since? = null
     ) {
         /** True until its turn comes. */
         val waiting: Boolean get() = started == null && outcome == null
@@ -133,15 +135,32 @@ object FileWork {
                 return ((index.coerceIn(0, count) + (part ?: 0f)) / count).coerceIn(0f, 1f)
             }
 
-        /** Seconds left at [now] (by [clock]) while it runs to a [plan], refined by how fast it went so far ([ConvertEstimate.remaining]); else null. */
-        fun secondsLeft(now: Long): Double? {
+        /** The item its time left counts from: the current one, the only one when it counts none. */
+        private val at: Int get() = if (count <= 1) 0 else index
+
+        /** How far into the current item it is, from 0 to 1. */
+        private val part: Double get() = if (total > 0) done.coerceIn(0, total).toDouble() / total else 0.0
+
+        /** Where it stands at [now], the app [front] or not. */
+        fun here(now: Long, front: Boolean) = Since(now, at, part, front)
+
+        /**
+         * Seconds left at [now] (by [clock]) while it runs to a [plan], the app [front] or away
+         * (work then takes [slowdown] times as long), refined by how fast it went [since]
+         * ([ConvertEstimate.remaining]); else null.
+         */
+        fun secondsLeft(now: Long, front: Boolean = FileWork.inFront(), slowdown: Double = FileWork.slowdown()): Double? {
             val planned = plan?.takeIf { it.isNotEmpty() } ?: return null
             val start = started?.takeIf { outcome == null } ?: return null
-            val part = if (total > 0) done.coerceIn(0, total).toDouble() / total else 0.0
-            val at = if (count <= 1) 0 else index
-            return ConvertEstimate.remaining(planned, at, part, (now - start).coerceAtLeast(0) / 1000.0)
+            val from = since ?: Since(start, 0, 0.0, front)
+            fun pace(here: Boolean) = if (here) 1.0 else slowdown.coerceAtLeast(1.0)
+            val elapsed = (now - from.at).coerceAtLeast(0) / 1000.0
+            return ConvertEstimate.remaining(planned, at, part, elapsed, pace(front), from.index, from.part, pace(from.front))
         }
     }
+
+    /** Where a job stood [at] (by [clock]): item [index], [part] of it done, the app [front] or not. */
+    data class Since(val at: Long, val index: Int, val part: Double, val front: Boolean)
 
     /** What an operation's work hears from and tells the runner. */
     interface Progress {
@@ -173,6 +192,14 @@ object FileWork {
     /** Where operations run; tests may stand in another. */
     @Volatile
     var dispatcher: CoroutineDispatcher = AppDispatchers.io
+
+    /** True while the app is in front; work runs slower once it is not ([slowdown]). */
+    @Volatile
+    var inFront: () -> Boolean = { true }
+
+    /** How many times longer work takes with the app away ([WorkRates.slowdown]). */
+    @Volatile
+    var slowdown: () -> Double = { 1.0 }
 
     /** Hears each operation start, to keep the app running while it does. */
     @Volatile
@@ -240,7 +267,7 @@ object FileWork {
                     val now = clock()
                     if (now - reported < REPORT_MS && done < total) return
                     reported = now
-                    edit(flow, op.id) { it.copy(done = done, total = total) }
+                    edit(flow, op.id) { paced(it.copy(done = done, total = total), now) }
                 }
 
                 override fun stoppable(can: Boolean) {
@@ -249,11 +276,11 @@ object FileWork {
 
                 override fun item(name: String, index: Int, count: Int) {
                     reported = 0L
-                    edit(flow, op.id) { it.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true) }
+                    edit(flow, op.id) { paced(it.copy(name = name, index = index, count = count, done = 0, total = 0, stoppable = true), clock()) }
                 }
 
                 override fun plan(seconds: List<Double>) {
-                    edit(flow, op.id) { it.copy(plan = seconds) }
+                    edit(flow, op.id) { it.copy(plan = seconds, since = it.here(clock(), inFront())) }
                 }
             }
             outcome = try {
@@ -278,6 +305,13 @@ object FileWork {
         edit(flow, op.id) { it.copy(outcome = outcome) }
         running = null
         pump()
+    }
+
+    /** [status] measuring its speed anew from [now] when the app came or went since it last did. */
+    private fun paced(status: Status, now: Long): Status {
+        val since = status.since ?: return status
+        val front = inFront()
+        return if (since.front == front) status else status.copy(since = status.here(now, front))
     }
 
     private fun edit(flow: MutableStateFlow<List<Status>>, id: Long, change: (Status) -> Status) {

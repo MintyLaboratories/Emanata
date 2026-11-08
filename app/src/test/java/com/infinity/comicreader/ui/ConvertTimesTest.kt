@@ -5,6 +5,7 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
@@ -26,6 +27,8 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.CompletableFuture
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -92,6 +95,9 @@ class ConvertTimesTest {
         ConvertRates.reset()
     }
 
+    /** "Takes about [minutes] min", and four times that with the app away (the slowdown before any is measured). */
+    private fun takes(minutes: Int) = context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, minutes), context.getString(R.string.span_minutes, minutes * 4))
+
     private fun estimateLine(): TextView {
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         repeat(300) {
@@ -111,14 +117,33 @@ class ConvertTimesTest {
         val line = estimateLine()
         assertEquals(View.VISIBLE, line.visibility)
         // Six pages at about 100 s each.
-        assertEquals(context.getString(R.string.takes_minutes, 10), line.text.toString())
+        assertEquals(takes(10), line.text.toString())
     }
 
     @Test
     fun aQuickJobTakesUnderAMinute() {
-        val path = book("Book B.cbz", 2).absolutePath
-        actions.rebuild(listOf(path), FileJobs.Rebuild.REPACK)
+        val file = book("Book B.cbz", 2)
+        actions.rebuild(listOf(file.absolutePath), FileJobs.Rebuild.REPACK)
         assertEquals(context.getString(R.string.takes_under_minute), estimateLine().text.toString())
+        // The same book read as slow as five minutes: the estimate is no constant.
+        File(context.noBackupFilesDir, "convert_rates.txt").writeText("read/device/zip=1e12,${1e12 * 300.0 / file.length()}")
+        ConvertRates.reset()
+        actions.rebuild(listOf(file.absolutePath), FileJobs.Rebuild.REPACK)
+        assertEquals(takes(5), estimateLine().text.toString())
+    }
+
+    @Test
+    fun theEstimateLineHidesWhenNothingCanBeEstimated() {
+        val dialog = AlertDialog.Builder(controller.get()).setView(R.layout.dialog_estimate).show()
+        val line = dialog.findViewById<TextView>(R.id.convert_estimate)!!
+        val failed = CompletableFuture<List<Double>>().apply { completeExceptionally(IOException("unreadable")) }
+        TimeText.show(line, controller.get().lifecycleScope, failed)
+        repeat(300) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (line.visibility == View.GONE) return@repeat
+            Thread.sleep(10)
+        }
+        assertEquals(View.GONE, line.visibility)
     }
 
     @Test
@@ -127,7 +152,7 @@ class ConvertTimesTest {
         val dir = File(shelf, "Loose").apply { mkdirs() }
         repeat(4) { File(dir, "%02d.jpg".format(it)).writeBytes(page(4000)) }
         actions.pack(listOf(dir), compacted = true)
-        assertEquals(context.getString(R.string.takes_minutes, 2), estimateLine().text.toString())
+        assertEquals(takes(2), estimateLine().text.toString())
         // Packed as they are, the pages are only copied.
         actions.pack(listOf(dir), compacted = false)
         assertEquals(context.getString(R.string.takes_under_minute), estimateLine().text.toString())
@@ -142,10 +167,14 @@ class ConvertTimesTest {
         assertEquals("Under a minute left", TimeText.left(context, 59.0))
         assertEquals("About 4 min left", TimeText.left(context, 250.0))
         assertEquals("About 1 h 40 min left", TimeText.left(context, 100 * 60.0))
+        assertEquals("Takes about 12 min, about 40 min with the app away", TimeText.takes(context, 12 * 60.0, 40 * 60.0))
+        // Both read alike: said once.
+        assertEquals("Takes under a minute", TimeText.takes(context, 10.0, 40.0))
     }
 
     @Test
     fun theNotificationTellsTheTimeLeftOfAJobWithAPlan() {
+        FileWork.inFront = { true }
         val status = FileWork.Status(FileWork.Kind.COMPACT, "Book A.cbz", started = 1_000, done = 0, total = 0, plan = listOf(600.0))
         assertEquals("Book A.cbz · About 10 min left", FileWorkService.textOf(context, status, 1_000))
         // Halfway through on plan, five minutes later.
@@ -157,5 +186,20 @@ class ConvertTimesTest {
         val many = status.copy(count = 3, index = 1, plan = listOf(60.0, 60.0, 60.0))
         assertTrue(FileWorkService.textOf(context, many, 61_000).endsWith("About 2 min left"))
         assertNotEquals(FileWorkService.textOf(context, many, 61_000), FileWorkService.nameOf(context, many))
+    }
+
+    @Test
+    fun withTheAppAwayTheTimeLeftRunsAtItsPace() {
+        FileWork.slowdown = { 4.0 }
+        try {
+            FileWork.inFront = { false }
+            val status = FileWork.Status(FileWork.Kind.COMPACT, "Book A.cbz", started = 1_000, plan = listOf(600.0), since = FileWork.Since(1_000, 0, 0.0, front = true))
+            assertEquals("Book A.cbz · About 40 min left", FileWorkService.textOf(context, status, 1_000))
+            FileWork.inFront = { true }
+            assertEquals("Book A.cbz · About 10 min left", FileWorkService.textOf(context, status, 1_000))
+        } finally {
+            FileWork.inFront = { true }
+            FileWork.slowdown = { 1.0 }
+        }
     }
 }

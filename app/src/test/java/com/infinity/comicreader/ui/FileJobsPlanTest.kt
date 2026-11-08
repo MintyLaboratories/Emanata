@@ -145,4 +145,14 @@ class FileJobsPlanTest {
         assertNull(plans.single().done)
         assertNull(plans.single().pages)
     }
+
+    @Test
+    fun aRebuildTellsItsPlanAndKeepsWhatItLearned() {
+        val paths = listOf(book("A.cbz").absolutePath, book("B.cbz").absolutePath)
+        val heard = Heard()
+        jobs.rebuild(paths, FileJobs.Rebuild.COMPACT, inPlace = false, skipHidden = false, chosen = jobs.look(paths), p = heard)
+        assertEquals(2, heard.plan!!.size)
+        assertTrue(heard.plan!!.all { it > 0 })
+        assertTrue(File(context.noBackupFilesDir, "convert_rates.txt").readText().isNotBlank())
+    }
 }

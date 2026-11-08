@@ -196,4 +196,39 @@ class FileWorkQueueTest {
         go.release()
         waitFor { status(b).outcome != null }
     }
+
+    @Test
+    fun aJobMeasuresItsSpeedFromItsPlanAndAnewWhenTheAppComesOrGoes() {
+        var front = true
+        var now = 1_000L
+        FileWork.inFront = { front }
+        FileWork.clock = { now }
+        val go = Semaphore(0)
+        val stage = Semaphore(0)
+        try {
+            val id = FileWork.start(FileWork.Kind.COMPACT, "a") { p ->
+                // Time before the plan does not count.
+                now = 5_000L
+                p.plan(listOf(60.0))
+                stage.release()
+                go.acquire()
+                p.report(50, 100)
+                stage.release()
+                go.acquire()
+                FileWork.Outcome.Done(null)
+            }
+            stage.acquire()
+            assertEquals(FileWork.Since(5_000L, 0, 0.0, front = true), status(id).since)
+            front = false
+            now = 8_000L
+            go.release()
+            stage.acquire()
+            assertEquals(FileWork.Since(8_000L, 0, 0.5, front = false), status(id).since)
+            go.release()
+            waitFor { status(id).outcome != null }
+        } finally {
+            FileWork.inFront = { true }
+            FileWork.clock = { System.nanoTime() / 1_000_000 }
+        }
+    }
 }

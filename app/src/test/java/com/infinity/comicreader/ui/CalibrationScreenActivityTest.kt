@@ -130,6 +130,17 @@ class CalibrationScreenActivityTest {
     }
 
     @Test
+    fun theBarStepsWithoutAnimating() {
+        val a = launch().get()
+        val bar = a.findViewById<LinearProgressIndicator>(R.id.calibration_bar)
+        // The share of the bar drawn: Material keeps it private (1.12.0); an animated step would still draw the old share until frames move it.
+        val drawn = bar.progressDrawable!!.javaClass.getDeclaredMethod("getIndicatorFraction").apply { isAccessible = true }
+        fake.move(CalibrationProgress(timing = true, done = 25, total = 50, candidate = Candidate(Candidate.Kind.JXL, 2, pinned = true), round = 3))
+        assertEquals(500, bar.progress)
+        assertEquals(0.5f, drawn.invoke(bar.progressDrawable) as Float, 0.001f)
+    }
+
+    @Test
     fun backDoesNotLeaveWhileItRuns() {
         val a = launch().get()
         a.onBackPressedDispatcher.onBackPressed()

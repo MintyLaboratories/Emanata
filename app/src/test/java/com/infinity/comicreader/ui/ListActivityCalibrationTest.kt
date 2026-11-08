@@ -70,6 +70,11 @@ class ListActivityCalibrationTest {
         fake.offered = CalibrationOffer.SCREEN
         val c = launch()
         val a = c.get()
+        // Not before, though resumed and hearing calibration change: a dialog over the library, or the library not drawn yet.
+        fake.move(com.infinity.comicreader.reader.CalibrationProgress())
+        idle()
+        assertFalse(a.screenStarted())
+        assertEquals(0, fake.shownTimes)
         c.windowFocusChanged(true)
         idle()
         assertTrue(a.screenStarted())

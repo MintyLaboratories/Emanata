@@ -1,6 +1,8 @@
 package com.infinity.comicreader.ui
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
@@ -14,6 +16,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = android.app.Application::class)
@@ -58,6 +61,28 @@ class PanelTunerViewTest {
         assertTrue(view.playing)
         c.get().setContentView(View(c.get()))
         assertFalse(view.playing)
+    }
+
+    @Test
+    fun framesComeAtTheCap() {
+        val (_, view) = shown()
+        view.onVisibilityAggregated(true)
+        val canvas = Canvas(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+        val looper = shadowOf(Looper.getMainLooper())
+        repeat(3) {
+            view.draw(canvas)
+            assertFalse(view.isDirty)
+            // The next frame is asked for a frame's length after this one began, not sooner.
+            looper.idleFor(Duration.ofMillis(1000L / PanelTunerView.FPS - 10))
+            assertFalse(view.isDirty)
+            looper.idleFor(Duration.ofMillis(20))
+            assertTrue(view.isDirty)
+        }
+        // Held: no frame asked for.
+        view.draw(canvas)
+        view.held = true
+        looper.idleFor(Duration.ofMillis(200))
+        assertFalse(view.isDirty)
     }
 
     @Test

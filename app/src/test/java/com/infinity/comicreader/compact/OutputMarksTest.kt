@@ -196,6 +196,16 @@ class OutputMarksTest {
     }
 
     @Test
+    fun theToolShowsAsOursOrCutToLength() {
+        fun by(tool: String) = OutputMarks.done(listOf(Entry(tool, "compact", 1))).compactedBy
+        assertEquals("Emanata", by("EMANATA"))
+        assertEquals("SomeTool", by("SomeTool"))
+        val long = "t".repeat(OutputMarks.SHOWN_TOOL)
+        assertEquals(long, by(long))
+        assertEquals("t".repeat(OutputMarks.SHOWN_TOOL - 1) + "…", by(long + "t".repeat(10_000)))
+    }
+
+    @Test
     fun emanataEntriesCountAtTheirVersionOrLater() {
         val f = zip(*pages)
         setComment(f, "[i: Emanata:compact:v0 | ${hex(f)}]".toByteArray())

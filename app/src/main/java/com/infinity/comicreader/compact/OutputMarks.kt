@@ -139,7 +139,7 @@ object OutputMarks {
         return text.toByteArray(Charsets.ISO_8859_1)
     }
 
-    /** What a verified chain says: compacted (by which tool), made compatible, repacked. */
+    /** What a verified chain says: compacted (by which tool, as shown), made compatible, repacked. */
     data class Done(val compactedBy: String?, val compatible: Boolean, val repacked: Boolean) {
         companion object {
             val NOTHING = Done(null, compatible = false, repacked = false)
@@ -165,7 +165,17 @@ object OutputMarks {
         fun current(e: Entry) = !e.ours || e.version >= (Operation.entries.firstOrNull { it.verb.equals(e.action, true) }?.version ?: 0)
         fun ours(op: Operation) = last { it.ours && it.action.equals(op.verb, true) && it.version >= op.version } != null
         val compacted = last { e -> (e.action.equals(COMPACT_VERB, true) || e.action.startsWith("$COMPACT_VERB-", true)) && current(e) }
-        return Done(compacted?.tool, ours(Operation.COMPATIBLE), ours(Operation.REPACK))
+        return Done(compacted?.let(::shown), ours(Operation.COMPATIBLE), ours(Operation.REPACK))
+    }
+
+    /** The longest tool name shown; a longer one is cut to it, ending in an ellipsis. */
+    const val SHOWN_TOOL = 32
+
+    /** [e]'s tool as shown: [TOOL] for Emanata's in any case, any other cut to [SHOWN_TOOL]. */
+    private fun shown(e: Entry): String = when {
+        e.ours -> TOOL
+        e.tool.length <= SHOWN_TOOL -> e.tool
+        else -> e.tool.take(SHOWN_TOOL - 1) + "…"
     }
 
     /** What the chain of [tail] verified by its central directory's hash says was done ([done]); a stale chain is history only. */

@@ -116,8 +116,31 @@ class OutputMarksTest {
         assertEquals("Notes", OutputMarks.withoutBlocks("Notes\r\n$block"))
         assertEquals("Notes\n", OutputMarks.withoutBlocks("Notes\n\n$block"))
         assertEquals("Notes", OutputMarks.withoutBlocks("$block\nNotes"))
+        assertEquals("Notes", OutputMarks.withoutBlocks("$block\r\nNotes"))
         assertEquals("Notes", OutputMarks.withoutBlocks("$block$block\nNotes"))
         assertEquals("a  b", OutputMarks.withoutBlocks("a $block b"))
+        assertEquals("a lone CR is no line break", "Notes\r", OutputMarks.withoutBlocks("Notes\r$block"))
+    }
+
+    @Test
+    fun textEndingInALoneCarriageReturnLosesItOnTheNextRewrite() {
+        val f = zip(*pages)
+        assertTrue(write(f, "Notes\r", Operation.REPACK))
+        assertEquals("Notes\r\n[i: Emanata:repack:v1 | ${hex(f)}]", commentOf(f))
+        assertEquals("accepted", "Notes", OutputMarks.withoutBlocks(commentOf(f)))
+    }
+
+    @Test
+    fun onlyTheBlocksWrittenForTheDirectoryCount() {
+        val f = zip(*pages)
+        val stale = "0123456789abcdef"
+        assertNotEquals(stale, hex(f))
+        setComment(f, "[i: A:compact:v1 | $stale]\n[i: B:tag:v1 | ${hex(f)}]".toByteArray())
+        assertEquals("B:tag:v1", chainOf(f))
+        assertNull("the stale block's compacting is history only", OutputMarks.verified(f, Xxh3Port).compactedBy)
+        setComment(f, "[i: A:compact:v1 | ${hex(f)}]\n[i: B:recolor:v1 | $stale]".toByteArray())
+        assertEquals("A:compact:v1", chainOf(f))
+        assertEquals("the stale block's later entry undoes nothing", "A", OutputMarks.verified(f, Xxh3Port).compactedBy)
     }
 
     @Test
@@ -303,9 +326,10 @@ class OutputMarksTest {
 
     /**
      * [zip] (no comment) with a ZIP64 end record and locator before its end record, as some
-     * writers add to every archive, the end record's fields left as they were.
+     * writers add to every archive, the end record's fields left as they were, or with
+     * [sentinels] its counts, size and offset set to the ZIP64 sentinels, as a real ZIP64 archive.
      */
-    private fun withZip64(zip: File): File {
+    private fun withZip64(zip: File, sentinels: Boolean = false): File {
         val bytes = zip.readBytes()
         val end = bytes.size - 22
         val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
@@ -316,9 +340,23 @@ class OutputMarksTest {
         extra.putInt(0x06064b50).putLong(44).putShort(45).putShort(45).putInt(0).putInt(0)
             .putLong(entries).putLong(entries).putLong(size).putLong(offset)
         extra.putInt(0x07064b50).putInt(0).putLong(end.toLong()).putInt(1)
-        val out = File(zip.parentFile, "zip64.cbz")
-        out.writeBytes(bytes.copyOfRange(0, end) + extra.array() + bytes.copyOfRange(end, bytes.size))
+        val record = bytes.copyOfRange(end, bytes.size)
+        if (sentinels) java.nio.ByteBuffer.wrap(record).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .putShort(8, -1).putShort(10, -1).putInt(12, -1).putInt(16, -1)
+        val out = File(zip.parentFile, if (sentinels) "zip64-sentinels.cbz" else "zip64.cbz")
+        out.writeBytes(bytes.copyOfRange(0, end) + extra.array() + record)
         return out
+    }
+
+    @Test
+    fun aZip64ArchiveWithSentinelsIsLocatedAndMarked() {
+        val plain = zip(*pages)
+        val f = withZip64(plain, sentinels = true)
+        assertEquals(directoryHash(plain), directoryHash(f))
+        assertTrue(write(f, "Notes", Operation.COMPACT))
+        assertEquals("Notes\n[i: Emanata:compact:v1 | ${hex(plain)}]", commentOf(f))
+        assertEquals("Emanata", OutputMarks.verified(f, Xxh3Port).compactedBy)
+        ZipFile(f).use { z -> assertEquals("two", z.getInputStream(z.getEntry("02.jpg")).readBytes().decodeToString()) }
     }
 
     @Test

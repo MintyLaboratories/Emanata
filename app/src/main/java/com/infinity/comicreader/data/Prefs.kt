@@ -725,9 +725,7 @@ class Prefs(context: Context) {
         const val AI_NONE = "none"
 
         /** The key of [step]'s model. */
-        fun aiKey(step: AiStep) = if (step == AiStep.UPSCALE) KEY_AI_UPSCALE else "pref_ai_${step.key}"
-
-        private const val KEY_AI_UPSCALE = "pref_ai_upscale_model"
+        fun aiKey(step: AiStep) = "pref_ai_${step.key}"
 
         private val KNOWN_KEYS = setOf(
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,

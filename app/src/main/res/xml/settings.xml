@@ -349,7 +349,7 @@
         </ListPreference>
         <ListPreference
             app:dependency="pref_ai"
-            app:key="pref_ai_upscale_model"
+            app:key="pref_ai_upscale"
             app:title="@string/pref_ai_upscale" />
         <Preference
             app:key="ai_models"

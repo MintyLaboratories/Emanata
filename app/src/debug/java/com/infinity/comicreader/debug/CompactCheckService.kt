@@ -27,7 +27,9 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.ui.FileJobs
+import com.infinity.comicreader.ui.TimeText
 import com.infinity.comicreader.util.Formats
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -44,7 +46,10 @@ import kotlin.concurrent.thread
  * - `extract --es path <book> --es out <dir>`: every page of a book into a folder, by its file name;
  * - `rebuild --es path <book or folder> [--ez compatible true] [--ez inplace true]`: Compact
  *   (or Make compatible) each book as the ⋮ menu does, timed one by one;
- * - `compare --es path <cbz> --es out <dir>`: each JPEG page of a book against the file of its name in a folder, byte for byte.
+ * - `compare --es path <cbz> --es out <dir>`: each JPEG page of a book against the file of its name in a folder, byte for byte;
+ * - `estimate --es path <book or folder> --es how compact|compatible|repack|pack|pack-compacted [--ez inplace true]`: the
+ *   books (or, to pack, the subfolders) estimated as the Convert dialog does, then run as one queued operation, the
+ *   time left logged every few seconds and the actual time at the end.
  *
  * Results go to the log under "CompactCheck", ending with "done".
  */
@@ -58,6 +63,7 @@ class CompactCheckService : Service() {
         val out = intent?.getStringExtra("out")
         val compatible = intent?.getBooleanExtra("compatible", false) == true
         val inPlace = intent?.getBooleanExtra("inplace", false) == true
+        val how = intent?.getStringExtra("how")
         thread(name = "compact-check") {
             try {
                 when (what) {
@@ -65,6 +71,7 @@ class CompactCheckService : Service() {
                     "extract" -> extract(File(path!!), File(out!!))
                     "rebuild" -> rebuild(File(path!!), compatible, inPlace)
                     "compare" -> compare(File(path!!), File(out!!))
+                    "estimate" -> estimate(File(path!!), how ?: "compact", inPlace)
                     else -> log("unknown: $what")
                 }
             } catch (t: Throwable) {
@@ -195,6 +202,56 @@ class CompactCheckService : Service() {
         log("all ${books.size} books in ${ms(all)} ms: $before -> $after bytes")
     }
 
+    private fun estimate(path: File, how: String, inPlace: Boolean) {
+        val jobs = FileJobs(this, Library(this), Prefs(this))
+        val pack = how.startsWith("pack")
+        val items = when {
+            !path.isDirectory -> listOf(path)
+            pack -> path.listFiles().orEmpty().filter { it.isDirectory }.sortedBy { it.name }
+            else -> path.listFiles().orEmpty().filter { it.isFile && Formats.isArchiveName(it.name) }.sortedBy { it.name }
+        }.map { it.absolutePath }
+        if (items.isEmpty()) return log("nothing to $how")
+        val rebuild = when (how) {
+            "compatible" -> FileJobs.Rebuild.COMPATIBLE
+            "repack" -> FileJobs.Rebuild.REPACK
+            else -> FileJobs.Rebuild.COMPACT
+        }
+        val t = System.nanoTime()
+        val forecast = if (pack) jobs.forecastPack(items, how == "pack-compacted") else jobs.forecast(items, rebuild)
+        val plan = forecast.get()
+        log("estimate $how of ${items.size} in ${ms(t)} ms: %.1f s (%s); per book %s".format(plan.sum(), TimeText.takes(this, plan.sum()), plan.joinToString { "%.1f".format(it) }))
+        val chosen = jobs.look(items)
+        val name = File(items.first()).name
+        val kind = if (pack) FileWork.Kind.PACK else rebuild.kind
+        val started = System.nanoTime()
+        val id = if (pack) {
+            val plans = items.map { FileJobs.PackPlan(it, File(it).name + ".cbz") }
+            FileWork.start(kind, name, items.size) { p -> jobs.pack(plans, how == "pack-compacted", chosen, p) }
+        } else {
+            FileWork.start(kind, name, items.size) { p -> jobs.rebuild(items, rebuild, inPlace, false, chosen, p, forecast) }
+        }
+        var logged = 0L
+        while (true) {
+            // A library screen in front acknowledges the outcome itself.
+            val status = FileWork.operations.value.firstOrNull { it.id == id }
+            val outcome = status?.outcome
+            if (status == null || outcome != null) {
+                FileWork.acknowledge(id)
+                log("actual $how: %.1f s, estimated %.1f s; %s".format((System.nanoTime() - started) / 1e9, plan.sum(), outcome?.javaClass?.simpleName ?: "told"))
+                break
+            }
+            val at = System.nanoTime() - started
+            if (at - logged >= LOG_EVERY_MS * 1_000_000) {
+                logged = at
+                status.secondsLeft(FileWork.clock())?.let {
+                    log("at %.0f s: item %d of %d, %.0f%%, left %.1f s (%s)".format(at / 1e9, status.index + 1, status.count, 100 * (status.fraction ?: 0f), it, TimeText.left(this, it)))
+                }
+            }
+            Thread.sleep(POLL_MS)
+        }
+        log("rates:\n" + ConvertRates.get(this).encode())
+    }
+
     private fun compare(book: File, dir: File) {
         var same = 0
         var differ = 0
@@ -248,6 +305,8 @@ class CompactCheckService : Service() {
 
     private companion object {
         const val TAG = "CompactCheck"
+        private const val LOG_EVERY_MS = 5_000L
+        private const val POLL_MS = 100L
         const val CHANNEL = "compact_check"
         const val NOTIFICATION_ID = 7304
     }

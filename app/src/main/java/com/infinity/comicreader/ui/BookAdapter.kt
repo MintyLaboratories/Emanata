@@ -26,6 +26,8 @@ import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.util.AppDispatchers
@@ -551,7 +553,9 @@ class BookAdapter(
      * Covers are made in two passes: a layered cover page first gives a quick cover from its
      * first layer ([CoverSource.loadFirst]); the full one replaces it once every cover asked
      * for has had its first pass ([finishCover]). On a share set not to load thumbnails
-     * ([Remotes.thumbnails]), only covers already made show.
+     * ([Remotes.thumbnails]), only covers already made show; likewise while covers from shares
+     * are skipped ([NetPolicy]: on a metered connection, or on a slow share for a row not on
+     * screen, which asks again once attached).
      */
     private fun requestCover(holder: BookHolder) {
         // A row left over from the list before (a request posted before it changed) asks nothing.
@@ -576,12 +580,17 @@ class BookAdapter(
         }
         // A share set not to load thumbnails shows only covers made before.
         val makes = Remotes.thumbnails(item.path)
+        val work = if (holder.itemView.isAttachedToWindow) NetWork.COVER else NetWork.COVER_OFF_SCREEN
         firstPasses.value++
         val job = scope.launch {
+            var held = false
             val got = withContext(AppDispatchers.io) {
                 runCatching { source.cached(appContext, item, w, h, style) }.getOrNull()?.let { Thumbs.Cover(it, full = true) }
-            } ?: if (!makes) null else gated { canceled -> Timing.span("cover first") { runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
+                    .also { if (it == null) held = makes && !NetPolicy.mayAt(work, item.path) }
+            } ?: if (!makes || held) null else gated { canceled -> Timing.span("cover first") { runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
             if (holder.wanted != id) return@launch
+            // A row bound ahead of a scroll asks again once on screen ([onViewAttachedToWindow]).
+            if (held && work == NetWork.COVER_OFF_SCREEN) holder.requested = 0L
             if (got == null) {
                 // The same book's earlier cover stood in for one there is none of now.
                 if (holder.drawn == null && holder.quick == null) clearCover(holder)
@@ -644,6 +653,12 @@ class BookAdapter(
         holder.quick = null
         holder.placeholder.visibility = View.GONE
         ReadProbes.current?.cover(holder.thumb, holder.bindingAdapterPosition, exact = true)
+    }
+
+    /** A row bound ahead of a scroll, its cover held back while off screen, asks for it now. */
+    override fun onViewAttachedToWindow(holder: RecyclerView.ViewHolder) {
+        super.onViewAttachedToWindow(holder)
+        if (holder is BookHolder) requestCover(holder)
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {

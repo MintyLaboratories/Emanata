@@ -738,7 +738,11 @@ class CleanupActivity : AppCompatActivity() {
             val style = prefs.coverStyle
             v.setTag(R.id.thumb, lifecycleScope.launch {
                 val bitmap = withContext(AppDispatchers.io) {
-                    runCatching { Thumbs.load(applicationContext, entry, charset, w, h, style) }.getOrNull()
+                    // While covers from shares are skipped ([NetPolicy]), only those made before show.
+                    runCatching {
+                        if (NetPolicy.mayAt(NetWork.COVER, entry.path)) Thumbs.load(applicationContext, entry, charset, w, h, style)
+                        else Thumbs.cached(applicationContext, entry, w, h, style)
+                    }.getOrNull()
                 }
                 if (bitmap != null) {
                     thumb.setImageBitmap(bitmap)

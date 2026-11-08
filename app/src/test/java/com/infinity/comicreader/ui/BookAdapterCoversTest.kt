@@ -18,6 +18,13 @@ import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetRules
+import com.infinity.comicreader.net.NetSkip
+import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeed
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -159,6 +166,54 @@ class BookAdapterCoversTest {
     }
 
     private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder?)?.thumb?.drawable
+
+    private fun shareBook(name: String) = BookEntry(Remotes.file("/net/s1/$name", askNetwork = false), name, false, EntryType.ARCHIVE, 100, 1L)
+
+    @Test
+    fun onAMeteredConnectionShareCoversAreNotMadeButThoseMadeBeforeShow() {
+        Remotes.serve(listOf(FakeRemoteFs.share())) { throw AssertionError("no reads") }
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        try {
+            adapter.submit(listOf(shareBook("a.cbz"), shareBook("made.cbz"), book("device.cbz")))
+            layout()
+            until { fake.started.isNotEmpty() && drawn(1) != null }
+            repeat(10) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            assertEquals(listOf("device.cbz"), fake.started.toList())
+            assertNotNull(drawn(1))
+            // With covers not skipped on metered connections they are made.
+            NetPolicy.rules = NetRules(metered = emptySet())
+            adapter.submit(listOf(shareBook("b.cbz")))
+            layout()
+            until { "b.cbz" in fake.started }
+            assertTrue("b.cbz" in fake.started)
+        } finally {
+            NetPolicy.rules = NetRules()
+            Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+            Metered.forget()
+            Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        }
+    }
+
+    @Test
+    fun onASlowShareCoversOnScreenAreMade() {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { throw AssertionError("no reads") }
+        try {
+            adapter.submit(listOf(shareBook("a.cbz"), shareBook("b.cbz")))
+            layout()
+            until { fake.started.size == 2 }
+            assertEquals(setOf("a.cbz", "b.cbz"), fake.started.toSet())
+            // Skipping any network use not asked for holds back those on screen too.
+            NetPolicy.rules = NetRules(slow = setOf(NetSkip.ANY))
+            adapter.submit(listOf(shareBook("c.cbz")))
+            layout()
+            repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            assertTrue("c.cbz" !in fake.started)
+        } finally {
+            NetPolicy.rules = NetRules()
+            Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        }
+    }
 
     @Test
     fun batterySaverKeepsFirstLayersUntilItEnds() {

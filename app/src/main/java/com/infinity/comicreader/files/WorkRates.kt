@@ -157,14 +157,17 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         return (t.seconds + prior * seed) / (t.amount + prior)
     }
 
-    /** The seed of a page figure: from a measured size class of the same step and format, else the default scaled by the device's speed. */
+    /** The seed of a page figure: from a measured size class of the same step and format, else the default scaled by the device's speed; scaled by size class for JPEG only ([scale]). */
     private fun pageSeed(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean): Double {
         val near = SizeClass.entries.filter { it != size }.mapNotNull { other ->
             tallies[pageKey(step, format, other, lossy)]?.takeIf { it.amount >= PRIOR_PAGES }?.let { other to it }
         }.maxByOrNull { it.second.amount }
-        if (near != null) return near.second.seconds / near.second.amount * size.scale / near.first.scale
-        return defaultSeconds(step, format, lossy) * size.scale * seeds.speed().coerceIn(MIN_SPEED, MAX_SPEED)
+        if (near != null) return near.second.seconds / near.second.amount * scale(format, size) / scale(format, near.first)
+        return defaultSeconds(step, format, lossy) * scale(format, size) * seeds.speed().coerceIn(MIN_SPEED, MAX_SPEED)
     }
+
+    /** How a page's time scales with its [size] class: a JPEG's bytes follow its pixels; a lossless page's, how well it compresses. */
+    private fun scale(format: ImageKind?, size: SizeClass) = if (format == ImageKind.JPEG) size.scale else 1.0
 
     private fun readSeed(location: String, container: Container): Double {
         val local = when (container) {

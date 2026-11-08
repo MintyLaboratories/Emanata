@@ -52,9 +52,13 @@ class WorkRatesTest {
     @Test
     fun aSizeClassNotMeasuredFollowsOneThatWas() {
         val rates = WorkRates()
-        repeat(10) { rates.page(Step.COMPACT, ImageKind.PNG, 2 * mb, 4.0) }
-        val large = rates.secondsPerPage(Step.COMPACT, ImageKind.PNG, SizeClass.LARGE)
+        repeat(10) { rates.page(Step.COMPACT, jpeg, 2 * mb, 4.0) }
+        val large = rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.LARGE)
         assertEquals(4.0 * SizeClass.LARGE.scale / SizeClass.MEDIUM.scale, large, 0.01)
+        // A lossless page's bytes say how well it compresses, not how many pixels it holds.
+        repeat(10) { rates.page(Step.COMPACT, ImageKind.PNG, 2 * mb, 4.0) }
+        assertEquals(4.0, rates.secondsPerPage(Step.COMPACT, ImageKind.PNG, SizeClass.SMALL), 0.01)
+        assertEquals(WorkRates.defaultSeconds(Step.COMPACT, ImageKind.JXL), WorkRates().secondsPerPage(Step.COMPACT, ImageKind.JXL, SizeClass.SMALL), 1e-9)
     }
 
     @Test

@@ -377,9 +377,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   directory in 16 hex digits (read in either case), which changes with any
   entry; the directory is located by where it ends (so data before the
   archive moves nothing, ZIP64 included), and one over 32 MB is not hashed.
-  A rewrite keeps the book's comment byte for byte, appends its entries to the
-  chain (never one the same as the last), merges several blocks into one in
-  order, replaces the hash, and puts the block on its own last line; when the
+  A rewrite keeps the comment's human text as is (blocks removed, each with
+  one line break next to it), appends its entries to the chain (never one the
+  same as the last), merges several blocks into one in order, replaces the
+  hash, and puts the block on its own last line; when the
   comment would pass 65,535 bytes the oldest entries go first, and no block is
   written when even the newest can't fit or the directory can't be located.
   A chain counts only while its hash matches (a stale one is history only);

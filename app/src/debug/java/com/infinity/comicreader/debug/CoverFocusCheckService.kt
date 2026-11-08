@@ -58,7 +58,9 @@ import kotlin.concurrent.thread
  * end.
  *
  * With `--es mode crops`, every book under `dir` instead goes through [CoverCropSurvey] with the
- * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`.
+ * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`. Start it
+ * with the app's library shown: with no window shown the system soon moves the process to fewer,
+ * slower cores, which each line's `cpuset` tells.
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null

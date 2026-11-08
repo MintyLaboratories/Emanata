@@ -32,7 +32,7 @@ import java.io.File
  * ([CoverArt.textFront]), else all of it (Fit on blur), and says whether barcode and text
  * agree, which lets it set reading direction ([Wraparound.Fronts.agreed]); a wraparound shown
  * whole is not measured further.
- * One JSON object per book ([log]): the focus of the part shown and its time, and for each box
+ * One JSON object per book ([log]): the process's cpuset (timings hold only within one), the focus of the part shown and its time, and for each box
  * shape the axis cropped, the share kept and where each anchor starts, as shares of that axis,
  * whether each cuts the tallest text line, and whether the default fit (Auto) crops at all.
  * With [cropsDir], that book's covers by Top and by Smart (filled) as PNGs [CROP_H] tall: in a
@@ -50,7 +50,7 @@ internal class CoverCropSurvey(
         // The first run loads the model: kept out of every cover's time.
         Bitmap.createBitmap(SmartCrop.STRIDE * 4, SmartCrop.STRIDE * 6, Bitmap.Config.ARGB_8888).let { runCatching { detect(it) }; it.recycle() }
         for ((index, book) in books.withIndex()) {
-            val o = JSONObject().put("book", index).put("kind", kind(book))
+            val o = JSONObject().put("book", index).put("kind", kind(book)).put("cpuset", cpuset())
             try {
                 cover(book, o)
             } catch (t: Throwable) {
@@ -59,6 +59,9 @@ internal class CoverCropSurvey(
             log(o)
         }
     }
+
+    /** The cpuset this process runs in, as `top-app`; the system moves a process without a window shown to fewer, slower cores. */
+    private fun cpuset(): String = runCatching { File("/proc/self/cpuset").readText().trim().trimStart('/') }.getOrDefault("?")
 
     private fun books(dir: File): List<File> = dir.walkTopDown().filter { f ->
         if (f.isDirectory) pages(f).size >= 2

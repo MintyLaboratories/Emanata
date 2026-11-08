@@ -27,14 +27,15 @@ internal object OrderDialog {
 
         fun shown(position: Int): Boolean
 
-        fun show(position: Int, shown: Boolean)
+        /** Shows or hides the item at [position]; false when that is refused, and the checkbox goes back. */
+        fun show(position: Int, shown: Boolean): Boolean
 
         /** Moves the item at [from] to [to]; false when nothing moved. */
         fun move(from: Int, to: Int): Boolean
     }
 
-    /** Shows [items] under [title], in a list with id [listId]; [onDismiss] runs when it closes. */
-    fun show(context: Context, title: Int, listId: Int, items: Items, onDismiss: () -> Unit = {}): AlertDialog {
+    /** Shows [items] under [title] and [note], in a list with id [listId]; [onDismiss] runs when it closes. */
+    fun show(context: Context, title: Int, listId: Int, items: Items, onDismiss: () -> Unit = {}, note: String? = null): AlertDialog {
         val list = RecyclerView(context).apply {
             id = listId
             layoutManager = LinearLayoutManager(context)
@@ -60,6 +61,7 @@ internal object OrderDialog {
         list.setPadding(0, pad, 0, 0)
         return AlertDialog.Builder(context)
             .setTitle(title)
+            .apply { if (note != null) setMessage(note) }
             .setView(list)
             .setPositiveButton(R.string.done, null)
             .setOnDismissListener { onDismiss() }
@@ -88,9 +90,12 @@ internal object OrderDialog {
             holder.shown.setOnCheckedChangeListener(null)
             holder.shown.text = items.label(position)
             holder.shown.isChecked = items.shown(position)
-            holder.shown.setOnCheckedChangeListener { _, checked ->
+            holder.shown.setOnCheckedChangeListener { box, checked ->
                 val at = holder.bindingAdapterPosition
-                if (at != RecyclerView.NO_POSITION) items.show(at, checked)
+                if (at != RecyclerView.NO_POSITION && !items.show(at, checked)) {
+                    // Posted: a checkbox set back from within its own change keeps the new state.
+                    box.post { notifyItemChanged(holder.bindingAdapterPosition) }
+                }
             }
             holder.handle.setOnTouchListener { _, e ->
                 if (e.actionMasked == MotionEvent.ACTION_DOWN) onHandleDown?.invoke(holder)

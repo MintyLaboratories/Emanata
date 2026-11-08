@@ -67,9 +67,10 @@ object MoreActionsDialog {
 
             override fun shown(position: Int) = prefs.moreActions.let { it.offered[position] in it.shown }
 
-            override fun show(position: Int, shown: Boolean) {
+            override fun show(position: Int, shown: Boolean): Boolean {
                 val actions = prefs.moreActions
                 prefs.moreActions = actions.with(actions.offered[position], shown)
+                return true
             }
 
             override fun move(from: Int, to: Int): Boolean {

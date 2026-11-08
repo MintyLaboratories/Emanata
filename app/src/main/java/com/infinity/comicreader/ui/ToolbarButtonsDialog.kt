@@ -35,9 +35,10 @@ object ToolbarButtonsDialog {
 
             override fun shown(position: Int) = prefs.toolbarButtons.let { it.order[position] in it.shown }
 
-            override fun show(position: Int, shown: Boolean) {
+            override fun show(position: Int, shown: Boolean): Boolean {
                 val buttons = prefs.toolbarButtons
                 prefs.toolbarButtons = buttons.with(buttons.order[position], shown)
+                return true
             }
 
             override fun move(from: Int, to: Int): Boolean {

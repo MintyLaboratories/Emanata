@@ -339,9 +339,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private var learnJob: Job? = null
     private var learnRound = 0
 
-    /** True when the open book's two-page pairing is shifted by one page; [shiftedByNames] from before seams. */
+    /** True when the open book's two-page pairing is shifted by one page. */
     private var shifted = false
-    private var shiftedByNames = false
 
     /** True when the open book's seams are never checked, nor pair, merge or join its pages. */
     private var ignoreSeams = false
@@ -1884,7 +1883,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         pageSizes = known.sizes
         val id = favoriteFile()?.let { bookId }
         shifted = id != null && library.isShifted(id)
-        shiftedByNames = id != null && library.isShiftedByNames(id)
         ignoreSeams = id != null && library.ignoresSeams(id)
         spreadChoices = shownChoices(library.spreadOverrides(id))
         analysis = known.analysis
@@ -2116,7 +2114,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         shownVisits = visitedPages.cardinality()
         val visited = visitedPages.stream().boxed().collect(Collectors.toSet())
         val seams = if (seamsRead()) shownSeams.of(rtl) else emptyList()
-        val options = Spreads.Options(prefs.coverAlone, shifted, seams, shiftedByNames, visited, tallPages + choices.alone, choices.paired)
+        val options = Spreads.Options(prefs.coverAlone, shifted, seams, visited, tallPages + choices.alone, choices.paired)
         if (spread) {
             val views = Spreads.pair(a, options)
             return PageLayout.of(views, spread = true, rtl = rtl, joined = Spreads.joined(views, options))
@@ -2254,7 +2252,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     private fun setShifted(value: Boolean) {
         if (shifted == value) return
         shifted = value
-        shiftedByNames = false
         if (favoriteFile() != null) book()?.let { library.setShifted(it, value) }
         if (spread) attach()
     }

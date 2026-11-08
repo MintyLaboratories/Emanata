@@ -229,22 +229,14 @@ class Library(context: Context) {
 
     // ---------------- spread pairing ----------------
     /** True when [id]'s two-page pairing is shifted by one page. */
-    fun isShifted(id: BookId): Boolean = isShiftedByNames(id) || id in readIds(KEY_SHIFTED_SEAMS)
-
-    /**
-     * True when [id]'s shift was chosen before seams paired pages: it flips the pairing
-     * page names give, not the one seams correct.
-     */
-    fun isShiftedByNames(id: BookId): Boolean = id in readIds(KEY_SHIFTED)
+    fun isShifted(id: BookId): Boolean = id in readIds(KEY_SHIFTED)
 
     /** Shifts [book]'s pairing, or not, from the pairing shown now: seams and names alike. */
     fun setShifted(book: BookRef, shifted: Boolean) {
         synchronized(LOCK) {
-            val byNames = readIds(KEY_SHIFTED)
-            if (byNames.remove(book.id)) writeIds(KEY_SHIFTED, byNames)
-            val set = readIds(KEY_SHIFTED_SEAMS)
+            val set = readIds(KEY_SHIFTED)
             val changed = if (shifted) set.add(book.id) else set.remove(book.id)
-            if (changed) writeIds(KEY_SHIFTED_SEAMS, set)
+            if (changed) writeIds(KEY_SHIFTED, set)
             if (shifted) keep(book)
         }
     }
@@ -862,7 +854,7 @@ class Library(context: Context) {
         val history = readArray(KEY_HISTORY).ids()
         val marks = readArray(KEY_BOOKMARKS).ids()
         val hidden = hiddenCounts()
-        val settings = readIds(KEY_SHIFTED) + readIds(KEY_SHIFTED_SEAMS) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
+        val settings = readIds(KEY_SHIFTED) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
             readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids() +
             readObject(KEY_AI).ids() + readObject(KEY_COVERS).ids() + readObject(KEY_SPREAD_PAGES).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
@@ -1151,7 +1143,7 @@ class Library(context: Context) {
         for (i in 0 until arr.length()) {
             when (key) {
                 KEY_FAVORITES -> arr.optString(i, "").takeIf { bookToken(it) != null || isFolderPath(it) }?.let { out.put(it) }
-                KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK -> BookId.parse(arr.optString(i, ""))?.let { out.put(it.hex) }
+                KEY_READ, KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK -> BookId.parse(arr.optString(i, ""))?.let { out.put(it.hex) }
                 else -> arr.optJSONObject(i)?.takeIf { BookId.parse(it.optString("id")) != null }?.let { out.put(it) }
             }
         }
@@ -1263,11 +1255,8 @@ class Library(context: Context) {
         private const val KEY_ADJUST = "adjust"
         private const val KEY_HIDDEN = "hidden_pages"
 
-        /** Books shifted before seams paired pages ([isShiftedByNames]). */
-        private const val KEY_SHIFTED = "shifted"
-
-        /** Books shifted since. */
-        private const val KEY_SHIFTED_SEAMS = "shifted_seams"
+        /** Books whose pairing is shifted by one page ([isShifted]). */
+        private const val KEY_SHIFTED = "shifted_seams"
 
         /** Books whose seams are ignored ([ignoresSeams]); stored under its first name. */
         private const val KEY_IGNORE_SEAMS = "no_merge"
@@ -1312,14 +1301,14 @@ class Library(context: Context) {
 
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
-        private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
+        private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
         private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
         private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
 
         /** Lists of book IDs. */
-        private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
+        private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
 
         /** Documents kept by book ID. */
         private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
@@ -1327,7 +1316,7 @@ class Library(context: Context) {
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_SHIFTED_SEAMS, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES
+            KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES
         )
 
         private val LOCK = Any()

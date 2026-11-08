@@ -21,8 +21,7 @@ import java.util.Locale
  * pages, the left pages' parity comes from the seams between them when they tell
  * ([Options.seams]: the picture runs on from one page into the next, so those two share
  * a screen; one match alone tells only near the reader), else from what spreads say (a spread starts on a left page), else the run's
- * first page is a left page; [Options.shift] flips it (a shift from before seams flips
- * the parity without them, [Options.shiftByNames]). In one-page reading, two pages
+ * first page is a left page; [Options.shift] flips it. In one-page reading, two pages
  * whose seam matches show as one ([merge]). The reader's own choices come first: a page
  * shown alone ([Options.alone]) breaks a run like a wide one; a page paired with the next
  * ([Options.paired]) shares a screen with it, whatever its kind, and the run after them
@@ -113,8 +112,7 @@ object Spreads {
     /**
      * Pairing choices: the [coverAlone] option, the book's manual [shift] by one page and
      * the [seams] found so far, by page: the seam between that page and the next in
-     * reading order, null where not checked. A shift chosen before seams paired pages
-     * ([shiftByNames]) flips the pairing names and spreads give, seams unread. [visited]
+     * reading order, null where not checked. [visited]
      * holds the pages the reader has had on screen: a lone seam match settles a run only
      * within [NEAR] pages of one of them. Pages in [alone] (tall ones, and those the reader
      * chose to show alone) never share a screen. Each page in [paired] shares one with the
@@ -124,16 +122,12 @@ object Spreads {
         val coverAlone: Boolean = true,
         val shift: Boolean = false,
         val seams: List<SpreadSeams.Verdict?> = emptyList(),
-        val shiftByNames: Boolean = false,
         val visited: Set<Int> = emptySet(),
         val alone: Set<Int> = emptySet(),
         val paired: Set<Int> = emptySet()
     ) {
         /** True when the picture runs on from page [i] into the next. */
         fun joins(i: Int): Boolean = seams.getOrNull(i)?.match == true
-
-        /** True when seams may settle pairing. */
-        val pairsBySeams: Boolean get() = !(shift && shiftByNames)
 
         /** True when the seam after page [i] lies within [NEAR] pages of a page the reader has had on screen. */
         fun near(i: Int): Boolean = visited.isNotEmpty() && (i - NEAR..i + 1 + NEAR).any { it in visited }
@@ -415,7 +409,7 @@ object Spreads {
             val anchored = seg.pages.first() - 2 in forced
             val pairs = if (seg.numbered) {
                 val soft = seg.soft && seg.group == previousGroup
-                val bySeams = if (options.pairsBySeams && !anchored) seamSide(numberedSeams(seg, pages, options)) else null
+                val bySeams = if (!anchored) seamSide(numberedSeams(seg, pages, options)) else null
                 var parity = if (anchored) Math.floorMod(pages[seg.pages.first()].number, 2L).toInt()
                 else bySeams ?: parityOf(seg, pages, votes[seg.group], if (soft) previousParity else -1)
                 val flip = options.shift && !anchored
@@ -425,7 +419,7 @@ object Spreads {
                 pairNumbered(seg.pages, pages, parity)
             } else {
                 previousGroup = -2
-                val offset = (if (options.pairsBySeams && !anchored) seamSide(positionalSeams(seg, options)) else null) ?: 0
+                val offset = (if (!anchored) seamSide(positionalSeams(seg, options)) else null) ?: 0
                 pairPositional(seg.pages, if (options.shift && !anchored) 1 - offset else offset)
             }
             out += pairs

@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONArray
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -31,34 +30,20 @@ class LibraryShiftTest {
     private val b = BookRef(BookId(0xb), "/books/old/b.cbz")
 
     @Test
-    fun aShiftKeptBeforeSeamsFlipsPairingByNames() {
-        library.importAll(JSONObject().put("shifted", JSONArray().put(a.id.hex)))
-        assertTrue(library.isShifted(a.id))
-        assertTrue(library.isShiftedByNames(a.id))
-        // Turned off and on again, it flips the pairing shown, seams included.
-        library.setShifted(a, false)
-        assertFalse(library.isShifted(a.id))
-        library.setShifted(a, true)
-        assertTrue(library.isShifted(a.id))
-        assertFalse(library.isShiftedByNames(a.id))
-    }
-
-    @Test
-    fun shiftsFollowTheBookThroughMovesDeletesAndBackups() {
-        library.importAll(JSONObject().put("shifted", JSONArray().put(a.id.hex).put("/books/old/legacy.cbz")))
+    fun shiftsFollowTheBookThroughMovesAndBackups() {
         library.setShifted(b, true)
         library.replacePath("/books/old", "/books/new")
-        assertTrue(library.isShiftedByNames(a.id))
         assertTrue(library.isShifted(b.id))
+        assertFalse(library.isShifted(a.id))
         assertEquals("/books/new/b.cbz", library.pathOf(b.id))
         val backup = library.exportAll()
-        assertEquals(JSONArray().put(a.id.hex).toString(), backup.getJSONArray("shifted").toString())
-        library.setShifted(a, false)
         library.setShifted(b, false)
+        assertFalse(library.isShifted(b.id))
+        // A row that is not a book ID is dropped.
+        backup.getJSONArray("shifted_seams").put("/books/old/a.cbz")
         library.importAll(backup)
-        assertTrue(library.isShiftedByNames(a.id))
         assertTrue(library.isShifted(b.id))
-        assertFalse(library.isShiftedByNames(b.id))
+        assertEquals(JSONArray().put(b.id.hex).toString(), library.exportAll().getJSONArray("shifted_seams").toString())
     }
 
     @Test

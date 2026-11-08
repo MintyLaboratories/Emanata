@@ -250,7 +250,8 @@ class CalibrationScreenActivity : AppCompatActivity() {
             step.setText(R.string.calibration_getting_ready)
             round.text = ""
         } else {
-            bar.setProgressCompat((p.done * 1000L / p.total).toInt(), true)
+            // Steps without an animation: one would draw at the display's full rate beside the page's 20 fps.
+            bar.setProgressCompat((p.done * 1000L / p.total).toInt(), false)
             step.text = c?.let { SetupNames.of(resources, it) } ?: ""
             round.text = getString(R.string.calibration_round, p.round, Calibration.ROUNDS)
         }

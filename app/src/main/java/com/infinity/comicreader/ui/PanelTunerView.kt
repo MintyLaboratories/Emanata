@@ -189,7 +189,11 @@ class PanelTunerView @JvmOverloads constructor(context: Context, attrs: Attribut
             canvas.drawPath(path, border)
         }
         canvas.restore()
-        if (playing) postOnAnimationDelayed(tick, max(0L, FRAME_MS - (SystemClock.uptimeMillis() - started)))
+        if (playing) {
+            // One frame waiting at a time, whatever else made this one.
+            removeCallbacks(tick)
+            postOnAnimationDelayed(tick, max(0L, FRAME_MS - (SystemClock.uptimeMillis() - started)))
+        }
     }
 
     companion object {

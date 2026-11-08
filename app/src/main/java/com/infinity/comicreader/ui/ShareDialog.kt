@@ -1,14 +1,17 @@
 package com.infinity.comicreader.ui
 
 import android.app.Dialog
+import android.content.Context
 import android.content.DialogInterface
 import android.os.Bundle
+import android.text.format.Formatter
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.autofill.AutofillManager
 import android.widget.CompoundButton
 import android.widget.EditText
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.core.widget.doAfterTextChanged
@@ -22,6 +25,9 @@ import com.infinity.comicreader.net.DavUrl
 import com.infinity.comicreader.net.Share
 import com.infinity.comicreader.net.ShareForm
 import com.infinity.comicreader.net.ShareKind
+import com.infinity.comicreader.net.ShareSpeed
+import com.infinity.comicreader.net.ShareSpeeds
+import com.infinity.comicreader.net.SpeedMeter
 import com.infinity.comicreader.net.SharePath
 import com.infinity.comicreader.net.ShareStore
 import com.infinity.comicreader.util.AppDispatchers
@@ -33,7 +39,8 @@ import kotlinx.coroutines.withContext
  * The form that adds a network share, or edits one: SMB or WebDAV, name, path
  * (`host/share/folder`, or an `https://` address for WebDAV, plain `http://` to a
  * private address with a warning), user and password (an edit can clear a stored one),
- * and whether covers of its books are made; everything else defaulted. Saving checks
+ * whether covers of its books are made, and its speed (Auto, measured from its reads and shown
+ * as measured; Fast; Slow); everything else defaulted. Saving checks
  * the path, stores the share (its password sealed) off the main thread and tells the [LocationSheet.Host];
  * a bad path, or a password the keystore could not seal, keeps the form open, saying
  * what is wrong. It comes back after a rotation with what was typed.
@@ -58,7 +65,10 @@ class ShareDialog : DialogFragment() {
             field(R.id.share_path).setText(previous.path.toString())
             field(R.id.share_user).setText(previous.user)
             form.findViewById<CompoundButton>(R.id.share_thumbnails).isChecked = previous.thumbnails
+            form.findViewById<MaterialButtonToggleGroup>(R.id.share_speed).check(speedButton(previous.speed))
         }
+        form.findViewById<TextView>(R.id.share_speed_measured).text =
+            measuredText(context, previous?.let { ShareSpeeds.estimate(it.id) })
         field(R.id.share_path).doAfterTextChanged { showPathHint() }
         if (previous != null) showPassword(previous)
         val dialog = AlertDialog.Builder(context)
@@ -155,9 +165,10 @@ class ShareDialog : DialogFragment() {
         val passwordLayout = form.findViewById<TextInputLayout>(R.id.share_password_layout)
         val kind = kind()
         val thumbnails = form.findViewById<CompoundButton>(R.id.share_thumbnails).isChecked
+        val speed = speedOf(form.findViewById<MaterialButtonToggleGroup>(R.id.share_speed).checkedButtonId)
         val result = ShareForm.build(
             text(R.id.share_name), text(R.id.share_path), text(R.id.share_user), text(R.id.share_password), previous, kind,
-            thumbnails = thumbnails, clearPassword = clearing
+            thumbnails = thumbnails, speed = speed, clearPassword = clearing
         )
         when (result) {
             is ShareForm.Result.Invalid -> {
@@ -201,6 +212,28 @@ class ShareDialog : DialogFragment() {
 
         /** The form open over [activity]; null when none is. */
         fun find(activity: FragmentActivity): ShareDialog? = activity.supportFragmentManager.findFragmentByTag(TAG) as? ShareDialog
+
+        private fun speedButton(speed: ShareSpeed): Int = when (speed) {
+            ShareSpeed.AUTO -> R.id.share_speed_auto
+            ShareSpeed.FAST -> R.id.share_speed_fast
+            ShareSpeed.SLOW -> R.id.share_speed_slow
+        }
+
+        private fun speedOf(button: Int): ShareSpeed = when (button) {
+            R.id.share_speed_fast -> ShareSpeed.FAST
+            R.id.share_speed_slow -> ShareSpeed.SLOW
+            else -> ShareSpeed.AUTO
+        }
+
+        /** What [estimate] says of a share: throughput and first-byte wait, and whether Auto counts it slow. */
+        fun measuredText(context: Context, estimate: SpeedMeter.Estimate?): String {
+            estimate ?: return context.getString(R.string.share_speed_unmeasured)
+            val parts = listOfNotNull(
+                estimate.bytesPerSecond?.let { context.getString(R.string.share_speed_rate, Formatter.formatShortFileSize(context, it)) },
+                estimate.firstByteMs?.let { context.getString(R.string.share_speed_first_byte, it.toInt()) }
+            ).joinToString(", ")
+            return context.getString(if (estimate.slow) R.string.share_speed_measured_slow else R.string.share_speed_measured_fast, parts)
+        }
 
         fun problemText(problem: SharePath.Problem, kind: ShareKind = ShareKind.SMB): Int = when (problem) {
             SharePath.Problem.EMPTY -> if (kind == ShareKind.WEBDAV) R.string.share_problem_empty_webdav else R.string.share_problem_empty

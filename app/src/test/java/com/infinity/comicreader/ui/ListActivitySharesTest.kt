@@ -27,7 +27,10 @@ import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.SecretBox
+import com.infinity.comicreader.net.ShareSpeed
+import com.infinity.comicreader.net.ShareSpeeds
 import com.infinity.comicreader.net.ShareStore
+import com.infinity.comicreader.net.SpeedMeter
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -463,6 +466,44 @@ class ListActivitySharesTest {
         assertFalse(saved.passwordLost)
         assertFalse(saved.thumbnails)
         assertFalse(Remotes.thumbnails("/net/s1/Loose.cbz"))
+    }
+
+    @Test
+    fun theFormShowsTheMeasuredSpeedAndStoresAChoice() {
+        var now = 0L
+        ShareSpeeds.clock = { now }
+        try {
+            // Reads at 1.5 MB/s: Auto counts the share slow.
+            repeat(SpeedMeter.MIN_SAMPLES) {
+                val meter = ShareSpeeds.meter("s1")
+                meter.bulkStarted()
+                now += 1_000
+                meter.bulkEnded(1_500_000)
+            }
+            val estimate = ShareSpeeds.estimate("s1")!!
+            assertTrue(ShareSpeeds.slow("s1"))
+            val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+            idle()
+            openSheet(activity)
+            row("Share A").performLongClick()
+            idle()
+            (ShadowDialog.getLatestDialog() as AlertDialog).listView.performItemClick(null, 0, 0)
+            idle()
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            val shown = dialog.findViewById<TextView>(R.id.share_speed_measured)!!.text.toString()
+            assertEquals(ShareDialog.measuredText(activity, estimate), shown)
+            assertEquals(activity.getString(R.string.share_speed_measured_slow, activity.getString(R.string.share_speed_rate, "1.5 MB")), shown)
+            assertEquals(R.id.share_speed_auto, dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.checkedButtonId)
+            dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.check(R.id.share_speed_fast)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+            idle()
+            assertEquals(ShareSpeed.FAST, ShareStore(context, box).all().single().speed)
+            assertFalse(ShareSpeeds.slow("s1"))
+            assertEquals("what it measured stays", estimate, ShareSpeeds.estimate("s1"))
+            assertEquals(activity.getString(R.string.share_speed_unmeasured), ShareDialog.measuredText(activity, null))
+        } finally {
+            ShareSpeeds.clock = { System.nanoTime() / 1_000_000 }
+        }
     }
 
     @Test

@@ -94,7 +94,11 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Robolectric bitmaps live on the test JVM's heap; the 512 MB default runs out.
-        unitTests.all { it.maxHeapSize = "2g" }
+        // A fresh JVM every 50 classes: what each class leaves behind adds up across the whole suite.
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            it.forkEvery = 50
+        }
     }
 
     packaging {

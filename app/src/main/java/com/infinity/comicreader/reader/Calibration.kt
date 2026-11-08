@@ -408,7 +408,7 @@ object Calibration {
      * [after] gained since [before] (all of it for one born since), less what the core ledger
      * [counted] as calibration's work on it (ns by thread id: a shared pool thread that ran
      * a resampling band counts only its time beyond the band), but for those [skip] names
-     * ([skips]). Threads gone since are not counted.
+     * ([skips]). Threads gone since are not here ([goneMs]).
      */
     fun othersMs(before: Map<Int, Long>, after: Map<Int, Long>, counted: Map<Int, Long> = emptyMap(), skip: (Int) -> Boolean): Double {
         var ns = 0L
@@ -417,6 +417,20 @@ object Calibration {
             ns += (now - (before[tid] ?: 0L) - (counted[tid] ?: 0L)).coerceAtLeast(0L)
         }
         return ns / 1e6
+    }
+
+    /**
+     * CPU time in ms of threads that ended during a sample, which no per-thread reading
+     * shows: what the whole process used ([processMs], read within the two readings of every
+     * thread) beyond what the threads still there gained from [before] to [after] and what
+     * the core ledger [counted] for threads gone since (calibration's own JPEG XL workers,
+     * which end with each decode). Its readings lie within theirs, so it can only fall short.
+     */
+    fun goneMs(processMs: Double, before: Map<Int, Long>, after: Map<Int, Long>, counted: Map<Int, Long>): Double {
+        var ns = 0L
+        for ((tid, now) in after) ns += (now - (before[tid] ?: 0L)).coerceAtLeast(0L)
+        for ((tid, c) in counted) if (tid !in after) ns += c
+        return (processMs - ns / 1e6).coerceAtLeast(0.0)
     }
 
     /**

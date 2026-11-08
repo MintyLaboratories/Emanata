@@ -358,8 +358,9 @@ object Calibrator {
         /** App work started before the sample in progress. */
         private var workedBefore = 0L
 
-        /** Every thread's CPU time when the sample in progress began, and when that was. */
+        /** Every thread's CPU time when the sample in progress began, the process's (ms), and when that was. */
         private var tasksBefore: Map<Int, Long> = emptyMap()
+        private var processBefore = 0L
         private var sampleStartNs = 0L
 
         private var reason: String? = null
@@ -565,6 +566,7 @@ object Calibrator {
             workedBefore = worked.get()
             if (LibPixels.loaded) LibPixels.ledgerThreads()
             tasksBefore = tasks.snapshot()
+            processBefore = Process.getElapsedCpuTime()
             sampleStartNs = System.nanoTime()
         }
 
@@ -584,21 +586,24 @@ object Calibrator {
         /**
          * True when the app's threads, but calibration's own, the UI's and the runtime's
          * housekeeping ([Calibration.skips]), used no more CPU time beyond what the core ledger
-         * counted as calibration's work ([LibPixels.ledgerThreads]) than [Calibration.othersBusy]
-         * allows since the sample began; else the busiest is noted ([disturbedBy]).
+         * counted as calibration's work ([LibPixels.ledgerThreads]), threads that ended meanwhile
+         * included ([Calibration.goneMs]; not where times come in clock ticks, too coarse to
+         * tell), than [Calibration.othersBusy] allows since the sample began; else the busiest
+         * is noted ([disturbedBy]).
          */
         private fun othersQuiet(): Boolean {
+            val processMs = (Process.getElapsedCpuTime() - processBefore).toDouble()
             val after = tasks.snapshot()
             val wallMs = (System.nanoTime() - sampleStartNs) / 1e6
             val counted = if (LibPixels.loaded) LibPixels.ledgerThreads() else emptyMap()
             val skip = Calibration.skips(synchronized(own) { HashSet(own) }, ui.tids, tasks::name)
             val others = Calibration.othersMs(tasksBefore, after, counted, skip)
-            if (!Calibration.othersBusy(others, wallMs, tasks.coarse)) return true
+            val gone = if (tasks.coarse) 0.0 else Calibration.goneMs(processMs, tasksBefore, after, counted)
+            if (!Calibration.othersBusy(others + gone, wallMs, tasks.coarse)) return true
             fun gained(tid: Int) = after.getValue(tid) - (tasksBefore[tid] ?: 0L) - (counted[tid] ?: 0L)
-            after.keys.filter { !skip(it) }.maxByOrNull(::gained)?.let { tid ->
-                val name = tasks.name(tid).ifEmpty { "?" }
-                disturbedBy[name] = (disturbedBy[name] ?: 0) + 1
-            }
+            val busiest = after.keys.filter { !skip(it) }.maxByOrNull(::gained)
+            val name = if (busiest == null || gone * 1e6 > gained(busiest)) GONE else tasks.name(busiest).ifEmpty { "?" }
+            disturbedBy[name] = (disturbedBy[name] ?: 0) + 1
             return false
         }
 
@@ -656,6 +661,9 @@ object Calibrator {
             private const val JXL_NAME = "page-${PAGE_W}x$PAGE_H-q91"
             private const val JPEG_NAME = "page-${JPEG_W}x$JPEG_H-q90"
             private const val STEP_MS = 50L
+
+            /** How [disturbedBy] names threads that ended during a sample. */
+            private const val GONE = "(ended threads)"
         }
     }
 

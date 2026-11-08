@@ -357,6 +357,19 @@ class CalibrationTest {
     }
 
     @Test
+    fun threadsThatEndedDuringASampleCountFromTheProcessTime() {
+        val before = mapOf(1 to 0L, 2 to 10_000_000L, 3 to 0L)
+        // 1 still there (+40 ms); 2 ended; 3 ended, a JPEG XL worker the ledger counted 20 ms for; 4 born (+5 ms).
+        val after = mapOf(1 to 40_000_000L, 4 to 5_000_000L)
+        val counted = mapOf(3 to 20_000_000L)
+        // The process used 72 ms: 40 + 5 by threads still there, 20 by the worker, 7 by thread 2 before it ended.
+        assertEquals(7.0, Calibration.goneMs(72.0, before, after, counted), 1e-9)
+        // Nothing ended: nothing gone; never below 0.
+        assertEquals(0.0, Calibration.goneMs(45.0, before, after, emptyMap()), 1e-9)
+        assertEquals(0.0, Calibration.goneMs(30.0, before, after, counted), 0.0)
+    }
+
+    @Test
     fun batteryTemperatureStandsInWhereThereIsNoThermalStatus() {
         assertEquals(0, Calibration.batteryStatus(399))
         assertEquals(Calibration.LIGHT, Calibration.batteryStatus(400))

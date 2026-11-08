@@ -191,7 +191,7 @@ class ViewerActivityRepackTest {
             Thread.sleep(10)
         }
         assertEquals(View.VISIBLE, line.visibility)
-        val away = context.getString(R.string.span_minutes, (3 * WorkRates.BACK_SLOWDOWN).toInt())
+        val away = TimeText.span(context, 180 * WorkRates.BACK_SLOWDOWN)
         assertEquals(context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, 3), away), line.text.toString())
     }
 }

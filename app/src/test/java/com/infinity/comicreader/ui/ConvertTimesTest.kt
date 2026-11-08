@@ -13,6 +13,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
+import com.infinity.comicreader.files.WorkRates
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -95,8 +96,8 @@ class ConvertTimesTest {
         ConvertRates.reset()
     }
 
-    /** "Takes about [minutes] min", and four times that with the app away (the slowdown before any is measured). */
-    private fun takes(minutes: Int) = context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, minutes), context.getString(R.string.span_minutes, minutes * 4))
+    /** "Takes about [minutes] min", and as long as the slowdown before any is measured says with the app away. */
+    private fun takes(minutes: Int) = context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, minutes), TimeText.span(context, minutes * 60 * WorkRates.BACK_SLOWDOWN))
 
     private fun estimateLine(): TextView {
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog

@@ -269,10 +269,13 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         /** A page of a step with no default (a model never run here). */
         private const val UNKNOWN_STEP = 5.0
 
-        /** Bytes a second on the device: reading a ZIP, folder or TAR, a RAR, a 7z; writing. */
+        /**
+         * Bytes a second on the device: reading a ZIP, folder or TAR, a RAR (a guess: no
+         * compressed RAR was measured), a solid 7z (LZMA2 of JPEG pages measured 11 MB/s); writing.
+         */
         const val DEVICE_READ = 120e6
         const val RAR_READ = 40e6
-        const val SEVEN_ZIP_READ = 25e6
+        const val SEVEN_ZIP_READ = 12e6
         const val DEVICE_WRITE = 150e6
 
         /** Bytes a second reading a share whose reads measured nothing yet, and the share of that writing reaches. */
@@ -285,8 +288,11 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         /** Bytes each action writes per byte of book before any is measured; 1 for others. */
         val OUTPUT_SHARES = mapOf("compact" to 0.8, "pack-compacted" to 0.8, "compatible" to 1.3)
 
-        /** How many times longer work takes with the app away, before any is measured: its workers' share of the CPU drops. */
-        const val BACK_SLOWDOWN = 4.0
+        /**
+         * How many times longer work takes with the app away, before any is measured: the system
+         * clocks its cores down for an app not in front (one job measured 2.9 to 3.4 times).
+         */
+        const val BACK_SLOWDOWN = 3.5
 
         /** How many units a seed counts as. */
         private const val PRIOR_PAGES = 3.0

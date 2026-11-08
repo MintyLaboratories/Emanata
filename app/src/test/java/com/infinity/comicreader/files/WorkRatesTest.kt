@@ -158,6 +158,8 @@ class WorkRatesTest {
         repeat(50) { meter.page(webp("VP8L"), 3.0) }
         assertEquals(0.02, rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.SMALL, lossy = true), 0.05)
         assertEquals(3.0, rates.secondsPerPage(Step.COMPACT, ImageKind.WEBP, SizeClass.SMALL), 0.3)
+        // A JPEG XL holding a JPEG is kept apart too.
+        assertTrue(rates.secondsPerPage(Step.COMPATIBLE, ImageKind.JXL, SizeClass.MEDIUM, lossy = true) < rates.secondsPerPage(Step.COMPATIBLE, ImageKind.JXL, SizeClass.MEDIUM) / 10)
         // The flag means nothing for other formats.
         assertEquals(rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.SMALL), rates.secondsPerPage(Step.COMPACT, jpeg, SizeClass.SMALL, lossy = true), 0.0)
     }

@@ -302,8 +302,7 @@ internal class FileJobs(
                     if (entries.any { Formats.isArchiveName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }) return@use plan.copy(done = true)
                     val pages = entries.filter { Formats.isImageName(it.path) && !ArchiveJunk.isJunk(it.path, it.size) }
                     // Only where reading a page unpacks no other.
-                    val lossy = how == Rebuild.COMPACT && reader.randomAccess &&
-                        ConvertEstimate.lossyWebp(pages.map { it.path }) { i -> reader.read(pages[i]) { head(it) } }
+                    val lossy = if (how.op.step != null && reader.randomAccess) ConvertEstimate.lossyPages(pages.map { it.path }) { i -> reader.read(pages[i]) { head(it) } } else emptySet()
                     plan.copy(pages = pages.map { pagePlan(it.path, it.size, lossy) })
                 } ?: plan
             }.getOrDefault(plan)
@@ -332,20 +331,20 @@ internal class FileJobs(
     private fun planFolder(path: String, compacted: Boolean): BookPlan {
         val contents = PackFolders.of(File(path))
         val files = contents.images + contents.extras
-        val lossy = compacted && ConvertEstimate.lossyWebp(contents.images.map { it.name }) { i -> contents.images[i].inputStream().use(::head) }
+        val lossy = if (compacted) ConvertEstimate.lossyPages(contents.images.map { it.name }) { i -> contents.images[i].inputStream().use(::head) } else emptySet()
         val pages = contents.images.map { pagePlan(it.name, it.length(), lossy) }
         return BookPlan(files.sumOf { it.length() }, ConvertRates.location(path), Container.FOLDER, pages)
     }
 
-    /** A page named [name] of [size] bytes, a WebP [lossy] as the book's sampled pages say. */
-    private fun pagePlan(name: String, size: Long, lossy: Boolean): PagePlan {
+    /** A page named [name] of [size] bytes, lossy when its format is among those the book's sampled pages say are ([lossy]). */
+    private fun pagePlan(name: String, size: Long, lossy: Set<ImageKind>): PagePlan {
         val format = ConvertEstimate.formatOf(name)
-        return PagePlan(format, size, lossy && format == ImageKind.WEBP)
+        return PagePlan(format, size, format in lossy)
     }
 
-    /** The first bytes of [input] that [ConvertEstimate.lossyWebp] reads. */
+    /** The first bytes of [input] that [ConvertEstimate.lossy] reads. */
     private fun head(input: InputStream): ByteArray {
-        val buf = ByteArray(ConvertEstimate.WEBP_HEAD)
+        val buf = ByteArray(ConvertEstimate.HEAD_BYTES)
         var n = 0
         while (n < buf.size) {
             val r = input.read(buf, n, buf.size - n)

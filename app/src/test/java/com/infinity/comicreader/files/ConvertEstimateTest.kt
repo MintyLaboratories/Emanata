@@ -135,17 +135,23 @@ class ConvertEstimateTest {
     }
 
     @Test
-    fun lossyWebpPagesAreToldByTheirFirstBytes() {
+    fun lossyPagesAreToldByTheirFirstBytes() {
         fun webp(chunk: String) = "RIFF".toByteArray() + ByteArray(4) + "WEBP$chunk".toByteArray() + byteArrayOf(10, 0, 0, 0) + ByteArray(10)
+        fun box(type: String, size: Int) = byteArrayOf(0, 0, 0, size.toByte()) + type.toByteArray() + ByteArray(size - 8)
+        // As libjxl lays out a JPEG XL holding a JPEG: signature, ftyp, a first codestream part, then the JPEG's data.
+        val holdsJpeg = box("JXL ", 12) + box("ftyp", 20) + box("jxlp", 20) + box("jbrd", 40)
         val names = List(10) { "%02d.webp".format(it) }
         val asked = ArrayList<Int>()
-        assertTrue(ConvertEstimate.lossyWebp(names) { asked += it; webp("VP8 ") })
+        assertEquals(setOf(ImageKind.WEBP), ConvertEstimate.lossyPages(names) { asked += it; webp("VP8 ") })
         // The first, middle and last only.
         assertEquals(listOf(0, 5, 9), asked)
-        assertFalse(ConvertEstimate.lossyWebp(names) { webp("VP8L") })
-        assertFalse(ConvertEstimate.lossyWebp(listOf("01.jpg")) { webp("VP8 ") })
-        // Unreadable: taken as converted.
-        assertFalse(ConvertEstimate.lossyWebp(names) { null })
+        assertEquals(emptySet<ImageKind>(), ConvertEstimate.lossyPages(names) { webp("VP8L") })
+        assertEquals(emptySet<ImageKind>(), ConvertEstimate.lossyPages(listOf("01.jpg")) { webp("VP8 ") })
+        // Unreadable: taken as lossless.
+        assertEquals(emptySet<ImageKind>(), ConvertEstimate.lossyPages(names) { null })
+        val mixed = listOf("01.jxl", "02.webp", "03.jxl")
+        assertEquals(setOf(ImageKind.JXL), ConvertEstimate.lossyPages(mixed) { if (mixed[it].endsWith("jxl")) holdsJpeg.copyOf(ConvertEstimate.HEAD_BYTES) else webp("VP8L") })
+        assertFalse(ConvertEstimate.lossy(ImageKind.JXL, byteArrayOf(0xFF.toByte(), 0x0A)))
         // A book of lossy WebP takes a glance per page.
         val lossy = BookPlan(200 * mb, pages = List(100) { PagePlan(ImageKind.WEBP, 2 * mb, lossy = true) })
         val lossless = lossy.copy(pages = List(100) { PagePlan(ImageKind.WEBP, 2 * mb) })

@@ -3,7 +3,6 @@ package com.infinity.comicreader.files
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import com.infinity.comicreader.compact.Compactor
-import com.infinity.comicreader.compact.PageProbe
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeeds
 import com.infinity.comicreader.reader.Calibrator
@@ -105,7 +104,7 @@ class BookMeter(
     override fun page(bytes: ByteArray, seconds: Double) {
         val s = op.step ?: return
         val kind = ImageKind.sniff(bytes, minOf(bytes.size, ImageKind.HEADER_BYTES))
-        val lossy = kind == ImageKind.WEBP && !PageProbe.webpLossless(bytes)
+        val lossy = ConvertEstimate.lossy(kind, bytes)
         if (inFront()) rates.page(s, kind, bytes.size.toLong(), seconds, lossy)
         else rates.away(rates.secondsPerPage(s, kind, SizeClass.of(bytes.size.toLong()), lossy), seconds)
         synchronized(this) { convert += seconds }

@@ -90,8 +90,8 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     private val tallies = HashMap<String, Tally>()
 
     /**
-     * Seconds of wall time one page of [format] in [size] takes for [step]; [lossy] for a WebP
-     * Compact leaves as it is (lossy, animated, or with a profile), kept apart from those it converts.
+     * Seconds of wall time one page of [format] in [size] takes for [step]; [lossy] for a lossy
+     * WebP or a JPEG XL holding a JPEG ([ConvertEstimate.lossy]), kept apart from the others.
      */
     @Synchronized
     fun secondsPerPage(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean = false): Double =
@@ -222,21 +222,24 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
         }
 
         /**
-         * Seconds of wall time a medium page of [format] takes for [step] on the reference
-         * device with the app in front (synthetic 2160x3840 pages: JPEG 0.25 s, four side by
-         * side; a PNG of flat colors 2.9 s, converting alone as its pixels take the memory of
-         * four); formats a step leaves as they are take a glance.
+         * Seconds of wall time a medium page of [format] ([lossy] as [secondsPerPage] says)
+         * takes for [step] on the reference device with the app in front, as measured on
+         * synthetic 2160x3840 pages: for Compact a JPEG 0.25 s (four side by side), a PNG of
+         * flat colors or a lossless WebP 2.9 s (alone, as its pixels take the memory of four), a
+         * lossless JPEG XL 13 s and one holding a JPEG 2.3 s; for Make compatible a lossless JPEG
+         * XL 8.3 s and one holding a JPEG 0.1 s. AVIF, HEIF and TIFF are not measured; formats a
+         * step leaves as they are take a glance.
          */
         fun defaultSeconds(step: Step, format: ImageKind?, lossy: Boolean = false): Double = when (step) {
             Step.COMPACT -> when (format) {
                 ImageKind.JPEG -> 0.25
                 ImageKind.PNG, ImageKind.BMP, ImageKind.TIFF -> 3.0
-                ImageKind.WEBP -> if (lossy) GLANCE else 1.0
-                ImageKind.JXL -> 5.0
+                ImageKind.WEBP -> if (lossy) GLANCE else 2.9
+                ImageKind.JXL -> if (lossy) 2.3 else 13.0
                 else -> GLANCE
             }
             Step.COMPATIBLE -> when (format) {
-                ImageKind.JXL -> 0.5
+                ImageKind.JXL -> if (lossy) 0.1 else 8.3
                 ImageKind.AVIF, ImageKind.HEIF -> 0.6
                 ImageKind.TIFF -> 1.0
                 else -> GLANCE
@@ -246,7 +249,7 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
 
         private fun pageKey(step: Step, format: ImageKind?, size: SizeClass, lossy: Boolean): String {
             val name = format?.name?.lowercase(Locale.ROOT) ?: "other"
-            return "page/${step.key}/$name${if (lossy && format == ImageKind.WEBP) "-lossy" else ""}/${size.key}"
+            return "page/${step.key}/$name${if (lossy && format in ConvertEstimate.SPLIT) "-lossy" else ""}/${size.key}"
         }
         private fun readKey(location: String, container: Container) = "read/$location/${container.key}"
         private fun writeKey(location: String, op: String) = "write/$location/$op"

@@ -21,7 +21,7 @@ data class ConvertOp(val key: String, val step: Step?) {
 
 /**
  * A page as known before the work: its [format], by its name, its [bytes], and [lossy] for a
- * WebP its first bytes say Compact leaves as it is ([WorkRates.secondsPerPage]).
+ * WebP or JPEG XL its first bytes say is lossy ([ConvertEstimate.lossy]).
  */
 data class PagePlan(val format: ImageKind?, val bytes: Long, val lossy: Boolean = false)
 
@@ -138,23 +138,37 @@ class ConvertEstimate(private val rates: WorkRates) {
             return plan.subList(0, i).sum() + (plan.getOrNull(i) ?: 0.0) * part.coerceIn(0.0, 1.0)
         }
 
-        /** The bytes [lossyWebp] needs of a WebP. */
-        const val WEBP_HEAD = 64
+        /** The bytes of a page [lossy] reads. */
+        const val HEAD_BYTES = 128
 
-        /** How many WebP pages of a book [lossyWebp] is asked about. */
-        const val WEBP_SAMPLES = 3
+        /** How many pages of a format [lossyPages] reads of a book. */
+        const val SAMPLES = 3
+
+        /** The formats whose lossy pages take their own time ([lossy]). */
+        val SPLIT = setOf(ImageKind.WEBP, ImageKind.JXL)
 
         /**
-         * Whether the WebP pages among [names] are ones Compact leaves as they are (lossy,
-         * [com.infinity.comicreader.compact.PageProbe.webpLossless]), by the first bytes ([head])
-         * of the first, middle and last of them: as most of those read say; false when none was read.
+         * True for a page of [format] whose first bytes [head] say it is lossy: a WebP Compact
+         * leaves as it is ([PageProbe.webpLossless]: lossy, animated, or with a profile), a JPEG
+         * XL holding a JPEG ([PageProbe.jxlHoldsJpeg]), which rebuilds or transcodes its JPEG.
          */
-        fun lossyWebp(names: List<String>, head: (Int) -> ByteArray?): Boolean {
-            val webp = names.indices.filter { formatOf(names[it]) == ImageKind.WEBP }
-            if (webp.isEmpty()) return false
-            val picks = listOf(webp.first(), webp[webp.size / 2], webp.last()).distinct().take(WEBP_SAMPLES)
-            val said = picks.mapNotNull { i -> runCatching { head(i) }.getOrNull()?.let { !PageProbe.webpLossless(it) } }
-            return said.isNotEmpty() && said.count { it } * 2 >= said.size
+        fun lossy(format: ImageKind?, head: ByteArray): Boolean = when (format) {
+            ImageKind.WEBP -> !PageProbe.webpLossless(head)
+            ImageKind.JXL -> PageProbe.jxlHoldsJpeg(head)
+            else -> false
+        }
+
+        /**
+         * The formats among [SPLIT] whose pages among [names] are lossy ([lossy]), by the first
+         * bytes ([head]) of the first, middle and last page of each: as most of those read say;
+         * a format none of whose pages was read is not.
+         */
+        fun lossyPages(names: List<String>, head: (Int) -> ByteArray?): Set<ImageKind> = SPLIT.filterTo(HashSet()) { format ->
+            val of = names.indices.filter { formatOf(names[it]) == format }
+            if (of.isEmpty()) return@filterTo false
+            val picks = listOf(of.first(), of[of.size / 2], of.last()).distinct().take(SAMPLES)
+            val said = picks.mapNotNull { i -> runCatching { head(i) }.getOrNull()?.let { lossy(format, it) } }
+            said.isNotEmpty() && said.count { it } * 2 >= said.size
         }
 
         /** The format a page named [name] holds, by its extension; null for one of none known. */

@@ -847,6 +847,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   **This book**), kept with its other data; **Default** follows Settings, and
   a change there changes the default. Processed pages are kept on disk (up to
   1 GB and a tenth of the free space, cleared by Clear cache).
+- **Optimizing for this device**: at first launch, once the library shows, a
+  full-screen calibration times how fast the device decodes and resizes pages
+  (about 30 s; a comic page whose gutters slide one at a time keeps it company)
+  and keeps the setup that is fast without wasting battery. **Cancel** keeps
+  what is in effect (the defaults the first time) and asks again at the next
+  launch, **Keep old calibration** (not on the first run) keeps the previous one
+  until the next system update, **Continue in background** lets it run unseen
+  while the app is open and idle. After a system update a banner in the
+  library offers it again ("Optimize for this device (~N s)": Start, Later,
+  Skip); **Settings → Performance → Recalibrate** runs it any time. No charger
+  needed; too warm or under 20 % battery, it says so and stops; with battery
+  saver on it offers saver's settings or **Measure anyway** (replaced by the
+  next run without saver). The screen stays on while it runs.
 - About: version, source, upstream credit, the license, third-party licenses,
   and the AI models' authors and licenses.
 
@@ -892,8 +905,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   memory.
 - Per-device calibration (`Calibrator`, choices in `Calibration`): once per
   system build and calibration version (`Calibration.VERSION`, bumped when the
-  setups or the method change; app updates alone don't recalibrate), while the
-  app is in front but not reading, charging, cool and otherwise idle, it times
+  setups or the method change; app updates alone don't recalibrate), when the
+  user lets it (`CalibrationScreenActivity`, the library's `CalibrationBanner`;
+  rules in `CalibrationPrompts`), while the app is in front but not reading,
+  cool and otherwise idle, it times
   the resampler on 1, 2, one-per-large-core and one-per-core workers and on the
   GPU on a synthetic 2000x3000 page, native JPEG XL decodes on 2,
   one-per-large-core and one-per-core threads and platform JPEG decodes pinned
@@ -929,8 +944,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (never restored onto another
   device); until the first calibration ends the one-per-large-core rule
   applies, and after a system update the previous winners stay until new ones
-  are established. Debug and bench builds show it and recalibrate in
-  `CalibrationActivity` (shell only).
+  are established. The calibration screen's page is `PanelTunerView`: a
+  `PanelPage` of gutter lines with locked angles and moving offsets, panels the
+  quads between them, each panel's halftone drawn once per size into an alpha
+  mask fixed to the page and clipped by its quad each frame (20 fps at most,
+  none while hidden, still with animations off). Debug and bench builds show
+  calibration and recalibrate in `CalibrationActivity` (shell only).
 - AI processing (`ai/`): ncnn with Vulkan, built from
   source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own
   (`libaincnn.so`) loaded on first use. A model (`.param`/`.bin`) runs over a

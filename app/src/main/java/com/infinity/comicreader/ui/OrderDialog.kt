@@ -93,8 +93,8 @@ internal object OrderDialog {
             holder.shown.setOnCheckedChangeListener { box, checked ->
                 val at = holder.bindingAdapterPosition
                 if (at != RecyclerView.NO_POSITION && !items.show(at, checked)) {
-                    // Posted: a checkbox set back from within its own change keeps the new state.
-                    box.post { notifyItemChanged(holder.bindingAdapterPosition) }
+                    // Posted: a checkbox set back from within its own change keeps the new state. A row unbound by then binds anew from the items.
+                    box.post { holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }?.let { notifyItemChanged(it) } }
                 }
             }
             holder.handle.setOnTouchListener { _, e ->

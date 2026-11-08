@@ -132,6 +132,9 @@ interface RemoteInput : Closeable {
      */
     val background: RemoteInput get() = this
 
+    /** The id of the share the file is on, as [Remotes.open] tells; null when not opened through it. */
+    val shareId: String? get() = null
+
     /** Runs [block], the caller waiting on [background] work it now needs, counted as its own request. */
     fun <T> awaiting(block: () -> T): T = block()
 }

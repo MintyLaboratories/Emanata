@@ -6,10 +6,8 @@ import android.net.NetworkCapabilities
 import androidx.annotation.VisibleForTesting
 
 /**
- * Whether the connection costs by the byte, asked before any network work nobody asked for
- * (similar-books hashing on shares, model downloads that start or resume by themselves,
- * background scans of share books, reading ahead on shares): such work is skipped while
- * [skipsOptional]. Explicit actions (opening a book, a Download tap) never ask.
+ * Whether the connection costs by the byte, asked through [NetPolicy] before any network work
+ * nobody asked for. Mobile data always counts as metered.
  */
 object Metered {
     /** What the active network says of itself. */
@@ -76,9 +74,6 @@ object Metered {
         kept?.let { (time, verdict) -> if (at - time in 0 until KEEP_MS) return verdict }
         return verdict(probe()).also { kept = at to it }
     }
-
-    /** True while optional network work is to be skipped: on a metered connection. */
-    fun skipsOptional(): Boolean = now() == Verdict.METERED
 
     /** Forgets the kept answer, so the next [now] asks again. */
     @VisibleForTesting

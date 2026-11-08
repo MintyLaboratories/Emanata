@@ -113,7 +113,8 @@ import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileSpaces
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.Transfer
-import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.RemoteStat
@@ -1678,7 +1679,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
      * goes on undisturbed. It waits while the library is out of sight, as while a book
      * is read, so it never competes with the reader for the share or the battery, and
      * while battery saver pauses background scans. Books and folders on shares are skipped
-     * on a metered connection ([Metered]), to be read on a later listing; a note says so.
+     * while background reads are held back there, on a metered connection or a slow share
+     * ([NetPolicy]), to be read on a later listing; a note says so.
      */
     private fun scheduleFacts(keys: Set<SortKey>) {
         val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
@@ -1700,12 +1702,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             val books = candidates.filter { unknown(it) }
             val charset = prefs.charset
             var shownAt = SystemClock.uptimeMillis()
-            var metered = false
+            // Why share books were held back: metered wins over slow.
+            var held: NetPolicy.Why? = null
             for ((i, e) in books.withIndex()) {
                 withStarted {}
                 awaitScans()
-                if (Remotes.isRemote(e.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) {
-                    metered = true
+                val why = if (Remotes.isRemote(e.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, e.path) } else null
+                if (why != null) {
+                    if (held != NetPolicy.Why.METERED) held = why
                     continue
                 }
                 val read = withContext(AppDispatchers.io) {
@@ -1722,18 +1726,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 applyFilterAndSort(resort = false)
             }
             // Facts read before the books skipped last show too.
-            if (metered) applyFilterAndSort(resort = false)
+            if (held != null) applyFilterAndSort(resort = false)
             for (f in folders) {
                 withStarted {}
                 awaitScans()
-                if (Remotes.isRemote(f.path) && withContext(AppDispatchers.io) { Metered.skipsOptional() }) {
-                    metered = true
+                val why = if (Remotes.isRemote(f.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, f.path) } else null
+                if (why != null) {
+                    if (held != NetPolicy.Why.METERED) held = why
                     continue
                 }
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
             if (folders.isNotEmpty()) applyFilterAndSort()
-            if (metered) Snackbar.make(recycler, R.string.facts_metered, Snackbar.LENGTH_LONG).show()
+            held?.let { Snackbar.make(recycler, if (it == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG).show() }
         }
     }
 

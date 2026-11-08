@@ -2,7 +2,8 @@ package com.infinity.comicreader.ai
 
 import android.os.SystemClock
 import android.util.Log
-import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetWork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -57,13 +58,14 @@ object ModelDownloads {
     /**
      * Downloads [model] into [store] unless it is installed or already on its way. One nobody
      * asked for ([optional]: started or resumed by the app itself) is not started on a metered
-     * connection ([Metered]): it shows as failed for that ([DownloadFailure.METERED]) instead.
+     * connection when the user skips downloads there ([NetPolicy]): it shows as failed for that
+     * ([DownloadFailure.METERED]) instead.
      */
     fun start(store: ModelStore, model: CatalogModel, client: OkHttpClient = this.client(), optional: Boolean = false) {
         if (store.installed(model)) return
         synchronized(jobs) {
             if (jobs[model.id]?.isActive == true) return
-            if (optional && Metered.skipsOptional()) {
+            if (optional && !NetPolicy.may(NetWork.DOWNLOAD)) {
                 set(model.id, DownloadState.Failed(DownloadFailure.METERED))
                 return
             }

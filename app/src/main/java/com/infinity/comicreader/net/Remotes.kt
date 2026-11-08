@@ -148,6 +148,7 @@ object Remotes {
         onMainThread = { false }
         clock = { System.nanoTime() / 1_000_000 }
         answerMs = DEFAULT_ANSWER_MS
+        ShareSpeeds.reset()
         changed(null)
     }
 
@@ -192,10 +193,13 @@ object Remotes {
             changes++
             val before = shares?.firstOrNull { it.id == id }
             shares = null
-            if (id != null && before != null && sameWay(before, share(id))) {
+            val now = id?.let(::share)
+            if (id != null && before != null && sameWay(before, now)) {
                 retry(id)
                 return
             }
+            // What a share's reads measured holds while it is reached the same way.
+            if (id != null && (now == null || before != null)) ShareSpeeds.forget(id)
             forget = id != null
             if (id == null) {
                 closing += open.values
@@ -321,7 +325,8 @@ object Remotes {
     fun open(path: String): RemoteInput = Timing.span("share open") {
         call(path) { fs ->
             val by = asker.get()
-            val input = asked(by) { fs.open(relOf(path)) }
+            val id = idOf(path)!!
+            val input = Measured(id, asked(by) { fs.open(relOf(path)) })
             if (by == null) input else Asked(by, input)
         }
     }
@@ -353,6 +358,34 @@ object Remotes {
             }
 
         override val background: RemoteInput get() = this
+    }
+
+    /** [input], a file on share [shareId], its reads measuring the share's speed ([ShareSpeeds]). */
+    private class Measured(override val shareId: String, private val input: RemoteInput) : RemoteInput by input {
+        override fun read(position: Long, buffer: ByteArray, offset: Int, count: Int): Int =
+            timed(count) { input.read(position, buffer, offset, count) }
+
+        override fun readFully(position: Long, buffer: ByteArray, offset: Int, count: Int, heard: () -> Unit): Int =
+            timed(count) { input.readFully(position, buffer, offset, count, heard) }
+
+        override val background: RemoteInput get() = input.background.let { if (it === input) this else Measured(shareId, it) }
+
+        /** Runs [block], a read of [count] bytes: a long one counts toward throughput, a short one toward first-byte latency. */
+        private inline fun timed(count: Int, block: () -> Int): Int {
+            val meter = ShareSpeeds.meter(shareId)
+            val bulk = count >= SpeedMeter.BULK_BYTES
+            if (bulk) meter.bulkStarted()
+            val start = ShareSpeeds.clock()
+            var got = -1
+            try {
+                got = block()
+                return got
+            } finally {
+                if (bulk) meter.bulkEnded(got.coerceAtLeast(0).toLong())
+                else if (count <= SpeedMeter.SHORT_BYTES && got > 0) meter.firstByte(ShareSpeeds.clock() - start)
+                ShareSpeeds.measured(shareId)
+            }
+        }
     }
 
     /** Runs [block], a request to a share, counting it as [by]'s waiting for an answer until it returns or fails. */

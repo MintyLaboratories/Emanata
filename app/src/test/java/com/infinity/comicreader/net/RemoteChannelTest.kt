@@ -150,6 +150,8 @@ class RemoteChannelTest {
         RemoteChannel.thrifty = false
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
         Metered.forget()
+        NetPolicy.rules = NetRules()
+        Remotes.serve(emptyList()) { throw AssertionError("no shares") }
         RemoteChannel.heapRoom = heapRoom
         RemoteChannel.heapMax = heapMax
     }
@@ -239,6 +241,29 @@ class RemoteChannelTest {
         channel.read(ByteBuffer.allocate(10))
         assertTrue(channel.aheads > 0)
         channel.close()
+    }
+
+    @Test
+    fun onASlowShareSkippingReadAheadOnlyExpectedSpansComeAhead() {
+        Remotes.serve(listOf(FakeRemoteFs.share("s1").copy(speed = ShareSpeed.SLOW))) { throw AssertionError("no reads") }
+        val big = ByteArray(100_000) { (it * 13).toByte() }
+        fun onShare() = object : RemoteInput by Bytes(big) {
+            override val shareId = "s1"
+        }
+        val streamed = RemoteChannel(onShare(), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
+        assertArrayEquals(big, drain(streamed, 500))
+        assertEquals(0, streamed.aheads)
+        val channel = RemoteChannel(onShare(), minBlock = 1024, maxBlock = 16_384, background = now)
+        channel.expect(10_000, 60_000)
+        channel.position(10_000)
+        channel.read(ByteBuffer.allocate(10))
+        assertTrue(channel.aheads > 0)
+        channel.close()
+        // Read-ahead not skipped on slow shares comes as on any other.
+        NetPolicy.rules = NetRules(slow = emptySet())
+        val free = RemoteChannel(onShare(), minBlock = 1024, maxBlock = 8192, aheadFrom = 4096, background = now)
+        assertArrayEquals(big, drain(free, 500))
+        assertTrue(free.aheads > 0)
     }
 
     @Test

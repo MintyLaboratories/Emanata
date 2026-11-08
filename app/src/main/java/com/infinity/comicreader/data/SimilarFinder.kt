@@ -87,7 +87,7 @@ class SimilarFinder(
      * with how many could be compared: those with something kept, and with [readNew] the
      * others, read first (those only on shares only with [readShares]; of a content on the
      * device and on a share, the device copy). Starts no read once [alive] turns false, nor a
-     * share read once [sharesAlive] does, and compares what was read by then. [progress] hears
+     * share read once [sharesAlive] does for the file it would read, and compares what was read by then. [progress] hears
      * books read of all to read, from the reading threads.
      */
     fun find(
@@ -96,7 +96,7 @@ class SimilarFinder(
         progress: (Int, Int) -> Unit = { _, _ -> },
         readNew: Boolean = true,
         readShares: Boolean = true,
-        sharesAlive: () -> Boolean = { true }
+        sharesAlive: (File) -> Boolean = { true }
     ): Found {
         val byId = contents.byId
         val ids = byId.keys.toList()
@@ -117,13 +117,13 @@ class SimilarFinder(
                 override fun <T> run(work: () -> T): T = gate.pass(work)
             }
             fun task(id: BookId, onShare: Boolean) = Callable {
-                val going = if (onShare) { -> alive() && sharesAlive() } else alive
+                val files = byId.getValue(id)
+                val file = files.firstOrNull { !remote(it) } ?: files.first()
+                val going = if (onShare) { -> alive() && sharesAlive(file) } else alive
                 val readOne = readOne@{
                     if (!going()) return@readOne null
                     tried.incrementAndGet()
                     if (onShare) triedShares.incrementAndGet()
-                    val files = byId.getValue(id)
-                    val file = files.firstOrNull { !remote(it) } ?: files.first()
                     val got = runCatching { read(file, { !going() }, if (onShare) gated else Pace.FREE) }.getOrNull()
                     if (got == null && !going()) {
                         tried.decrementAndGet()

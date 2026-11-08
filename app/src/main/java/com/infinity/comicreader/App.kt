@@ -16,9 +16,11 @@ import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.net.Listings
 import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeeds
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSeams
@@ -39,8 +41,10 @@ class App : Application() {
         Library(this).publishNameCharsets()
         AppCompatDelegate.setDefaultNightMode(prefs.nightMode)
         Locales.apply(prefs.localeTag)
+        ShareSpeeds.init(this)
         Remotes.init(this)
         Metered.init(this)
+        NetPolicy.rules = prefs.netRules
         Remotes.answerMs = prefs.networkTimeoutMs
         FileWork.onStart = { FileWorkService.start(this) }
         RemoteCache.limitBytes = prefs.networkCacheBytes

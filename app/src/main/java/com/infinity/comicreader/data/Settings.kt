@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.infinity.comicreader.ai.AiPicks
+import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
@@ -184,9 +185,10 @@ class SettingsRepository internal constructor(private val app: Context) {
         holdBackShares()
     }
 
-    /** Share reads fetch nothing ahead while battery saver holds back read-ahead. */
+    /** Share reads fetch nothing ahead while battery saver holds back read-ahead; optional network work follows the skip choices. */
     private fun holdBackShares() {
         RemoteChannel.thrifty = thrift.lessReadAhead
+        NetPolicy.rules = prefs.netRules
     }
 
     // Held in a field: SharedPreferences references its listeners only weakly.

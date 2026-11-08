@@ -14,7 +14,8 @@ object ShareForm {
      * [previous]'s, lost or not, only for the same server reached the same way: else
      * the password is asked for again ([SharePath.Problem.PASSWORD_AGAIN]), so it never
      * goes to a mistyped host or over another protocol. With [clearPassword], a blank
-     * [password] stores none. [thumbnails] says whether covers of its books are made.
+     * [password] stores none. [thumbnails] says whether covers of its books are made, [speed]
+     * whether it counts as slow.
      */
     fun build(
         name: String,
@@ -24,6 +25,7 @@ object ShareForm {
         previous: Share?,
         kind: ShareKind = ShareKind.SMB,
         thumbnails: Boolean = previous?.thumbnails ?: true,
+        speed: ShareSpeed = previous?.speed ?: ShareSpeed.AUTO,
         clearPassword: Boolean = false
     ): Result {
         val parsed: ShareAddress = when (kind) {
@@ -47,7 +49,7 @@ object ShareForm {
         }
         val secret = if (keep) previous!!.password else password
         val lost = keep && previous!!.passwordLost
-        return Result.Ok(Share(previous?.id ?: ShareStore.newId(), label, parsed, user.trim(), secret, passwordLost = lost, thumbnails = thumbnails))
+        return Result.Ok(Share(previous?.id ?: ShareStore.newId(), label, parsed, user.trim(), secret, passwordLost = lost, thumbnails = thumbnails, speed = speed))
     }
 
     /** What a password is sent to: the protocol, host and port. */

@@ -4,7 +4,6 @@ import com.infinity.comicreader.net.Metered.Link
 import com.infinity.comicreader.net.Metered.Verdict
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,19 +50,19 @@ class MeteredTest {
     }
 
     @Test
-    fun skipsOptionalOnlyWhenMetered() {
+    fun meteredOnlyWhenTheLinkSaysSo() {
         var link: Link? = wifi.copy(notMetered = false)
         var now = 0L
         Metered.probe = { link }
         Metered.clock = { now }
         Metered.forget()
-        assertTrue(Metered.skipsOptional())
+        assertEquals(Verdict.METERED, Metered.now())
         link = null
         now += 2_000
-        assertFalse(Metered.skipsOptional())
+        assertTrue(Metered.now() != Verdict.METERED)
         link = wifi
         now += 2_000
-        assertFalse(Metered.skipsOptional())
+        assertTrue(Metered.now() != Verdict.METERED)
     }
 
     @Test

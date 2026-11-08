@@ -8,6 +8,7 @@ package com.infinity.comicreader.net
  * [passwordLost] says the stored password can no longer be opened (the keystore was
  * reset, or the share came from another device): it is never signed in with until
  * entered again. Without [thumbnails], covers of its books are not made (for slow drives).
+ * [speed] says whether it counts as slow ([ShareSpeeds]).
  */
 data class Share(
     val id: String,
@@ -16,7 +17,8 @@ data class Share(
     val user: String,
     val password: String,
     val passwordLost: Boolean = false,
-    val thumbnails: Boolean = true
+    val thumbnails: Boolean = true,
+    val speed: ShareSpeed = ShareSpeed.AUTO
 ) {
     val kind: ShareKind get() = if (path is DavUrl) ShareKind.WEBDAV else ShareKind.SMB
 
@@ -31,4 +33,13 @@ data class Share(
 
     /** Hides the password from logs and crash reports. */
     override fun toString(): String = "Share(id=$id, name=$name, path=$path, user=$user)"
+}
+
+/** Whether a share counts as slow: as measured ([AUTO]), or as the user says. Stored by [key]. */
+enum class ShareSpeed(val key: String) {
+    AUTO("auto"), FAST("fast"), SLOW("slow");
+
+    companion object {
+        fun of(key: String?): ShareSpeed = entries.firstOrNull { it.key == key } ?: AUTO
+    }
 }

@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicLong
  * span read right after another span was read up to it, the next two are fetched in the background
  * ([readAhead]; as [RemoteInput.background] work, waited on as the reader's own request),
  * within a budget all channels share, only while a quarter of the heap stays free after
- * them, never while [thrifty], and on a metered connection only inside a span or when the whole file is read
+ * them, never while [thrifty], and on a metered connection or slow share skipping read-ahead ([NetPolicy])
+ * only inside a span or when the whole file is read
  * ([toEnd]). The most recently used runs are kept, up to
  * [maxCached] bytes, and only the latest once memory runs low ([trim]); the array of a
  * run let go is reused for the next of its length, so a long streamed read allocates little.
@@ -298,8 +299,9 @@ class RemoteChannel(
      * when an earlier span was read up to just before it, as entries read in a row are;
      * or, outside any span, once [run], at least [aheadFrom] long, followed on from the run
      * before. Two, so the next fetch is under way while the last one's final pieces come.
-     * Within [MAX_AHEAD_BYTES] for all channels, never while [thrifty]; on a metered
-     * connection ([Metered]) only where the bytes are read anyway: inside a span, or [toEnd].
+     * Within [MAX_AHEAD_BYTES] for all channels, never while [thrifty]; on a metered connection or
+     * a slow share skipping read-ahead ([NetPolicy]) only where the bytes are read anyway: inside a
+     * span, or [toEnd].
      */
     private fun fetchAhead(run: Run) {
         if (!readAhead || thrifty || run.end >= size || run.end != lastEnd) return
@@ -311,7 +313,7 @@ class RemoteChannel(
         // Past a span's end more comes only for entries read in a row: one page read whole (a cover) wants no more.
         val inRow = entriesAhead && span != null && !inSpan && !shared && followsRead(span)
         if (!inSpan && !inRow && (span != null || run.bytes.size < aheadFrom || window < aheadFrom)) return
-        if (!inSpan && !toEnd && Metered.skipsOptional()) return
+        if (!inSpan && !toEnd && !NetPolicy.may(NetWork.READ_AHEAD, input.shareId)) return
         val limit = if (inSpan) spanEnd else size
         var next = coming.lastOrNull()?.let { it.start + it.length } ?: run.end
         while (coming.size < MAX_COMING && next < limit) {

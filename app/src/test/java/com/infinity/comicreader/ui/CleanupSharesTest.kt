@@ -24,6 +24,7 @@ import com.infinity.comicreader.reader.SyntheticArt
 import com.infinity.comicreader.testing.Xxh3Port
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -143,10 +144,16 @@ class CleanupSharesTest {
         // The two copies sharing a size are not read for the exact-copy check either.
         val notes = listOf(context.resources.getQuantityString(R.plurals.dupes_metered, 2, 2), context.resources.getQuantityString(R.plurals.similar_metered, 4, 4))
         assertEquals(notes.joinToString("\n"), activity.findViewById<TextView>(R.id.similar_text).text.toString())
-        assertEquals(View.GONE, activity.findViewById<View>(R.id.similar_compare).visibility)
         assertEquals(0, list.adapter!!.itemCount)
         assertEquals(0L, fake.bytesRead)
         assertNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
+        // Compare is asked for: it reads them anyway.
+        val compare = activity.findViewById<View>(R.id.similar_compare)
+        assertEquals(View.VISIBLE, compare.visibility)
+        compare.performClick()
+        settle(activity)
+        assertTrue(fake.bytesRead > 0)
+        assertNotNull(SimilarStore.of(context.cacheDir).get(BookIds.of(Remotes.file(Remotes.rootOf("s1") + "/third/Other.cbz"))))
     }
 
     @Test

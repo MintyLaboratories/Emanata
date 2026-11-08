@@ -45,6 +45,38 @@ class RemotesTest {
     }
 
     @Test
+    fun readsMeasureTheShareSpeed() {
+        File(tmp.root, "share/big.bin").writeBytes(ByteArray(3 shl 20))
+        var list = listOf(FakeRemoteFs.share())
+        Remotes.serve({ list }) { fake }
+        Remotes.clock = { now }
+        var t = 0L
+        ShareSpeeds.clock = { t += 150; t }
+        try {
+            Remotes.open("/net/s1/big.bin").use { input ->
+                assertEquals("s1", input.shareId)
+                val buffer = ByteArray(1 shl 20)
+                for (i in 0 until 3) input.readFully(i.toLong() shl 20, buffer, 0, buffer.size)
+                for (i in 0 until 3) input.read(i * 4096L, buffer, 0, 4096)
+            }
+            val e = ShareSpeeds.estimate("s1")!!
+            // Each long read was under way for two ticks; each short one answered in one.
+            assertEquals((1L shl 20) * 1000 / 300, e.bytesPerSecond)
+            assertEquals(150L, e.firstByteMs)
+            assertFalse(ShareSpeeds.slow("s1"))
+            // Editing what is not how it is reached keeps what it measured; removing the share forgets it.
+            list = listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.FAST))
+            Remotes.changed("s1")
+            assertEquals(e, ShareSpeeds.estimate("s1"))
+            list = emptyList()
+            Remotes.changed("s1")
+            assertNull(ShareSpeeds.estimate("s1"))
+        } finally {
+            ShareSpeeds.clock = { System.nanoTime() / 1_000_000 }
+        }
+    }
+
+    @Test
     fun pathsOnSharesMakeRemoteFiles() {
         val f = Remotes.file("/net/s1/Series/001.cbz")
         assertTrue(f is RemoteFile)

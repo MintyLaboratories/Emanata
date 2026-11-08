@@ -143,7 +143,7 @@ enum class DownloadFailure {
     /** Not enough free space for what is left. */
     SPACE,
 
-    /** Not started: nobody asked for it, and the connection is metered ([com.infinity.comicreader.net.Metered]). */
+    /** Not started: nobody asked for it, and downloads are skipped on this metered connection ([com.infinity.comicreader.net.NetPolicy]). */
     METERED
 }
 

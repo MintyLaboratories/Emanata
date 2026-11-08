@@ -43,7 +43,7 @@ object ShareBackup {
         val list = JSONArray()
         for (s in shares) {
             val o = JSONObject().put("id", s.id).put("name", s.name).put("user", s.user)
-                .put("host", s.path.host).put("port", s.path.port).put("dir", s.path.dir).put("thumbnails", s.thumbnails)
+                .put("host", s.path.host).put("port", s.path.port).put("dir", s.path.dir).put("thumbnails", s.thumbnails).put("speed", s.speed.key)
             when (val p = s.path) {
                 is SharePath -> o.put("kind", "smb").put("share", p.share)
                 is DavUrl -> o.put("kind", "webdav").put("secure", p.secure)
@@ -88,7 +88,7 @@ object ShareBackup {
                 }
                 else -> continue
             }
-            val share = Share(id, o.optString("name").ifBlank { host }, path, o.optString("user"), "", thumbnails = o.optBoolean("thumbnails", true))
+            val share = Share(id, o.optString("name").ifBlank { host }, path, o.optString("user"), "", thumbnails = o.optBoolean("thumbnails", true), speed = ShareSpeed.of(o.optString("speed", null)))
             val sealed = o.optString("password").takeIf { it.isNotEmpty() }
             // Opens only for the server and user it was sealed for: one edited in the file gets none.
             val password = sealed?.let { s ->

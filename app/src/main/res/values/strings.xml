@@ -102,6 +102,7 @@
     <string name="network_open_device">Open device</string>
     <string name="share_answering">%1$s is answering now</string>
     <string name="facts_metered">Share books not read for this sort: skipped on a metered connection</string>
+    <string name="facts_slow">Share books not read for this sort: skipped on a slow share</string>
     <string name="share_open">Open</string>
     <string name="share_remove_title">Remove network share?</string>
     <string name="share_remove_msg">%1$s leaves the locations.</string>
@@ -257,6 +258,10 @@
         <item quantity="one">Exact copies: %1$d file on a share not checked. Skipped on a metered connection</item>
         <item quantity="other">Exact copies: %1$d files on shares not checked. Skipped on a metered connection</item>
     </plurals>
+    <plurals name="dupes_slow">
+        <item quantity="one">Exact copies: %1$d file on a share not checked. Skipped on a slow share</item>
+        <item quantity="other">Exact copies: %1$d files on shares not checked. Skipped on slow shares</item>
+    </plurals>
     <string name="dupes_similar">Similar books (probable)</string>
     <string name="dupes_similar_partial">Similar books (probable; %1$d of %2$d books compared)</string>
     <string name="similar_progress">Hashing pages of books: %1$d / %2$d</string>
@@ -265,8 +270,12 @@
     <string name="similar_compare">Compare</string>
     <string name="similar_unread">Similar books: %1$d of %2$d books not compared yet</string>
     <plurals name="similar_metered">
-        <item quantity="one">Similar books: %1$d book on a share not compared. Skipped on a metered connection</item>
-        <item quantity="other">Similar books: %1$d books on shares not compared. Skipped on a metered connection</item>
+        <item quantity="one">Similar books: %1$d book on a share not compared. Skipped on a metered connection; Compare reads it</item>
+        <item quantity="other">Similar books: %1$d books on shares not compared. Skipped on a metered connection; Compare reads them</item>
+    </plurals>
+    <plurals name="similar_slow">
+        <item quantity="one">Similar books: %1$d book on a share not compared. Skipped on a slow share; Compare reads it</item>
+        <item quantity="other">Similar books: %1$d books on shares not compared. Skipped on slow shares; Compare reads them</item>
     </plurals>
     <plurals name="similar_pages">
         <item quantity="one">%1$d page · %2$s</item>

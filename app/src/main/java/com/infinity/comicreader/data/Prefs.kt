@@ -6,6 +6,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.net.NetRules
+import com.infinity.comicreader.net.NetSkip
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.AutoScroll
@@ -507,6 +509,31 @@ class Prefs(context: Context) {
         get() = bool(KEY_SAVER_AI, true)
         set(v) = put(KEY_SAVER_AI, v)
 
+    // ---------------------------------------------------------------- network
+
+    /** What optional network work is skipped on a metered connection ([NetPolicy]). */
+    var meteredSkip: Set<NetSkip>
+        get() = sp.getString(KEY_METERED_SKIP, null)?.let(NetSkip::parse) ?: NetRules.METERED_DEFAULT
+        set(v) = put(KEY_METERED_SKIP, NetSkip.format(v))
+
+    /** What optional network work is skipped on a slow share ([NetPolicy]). */
+    var slowSkip: Set<NetSkip>
+        get() = sp.getString(KEY_SLOW_SKIP, null)?.let(NetSkip::parse) ?: NetRules.SLOW_DEFAULT
+        set(v) = put(KEY_SLOW_SKIP, NetSkip.format(v))
+
+    /** Both skip choices together. */
+    val netRules: NetRules get() = NetRules(meteredSkip, slowSkip)
+
+    /** Asks before opening a book on a share larger than [meteredWarnMb] on a metered connection. */
+    var meteredWarn: Boolean
+        get() = bool(KEY_METERED_WARN, true)
+        set(v) = put(KEY_METERED_WARN, v)
+
+    /** The size in MB (10^6 bytes) above which [meteredWarn] asks. */
+    var meteredWarnMb: Int
+        get() = str(KEY_METERED_WARN_MB, DEFAULT_METERED_WARN_MB.toString()).toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_METERED_WARN_MB
+        set(v) = put(KEY_METERED_WARN_MB, v.toString())
+
     // ---------------------------------------------------------------- AI processing
 
     /** Pages go through the models chosen per step ([aiModel]); off by default. */
@@ -682,6 +709,11 @@ class Prefs(context: Context) {
         private const val DEFAULT_NETWORK_CACHE_MB = "2048"
         const val KEY_NETWORK_TIMEOUT = "pref_network_timeout"
         const val KEY_SIMILAR_SHARES = "pref_similar_shares"
+        const val KEY_METERED_SKIP = "pref_metered_skip"
+        const val KEY_SLOW_SKIP = "pref_slow_skip"
+        const val KEY_METERED_WARN = "pref_metered_warn"
+        const val KEY_METERED_WARN_MB = "pref_metered_warn_mb"
+        const val DEFAULT_METERED_WARN_MB = 100
         private const val MIN_NETWORK_TIMEOUT_S = 5L
         private const val MAX_NETWORK_TIMEOUT_S = 600L
 
@@ -757,7 +789,7 @@ class Prefs(context: Context) {
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI,
-            KEY_SIMILAR_SHARES
+            KEY_SIMILAR_SHARES, KEY_METERED_SKIP, KEY_SLOW_SKIP, KEY_METERED_WARN, KEY_METERED_WARN_MB
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** The Language setting's values (`locale_values`). */

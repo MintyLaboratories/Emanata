@@ -37,7 +37,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
             out.add(
                 Share(
                     id, o.optString("name"), path, o.optString("user"), password.orEmpty(),
-                    passwordLost = lost, thumbnails = o.optBoolean(KEY_THUMBNAILS, true)
+                    passwordLost = lost, thumbnails = o.optBoolean(KEY_THUMBNAILS, true), speed = ShareSpeed.of(o.optString(KEY_SPEED, null))
                 )
             )
         }
@@ -78,6 +78,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
                     .put("user", s.user).put("secret", seal(s.password))
                     .apply { if (s.passwordLost) put(KEY_LOST, true) }
                     .apply { if (!s.thumbnails) put(KEY_THUMBNAILS, false) }
+                    .apply { if (s.speed != ShareSpeed.AUTO) put(KEY_SPEED, s.speed.key) }
             )
         }
         sp.edit().putString(KEY_LIST, arr.toString()).commit()
@@ -95,6 +96,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
         private const val KEY_LIST = "list"
         private const val KEY_LOST = "lost"
         private const val KEY_THUMBNAILS = "thumbnails"
+        private const val KEY_SPEED = "speed"
 
         /** How a share is reached: [KIND_WEBDAV], or absent for SMB. */
         private const val KEY_KIND = "kind"

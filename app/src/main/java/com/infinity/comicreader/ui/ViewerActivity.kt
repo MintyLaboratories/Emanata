@@ -100,7 +100,8 @@ import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.SpreadOverrides
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
-import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
@@ -1443,7 +1444,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
      * kept, asks once whether to carry that data over. A ComicInfo that only unpacking
      * pages would reach is read through its own handle at the lowest priority, unless
      * battery saver pauses scans ([Thrift.pausedScans]), the book is solid on a share, or
-     * on a share over a metered connection ([Metered]): then the book is noted on a later open.
+     * on a share holding back background reads ([sharedHeld]): then the book is noted on a later open.
      */
     private fun noteLikeness(book: File, src: PageSource, id: BookId?, fresh: Boolean) {
         likenessJob?.cancel()
@@ -1457,7 +1458,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
                 if (!CopyMatch.needed(store, id, book.name, fresh)) return@withContext null
                 val raw = (src as? HidingSource)?.inner ?: src
                 val info = if (raw.comicInfoCostly()) {
-                    if (paused || (book is RemoteFile && Metered.skipsOptional())) return@withContext null
+                    if (paused || sharedHeld(book)) return@withContext null
                     withContext(AppDispatchers.background) { BookFactsReader.comicInfo(book, charset, cacheDir) } ?: return@withContext null
                 } else {
                     runCatching { raw.comicInfo(cheapOnly = true) }.getOrNull()
@@ -1909,20 +1910,23 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         tallPages = findTallPages()
     }
 
-    /** True for [book] on a share while the connection is metered: background reads of it wait ([Metered]). */
-    private fun sharedMetered(book: File): Boolean = book is RemoteFile && Metered.skipsOptional()
+    /**
+     * True for [book] on a share while background reads of it are held back, on a metered connection
+     * or a slow share ([NetPolicy], [NetWork.OTHER]): they wait.
+     */
+    private fun sharedHeld(book: File): Boolean = book is RemoteFile && !NetPolicy.mayAt(NetWork.OTHER, book.path)
 
     /**
      * Reads the sizes [book]'s pages lack from their headers, in the background and from
      * the page on screen outward, stores them, and lays the book out again when they
      * change its spreads. Skipped where that would unpack the whole book
      * ([PageSource.cheapSizes]), while battery saver pauses scans ([Thrift.pausedScans]), and
-     * for a book on a share over a metered connection ([Metered]).
+     * for a book on a share holding back background reads ([sharedHeld]).
      */
     private fun scanSizes(book: File, src: PageSource) {
         val previous = sizesJob
         previous?.cancel()
-        if (!src.cheapSizes || pageSizes.none { it == null } || applied.thrift.pausedScans || sharedMetered(book)) return
+        if (!src.cheapSizes || pageSizes.none { it == null } || applied.thrift.pausedScans || sharedHeld(book)) return
         val names = pageNames
         val store = pageStore ?: return
         val sizes = pageSizes.copyOf()
@@ -2163,7 +2167,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
      * They are kept for the book ([PageSeams]), and the book is laid out again whenever they
      * change it. While battery saver pauses scans ([Thrift.pausedScans]), only those within
      * [SEAM_WINDOW] pages are checked: the screens being read need them; likewise for a book on
-     * a share over a metered connection ([Metered]).
+     * a share holding back background reads ([sharedHeld]).
      * A page's sides come from its decode for the reader ([PageSource.decodedSides]), checked at
      * once and first; only a JPEG page read alone is read for them before that, in rounds that
      * start once no page decodes for the reader ([PageAdapter.awaitIdle]). Other pages, and every
@@ -2178,7 +2182,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         val store = pageStore ?: return
         if (!scansReleased || seamsJob?.isActive == true || !seamsUsed() || src.isVector) return
         val names = pageNames
-        val far = !applied.thrift.pausedScans && !sharedMetered(book)
+        val far = !applied.thrift.pausedScans && !sharedHeld(book)
         // Pages are read for their sides until one decodes whole for them: the job then ends and the next waits for decodes.
         val strips = !src.dearSides
         val readable = { i: Int -> strips && src.cheapSizes && Decoders.cheapSidesNamed(names.getOrNull(i)) }

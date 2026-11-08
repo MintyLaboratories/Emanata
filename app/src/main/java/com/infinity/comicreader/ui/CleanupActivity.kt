@@ -37,7 +37,8 @@ import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.Thumbs
-import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.BookPrints
@@ -58,6 +59,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Housekeeping: finds duplicate files or lists the largest files below a folder,
@@ -119,8 +121,12 @@ class CleanupActivity : AppCompatActivity() {
     /** What the bar says of the exact-copy check once the search is over; null when it read everything. */
     private var dupesNote: String? = null
 
-    /** Share files the exact-copy check left unread on a metered connection. */
-    private val meteredFiles: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** Share files the exact-copy check left unread: on a metered connection, or on a slow share ([NetPolicy]). */
+    private val skippedFiles: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** Why the exact-copy check last left share files unread: metered wins over slow. */
+    @Volatile
+    private var skippedWhy: NetPolicy.Why? = null
 
     /** True in a share folder: nothing is selected or deleted. */
     private var readOnly = false
@@ -242,7 +248,9 @@ class CleanupActivity : AppCompatActivity() {
             showSimilarBar(getString(R.string.dupes_checking), running = true)
             val found = withContext(AppDispatchers.io) { findDuplicates(files) { isActive && !stopped } }
             dupesNote = when {
-                meteredFiles.isNotEmpty() -> resources.getQuantityString(R.plurals.dupes_metered, meteredFiles.size, meteredFiles.size)
+                skippedFiles.isNotEmpty() -> resources.getQuantityString(
+                    if (skippedWhy == NetPolicy.Why.METERED) R.plurals.dupes_metered else R.plurals.dupes_slow, skippedFiles.size, skippedFiles.size
+                )
                 stopped -> getString(R.string.dupes_stopped)
                 else -> null
             }
@@ -283,15 +291,17 @@ class CleanupActivity : AppCompatActivity() {
 
     /**
      * [f]'s bytes for [Duplicates]: a share's file read in place, each piece asked for at once.
-     * Fails for a share file that comes only whole ([Remotes.seekable]), and for one while the
-     * connection is metered ([Metered], asked before each piece), which [meteredFiles] counts.
+     * Fails for a share file that comes only whole ([Remotes.seekable]), and for one while hashing
+     * is skipped on a metered connection or slow share ([NetPolicy], asked before each piece),
+     * which [skippedFiles] counts.
      */
     private fun bytesOf(f: File): Duplicates.Bytes {
         if (f !is RemoteFile) return Duplicates.local(f)
         val unmetered = {
-            if (Metered.skipsOptional()) {
-                meteredFiles += f.absolutePath
-                throw IOException("Metered: ${f.name}")
+            NetPolicy.whyNotAt(NetWork.HASHING, f.path)?.let { why ->
+                skippedFiles += f.absolutePath
+                if (skippedWhy != NetPolicy.Why.METERED) skippedWhy = why
+                throw IOException("Skipped: ${f.name}")
             }
         }
         unmetered()
@@ -353,11 +363,12 @@ class CleanupActivity : AppCompatActivity() {
      * (device books by up to [SimilarFinder.WORKERS] threads as heat and battery allow, share
      * books one at a time beside them), and lists what it found in place of the similar books
      * listed. Shows books hashed of those to hash meanwhile; Stop, or leaving, compares only
-     * what was read by then. On a metered connection ([Metered], asked again between pages)
-     * share books are not read, not even for their IDs, and the bar says so. Books left
-     * uncompared otherwise are counted on the bar, with Compare to read them.
+     * what was read by then. While hashing is skipped on a metered connection or a slow share
+     * ([NetPolicy], asked again between pages) books there are not read, not even for their IDs,
+     * and the bar says so, unless [asked] (a Compare tap). Books left uncompared otherwise are
+     * counted on the bar, with Compare to read them.
      */
-    private suspend fun compareSimilar(books: List<File>, readNew: Boolean) {
+    private suspend fun compareSimilar(books: List<File>, readNew: Boolean, asked: Boolean = false) {
         comparing = true
         showSimilarBar(getString(R.string.similar_listing), running = true)
         updateEmpty()
@@ -366,14 +377,21 @@ class CleanupActivity : AppCompatActivity() {
         val charset = prefs.charset
         val workers = SimilarFinder.WORKERS
         val left = books.filter { it.absolutePath !in deleted }
-        val meteredSeen = AtomicBoolean(false)
-        // Share reads go on while the connection is unmetered, asked at most once a second ([Metered]).
-        val unmetered = { (!Metered.skipsOptional()).also { if (!it) meteredSeen.set(true) } }
-        val metered = left.any { it is RemoteFile } && withContext(AppDispatchers.io) { !unmetered() }
-        // A share book's ID not known yet is read from it, unless metered or stopped: then it is counted as not compared.
+        // Why share books were held back: metered wins over slow.
+        val skipWhy = AtomicReference<NetPolicy.Why?>()
+        // Share reads go on while hashing may run there ([NetPolicy]); a Compare tap reads them anyway.
+        val mayRead = { f: File ->
+            asked || NetPolicy.whyNotAt(NetWork.HASHING, f.path).let { why ->
+                if (why == NetPolicy.Why.METERED) skipWhy.set(why) else if (why != null) skipWhy.compareAndSet(null, why)
+                why == null
+            }
+        }
+        val onShares = left.filter { it is RemoteFile }.distinctBy { Remotes.idOf(it.path) }
+        val readShares = onShares.isNotEmpty() && withContext(AppDispatchers.io) { onShares.map(mayRead).any { it } }
+        // A share book's ID not known yet is read from it, unless held back or stopped: then it is counted as not compared.
         val unknown = AtomicInteger()
         val idOf = { f: File ->
-            if (f is RemoteFile && (stopped || !unmetered())) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
+            if (f is RemoteFile && (stopped || !mayRead(f))) BookIds.known(f).also { if (it == null) unknown.incrementAndGet() } else BookIds.find(f)
         }
         val finder = SimilarFinder(
             SimilarStore.of(cacheDir), idOf, { f, canceled, pace -> BookPrints.read(f, charset, cacheDir, canceled, pace) },
@@ -385,7 +403,7 @@ class CleanupActivity : AppCompatActivity() {
             Timing.span("similar books ${contents.byId.size}") {
                 finder.find(
                     contents, { context.isActive && !stopped }, { done, total -> onProgress(R.string.similar_progress, done, total) }, readNew,
-                    readShares = !metered, sharesAlive = unmetered
+                    readShares = readShares, sharesAlive = mayRead
                 )
             }
         }
@@ -412,7 +430,8 @@ class CleanupActivity : AppCompatActivity() {
         rows.removeAll { it is Row.Similar || (it is Row.Section && it.similar) }
         rows.addAll(found)
         forget(deleted)
-        val skipped = if (meteredSeen.get()) result.unreadShares + unknown.get() else 0
+        val why = skipWhy.get()
+        val skipped = if (why != null) result.unreadShares + unknown.get() else 0
         val waiting = result.unread + unknown.get() - skipped
         if (!context.isActive) {
             comparing = false
@@ -420,14 +439,16 @@ class CleanupActivity : AppCompatActivity() {
         } else {
             val notes = listOfNotNull(
                 getString(R.string.similar_unread, waiting, result.total + unknown.get()).takeIf { waiting > 0 },
-                resources.getQuantityString(R.plurals.similar_metered, skipped, skipped).takeIf { skipped > 0 }
+                resources.getQuantityString(
+                    if (why == NetPolicy.Why.METERED) R.plurals.similar_metered else R.plurals.similar_slow, skipped, skipped
+                ).takeIf { skipped > 0 }
             )
             val compare = { ->
                 stopped = false
-                lifecycleScope.launch { compareSimilar(books, readNew = true) }
+                lifecycleScope.launch { compareSimilar(books, readNew = true, asked = true) }
                 Unit
             }
-            endBar(notes, compare.takeIf { waiting > 0 })
+            endBar(notes, compare.takeIf { waiting + skipped > 0 })
         }
         adapter.notifyDataSetChanged()
         updateEmpty()

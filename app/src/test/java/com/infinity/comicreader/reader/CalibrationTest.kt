@@ -268,11 +268,93 @@ class CalibrationTest {
     }
 
     @Test
-    fun fingerprintChangesWithAppOrSystem() {
-        val a = Calibration.fingerprint("12@100", "brand/device:16/BUILD1")
-        assertTrue(a != Calibration.fingerprint("12@200", "brand/device:16/BUILD1"))
-        assertTrue(a != Calibration.fingerprint("12@100", "brand/device:16/BUILD2"))
-        assertEquals(a, Calibration.fingerprint("12@100", "brand/device:16/BUILD1"))
+    fun calibrationIsDueAfterASystemUpdateOrAVersionBumpNotAnAppUpdate() {
+        val a = Calibration.fingerprint(2, "brand/device:16/BUILD1")
+        assertTrue(a != Calibration.fingerprint(3, "brand/device:16/BUILD1"))
+        assertTrue(a != Calibration.fingerprint(2, "brand/device:16/BUILD2"))
+        assertEquals(a, Calibration.fingerprint(2, "brand/device:16/BUILD1"))
+        val kept = org.json.JSONObject().put("fingerprint", a)
+        assertFalse(Calibration.due(kept, Calibration.fingerprint(2, "brand/device:16/BUILD1")))
+        assertTrue(Calibration.due(kept, Calibration.fingerprint(Calibration.VERSION + 1, "brand/device:16/BUILD1")))
+        // Pages are made anew after every app update too: the drawing or encoders may change.
+        val page = Calibration.pageFingerprint("12@100", "brand/device:16/BUILD1")
+        assertTrue(page != Calibration.pageFingerprint("12@200", "brand/device:16/BUILD1"))
+        assertTrue(page != Calibration.pageFingerprint("12@100", "brand/device:16/BUILD2"))
+    }
+
+    @Test
+    fun cpuTimeIsWeighedByTheCapacityOfTheCoresItRanOn() {
+        val caps = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)
+        // All on the fastest core: as is.
+        assertEquals(100.0, Calibration.weighted(100.0, longArrayOf(0, 0, 0, 0, 0, 0, 0, 5_000_000), caps), 1e-9)
+        // All on little cores: 261/1024 of it.
+        assertEquals(25.48828125, Calibration.weighted(100.0, longArrayOf(1_000_000, 1_000_000, 0, 0, 0, 0, 0, 0), caps), 1e-9)
+        // Half little, half on a middle core.
+        assertEquals(100.0 * (0.5 * 261 + 0.5 * 805) / 1024, Calibration.weighted(100.0, longArrayOf(3, 0, 0, 0, 0, 3, 0, 0), caps), 1e-9)
+        // Nothing counted, or capacities unknown: as is.
+        assertEquals(100.0, Calibration.weighted(100.0, LongArray(8), caps), 0.0)
+        assertEquals(100.0, Calibration.weighted(100.0, longArrayOf(5, 5), IntArray(0)), 0.0)
+        // A core past the known capacities counts as the fastest.
+        assertEquals(100.0, Calibration.weighted(100.0, longArrayOf(0, 0, 7), intArrayOf(512, 1024)), 1e-9)
+    }
+
+    @Test
+    fun weighedCpuTimeBreaksTiesSoLittleCoresCanWin() {
+        // A chip with 2 large and 6 little cores: 8 threads 300 ms for 1.7x the CPU time of 2 large cores at 360 ms,
+        // three quarters of it on little cores of capacity 435: weighed, 8 threads cost less.
+        val two = Timing(jxl(2, true), 360.0, 700.0, weightedMs = 700.0)
+        val eight = Timing(jxl(8, false), 300.0, 1200.0, weightedMs = 1200.0 * (0.25 + 0.75 * 435 / 1024))
+        // Raw CPU time would pick the large cores.
+        assertEquals(jxl(2, true), Calibration.pick(listOf(two.copy(weightedMs = 700.0), eight.copy(weightedMs = 1200.0)))!!.candidate)
+        assertEquals(jxl(8, false), Calibration.pick(listOf(two, eight))!!.candidate)
+        // Among setups both fast, the lesser weighed CPU time wins even with more raw CPU time.
+        val a = Timing(jxl(4, true), 100.0, 300.0, weightedMs = 280.0)
+        val b = Timing(jxl(8, false), 95.0, 400.0, weightedMs = 220.0)
+        assertEquals(jxl(8, false), Calibration.pick(listOf(a, b))!!.candidate)
+        // Noise is judged on weighed times: within 5 % the setup in effect stays.
+        val c = Timing(jxl(8, false), 95.0, 400.0, weightedMs = 270.0)
+        assertEquals(jxl(4, true), Calibration.pick(listOf(a, c), incumbent = jxl(4, true))!!.candidate)
+    }
+
+    @Test
+    fun otherThreadsCountWhatTheyGainedDuringASample() {
+        val before = mapOf(1 to 1_000_000L, 2 to 5_000_000L, 3 to 0L)
+        // 1: calibration's own, +50 ms; 2: +3 ms; 3: UI, +9 ms; 4: born since, 1.5 ms; 5 gone.
+        val after = mapOf(1 to 51_000_000L, 2 to 8_000_000L, 3 to 9_000_000L, 4 to 1_500_000L)
+        assertEquals(4.5, Calibration.othersMs(before, after) { it == 1 || it == 3 }, 1e-9)
+        // A thread's time never goes back.
+        assertEquals(0.0, Calibration.othersMs(mapOf(7 to 10L), mapOf(7 to 5L)) { false }, 0.0)
+        // A tenth of a core over the sample, but at least 2 ms; a tick more when times come in ticks.
+        assertFalse(Calibration.othersBusy(4.5, 50.0, coarse = false))
+        assertTrue(Calibration.othersBusy(5.5, 50.0, coarse = false))
+        assertFalse(Calibration.othersBusy(1.9, 5.0, coarse = false))
+        assertTrue(Calibration.othersBusy(2.1, 5.0, coarse = false))
+        assertFalse(Calibration.othersBusy(10.0, 5.0, coarse = true))
+        assertTrue(Calibration.othersBusy(12.1, 5.0, coarse = true))
+        assertTrue(Calibration.housekeeping("HeapTaskDaemon"))
+        assertTrue(Calibration.housekeeping("Jit thread pool"))
+        assertFalse(Calibration.housekeeping("DefaultDispatch"))
+        assertFalse(Calibration.housekeeping("binder:123_2"))
+    }
+
+    @Test
+    fun batteryTemperatureStandsInWhereThereIsNoThermalStatus() {
+        assertEquals(0, Calibration.batteryStatus(399))
+        assertEquals(Calibration.LIGHT, Calibration.batteryStatus(400))
+        assertEquals(Calibration.LIGHT, Calibration.batteryStatus(419))
+        assertEquals(Calibration.HOT, Calibration.batteryStatus(420))
+        // A thermal HAL: its status alone, a warm battery or not.
+        assertEquals(0, Calibration.heatStatus(0, thermalKnown = true, batteryTenthsC = 450))
+        assertEquals(3, Calibration.heatStatus(3, thermalKnown = true, batteryTenthsC = 300))
+        // None: the battery's.
+        assertEquals(Calibration.HOT, Calibration.heatStatus(null, thermalKnown = false, batteryTenthsC = 430))
+        assertEquals(Calibration.HOT, Calibration.heatStatus(0, thermalKnown = false, batteryTenthsC = 430))
+        assertEquals(0, Calibration.heatStatus(null, thermalKnown = false, batteryTenthsC = null))
+        // Cannot be told: the higher.
+        assertEquals(Calibration.LIGHT, Calibration.heatStatus(0, thermalKnown = null, batteryTenthsC = 405))
+        assertEquals(Calibration.HOT, Calibration.heatStatus(2, thermalKnown = null, batteryTenthsC = 300))
+        // The battery's status is waited out like the thermal one.
+        assertEquals("too warm (thermal status 2)", Calibration.waitReason(busy = false, thermalStatus = Calibration.heatStatus(0, null, 425), powerSave = false, forced = false))
     }
 
     @Test
@@ -359,12 +441,12 @@ class CalibrationTest {
         val order = ArrayList<String>()
         private val runs = HashMap<Candidate, Int>()
 
-        override fun time(candidate: Candidate): Pair<Double, Double>? {
+        override fun time(candidate: Candidate): RunTime? {
             val list = walls[candidate] ?: return null
             val i = runs.merge(candidate, 1, Int::plus)!! - 1
             order += candidate.key
             val w = list[i % list.size]
-            return w to w * 2
+            return RunTime(w, w * 2, w * 3)
         }
 
         override fun awaitFair(): Boolean = fair()
@@ -379,8 +461,41 @@ class CalibrationTest {
         val probe = FakeProbe(mapOf(a to listOf(1000.0, 10.0, 30.0, 20.0), b to listOf(1000.0, 5.0, 6.0, 7.0)))
         val t = CalibrationRun(probe, listOf(a, b), rounds = 3, warmup = 1, burst = 1, warm = false).run()!!
         assertEquals(listOf(a.key, b.key, b.key, a.key, a.key, b.key, b.key, a.key), probe.order)
-        assertEquals(Timing(a, 20.0, 40.0, 30.0, 60.0), t[0])
-        assertEquals(Timing(b, 6.0, 12.0, 3.0, 6.0), t[1])
+        assertEquals(Timing(a, 20.0, 40.0, 30.0, 60.0, 60.0, 90.0), t[0])
+        assertEquals(Timing(b, 6.0, 12.0, 3.0, 6.0, 18.0, 9.0), t[1])
+    }
+
+    @Test
+    fun warmingOnlyInTheFirstRoundSkipsLaterWarmRuns() {
+        val a = pixels(1, true)
+        val probe = FakeProbe(mapOf(a to listOf(10.0)))
+        val run = CalibrationRun(probe, listOf(a), rounds = 3, burst = 3, warm = true, warmOnce = true)
+        assertNotNull(run.run())
+        // 1 warm + 3 timed, then 3 and 3.
+        assertEquals(10, probe.order.size)
+        assertEquals(3, run.roundsRun)
+    }
+
+    @Test
+    fun aRunEndsEarlyOnlyOnceTheWinnersStaySettled() {
+        val a = pixels(1, true)
+        val b = pixels(4, true)
+        // b always wins: settled from round 2 on, but never before round 3.
+        val steady = FakeProbe(mapOf(a to listOf(20.0), b to listOf(10.0)))
+        val run = CalibrationRun(steady, listOf(a, b), rounds = 5, burst = 1, warm = false, winners = { t -> Calibration.pick(t)?.candidate })
+        assertNotNull(run.run())
+        assertEquals(3, run.roundsRun)
+        assertEquals(6, steady.order.size)
+        // Winners that change every round: all rounds run.
+        var n = 0
+        val flipping = FakeProbe(mapOf(a to listOf(20.0), b to listOf(10.0)))
+        val noisy = CalibrationRun(flipping, listOf(a, b), rounds = 5, burst = 1, warm = false, winners = { n++ % 2 })
+        assertNotNull(noisy.run())
+        assertEquals(5, noisy.roundsRun)
+        // Without winners every round runs.
+        val full = CalibrationRun(FakeProbe(mapOf(a to listOf(20.0), b to listOf(10.0))), listOf(a, b), rounds = 5, burst = 1, warm = false)
+        assertNotNull(full.run())
+        assertEquals(5, full.roundsRun)
     }
 
     @Test
@@ -410,8 +525,10 @@ class CalibrationTest {
         var n = 0
         // Every other sample is disturbed.
         val probe = FakeProbe(mapOf(a to listOf(10.0)), still = { n++ % 2 == 1 })
-        val t = CalibrationRun(probe, listOf(a), rounds = 2, retries = 5).run()
+        val counted = CalibrationRun(probe, listOf(a), rounds = 2, retries = 5)
+        val t = counted.run()
         assertNotNull(t)
+        assertEquals(2, counted.redone)
         // 4 samples of a warm run and 3 timed.
         assertEquals(16, probe.order.size)
         val never = FakeProbe(mapOf(a to listOf(10.0)), still = { false })
@@ -429,7 +546,7 @@ class CalibrationTest {
 
     /** Times every run 10 ms; [still] and [saver] script the device's state. */
     private class SaverProbe(val still: () -> Boolean, val saver: () -> Boolean) : CalibrationProbe {
-        override fun time(candidate: Candidate) = 10.0 to 20.0
+        override fun time(candidate: Candidate) = RunTime(10.0, 20.0)
         override fun awaitFair() = true
         override fun stillFair() = still()
         override val powerSave: Boolean get() = saver()
@@ -479,12 +596,12 @@ class CalibrationTest {
 
         override fun awaitFair(): Boolean = true.also { idle = true }
         override fun stillFair(): Boolean = true
-        override fun time(candidate: Candidate): Pair<Double, Double> {
+        override fun time(candidate: Candidate): RunTime {
             val factor = if (idle) cold.getValue(candidate) else 1.0
             idle = false
             val noise = 1 + (random.nextDouble() * 2 - 1) * jitter + if (outlierEvery > 0 && random.nextInt(outlierEvery) == 0) 0.6 else 0.0
             val wall = steady.getValue(candidate) * factor * noise
-            return wall to wall * cpuPerWall.getValue(candidate)
+            return RunTime(wall, wall * cpuPerWall.getValue(candidate))
         }
     }
 

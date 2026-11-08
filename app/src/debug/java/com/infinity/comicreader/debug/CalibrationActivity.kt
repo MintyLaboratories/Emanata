@@ -3,6 +3,7 @@ package com.infinity.comicreader.debug
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -14,6 +15,7 @@ import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PlatformPages
 import org.json.JSONObject
+import kotlin.concurrent.thread
 
 /**
  * Debug and bench builds only: what per-device calibration ([Calibrator]) chose and timed,
@@ -21,10 +23,16 @@ import org.json.JSONObject
  * the shell may start it:
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]
- *  [--ei burst 3] [--ez warm true]`
+ *  [--ei burst 3] [--ez warm true] [--ez warmOnce false] [--ez early false] [--el gapMs 0] [--ez noise false]`
  *
  * `burst` and `warm` shape a recalibration's samples (runs per sample, an untimed run before
- * them), to compare against the default (3, true); the result keeps them.
+ * them), to compare against the default (3, true); `warmOnce` warms only in the first round,
+ * `early` ends the run once the winners stay the same (both off by default); `gapMs` idles
+ * before each sample, as runs did before samples were checked while they run, to tell
+ * apart what sustained load does to the device's clocks; the result keeps them. `noise`
+ * keeps a thread of the app busy 50 ms of every second for 30 s, outside app work
+ * calibration knows of: the samples it overlaps are made again, and the result names it
+ * under `disturbedBy`.
  *
  * Each run's end is logged under "Calibration" as "ended true" or "ended false: " and why
  * (shown here too), a run a Recalibrate dropped as "dropped for a new run" ([Calibrator]).
@@ -71,8 +79,25 @@ class CalibrationActivity : Activity() {
     }
 
     private fun recalibrate(asked: Intent? = null) {
-        Calibrator.recalibrate(asked?.getIntExtra("burst", 3) ?: 3, asked?.getBooleanExtra("warm", true) ?: true)
+        Calibrator.recalibrate(
+            asked?.getIntExtra("burst", 3) ?: 3, asked?.getBooleanExtra("warm", true) ?: true,
+            warmOnce = asked?.getBooleanExtra("warmOnce", false) ?: false, early = asked?.getBooleanExtra("early", false) ?: false,
+            gapMs = asked?.getLongExtra("gapMs", 0L) ?: 0L
+        )
+        if (asked?.getBooleanExtra("noise", false) == true) noise()
         show()
+    }
+
+    /** Spins a thread named "noise" 50 ms of every second for 30 s. */
+    private fun noise() {
+        thread(name = "noise", isDaemon = true) {
+            val until = SystemClock.elapsedRealtime() + 30_000
+            while (SystemClock.elapsedRealtime() < until) {
+                val spin = SystemClock.elapsedRealtime() + 50
+                while (SystemClock.elapsedRealtime() < spin) continue
+                SystemClock.sleep(950)
+            }
+        }
     }
 
     private fun show() {
@@ -91,14 +116,18 @@ class CalibrationActivity : Activity() {
             appendLine()
             if (kept == null) appendLine("No calibration kept") else {
                 appendLine(
-                    "Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms, forced ${kept.optBoolean("forced")}, " +
+                    "Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms timing, ${kept.optLong("totalMs")} ms in all, " +
+                        "${kept.optInt("rounds")} rounds, ${kept.optInt("redone")} redone, forced ${kept.optBoolean("forced")}, " +
                         "battery saver ${kept.optBoolean("powerSave")}, thermal ${kept.optInt("thermal", -1)}, page ${kept.optString("page", "?")} " +
-                        "to ${kept.optString("target", "?")}, burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)}"
+                        "to ${kept.optString("target", "?")}, JPEG page ${kept.optString("jpegPage", "?")}, heat by ${kept.optString("heat", "?")}, " +
+                        "burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)} warmOnce ${kept.optBoolean("warmOnce")} early ${kept.optBoolean("early")}"
                 )
                 val timings = kept.optJSONArray("timings")
                 for (i in 0 until (timings?.length() ?: 0)) {
                     val t: JSONObject = timings!!.getJSONObject(i)
-                    appendLine("%-16s %7.1f ms wall %7.1f ms CPU".format(t.getString("setup"), t.getDouble("wallMs"), t.getDouble("cpuMs")))
+                    appendLine(
+                        "%-16s %7.1f ms wall %7.1f ms CPU %7.1f weighed".format(t.getString("setup"), t.getDouble("wallMs"), t.getDouble("cpuMs"), t.optDouble("weightedMs"))
+                    )
                 }
             }
         }

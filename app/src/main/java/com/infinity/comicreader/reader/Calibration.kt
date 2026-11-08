@@ -78,17 +78,25 @@ data class Candidate(val kind: Kind, val threads: Int, val pinned: Boolean, val 
     }
 }
 
-/** The median wall and CPU time of [candidate] over its runs, and how far its runs stray ([Calibration.spread]). */
+/**
+ * The median wall and CPU time of [candidate] over its runs, its CPU time weighed by core
+ * capacity ([weightedMs], [Calibration.weighted]), and how far its runs stray ([Calibration.spread]).
+ */
 data class Timing(
     val candidate: Candidate,
     val wallMs: Double,
     val cpuMs: Double,
     val wallSpreadMs: Double = 0.0,
-    val cpuSpreadMs: Double = 0.0
+    val cpuSpreadMs: Double = 0.0,
+    val weightedMs: Double = cpuMs,
+    val weightedSpreadMs: Double = cpuSpreadMs
 ) {
     fun toJson(): JSONObject = JSONObject().put("setup", candidate.key).put("wallMs", wallMs).put("cpuMs", cpuMs)
-        .put("wallSpreadMs", wallSpreadMs).put("cpuSpreadMs", cpuSpreadMs)
+        .put("wallSpreadMs", wallSpreadMs).put("cpuSpreadMs", cpuSpreadMs).put("weightedMs", weightedMs).put("weightedSpreadMs", weightedSpreadMs)
 }
+
+/** One run of a setup: its wall time, CPU time and CPU time weighed by core capacity ([Calibration.weighted]), in ms. */
+data class RunTime(val wallMs: Double, val cpuMs: Double, val weightedMs: Double = cpuMs)
 
 /**
  * Per-device calibration's choices, kept free of the device so they can be tested: which
@@ -99,19 +107,46 @@ data class Timing(
 object Calibration {
     /**
      * Setups within this share of the fastest wall time count as fast; the one of those
-     * using the least CPU time wins, since battery matters as much as speed. JPEG XL on
-     * synthetic pages on a tablet with 4 large and 4 little cores: 8 threads on any core
-     * decode about 10 % faster than 4 on the large ones, for 40-60 % more CPU time; the
-     * large ones win. CPU time on a little core costs less energy than on a large one, so
-     * this leans toward the large cores where both are close.
+     * using the least CPU time weighed by core capacity ([weighted]) wins, since battery
+     * matters as much as speed. JPEG XL on synthetic pages on a tablet with 4 large and 4
+     * little cores: 8 threads on any core decode about 10 % faster than 4 on the large ones,
+     * for 40-60 % more CPU time.
      */
     const val TOLERANCE = 0.20
+
+    /** Bumped whenever the setups timed or the method change: every device then calibrates again ([fingerprint]). */
+    const val VERSION = 2
+
+    /**
+     * [cpuMs] weighed by the capacity of the cores it ran on, as an energy proxy: each core's
+     * share of the time the core ledger counted ([coreNs], ns by core number) times its
+     * `cpu_capacity` ([capacities]) over the fastest's, so a ms on a little core of capacity
+     * 261 counts 261/1024 of one on the fastest core. Raw CPU time is the wrong proxy on chips
+     * with large and little cores: there a decode spread over the little cores too can use
+     * less energy than one on the large cores alone, for far more CPU time. The ledger counts the threads doing the timed work (native resampling bands,
+     * JPEG XL decodes and their workers), each charging its CPU time between ticks (a band, a
+     * JPEG XL group) to the core it is on at the tick, so unpinned threads are followed
+     * wherever the system moves them; the rest of [cpuMs] (the runtime, glue code) is taken
+     * to run where they did. [cpuMs] as is where capacities are unknown or the ledger counted
+     * nothing (platform decodes).
+     */
+    fun weighted(cpuMs: Double, coreNs: LongArray, capacities: IntArray): Double {
+        val top = capacities.maxOrNull()?.takeIf { it > 0 } ?: return cpuMs
+        var total = 0.0
+        var weighed = 0.0
+        for (n in coreNs.indices) {
+            val ns = coreNs[n].coerceAtLeast(0L).toDouble()
+            total += ns
+            weighed += ns * (capacities.getOrNull(n)?.takeIf { it > 0 } ?: top) / top
+        }
+        return if (total <= 0.0) cpuMs else cpuMs * weighed / total
+    }
 
     /**
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large
      * core and one per core for resampling (with the GPU when [gpu]), 2, one per large core
      * and one per core for JPEG XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
-     * left to the system. With [jpeg], a platform JPEG decode pinned to the large cores and
+     * left to the system. With [jpeg], a platform JPEG decode of a 4K-class page pinned to the large cores and
      * one left to the system, where there are large cores to pin to.
      */
     fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean, jpeg: Boolean = false): List<Candidate> {
@@ -128,7 +163,9 @@ object Calibration {
 
     /**
      * An unpinned JPEG decode must be faster than a pinned one by this share (and its own
-     * spread) for platform JPEG to be left unpinned. Where the system decoder spreads a page
+     * spread) for platform JPEG to be left unpinned. Calibration times a synthetic 4000x6000
+     * page (quality 90), 4K class as image decode timings use: a smaller page can hide a
+     * difference pages of reading size show. Where the system decoder spreads a page
      * over several cores, pinning confines it to the large ones. On a tablet with 2 large and
      * 6 little cores, synthetic 2000x3000 and 4000x6000 JPEGs decoded on their own took
      * 1.5-1.6x as long pinned; calibration, between its other setups, measured 1.0-1.6x
@@ -162,17 +199,17 @@ object Calibration {
 
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
-     * fastest's own spread of it), the one using the least CPU time; [incumbent], the setup
-     * in effect, while within [stay] more than that, unless the winner uses less CPU time by
-     * more than the noise ([cpuNoise]). A slow setup's own spread never counts, so its
-     * outliers cannot make it fast.
+     * fastest's own spread of it), the one using the least CPU time weighed by core capacity
+     * ([Timing.weightedMs]); [incumbent], the setup in effect, while within [stay] more than
+     * that, unless the winner uses less of it by more than the noise ([cpuNoise]). A slow
+     * setup's own spread never counts, so its outliers cannot make it fast.
      */
     fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE, stay: Double = 0.0): Timing? {
         val fastest = timings.minByOrNull { it.wallMs } ?: return null
         fun fast(t: Timing, share: Double) = t.wallMs <= fastest.wallMs * (1 + share) || t.wallMs - fastest.wallMs <= fastest.wallSpreadMs
-        val winner = timings.filter { fast(it, tolerance) }.minWith(compareBy({ it.cpuMs }, { it.wallMs }))
+        val winner = timings.filter { fast(it, tolerance) }.minWith(compareBy({ it.weightedMs }, { it.wallMs }))
         val kept = timings.firstOrNull { it.candidate == incumbent && fast(it, tolerance + stay) } ?: return winner
-        return if (kept.cpuMs - winner.cpuMs <= cpuNoise(kept, winner)) kept else winner
+        return if (kept.weightedMs - winner.weightedMs <= cpuNoise(kept, winner)) kept else winner
     }
 
     /**
@@ -188,12 +225,12 @@ object Calibration {
     const val STAY_MARGIN = 0.20
 
     /**
-     * The CPU time difference between [a] and [b] that counts as none: their spread, but at
-     * least [CPU_NOISE_SHARE] of the lesser CPU time and [CPU_NOISE_MS]. CPU times come in whole
+     * The weighed CPU time difference between [a] and [b] that counts as none: their spread,
+     * but at least [CPU_NOISE_SHARE] of the lesser and [CPU_NOISE_MS]. CPU times come in whole
      * ms, so medians of steady runs often spread 0.
      */
     internal fun cpuNoise(a: Timing, b: Timing): Double =
-        maxOf(a.cpuSpreadMs, b.cpuSpreadMs, CPU_NOISE_SHARE * minOf(a.cpuMs, b.cpuMs), CPU_NOISE_MS)
+        maxOf(a.weightedSpreadMs, b.weightedSpreadMs, CPU_NOISE_SHARE * minOf(a.weightedMs, b.weightedMs), CPU_NOISE_MS)
 
     private const val CPU_NOISE_SHARE = 0.05
     private const val CPU_NOISE_MS = 1.0
@@ -235,8 +272,8 @@ object Calibration {
      * True when [before], the tuning in effect, is the pick of [kept], the calibration kept,
      * made out of battery saver: only such a pick earns [STAY_MARGIN]. One made under battery
      * saver, whose clock caps skew timings, is replaced by the next run out of saver ([due]).
-     * A pick kept from an earlier app version or system build keeps the margin: automatic runs
-     * come only after an update, and a setup near the edge should not change with each one.
+     * A pick kept from an earlier system build or [VERSION] keeps the margin: automatic runs
+     * come only after those change, and a setup near the edge should not change with each one.
      */
     fun chosen(kept: JSONObject?, before: Tuning): Boolean =
         kept != null && !kept.optBoolean("powerSave") && Tuning.of(kept.optJSONObject("tuning")) == before
@@ -253,14 +290,20 @@ object Calibration {
         return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
     }
 
-    /** What a calibration is kept for: this install of the app on this system build. */
-    fun fingerprint(app: String, system: String): String = "$app|$system"
+    /**
+     * What a calibration is kept for: calibration [version] ([VERSION]) on this [system]
+     * build. App updates that change neither the setups nor the method keep it.
+     */
+    fun fingerprint(version: Int, system: String): String = "v$version|$system"
+
+    /** What calibration's encoded pages are kept for: this install of the [app] on this [system] build, whose drawing and encoders make them. */
+    fun pageFingerprint(app: String, system: String): String = "$app|$system"
 
     /**
-     * The bytes of the page [name].[ext] in [dir] made for [fingerprint]: as kept, or else
-     * made by [make] and kept, older ones of [name] deleted; null when it cannot be made. An
-     * update of the app or system may draw or encode the page differently, so each fingerprint
-     * makes its own.
+     * The bytes of the page [name].[ext] in [dir] made for [fingerprint] ([pageFingerprint]):
+     * as kept, or else made by [make] and kept, older ones of [name] deleted; null when it
+     * cannot be made. An update of the app or system may draw or encode the page differently,
+     * so each fingerprint makes its own.
      */
     internal fun cachedPage(dir: File, name: String, ext: String, fingerprint: String, make: () -> ByteArray?): ByteArray? = runCatching {
         val tag = "%08x".format(fingerprint.hashCode())
@@ -280,8 +323,8 @@ object Calibration {
     }.getOrNull()
 
     /**
-     * True when [kept], the calibration kept, is not for [fingerprint] (this install and
-     * system build), or was made under battery saver; false while [fingerprint] is unknown.
+     * True when [kept], the calibration kept, is not for [fingerprint] (this calibration
+     * version and system build), or was made under battery saver; false while [fingerprint] is unknown.
      */
     fun due(kept: JSONObject?, fingerprint: String?): Boolean =
         fingerprint != null && (kept?.optString("fingerprint") != fingerprint || kept?.optBoolean("powerSave") == true)
@@ -301,9 +344,9 @@ object Calibration {
 
     /**
      * What a calibration run waits out before timing, or null: app work, heat (thermal
-     * status [HOT] or above; [LIGHT] or above while [cooling], after a wait for heat, as some
-     * chips throttle there already), or, unless [forced], battery saver, whose clock caps skew
-     * timings.
+     * status [HOT] or above, [heatStatus]; [LIGHT] or above while [cooling], after a wait for
+     * heat, as some chips throttle there already), or, unless [forced], battery saver, whose
+     * clock caps skew timings.
      */
     fun waitReason(busy: Boolean, thermalStatus: Int, powerSave: Boolean, forced: Boolean, cooling: Boolean = false): String? = when {
         busy -> "app busy"
@@ -325,6 +368,80 @@ object Calibration {
 
     /** How [waitReason] begins when the wait is for heat. */
     const val TOO_WARM = "too warm"
+
+    /**
+     * The heat signal as a thermal status: [thermalStatus] where the device has a thermal HAL
+     * ([thermalKnown] true); battery temperature's ([batteryTenthsC], tenths of a degree C,
+     * [batteryStatus]) where it has none or reports no status (null); the higher of both where
+     * that cannot be told ([thermalKnown] null: Android 10, which reports status 0 without a HAL).
+     */
+    fun heatStatus(thermalStatus: Int?, thermalKnown: Boolean?, batteryTenthsC: Int?): Int {
+        val battery = batteryTenthsC?.let { batteryStatus(it) } ?: 0
+        return when {
+            thermalStatus == null || thermalKnown == false -> battery
+            thermalKnown == true -> thermalStatus
+            else -> maxOf(thermalStatus, battery)
+        }
+    }
+
+    /**
+     * The thermal status battery temperature [tenthsC] (tenths of a degree C) stands for
+     * where there is none: [HOT] from [BATTERY_HOT_C], [LIGHT] from [BATTERY_LIGHT_C], else 0.
+     * Charging in a room keeps a battery well under these (the reference tablet: 27-32 °C on a
+     * fast charger); a battery past 40 °C means the device is warm through, where charging
+     * rules (JEITA) commonly start cutting charge current.
+     */
+    fun batteryStatus(tenthsC: Int): Int = when {
+        tenthsC >= BATTERY_HOT_C * 10 -> HOT
+        tenthsC >= BATTERY_LIGHT_C * 10 -> LIGHT
+        else -> 0
+    }
+
+    /** Battery temperature in °C standing for thermal status [LIGHT] ([batteryStatus]). */
+    const val BATTERY_LIGHT_C = 40
+
+    /** Battery temperature in °C standing for thermal status [HOT] ([batteryStatus]). */
+    const val BATTERY_HOT_C = 42
+
+    /**
+     * CPU time in ms the app's other threads used during a sample: what each thread in
+     * [after] gained since [before] (all of it for one born since), but for those [skip]
+     * names (calibration's own, the UI's, the runtime's housekeeping). Threads gone since are
+     * not counted.
+     */
+    fun othersMs(before: Map<Int, Long>, after: Map<Int, Long>, skip: (Int) -> Boolean): Double {
+        var ns = 0L
+        for ((tid, now) in after) {
+            if (skip(tid)) continue
+            ns += (now - (before[tid] ?: 0L)).coerceAtLeast(0L)
+        }
+        return ns / 1e6
+    }
+
+    /**
+     * True when the app's other threads used too much CPU time ([othersMs]) in a sample of
+     * [wallMs] for it to count: more than a tenth of a core ([OTHERS_SHARE], as the idle
+     * check allows), and more than [OTHERS_FLOOR_MS], or a clock tick more where times come in
+     * ticks ([coarse]).
+     */
+    fun othersBusy(othersMs: Double, wallMs: Double, coarse: Boolean): Boolean =
+        othersMs > maxOf(wallMs * OTHERS_SHARE, OTHERS_FLOOR_MS + if (coarse) UiCpu.TICK_NS / 1e6 else 0.0)
+
+    /** The share of one core the app's other threads may use during a sample ([othersBusy]). */
+    const val OTHERS_SHARE = 0.10
+
+    /** CPU time the app's other threads may always use during a sample ([othersBusy]): wakeups, a binder call. */
+    const val OTHERS_FLOOR_MS = 2.0
+
+    /**
+     * True for the runtime's housekeeping threads, whose work calibration's own allocations
+     * and code bring on as much as anything else does (garbage collection, finalizers, JIT):
+     * left out of [othersMs] during samples, while still part of the CPU time measured.
+     */
+    fun housekeeping(name: String): Boolean = name in HOUSEKEEPING
+
+    /** Thread names (`comm`, at most 15 characters) of the runtime's housekeeping. */
+    private val HOUSEKEEPING = setOf("HeapTaskDaemon", "FinalizerDaemon", "ReferenceQueueD", "Jit thread pool")
 
     /** PowerManager.THERMAL_STATUS_LIGHT: some devices throttle a little. */
     const val LIGHT = 1
@@ -360,8 +477,8 @@ object Calibration {
 
 /** What a calibration run needs of the device. */
 internal interface CalibrationProbe {
-    /** One run of [candidate]: its wall and CPU time in ms, or null when it cannot run here. */
-    fun time(candidate: Candidate): Pair<Double, Double>?
+    /** One run of [candidate]: its times, or null when it cannot run here. */
+    fun time(candidate: Candidate): RunTime?
 
     /**
      * Waits until results would be fair (the app in front, nothing else busy, not hot);
@@ -382,10 +499,15 @@ internal interface CalibrationProbe {
 /**
  * Times [candidates] on [probe] in [rounds], the order reversed every other round (A B,
  * B A…) so heat weighs on each alike, [warmup] rounds left out. Each sample waits for the
- * device to be fair, runs the candidate once untimed when [warm] (the wait lets the cores
- * clock down, which the first run after it pays for), then takes the median of [burst]
- * runs back to back. A sample something disturbed is made again, up to [retries] times in
- * all per run a sample makes: a longer sample is the likelier to be disturbed.
+ * device to be fair, runs the candidate once untimed when [warm] (cores the setup before
+ * left at other clocks, or a wait let clock down, make the first run after pay for it),
+ * then takes the median of [burst] runs back to back. A sample something disturbed is made
+ * again, up to [retries] times in all per run a sample makes: a longer sample is the
+ * likelier to be disturbed.
+ *
+ * Two shortcuts, off by default and for debug comparisons only: [warmOnce] warms only in
+ * the first round; [winners], when given, ends the run once what it makes of the timings so
+ * far (the tuning they pick) stays the same over a round, from round [minRounds] on.
  */
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
@@ -394,7 +516,10 @@ internal class CalibrationRun(
     private val warmup: Int = 0,
     private val burst: Int = 3,
     private val warm: Boolean = true,
-    private val retries: Int = 10
+    private val retries: Int = 10,
+    private val warmOnce: Boolean = false,
+    private val winners: ((List<Timing>) -> Any?)? = null,
+    private val minRounds: Int = 3
 ) {
     /** Why the last [run] stopped first; null when it finished. */
     var why: String? = null
@@ -404,16 +529,25 @@ internal class CalibrationRun(
     var sawPowerSave: Boolean = false
         private set
 
+    /** Samples the last [run] made again. */
+    var redone: Int = 0
+        private set
+
+    /** Rounds the last [run] went through, warm-up rounds included. */
+    var roundsRun: Int = 0
+        private set
+
     private val mostRedone = retries * (burst.coerceAtLeast(1) + if (warm) 1 else 0)
 
     /** The median timing of each candidate that ran, with its spread over the samples; null when the run stopped first ([why]). */
     fun run(stopped: () -> Boolean = { false }): List<Timing>? {
         why = null
         sawPowerSave = false
-        val walls = candidates.associateWith { ArrayList<Double>() }
-        val cpus = candidates.associateWith { ArrayList<Double>() }
+        redone = 0
+        roundsRun = 0
+        val samples = candidates.associateWith { ArrayList<RunTime>() }
         val missing = HashSet<Candidate>()
-        var redone = 0
+        var said: Any? = null
         for (round in 0 until warmup + rounds) {
             val order = if (round % 2 == 0) candidates else candidates.asReversed()
             for (c in order) {
@@ -422,15 +556,14 @@ internal class CalibrationRun(
                     if (stopped()) return stop("stopped")
                     if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
                     val saver = probe.powerSave
-                    val t = sample(c)
+                    val t = sample(c, warm && (!warmOnce || round == 0))
                     if (t == null) {
                         missing += c
                         break
                     }
                     if (probe.stillFair()) {
                         if (round >= warmup) {
-                            walls.getValue(c) += t.first
-                            cpus.getValue(c) += t.second
+                            samples.getValue(c) += t
                             if (saver || probe.powerSave) sawPowerSave = true
                         }
                         break
@@ -438,29 +571,37 @@ internal class CalibrationRun(
                     if (++redone > mostRedone) return stop("disturbed $redone times")
                 }
             }
+            roundsRun = round + 1
+            val timed = round + 1 - warmup
+            if (winners != null && timed >= 1) {
+                val now = winners.invoke(timings(samples, missing))
+                if (timed >= minRounds && now == said) break
+                said = now
+            }
         }
-        return candidates.filter { it !in missing && walls.getValue(it).isNotEmpty() }.map {
-            val w = walls.getValue(it)
-            val c = cpus.getValue(it)
-            Timing(it, Calibration.median(w), Calibration.median(c), Calibration.spread(w), Calibration.spread(c))
-        }
+        return timings(samples, missing)
     }
+
+    /** Each candidate's median times over [samples] and their spread; those [missing] or never sampled left out. */
+    private fun timings(samples: Map<Candidate, List<RunTime>>, missing: Set<Candidate>): List<Timing> =
+        candidates.filter { it !in missing && samples.getValue(it).isNotEmpty() }.map {
+            val s = samples.getValue(it)
+            val w = s.map { r -> r.wallMs }
+            val c = s.map { r -> r.cpuMs }
+            val g = s.map { r -> r.weightedMs }
+            Timing(it, Calibration.median(w), Calibration.median(c), Calibration.spread(w), Calibration.spread(c), Calibration.median(g), Calibration.spread(g))
+        }
 
     private fun stop(reason: String): List<Timing>? {
         why = reason
         return null
     }
 
-    /** One sample of [c]: the medians of a warmed burst; null when it cannot run. */
-    private fun sample(c: Candidate): Pair<Double, Double>? {
-        if (warm && probe.time(c) == null) return null
-        val w = ArrayList<Double>(burst)
-        val u = ArrayList<Double>(burst)
-        repeat(burst.coerceAtLeast(1)) {
-            val t = probe.time(c) ?: return null
-            w += t.first
-            u += t.second
-        }
-        return Calibration.median(w) to Calibration.median(u)
+    /** One sample of [c]: the medians of a burst, after an untimed run when [warmed]; null when it cannot run. */
+    private fun sample(c: Candidate, warmed: Boolean): RunTime? {
+        if (warmed && probe.time(c) == null) return null
+        val runs = ArrayList<RunTime>(burst)
+        repeat(burst.coerceAtLeast(1)) { runs += probe.time(c) ?: return null }
+        return RunTime(Calibration.median(runs.map { it.wallMs }), Calibration.median(runs.map { it.cpuMs }), Calibration.median(runs.map { it.weightedMs }))
     }
 }

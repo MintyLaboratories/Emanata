@@ -33,16 +33,20 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 /**
- * Per-device calibration on the device ([Calibration] chooses): once per app version and
- * system build, while the app is in front but not reading ([Reading]), charging, cool, out
- * of battery saver and otherwise idle, it times resampling, JPEG XL decoding and platform
- * JPEG decoding setups on a synthetic page and keeps the winners ([Tuning]) in a file that is not backed up. A timing
- * during which the app decoded anything ([working]) is made again; the app's drawing
- * ([UiCpu]) is left out of CPU times. Until the first calibration ends, the
- * [Tuning.defaults] apply; after an update the previous winners apply until new ones are
- * established. A forced run ([recalibrate]) goes on under battery saver, whose clock caps
- * may skew it: it is kept marked so, and the next automatic run out of saver replaces it.
- * Benchmarks and checks [hold] it off. Never shown to the user.
+ * Per-device calibration on the device ([Calibration] chooses): once per system build and
+ * calibration version ([Calibration.VERSION]), while the app is in front but not reading
+ * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
+ * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
+ * keeps the winners ([Tuning]) in a file that is not backed up. It starts once the app is
+ * idle (waiting [SETTLE_MS] at most before it waits as for any sample), its pages drawn and
+ * encoded meanwhile. A timing during which the app decoded anything ([working]) or another
+ * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
+ * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and ends a
+ * run that heats up. Until the first calibration ends, the [Tuning.defaults] apply; after a
+ * system update the previous winners apply until new ones are established. A forced run
+ * ([recalibrate]) goes on under battery saver, whose clock caps may skew it: it is kept
+ * marked so, and the next automatic run out of saver replaces it. Benchmarks and checks
+ * [hold] it off. Never shown to the user.
  */
 object Calibrator {
     private const val TAG = "Calibration"
@@ -97,6 +101,10 @@ object Calibrator {
     @Volatile
     private var fingerprint: String? = null
 
+    /** What the encoded pages are kept for ([Calibration.pageFingerprint]). */
+    @Volatile
+    private var pageFingerprint: String? = null
+
     /** The run in progress (0: none); -1 once a forced run drops it. */
     @Volatile
     private var current = 0
@@ -133,12 +141,13 @@ object Calibrator {
             kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
             tuning = (Tuning.of(kept?.optJSONObject("tuning")) ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors()))
                 .also { it.apply() }
-            fingerprint = Calibration.fingerprint(appVersion(app), Build.FINGERPRINT)
+            pageFingerprint = Calibration.pageFingerprint(appVersion(app), Build.FINGERPRINT)
+            fingerprint = Calibration.fingerprint(Calibration.VERSION, Build.FINGERPRINT)
             if (resumed.get() > reading.get() && due()) begin(force = false)
         }
     }
 
-    /** True when this app version and system build have no calibration yet, or only one made under battery saver; false until what is kept is read. */
+    /** True when this system build and calibration version have no calibration yet, or only one made under battery saver; false until what is kept is read. */
     fun due(): Boolean = Calibration.due(kept, fingerprint)
 
     /** Runs [block] as app work no calibration timing may overlap: one it overlaps is made again. */
@@ -171,16 +180,27 @@ object Calibrator {
 
     /**
      * [recalibrate] with each sample the median of [burst] runs, after an untimed one when
-     * [warm] ([CalibrationRun]): debug builds compare run shapes with it. Kept with the result.
+     * [warm], only in the first round when [warmOnce], and ending once the winners stay the
+     * same when [early] ([CalibrationRun]), [gapMs] idle before each sample: debug builds
+     * compare run shapes with it. Kept with the result.
      */
-    fun recalibrate(burst: Int, warm: Boolean) {
-        shape = burst.coerceIn(1, 9) to warm
+    fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = 0) {
+        shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(0, 5_000))
         begin(force = true)
     }
 
-    /** How forced runs sample: runs per burst, and whether an untimed run warms each. */
+    /** How a run samples ([CalibrationRun], [recalibrate]); automatic runs take the default. */
+    private data class Shape(
+        val burst: Int = BURST,
+        val warm: Boolean = true,
+        val warmOnce: Boolean = false,
+        val early: Boolean = false,
+        val gapMs: Long = 0
+    )
+
+    /** How forced runs sample. */
     @Volatile
-    private var shape = BURST to true
+    private var shape = Shape()
 
     @Synchronized
     private fun begin(force: Boolean) {
@@ -200,9 +220,6 @@ object Calibrator {
         thread(name = "calibration", isDaemon = true) {
             var why: String? = "stopped"
             try {
-                // Let what brought the app to the front settle first.
-                val until = SystemClock.elapsedRealtime() + if (force) FORCED_START_MS else START_MS
-                while (!dropped() && SystemClock.elapsedRealtime() < until) SystemClock.sleep(STEP_MS)
                 if (!dropped()) why = calibrate(force, dropped)
             } catch (t: Throwable) {
                 why = "failed: ${t.javaClass.simpleName}: ${t.message}"
@@ -233,29 +250,43 @@ object Calibrator {
     /** One calibration: null when it finished and its winners apply, else why not. */
     private fun calibrate(force: Boolean, dropped: () -> Boolean): String? {
         val f = fingerprint ?: return "not ready"
-        val probe = DeviceProbe(app, force, dropped, f)
+        val pages = pageFingerprint ?: return "not ready"
+        val started = SystemClock.elapsedRealtime()
+        val s = if (force) shape else Shape()
+        val probe = DeviceProbe(app, force, dropped, pages, s.gapMs)
         try {
-            // Nothing is drawn or encoded before the app is first found idle.
+            // The pages are drawn and encoded while the app settles.
+            probe.prepareAhead()
             if (!probe.awaitFair()) return probe.why ?: "not fair"
-            probe.prepare()
+            val settleMs = SystemClock.elapsedRealtime() - started
+            if (!probe.awaitPages()) return "dropped"
             val cores = CpuCores.device
             // Platform JPEG is timed only where there are large cores to pin it to.
             val candidates = Calibration.candidates(
-                cores, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.prepareJxl(), jpeg = cores.big != 0L && probe.prepareJpeg()
+                cores, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.hasJxl, jpeg = cores.big != 0L && probe.hasJpeg
+            )
+            val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
+            val wasChosen = Calibration.chosen(kept, before)
+            val run = CalibrationRun(
+                probe, candidates, burst = s.burst, warm = s.warm, warmOnce = s.warmOnce,
+                winners = if (s.early) { t -> Calibration.tuning(t, before, chosen = wasChosen) } else null
             )
             val t0 = SystemClock.elapsedRealtime()
-            val (burst, warm) = if (force) shape else BURST to true
-            val run = CalibrationRun(probe, candidates, burst = burst, warm = warm)
+            probe.timing()
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
+            val tookMs = SystemClock.elapsedRealtime() - t0
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
-            val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
-            val chosen = Calibration.tuning(timings, before, chosen = Calibration.chosen(kept, before))
+            val chosen = Calibration.tuning(timings, before, chosen = wasChosen)
             chosen.apply()
             tuning = chosen
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())
-                .put("tookMs", SystemClock.elapsedRealtime() - t0).put("tuning", chosen.toJson())
+                .put("tookMs", tookMs).put("totalMs", SystemClock.elapsedRealtime() - started).put("settleMs", settleMs).put("prepMs", probe.prepMs)
+                .put("tuning", chosen.toJson())
                 .put("timings", Calibration.timingsJson(timings)).put("forced", force).put("powerSave", run.sawPowerSave)
-                .put("thermal", probe.thermal).put("page", probe.page).put("target", probe.target).put("burst", burst).put("warm", warm)
+                .put("thermal", probe.thermal).put("heat", probe.heatSource).put("batteryTemp", probe.batteryTemp / 10.0)
+                .put("page", probe.page).put("target", probe.target).put("jpegPage", probe.jpegPage)
+                .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
+                .put("rounds", run.roundsRun).put("redone", run.redone).put("disturbedBy", JSONObject(probe.disturbedBy as Map<*, *>))
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -270,7 +301,7 @@ object Calibrator {
 
     private fun file(context: Context) = File(context.noBackupFilesDir, "calibration.json")
 
-    /** The installed app's version code and install time: a new one after every update. */
+    /** The installed app's version code and install time: a new one after every update, for the pages it draws and encodes ([Calibration.pageFingerprint]). */
     @Suppress("DEPRECATION")
     private fun appVersion(context: Context): String = runCatching {
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -278,10 +309,10 @@ object Calibrator {
         "$code@${info.lastUpdateTime}"
     }.getOrDefault("?")
 
-    private fun charging(context: Context): Boolean {
-        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
-        return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
-    }
+    private fun charging(context: Context): Boolean = battery(context)?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)?.let { it != 0 } ?: false
+
+    /** The battery's last broadcast state; null when there is none. */
+    private fun battery(context: Context): Intent? = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
     /** The whole screen's size in pixels, system bars included: what the reader's pages fill. */
     fun screenSize(context: Context): Pair<Int, Int> {
@@ -296,36 +327,62 @@ object Calibrator {
     private fun powerSave(context: Context): Boolean = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
     /**
-     * Times setups on this device, on a 2000 x 3000 synthetic page shrunk to the screen's
-     * portrait size; its encoded forms are kept in the cache for [fingerprint] (this install
-     * and system build, whose drawing and encoders they come from).
+     * Times setups on this device: resampling and JPEG XL decodes on a 2000 x 3000 synthetic
+     * page shrunk to the screen's portrait size, platform JPEG decodes on a 4000 x 6000 one.
+     * Encoded pages are kept in the cache for [pageFingerprint] (this install and system
+     * build, whose drawing and encoders make them).
      */
     private class DeviceProbe(
         private val context: Context,
         private val force: Boolean,
         private val dropped: () -> Boolean,
-        private val fingerprint: String
+        private val pageFingerprint: String,
+        private val gapMs: Long = 0
     ) : CalibrationProbe {
-        private var src: Bitmap? = null
-        private var dst: Bitmap? = null
-        private var jxl: ByteArray? = null
-        private var jxlOut: Bitmap? = null
-        private var jpeg: ByteArray? = null
+        @Volatile private var src: Bitmap? = null
+        @Volatile private var dst: Bitmap? = null
+        @Volatile private var jxl: ByteArray? = null
+        @Volatile private var jxlOut: Bitmap? = null
+        @Volatile private var jpeg: ByteArray? = null
         private val ui = UiCpu.self().also { it.scan() }
+        private val tasks = TaskCpu.self()
+        private val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        private val cores = CpuCores.device
+        private val coreCount = maxOf(cores.capacities.size, Runtime.getRuntime().availableProcessors())
+
+        /** Calibration's own threads: this one, and the one preparing pages. */
+        private val own = mutableSetOf(Process.myTid())
+
+        private var preparing: Thread? = null
 
         /** App work started before the sample in progress. */
         private var workedBefore = 0L
+
+        /** Every thread's CPU time when the sample in progress began, and when that was. */
+        private var tasksBefore: Map<Int, Long> = emptyMap()
+        private var sampleStartNs = 0L
 
         private var reason: String? = null
 
         override val why: String? get() = reason
 
-        override val powerSave: Boolean
-            get() = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
+        override val powerSave: Boolean get() = saver
 
-        /** The highest thermal status seen during the run. */
+        /** The highest thermal status seen during the run, or the one battery temperature stood for ([Calibration.heatStatus]). */
         var thermal = 0
             private set
+
+        /** The highest battery temperature seen during the run, in tenths of a degree C. */
+        var batteryTemp = 0
+            private set
+
+        /** Time spent preparing pages ([prepareAhead]). */
+        @Volatile
+        var prepMs = 0L
+            private set
+
+        /** How often each of the app's other threads disturbed a sample most, by name. */
+        val disturbedBy = HashMap<String, Int>()
 
         /** Time spent waiting for fair moments so far. */
         private var waitedMs = 0L
@@ -336,42 +393,111 @@ object Calibrator {
         /** True once the run waited for heat: it waits for light throttling to end too. */
         private var cooling = false
 
+        /** True once the app was found idle at the start; later samples check the app's other threads during each ([stillFair]). */
+        private var idleSeen = false
+
+        /** True once the start has waited for the app to go idle ([SETTLE_MS]). */
+        private var settled = false
+
+        // The device's state as last read ([refresh]).
+        private var checkedAt = Long.MIN_VALUE
+        private var charging = false
+        private var saver = false
+        private var status = 0
+
+        /**
+         * Whether the device's thermal status is real: true where it reports thermal headroom
+         * (a thermal HAL answers), false where there is no thermal status (before Android 10),
+         * null where it cannot be told.
+         */
+        private val thermalKnown: Boolean? by lazy {
+            when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> false
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm?.getThermalHeadroom(0)?.isNaN() == false -> true
+                else -> null
+            }
+        }
+
+        /** What the heat signal is: "thermal", "battery", or "both" ([Calibration.heatStatus]). */
+        val heatSource: String get() = when (thermalKnown) { true -> "thermal"; false -> "battery"; null -> "both" }
+
         /** CPU time in ms of all but the UI threads ([UiCpu]). */
         private fun cpuMs(): Double = Process.getElapsedCpuTime() - ui.ms()
 
-        /** Draws the page and makes its target, the page shrunk to fit the whole screen held upright ([Calibration.target]), as the reader shows it. */
-        fun prepare() {
+        /** Starts drawing and encoding the pages on a thread of their own, at background priority. */
+        fun prepareAhead() {
+            val started = SystemClock.elapsedRealtime()
+            preparing = thread(name = "calibration-pages", isDaemon = true) {
+                synchronized(own) { own += Process.myTid() }
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                try {
+                    prepare()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Calibration pages failed", t)
+                } finally {
+                    prepMs = SystemClock.elapsedRealtime() - started
+                }
+            }
+        }
+
+        /** Waits for the pages ([prepareAhead]); false when the run was dropped meanwhile. */
+        fun awaitPages(): Boolean {
+            val t = preparing ?: return !dropped()
+            while (t.isAlive) {
+                if (dropped()) return false
+                t.join(STEP_MS)
+            }
+            return !dropped()
+        }
+
+        /** True when the JPEG XL page was made and native decodes are there. */
+        val hasJxl: Boolean get() = jxl != null && jxlOut != null
+
+        /** True when the JPEG page was made. */
+        val hasJpeg: Boolean get() = jpeg != null
+
+        /** Timing starts: the core ledger opens ([LibPixels.ledger]). */
+        fun timing() {
+            if (LibPixels.loaded) LibPixels.ledger(true)
+        }
+
+        /**
+         * Draws the page and makes its target, the page shrunk to fit the whole screen held
+         * upright ([Calibration.target]), as the reader shows it; makes the JPEG XL page
+         * (quality 91) and the 4K JPEG page (quality 90, as most scans), each once per
+         * [pageFingerprint]; deletes pages kept from earlier setups.
+         */
+        private fun prepare() {
             val (sw, sh) = screenSize(context)
             val (w, h) = Calibration.target(sw, sh, PAGE_W, PAGE_H)
-            src = SyntheticPage.draw(PAGE_W, PAGE_H)
+            val page = SyntheticPage.draw(PAGE_W, PAGE_H)
+            src = page
             dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            if (dropped()) return
+            if (JxlPages.kernel != null) {
+                jxl = Calibration.cachedPage(cache, JXL_NAME, "jxl", pageFingerprint) {
+                    JxlCoder.encode(page, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
+                }
+                if (jxl != null) jxlOut = Bitmap.createBitmap(PAGE_W, PAGE_H, Bitmap.Config.ARGB_8888)
+            }
+            if (dropped()) return
+            jpeg = Calibration.cachedPage(cache, JPEG_NAME, "jpg", pageFingerprint) {
+                val big = SyntheticPage.draw(JPEG_W, JPEG_H)
+                try {
+                    ByteArrayOutputStream().also { big.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+                } finally {
+                    big.recycle()
+                }
+            }
+            cache.listFiles()?.filter { f -> !f.name.startsWith(JXL_NAME) && !f.name.startsWith(JPEG_NAME) }?.forEach { it.delete() }
         }
 
         /** The page and its target, as `WxH`. */
         val page: String get() = "${PAGE_W}x$PAGE_H"
         val target: String get() = dst?.let { "${it.width}x${it.height}" } ?: "?"
+        val jpegPage: String get() = "${JPEG_W}x$JPEG_H"
 
         private val cache: File get() = File(context.cacheDir, "calibration")
-
-        /** Makes the JPEG XL page (quality 91, once per [fingerprint]); false where native decodes are missing. */
-        fun prepareJxl(): Boolean {
-            if (JxlPages.kernel == null) return false
-            val page = src ?: return false
-            jxl = Calibration.cachedPage(cache, "page-${PAGE_W}x$PAGE_H-q91", "jxl", fingerprint) {
-                JxlCoder.encode(page, JxlChannelsConfiguration.RGB, JxlCompressionOption.LOSSY, JxlEffort.HARE, 91, JxlDecodingSpeed.SLOWEST)
-            } ?: return false
-            jxlOut = Bitmap.createBitmap(PAGE_W, PAGE_H, Bitmap.Config.ARGB_8888)
-            return true
-        }
-
-        /** Makes the JPEG page (quality 90, as most scans, once per [fingerprint]); false when it cannot. */
-        fun prepareJpeg(): Boolean {
-            val page = src ?: return false
-            jpeg = Calibration.cachedPage(cache, "page-${PAGE_W}x$PAGE_H-q90", "jpg", fingerprint) {
-                ByteArrayOutputStream().also { page.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
-            }
-            return jpeg != null
-        }
 
         /** [bytes] decoded by the platform as the reader decodes its pages, then dropped; false when it fails. */
         private fun decodeJpeg(bytes: ByteArray): Boolean {
@@ -384,8 +510,10 @@ object Calibrator {
             return true
         }
 
-        override fun time(candidate: Candidate): Pair<Double, Double>? {
+        override fun time(candidate: Candidate): RunTime? {
             timing = true
+            // What the ledger counted between runs is not this run's.
+            if (LibPixels.loaded) LibPixels.ledgerNs(coreCount)
             val cpu0 = cpuMs()
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
@@ -397,7 +525,7 @@ object Calibrator {
                 Candidate.Kind.JXL -> {
                     val bytes = jxl ?: return null
                     val out = jxlOut ?: return null
-                    val mask = if (candidate.pinned) CpuCores.device.big else 0L
+                    val mask = if (candidate.pinned) cores.big else 0L
                     val r = LibJxl.page(bytes, out, candidate.threads, mask)
                     r == LibJxl.PAGE_OPAQUE || r == LibJxl.PAGE_ALPHA
                 }
@@ -407,18 +535,23 @@ object Calibrator {
                 }
             }
             if (!ok) return null
-            return (System.nanoTime() - t0) / 1e6 to (cpuMs() - cpu0).coerceAtLeast(0.0)
+            val wall = (System.nanoTime() - t0) / 1e6
+            val cpu = (cpuMs() - cpu0).coerceAtLeast(0.0)
+            val coreNs = if (LibPixels.loaded) LibPixels.ledgerNs(coreCount) else LongArray(0)
+            return RunTime(wall, cpu, Calibration.weighted(cpu, coreNs, cores.capacities))
         }
 
         /** Waits for a fair moment while [Calibration.giveUp] allows; says [why] when there is none. */
         override fun awaitFair(): Boolean {
             while (true) {
                 if (dropped()) return no("dropped")
-                Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging(context) })
+                refresh()
+                Calibration.stopReason(held = holds.get() > 0, reading = reading.get() > 0, inFront = resumed.get() > 0, forced = force, charging = { charging })
                     ?.let { return no(it) }
-                val wait = hindrance() ?: if (idle()) null else "app not idle"
+                val wait = hindrance() ?: if (idleSeen) null else if (settle()) null else "app not idle"
                 if (wait == null) {
-                    workedBefore = worked.get()
+                    if (gapMs > 0) SystemClock.sleep(gapMs)
+                    begin()
                     return true
                 }
                 val hot = wait.startsWith(Calibration.TOO_WARM)
@@ -430,46 +563,120 @@ object Calibrator {
             }
         }
 
+        /** A sample begins: what it is checked against ([stillFair]) is taken now. */
+        private fun begin() {
+            workedBefore = worked.get()
+            if (LibPixels.loaded) LibPixels.ledgerTids()
+            tasksBefore = tasks.snapshot()
+            sampleStartNs = System.nanoTime()
+        }
+
         private fun no(why: String): Boolean {
             reason = why
             return false
         }
 
-        /** Nothing held, left, read or decoded since the sample began, and nothing to wait out. */
-        override fun stillFair(): Boolean =
-            holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null
+        /** Nothing held, left, read or decoded since the sample began, nothing to wait out, and the app's other threads quiet. */
+        override fun stillFair(): Boolean {
+            refresh()
+            return holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null && othersQuiet()
+        }
+
+        /**
+         * True when no thread but calibration's own (this one, the threads its native work
+         * ran on: [LibPixels.ledgerTids]), the UI's and the runtime's housekeeping used more
+         * than [Calibration.othersBusy] allows since the sample began; else the busiest is noted ([disturbedBy]).
+         */
+        private fun othersQuiet(): Boolean {
+            val after = tasks.snapshot()
+            val wallMs = (System.nanoTime() - sampleStartNs) / 1e6
+            val ours = synchronized(own) { HashSet(own) }
+            if (LibPixels.loaded) LibPixels.ledgerTids().forEach { ours += it }
+            ours += ui.tids
+            val skip = { tid: Int -> tid in ours || Calibration.housekeeping(tasks.name(tid)) }
+            val others = Calibration.othersMs(tasksBefore, after, skip)
+            if (!Calibration.othersBusy(others, wallMs, tasks.coarse)) return true
+            after.keys.filter { !skip(it) }.maxByOrNull { (after.getValue(it) - (tasksBefore[it] ?: 0L)) }?.let { tid ->
+                val name = tasks.name(tid).ifEmpty { "?" }
+                disturbedBy[name] = (disturbedBy[name] ?: 0) + 1
+            }
+            return false
+        }
 
         /** In front and not reading. */
         private fun inFront() = resumed.get() > 0 && reading.get() == 0
 
-        /** What timing now would be skewed by ([Calibration.waitReason]); null when nothing. */
-        private fun hindrance(): String? {
-            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val status = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else 0
+        /** Reads charging, battery saver and heat again when last read over [CHECK_MS] ago. */
+        private fun refresh() {
+            val now = SystemClock.elapsedRealtime()
+            if (checkedAt != Long.MIN_VALUE && now - checkedAt < CHECK_MS) return
+            checkedAt = now
+            val b = battery(context)
+            charging = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+            val tenths = b?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
+            tenths?.let { batteryTemp = maxOf(batteryTemp, it) }
+            saver = pm?.isPowerSaveMode == true
+            val reported = if (pm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) pm.currentThermalStatus else null
+            status = Calibration.heatStatus(reported, thermalKnown, tenths)
             thermal = maxOf(thermal, status)
-            return Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = pm?.isPowerSaveMode == true, forced = force, cooling = cooling)
         }
 
-        /** True when all but the UI threads used under a tenth of a core over a short while: nothing else of the app is busy. */
+        /** What timing now would be skewed by ([Calibration.waitReason]); null when nothing. */
+        private fun hindrance(): String? =
+            Calibration.waitReason(busy = busy.get() > 0, thermalStatus = status, powerSave = saver, forced = force, cooling = cooling)
+
+        /**
+         * True once the app is idle ([idle]): the first time, tries for up to [SETTLE_MS] (what
+         * brought the app to the front settling), later once.
+         */
+        private fun settle(): Boolean {
+            val until = SystemClock.elapsedRealtime() + if (settled) 0L else SETTLE_MS
+            settled = true
+            do {
+                if (idle()) {
+                    idleSeen = true
+                    return true
+                }
+            } while (!dropped() && SystemClock.elapsedRealtime() < until)
+            return false
+        }
+
+        /** True when the app's threads but calibration's own and the UI's used under a tenth of a core over a short while: nothing else of the app is busy. */
         private fun idle(): Boolean {
-            val cpu0 = cpuMs()
+            val before = tasks.snapshot()
             SystemClock.sleep(IDLE_WINDOW_MS)
-            return cpuMs() - cpu0 < IDLE_WINDOW_MS / 10
+            val ours = synchronized(own) { HashSet(own) }.apply { addAll(ui.tids) }
+            return Calibration.othersMs(before, tasks.snapshot()) { it in ours } < IDLE_WINDOW_MS / 10.0
         }
 
         fun release() {
+            preparing?.join()
+            if (LibPixels.loaded) LibPixels.ledger(false)
             src?.recycle()
             dst?.recycle()
             jxlOut?.recycle()
+        }
+
+        companion object {
+            private const val JXL_NAME = "page-${PAGE_W}x$PAGE_H-q91"
+            private const val JPEG_NAME = "page-${JPEG_W}x$JPEG_H-q90"
+            private const val STEP_MS = 50L
         }
     }
 
     private const val BURST = 3
     private const val PAGE_W = 2000
     private const val PAGE_H = 3000
-    private const val START_MS = 10_000L
-    private const val FORCED_START_MS = 1_000L
-    private const val STEP_MS = 250L
+
+    /** The platform JPEG page: 4K class, as image decode timings use. */
+    private const val JPEG_W = 4000
+    private const val JPEG_H = 6000
+
+    /** The longest a run waits at its start for the app to go idle before it waits as for any sample. */
+    private const val SETTLE_MS = 3_000L
     private const val WAIT_MS = 1_000L
     private const val IDLE_WINDOW_MS = 300L
+
+    /** How often charging, battery saver and heat are read again: each read is a call to the system. */
+    private const val CHECK_MS = 1_000L
 }

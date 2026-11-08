@@ -891,14 +891,26 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
 - Per-device calibration (`Calibrator`, choices in `Calibration`): once per
-  install and system build, while the app is in front but not reading,
-  charging, cool and otherwise idle, it times the resampler on 1, 2,
-  one-per-large-core and one-per-core workers and on the GPU, and native JPEG
-  XL decodes on 2, one-per-large-core and one-per-core threads, on a synthetic
-  2000x3000 page. Pages read ahead get the same setup. A timing the
-  app's own decodes overlapped is made again; CPU times leave out the UI
-  threads. Of the setups within 20% of the fastest, the one using the least
-  CPU time wins. The
+  system build and calibration version (`Calibration.VERSION`, bumped when the
+  setups or the method change; app updates alone don't recalibrate), while the
+  app is in front but not reading, charging, cool and otherwise idle, it times
+  the resampler on 1, 2, one-per-large-core and one-per-core workers and on the
+  GPU, and native JPEG XL decodes on 2, one-per-large-core and one-per-core
+  threads, on a synthetic 2000x3000 page, and platform JPEG decodes pinned and
+  not on a synthetic 4000x6000 one. It starts once the app is idle (waiting 3 s
+  at most), the pages drawn and encoded meanwhile on a thread of their own;
+  heat is checked before timing starts (thermal status, or battery temperature
+  where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
+  throttling) and ends a run that heats up. Pages read ahead get the same
+  setup. A timing the app's own decodes overlapped, or during which any other
+  of the app's threads (per-thread CPU time from `/proc/self/task`; not
+  calibration's own, the UI's or the runtime's housekeeping) used over a tenth
+  of a core, is made again; CPU times leave out the UI threads. Of the setups
+  within 20% of the fastest, the one using the least CPU time weighed by core
+  capacity wins: native bands and JPEG XL threads charge their own CPU time to
+  the core they run on at each band or group (`core_ledger.c`), and a ms on a
+  core counts its `cpu_capacity`/1024, as on chips with large and little
+  cores raw CPU time overstates what the little ones cost. The
   GPU wins only when more than 20% faster than every CPU setup, since its own
   power is not measured. Differences within the runs' spread count as none,
   so the setup in effect stays; a resampling setup an earlier calibration
@@ -907,8 +919,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Winners are kept in `noBackupFilesDir`
   (never restored onto another
   device); until the first calibration ends the one-per-large-core rule
-  applies, and after an update the previous winners stay until new ones are
-  established. Debug and bench builds show it and recalibrate in
+  applies, and after a system update the previous winners stay until new ones
+  are established. Debug and bench builds show it and recalibrate in
   `CalibrationActivity` (shell only).
 - AI processing (`ai/`): ncnn with Vulkan, built from
   source (`src/main/cpp/Ncnn.cmake`, `ai_ncnn.cpp`) into a library of its own

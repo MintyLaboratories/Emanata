@@ -60,8 +60,8 @@ internal object LibPixels : PixelKernels {
 
     /**
      * Opens the core ledger (resetting it) or closes it: while open, native resampling bands
-     * and JPEG XL decodes count their threads' CPU time core by core ([ledgerNs]) and record
-     * their thread ids ([ledgerTids]). Calibration only.
+     * and JPEG XL decodes count their threads' CPU time core by core ([ledgerNs]) and thread
+     * by thread ([ledgerThreads]). Calibration only.
      */
     fun ledger(open: Boolean) = nLedger(open)
 
@@ -72,10 +72,12 @@ internal object LibPixels : PixelKernels {
         return out
     }
 
-    /** The ids of threads that counted since the last call, forgotten. */
-    fun ledgerTids(): IntArray {
-        val out = IntArray(128)
-        return out.copyOf(nLedgerTids(out))
+    /** The nanoseconds of CPU time each thread counted since the last call, by thread id; forgotten. */
+    fun ledgerThreads(): Map<Int, Long> {
+        val tids = IntArray(128)
+        val ns = LongArray(128)
+        val n = nLedgerThreads(tids, ns)
+        return HashMap<Int, Long>(n * 2).apply { for (i in 0 until n) put(tids[i], ns[i]) }
     }
 
     @JvmStatic
@@ -88,7 +90,7 @@ internal object LibPixels : PixelKernels {
     private external fun nLedgerNs(out: LongArray): Int
 
     @JvmStatic
-    private external fun nLedgerTids(out: IntArray): Int
+    private external fun nLedgerThreads(tids: IntArray, ns: LongArray): Int
 
     @JvmStatic
     private external fun nBegin(src: Bitmap, dst: Bitmap, linear: Boolean, workers: Int, gpu: Boolean): Long

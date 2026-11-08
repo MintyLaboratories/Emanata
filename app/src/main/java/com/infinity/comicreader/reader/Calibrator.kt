@@ -563,7 +563,7 @@ object Calibrator {
         /** A sample begins: what it is checked against ([stillFair]) is taken now. */
         private fun begin() {
             workedBefore = worked.get()
-            if (LibPixels.loaded) LibPixels.ledgerTids()
+            if (LibPixels.loaded) LibPixels.ledgerThreads()
             tasksBefore = tasks.snapshot()
             sampleStartNs = System.nanoTime()
         }
@@ -582,20 +582,20 @@ object Calibrator {
         }
 
         /**
-         * True when no thread but calibration's own (this one, the threads its native work
-         * ran on: [LibPixels.ledgerTids]), the UI's and the runtime's housekeeping used more
-         * than [Calibration.othersBusy] allows since the sample began; else the busiest is noted ([disturbedBy]).
+         * True when the app's threads, but calibration's own, the UI's and the runtime's
+         * housekeeping ([Calibration.skips]), used no more CPU time beyond what the core ledger
+         * counted as calibration's work ([LibPixels.ledgerThreads]) than [Calibration.othersBusy]
+         * allows since the sample began; else the busiest is noted ([disturbedBy]).
          */
         private fun othersQuiet(): Boolean {
             val after = tasks.snapshot()
             val wallMs = (System.nanoTime() - sampleStartNs) / 1e6
-            val ours = synchronized(own) { HashSet(own) }
-            if (LibPixels.loaded) LibPixels.ledgerTids().forEach { ours += it }
-            ours += ui.tids
-            val skip = { tid: Int -> tid in ours || Calibration.housekeeping(tasks.name(tid)) }
-            val others = Calibration.othersMs(tasksBefore, after, skip)
+            val counted = if (LibPixels.loaded) LibPixels.ledgerThreads() else emptyMap()
+            val skip = Calibration.skips(synchronized(own) { HashSet(own) }, ui.tids, tasks::name)
+            val others = Calibration.othersMs(tasksBefore, after, counted, skip)
             if (!Calibration.othersBusy(others, wallMs, tasks.coarse)) return true
-            after.keys.filter { !skip(it) }.maxByOrNull { (after.getValue(it) - (tasksBefore[it] ?: 0L)) }?.let { tid ->
+            fun gained(tid: Int) = after.getValue(tid) - (tasksBefore[tid] ?: 0L) - (counted[tid] ?: 0L)
+            after.keys.filter { !skip(it) }.maxByOrNull(::gained)?.let { tid ->
                 val name = tasks.name(tid).ifEmpty { "?" }
                 disturbedBy[name] = (disturbedBy[name] ?: 0) + 1
             }

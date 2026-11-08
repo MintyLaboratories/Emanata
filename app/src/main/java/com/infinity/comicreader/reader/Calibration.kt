@@ -405,18 +405,29 @@ object Calibration {
 
     /**
      * CPU time in ms the app's other threads used during a sample: what each thread in
-     * [after] gained since [before] (all of it for one born since), but for those [skip]
-     * names (calibration's own, the UI's, the runtime's housekeeping). Threads gone since are
-     * not counted.
+     * [after] gained since [before] (all of it for one born since), less what the core ledger
+     * [counted] as calibration's work on it (ns by thread id: a shared pool thread that ran
+     * a resampling band counts only its time beyond the band), but for those [skip] names
+     * ([skips]). Threads gone since are not counted.
      */
-    fun othersMs(before: Map<Int, Long>, after: Map<Int, Long>, skip: (Int) -> Boolean): Double {
+    fun othersMs(before: Map<Int, Long>, after: Map<Int, Long>, counted: Map<Int, Long> = emptyMap(), skip: (Int) -> Boolean): Double {
         var ns = 0L
         for ((tid, now) in after) {
             if (skip(tid)) continue
-            ns += (now - (before[tid] ?: 0L)).coerceAtLeast(0L)
+            ns += (now - (before[tid] ?: 0L) - (counted[tid] ?: 0L)).coerceAtLeast(0L)
         }
         return ns / 1e6
     }
+
+    /**
+     * The threads a sample's check of the app's other threads leaves out whole: calibration's
+     * [own] (the one timing, the one preparing pages), the [ui] threads (the app drawing
+     * itself, left out of CPU times too) and the runtime's housekeeping ([housekeeping], by
+     * [name]). Threads that ran calibration's native work are not among them: what they did
+     * besides is counted ([othersMs]).
+     */
+    fun skips(own: Set<Int>, ui: Collection<Int>, name: (Int) -> String): (Int) -> Boolean =
+        { tid -> tid in own || tid in ui || housekeeping(name(tid)) }
 
     /**
      * True when the app's other threads used too much CPU time ([othersMs]) in a sample of

@@ -11,11 +11,17 @@
 static atomic_int opened;
 static atomic_int_fast64_t spent[CL_MAX_CORES];
 static atomic_int tids[CL_MAX_TIDS];
+static atomic_int_fast64_t tid_ns[CL_MAX_TIDS];
 static atomic_int tid_count;
+// Bumped whenever the recorded threads are taken: a thread recorded before records itself again.
+static atomic_int generation;
 
-// This thread's nesting depth, and its CPU time at its last tick.
+// This thread's nesting depth, its CPU time at its last tick, and its slot among the
+// recorded threads in generation `slot_gen`.
 static _Thread_local int depth;
 static _Thread_local int64_t last;
+static _Thread_local int slot = -1;
+static _Thread_local int slot_gen = -1;
 
 static int64_t thread_ns(void)
 {
@@ -28,18 +34,31 @@ void cl_open(int open)
 {
     atomic_store(&opened, 0);
     for (int i = 0; i < CL_MAX_CORES; i++) atomic_store(&spent[i], 0);
+    atomic_fetch_add(&generation, 1);
     atomic_store(&tid_count, 0);
+    for (int i = 0; i < CL_MAX_TIDS; i++) atomic_store(&tid_ns[i], 0);
     atomic_store(&opened, open != 0);
 }
 
-static void record(int tid)
+// Records this thread (once per generation); its slot, -1 when the slots are full.
+static int record(void)
 {
+    const int gen = atomic_load(&generation);
+    if (slot_gen == gen) return slot;
+    const int tid = gettid();
+    int at = -1;
     const int n = atomic_load(&tid_count);
     for (int i = 0; i < n && i < CL_MAX_TIDS; i++) {
-        if (atomic_load(&tids[i]) == tid) return;
+        if (atomic_load(&tids[i]) == tid) at = i;
     }
-    const int at = atomic_fetch_add(&tid_count, 1);
-    if (at < CL_MAX_TIDS) atomic_store(&tids[at], tid);
+    if (at < 0) {
+        at = atomic_fetch_add(&tid_count, 1);
+        if (at < CL_MAX_TIDS) atomic_store(&tids[at], tid);
+        else at = -1;
+    }
+    slot = at;
+    slot_gen = gen;
+    return at;
 }
 
 void cl_begin(void)
@@ -51,7 +70,7 @@ void cl_begin(void)
     if (!atomic_load_explicit(&opened, memory_order_relaxed)) return;
     depth = 1;
     last = thread_ns();
-    record(gettid());
+    record();
 }
 
 void cl_tick(void)
@@ -63,6 +82,8 @@ void cl_tick(void)
     if (d <= 0 || !atomic_load_explicit(&opened, memory_order_relaxed)) return;
     const int cpu = sched_getcpu();
     if (cpu >= 0 && cpu < CL_MAX_CORES) atomic_fetch_add_explicit(&spent[cpu], d, memory_order_relaxed);
+    const int at = record();
+    if (at >= 0) atomic_fetch_add_explicit(&tid_ns[at], d, memory_order_relaxed);
 }
 
 void cl_end(void)
@@ -80,11 +101,20 @@ int cl_take_ns(int64_t * ns, int cores)
     return n;
 }
 
-int cl_take_tids(int32_t * out, int max)
+int cl_take_threads(int32_t * out, int64_t * ns, int max)
 {
+    atomic_fetch_add(&generation, 1);
     int n = atomic_exchange(&tid_count, 0);
     if (n > CL_MAX_TIDS) n = CL_MAX_TIDS;
-    if (n > max) n = max;
-    for (int i = 0; i < n; i++) out[i] = atomic_load(&tids[i]);
-    return n;
+    int copied = 0;
+    for (int i = 0; i < n; i++) {
+        const int32_t tid = atomic_load(&tids[i]);
+        const int64_t spent_ns = atomic_exchange(&tid_ns[i], 0);
+        if (copied < max) {
+            out[copied] = tid;
+            ns[copied] = spent_ns;
+            copied++;
+        }
+    }
+    return copied;
 }

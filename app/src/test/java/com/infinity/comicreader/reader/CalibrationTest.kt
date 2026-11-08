@@ -331,10 +331,29 @@ class CalibrationTest {
         assertTrue(Calibration.othersBusy(2.1, 5.0, coarse = false))
         assertFalse(Calibration.othersBusy(10.0, 5.0, coarse = true))
         assertTrue(Calibration.othersBusy(12.1, 5.0, coarse = true))
+        // A shared pool thread that ran calibration's bands counts only its time beyond what the ledger counted.
+        assertEquals(1.0, Calibration.othersMs(mapOf(8 to 0L), mapOf(8 to 41_000_000L), mapOf(8 to 40_000_000L)) { false }, 1e-9)
+        assertEquals(0.0, Calibration.othersMs(mapOf(8 to 0L), mapOf(8 to 39_000_000L), mapOf(8 to 40_000_000L)) { false }, 0.0)
         assertTrue(Calibration.housekeeping("HeapTaskDaemon"))
         assertTrue(Calibration.housekeeping("Jit thread pool"))
         assertFalse(Calibration.housekeeping("DefaultDispatch"))
         assertFalse(Calibration.housekeeping("binder:123_2"))
+    }
+
+    @Test
+    fun aSampleLeavesOutCalibrationsOwnTheUiAndHousekeepingButNotPoolThreads() {
+        val names = mapOf(10 to "calibration", 11 to "RenderThread", 12 to "HeapTaskDaemon", 13 to "DefaultDispatch", 14 to "OkHttp Dispatch")
+        val skip = Calibration.skips(own = setOf(10), ui = listOf(1, 11)) { names[it] ?: "" }
+        assertTrue(skip(10))
+        assertTrue(skip(1))
+        assertTrue(skip(11))
+        assertTrue(skip(12))
+        assertFalse(skip(13))
+        assertFalse(skip(14))
+        // Together: the pool thread's band time is calibration's, the rest of it and the other thread's are not.
+        val before = mapOf(10 to 0L, 1 to 0L, 11 to 0L, 12 to 0L, 13 to 0L, 14 to 0L)
+        val after = mapOf(10 to 90_000_000L, 1 to 30_000_000L, 11 to 20_000_000L, 12 to 15_000_000L, 13 to 52_000_000L, 14 to 3_000_000L)
+        assertEquals(5.0, Calibration.othersMs(before, after, mapOf(13 to 50_000_000L), skip), 1e-9)
     }
 
     @Test

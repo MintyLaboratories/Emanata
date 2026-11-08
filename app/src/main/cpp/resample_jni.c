@@ -193,14 +193,19 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerNs(JNI
     return n;
 }
 
-// Moves the ids of threads that counted in the ledger since the last call into `out`; their count.
-EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerTids(JNIEnv * env, jclass clazz, jintArray out)
+// Moves the ids of threads that counted in the ledger since the last call into `out`, the
+// nanoseconds each counted into `ns`; their count.
+EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerThreads(JNIEnv * env, jclass clazz, jintArray out, jlongArray ns)
 {
     (void)clazz;
     int32_t tids[CL_MAX_TIDS];
-    const jsize size = (*env)->GetArrayLength(env, out);
-    const int n = cl_take_tids(tids, size < CL_MAX_TIDS ? size : CL_MAX_TIDS);
+    int64_t spent_ns[CL_MAX_TIDS];
+    jsize size = (*env)->GetArrayLength(env, out);
+    const jsize size_ns = (*env)->GetArrayLength(env, ns);
+    if (size_ns < size) size = size_ns;
+    const int n = cl_take_threads(tids, spent_ns, size < CL_MAX_TIDS ? size : CL_MAX_TIDS);
     (*env)->SetIntArrayRegion(env, out, 0, n, (const jint *)tids);
+    (*env)->SetLongArrayRegion(env, ns, 0, n, (const jlong *)spent_ns);
     return n;
 }
 

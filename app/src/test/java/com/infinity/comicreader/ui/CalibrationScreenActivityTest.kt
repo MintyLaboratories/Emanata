@@ -141,6 +141,33 @@ class CalibrationScreenActivityTest {
     }
 
     @Test
+    fun thePageMovesThroughEverySetup() {
+        val a = launch().get()
+        val processors = Runtime.getRuntime().availableProcessors()
+        for (c in listOf(
+            Candidate(Candidate.Kind.JXL, 2, pinned = true), Candidate(Candidate.Kind.PIXELS, 4, pinned = true),
+            Candidate(Candidate.Kind.PIXELS, processors, pinned = false), Candidate(Candidate.Kind.PIXELS, 1, pinned = false, gpu = true)
+        )) {
+            fake.move(CalibrationProgress(timing = true, done = 1, total = 50, candidate = c, round = 1))
+            idle()
+            assertEquals(c.key, CalibrationScreenActivity.HOLD_SKEWED && CalibrationScreenActivity.skewed(c), !a.pageMoves())
+        }
+        assertTrue(a.keepsScreenOn())
+    }
+
+    @Test
+    fun skewedSetupsAreJpegXlAndResizingOnAllCores() {
+        fun skewed(kind: Candidate.Kind, threads: Int, pinned: Boolean, gpu: Boolean = false) =
+            CalibrationScreenActivity.skewed(Candidate(kind, threads, pinned, gpu), processors = 8)
+        assertTrue(skewed(Candidate.Kind.JXL, 2, true))
+        assertTrue(skewed(Candidate.Kind.JXL, 8, false))
+        assertTrue(skewed(Candidate.Kind.PIXELS, 8, false))
+        assertFalse(skewed(Candidate.Kind.PIXELS, 4, true))
+        assertFalse(skewed(Candidate.Kind.PIXELS, 1, false, gpu = true))
+        assertFalse(skewed(Candidate.Kind.JPEG, 1, false))
+    }
+
+    @Test
     fun backDoesNotLeaveWhileItRuns() {
         val a = launch().get()
         a.onBackPressedDispatcher.onBackPressed()

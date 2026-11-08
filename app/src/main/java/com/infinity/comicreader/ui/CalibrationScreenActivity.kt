@@ -285,18 +285,24 @@ class CalibrationScreenActivity : AppCompatActivity() {
         const val EXTRA_STILL = "still"
 
         /**
-         * Whether the page holds still while the GPU resampler is timed: not needed so far. On
-         * a tablet with 4 large and 4 little cores (Snapdragon 8 Gen 1 class, Android 16), 3
-         * calibrations with the page moving against 3 with it still (alternating, thermal
-         * status 0) timed the GPU setup at 1.01x, resampling setups at 0.93-1.02x and JPEG at
-         * 0.98x, JPEG XL decodes at 1.03-1.05x (each within its runs' spread), picking the same
-         * setups but in one still run, whose fastest resampling setup spread wide enough to let
-         * a slower one count as fast ([com.infinity.comicreader.reader.Calibration.pick]).
+         * Whether the page holds still while setups it skews ([skewed]) are timed: no. On a
+         * tablet with 4 large and 4 little cores (Snapdragon 8 Gen 1 class, Android 16), 7
+         * calibrations with the page moving against 7 with it still (alternating, thermal
+         * status 0) timed JPEG XL decodes at 1.02-1.05x, slower in 6-7 of the 7 moving runs than
+         * the median still one, and resizing on all cores at 0.92x, faster in all 7; the GPU
+         * setup at 1.01x, the other resizing setups at 1.00-1.02x and JPEG at 0.98-0.99x. All
+         * picked the same setups but one still run. Holding the page for the skewed setups (3
+         * runs) left JPEG XL at 1.01-1.03x and moved the GPU setup, which the page starting
+         * again then overlaps, to 0.84x.
          */
-        const val HOLD_FOR_GPU = false
+        const val HOLD_SKEWED = false
+
+        /** JPEG XL decodes and resizing on all [processors] cores: the setups the moving page skews ([HOLD_SKEWED]). */
+        fun skewed(c: Candidate, processors: Int = Runtime.getRuntime().availableProcessors()): Boolean =
+            c.kind == Candidate.Kind.JXL || (c.kind == Candidate.Kind.PIXELS && !c.gpu && c.threads >= processors)
 
         /** Whether the page holds still while [c] is timed. */
-        fun holdsFor(c: Candidate): Boolean = HOLD_FOR_GPU && c.gpu
+        fun holdsFor(c: Candidate): Boolean = HOLD_SKEWED && skewed(c)
 
         private const val STATE_SAVER_ACCEPTED = "saver_accepted"
         private const val STATE_STARTED = "started"

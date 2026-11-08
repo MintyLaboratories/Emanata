@@ -69,10 +69,10 @@ object Calibrator : CalibrationControl {
     var kept: JSONObject? = null
         private set
 
+    private val runs = CalibrationRuns()
+
     /** True while a calibration runs. */
-    @Volatile
-    override var running: Boolean = false
-        private set
+    override val running: Boolean get() = runs.running
 
     /** How the last run ended: "ended true", or "ended false: " and why; null before any. */
     @Volatile
@@ -121,15 +121,6 @@ object Calibrator : CalibrationControl {
     @Volatile
     private var pageFingerprint: String? = null
 
-    /** The run in progress (0: none); -1 once dropped. */
-    @Volatile
-    private var current = 0
-
-    private var runs = 0
-
-    /** A dropping run waits for the one it dropped to end. */
-    private var again = false
-
     @Volatile
     override var loaded: Boolean = false
         private set
@@ -158,10 +149,6 @@ object Calibrator : CalibrationControl {
 
     /** Runs started again in the background this launch ([BACKGROUND_TRIES]). */
     private var backgroundTries = 0
-
-    /** True while the user is stopping the run ([cancel]). */
-    @Volatile
-    private var canceling = false
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
 
@@ -213,18 +200,15 @@ object Calibrator : CalibrationControl {
 
     override fun estimateSeconds(): Int = CalibrationPrompts.estimateSeconds(kept)
 
+    /** Starts a run the user asked for; one asked for while the last is being canceled starts once that one ends. */
     override fun start(underSaver: Boolean) {
-        if (running) return
         inBackground = false
-        begin(Mode(underSaver = underSaver))
+        begin(Mode(underSaver = underSaver), restart = true)
     }
 
-    @Synchronized
     override fun cancel() {
         inBackground = false
-        if (!running) return
-        canceling = true
-        current = -1
+        runs.cancel()
     }
 
     override fun background() {
@@ -320,24 +304,16 @@ object Calibrator : CalibrationControl {
     @Volatile
     private var lastMode = Mode(underSaver = false)
 
-    /** Starts a run in [mode] unless one is running; with [drop], drops that one and starts once it ends. */
+    /** Starts a run in [mode] unless one is running; with [drop], or [restart] while the user cancels it, that one is dropped and the new one starts once it ends ([CalibrationRuns.begin]). */
     @Synchronized
-    private fun begin(mode: Mode, drop: Boolean = false) {
+    private fun begin(mode: Mode, drop: Boolean = false, restart: Boolean = false) {
         if (!::app.isInitialized) return
         lastMode = mode
-        if (running) {
-            if (drop) {
-                current = -1
-                again = true
-            }
-            return
-        }
-        running = true
+        val id = runs.begin(drop, restart)
+        if (id == 0) return
         lastEnd = null
         progress = CalibrationProgress()
-        val id = ++runs
-        current = id
-        val dropped = { current != id }
+        val dropped = { runs.dropped(id) }
         changed()
         thread(name = "calibration", isDaemon = true) {
             var why: String? = "stopped"
@@ -347,32 +323,31 @@ object Calibrator : CalibrationControl {
                 why = "failed: ${t.javaClass.simpleName}: ${t.message}"
                 Log.w(TAG, "Calibration failed", t)
             } finally {
-                ended(dropped(), why)
+                ended(id, why)
             }
         }
     }
 
-    /** A run ended, finished unless [why] says why not: a dropped one without reporting it (the user's [cancel] as canceled), then the run that dropped it starts. */
+    /** Run [id] ended, finished unless [why] says why not: a dropped one without reporting it (the user's [cancel] as canceled), then the run that dropped it starts. */
     @Synchronized
-    private fun ended(dropped: Boolean, why: String?) {
-        running = false
-        current = 0
-        if (dropped) {
-            Log.i(TAG, if (canceling) "canceled" else "dropped for a new run")
-            if (canceling) lastEnd = CalibrationEnd(ok = false, why = "canceled", canceled = true)
-        } else {
-            val line = if (why == null) "ended true" else "ended false: $why"
-            outcome = line
-            Log.i(TAG, line)
-            lastEnd = CalibrationEnd(ok = why == null, why = why)
-            if (why == null) inBackground = false
-            onEnded?.invoke(why == null)
+    private fun ended(id: Int, why: String?) {
+        val (how, next) = runs.ended(id)
+        when (how) {
+            CalibrationRuns.End.CANCELED -> {
+                Log.i(TAG, "canceled")
+                lastEnd = CalibrationEnd(ok = false, why = "canceled", canceled = true)
+            }
+            CalibrationRuns.End.DROPPED -> Log.i(TAG, "dropped for a new run")
+            CalibrationRuns.End.REPORTED -> {
+                val line = if (why == null) "ended true" else "ended false: $why"
+                outcome = line
+                Log.i(TAG, line)
+                lastEnd = CalibrationEnd(ok = why == null, why = why)
+                if (why == null) inBackground = false
+                onEnded?.invoke(why == null)
+            }
         }
-        canceling = false
-        if (again) {
-            again = false
-            begin(lastMode)
-        }
+        if (next) begin(lastMode)
         changed()
     }
 

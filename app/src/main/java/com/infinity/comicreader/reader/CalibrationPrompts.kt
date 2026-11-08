@@ -72,7 +72,7 @@ interface CalibrationControl {
     /** About how long a run takes, in seconds ([CalibrationPrompts.estimateSeconds]). */
     fun estimateSeconds(): Int
 
-    /** Starts a run the user asked for: no charger needed; under battery saver only with [underSaver]. Nothing when one is running. */
+    /** Starts a run the user asked for: no charger needed; under battery saver only with [underSaver]. Nothing when one is running, unless it is being canceled: then it starts once that one ends. */
     fun start(underSaver: Boolean)
 
     /** Stops the run in progress; what is in effect stays. */

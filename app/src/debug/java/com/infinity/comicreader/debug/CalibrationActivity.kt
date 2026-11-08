@@ -14,6 +14,7 @@ import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PlatformPages
+import com.infinity.comicreader.ui.CalibrationScreenActivity
 import org.json.JSONObject
 import kotlin.concurrent.thread
 
@@ -24,6 +25,9 @@ import kotlin.concurrent.thread
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]
  *  [--ei burst 3] [--ez warm true] [--ez warmOnce false] [--ez early false] [--el gapMs -1] [--ez noise false]`
+ *
+ * `--es do screen [--ez still true]` opens the calibration screen as Settings' Recalibrate
+ * does, its page held still with `still`, to compare timings with and without it moving.
  *
  * `burst` and `warm` shape a recalibration's samples (runs per sample, an untimed run before
  * them), to compare against the default (3, true); `warmOnce` warms only in the first round,
@@ -61,15 +65,25 @@ class CalibrationActivity : Activity() {
             })
         })
         Calibrator.onEnded = refresh
-        if (savedInstanceState == null && intent.getStringExtra("do") == "recalibrate") recalibrate(intent)
+        if (savedInstanceState == null) act(intent)
         show()
+    }
+
+    /** What a start asks for: a recalibration, or the calibration screen. */
+    private fun act(asked: Intent) {
+        when (asked.getStringExtra("do")) {
+            "recalibrate" -> recalibrate(asked)
+            "screen" -> startActivity(
+                CalibrationScreenActivity.intent(this).putExtra(CalibrationScreenActivity.EXTRA_STILL, asked.getBooleanExtra("still", false))
+            )
+        }
     }
 
     /** A start while this one is on top: recalibrate when asked. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getStringExtra("do") == "recalibrate") recalibrate(intent)
+        act(intent)
     }
 
     private val refresh: (Boolean) -> Unit = { runOnUiThread { show() } }
@@ -119,7 +133,7 @@ class CalibrationActivity : Activity() {
             if (kept == null) appendLine("No calibration kept") else {
                 appendLine(
                     "Kept: ${kept.optString("fingerprint")}, ${kept.optLong("tookMs")} ms timing, ${kept.optLong("totalMs")} ms in all, " +
-                        "${kept.optInt("rounds")} rounds, ${kept.optInt("redone")} redone, forced ${kept.optBoolean("forced")}, " +
+                        "${kept.optInt("rounds")} rounds, ${kept.optInt("redone")} redone, measured under saver by choice ${kept.optBoolean("underSaver")}, " +
                         "battery saver ${kept.optBoolean("powerSave")}, thermal ${kept.optInt("thermal", -1)}, page ${kept.optString("page", "?")} " +
                         "to ${kept.optString("target", "?")}, JPEG page ${kept.optString("jpegPage", "?")}, heat by ${kept.optString("heat", "?")}, " +
                         "burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)} warmOnce ${kept.optBoolean("warmOnce")} early ${kept.optBoolean("early")}, " +

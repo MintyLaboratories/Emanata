@@ -586,28 +586,15 @@ class Prefs(context: Context) {
         e.apply()
     }
 
-    /** Moves values stored under replaced keys to the settings that replaced them. */
-    fun upgrade() {
-        val changes = upgrade(sp.all)
-        if (changes.isEmpty()) return
-        val e = sp.edit()
-        write(e, changes)
-        e.apply()
-    }
-
     /** Every stored `pref_*` value of a simple type, for backup. */
     fun exportAll(): Map<String, Any> =
         sp.all.filter { (k, v) -> k in KNOWN_KEYS && (v is String || v is Boolean || v is Int) }
             .mapValues { it.value as Any }
 
-    /**
-     * Restores values written by [exportAll], an older version's brought up to date;
-     * unknown keys and odd types are ignored.
-     */
+    /** Restores values written by [exportAll]; unknown keys and odd types are ignored. */
     fun importAll(values: Map<String, Any>) {
-        val known = values.filterKeys { it in KNOWN_KEYS }
         val e = sp.edit()
-        write(e, known + upgrade(known))
+        write(e, values.filterKeys { it in KNOWN_KEYS })
         e.apply()
     }
 
@@ -737,88 +724,28 @@ class Prefs(context: Context) {
         /** The stored value of a step without a model. */
         const val AI_NONE = "none"
 
-        /** The key of [step]'s model; Upscale's changed with its default ([OLD_AI_UPSCALE]). */
+        /** The key of [step]'s model. */
         fun aiKey(step: AiStep) = if (step == AiStep.UPSCALE) KEY_AI_UPSCALE else "pref_ai_${step.key}"
 
         private const val KEY_AI_UPSCALE = "pref_ai_upscale_model"
 
-        /**
-         * Replaced by [KEY_AI_UPSCALE]. The settings screen stored its default unasked, so the
-         * old default ([OLD_DEFAULT_UPSCALE]) is dropped, following today's; other choices move.
-         */
-        private const val OLD_AI_UPSCALE = "pref_ai_upscale"
-
-        /** Upscale's default while [OLD_AI_UPSCALE] held its model. */
-        private const val OLD_DEFAULT_UPSCALE = "opencomic-ai-upscale-2x-compact-v2"
-
         private val KNOWN_KEYS = setOf(
-            KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, OLD_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
+            KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
-            KEY_RESUME_MODE, OLD_RESUME, OLD_ASK_RESUME, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, OLD_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
-            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, OLD_GRID,
-            OLD_COLUMNS, OLD_SORT, OLD_SORT_DIR, KEY_PINCH_PEEK, OLD_FILENAMES, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
-            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, OLD_AUTO_SPEED, KEY_PER_SERIES, OLD_ROWS,
-            KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, OLD_TAP_ZONES, KEY_ADJUST_BRIGHTNESS,
-            KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, OLD_BRIGHTNESS, KEY_GROUP_FAVORITES,
+            KEY_RESUME_MODE, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
+            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR,
+            KEY_PINCH_PEEK, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
+            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES,
+            KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,
+            KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
-            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI, OLD_AI_UPSCALE,
+            KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI,
             KEY_SIMILAR_SHARES
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
-        /** With [OLD_SORT_DIR] ("asc" / "desc"), replaced by Browse's and Favorites' own sorts. */
-        private const val OLD_SORT = "pref_sort"
-        private const val OLD_SORT_DIR = "pref_sort_dir"
-
-        /** With [OLD_COLUMNS] and [OLD_ROWS], replaced by Browse's and Favorites' own views; defaulted off. */
-        private const val OLD_GRID = "pref_grid"
-
-        /** Stored as strings by the list preferences they came from. */
-        private const val OLD_COLUMNS = "pref_grid_columns"
-        private const val OLD_ROWS = "pref_grid_rows"
-
-        /** Replaced by [KEY_TITLE_DISPLAY] and each tab's detail display: off hid titles and details. */
-        private const val OLD_FILENAMES = "pref_show_filenames"
-
-        /**
-         * The old single sort ("name", "size", "date", "type"), ascending unless
-         * [descending], as a sort level: dates are when files were added, and
-         * "type" ascending put images before archives.
-         */
-        private fun sortLevelOf(old: String?, descending: Boolean): SortLevel = when (old) {
-            "size" -> SortLevel(SortKey.SIZE, flipped = !descending)
-            "date" -> SortLevel(SortKey.ADDED, flipped = !descending)
-            "type" -> SortLevel(SortKey.TYPE, flipped = !descending)
-            else -> SortLevel(SortKey.NAME, flipped = descending)
-        }
-
-        /** The tabs that take over the single grid and sort settings; the others start at their defaults. */
-        private val GRID_HEIRS = listOf(TAB_BROWSE, TAB_FAVORITES)
-
-        /** The Language setting's values (`locale_values`); other stored tags move per [OLD_LOCALES] or fall back to the system's. */
+        /** The Language setting's values (`locale_values`). */
         internal val LOCALES = listOf("system", "en-US")
-
-        /** Retired language tags and the [LOCALES] value that replaced each. */
-        private val OLD_LOCALES = mapOf("en" to "en-US")
-
-        /** Replaced by [KEY_CHARSET], whose default reads UTF-8 names as UTF-8 did; other charsets move. */
-        private const val OLD_CHARSET = "pref_charset"
-
-        /** Replaced by [KEY_TWO_PAGE]: on meant [TwoPage.ON]. */
-        private const val OLD_TWO_PAGE = "pref_two_page"
-
-        /** Replaced by [KEY_AUTO_SPEED]: a 1..10 scale, not converted; the speed starts over at [AutoScroll.DEFAULT]. */
-        private const val OLD_AUTO_SPEED = "pref_auto_speed"
-
-        /** Replaced by [KEY_TAP_ZONE_LAYOUT]: on meant left/right zones. */
-        private const val OLD_TAP_ZONES = "pref_tap_zones"
-
-        /** Replaced by [KEY_ADJUST_BRIGHTNESS]: a black overlay, 20..100 with 100 = none. */
-        private const val OLD_BRIGHTNESS = "pref_brightness"
-
-        /** With [OLD_ASK_RESUME], replaced by [KEY_RESUME_MODE] ([ResumeMode.fromSwitches]); both default on. */
-        private const val OLD_RESUME = "pref_resume"
-        private const val OLD_ASK_RESUME = "pref_ask_resume"
 
         /** Puts each of [values] into [e]: a string, boolean or int is written, null removes its key, other types are ignored. */
         internal fun write(e: SharedPreferences.Editor, values: Map<String, Any?>) {
@@ -830,102 +757,6 @@ class Prefs(context: Context) {
                     null -> e.remove(k)
                 }
             }
-        }
-
-        /**
-         * The changes that bring [stored] settings up to date: a value to write per key,
-         * or null for a key to remove. A replaced key's value moves to its successor
-         * unless the successor is already set.
-         */
-        internal fun upgrade(stored: Map<String, Any?>): Map<String, Any?> {
-            val out = LinkedHashMap<String, Any?>()
-            if (OLD_TAP_ZONES in stored) {
-                val on = stored[OLD_TAP_ZONES] as? Boolean ?: true
-                if (KEY_TAP_ZONE_LAYOUT !in stored) {
-                    out[KEY_TAP_ZONE_LAYOUT] = (if (on) TapZones.LEFT_RIGHT else TapZones.DISABLED).value
-                }
-                out[OLD_TAP_ZONES] = null
-            }
-            if (OLD_BRIGHTNESS in stored) {
-                val old = stored[OLD_BRIGHTNESS] as? Int
-                if (KEY_ADJUST_BRIGHTNESS !in stored && old != null) {
-                    out[KEY_ADJUST_BRIGHTNESS] = old.coerceIn(20, 100) - 100
-                }
-                out[OLD_BRIGHTNESS] = null
-            }
-            if (OLD_RESUME in stored || OLD_ASK_RESUME in stored) {
-                if (KEY_RESUME_MODE !in stored) {
-                    val resume = stored[OLD_RESUME] as? Boolean ?: true
-                    val ask = stored[OLD_ASK_RESUME] as? Boolean ?: true
-                    out[KEY_RESUME_MODE] = ResumeMode.fromSwitches(resume, ask).value
-                }
-                out[OLD_RESUME] = null
-                out[OLD_ASK_RESUME] = null
-            }
-            if (OLD_GRID in stored || OLD_COLUMNS in stored || OLD_ROWS in stored) {
-                // A missing grid switch was off, its old default.
-                val grid = stored[OLD_GRID] as? Boolean ?: false
-                val columns = (stored[OLD_COLUMNS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
-                val rows = (stored[OLD_ROWS] as? String)?.toIntOrNull()?.coerceIn(0, TabView.MAX_CELLS)
-                for (tab in GRID_HEIRS) {
-                    for ((field, value) in listOf(VIEW_GRID to grid, VIEW_COLUMNS to columns, VIEW_ROWS to rows)) {
-                        val key = viewKey(tab, field)
-                        if (value != null && key !in stored) out[key] = value
-                    }
-                }
-                out[OLD_GRID] = null
-                out[OLD_COLUMNS] = null
-                out[OLD_ROWS] = null
-            }
-            if (OLD_SORT in stored || OLD_SORT_DIR in stored) {
-                val level = sortLevelOf(stored[OLD_SORT] as? String, stored[OLD_SORT_DIR] == "desc")
-                if (level != SortLevel(SortKey.NAME)) {
-                    for (tab in GRID_HEIRS) {
-                        val key = sortKey(tab, SORT_BY)
-                        if (key !in stored) out[key] = level.encode()
-                    }
-                }
-                out[OLD_SORT] = null
-                out[OLD_SORT_DIR] = null
-            }
-            if (OLD_FILENAMES in stored) {
-                if (stored[OLD_FILENAMES] == false) {
-                    if (KEY_TITLE_DISPLAY !in stored) out[KEY_TITLE_DISPLAY] = TitleDisplay.HIDDEN.key
-                    for (tab in TABS) {
-                        val key = viewKey(tab, VIEW_DETAIL)
-                        if (key !in stored) out[key] = DetailDisplay.HIDDEN.key
-                    }
-                }
-                out[OLD_FILENAMES] = null
-            }
-            if (OLD_AUTO_SPEED in stored) out[OLD_AUTO_SPEED] = null
-            if (OLD_CHARSET in stored) {
-                val old = stored[OLD_CHARSET] as? String
-                if (KEY_CHARSET !in stored && old != null && old != "UTF-8") out[KEY_CHARSET] = old
-                out[OLD_CHARSET] = null
-            }
-            if (OLD_TWO_PAGE in stored) {
-                val on = stored[OLD_TWO_PAGE] as? Boolean
-                if (KEY_TWO_PAGE !in stored && on != null) out[KEY_TWO_PAGE] = TwoPage.of(on).key
-                out[OLD_TWO_PAGE] = null
-            }
-            val mode = stored[KEY_PAGE_MODE]
-            if (mode == ReaderLayout.OLD_VERTICAL || mode == ReaderLayout.OLD_LONGSTRIP) {
-                // Both read top to bottom: vertical pages, the long strip is continuous.
-                val (layout, dir) = ReaderLayout.migrated(mode as String, null)
-                out[KEY_PAGE_MODE] = layout
-                out[KEY_READING_DIR] = dir
-                // The long strip never cropped; continuous would.
-                if (mode == ReaderLayout.OLD_LONGSTRIP) out[KEY_AUTO_CROP] = false
-            }
-            val locale = stored[KEY_LOCALE]
-            if (locale != null && locale !in LOCALES) out[KEY_LOCALE] = OLD_LOCALES[locale]
-            if (OLD_AI_UPSCALE in stored) {
-                val old = stored[OLD_AI_UPSCALE] as? String
-                if (KEY_AI_UPSCALE !in stored && old != null && old != OLD_DEFAULT_UPSCALE) out[KEY_AI_UPSCALE] = old
-                out[OLD_AI_UPSCALE] = null
-            }
-            return out
         }
     }
 }

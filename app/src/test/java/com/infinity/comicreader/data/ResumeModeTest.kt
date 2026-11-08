@@ -7,14 +7,6 @@ import org.junit.Test
 class ResumeModeTest {
 
     @Test
-    fun switchesMigrate() {
-        assertEquals(ResumeMode.NO, ResumeMode.fromSwitches(resume = false, ask = true))
-        assertEquals(ResumeMode.NO, ResumeMode.fromSwitches(resume = false, ask = false))
-        assertEquals(ResumeMode.ASK, ResumeMode.fromSwitches(resume = true, ask = true))
-        assertEquals(ResumeMode.YES, ResumeMode.fromSwitches(resume = true, ask = false))
-    }
-
-    @Test
     fun valuesRoundTripAndUnknownIsAsk() {
         for (m in ResumeMode.entries) assertEquals(m, ResumeMode.of(m.value))
         assertEquals(ResumeMode.ASK, ResumeMode.of(null))

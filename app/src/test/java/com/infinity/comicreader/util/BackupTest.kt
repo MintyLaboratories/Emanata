@@ -13,6 +13,7 @@ import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
+import com.infinity.comicreader.data.TabSort
 import com.infinity.comicreader.net.AesGcmBox
 import com.infinity.comicreader.net.Share
 import com.infinity.comicreader.net.SharePath
@@ -93,9 +94,17 @@ class BackupTest {
             setUp()
             assertTrue(app, Backup.import(context, backup(app)))
             assertEquals(listOf("/books/attic"), Library(context).favorites())
-            // The old single sort moved to Browse: "date" ascending is oldest added first.
-            assertEquals(SortLevel(SortKey.ADDED, flipped = true), Prefs(context).sort(Prefs.TAB_BROWSE).by)
         }
+    }
+
+    @Test
+    fun upstreamSettingsAreReadIntoTodaysOnlyFromUpstream() {
+        assertTrue(Backup.import(context, backup("ComicReader")))
+        // Upstream's single sort moved to Browse: "date" ascending is oldest added first.
+        assertEquals(SortLevel(SortKey.ADDED, flipped = true), Prefs(context).sort(Prefs.TAB_BROWSE).by)
+        setUp()
+        assertTrue(Backup.import(context, backup("Emanata")))
+        assertEquals(TabSort.defaultFor(Prefs.TAB_BROWSE), Prefs(context).sort(Prefs.TAB_BROWSE))
     }
 
     @Test

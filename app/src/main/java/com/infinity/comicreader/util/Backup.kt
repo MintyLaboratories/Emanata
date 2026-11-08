@@ -7,6 +7,7 @@ import com.infinity.comicreader.data.Likeness
 import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
+import com.infinity.comicreader.data.UpstreamBackup
 import com.infinity.comicreader.net.ShareBackup
 import com.infinity.comicreader.net.ShareStore
 import org.json.JSONArray
@@ -24,8 +25,8 @@ import org.json.JSONObject
 object Backup {
     private const val APP = "Emanata"
 
-    /** Names a restorable backup may carry: this app's and its upstream's. */
-    private val APPS = setOf(APP, "ComicReader")
+    /** Names a restorable backup may carry: this app's and its upstream's ([UpstreamBackup]). */
+    private val APPS = setOf(APP, UpstreamBackup.APP)
     private const val VERSION = 1
 
     /** Largest backup file that will be read. Real backups are a few hundred KB. */
@@ -73,7 +74,9 @@ object Backup {
                     is Boolean, is Int, is String -> values[k] = v
                 }
             }
-            Prefs(context).importAll(values)
+            val prefs = Prefs(context)
+            prefs.importAll(values)
+            if (root.optString("app") == UpstreamBackup.APP) UpstreamBackup.restore(values, prefs)
         }
         root.optJSONArray("likeness")?.let { importLikeness(LikenessStore(context), it) }
         root.optJSONObject("shares")?.let { s ->

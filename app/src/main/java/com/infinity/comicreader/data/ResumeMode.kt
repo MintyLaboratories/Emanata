@@ -36,12 +36,5 @@ enum class ResumeMode(val value: String) {
         val DEFAULT = ASK
 
         fun of(value: String?): ResumeMode = entries.firstOrNull { it.value == value } ?: DEFAULT
-
-        /** What the older "Resume where I left off" and "Ask where to start" switches meant together. */
-        fun fromSwitches(resume: Boolean, ask: Boolean): ResumeMode = when {
-            !resume -> NO
-            ask -> ASK
-            else -> YES
-        }
     }
 }

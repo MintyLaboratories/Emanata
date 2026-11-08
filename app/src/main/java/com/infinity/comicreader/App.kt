@@ -37,7 +37,6 @@ class App : Application() {
         super.onCreate()
         Timing.enabled = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val prefs = Prefs(this)
-        prefs.upgrade()
         Library(this).apply {
             forgetPathKeyedBooks()
             migrateFolderLayouts(ReaderLayout.of(prefs))

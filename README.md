@@ -904,7 +904,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   unevenly);
   heat is checked before timing starts (thermal status, or battery temperature
   where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
-  throttling) and ends a run that heats up. Pages read ahead get the same
+  throttling) and, by thermal status, ends a run that heats up (battery
+  temperature comes from the last battery broadcast, which can be minutes or
+  hours old, so it is a check at the start only). Pages read ahead get the same
   setup. A timing the app's own decodes overlapped, or during which any other
   of the app's threads (per-thread CPU time from `/proc/self/task`; not
   calibration's own, the UI's or the runtime's housekeeping) used over a tenth

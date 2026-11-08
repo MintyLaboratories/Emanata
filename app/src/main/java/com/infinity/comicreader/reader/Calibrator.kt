@@ -43,8 +43,9 @@ import kotlin.concurrent.thread
  * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws
  * and encodes its pages, off the timed path. A timing during which the app decoded anything ([working]) or another
  * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
- * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and ends a
- * run that heats up. Until the first calibration ends, the [Tuning.defaults] apply; after a
+ * ([UiCpu]) is left out of CPU times. Heat is waited out before timing starts and, where the
+ * thermal status shows it, ends a run that heats up (battery temperature, the fallback, is
+ * too slow to: [Calibration.heatStatus]). Until the first calibration ends, the [Tuning.defaults] apply; after a
  * system update the previous winners apply until new ones are established. A forced run
  * ([recalibrate]) goes on under battery saver, whose clock caps may skew it: it is kept
  * marked so, and the next automatic run out of saver replaces it. Benchmarks and checks
@@ -376,7 +377,7 @@ object Calibrator {
         var thermal = 0
             private set
 
-        /** The highest battery temperature seen during the run, in tenths of a degree C. */
+        /** The highest battery temperature the battery broadcasts reported during the run (possibly older), in tenths of a degree C. */
         var batteryTemp = 0
             private set
 

@@ -394,6 +394,9 @@ object Calibration {
      * ([thermalKnown] true); battery temperature's ([batteryTenthsC], tenths of a degree C,
      * [batteryStatus]) where it has none or reports no status (null); the higher of both where
      * that cannot be told ([thermalKnown] null: Android 10, which reports status 0 without a HAL).
+     * Battery temperature is a check at the start only: it comes from the last battery
+     * broadcast, which can be minutes old (hours apart on a full battery on the charger), so
+     * where it is the only signal a run that heats up is not ended by it.
      */
     fun heatStatus(thermalStatus: Int?, thermalKnown: Boolean?, batteryTenthsC: Int?): Int {
         val battery = batteryTenthsC?.let { batteryStatus(it) } ?: 0

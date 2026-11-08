@@ -67,6 +67,12 @@ class ListActivityCoversTest {
             idle()
         }
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        // The listing arrives from a background thread.
+        var left = 250
+        while ((recycler.adapter?.itemCount ?: 0) == 0 && left-- > 0) {
+            Thread.sleep(20)
+            idle()
+        }
         recycler.measure(
             View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY)

@@ -50,6 +50,9 @@ class BookAdapterCoversTest {
     private lateinit var adapter: BookAdapter
     private val release = CountDownLatch(1)
 
+    /** Holds the look for covers made before of books named "late…" until counted down. */
+    private val lookedUp = CountDownLatch(1)
+
     /** Books whose covers are made slowly (named "slow…", until [release]), one whose cover was made before, and others made at once. */
     private inner class Fake : CoverSource {
         val started: MutableList<String> = Collections.synchronizedList(ArrayList())
@@ -57,8 +60,10 @@ class BookAdapterCoversTest {
 
         override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? = null
 
-        override fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? =
-            if (entry.name == "made.cbz") Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) else null
+        override fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? {
+            if (entry.name.startsWith("late")) lookedUp.await(10, TimeUnit.SECONDS)
+            return if (entry.name == "made.cbz") Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) else null
+        }
 
         override fun load(
             context: Context,
@@ -143,6 +148,7 @@ class BookAdapterCoversTest {
     @After
     fun tearDown() {
         release.countDown()
+        lookedUp.countDown()
         adapter.release()
     }
 
@@ -211,6 +217,37 @@ class BookAdapterCoversTest {
             assertTrue("c.cbz" !in fake.started)
         } finally {
             NetPolicy.rules = NetRules()
+            Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        }
+    }
+
+    @Test
+    fun aRowBoundOffScreenOnASlowShareGetsItsCoverOnceAttachedEvenBeforeTheLookFinishes() {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { throw AssertionError("no reads") }
+        try {
+            adapter.submit((0 until 400).map { shareBook("late$it.cbz") })
+            layout()
+            // Bound ahead of a scroll, as prefetch does: not attached, laid out at a row's size.
+            val position = 399
+            val row = recycler.getChildAt(0)
+            assertEquals(null, recycler.findViewHolderForAdapterPosition(position))
+            val pool = RecyclerView::class.java.getDeclaredField("mRecycler").apply { isAccessible = true }.get(recycler) as RecyclerView.Recycler
+            val prefetched = pool.getViewForPosition(position)
+            prefetched.measure(
+                View.MeasureSpec.makeMeasureSpec(row.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(row.height, View.MeasureSpec.EXACTLY)
+            )
+            prefetched.layout(0, 0, row.width, row.height)
+            val holder = recycler.getChildViewHolder(prefetched) as BookAdapter.BookHolder
+            assertTrue(!prefetched.isAttachedToWindow)
+            repeat(5) { shadowOf(Looper.getMainLooper()).idle() }
+            // Attached while the look for a cover made before still runs.
+            (recycler.parent as FrameLayout).addView(prefetched)
+            adapter.onViewAttachedToWindow(holder)
+            lookedUp.countDown()
+            until { "late$position.cbz" in fake.started }
+            assertTrue("late$position.cbz" in fake.started)
+        } finally {
             Remotes.serve(emptyList()) { throw AssertionError("no shares") }
         }
     }

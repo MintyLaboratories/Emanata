@@ -385,6 +385,9 @@ class BookAdapter(
         var entry: BookEntry? = null
         var requested = 0L
 
+        /** True when the last request ran off screen with its cover held back: attaching asks again. */
+        var heldOffScreen = false
+
         /** The [coverId] of the entry bound here, of the cover drawn, if any, and of a quick cover drawn until it is. */
         var wanted: String? = null
         var drawn: String? = null
@@ -581,16 +584,15 @@ class BookAdapter(
         // A share set not to load thumbnails shows only covers made before.
         val makes = Remotes.thumbnails(item.path)
         val work = if (holder.itemView.isAttachedToWindow) NetWork.COVER else NetWork.COVER_OFF_SCREEN
+        // Decided here, on the main thread, so a row attached while the load runs finds it ([onViewAttachedToWindow]).
+        val held = makes && !NetPolicy.mayAt(work, item.path)
+        holder.heldOffScreen = held && work == NetWork.COVER_OFF_SCREEN
         firstPasses.value++
         val job = scope.launch {
-            var held = false
             val got = withContext(AppDispatchers.io) {
                 runCatching { source.cached(appContext, item, w, h, style) }.getOrNull()?.let { Thumbs.Cover(it, full = true) }
-                    .also { if (it == null) held = makes && !NetPolicy.mayAt(work, item.path) }
             } ?: if (!makes || held) null else gated { canceled -> Timing.span("cover first") { runCatching { source.loadFirst(appContext, item, charset, w, h, style, canceled) }.getOrNull() } }
             if (holder.wanted != id) return@launch
-            // A row bound ahead of a scroll asks again once on screen ([onViewAttachedToWindow]).
-            if (held && work == NetWork.COVER_OFF_SCREEN) holder.requested = 0L
             if (got == null) {
                 // The same book's earlier cover stood in for one there is none of now.
                 if (holder.drawn == null && holder.quick == null) clearCover(holder)
@@ -658,7 +660,12 @@ class BookAdapter(
     /** A row bound ahead of a scroll, its cover held back while off screen, asks for it now. */
     override fun onViewAttachedToWindow(holder: RecyclerView.ViewHolder) {
         super.onViewAttachedToWindow(holder)
-        if (holder is BookHolder) requestCover(holder)
+        if (holder !is BookHolder) return
+        if (holder.heldOffScreen) {
+            holder.heldOffScreen = false
+            holder.requested = 0L
+        }
+        requestCover(holder)
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
@@ -670,6 +677,7 @@ class BookAdapter(
         holder.wanted = null
         holder.drawn = null
         holder.quick = null
+        holder.heldOffScreen = false
         holder.thumb.setImageDrawable(null)
     }
 

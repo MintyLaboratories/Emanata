@@ -57,8 +57,8 @@ data class Scaling(val filter: ScaleFilter = ScaleFilter.DEFAULT, val upRing: In
 
     /**
      * Part of a cache key for images that shrink, as covers do: [filter] and [downRing] only, so
-     * a change to [upRing] keeps them. Empty for [DEFAULT]'s, which covers made before these
-     * settings carry no token for.
+     * a change to [upRing] keeps them. Empty for [DEFAULT]'s, as optional tokens in
+     * [com.infinity.comicreader.data.CoverStyle.key] are when off.
      */
     val shrinkKey: String get() = if (filter == DEFAULT.filter && downRing == DEFAULT.downRing) "" else "${filter.key}r$downRing"
 

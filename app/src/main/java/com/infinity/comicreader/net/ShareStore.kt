@@ -96,7 +96,7 @@ class ShareStore(context: Context, private val box: SecretBox = defaultBox) {
         private const val KEY_LOST = "lost"
         private const val KEY_THUMBNAILS = "thumbnails"
 
-        /** How a share is reached: absent for SMB, as stored before WebDAV. */
+        /** How a share is reached: [KIND_WEBDAV], or absent for SMB. */
         private const val KEY_KIND = "kind"
         private const val KIND_WEBDAV = "webdav"
         private const val KEY_SECURE = "secure"

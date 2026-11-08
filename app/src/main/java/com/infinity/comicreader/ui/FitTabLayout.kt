@@ -2,14 +2,19 @@ package com.infinity.comicreader.ui
 
 import android.content.Context
 import android.util.AttributeSet
+import android.widget.TextView
+import androidx.core.content.res.use
+import androidx.core.widget.TextViewCompat
 import com.google.android.material.tabs.TabLayout
+import com.infinity.comicreader.R
 import kotlin.math.roundToInt
 
 /**
  * Tabs that share the width equally while every label fits its share on one line, first
  * with the styled side padding, then with less, down to [MIN_PAD_DP] a side; past that they
- * scroll, at the styled padding. A label's font never shrinks: the two-line text size
- * Material switches to is the one-line size (`design_tab_text_size_2line`).
+ * scroll, at the styled padding. A label stays on one line at the tab text size: each tab
+ * shows it in its own one-line view ([R.layout.tab_label]), so Material's smaller two-line
+ * text never applies; past the widest a tab gets, it is cut with "…".
  */
 class FitTabLayout @JvmOverloads constructor(
     context: Context,
@@ -19,6 +24,21 @@ class FitTabLayout @JvmOverloads constructor(
 
     /** Each tab's side padding as styled; read from the first tab. */
     private var styledPad = -1
+
+    /** The tab text's style, as the tabs' own text would take it. */
+    private val textStyle = context.obtainStyledAttributes(
+        attrs, com.google.android.material.R.styleable.TabLayout, defStyleAttr, com.google.android.material.R.style.Widget_Design_TabLayout
+    ).use { it.getResourceId(com.google.android.material.R.styleable.TabLayout_tabTextAppearance, 0) }
+
+    /** A tab whose label is a one-line view in the tab text's style and colors. */
+    override fun newTab(): Tab {
+        val tab = super.newTab().setCustomView(R.layout.tab_label)
+        (tab.customView as? TextView)?.let { label ->
+            if (textStyle != 0) TextViewCompat.setTextAppearance(label, textStyle)
+            tabTextColors?.let { label.setTextColor(it) }
+        }
+        return tab
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && tabCount > 0) {

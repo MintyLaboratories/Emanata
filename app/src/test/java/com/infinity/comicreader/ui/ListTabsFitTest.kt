@@ -150,6 +150,24 @@ class ListTabsFitTest {
     }
 
     @Test
+    fun aLabelWiderThanAnyTabStaysOnOneLineAtItsOwnSizeAndColors() {
+        val tabs = tabs("w411dp-h914dp-xxhdpi", 2.0f)
+        tabs.getTabAt(1)!!.text = "Favorites of every kind, kept here for reading later on"
+        val width = tabs.resources.displayMetrics.widthPixels
+        tabs.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        tabs.layout(0, 0, tabs.measuredWidth, tabs.measuredHeight)
+        assertEquals(TabLayout.MODE_SCROLLABLE, tabs.tabMode)
+        val size = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, tabs.resources.displayMetrics)
+        for (label in tabs.labels()) {
+            assertEquals("\"${label.text}\" on one line", 1, label.layout.lineCount)
+            assertEquals("\"${label.text}\" at its own size", size, label.textSize, 0.5f)
+            assertEquals(tabs.tabTextColors, label.textColors)
+        }
+        // Only the one wider than any tab is cut.
+        assertTrue(tabs.labels()[1].layout.getEllipsisCount(0) > 0)
+    }
+
+    @Test
     fun paddingPicksTheMostThatFits() {
         // Labels 80 and 90 wide in shares of 110: 10 a side fits, 11 does not.
         assertEquals(10, TabPadding.pick(listOf(80, 90), listOf(0, 0), 110, 36, 12 - 2))

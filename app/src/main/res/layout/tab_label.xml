@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A library tab's label: always one line, at the tab text size; cut with "…" only past the widest a tab gets. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/text1"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:ellipsize="end"
+    android:gravity="center"
+    android:maxLines="1" />

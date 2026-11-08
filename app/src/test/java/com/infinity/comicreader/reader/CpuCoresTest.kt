@@ -77,6 +77,7 @@ class CpuCoresTest {
         val c = CpuCores.read(tree("a", "261\n" to "1785600", "261\n" to "1785600", "805\n" to "2496000", "1024\n" to "2995200"))
         assertEquals(0b1100L, c.big)
         assertEquals(0b0011L, c.little)
+        assertEquals(listOf(261, 261, 805, 1024), c.capacities.toList())
     }
 
     @Test
@@ -85,6 +86,8 @@ class CpuCoresTest {
         val c = CpuCores.read(tree("b", "261" to "1785600", "261" to "1785600", "805" to "2496000", null to "2995200"))
         assertEquals(0b1100L, c.big)
         assertEquals(0b0011L, c.little)
+        // Clock speeds are no capacities.
+        assertEquals(0, c.capacities.size)
     }
 
     @Test

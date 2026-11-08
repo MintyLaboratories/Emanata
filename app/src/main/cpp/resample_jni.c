@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core_ledger.h"
 #include "jxl_runner.h"
 #include "resample.h"
 
@@ -166,9 +167,41 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
     if (h->gpu) return h->on_gpu != NULL && rs_gpu_band(h->on_gpu, y0, y1) == 0;
     cpu_set_t kept;
     const int pinned = jr_pin((uint64_t)cores, &kept);
+    cl_begin();
     const int r = rs_band(&h->job, &h->workers[worker], y0, y1);
+    cl_end();
     if (pinned) jr_unpin();
     return r == 0;
+}
+
+// Opens the core ledger (core_ledger.h), resetting it, or closes it.
+EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedger(JNIEnv * env, jclass clazz, jboolean open)
+{
+    (void)env;
+    (void)clazz;
+    cl_open(open == JNI_TRUE);
+}
+
+// Moves the ledger's nanoseconds per core into `out`, zeroing them; the count of cores.
+EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerNs(JNIEnv * env, jclass clazz, jlongArray out)
+{
+    (void)clazz;
+    int64_t ns[CL_MAX_CORES];
+    const jsize size = (*env)->GetArrayLength(env, out);
+    const int n = cl_take_ns(ns, size < CL_MAX_CORES ? size : CL_MAX_CORES);
+    (*env)->SetLongArrayRegion(env, out, 0, n, (const jlong *)ns);
+    return n;
+}
+
+// Moves the ids of threads that counted in the ledger since the last call into `out`; their count.
+EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerTids(JNIEnv * env, jclass clazz, jintArray out)
+{
+    (void)clazz;
+    int32_t tids[CL_MAX_TIDS];
+    const jsize size = (*env)->GetArrayLength(env, out);
+    const int n = cl_take_tids(tids, size < CL_MAX_TIDS ? size : CL_MAX_TIDS);
+    (*env)->SetIntArrayRegion(env, out, 0, n, (const jint *)tids);
+    return n;
 }
 
 // Ends a job: unlocks both bitmaps and frees everything it holds.

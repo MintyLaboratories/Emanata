@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/resource.h>
 
+#include "core_ledger.h"
 #include "jxl_runner.h"
 
 static pthread_once_t coder_once = PTHREAD_ONCE_INIT;
@@ -89,6 +90,7 @@ int jp_decode(const jp_api * api, const uint8_t * data, size_t size, uint8_t * o
     jr_pool * pool = NULL;
     cpu_set_t kept;
     const int pinned = jr_pin(cores, &kept);
+    cl_begin();
     int lowered = 0;
     int kept_nice = 0;
     int result = JP_FAILED;
@@ -148,6 +150,7 @@ done:
     if (pool != NULL && jr_canceled(pool)) result = JP_CANCELED;
     api->JxlDecoderDestroy(dec);
     jr_destroy(pool);
+    cl_end();
     if (pinned) jr_unpin();
     if (lowered) setpriority(PRIO_PROCESS, 0, kept_nice);
     return result;

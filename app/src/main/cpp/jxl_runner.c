@@ -3,6 +3,8 @@
 
 #include "jxl_runner.h"
 
+#include "core_ledger.h"
+
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -92,6 +94,7 @@ static void drain(jr_pool * p, JxlParallelRunFunction func, void * opaque, uint3
         const uint32_t v = (uint32_t)atomic_fetch_add_explicit(&p->next, 1, memory_order_relaxed);
         if (v >= end) return;
         func(opaque, v, id);
+        cl_tick();
     }
 }
 
@@ -106,6 +109,7 @@ static void * work(void * argument)
     pthread_setname_np(pthread_self(), name);
     cpu_set_t kept;
     jr_pin(p->cores, &kept);
+    cl_begin();
     unsigned seen = 0;
     pthread_mutex_lock(&p->lock);
     for (;;) {
@@ -121,6 +125,7 @@ static void * work(void * argument)
         if (--p->busy == 0) pthread_cond_signal(&p->idle);
     }
     pthread_mutex_unlock(&p->lock);
+    cl_end();
     return NULL;
 }
 
@@ -189,6 +194,7 @@ JxlParallelRetCode jr_run(void * pool, void * opaque, JxlParallelRunInit init, J
         for (uint32_t v = start; v < end; v++) {
             if (stopped(p, 0)) return JXL_PARALLEL_RET_RUNNER_ERROR;
             func(opaque, v, 0);
+            cl_tick();
         }
         return JXL_PARALLEL_RET_SUCCESS;
     }

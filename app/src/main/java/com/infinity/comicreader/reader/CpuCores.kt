@@ -7,9 +7,10 @@ import java.io.File
  * [largeShare] as fast as the fastest, the rest little. Masks have bit n set for core n; a
  * mask is 0 where pinning to it would change nothing (one kind of core) or cannot be known.
  *
- * [speeds] holds each core's speed by number, 0 where unknown.
+ * [speeds] holds each core's speed by number, 0 where unknown; [capacities] each core's
+ * `cpu_capacity` (the fastest 1024), empty where the kernel gives none.
  */
-class CpuCores(speeds: IntArray, largeShare: Double = CAPACITY_SHARE) {
+class CpuCores(speeds: IntArray, largeShare: Double = CAPACITY_SHARE, val capacities: IntArray = IntArray(0)) {
     /** True when the cores' speeds were read; otherwise nothing is pinned and counts are guesses. */
     val known: Boolean = speeds.any { it > 0 }
 
@@ -59,7 +60,7 @@ class CpuCores(speeds: IntArray, largeShare: Double = CAPACITY_SHARE) {
                 for (n in numbers) speeds[n] = number(File(root, "cpu$n/$file")) ?: return null
                 return speeds
             }
-            all("cpu_capacity")?.let { return CpuCores(it, CAPACITY_SHARE) }
+            all("cpu_capacity")?.let { return CpuCores(it, CAPACITY_SHARE, it) }
             all("cpufreq/cpuinfo_max_freq")?.let { return CpuCores(it, CLOCK_SHARE) }
             return CpuCores(IntArray(0))
         }

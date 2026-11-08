@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,6 +39,14 @@ class ClockCapsTest {
         policy(root, 0, "1785600")
         policy(root, 4, "fast")
         assertNull(ClockCaps(root).read())
+    }
+
+    @Test
+    fun eachSampleRestsAThirdOfTheOneBeforeWithinBounds() {
+        assertEquals(Calibration.REST_MIN_MS, Calibration.restMs(0.0))
+        assertEquals(Calibration.REST_MIN_MS, Calibration.restMs(150.0))
+        assertEquals(150L, Calibration.restMs(500.0))
+        assertEquals(Calibration.REST_MAX_MS, Calibration.restMs(1600.0))
     }
 
     @Test

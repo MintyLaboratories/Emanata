@@ -119,7 +119,7 @@ object Calibration {
      * again ([fingerprint]). A test pins a hash of what the method is made of ([method],
      * [Calibrator.method]) to each version.
      */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** Rounds a run times every setup in ([CalibrationRun]). */
     const val ROUNDS = 5
@@ -141,7 +141,7 @@ object Calibration {
         val setups = chips.joinToString(";") { c -> candidates(c, 8, gpu = true, jxl = true, jpeg = true).joinToString(",") { it.key } }
         return listOf(
             setups, TOLERANCE, STAY_MARGIN, JPEG_MARGIN, JPEG_THREADED, CPU_NOISE_SHARE, CPU_NOISE_MS, coreWeight(435, 1024),
-            OTHERS_SHARE, OTHERS_FLOOR_MS, HOUSEKEEPING.sorted(), REST_MS, LIGHT, HOT, BATTERY_LIGHT_C, BATTERY_HOT_C,
+            OTHERS_SHARE, OTHERS_FLOOR_MS, HOUSEKEEPING.sorted(), REST_SHARE, REST_MIN_MS, REST_MAX_MS, LIGHT, HOT, BATTERY_LIGHT_C, BATTERY_HOT_C,
             SPREAD_MADS, ROUNDS, RETRIES
         ).joinToString("|")
     }
@@ -539,23 +539,34 @@ object Calibration {
     const val GIVE_UP_MS = 120_000L
 
     /**
-     * Rest before each sample, in ms. A run's own load makes the system lower the large
-     * cores' clock caps within a fraction of a second, at thermal status 0 (a power limit),
-     * so samples back to back time setups slower and unevenly. On a tablet with 4 large and 4
-     * little cores (Snapdragon 8 Gen 1 class, Android 16), against 300 ms of rest (3 runs
-     * each): with none, JPEG XL on the large cores took 1.14x as long and resampling there
-     * went from 0.99x to 1.14x the time of 8 threads on any core, close to [TOLERANCE]; with
-     * 100 ms every setup but one stayed within 5 % (JPEG XL on the large cores 6 % slower) and
-     * the ratios that decide picks within noise, for two thirds of the time (21 instead of 31
-     * s). Caps fell during 39, 25 and 5 of 50 samples with 0, 100 and 300 ms ([capped]).
+     * The rest before a sample, in ms, after one that took [previousMs]: [REST_SHARE] of it,
+     * from [REST_MIN_MS] to [REST_MAX_MS] (all samples rested 300 ms before they were checked
+     * while they run), so the cores rest as for pages decoded at reading pace. Back to back, a
+     * run's own load lowers the large cores' clock caps within a fraction of a second at
+     * thermal status 0 (a power limit), which skews setups unevenly, most of all the sample
+     * after a long one. On a tablet with 4 large and 4 little cores (Snapdragon 8 Gen 1 class,
+     * Android 16; 3 runs each), against a fixed 300 ms: with no rest, resampling on the large
+     * cores went from 0.95-1.05x to 1.14x the time of 8 threads on any core, close to
+     * [TOLERANCE], and JPEG XL there took 1.14x as long; a fixed 100 ms kept that ratio while
+     * the JPEG XL page was 2000x3000 but not at 4000x6000 (1.15x, up to 1.22x); resting until
+     * every clock was at its floor and every cap back (about 40 ms) did not either (1.14x): the
+     * limit outlasts what the clocks show. This rest kept every setup within 5 % and the
+     * ratios that decide picks within noise (1.03x), in 37 instead of 44 s.
      */
-    const val REST_MS = 100L
+    fun restMs(previousMs: Double): Long = (previousMs * REST_SHARE).toLong().coerceIn(REST_MIN_MS, REST_MAX_MS)
+
+    /** The share of the previous sample's length rested before the next ([restMs]). */
+    const val REST_SHARE = 0.3
+
+    /** The shortest and longest rest before a sample ([restMs]). */
+    const val REST_MIN_MS = 100L
+    const val REST_MAX_MS = 300L
 
     /**
      * True when a CPU frequency domain may now run slower than it could earlier in the run:
      * its clock cap in [now] ([ClockCaps]) is below the highest seen ([top]). False when
      * either is unknown or they differ in count. Calibration counts samples a cap fell
-     * during; it cannot redo or end them, as its own load lowers caps ([REST_MS]).
+     * during; it cannot redo or end them, as its own load lowers caps ([restMs]).
      */
     fun capped(top: IntArray?, now: IntArray?): Boolean =
         top != null && now != null && top.size == now.size && now.indices.any { now[it] < top[it] }

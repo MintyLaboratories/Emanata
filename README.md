@@ -899,9 +899,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   one-per-large-core and one-per-core threads and platform JPEG decodes pinned
   and not on a synthetic 4000x6000 one (4K class, as image decode timings
   use). It starts once the app is idle (waiting 3 s at most), then draws and
-  encodes its pages on a thread of their own; each sample follows 100 ms of
-  rest, as decodes at reading pace do (back to back, the run's own load lowers
-  the large cores' clock caps and skews setups unevenly);
+  encodes its pages on a thread of their own; each sample follows a rest of a
+  third of the one before (100-300 ms), as decodes at reading pace do (back to
+  back, the run's own load lowers the large cores' clock caps and skews setups
+  unevenly);
   heat is checked before timing starts (thermal status, or battery temperature
   where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
   throttling) and, by thermal status, ends a run that heats up (battery

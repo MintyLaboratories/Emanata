@@ -38,8 +38,9 @@ import kotlin.concurrent.thread
  * calibration version ([Calibration.VERSION]), while the app is in front but not reading
  * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
  * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
- * keeps the winners ([Tuning]) in a file that is not backed up. Each sample follows a short
- * rest ([Calibration.REST_MS]), as page decodes at reading pace do. It starts once the app is
+ * keeps the winners ([Tuning]) in a file that is not backed up. Each sample follows a rest
+ * as long as a third of the one before ([Calibration.restMs]), as page decodes at reading
+ * pace do. It starts once the app is
  * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws
  * and encodes its pages, off the timed path. A timing during which the app decoded anything ([working]) or another
  * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
@@ -184,11 +185,12 @@ object Calibrator {
     /**
      * [recalibrate] with each sample the median of [burst] runs, after an untimed one when
      * [warm], only in the first round when [warmOnce], and ending once the winners stay the
-     * same when [early] ([CalibrationRun]), [gapMs] of rest before each sample
-     * ([Calibration.REST_MS]): debug builds compare run shapes with it. Kept with the result.
+     * same when [early] ([CalibrationRun]), a fixed [gapMs] of rest before each sample
+     * instead of one scaled to the sample before (negative: [Calibration.restMs]): debug
+     * builds compare run shapes with it. Kept with the result.
      */
-    fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = Calibration.REST_MS) {
-        shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(0, 5_000))
+    fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = -1) {
+        shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(-1, 5_000))
         begin(force = true)
     }
 
@@ -198,7 +200,7 @@ object Calibrator {
         val warm: Boolean = true,
         val warmOnce: Boolean = false,
         val early: Boolean = false,
-        val gapMs: Long = Calibration.REST_MS
+        val gapMs: Long = -1
     )
 
     /** How forced runs sample. */
@@ -291,6 +293,7 @@ object Calibrator {
                 .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
                 .put("rounds", run.roundsRun).put("redone", run.redone).put("disturbedBy", JSONObject(probe.disturbedBy as Map<*, *>))
                 .put("cappedSamples", probe.cappedSamples).put("capsKHz", probe.caps?.let { JSONArray(it.toList()) })
+                .put("restMs", probe.restMs)
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -346,7 +349,7 @@ object Calibrator {
         private val force: Boolean,
         private val dropped: () -> Boolean,
         private val pageFingerprint: String,
-        private val gapMs: Long = Calibration.REST_MS
+        private val gapMs: Long = -1
     ) : CalibrationProbe {
         @Volatile private var src: Bitmap? = null
         @Volatile private var dst: Bitmap? = null
@@ -406,6 +409,13 @@ object Calibrator {
         /** Samples during which a clock cap fell. */
         var cappedSamples = 0
             private set
+
+        /** Rest before samples in all, in ms ([rest]). */
+        var restMs = 0L
+            private set
+
+        /** How long the last sample took, in ms. */
+        private var lastSampleMs = 0.0
 
         /** Time spent waiting for fair moments so far. */
         private var waitedMs = 0L
@@ -582,7 +592,7 @@ object Calibrator {
                     ?.let { return no(it) }
                 val wait = hindrance() ?: if (settle()) null else "app not idle"
                 if (wait == null) {
-                    if (gapMs > 0) SystemClock.sleep(gapMs)
+                    rest()
                     begin()
                     return true
                 }
@@ -593,6 +603,13 @@ object Calibrator {
                 SystemClock.sleep(WAIT_MS)
                 waitedMs += SystemClock.elapsedRealtime() - since
             }
+        }
+
+        /** Rests before a sample: [gapMs] when set, else as long as the last sample asks for ([Calibration.restMs]). */
+        private fun rest() {
+            val ms = if (gapMs >= 0) gapMs else Calibration.restMs(lastSampleMs)
+            if (ms > 0) SystemClock.sleep(ms)
+            restMs += ms
         }
 
         /** A sample begins: what it is checked against ([stillFair]) is taken now. */
@@ -631,6 +648,7 @@ object Calibrator {
             val processMs = (Process.getElapsedCpuTime() - processBefore).toDouble()
             val after = tasks.snapshot()
             val wallMs = (System.nanoTime() - sampleStartNs) / 1e6
+            lastSampleMs = wallMs
             val counted = if (LibPixels.loaded) LibPixels.ledgerThreads() else emptyMap()
             val skip = Calibration.skips(synchronized(own) { HashSet(own) }, ui.tids, tasks::name)
             val others = Calibration.othersMs(tasksBefore, after, counted, skip)

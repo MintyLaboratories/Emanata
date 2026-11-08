@@ -16,6 +16,7 @@ import org.robolectric.annotation.Config
 class CalibrationTest {
     private companion object {
         const val PINNED_V3 = "ba2b68cf"
+        const val PINNED_V4 = "07355a12"
     }
 
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
@@ -299,7 +300,7 @@ class CalibrationTest {
     @Test
     fun theMethodIsPinnedToItsVersion() {
         // Never edit a pinned hash: a change to the method bumps Calibration.VERSION and pins its hash beside the others.
-        val pinned = mapOf(3 to PINNED_V3)
+        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4)
         val hash = "%08x".format(Calibrator.method().hashCode())
         assertEquals("The calibration method changed: bump Calibration.VERSION and pin $hash for it", pinned[Calibration.VERSION], hash)
         assertEquals(pinned.size, pinned.values.toSet().size)

@@ -124,16 +124,6 @@ class LibraryForgetTest {
     }
 
     @Test
-    fun statisticsKeptBeforeBooksCountedStartFromTheReadMarks() {
-        library.setReadMany(listOf(a, b), true)
-        context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().putString("stats", "{\"seconds\":60}").commit()
-        assertEquals(2, library.stats().books)
-        library.setRead(c, true)
-        assertEquals(3, library.stats().books)
-        assertEquals(60, library.stats().seconds)
-    }
-
-    @Test
     fun aBookSeenNotesItsSizeFromTheIndex() {
         val file = File(tmp.newFolder("Series"), "one.cbz").apply { writeBytes(ByteArray(300) { it.toByte() }) }
         val ref = BookRef(bookId(file), file.absolutePath)

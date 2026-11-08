@@ -188,13 +188,12 @@ class Library(context: Context) {
     fun setReadMany(books: Collection<BookRef>, read: Boolean) {
         synchronized(LOCK) {
             val set = readSet()
-            val before = set.toSet()
             val changing = books.filter { (it.id in set) != read }.distinctBy { it.id }
             if (changing.isEmpty()) return@synchronized
             if (read) set.addAll(changing.map { it.id }) else set.removeAll(changing.map { it.id }.toSet())
             writeIds(KEY_READ, set)
             val counted = changing.count { !FolderReads.isLooseImage(it.path) }
-            if (counted > 0) addBooksRead(if (read) counted else -counted, before)
+            if (counted > 0) addBooksRead(if (read) counted else -counted)
             if (read) keepAll(books)
         }
     }
@@ -209,14 +208,14 @@ class Library(context: Context) {
             if (all.has(folder) == read) return@synchronized
             if (read) all.put(folder, true) else all.remove(folder)
             sp.edit().putString(KEY_READ_FOLDERS, all.toString()).apply()
-            addBooksRead(if (read) 1 else -1, readSet())
+            addBooksRead(if (read) 1 else -1)
         }
     }
 
-    /** Adds [delta] to books read in statistics, never below 0; [readMarks] are the books read before, for statistics kept before they counted. */
-    private fun addBooksRead(delta: Int, readMarks: Set<BookId>) {
+    /** Adds [delta] to books read in statistics, never below 0. */
+    private fun addBooksRead(delta: Int) {
         val stats = readObject(KEY_STATS)
-        stats.put(STAT_BOOKS, (booksRead(stats, readMarks) + delta).coerceAtLeast(0))
+        stats.put(STAT_BOOKS, (booksRead(stats) + delta).coerceAtLeast(0))
         sp.edit().putString(KEY_STATS, stats.toString()).apply()
     }
 
@@ -821,7 +820,7 @@ class Library(context: Context) {
         return ReadingStats(
             seconds = o.optLong("seconds"),
             pages = o.optLong("pages"),
-            books = booksRead(o, readSet()),
+            books = booksRead(o),
             daysRead = days.size,
             streak = streak,
             bestStreak = best
@@ -837,14 +836,9 @@ class Library(context: Context) {
 
     /**
      * Books read in statistics [o]: books (and folders of loose images) marked read, less
-     * those unmarked, since the statistics were last cleared. Statistics kept before they
-     * counted them start from the [readMarks] there are, loose images aside.
+     * those unmarked, since the statistics were last cleared.
      */
-    private fun booksRead(o: JSONObject, readMarks: Set<BookId>): Int {
-        if (o.has(STAT_BOOKS)) return o.optInt(STAT_BOOKS).coerceAtLeast(0)
-        val seen = seenAt()
-        return readMarks.count { id -> seen[id]?.path?.let { !FolderReads.isLooseImage(it) } ?: true }
-    }
+    private fun booksRead(o: JSONObject): Int = o.optInt(STAT_BOOKS).coerceAtLeast(0)
 
     // ---------------- what books keep ----------------
     /** What is kept for each book with anything kept, by ID. */

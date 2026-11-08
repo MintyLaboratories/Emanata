@@ -189,6 +189,15 @@ class LargeBookWarningTest {
     }
 
     @Test
+    fun theChapterOpenedAheadWaitsForABookThatWouldAsk() {
+        val prefs = Prefs(context)
+        assertTrue(LargeBookWarning.wouldAsk(prefs, Remotes.file("/net/s1/Large.cbz", askNetwork = false)))
+        assertFalse(LargeBookWarning.wouldAsk(prefs, Remotes.file("/net/s1/Small.cbz")))
+        metered(false)
+        assertFalse(LargeBookWarning.wouldAsk(prefs, Remotes.file("/net/s1/Large.cbz")))
+    }
+
+    @Test
     fun aBookOnTheDeviceNeverAsks() {
         val local = tmp.newFile("Local.cbz").apply { RandomAccessFile(this, "rw").use { it.setLength(500_000_000) } }
         LargeBookWarning.check(activity, local, 0)

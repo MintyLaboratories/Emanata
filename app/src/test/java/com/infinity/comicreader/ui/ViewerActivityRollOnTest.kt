@@ -12,6 +12,9 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.TestImages
 import com.infinity.comicreader.testing.bookId
 import org.junit.Assert.assertEquals
@@ -152,5 +155,24 @@ class ViewerActivityRollOnTest {
         shadowOf(viewer).clickMenuItem(R.id.menu_bookmark)
         assertTrue(library.bookmarksFor(a).isEmpty())
         assertEquals(listOf(second.absolutePath), library.bookmarksFor(b).map { it.path })
+    }
+
+    /** Opens the first book from a share set to [speed] and waits a moment for its next chapter. */
+    private fun fromShare(speed: ShareSpeed): Int {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = speed))) { FakeRemoteFs(first.parentFile!!) }
+        try {
+            val viewer = launch(Remotes.file("/net/s1/a.cbz"))
+            await { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
+            return viewer.strip().adapter?.itemCount ?: 0
+        } finally {
+            controller.pause().stop().destroy()
+            Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        }
+    }
+
+    @Test
+    fun onAShareWhereReadAheadIsSkippedTheNextChapterOpensOnlyWhenReached() {
+        assertEquals(3, fromShare(ShareSpeed.SLOW))
+        assertEquals(6, fromShare(ShareSpeed.FAST))
     }
 }

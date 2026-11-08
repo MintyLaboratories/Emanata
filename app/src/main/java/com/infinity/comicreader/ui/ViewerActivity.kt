@@ -2483,7 +2483,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * Opens the chapter after this one so continuous reading can be
      * rolled straight into it. Nothing is on screen yet: once its pages are open
      * they are laid in behind the current chapter's, and scrolling simply reaches
-     * them, exactly like scrolling between two pages of one archive.
+     * them, exactly like scrolling between two pages of one archive. Not on a share
+     * where read-ahead is skipped now ([NetPolicy]), nor a book the large-book warning
+     * would ask about ([LargeBookWarning]): those open when reached.
      */
     private fun prepareStripAhead() {
         if (mode == MODE_PAGED || !prefs.autoNext) {
@@ -2495,10 +2497,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         // and a new file closes both first.
         if (stripAhead != null || stripAheadJob?.isActive == true) return
         val next = nextChapter() ?: return
+        if (!NetPolicy.mayAt(NetWork.READ_AHEAD, next.path)) return
         stripAheadJob = lifecycleScope.launch {
             // The reader's own: once reached, its pages show from what this opens.
             var id: BookId? = null
             val (src, ok) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
+                if (LargeBookWarning.wouldAsk(prefs, next)) return@withContext null to false
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
                 val job = coroutineContext.job
                 id = BookIds.find(next)

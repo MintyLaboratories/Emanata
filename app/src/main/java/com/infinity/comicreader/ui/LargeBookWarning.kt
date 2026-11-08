@@ -61,14 +61,25 @@ object LargeBookWarning {
         looking += activity
         activity.lifecycleScope.launch {
             try {
-                val bytes = withContext(AppDispatchers.io) {
-                    runCatching { book.fresh()?.takeIf { !it.isDirectory }?.size ?: 0L }.getOrDefault(0L)
-                }
+                val bytes = withContext(AppDispatchers.io) { sizeOf(book) }
                 decide(activity, book, page, bytes, threshold)
             } finally {
                 looking -= activity
             }
         }
+    }
+
+    /** [book]'s size, asked of its share when not known; 0 when that fails. Off the main thread. */
+    private fun sizeOf(book: RemoteFile): Long =
+        book.length().takeIf { it > 0 } ?: runCatching { book.fresh()?.takeIf { !it.isDirectory }?.size ?: 0L }.getOrDefault(0L)
+
+    /**
+     * True when opening [book] now would ask first ([check]), so nothing opens it unasked (the
+     * next chapter opened ahead waits to be reached). Off the main thread.
+     */
+    fun wouldAsk(prefs: Prefs, book: File): Boolean {
+        if (book !is RemoteFile || !prefs.meteredWarn || Metered.now() != Metered.Verdict.METERED) return false
+        return needed(remote = true, metered = true, enabled = true, thresholdMb = prefs.meteredWarnMb, bytes = sizeOf(book))
     }
 
     private fun <A> decide(activity: A, book: File, page: Int, bytes: Long, threshold: Int) where A : FragmentActivity, A : Host {

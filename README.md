@@ -906,11 +906,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   of the app's threads (per-thread CPU time from `/proc/self/task`; not
   calibration's own, the UI's or the runtime's housekeeping) used over a tenth
   of a core, is made again; CPU times leave out the UI threads. Of the setups
-  within 20% of the fastest, the one using the least CPU time weighed by core
-  capacity wins: native bands and JPEG XL threads charge their own CPU time to
-  the core they run on at each band or group (`core_ledger.c`), and a ms on a
-  core counts its `cpu_capacity`/1024, as on chips with large and little
-  cores raw CPU time overstates what the little ones cost. The
+  within 20% of the fastest, the one using the least CPU time weighed by the
+  cores it ran on wins: native bands and JPEG XL threads charge their own CPU
+  time to the core they run on at each band or group (`core_ledger.c`), and a
+  ms on a core counts the square of its `cpu_capacity`/1024, as on chips with
+  large and little cores raw CPU time overstates what the little ones cost
+  (squared capacity matches a battery measurement on a 2 large + 6 little chip,
+  where 8 JPEG XL threads used 19% less energy than the 2 large cores for 2.1x
+  the CPU time; capacity alone would have picked the large cores). The
   GPU wins only when more than 20% faster than every CPU setup, since its own
   power is not measured. Differences within the runs' spread count as none,
   so the setup in effect stays; a resampling setup an earlier calibration

@@ -79,8 +79,8 @@ data class Candidate(val kind: Kind, val threads: Int, val pinned: Boolean, val 
 }
 
 /**
- * The median wall and CPU time of [candidate] over its runs, its CPU time weighed by core
- * capacity ([weightedMs], [Calibration.weighted]), and how far its runs stray ([Calibration.spread]).
+ * The median wall and CPU time of [candidate] over its runs, its CPU time weighed by the
+ * cores it ran on ([weightedMs], [Calibration.weighted]), and how far its runs stray ([Calibration.spread]).
  */
 data class Timing(
     val candidate: Candidate,
@@ -95,7 +95,7 @@ data class Timing(
         .put("wallSpreadMs", wallSpreadMs).put("cpuSpreadMs", cpuSpreadMs).put("weightedMs", weightedMs).put("weightedSpreadMs", weightedSpreadMs)
 }
 
-/** One run of a setup: its wall time, CPU time and CPU time weighed by core capacity ([Calibration.weighted]), in ms. */
+/** One run of a setup: its wall time, CPU time and CPU time weighed by the cores it ran on ([Calibration.weighted]), in ms. */
 data class RunTime(val wallMs: Double, val cpuMs: Double, val weightedMs: Double = cpuMs)
 
 /**
@@ -107,7 +107,7 @@ data class RunTime(val wallMs: Double, val cpuMs: Double, val weightedMs: Double
 object Calibration {
     /**
      * Setups within this share of the fastest wall time count as fast; the one of those
-     * using the least CPU time weighed by core capacity ([weighted]) wins, since battery
+     * using the least CPU time weighed by the cores it ran on ([weighted]) wins, since battery
      * matters as much as speed. JPEG XL on synthetic pages on a tablet with 4 large and 4
      * little cores: 8 threads on any core decode about 10 % faster than 4 on the large ones,
      * for 40-60 % more CPU time.
@@ -115,20 +115,19 @@ object Calibration {
     const val TOLERANCE = 0.20
 
     /** Bumped whenever the setups timed or the method change: every device then calibrates again ([fingerprint]). */
-    const val VERSION = 2
+    const val VERSION = 3
 
     /**
-     * [cpuMs] weighed by the capacity of the cores it ran on, as an energy proxy: each core's
-     * share of the time the core ledger counted ([coreNs], ns by core number) times its
-     * `cpu_capacity` ([capacities]) over the fastest's, so a ms on a little core of capacity
-     * 261 counts 261/1024 of one on the fastest core. Raw CPU time is the wrong proxy on chips
-     * with large and little cores: there a decode spread over the little cores too can use
-     * less energy than one on the large cores alone, for far more CPU time. The ledger counts the threads doing the timed work (native resampling bands,
-     * JPEG XL decodes and their workers), each charging its CPU time between ticks (a band, a
-     * JPEG XL group) to the core it is on at the tick, so unpinned threads are followed
-     * wherever the system moves them; the rest of [cpuMs] (the runtime, glue code) is taken
-     * to run where they did. [cpuMs] as is where capacities are unknown or the ledger counted
-     * nothing (platform decodes).
+     * [cpuMs] weighed by the cores it ran on, as an energy proxy: each core's share of the
+     * time the core ledger counted ([coreNs], ns by core number) times its [coreWeight] (from
+     * its `cpu_capacity`, [capacities]). Raw CPU time is the wrong proxy on chips with large
+     * and little cores: there a decode spread over the little cores too can use less energy
+     * than one on the large cores alone, for far more CPU time. The ledger counts the threads
+     * doing the timed work (native resampling bands, JPEG XL decodes and their workers), each
+     * charging its CPU time between ticks (a band, a JPEG XL group) to the core it is on at the
+     * tick, so unpinned threads are followed wherever the system moves them; the rest of
+     * [cpuMs] (the runtime, glue code) is taken to run where they did. [cpuMs] as is where
+     * capacities are unknown or the ledger counted nothing (platform decodes).
      */
     fun weighted(cpuMs: Double, coreNs: LongArray, capacities: IntArray): Double {
         val top = capacities.maxOrNull()?.takeIf { it > 0 } ?: return cpuMs
@@ -137,9 +136,27 @@ object Calibration {
         for (n in coreNs.indices) {
             val ns = coreNs[n].coerceAtLeast(0L).toDouble()
             total += ns
-            weighed += ns * (capacities.getOrNull(n)?.takeIf { it > 0 } ?: top) / top
+            weighed += ns * coreWeight(capacities.getOrNull(n)?.takeIf { it > 0 } ?: top, top)
         }
         return if (total <= 0.0) cpuMs else cpuMs * weighed / total
+    }
+
+    /**
+     * What a ms of CPU time on a core of [capacity] costs against one on the fastest core
+     * ([top]), as energy: the square of their capacities' ratio. A core's power grows faster
+     * than its speed (larger cores spend more transistors on each instruction, higher clocks
+     * need higher voltage, and dynamic power goes with clock times voltage squared). Fitted to
+     * the one measurement on battery alone: on a chip with 2 large cores (capacity 1024) and 6
+     * little ones (435), JPEG XL decodes on 8 threads used 19 % less energy per page than on
+     * the 2 large cores, for 2.1x the CPU time. With that CPU time spread evenly over the 8
+     * cores, squared capacity gives 2.1 x (0.25 + 0.75 x 0.18) = 0.81 of the large cores'
+     * cost; capacity alone (a little ms 0.42 of a large one) gives 1.19 and picks the large
+     * cores, the wrong choice there. Squared, 8 threads cost less once over 64 % of their CPU
+     * time is on the little cores; where both cluster sizes run flat out it is 71 % there.
+     */
+    fun coreWeight(capacity: Int, top: Int): Double {
+        val r = capacity.toDouble() / top
+        return r * r
     }
 
     /**

@@ -297,10 +297,10 @@ class CalibrationTest {
         val caps = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)
         // All on the fastest core: as is.
         assertEquals(100.0, Calibration.weighted(100.0, longArrayOf(0, 0, 0, 0, 0, 0, 0, 5_000_000), caps), 1e-9)
-        // All on little cores: 261/1024 of it.
-        assertEquals(25.48828125, Calibration.weighted(100.0, longArrayOf(1_000_000, 1_000_000, 0, 0, 0, 0, 0, 0), caps), 1e-9)
+        // All on little cores: (261/1024)^2 of it.
+        assertEquals(100.0 * (261.0 / 1024) * (261.0 / 1024), Calibration.weighted(100.0, longArrayOf(1_000_000, 1_000_000, 0, 0, 0, 0, 0, 0), caps), 1e-9)
         // Half little, half on a middle core.
-        assertEquals(100.0 * (0.5 * 261 + 0.5 * 805) / 1024, Calibration.weighted(100.0, longArrayOf(3, 0, 0, 0, 0, 3, 0, 0), caps), 1e-9)
+        assertEquals(100.0 * (0.5 * Calibration.coreWeight(261, 1024) + 0.5 * Calibration.coreWeight(805, 1024)), Calibration.weighted(100.0, longArrayOf(3, 0, 0, 0, 0, 3, 0, 0), caps), 1e-9)
         // Nothing counted, or capacities unknown: as is.
         assertEquals(100.0, Calibration.weighted(100.0, LongArray(8), caps), 0.0)
         assertEquals(100.0, Calibration.weighted(100.0, longArrayOf(5, 5), IntArray(0)), 0.0)
@@ -310,13 +310,24 @@ class CalibrationTest {
 
     @Test
     fun weighedCpuTimeBreaksTiesSoLittleCoresCanWin() {
-        // A chip with 2 large and 6 little cores: 8 threads 300 ms for 1.7x the CPU time of 2 large cores at 360 ms,
-        // three quarters of it on little cores of capacity 435: weighed, 8 threads cost less.
-        val two = Timing(jxl(2, true), 360.0, 700.0, weightedMs = 700.0)
-        val eight = Timing(jxl(8, false), 300.0, 1200.0, weightedMs = 1200.0 * (0.25 + 0.75 * 435 / 1024))
-        // Raw CPU time would pick the large cores.
-        assertEquals(jxl(2, true), Calibration.pick(listOf(two.copy(weightedMs = 700.0), eight.copy(weightedMs = 1200.0)))!!.candidate)
-        assertEquals(jxl(8, false), Calibration.pick(listOf(two, eight))!!.candidate)
+        // The measured chip: 6 little cores (capacity 435) and 2 large ones (1024). On battery alone, JPEG XL on 8 threads
+        // used 19 % less energy per page than on the 2 large cores, for 2.1x the CPU time (970 against 2070 ms a page).
+        val caps = intArrayOf(435, 435, 435, 435, 435, 435, 1024, 1024)
+        fun spread(littleShare: Double) = LongArray(8) { if (it < 6) (littleShare / 6 * 1e9).toLong() else ((1 - littleShare) / 2 * 1e9).toLong() }
+        val bigOnly = longArrayOf(0, 0, 0, 0, 0, 0, 500_000_000, 500_000_000)
+        // Walls made close, so the tie-break decides (measured, 8 threads were 38 % faster and won outright).
+        fun two() = Timing(jxl(2, true), 330.0, 970.0, weightedMs = Calibration.weighted(970.0, bigOnly, caps))
+        fun eight(littleShare: Double) = Timing(jxl(8, false), 300.0, 2070.0, weightedMs = Calibration.weighted(2070.0, spread(littleShare), caps))
+        // CPU time spread evenly over the 8 cores (3/4 on the little ones): weighed, 8 threads cost 0.81 of the large cores, as measured.
+        assertEquals(0.81, eight(0.75).weightedMs / two().weightedMs, 0.02)
+        assertEquals(jxl(8, false), Calibration.pick(listOf(two(), eight(0.75)))!!.candidate)
+        // Both clusters flat out for the 302 ms a page took: 604 of the 2070 ms on the large cores; 8 threads still win.
+        assertEquals(jxl(8, false), Calibration.pick(listOf(two(), eight(1 - 604.0 / 2070)))!!.candidate)
+        // Raw CPU time would pick the large cores; so would capacity alone (2.1 x (0.25 + 0.75 x 0.42) = 1.19).
+        assertEquals(jxl(2, true), Calibration.pick(listOf(two().copy(weightedMs = 970.0), eight(0.75).copy(weightedMs = 2070.0)))!!.candidate)
+        assertTrue(2070.0 * (0.25 + 0.75 * 435 / 1024) > 970.0)
+        // With most of the time on the large cores, 8 threads cost more and lose.
+        assertEquals(jxl(2, true), Calibration.pick(listOf(two(), eight(0.5)))!!.candidate)
         // Among setups both fast, the lesser weighed CPU time wins even with more raw CPU time.
         val a = Timing(jxl(4, true), 100.0, 300.0, weightedMs = 280.0)
         val b = Timing(jxl(8, false), 95.0, 400.0, weightedMs = 220.0)

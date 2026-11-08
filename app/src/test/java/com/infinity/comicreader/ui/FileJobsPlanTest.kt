@@ -126,6 +126,20 @@ class FileJobsPlanTest {
     }
 
     @Test
+    fun foldersPastTheListingBudgetTellTheirBytesOnlyAndNothingIsReadOnceNotAlive() {
+        val dir = tmp.newFolder("Loose")
+        repeat(3) { File(dir, "0$it.jpg").writeBytes(jpeg(it)) }
+        val listed = jobs.planFolders(listOf(dir.absolutePath)).single()
+        assertEquals(3, listed.pages!!.size)
+        val past = jobs.planFolders(listOf(dir.absolutePath), listMs = -1).single()
+        assertNull(past.pages)
+        assertEquals(listed.bytes, past.bytes)
+        val stopped = jobs.planFolders(listOf(dir.absolutePath), alive = { false }).single()
+        assertNull(stopped.done)
+        assertEquals(0L, stopped.bytes)
+    }
+
+    @Test
     fun nothingIsReadOnceNotAlive() {
         val plans = jobs.planBooks(listOf(book("A.cbz").absolutePath), FileJobs.Rebuild.COMPACT, alive = { false })
         assertNull(plans.single().done)

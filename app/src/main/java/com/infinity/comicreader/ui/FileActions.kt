@@ -213,16 +213,20 @@ internal class FileActions(
         val message = activity.getString(if (folders.size == 1) R.string.pack_message_one else R.string.pack_message) +
             if (compacted) "\n\n" + activity.getString(R.string.compact_warning) else ""
         val view = activity.layoutInflater.inflate(R.layout.dialog_estimate, null)
-        TimeText.show(view.findViewById(R.id.convert_estimate), activity.lifecycleScope, jobs.forecastPack(folders.map { it.absolutePath }, compacted))
+        // Folders are listed for it only while the dialog shows.
+        val asked = AtomicBoolean(true)
+        TimeText.show(view.findViewById(R.id.convert_estimate), activity.lifecycleScope, jobs.forecastPack(folders.map { it.absolutePath }, compacted) { asked.get() })
         AlertDialog.Builder(activity)
             .setTitle(title)
             .setMessage(message)
             .setView(view)
             .setPositiveButton(if (compacted) R.string.more_pack_compacted else R.string.more_pack) { _, _ ->
+                asked.set(false)
                 onConfirmed()
                 activity.lifecycleScope.launch { planPack(folders, compacted) }
             }
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> asked.set(false) }
+            .setOnCancelListener { asked.set(false) }
             .show()
     }
 

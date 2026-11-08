@@ -305,21 +305,39 @@ internal class FileJobs(
         }
     }
 
-    /** What is known of the folders at [folders] to pack: their images and the files packed with them. Blocking. */
-    fun planFolders(folders: List<String>): List<BookPlan> = folders.map { path ->
+    /**
+     * What is known of the folders at [folders] to pack: for as long as [listMs] lasts, their
+     * images and the files packed with them; past it, only the bytes of the files in them.
+     * Stops reading once not [alive]. Blocking.
+     */
+    fun planFolders(folders: List<String>, alive: () -> Boolean = { true }, listMs: Long = PLAN_MS): List<BookPlan> {
+        val start = System.nanoTime()
+        return folders.map { path ->
+            val location = ConvertRates.location(path)
+            when {
+                !alive() -> BookPlan(0, location, Container.FOLDER, done = null)
+                System.nanoTime() - start > listMs * 1_000_000 ->
+                    BookPlan(File(path).listFiles()?.sumOf { if (it.isFile) it.length() else 0L } ?: 0L, location, Container.FOLDER)
+                else -> planFolder(path)
+            }
+        }
+    }
+
+    /** What is known of the folder at [path] to pack: its images and the files packed with them. */
+    private fun planFolder(path: String): BookPlan {
         val contents = PackFolders.of(File(path))
         val files = contents.images + contents.extras
         val pages = contents.images.map { PagePlan(ConvertEstimate.formatOf(it.name), it.length()) }
-        BookPlan(files.sumOf { it.length() }, ConvertRates.location(path), Container.FOLDER, pages)
+        return BookPlan(files.sumOf { it.length() }, ConvertRates.location(path), Container.FOLDER, pages)
     }
 
     /** The seconds rebuilding each of [paths] as [how] takes ([ConvertEstimate]), worked out beside the queue, listing while [alive]. */
     fun forecast(paths: List<String>, how: Rebuild, alive: () -> Boolean = { true }): CompletableFuture<List<Double>> =
         CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(how.op, planBooks(paths, how, alive)) }, AppDispatchers.io.asExecutor())
 
-    /** The seconds packing each of [folders] takes, [compacted] or not, worked out beside the queue. */
-    fun forecastPack(folders: List<String>, compacted: Boolean): CompletableFuture<List<Double>> =
-        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(packOp(compacted), planFolders(folders)) }, AppDispatchers.io.asExecutor())
+    /** The seconds packing each of [folders] takes, [compacted] or not, worked out beside the queue, listing while [alive]. */
+    fun forecastPack(folders: List<String>, compacted: Boolean, alive: () -> Boolean = { true }): CompletableFuture<List<Double>> =
+        CompletableFuture.supplyAsync({ ConvertEstimate(ConvertRates.get(app)).forecast(packOp(compacted), planFolders(folders, alive)) }, AppDispatchers.io.asExecutor())
 
     /** Tells [p] the plan [forecast] gives, else the one [make] works out now; nothing when neither can. */
     private fun plan(p: FileWork.Progress, forecast: Future<List<Double>>?, make: () -> List<Double>) {
@@ -477,7 +495,7 @@ internal class FileJobs(
         val pages = if (compacted) pageWork() ?: return FileWork.Outcome.Failed(IOException("JPEG XL is not available"), 0, plans.size) else null
         val rates = ConvertRates.get(app)
         val op = packOp(compacted)
-        plan(p, null) { ConvertEstimate(rates).forecast(op, planFolders(plans.map { it.folder })) }
+        plan(p, null) { ConvertEstimate(rates).forecast(op, planFolders(plans.map { it.folder }, alive = { p.alive })) }
         val seen = settled(chosen)
         val scratch = File(app.cacheDir, SCRATCH).apply { deleteRecursively(); mkdirs() }
         val workers = CompactWorkers.max()

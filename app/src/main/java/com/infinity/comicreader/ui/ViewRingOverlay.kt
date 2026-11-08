@@ -114,6 +114,11 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
     private val density get() = activity.resources.displayMetrics.density
 
+    /** The system bars' and display cutout's insets over a view in the window; tests stand in their own. */
+    internal var barInsets: (View) -> Insets = { v ->
+        ViewCompat.getRootWindowInsets(v)?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()) ?: Insets.NONE
+    }
+
     /** Opens the ring around [fab] with [items], from the top of the arc inward. */
     fun open(fab: View, items: List<Item>) {
         if (isOpen) return
@@ -320,8 +325,7 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The overlay's room for the ring: inside the system bars and display cutout, [MARGIN_DP] in; [origin] is [host]'s place in the window. */
     private fun bounds(host: View, origin: IntArray): RingGeometry.Box {
         val m = MARGIN_DP * density
-        val bars = ViewCompat.getRootWindowInsets(host)
-            ?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()) ?: Insets.NONE
+        val bars = barInsets(host)
         val window = host.rootView
         val left = maxOf(0, bars.left - origin[0])
         val top = maxOf(0, bars.top - origin[1])

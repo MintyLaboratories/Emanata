@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.appcompat.app.AlertDialog
+import androidx.core.graphics.Insets
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -109,7 +110,12 @@ class ListActivityViewRingTest {
 
     private fun ListActivity.recycler(): RecyclerView = findViewById(R.id.recycler)
 
+    /** A status bar and side cutouts the ring keeps clear of, in px. */
+    private val ListActivity.bars: Insets
+        get() = resources.displayMetrics.density.let { d -> Insets.of((24 * d).toInt(), (32 * d).toInt(), (24 * d).toInt(), 0) }
+
     private fun ListActivity.openRing() {
+        viewRing.barInsets = { bars }
         assertTrue(fab().performLongClick())
         settle(300)
         assertTrue(viewRing.isOpen)
@@ -158,9 +164,9 @@ class ListActivityViewRingTest {
         return RingGeometry.Box(at[0].toFloat(), at[1].toFloat(), (at[0] + v.width).toFloat(), (at[1] + v.height).toFloat())
     }
 
-    /** Every label shows whole on screen, clear of every round button, the hub and each other. */
+    /** Every label shows whole on screen inside the bars, clear of every round button, the hub and each other. */
     private fun ListActivity.assertLabelsClear(tab: String) {
-        val screen = box(window.decorView)
+        val screen = box(window.decorView).let { RingGeometry.Box(it.left + bars.left, it.top + bars.top, it.right - bars.right, it.bottom - bars.bottom) }
         val round = (ViewRing.options(tab, prefs.ringOptions).map { viewRing.button(it)!! } + viewRing.hub()!!).map { b ->
             center(b).let { (x, y) -> Triple(x, y, b.width / 2f) }
         }

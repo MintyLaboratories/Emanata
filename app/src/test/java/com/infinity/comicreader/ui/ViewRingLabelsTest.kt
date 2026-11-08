@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Environment
 import android.os.Looper
 import android.view.View
+import androidx.core.graphics.Insets
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -34,7 +35,7 @@ import java.time.Duration
 
 /**
  * The view ring's longest labels, measured with real text: whole (no "…"), the value on at
- * most two lines, clear of every button, the hub, each other and the system bars, at font
+ * most two lines, clear of every button, the hub, each other and (stood-in) system bars, at font
  * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -74,6 +75,9 @@ class ViewRingLabelsTest {
         return RingGeometry.Box(at[0].toFloat(), at[1].toFloat(), (at[0] + v.width).toFloat(), (at[1] + v.height).toFloat())
     }
 
+    /** A status bar and side cutouts the ring must keep clear of (the floating button sits above the bottom). */
+    private fun bars(list: ListActivity): Insets = (list.resources.displayMetrics.density).let { d -> Insets.of((24 * d).toInt(), (32 * d).toInt(), (24 * d).toInt(), 0) }
+
     private fun center(v: View): Triple<Float, Float, Float> = box(v).let { Triple((it.left + it.right) / 2, (it.top + it.bottom) / 2, v.width / 2f) }
 
     /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label, and that the radius is at most [most] times the one asked for. */
@@ -84,13 +88,15 @@ class ViewRingLabelsTest {
         prefs.leftHanded = left
         val list = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         settle()
+        val bars = bars(list)
+        list.viewRing.barInsets = { bars }
         val fab = list.findViewById<FloatingActionButton>(R.id.fab)
         assertTrue(what, fab.performLongClick())
         settle()
         val ring = list.viewRing
         val options = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)
         assertEquals(what, count, options.size)
-        val screen = box(list.window.decorView)
+        val screen = box(list.window.decorView).let { RingGeometry.Box(it.left + bars.left, it.top + bars.top, it.right - bars.right, it.bottom - bars.bottom) }
         val want = RingGeometry.radius(options.size, 75f, 91f) * list.resources.displayMetrics.density
         assertTrue("$what: radius ${ring.ringRadius / want} of the one asked for", ring.ringRadius <= want * most + 0.5f)
         val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
@@ -105,10 +111,13 @@ class ViewRingLabelsTest {
             for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
             for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
         }
-        // A tap changes values in place; the labels still fit.
+        // A tap changes values in place; the labels still fit, clear of the bars.
         ring.button(RingOption.SORT)!!.performClick()
         settle()
-        for ((o, label) in labels) for (line in 0 until label.layout.lineCount) assertEquals("$what, after a tap: $o whole", 0, label.layout.getEllipsisCount(line))
+        for ((o, label) in labels) {
+            for (line in 0 until label.layout.lineCount) assertEquals("$what, after a tap: $o whole", 0, label.layout.getEllipsisCount(line))
+            assertTrue("$what, after a tap: $o on $screen", box(label).within(screen))
+        }
         ring.close(animate = false)
     }
 

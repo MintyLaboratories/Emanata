@@ -3,7 +3,6 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import com.infinity.comicreader.data.RetiredFiles
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -199,8 +198,11 @@ class ModelImportsTest {
         store.root.mkdirs()
         File(store.root, ModelImports.CHECKING).writeText("Heavy one")
         File(store.root, "dropped-model").mkdirs()
-        RetiredFiles.drop(context)
+        val offered = store.dir(ModelCatalog.all.first()).apply { mkdirs() }
+        File(offered, "part.bin.part").writeText("x")
+        ModelImports.tidy(store)
         assertFalse("the store is cleaned", File(store.root, "dropped-model").exists())
+        assertTrue("a model offered stays", File(offered, "part.bin.part").exists())
         assertEquals("Heavy one", ModelImports.crashed(context))
         assertNull(ModelImports.crashed(context))
     }

@@ -231,6 +231,15 @@ object ModelImports {
         marker.delete()
     }
 
+    /**
+     * At start: reads the marker of a check that ended the app ([recover]), then deletes
+     * models the catalog no longer has and what imports left ([ModelStore.prune]). Blocking.
+     */
+    fun tidy(store: ModelStore) {
+        recover(store)
+        store.prune()
+    }
+
     /** The name of a model whose check ended the app, once; null for none. Blocking. */
     @Synchronized
     fun crashed(context: Context): String? {

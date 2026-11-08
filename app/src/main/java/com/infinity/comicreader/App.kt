@@ -4,13 +4,13 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.appcompat.app.AppCompatDelegate
+import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.ProcessedStore
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
-import com.infinity.comicreader.data.RetiredFiles
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
@@ -64,12 +64,12 @@ class App : Application() {
     }
 
     /**
-     * Drops temporary files left by earlier runs and files of earlier versions, and keeps
+     * Drops temporary files left by earlier runs and models no longer offered, and keeps
      * the cover, page-preview, page-size, seam, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
         thread(name = "cache-cleanup", isDaemon = true) {
-            runCatching { RetiredFiles.drop(this@App) }
+            runCatching { ModelImports.tidy(ModelStore.of(this@App)) }
             runCatching {
                 // Only files that are clearly stale: a document another app just handed us
                 // may be copied into the cache while this thread runs.

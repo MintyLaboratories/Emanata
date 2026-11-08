@@ -101,6 +101,10 @@
             android:name=".ui.CleanupActivity"
             android:label="@string/menu_dupes" />
 
+        <!-- Calibration runs behind it: Back does not leave while it runs. -->
+        <activity
+            android:name=".ui.CalibrationScreenActivity"
+            android:launchMode="singleTop" />
         <activity
             android:name=".ui.MissingBooksActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"

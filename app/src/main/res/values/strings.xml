@@ -963,6 +963,53 @@
     <string name="battery_saver">Battery saver</string>
     <string name="battery_saver_on">On: what is switched on below is held back</string>
     <string name="battery_saver_off">Off: nothing is held back</string>
+    <!-- Calibration screen and its offers -->
+    <string name="pref_cat_performance">Performance</string>
+    <string name="pref_recalibrate">Recalibrate</string>
+    <string name="pref_recalibrate_desc">Time how fast this device decodes and resizes pages again, and pick the fastest setup that spares the battery (about %1$d s)</string>
+    <string name="calibration_page">A comic page whose gutters shift one at a time</string>
+    <string name="calibration_title">Optimizing for this device</string>
+    <string name="calibration_text">Timing how fast this device decodes and resizes pages, so reading stays quick without wasting battery. About %1$d seconds.</string>
+    <string name="calibration_getting_ready">Getting ready</string>
+    <string name="calibration_round">Round %1$d of %2$d</string>
+    <string name="calibration_keep">Keep old calibration</string>
+    <string name="calibration_background">Continue in background</string>
+    <string name="calibration_saver_title">Battery saver is on</string>
+    <string name="calibration_saver_text">Battery saver slows the processor, which would skew the timings. Switch it off for the run, or measure anyway: a run under battery saver is replaced by the next one without it.</string>
+    <string name="calibration_saver_settings">Open battery saver settings</string>
+    <string name="calibration_saver_anyway">Measure anyway</string>
+    <string name="calibration_hot_title">Too warm to measure</string>
+    <string name="calibration_hot_text">This device is warm, which would skew the timings. Try again once it has cooled down.</string>
+    <string name="calibration_low_title">Battery low</string>
+    <string name="calibration_low_text">Measuring needs at least %1$d %% battery. Try again once it is charged.</string>
+    <string name="calibration_failed_title">Could not finish</string>
+    <string name="calibration_failed_hot">The device got too warm while measuring.</string>
+    <string name="calibration_failed_busy">Measuring could not finish this time.</string>
+    <string name="calibration_kept_previous">The previous settings stay in use; you will be asked again next time.</string>
+    <string name="calibration_kept_defaults">Standard settings stay in use; you will be asked again next time.</string>
+    <string name="calibration_banner">Optimize for this device (~%1$d s)</string>
+    <string name="calibration_banner_start">Start</string>
+    <string name="calibration_banner_later">Later</string>
+    <string name="calibration_banner_skip">Skip</string>
+    <string name="setup_resize_gpu">Resizing on the GPU</string>
+    <string name="setup_jpeg_big">JPEG on big cores</string>
+    <string name="setup_jpeg_any">JPEG on any core</string>
+    <plurals name="setup_resize_big">
+        <item quantity="one">Resizing on %1$d big core</item>
+        <item quantity="other">Resizing on %1$d big cores</item>
+    </plurals>
+    <plurals name="setup_resize_any">
+        <item quantity="one">Resizing on %1$d core</item>
+        <item quantity="other">Resizing on %1$d cores</item>
+    </plurals>
+    <plurals name="setup_jxl_big">
+        <item quantity="one">JPEG XL on %1$d big core</item>
+        <item quantity="other">JPEG XL on %1$d big cores</item>
+    </plurals>
+    <plurals name="setup_jxl_any">
+        <item quantity="one">JPEG XL on %1$d core</item>
+        <item quantity="other">JPEG XL on %1$d cores</item>
+    </plurals>
     <string name="pref_saver_covers">Covers from the first layer only</string>
     <string name="pref_saver_covers_desc">While battery saver is on, covers of layered images stay at their quick first layer</string>
     <string name="pref_saver_read_ahead">Read fewer pages ahead</string>

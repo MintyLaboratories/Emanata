@@ -497,6 +497,35 @@ object Calibration {
     /** The longest a calibration run waits for fair moments in all before it tries another time. */
     const val GIVE_UP_MS = 120_000L
 
+    /**
+     * Rest before each sample, in ms. A run's own load makes the system lower the large
+     * cores' clock caps within a fraction of a second, at thermal status 0 (a power limit),
+     * so samples back to back time setups slower and unevenly. On a tablet with 4 large and 4
+     * little cores (Snapdragon 8 Gen 1 class, Android 16), against 300 ms of rest (3 runs
+     * each): with none, JPEG XL on the large cores took 1.14x as long and resampling there
+     * went from 0.99x to 1.14x the time of 8 threads on any core, close to [TOLERANCE]; with
+     * 100 ms every setup but one stayed within 5 % (JPEG XL on the large cores 6 % slower) and
+     * the ratios that decide picks within noise, for two thirds of the time (21 instead of 31
+     * s). Caps fell during 39, 25 and 5 of 50 samples with 0, 100 and 300 ms ([capped]).
+     */
+    const val REST_MS = 100L
+
+    /**
+     * True when a CPU frequency domain may now run slower than it could earlier in the run:
+     * its clock cap in [now] ([ClockCaps]) is below the highest seen ([top]). False when
+     * either is unknown or they differ in count. Calibration counts samples a cap fell
+     * during; it cannot redo or end them, as its own load lowers caps ([REST_MS]).
+     */
+    fun capped(top: IntArray?, now: IntArray?): Boolean =
+        top != null && now != null && top.size == now.size && now.indices.any { now[it] < top[it] }
+
+    /** [top] raised to [now] wherever [now] is higher; [now] while there is no [top], [top] while [now] is unknown. */
+    fun raised(top: IntArray?, now: IntArray?): IntArray? = when {
+        now == null -> top
+        top == null || top.size != now.size -> now.copyOf()
+        else -> IntArray(top.size) { maxOf(top[it], now[it]) }
+    }
+
     /** The longest a run tries at its start for the app to go idle ([IdleChecks]) before it waits as for any sample. */
     const val SETTLE_MS = 3_000L
 

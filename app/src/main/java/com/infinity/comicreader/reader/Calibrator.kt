@@ -24,6 +24,7 @@ import com.awxkee.jxlcoder.JxlCompressionOption
 import com.awxkee.jxlcoder.JxlDecodingSpeed
 import com.awxkee.jxlcoder.JxlEffort
 import com.infinity.comicreader.compact.LibJxl
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -37,7 +38,8 @@ import kotlin.concurrent.thread
  * calibration version ([Calibration.VERSION]), while the app is in front but not reading
  * ([Reading]), charging, cool, out of battery saver and otherwise idle, it times
  * resampling, JPEG XL decoding and platform JPEG decoding setups on synthetic pages and
- * keeps the winners ([Tuning]) in a file that is not backed up. It starts once the app is
+ * keeps the winners ([Tuning]) in a file that is not backed up. Each sample follows a short
+ * rest ([Calibration.REST_MS]), as page decodes at reading pace do. It starts once the app is
  * idle (waiting [Calibration.SETTLE_MS] at most before it waits as for any sample), then draws
  * and encodes its pages, off the timed path. A timing during which the app decoded anything ([working]) or another
  * of its threads used the CPU ([Calibration.othersBusy]) is made again; the app's drawing
@@ -181,10 +183,10 @@ object Calibrator {
     /**
      * [recalibrate] with each sample the median of [burst] runs, after an untimed one when
      * [warm], only in the first round when [warmOnce], and ending once the winners stay the
-     * same when [early] ([CalibrationRun]), [gapMs] idle before each sample: debug builds
-     * compare run shapes with it. Kept with the result.
+     * same when [early] ([CalibrationRun]), [gapMs] of rest before each sample
+     * ([Calibration.REST_MS]): debug builds compare run shapes with it. Kept with the result.
      */
-    fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = 0) {
+    fun recalibrate(burst: Int, warm: Boolean, warmOnce: Boolean = false, early: Boolean = false, gapMs: Long = Calibration.REST_MS) {
         shape = Shape(burst.coerceIn(1, 9), warm, warmOnce, early, gapMs.coerceIn(0, 5_000))
         begin(force = true)
     }
@@ -195,7 +197,7 @@ object Calibrator {
         val warm: Boolean = true,
         val warmOnce: Boolean = false,
         val early: Boolean = false,
-        val gapMs: Long = 0
+        val gapMs: Long = Calibration.REST_MS
     )
 
     /** How forced runs sample. */
@@ -287,6 +289,7 @@ object Calibrator {
                 .put("page", probe.page).put("target", probe.target).put("jpegPage", probe.jpegPage)
                 .put("burst", s.burst).put("warm", s.warm).put("warmOnce", s.warmOnce).put("early", s.early).put("gapMs", s.gapMs)
                 .put("rounds", run.roundsRun).put("redone", run.redone).put("disturbedBy", JSONObject(probe.disturbedBy as Map<*, *>))
+                .put("cappedSamples", probe.cappedSamples).put("capsKHz", probe.caps?.let { JSONArray(it.toList()) })
             kept = record
             val out = file(app)
             val tmp = File(out.path + ".tmp")
@@ -337,7 +340,7 @@ object Calibrator {
         private val force: Boolean,
         private val dropped: () -> Boolean,
         private val pageFingerprint: String,
-        private val gapMs: Long = 0
+        private val gapMs: Long = Calibration.REST_MS
     ) : CalibrationProbe {
         @Volatile private var src: Bitmap? = null
         @Volatile private var dst: Bitmap? = null
@@ -384,6 +387,19 @@ object Calibrator {
 
         /** How often each of the app's other threads disturbed a sample most, by name. */
         val disturbedBy = HashMap<String, Int>()
+
+        private val clockCaps = ClockCaps.device()
+
+        /** The highest clock caps seen during the run, in kHz by frequency domain ([Calibration.raised]); null where they cannot be read. */
+        var caps: IntArray? = null
+            private set
+
+        /** True once a clock cap fell during the sample in progress ([Calibration.capped]). */
+        private var cappedNow = false
+
+        /** Samples during which a clock cap fell. */
+        var cappedSamples = 0
+            private set
 
         /** Time spent waiting for fair moments so far. */
         private var waitedMs = 0L
@@ -543,6 +559,9 @@ object Calibrator {
             val wall = (System.nanoTime() - t0) / 1e6
             val cpu = (cpuMs() - cpu0).coerceAtLeast(0.0)
             val coreNs = if (LibPixels.loaded) LibPixels.ledgerNs(coreCount) else LongArray(0)
+            val now = clockCaps.read()
+            if (Calibration.capped(caps, now)) cappedNow = true
+            caps = Calibration.raised(caps, now)
             return RunTime(wall, cpu, Calibration.weighted(cpu, coreNs, cores.capacities))
         }
 
@@ -570,6 +589,7 @@ object Calibrator {
 
         /** A sample begins: what it is checked against ([stillFair]) is taken now. */
         private fun begin() {
+            cappedNow = false
             workedBefore = worked.get()
             if (LibPixels.loaded) LibPixels.ledgerThreads()
             tasksBefore = tasks.snapshot()
@@ -584,6 +604,7 @@ object Calibrator {
 
         /** Nothing held, left, read or decoded since the sample began, nothing to wait out, and the app's other threads quiet. */
         override fun stillFair(): Boolean {
+            if (cappedNow) cappedSamples++
             refresh()
             val fair = holds.get() == 0 && inFront() && worked.get() == workedBefore && hindrance() == null && othersQuiet()
             if (!fair) idleChecks.disturbed()

@@ -899,6 +899,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   threads, on a synthetic 2000x3000 page, and platform JPEG decodes pinned and
   not on a synthetic 4000x6000 one. It starts once the app is idle (waiting 3 s
   at most), then draws and encodes its pages on a thread of their own;
+  each sample follows 100 ms of rest, as decodes at reading pace do (back to
+  back, the run's own load lowers the large cores' clock caps and skews setups
+  unevenly);
   heat is checked before timing starts (thermal status, or battery temperature
   where there is no thermal HAL: 40 °C counts as light, 42 °C as moderate
   throttling) and ends a run that heats up. Pages read ahead get the same

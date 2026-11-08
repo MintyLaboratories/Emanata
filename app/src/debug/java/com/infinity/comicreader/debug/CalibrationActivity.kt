@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.JxlPages
@@ -23,13 +24,14 @@ import kotlin.concurrent.thread
  * the shell may start it:
  *
  * `adb shell am start -n <package>/com.infinity.comicreader.debug.CalibrationActivity [--es do recalibrate]
- *  [--ei burst 3] [--ez warm true] [--ez warmOnce false] [--ez early false] [--el gapMs 0] [--ez noise false]`
+ *  [--ei burst 3] [--ez warm true] [--ez warmOnce false] [--ez early false] [--el gapMs 100] [--ez noise false]`
  *
  * `burst` and `warm` shape a recalibration's samples (runs per sample, an untimed run before
  * them), to compare against the default (3, true); `warmOnce` warms only in the first round,
- * `early` ends the run once the winners stay the same (both off by default); `gapMs` idles
- * before each sample, as runs did before samples were checked while they run, to tell
- * apart what sustained load does to the device's clocks; the result keeps them. `noise`
+ * `early` ends the run once the winners stay the same (both off by default); `gapMs` rests
+ * before each sample (`Calibration.REST_MS` by default; 0 for samples back to back, 300
+ * as runs did before samples were checked while they run), to tell apart what sustained
+ * load does to the device's clocks; the result keeps them. `noise`
  * keeps a thread of the app busy 50 ms of every second for 30 s, outside app work
  * calibration knows of: the samples it overlaps are made again, and the result names it
  * under `disturbedBy`.
@@ -82,7 +84,7 @@ class CalibrationActivity : Activity() {
         Calibrator.recalibrate(
             asked?.getIntExtra("burst", 3) ?: 3, asked?.getBooleanExtra("warm", true) ?: true,
             warmOnce = asked?.getBooleanExtra("warmOnce", false) ?: false, early = asked?.getBooleanExtra("early", false) ?: false,
-            gapMs = asked?.getLongExtra("gapMs", 0L) ?: 0L
+            gapMs = asked?.getLongExtra("gapMs", Calibration.REST_MS) ?: Calibration.REST_MS
         )
         if (asked?.getBooleanExtra("noise", false) == true) noise()
         show()
@@ -120,7 +122,8 @@ class CalibrationActivity : Activity() {
                         "${kept.optInt("rounds")} rounds, ${kept.optInt("redone")} redone, forced ${kept.optBoolean("forced")}, " +
                         "battery saver ${kept.optBoolean("powerSave")}, thermal ${kept.optInt("thermal", -1)}, page ${kept.optString("page", "?")} " +
                         "to ${kept.optString("target", "?")}, JPEG page ${kept.optString("jpegPage", "?")}, heat by ${kept.optString("heat", "?")}, " +
-                        "burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)} warmOnce ${kept.optBoolean("warmOnce")} early ${kept.optBoolean("early")}"
+                        "burst ${kept.optInt("burst", 3)} warm ${kept.optBoolean("warm", true)} warmOnce ${kept.optBoolean("warmOnce")} early ${kept.optBoolean("early")}, " +
+                        "rest ${kept.optLong("gapMs")} ms, clock caps fell in ${kept.optInt("cappedSamples")} samples"
                 )
                 val timings = kept.optJSONArray("timings")
                 for (i in 0 until (timings?.length() ?: 0)) {

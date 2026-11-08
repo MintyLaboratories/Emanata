@@ -274,7 +274,15 @@ class CalibrationScreenActivity : AppCompatActivity() {
         /** Debuggable builds: hold the page still, to compare timings with and without it moving. */
         const val EXTRA_STILL = "still"
 
-        /** Whether the page holds still while the GPU resampler is timed. */
+        /**
+         * Whether the page holds still while the GPU resampler is timed: not needed so far. On
+         * a tablet with 4 large and 4 little cores (Snapdragon 8 Gen 1 class, Android 16), 3
+         * calibrations with the page moving against 3 with it still (alternating, thermal
+         * status 0) timed the GPU setup at 1.01x, resampling setups at 0.93-1.02x and JPEG at
+         * 0.98x, JPEG XL decodes at 1.03-1.05x (each within its runs' spread), picking the same
+         * setups but in one still run, whose fastest resampling setup spread wide enough to let
+         * a slower one count as fast ([com.infinity.comicreader.reader.Calibration.pick]).
+         */
         const val HOLD_FOR_GPU = false
 
         private const val STATE_SAVER_ACCEPTED = "saver_accepted"

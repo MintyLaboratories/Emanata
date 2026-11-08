@@ -71,6 +71,14 @@ class RemotesTest {
             list = emptyList()
             Remotes.changed("s1")
             assertNull(ShareSpeeds.estimate("s1"))
+            // An edit made before the shares were loaded may have moved the share: forgotten too.
+            list = listOf(FakeRemoteFs.share())
+            Remotes.serve({ list }) { fake }
+            repeat(3) { ShareSpeeds.meter("s1").firstByte(5) }
+            assertEquals(5L, ShareSpeeds.estimate("s1")!!.firstByteMs)
+            list = listOf(FakeRemoteFs.share().copy(name = "Share B"))
+            Remotes.changed("s1")
+            assertNull(ShareSpeeds.estimate("s1"))
         } finally {
             ShareSpeeds.clock = { System.nanoTime() / 1_000_000 }
         }

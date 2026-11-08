@@ -184,8 +184,10 @@ object Remotes {
     /**
      * Forgets what was held for share [id] (every share when null): its connection,
      * findings, failures and listings. A share changed in nothing that reaching it takes
-     * (its address, user and password), or not at all, keeps all but its failures. Tells
-     * [NetPolicy] in the end: a share's speed setting may have changed.
+     * (its address, user and password), or not at all, keeps all but its failures. What share
+     * [id]'s reads measured ([ShareSpeeds]) holds only while it is known to be reached the same
+     * way: not after an edit made while the shares were not loaded. Tells [NetPolicy] in the end:
+     * a share's speed setting may have changed.
      */
     fun changed(id: String?) {
         try {
@@ -207,8 +209,7 @@ object Remotes {
                 retry(id)
                 return
             }
-            // What a share's reads measured holds while it is reached the same way.
-            if (id != null && (now == null || before != null)) ShareSpeeds.forget(id)
+            if (id != null) ShareSpeeds.forget(id)
             forget = id != null
             if (id == null) {
                 closing += open.values

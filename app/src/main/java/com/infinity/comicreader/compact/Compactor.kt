@@ -86,8 +86,26 @@ class Compactor(
         /** Where the new file goes instead when a file takes [target]'s name meanwhile ("Keep both"); null to fail then. */
         val keepBoth: ((File) -> File)? = null,
         /** What the new file's comment says was done ([OutputMarks]), in order; compacting with pages left out says so. Empty for no mark. */
-        val marks: List<OutputMarks.Operation> = emptyList()
+        val marks: List<OutputMarks.Operation> = emptyList(),
+        /** Hears how long each part of the work took. */
+        val meter: Meter = Meter.NONE
     )
+
+    /** Hears how long each part of a book's work took, so this device's speeds can be learned. */
+    interface Meter {
+        /** Page [bytes] went through [Request.convert], charged [seconds] of wall time shared with the pages converting beside it ([WallShares]). */
+        fun page(bytes: ByteArray, seconds: Double) {}
+
+        /** [bytes] of the book read in [seconds]. */
+        fun read(bytes: Long, seconds: Double) {}
+
+        /** [bytes] of the new file written and read back in [seconds]. */
+        fun written(bytes: Long, seconds: Double) {}
+
+        companion object {
+            val NONE: Meter = object : Meter {}
+        }
+    }
 
     /** Puts a rebuilt book in place. */
     fun interface Placer {
@@ -203,6 +221,7 @@ class Compactor(
             flat.forEachIndexed { k, i -> names[i] = flatNames[k] }
             val out = File(dir, ".${book.name}.${System.nanoTime()}.part")
             part = out
+            val writing = System.nanoTime()
             pack(out, names, pieces, time, progress, total)
             if (request.marks.isNotEmpty()) {
                 val partial = dropped.isNotEmpty()
@@ -210,6 +229,7 @@ class Compactor(
                 OutputMarks.write(out, sourceComment(book), ops, hash())
             }
             verify(out, names, pieces)
+            request.meter.written(out.length(), seconds(writing))
             val before = if (book.isDirectory) all.sumOf { it.size.coerceAtLeast(0) } else book.length()
             val after = out.length()
             if (request.smallerOnly && after >= before) return Result.Unchanged(Why.NOT_SMALLER, failedAt.map { FlatNames.baseName(files[it].path) })
@@ -246,6 +266,8 @@ class Compactor(
         val room = Semaphore(maxWorkers.coerceAtLeast(1) * 2)
         val budget = Budget(memory.coerceAtLeast(1))
         val gate = LimitGate(limit)
+        val shares = WallShares()
+        val meter = request.meter
         val futures = ArrayList<Future<*>>()
         var done = 0L
         val lock = Any()
@@ -259,7 +281,9 @@ class Compactor(
                 val entry = files[i]
                 val file = File(work, i.toString())
                 if (request.convert == null || !isPage(entry)) {
+                    val reading = System.nanoTime()
                     val piece = asIs(reader, entry, file)
+                    meter.read(piece.size, seconds(reading))
                     // A page too large to convert that had to be: listed as failed.
                     val unconverted = request.convert != null && isImage(entry) && request.mustConvert(head(piece.file))
                     pieces[i] = if (unconverted) Piece(piece.file, piece.size, piece.crc, null, failed = true) else piece
@@ -269,8 +293,9 @@ class Compactor(
                 while (!room.tryAcquire(WAIT_MS, TimeUnit.MILLISECONDS)) check(progress)
                 // The page's bytes first, then what converting it takes beyond them; a page larger than the budget converts alone.
                 var held = budget.take(entry.size, progress)
+                val reading = System.nanoTime()
                 val bytes = try {
-                    reader.read(entry) { it.readBytes() }
+                    reader.read(entry) { it.readBytes() }.also { meter.read(it.size.toLong(), seconds(reading)) }
                 } catch (e: OutOfMemoryError) {
                     null
                 } catch (t: Throwable) {
@@ -299,6 +324,7 @@ class Compactor(
                     try {
                         var failed = false
                         val made = if (!progress.alive) null else gate.pass {
+                            shares.start(i)
                             try {
                                 request.convert?.invoke(bytes)
                             } catch (e: Exception) {
@@ -307,6 +333,8 @@ class Compactor(
                             } catch (e: OutOfMemoryError) {
                                 failed = true
                                 null
+                            } finally {
+                                meter.page(bytes, shares.end(i) / 1e9)
                             }
                         }
                         val keep = made?.bytes ?: bytes
@@ -560,6 +588,9 @@ class Compactor(
         private const val PACK_SHARE = 10
 
         private fun crcOf(bytes: ByteArray): Long = CRC32().apply { update(bytes) }.value
+
+        /** Seconds since [start], a [System.nanoTime]. */
+        private fun seconds(start: Long): Double = (System.nanoTime() - start) / 1e9
 
         /**
          * The places among [files] (path, size) of the book's pages, in the book's order: as

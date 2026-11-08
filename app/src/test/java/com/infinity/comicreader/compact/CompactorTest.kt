@@ -534,6 +534,56 @@ class CompactorTest {
         assertThrows(ChangeRefused::class.java) { pack(dir, halve, File(tmp.root, "Again.cbz"), free = { need }) }
     }
 
+    @Test
+    fun theMeterHearsEachPageConvertedWhatWasReadAndWhatWasWritten() {
+        val source = zip("Book.cbz", book)
+        val pages = ArrayList<Int>()
+        var read = 0L
+        var written = 0L
+        val meter = object : Compactor.Meter {
+            override fun page(bytes: ByteArray, seconds: Double) = synchronized(pages) { pages += bytes.size }
+
+            override fun read(bytes: Long, seconds: Double) {
+                read += bytes
+            }
+
+            override fun written(bytes: Long, seconds: Double) {
+                written += bytes
+            }
+        }
+        val slow: (ByteArray) -> PageWork.Made? = { bytes ->
+            Thread.sleep(20)
+            halve(bytes)
+        }
+        val request = Compactor.Request(source, slow, inPlace = false, suffix = "compacted", meter = meter)
+        val result = Compactor(scratch, 2).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive) as Compactor.Result.Rebuilt
+        // The three pages, each once; the litter is never read.
+        assertEquals(listOf(2000, 2000, 2000), pages)
+        assertEquals(book.take(4).sumOf { it.second.size.toLong() }, read)
+        assertEquals(result.file.length(), written)
+    }
+
+    @Test
+    fun pagesConvertingSideBySideShareTheirWallTime() {
+        val source = zip("Book.cbz", List(8) { "Book/$it.png" to page(PNG) })
+        val charged = ArrayList<Double>()
+        val meter = object : Compactor.Meter {
+            override fun page(bytes: ByteArray, seconds: Double) = synchronized(charged) { charged += seconds }
+        }
+        val slow: (ByteArray) -> PageWork.Made? = { bytes ->
+            Thread.sleep(100)
+            halve(bytes)
+        }
+        val request = Compactor.Request(source, slow, inPlace = false, suffix = "compacted", meter = meter)
+        val began = System.nanoTime()
+        Compactor(scratch, 4).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive)
+        val wall = (System.nanoTime() - began) / 1e9
+        assertEquals(8, charged.size)
+        // Four at a time: about a quarter of each page's 0.1 s, never more than the run took.
+        assertTrue("${charged.sum()} of $wall", charged.sum() < wall)
+        assertTrue("${charged.sum()}", charged.sum() > 0.15)
+    }
+
     private companion object {
         const val PNG = 0x50
         const val JPG = 0x4A

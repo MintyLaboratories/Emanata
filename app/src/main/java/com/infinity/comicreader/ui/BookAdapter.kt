@@ -49,6 +49,8 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import java.util.Collections
+import java.util.WeakHashMap
 import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
@@ -587,6 +589,7 @@ class BookAdapter(
         // Decided here, on the main thread, so a row attached while the load runs finds it ([onViewAttachedToWindow]).
         val held = makes && !NetPolicy.mayAt(work, item.path)
         holder.heldOffScreen = held && work == NetWork.COVER_OFF_SCREEN
+        if (held) heldRows += holder else heldRows -= holder
         firstPasses.value++
         val job = scope.launch {
             val got = withContext(AppDispatchers.io) {
@@ -610,6 +613,20 @@ class BookAdapter(
         }
         track(holder, job)
         job.invokeOnCompletion { firstPasses.value-- }
+    }
+
+    /** Rows whose last cover request was held back ([NetPolicy]); [retryHeld] asks for them again. */
+    private val heldRows: MutableSet<BookHolder> = Collections.newSetFromMap(WeakHashMap())
+
+    /** Asks again for the covers held back ([NetPolicy]): the connection or a share's speed changed. */
+    fun retryHeld() {
+        for (holder in heldRows.toList()) {
+            heldRows -= holder
+            if (holder.entry == null) continue
+            holder.heldOffScreen = false
+            holder.requested = 0L
+            requestCover(holder)
+        }
     }
 
     /** First passes ([requestCover]) not done yet; full covers wait for none to be left. */
@@ -678,6 +695,7 @@ class BookAdapter(
         holder.drawn = null
         holder.quick = null
         holder.heldOffScreen = false
+        heldRows -= holder
         holder.thumb.setImageDrawable(null)
     }
 

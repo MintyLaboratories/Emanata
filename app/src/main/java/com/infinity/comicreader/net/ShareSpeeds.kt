@@ -15,6 +15,9 @@ object ShareSpeeds {
     private val meters = ConcurrentHashMap<String, SpeedMeter>()
     private val savedAt = ConcurrentHashMap<String, Long>()
 
+    /** Whether each share counted as slow after its last read, so a change tells [NetPolicy]. */
+    private val slowAfter = ConcurrentHashMap<String, Boolean>()
+
     @Volatile
     private var store: SharedPreferences? = null
 
@@ -42,8 +45,14 @@ object ShareSpeeds {
         else -> meter(id).slow()
     }
 
-    /** Keeps share [id]'s estimate on disk once its own reads give one, unless kept less than [SAVE_EVERY_MS] ago. */
+    /**
+     * After a read of share [id]: tells [NetPolicy] when the share turned slow or fast, and keeps
+     * its estimate on disk once its own reads give one, unless kept less than [SAVE_EVERY_MS] ago.
+     */
     internal fun measured(id: String) {
+        val slowNow = slow(id)
+        val before = slowAfter.put(id, slowNow)
+        if (before != null && before != slowNow) NetPolicy.changed()
         val sp = store ?: return
         val now = clock()
         val last = savedAt[id]
@@ -66,6 +75,7 @@ object ShareSpeeds {
     fun forget(id: String) {
         meters.remove(id)
         savedAt.remove(id)
+        slowAfter.remove(id)
         store?.edit()?.remove(id)?.apply()
     }
 
@@ -74,6 +84,7 @@ object ShareSpeeds {
     fun reset() {
         meters.clear()
         savedAt.clear()
+        slowAfter.clear()
         store = null
     }
 

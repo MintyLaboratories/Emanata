@@ -62,6 +62,26 @@ class ShareSpeedsTest {
     }
 
     @Test
+    fun aShareTurningSlowOrFastIsTold() {
+        var heard = 0
+        val listener = { heard++; Unit }
+        NetPolicy.listen(listener)
+        try {
+            reads("s1", 8L shl 20)
+            assertEquals(0, heard)
+            now += ShareSpeeds.SAVE_EVERY_MS
+            reads("s1", 1_500_000)
+            reads("s1", 1_500_000)
+            assertEquals(1, heard)
+            reads("s1", 8L shl 20)
+            reads("s1", 8L shl 20)
+            assertEquals(2, heard)
+        } finally {
+            NetPolicy.unlisten(listener)
+        }
+    }
+
+    @Test
     fun forgettingAShareDropsWhatWasKept() {
         reads("s1", 1_500_000)
         ShareSpeeds.forget("s1")

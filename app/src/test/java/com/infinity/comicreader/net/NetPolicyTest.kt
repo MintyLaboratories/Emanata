@@ -142,4 +142,36 @@ class NetPolicyTest {
         assertTrue(NetPolicy.may(NetWork.DOWNLOAD))
         assertFalse(NetPolicy.may(NetWork.COVER))
     }
+
+    @Test
+    fun listenersHearTheRulesTheConnectionAndShareSettingsChange() {
+        var heard = 0
+        val listener = { heard++; Unit }
+        NetPolicy.listen(listener)
+        try {
+            NetPolicy.rules = NetRules()
+            assertEquals(0, heard)
+            NetPolicy.rules = NetRules(slow = emptySet())
+            assertEquals(1, heard)
+            // The connection: told once per new verdict.
+            Metered.recheck()
+            val first = heard
+            Metered.recheck()
+            assertEquals(first, heard)
+            Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+            Metered.recheck()
+            assertEquals(first + 1, heard)
+            // A share's settings.
+            Remotes.serve(listOf(FakeRemoteFs.share())) { throw AssertionError("no reads") }
+            val served = heard
+            Remotes.changed("s1")
+            assertEquals(served + 1, heard)
+        } finally {
+            NetPolicy.unlisten(listener)
+        }
+        val gone = heard
+        NetPolicy.rules = NetRules(slow = setOf(NetSkip.ANY))
+        Remotes.changed("s1")
+        assertEquals(gone, heard)
+    }
 }

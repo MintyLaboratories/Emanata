@@ -1,6 +1,7 @@
 package com.infinity.comicreader.net
 
 import androidx.annotation.VisibleForTesting
+import java.util.concurrent.CopyOnWriteArrayList
 
 /** Network work nobody asked for, by what the skip choices ([NetSkip]) say of it. */
 enum class NetWork {
@@ -81,8 +82,29 @@ object NetPolicy {
 
     /** The skip choices; the settings set them. */
     @Volatile
-    @set:VisibleForTesting
     var rules: NetRules = NetRules()
+        set(value) {
+            val old = field
+            field = value
+            if (old != value) changed()
+        }
+
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /** Calls [listener], on any thread, whenever work held back may run now, or the reverse ([changed]). */
+    fun listen(listener: () -> Unit) {
+        listeners += listener
+    }
+
+    /** Stops calling [listener]. */
+    fun unlisten(listener: () -> Unit) {
+        listeners -= listener
+    }
+
+    /** Tells the listeners: the connection turned metered or not, a share fast or slow, or the rules changed. */
+    fun changed() {
+        for (listener in listeners) listener()
+    }
 
     /**
      * Why [work] is held back under [rules] on a [metered] connection, on a [slow] share; null

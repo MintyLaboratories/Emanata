@@ -545,14 +545,20 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         showCurrentContent()
         adapter.stopped = false
         storageWatcher.start()
+        NetPolicy.listen(netChanged)
+        adapter.retryHeld()
     }
 
     override fun onStop() {
         viewRing.close(animate = false)
         adapter.stopped = true
         storageWatcher.stop()
+        NetPolicy.unlisten(netChanged)
         super.onStop()
     }
+
+    /** Covers held back ([NetPolicy]) are asked for again once the connection or a share's speed changes. */
+    private val netChanged: () -> Unit = { runOnUiThread { if (!isDestroyed) adapter.retryHeld() } }
 
     override fun onDestroy() {
         super.onDestroy()

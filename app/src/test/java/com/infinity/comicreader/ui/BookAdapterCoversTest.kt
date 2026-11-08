@@ -202,6 +202,28 @@ class BookAdapterCoversTest {
     }
 
     @Test
+    fun coversHeldOnAMeteredConnectionAreMadeOnceItIsNot() {
+        Remotes.serve(listOf(FakeRemoteFs.share())) { throw AssertionError("no reads") }
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        try {
+            adapter.submit(listOf(shareBook("a.cbz"), shareBook("b.cbz")))
+            layout()
+            repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            assertTrue(fake.started.isEmpty())
+            Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+            Metered.forget()
+            adapter.retryHeld()
+            until { fake.started.size == 2 }
+            assertEquals(setOf("a.cbz", "b.cbz"), fake.started.toSet())
+        } finally {
+            Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+            Metered.forget()
+            Remotes.serve(emptyList()) { throw AssertionError("no shares") }
+        }
+    }
+
+    @Test
     fun onASlowShareCoversOnScreenAreMade() {
         Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { throw AssertionError("no reads") }
         try {

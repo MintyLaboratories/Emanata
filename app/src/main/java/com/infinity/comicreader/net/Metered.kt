@@ -2,6 +2,7 @@ package com.infinity.comicreader.net
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.annotation.VisibleForTesting
 
@@ -48,11 +49,32 @@ object Metered {
     @Volatile
     private var kept: Pair<Long, Verdict>? = null
 
-    /** Asks [context]'s connectivity service from now on. */
+    /** Asks [context]'s connectivity service from now on, and hears its network change ([NetPolicy.changed]). */
     fun init(context: Context) {
         val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java) ?: return
         probe = { linkOf(connectivity) }
         kept = null
+        runCatching {
+            connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = recheck()
+
+                override fun onLost(network: Network) = recheck()
+            })
+        }
+    }
+
+    /** The verdict last told of by [recheck]. */
+    @Volatile
+    private var heard: Verdict? = null
+
+    /** Asks again after the network changed; a new verdict tells [NetPolicy]'s listeners. */
+    @VisibleForTesting
+    fun recheck() {
+        kept = null
+        val verdict = now()
+        if (verdict == heard) return
+        heard = verdict
+        NetPolicy.changed()
     }
 
     /** Asks Android about its active network; null without one. */

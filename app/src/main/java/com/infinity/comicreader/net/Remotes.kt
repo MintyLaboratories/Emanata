@@ -184,9 +184,18 @@ object Remotes {
     /**
      * Forgets what was held for share [id] (every share when null): its connection,
      * findings, failures and listings. A share changed in nothing that reaching it takes
-     * (its address, user and password), or not at all, keeps all but its failures.
+     * (its address, user and password), or not at all, keeps all but its failures. Tells
+     * [NetPolicy] in the end: a share's speed setting may have changed.
      */
     fun changed(id: String?) {
+        try {
+            forgetShares(id)
+        } finally {
+            NetPolicy.changed()
+        }
+    }
+
+    private fun forgetShares(id: String?) {
         val closing = ArrayList<RemoteFs>()
         var forget = false
         synchronized(this) {

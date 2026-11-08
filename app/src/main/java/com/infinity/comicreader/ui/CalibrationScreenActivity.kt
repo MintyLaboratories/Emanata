@@ -173,8 +173,10 @@ class CalibrationScreenActivity : AppCompatActivity() {
             return
         }
         if (state == State.FAILED) return
-        if (started && control.lastEnd?.ok == true) {
-            finish()
+        // The run this screen started ended for good, also as seen by a screen made again (rotated, restored).
+        val end = control.lastEnd
+        if (started && end != null && !end.away) {
+            if (end.ok || end.canceled) finish() else show(State.FAILED)
             return
         }
         val r = readings(this)

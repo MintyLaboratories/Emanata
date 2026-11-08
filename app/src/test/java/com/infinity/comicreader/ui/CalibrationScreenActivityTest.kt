@@ -165,6 +165,31 @@ class CalibrationScreenActivityTest {
     }
 
     @Test
+    fun aFailedRunStaysFailedWhenTheScreenIsMadeAgain() {
+        val c = launch()
+        fake.end(CalibrationEnd(ok = false, why = "${Calibration.TOO_WARM} (thermal status 2) while timing"))
+        idle()
+        // Rotated: the run is not started again, cooler or not.
+        c.recreate()
+        idle()
+        assertEquals(1, fake.starts.size)
+        assertEquals(CalibrationScreenActivity.State.FAILED, c.get().state)
+        assertTrue(c.get().shows(R.id.calibration_close))
+    }
+
+    @Test
+    fun aFinishedRunClosesTheScreenMadeAgain() {
+        val c = launch()
+        // It ended unheard, the screen in the background, before the screen was made again.
+        c.pause().stop()
+        fake.end(CalibrationEnd(ok = true, why = null))
+        c.recreate()
+        idle()
+        assertEquals(1, fake.starts.size)
+        assertTrue(c.get().isFinishing)
+    }
+
+    @Test
     fun aRunStoppedByLeavingStartsAgainWhenBack() {
         val c = launch()
         c.pause()

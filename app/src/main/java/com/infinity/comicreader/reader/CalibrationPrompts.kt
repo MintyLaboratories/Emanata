@@ -146,5 +146,5 @@ object CalibrationPrompts {
     }
 
     /** The estimate before any run: about what the reference tablet takes. */
-    const val DEFAULT_SECONDS = 30
+    const val DEFAULT_SECONDS = 40
 }

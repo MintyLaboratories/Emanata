@@ -849,7 +849,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   1 GB and a tenth of the free space, cleared by Clear cache).
 - **Optimizing for this device**: at first launch, once the library shows, a
   full-screen calibration times how fast the device decodes and resizes pages
-  (about 30 s; a comic page whose gutters slide one at a time keeps it company)
+  (about 40 s; a comic page whose gutters slide one at a time keeps it company)
   and keeps the setup that is fast without wasting battery. **Cancel** keeps
   what is in effect (the defaults the first time) and asks again at the next
   launch, **Keep old calibration** (not on the first run) keeps the previous one

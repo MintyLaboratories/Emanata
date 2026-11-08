@@ -546,6 +546,21 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   share asks for its password when opened. "Without passwords" in the export
   leaves them out; a restore never replaces a password that works with one
   left out or older.
+- **Metered connections and slow shares** (Settings → Network): **Skip on
+  metered connections** picks which optional network work waits while the
+  connection costs by the byte (mobile data always does): covers from
+  shares, similar-books hashing on shares, read-ahead on shares, automatic
+  model or detector downloads, or any network use you didn't start (all of
+  them by default). Opening a book, a search, Download and Compare always
+  run. **Warn before opening a large book on a metered connection** (on, 100
+  MB by default) asks before a larger book on a share opens: Open anyway or
+  Cancel. Each share has a **Speed**: Auto, Fast or Slow. Auto measures the
+  share's real reads (median throughput of long reads, timed while any is
+  under way, and median wait for short reads' first byte, so one disk
+  spinning up does not count) and counts it slow below 2 MB/s or over 1 s to
+  the first byte; the share's form shows what it measured. **On slow shares,
+  skip** works like the metered choices (by default: background hashing,
+  read-ahead beyond the page shown, and covers of books not on screen).
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.

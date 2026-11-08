@@ -25,7 +25,8 @@ object LargeBookWarning {
 
     /**
      * Calls [open] for [book] at once, or once the user taps Open anyway. A size not known yet
-     * is asked of the share first, off the main thread.
+     * is asked of the share first, off the main thread, also for a file made never to ask
+     * ([RemoteFile.asksNetwork]: history, bookmarks, library).
      */
     fun check(activity: AppCompatActivity, book: File, open: () -> Unit) {
         val prefs = Prefs(activity)
@@ -41,7 +42,9 @@ object LargeBookWarning {
             return
         }
         activity.lifecycleScope.launch {
-            val bytes = withContext(AppDispatchers.io) { runCatching { book.length() }.getOrDefault(0L) }
+            val bytes = withContext(AppDispatchers.io) {
+                runCatching { book.fresh()?.takeIf { !it.isDirectory }?.size ?: 0L }.getOrDefault(0L)
+            }
             decide(activity, book, bytes, threshold, open)
         }
     }

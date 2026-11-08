@@ -74,9 +74,9 @@ class LargeBookWarningTest {
         }
     }
 
-    private fun check(path: String) {
+    private fun check(path: String, askNetwork: Boolean = true) {
         ShadowDialog.reset()
-        LargeBookWarning.check(activity, Remotes.file(path)) { opened++ }
+        LargeBookWarning.check(activity, Remotes.file(path, askNetwork)) { opened++ }
         idle()
     }
 
@@ -102,6 +102,14 @@ class LargeBookWarningTest {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
         assertEquals(1, opened)
+    }
+
+    @Test
+    fun aBookFromHistoryOrTheLibraryAsksItsShareForTheSize() {
+        // Such files never ask the share for their stat; the warning asks anyway, off the main thread.
+        check("/net/s1/Large.cbz", askNetwork = false)
+        assertEquals(0, opened)
+        assertTrue(shown() != null)
     }
 
     @Test

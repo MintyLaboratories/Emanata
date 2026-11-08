@@ -167,7 +167,8 @@ class CalibrationScreenActivity : AppCompatActivity() {
 
     /** Shows the run in progress, or starts one when nothing stops it, or says what does. */
     private fun evaluate() {
-        if (control.running) {
+        // A run being canceled is not shown: a new one follows it ([CalibrationControl.start]).
+        if (control.running && !control.canceling) {
             started = true
             show(State.RUNNING)
             return

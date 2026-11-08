@@ -74,6 +74,8 @@ object Calibrator : CalibrationControl {
     /** True while a calibration runs. */
     override val running: Boolean get() = runs.running
 
+    override val canceling: Boolean get() = runs.canceling
+
     /** How the last run ended: "ended true", or "ended false: " and why; null before any. */
     @Volatile
     var outcome: String? = null

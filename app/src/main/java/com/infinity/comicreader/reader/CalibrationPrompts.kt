@@ -58,6 +58,9 @@ interface CalibrationControl {
     /** True while a run is in progress. */
     val running: Boolean
 
+    /** True while the user is stopping the run in progress ([cancel]): a [start] then follows it. */
+    val canceling: Boolean
+
     /** True when a calibration is kept, from any system build or version: there is an old one to keep. */
     val calibrated: Boolean
 

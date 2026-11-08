@@ -253,6 +253,17 @@ class CalibrationScreenActivityTest {
     }
 
     @Test
+    fun aRunBeingCanceledIsFollowedByANewOne() {
+        // Canceled on another screen a moment ago, still ending.
+        fake.running = true
+        fake.canceling = true
+        val a = launch().get()
+        assertEquals(listOf(false), fake.starts)
+        assertEquals(CalibrationScreenActivity.State.RUNNING, a.state)
+        assertFalse(a.isFinishing)
+    }
+
+    @Test
     fun batterySaverAsksFirst() {
         now = now.copy(saverOn = true)
         val a = launch().get()

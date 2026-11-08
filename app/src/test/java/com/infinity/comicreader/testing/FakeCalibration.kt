@@ -12,6 +12,7 @@ class FakeCalibration(
 ) : CalibrationControl {
     override var loaded: Boolean = true
     override var running: Boolean = false
+    override var canceling: Boolean = false
     override var progress: CalibrationProgress = CalibrationProgress()
     override var lastEnd: CalibrationEnd? = null
 
@@ -32,7 +33,8 @@ class FakeCalibration(
     override fun estimateSeconds(): Int = 25
 
     override fun start(underSaver: Boolean) {
-        if (running) return
+        if (running && !canceling) return
+        canceling = false
         starts += underSaver
         running = true
         lastEnd = null

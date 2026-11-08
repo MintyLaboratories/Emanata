@@ -185,7 +185,7 @@ class FileJobsRepackTest {
         val book = cbz("Book.cbz", "From the scanner")
         run(book, FileJobs.Rebuild.COMPACT, inPlace = true) as FileWork.Outcome.Done
         val comment = ZipFile(book).use { it.comment }
-        assertTrue(comment, comment.startsWith("From the scanner\n[i:Emanata compacted v1 "))
+        assertTrue(comment, comment.startsWith("From the scanner\n[i: Emanata:compact:v1 | "))
         assertEquals("Emanata", OutputMarks.verified(book, BookIds.xxh3).compactedBy)
     }
 
@@ -201,8 +201,10 @@ class FileJobsRepackTest {
         run(book, FileJobs.Rebuild.COMPATIBLE, inPlace = true) as FileWork.Outcome.Done
         val done = OutputMarks.verified(book, BookIds.xxh3)
         assertTrue(done.compatible)
-        assertNull("the compacted block went with the old directory", done.compactedBy)
-        assertEquals(1, OutputMarks.blocks(ZipFile(book).use { it.comment }).size)
+        assertNull("making compatible after it changed the pages", done.compactedBy)
+        val blocks = OutputMarks.blocks(ZipFile(book).use { it.comment })
+        assertEquals(1, blocks.size)
+        assertEquals("Emanata:compact:v1, Emanata:compatible:v1", blocks[0].entries.joinToString(", "))
     }
 
     @Test
@@ -210,7 +212,7 @@ class FileJobsRepackTest {
         val book = cbz("Book.cbz")
         library.setHiddenPages(ref(book), setOf(1), 2)
         run(book, FileJobs.Rebuild.COMPACT, inPlace = true, skipHidden = true) as FileWork.Outcome.Done
-        assertTrue(ZipFile(book).use { it.comment }.startsWith("[i:Emanata compacted-partial v1 "))
+        assertTrue(ZipFile(book).use { it.comment }.startsWith("[i: Emanata:compact-partial:v1 | "))
         assertEquals("Emanata", OutputMarks.verified(book, BookIds.xxh3).compactedBy)
     }
 

@@ -364,21 +364,31 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (with In place) or **Not now**, kept for that book by its Book ID. Repacking
   from there closes the reader; the operation shows in the library.
 - Compact, Make compatible, Repack as CBZ and Pack compacted mark their new
-  file with a block at the end of its ZIP archive comment, `[i:Emanata
-  <operation> v<version> <hash>]`: the operation `compacted` (Pack compacted
-  too; `compacted-partial` when hidden pages were skipped), `compatible` or
-  `repacked`; a version per operation, raised
-  when its output would improve, so books made by an older version are offered
-  it again; the hash the XXH3-64 of the central directory in 16 hex digits,
-  which changes with any entry. A ZIP book's own comment is kept, the block on
-  a new line after it; blocks already there are dropped (a rewrite makes them
-  stale), and no block is written when the comment would pass 65,535 bytes.
-  Blocks are found by their shape, any tool's, operation or version; one counts
-  only while its hash matches. A current one disables the same operation
-  ("Already compacted by Emanata") while the reverse stays offered, and a
-  folder's books already done are left as they are; any other tool's valid
-  `compacted` block counts as compacted. Reading it takes only the file's
-  tail (the end record and central directory).
+  file with one block at the end of its ZIP archive comment: the file's
+  history as a chain, oldest first, and one hash, e.g.
+  `[i: OtherTool:compact-max:v2, Emanata:compatible:v1 | 9f86d081884c7d65]`.
+  Entries are `Tool:action:vN` (tool and action letters, digits, `.`, `_`,
+  `-`), separated by commas, `|` before the hash; spaces or tabs may stand
+  around every separator and inside the brackets. Emanata's actions:
+  `compact` (`compact-partial` when hidden pages were skipped), `compatible`,
+  `repack` (Pack compacted writes `compact`); a version
+  per action, raised when its output would improve, so books made by an older
+  version are offered it again. The hash is the XXH3-64 of the central
+  directory in 16 hex digits (read in either case), which changes with any
+  entry; the directory is located by where it ends (so data before the
+  archive moves nothing, ZIP64 included), and one over 32 MB is not hashed.
+  A rewrite keeps the book's comment byte for byte, appends its entries to the
+  chain (never one the same as the last), merges several blocks into one in
+  order, replaces the hash, and puts the block on its own last line; when the
+  comment would pass 65,535 bytes the oldest entries go first, and no block is
+  written when even the newest can't fit or the directory can't be located.
+  A chain counts only while its hash matches (a stale one is history only);
+  an action is done when its entry is there and no later entry changes pages
+  (`embed`, `metadata` and `tag` don't; any other does). A current one
+  disables the same operation ("Already compacted by Emanata") while the
+  reverse stays offered, and a folder's books already done are left as they
+  are; any tool's `compact` or `compact-*` counts as compacted. Reading it
+  takes only the file's tail (the end record and central directory).
 - **Pack** turns the selected folders of loose images (on the device) into
   books: each becomes `<folder name>.cbz` beside it, stored entries in natural
   order, its images as they are (**Pack**) or each made smaller losslessly by

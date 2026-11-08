@@ -10,12 +10,14 @@ import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption
 
 /**
- * What a ZIP says was done to it: blocks `[i:<tool> <operation> v<version> <hash>]` at the
- * end of its archive comment, hash the XXH3-64 of its central directory in 16 hex digits.
- * Emanata's Compact, Make compatible and Repack append theirs ([write]); any tool's are
- * read ([blocks]), and count only while the hash still matches ([verified]). The central
- * directory lists every entry's name, sizes and CRC-32, so any change to the files
- * changes it; reading it takes only the file's tail.
+ * What a ZIP says was done to it: one block at the end of its archive comment holding a
+ * history chain and the XXH3-64 of its central directory as it is now, e.g.
+ * `[i: Tool:compact-max:v2, Emanata:embed:v1 | 9f86d081884c7d65]`. Entries `Tool:action:vN`
+ * run oldest first; spaces or tabs may stand around every separator and inside the brackets;
+ * the hash is 16 hex digits, read in either case. A chain counts only while its hash matches
+ * ([verified]): the central directory lists every entry's name, sizes and CRC-32, so any
+ * change to the files changes it; reading it takes only the file's tail. Emanata's Compact,
+ * Make compatible, Repack and Pack append their entries to the source's chain ([write]).
  */
 object OutputMarks {
     /** The tool name Emanata writes. */
@@ -24,85 +26,144 @@ object OutputMarks {
     /** The longest ZIP archive comment, in bytes. */
     const val MAX_COMMENT = 0xFFFF
 
+    /** Verbs that leave the pages as they were: any other changes them. */
+    val KEEPS_PAGES = setOf("embed", "metadata", "tag")
+
+    /** Any tool's compacting: this verb, or it with a variant after a hyphen. */
+    private const val COMPACT_VERB = "compact"
+
     /**
      * What Emanata did, and the version of its output: bumped when that operation's output
      * would improve, so an older version's outputs may be offered it again.
      */
-    enum class Operation(val word: String, val version: Long) {
-        COMPACTED("compacted", 1),
+    enum class Operation(val verb: String, val version: Long) {
+        COMPACT("compact", 1),
 
         /** Compacted, its hidden pages left out ("Skip hidden pages"). */
-        COMPACTED_PARTIAL("compacted-partial", 1),
+        COMPACT_PARTIAL("compact-partial", 1),
         COMPATIBLE("compatible", 1),
-        REPACKED("repacked", 1)
+        REPACK("repack", 1),
+
+        /** A folder of loose images made a book. */
+        PACK("pack", 1);
+
+        /** Emanata's entry for this operation. */
+        val entry: Entry get() = Entry(TOOL, verb, version)
     }
 
-    /** A block found: [hash] as written, verifiable only as 16 hex digits ([value]). */
-    data class Block(val tool: String, val operation: String, val version: Long, val hash: String) {
-        /** The hash as a number; null for any other form, which nothing verifies. */
-        val value: Long?
-            get() = if (hash.length == HASH_DIGITS && hash.all { Character.digit(it, 16) >= 0 }) java.lang.Long.parseUnsignedLong(hash, 16) else null
+    /** One step of a chain: [tool] did [action], its output at [version]. */
+    data class Entry(val tool: String, val action: String, val version: Long) {
+        override fun toString() = "$tool:$action:v$version"
+
+        /** True for the same step, tool and action in any case. */
+        fun sameAs(other: Entry) = tool.equals(other.tool, true) && action.equals(other.action, true) && version == other.version
+
+        /** False for a verb of [KEEPS_PAGES]. */
+        val changesPages: Boolean get() = KEEPS_PAGES.none { it.equals(action, true) }
+
+        /** True for Emanata's. */
+        val ours: Boolean get() = tool.equals(TOOL, true)
     }
 
-    /** Any tool's block, by shape alone. */
-    private val BLOCK = Regex("""\[i:(\S+?) (\S+?) v(\d+) (\S+?)]""")
+    /** A block found: its [entries], oldest first, and the directory hash it was written for. */
+    data class Block(val entries: List<Entry>, val hash: Long)
 
-    /** A block with the line break before it, dropped together. */
-    private val BLOCK_LINE = Regex("""(?:\r?\n)?""" + BLOCK.pattern)
-
+    private const val SPACE = "[ \\t]*"
+    private const val NAME = "[A-Za-z0-9._-]+"
+    private const val ENTRY_SHAPE = "$NAME$SPACE:$SPACE$NAME$SPACE:${SPACE}v\\d+"
+    private val ENTRY = Regex("($NAME)$SPACE:$SPACE($NAME)$SPACE:${SPACE}v(\\d+)")
     private const val HASH_DIGITS = 16
 
-    /** The blocks in [comment], in order; one whose version is too large to read is left out. */
-    fun blocks(comment: String): List<Block> = BLOCK.findAll(comment).mapNotNull { m ->
-        val (tool, operation, version, hash) = m.destructured
-        version.toLongOrNull()?.let { Block(tool, operation, it, hash) }
-    }.toList()
+    /** Any block, by shape alone. */
+    private val BLOCK = Regex("\\[i:$SPACE($ENTRY_SHAPE(?:$SPACE,$SPACE$ENTRY_SHAPE)*)$SPACE\\|$SPACE([0-9A-Fa-f]{$HASH_DIGITS})$SPACE]")
+
+    /** A block with the line break before it, dropped together. */
+    private val BLOCK_LINE = Regex("(?:\\r?\\n)?" + BLOCK.pattern)
+
+    private val LEADING_BREAK = Regex("^\\r?\\n")
+
+    /** The blocks in [comment], in order; one with a version too large to read is no block. */
+    fun blocks(comment: String): List<Block> = BLOCK.findAll(comment).mapNotNull(::blockOf).toList()
+
+    private fun blockOf(m: MatchResult): Block? {
+        val entries = ArrayList<Entry>()
+        for (e in ENTRY.findAll(m.groupValues[1])) {
+            val (tool, action, version) = e.destructured
+            entries += Entry(tool, action, version.toLongOrNull() ?: return null)
+        }
+        return Block(entries, java.lang.Long.parseUnsignedLong(m.groupValues[2], 16))
+    }
 
     /** [comment] without any block, each taken with the line break before it, or after it when it starts the comment. */
     fun withoutBlocks(comment: String): String {
-        val text = BLOCK_LINE.replace(comment, "")
-        return if (BLOCK.find(comment)?.range?.first == 0) text.replaceFirst(LEADING_BREAK, "") else text
+        val starts = BLOCK.find(comment)?.let { it.range.first == 0 && blockOf(it) != null } == true
+        val text = BLOCK_LINE.replace(comment) { m -> if (BLOCK.find(m.value)?.let(::blockOf) != null) "" else m.value }
+        return if (starts) text.replaceFirst(LEADING_BREAK, "") else text
     }
 
-    private val LEADING_BREAK = Regex("""^\r?\n""")
+    /** The block of [entries] over a central directory of hash [directory]. */
+    fun block(entries: List<Entry>, directory: Long): String =
+        "[i: ${entries.joinToString(", ")} | ${java.lang.Long.toHexString(directory).padStart(HASH_DIGITS, '0')}]"
 
-    /** Emanata's block for [operation] over a central directory of hash [directory]. */
-    fun block(operation: Operation, directory: Long): String =
-        "[i:$TOOL ${operation.word} v${operation.version} ${java.lang.Long.toHexString(directory).padStart(HASH_DIGITS, '0')}]"
+    /** [chain] with [added] after it, no entry the same as the one before it. */
+    fun appended(chain: List<Entry>, added: List<Entry>): List<Entry> {
+        val out = ArrayList<Entry>(chain.size + added.size)
+        for (e in chain + added) if (out.lastOrNull()?.sameAs(e) != true) out += e
+        return out
+    }
 
     /**
-     * The comment for a new archive from its source's [kept] comment (bytes as they were,
-     * blocks then dropped) with [block] after it on a new line (its own when it ends in one);
-     * just what is kept when both would be longer than [MAX_COMMENT].
+     * The comment for a new archive from its source's [kept] comment (bytes as they were):
+     * its human text as it is, then, on its own last line, one block of every block's chain
+     * in order with [added] after it, over a central directory of hash [directory]. The
+     * oldest entries are dropped first when the comment would pass [MAX_COMMENT]; human text
+     * alone when even the newest entry does not fit, or [directory] is null (not located).
      */
-    fun comment(kept: ByteArray, block: String): ByteArray {
-        val text = withoutBlocks(String(kept, Charsets.ISO_8859_1))
-        val base = text.toByteArray(Charsets.ISO_8859_1)
-        val joined = (if (text.isEmpty() || text.endsWith("\n")) text + block else text + "\n" + block).toByteArray(Charsets.ISO_8859_1)
-        return if (joined.size <= MAX_COMMENT) joined else base
+    fun comment(kept: ByteArray, added: List<Entry>, directory: Long?): ByteArray {
+        val found = String(kept, Charsets.ISO_8859_1)
+        val text = withoutBlocks(found)
+        if (directory != null) {
+            val chain = appended(blocks(found).flatMap { it.entries }, added)
+            val lead = if (text.isEmpty()) "" else text + "\n"
+            for (from in chain.indices) {
+                val joined = lead + block(chain.subList(from, chain.size), directory)
+                if (joined.length <= MAX_COMMENT) return joined.toByteArray(Charsets.ISO_8859_1)
+            }
+        }
+        return text.toByteArray(Charsets.ISO_8859_1)
     }
 
-    /** What [blocks] verified against a central directory say: compacted (by which tool), made compatible, repacked. */
+    /** What a verified chain says: compacted (by which tool), made compatible, repacked. */
     data class Done(val compactedBy: String?, val compatible: Boolean, val repacked: Boolean) {
         companion object {
             val NOTHING = Done(null, compatible = false, repacked = false)
         }
     }
 
+    /** The chain of the blocks in [comment] written for a central directory of hash [directory], in order. */
+    fun chain(comment: String, directory: Long): List<Entry> = blocks(comment).filter { it.hash == directory }.flatMap { it.entries }
+
     /**
-     * What the blocks of [tail] verified by its central directory's hash say was done: by
-     * Emanata, each operation at its current version or a later one; by any other tool,
-     * compacting at any version. A block from before the archive last changed counts for nothing.
+     * What [chain] says is done: an operation whose entry is there with no entry changing
+     * pages after it. Emanata's count at the operation's current version or a later one;
+     * any tool's `compact` or `compact-*` counts as compacted, at any version.
      */
-    fun verified(tail: Tail): Done {
-        val valid = blocks(String(tail.comment, Charsets.ISO_8859_1)).filter { it.value == tail.directory }
-        fun ours(op: Operation) = valid.any { it.tool == TOOL && it.operation == op.word && it.version >= op.version }
-        val compacted = when {
-            ours(Operation.COMPACTED) || ours(Operation.COMPACTED_PARTIAL) -> TOOL
-            else -> valid.firstOrNull { it.tool != TOOL && it.operation == Operation.COMPACTED.word }?.tool
+    fun done(chain: List<Entry>): Done {
+        fun last(test: (Entry) -> Boolean): Entry? {
+            for (e in chain.asReversed()) {
+                if (test(e)) return e
+                if (e.changesPages) return null
+            }
+            return null
         }
-        return Done(compacted, ours(Operation.COMPATIBLE), ours(Operation.REPACKED))
+        fun current(e: Entry) = !e.ours || e.version >= (Operation.entries.firstOrNull { it.verb.equals(e.action, true) }?.version ?: 0)
+        fun ours(op: Operation) = last { it.ours && it.action.equals(op.verb, true) && it.version >= op.version } != null
+        val compacted = last { e -> (e.action.equals(COMPACT_VERB, true) || e.action.startsWith("$COMPACT_VERB-", true)) && current(e) }
+        return Done(compacted?.tool, ours(Operation.COMPATIBLE), ours(Operation.REPACK))
     }
+
+    /** What the chain of [tail] verified by its central directory's hash says was done ([done]); a stale chain is history only. */
+    fun verified(tail: Tail): Done = done(chain(String(tail.comment, Charsets.ISO_8859_1), tail.directory))
 
     /**
      * [verified] for the ZIP [file] on the device; nothing for one that is no ZIP or cannot
@@ -133,12 +194,21 @@ object OutputMarks {
     /** The tail of the ZIP read through [channel]; null when it has none, or its central directory is out of reach. */
     fun tail(channel: SeekableByteChannel, hash: Xxh3): Tail? {
         val raw = tailBytes(channel) ?: return null
-        val directory = read(channel, raw.directoryAt, raw.directorySize.toInt()) ?: return null
-        return Tail(raw.comment, hash.hash(directory, directory.size), raw.end)
+        return directoryHash(channel, raw, hash)?.let { Tail(raw.comment, it, raw.end) }
     }
 
-    /** What the end of central directory record says, read without the directory itself. */
-    private class RawTail(val comment: ByteArray, val directoryAt: Long, val directorySize: Long, val end: Long)
+    /** The XXH3-64 of the central directory [raw] locates; null when it locates none or it cannot be read. */
+    private fun directoryHash(channel: SeekableByteChannel, raw: RawTail, hash: Xxh3): Long? {
+        val at = raw.directoryAt ?: return null
+        val directory = read(channel, at, raw.directorySize.toInt()) ?: return null
+        return hash.hash(directory, directory.size)
+    }
+
+    /**
+     * What the end of central directory record says, read without the directory itself:
+     * where the directory starts ([directoryAt]), null when it is not located (or too large to hash).
+     */
+    private class RawTail(val comment: ByteArray, val directoryAt: Long?, val directorySize: Long, val end: Long)
 
     private fun tailBytes(channel: SeekableByteChannel): RawTail? {
         val size = channel.size()
@@ -167,9 +237,9 @@ object OutputMarks {
             directorySize = record.second
             directoryEnd = record.first
         } else if (sentinels) {
-            return null
+            return RawTail(comment, null, 0, end)
         }
-        if (directorySize < 0 || directorySize > MAX_DIRECTORY_BYTES || directoryEnd - directorySize < 0) return null
+        if (directorySize < 0 || directorySize > MAX_DIRECTORY_BYTES || directoryEnd - directorySize < 0) return RawTail(comment, null, 0, end)
         // Where the directory is by where it ends, so data before the archive (a self-extractor) moves nothing.
         return RawTail(comment, directoryEnd - directorySize, directorySize, end)
     }
@@ -192,26 +262,30 @@ object OutputMarks {
     }
 
     /**
-     * Ends [zip], a ZIP just written with no comment, with the comment of its source's
-     * [kept] comment and Emanata's block for [operation] over its central directory
-     * ([comment]), then reads it back: true when the block is there and verifies, false
-     * when only [kept] fit. Throws when [zip] is no ZIP or already has a comment.
+     * Ends [zip], a ZIP just written with no comment, with the comment ([comment]) of its
+     * source's [kept] comment and the entries of [operations] (in order) over its central
+     * directory, then reads it back: true when the block is there, verifies and ends with
+     * the last operation's entry; false when only the human text was written (too long, or
+     * the directory not located). Throws when [zip] is no ZIP or already has a comment.
      */
-    fun write(zip: File, kept: ByteArray, operation: Operation, hash: Xxh3): Boolean {
+    fun write(zip: File, kept: ByteArray, operations: List<Operation>, hash: Xxh3): Boolean {
+        require(operations.isNotEmpty()) { "No operation" }
         FileChannel.open(zip.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE).use { channel ->
-            val tail = tail(channel, hash) ?: throw IOException("No ZIP end in ${zip.name}")
-            if (tail.comment.isNotEmpty()) throw IOException("${zip.name} has a comment")
-            val text = comment(kept, block(operation, tail.directory))
+            val raw = tailBytes(channel) ?: throw IOException("No ZIP end in ${zip.name}")
+            if (raw.comment.isNotEmpty()) throw IOException("${zip.name} has a comment")
+            val directory = directoryHash(channel, raw, hash)
+            val text = comment(kept, operations.map { it.entry }, directory)
             val out = ByteBuffer.allocate(2 + text.size).order(ByteOrder.LITTLE_ENDIAN)
             out.putShort(text.size.toShort()).put(text).flip()
-            channel.position(tail.end + 20)
+            channel.position(raw.end + 20)
             while (out.hasRemaining()) channel.write(out)
-            channel.truncate(tail.end + EOCD_BYTES + text.size)
+            channel.truncate(raw.end + EOCD_BYTES + text.size)
             channel.force(true)
-            val back = tail(channel, hash) ?: throw IOException("No ZIP end in ${zip.name}")
-            if (!back.comment.contentEquals(text) || back.directory != tail.directory) throw IOException("Comment of ${zip.name} differs")
-            val marked = blocks(String(text, Charsets.ISO_8859_1)).any { it.tool == TOOL && it.operation == operation.word && it.value == back.directory }
-            return marked
+            val back = tailBytes(channel) ?: throw IOException("No ZIP end in ${zip.name}")
+            val backDirectory = directoryHash(channel, back, hash)
+            if (!back.comment.contentEquals(text) || backDirectory != directory) throw IOException("Comment of ${zip.name} differs")
+            if (directory == null) return false
+            return chain(String(text, Charsets.ISO_8859_1), directory).lastOrNull()?.sameAs(operations.last().entry) == true
         }
     }
 

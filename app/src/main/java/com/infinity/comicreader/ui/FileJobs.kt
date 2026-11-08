@@ -252,13 +252,13 @@ internal class FileJobs(
     /** What a rebuild makes of each book, the operation it runs as, the word naming a new file beside it, and the mark it leaves. */
     enum class Rebuild(val kind: FileWork.Kind, val suffix: String, val mark: OutputMarks.Operation) {
         /** Pages made smaller losslessly. */
-        COMPACT(FileWork.Kind.COMPACT, SUFFIX_COMPACTED, OutputMarks.Operation.COMPACTED),
+        COMPACT(FileWork.Kind.COMPACT, SUFFIX_COMPACTED, OutputMarks.Operation.COMPACT),
 
         /** Pages in formats few readers open made ones every reader opens. */
         COMPATIBLE(FileWork.Kind.COMPATIBLE, SUFFIX_COMPATIBLE, OutputMarks.Operation.COMPATIBLE),
 
         /** Every file copied as it is into a CBZ: a solid archive made quick to open at any page. */
-        REPACK(FileWork.Kind.REPACK, SUFFIX_REPACKED, OutputMarks.Operation.REPACKED);
+        REPACK(FileWork.Kind.REPACK, SUFFIX_REPACKED, OutputMarks.Operation.REPACK);
 
         /** True when [done] says a book had this done already, at the current version. */
         fun doneIn(done: OutputMarks.Done): Boolean = when (this) {
@@ -361,7 +361,7 @@ internal class FileJobs(
                     val request = Compactor.Request(
                         book, convert, inPlace, how.suffix, hidden, smallerOnly = how == Rebuild.COMPACT,
                         cost = pages?.let { it::memoryFor } ?: { it.size.toLong() }, placer = placer,
-                        always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, mark = how.mark
+                        always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, marks = listOf(how.mark)
                     )
                     val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
                     when (val result = compactor.run(request, open, progress)) {
@@ -477,7 +477,7 @@ internal class FileJobs(
                         dir, convert, inPlace = false, suffix = "", cost = cost, placer = placer, target = target, replace = replace, always = true,
                         dotFolders = plan.unusualToo, keepBoth = ::keepBoth,
                         // Compacted as Compact would: not offered Compact again.
-                        mark = if (compacted) OutputMarks.Operation.COMPACTED else null
+                        marks = if (compacted) listOf(OutputMarks.Operation.COMPACT) else emptyList()
                     )
                     val result = compactor.run(request, { FolderReader(files, dir) }, progress) as? Compactor.Result.Rebuilt
                         ?: throw IOException("Not packed: ${dir.name}")

@@ -464,7 +464,7 @@ class ListActivityFileOpsTest {
             zip.write(byteArrayOf(1, 2, 3))
             zip.closeEntry()
         }
-        assertTrue(OutputMarks.write(marked, ByteArray(0), OutputMarks.Operation.COMPACTED, BookIds.xxh3))
+        assertTrue(OutputMarks.write(marked, ByteArray(0), listOf(OutputMarks.Operation.COMPACT), BookIds.xxh3))
         val activity = launch()
         activity.select(marked.absolutePath)
         val compact = activity.moreItem(MoreAction.COMPACT)

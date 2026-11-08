@@ -12,6 +12,7 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -405,16 +406,25 @@ class ListActivityViewRingTest {
         val list = launch()
         val fab = list.fab()
         assertTrue(fab.contentDescription.toString().startsWith("Smaller: 5 columns, tap for 6 columns"))
+        assertEquals(R.drawable.ic_zoom_out, shadowOf(fab.drawable).createdFromResId)
         assertEquals(255, fab.imageAlpha)
+        assertNull(ViewCompat.getStateDescription(fab))
         fab.performClick()
         settle()
         assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
         assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
-        // At its end: grayed, and a tap changes nothing.
+        // At its end: grayed, TalkBack told so, and a tap changes nothing.
+        assertEquals(R.drawable.ic_zoom_out, shadowOf(fab.drawable).createdFromResId)
         assertTrue(fab.imageAlpha < 128)
+        assertEquals("At its end", ViewCompat.getStateDescription(fab).toString())
         fab.performClick()
         settle()
         assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
+        // Back to the layout toggle: its own icon, no state.
+        prefs.fabTap = RingOption.LAYOUT
+        val again = launch()
+        assertEquals(R.drawable.ic_view_list, shadowOf(again.fab().drawable).createdFromResId)
+        assertNull(ViewCompat.getStateDescription(again.fab()))
         // The long press still opens the ring.
         list.openRing()
     }

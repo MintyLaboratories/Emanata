@@ -2023,12 +2023,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /**
      * Gives the grid/list button the look of its tap action [tap] (Settings): the ring
-     * button's icon, grayed where the action is at its end, and a name saying what a tap does.
+     * button's icon, grayed where the action is at its end (and TalkBack told so), and a name
+     * saying what a tap does.
      */
     private fun paintTap(tap: RingOption) {
         val item = ringLabels.item(tap, prefs, tabName(), view, columnCount())
         paint(fab, FabLook.of(SelectionActions.Fab.GRID_LIST, view.grid, false).copy(icon = item.icon))
-        if (!item.enabled) fab.imageAlpha = (255 * DISABLED_ALPHA).toInt()
+        if (!item.enabled) {
+            fab.imageAlpha = (255 * DISABLED_ALPHA).toInt()
+            ViewCompat.setStateDescription(fab, getString(R.string.view_ring_at_end))
+        }
         val next = item.spoken.next
         fab.contentDescription = if (next == null) getString(R.string.view_ring_item, item.name, item.spoken.current)
         else getString(R.string.view_ring_item_next, item.name, item.spoken.current, next)
@@ -2114,6 +2118,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         button.setImageResource(look.icon)
         button.imageAlpha = 255
         button.contentDescription = getString(look.label)
+        ViewCompat.setStateDescription(button, null)
         button.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.background))
         button.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.foreground))
     }

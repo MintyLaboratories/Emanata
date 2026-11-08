@@ -97,6 +97,7 @@ import com.infinity.comicreader.data.Presence
 import com.infinity.comicreader.data.PresenceCheck
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.data.RingOption
 import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortValues
@@ -162,6 +163,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** The quick view options a long press on the grid/list button fans out. */
     internal val viewRing = ViewRingOverlay(this)
+    private val ringLabels = RingLabels(this)
 
     /** Where the finger on [fab] is in the window, while one is down. */
     private var fabFinger: Pair<Float, Float>? = null
@@ -614,7 +616,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
         if (s.statusBar != old.statusBar) applyStatusBarSetting()
         if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
-        if (s.quickFab != old.quickFab) updateFab()
+        if (s.quickFab != old.quickFab || s.fabTap != old.fabTap) updateFab()
         if (s.leftHanded != old.leftHanded) stack.setLeftHanded(s.leftHanded)
     }
 
@@ -2014,8 +2016,22 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             fab.visibility = View.GONE
             return
         }
-        paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
+        val tap = ViewRing.tapAction(tabName(), prefs.fabTap)
+        if (shows == SelectionActions.Fab.GRID_LIST && tap != RingOption.LAYOUT) paintTap(tap) else paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
         fab.visibility = View.VISIBLE
+    }
+
+    /**
+     * Gives the grid/list button the look of its tap action [tap] (Settings): the ring
+     * button's icon, grayed where the action is at its end, and a name saying what a tap does.
+     */
+    private fun paintTap(tap: RingOption) {
+        val item = ringLabels.item(tap, prefs, tabName(), view, columnCount())
+        paint(fab, FabLook.of(SelectionActions.Fab.GRID_LIST, view.grid, false).copy(icon = item.icon))
+        if (!item.enabled) fab.imageAlpha = (255 * DISABLED_ALPHA).toInt()
+        val next = item.spoken.next
+        fab.contentDescription = if (next == null) getString(R.string.view_ring_item, item.name, item.spoken.current)
+        else getString(R.string.view_ring_item_next, item.name, item.spoken.current, next)
     }
 
     // ------------------------------------------------------------------ view ring
@@ -2051,47 +2067,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         return true
     }
 
-    /** The ring's buttons for the current tab, each with its current value. */
-    private fun ringItems(): List<ViewRingOverlay.Item> {
-        val tab = tabName()
-        val v = view
-        val columns = columnCount()
-        val sort = prefs.sort(tab)
-        val size = if (!v.grid) TabViewDialogs.densityLabel(this, v.density)
-        else if (v.rows > 0) getString(R.string.view_ring_grid, columns, v.rows)
-        else resources.getQuantityString(R.plurals.view_ring_columns, columns, columns)
-        fun onOff(on: Boolean) = getString(if (on) R.string.view_ring_on else R.string.view_ring_off)
-        return ViewRing.options(tab).map { option ->
-            when (option) {
-                RingOption.LAYOUT -> ViewRingOverlay.Item(
-                    option, if (v.grid) R.drawable.ic_grid_view else R.drawable.ic_view_list,
-                    getString(R.string.view_ring_layout), getString(if (v.grid) R.string.layout_grid else R.string.layout_list)
-                )
-                RingOption.SMALLER -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_zoom_out, getString(R.string.view_ring_smaller), size, ViewRing.smaller(v, columns) != null
-                )
-                RingOption.LARGER -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_zoom_in, getString(R.string.view_ring_larger), size, ViewRing.larger(v, columns) != null
-                )
-                RingOption.DETAIL -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_info, getString(R.string.view_ring_details), TabViewDialogs.detailLabel(this, v.detail)
-                )
-                RingOption.SORT -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_sort, getString(R.string.menu_sort), SortDialog.levelText(this, sort.by),
-                    longLabel = getString(R.string.view_ring_sort_more)
-                )
-                RingOption.FOLDERS_FIRST -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_folder, getString(R.string.sort_folders_first), onOff(sort.foldersFirst)
-                )
-                RingOption.SECTIONS -> ViewRingOverlay.Item(
-                    option, R.drawable.ic_view_agenda, getString(R.string.view_ring_sections), onOff(prefs.groupFavorites)
-                )
-            }
-        }
-    }
+    /** The ring's buttons for the current tab, as Settings choose them, each with what a tap does. */
+    private fun ringItems(): List<ViewRingOverlay.Item> = ringLabels.items(prefs, tabName(), view, columnCount())
 
     /** Writes what ring button [option] changes, shows it at once, and the ring shows the new values. */
     private fun onRingTap(option: RingOption) {
+        runRing(option)
+        viewRing.refresh(ringItems())
+    }
+
+    /** Writes what ring action [option] changes and shows it at once; at its end, Smaller or Larger does nothing. */
+    private fun runRing(option: RingOption) {
         val tab = tabName()
         val v = view
         when (option) {
@@ -2100,6 +2086,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             RingOption.LARGER -> ViewRing.larger(v, columnCount())?.let { setView(tab, it) }
             RingOption.DETAIL -> prefs.setDetail(tab, ViewRing.nextDetail(v.detail))
             RingOption.SORT -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(by = it.by.flip())) }
+            RingOption.TITLE_LINES -> prefs.titleDisplay = ViewRing.nextTitle(prefs.titleDisplay)
             RingOption.FOLDERS_FIRST -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(foldersFirst = !it.foldersFirst)) }
             RingOption.SECTIONS -> prefs.groupFavorites = !prefs.groupFavorites
         }
@@ -2107,7 +2094,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             RingOption.SORT, RingOption.FOLDERS_FIRST, RingOption.SECTIONS -> onTabSettingsChanged()
             else -> showCurrentView()
         }
-        viewRing.refresh(ringItems())
+        updateFab()
     }
 
     /** Writes a grid size or list density stepped by the ring. */
@@ -2125,6 +2112,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** Gives [button] the icon, name and colors of [look]. */
     private fun paint(button: FloatingActionButton, look: FabLook) {
         button.setImageResource(look.icon)
+        button.imageAlpha = 255
         button.contentDescription = getString(look.label)
         button.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.background))
         button.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.foreground))
@@ -2132,7 +2120,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     private fun onFabClick() {
         when (fabShows) {
-            null, SelectionActions.Fab.GRID_LIST -> toggleGrid()
+            null, SelectionActions.Fab.GRID_LIST -> ViewRing.tapAction(tabName(), prefs.fabTap).let { if (it == RingOption.LAYOUT) toggleGrid() else runRing(it) }
             SelectionActions.Fab.OPEN -> selection.entries.singleOrNull()?.let {
                 endSelection()
                 openEntry(it)

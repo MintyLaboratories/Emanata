@@ -2,8 +2,10 @@ package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
-import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RingOption
+import com.infinity.comicreader.data.RingOptions
 import com.infinity.comicreader.data.TabView
+import com.infinity.comicreader.data.TitleDisplay
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -13,41 +15,14 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** A quick view option on the ring a long press on the grid/list button opens. */
-internal enum class RingOption {
-    /** Grid or list. */
-    LAYOUT,
-
-    /** More grid columns (and rows, when set), or a smaller list density. */
-    SMALLER,
-
-    /** Fewer grid columns (and rows, when set), or a larger list density. */
-    LARGER,
-
-    /** Detail display: Hidden, Comfortable, Dense in turn. */
-    DETAIL,
-
-    /** The first sort level's direction. */
-    SORT,
-
-    /** Folders first, on or off (Browse). */
-    FOLDERS_FIRST,
-
-    /** Favorites under Libraries, Sets and Comics, on or off (Favorites). */
-    SECTIONS
-}
-
 /** What the view ring offers per tab, and what each option changes; free of Android types. */
 internal object ViewRing {
 
-    private val COMMON = listOf(RingOption.LAYOUT, RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT)
+    /** [tab]'s options, from the top of the ring inward: those [chosen] that apply to it. */
+    fun options(tab: String, chosen: RingOptions = RingOptions.DEFAULT): List<RingOption> = chosen.forTab(tab)
 
-    /** [tab]'s options, from the top of the ring inward: the common five, plus Folders first in Browse or Sections in Favorites. */
-    fun options(tab: String): List<RingOption> = when (tab) {
-        Prefs.TAB_BROWSE -> COMMON + RingOption.FOLDERS_FIRST
-        Prefs.TAB_FAVORITES -> COMMON + RingOption.SECTIONS
-        else -> COMMON
-    }
+    /** What the grid/list button's tap runs in [tab]: [chosen], or Layout where that does not apply. */
+    fun tapAction(tab: String, chosen: RingOption): RingOption = if (chosen.appliesTo(tab)) chosen else RingOption.LAYOUT
 
     /** [view] with larger covers or rows: one column fewer than the [columns] shown (and one row, when set), or the next density up; null at the end. */
     fun larger(view: TabView, columns: Int): TabView? = if (view.grid) grid(view, columns, -1) else density(view, +1)
@@ -71,6 +46,43 @@ internal object ViewRing {
 
     /** The detail display after [detail], round and round. */
     fun nextDetail(detail: DetailDisplay): DetailDisplay = DetailDisplay.entries[(detail.ordinal + 1) % DetailDisplay.entries.size]
+
+    /** The title display after [title], round and round. */
+    fun nextTitle(title: TitleDisplay): TitleDisplay = TitleDisplay.entries[(title.ordinal + 1) % TitleDisplay.entries.size]
+
+    /**
+     * [current] and [next] with the words they share said once: leading words kept on the
+     * current side only ("Dir. LTR", "RTL"), else trailing words on the next side only ("4",
+     * "5 columns"); as they are when they share none, or are the same.
+     */
+    fun compact(current: String, next: String): Pair<String, String> {
+        val a = current.split(' ')
+        val b = next.split(' ')
+        if (a == b) return current to next
+        val most = min(a.size, b.size) - 1
+        val lead = (0 until most).takeWhile { a[it] == b[it] }.count()
+        if (lead > 0) return current to b.drop(lead).joinToString(" ")
+        val trail = (0 until most).takeWhile { a[a.size - 1 - it] == b[b.size - 1 - it] }.count()
+        if (trail > 0) return a.dropLast(trail).joinToString(" ") to next
+        return current to next
+    }
+}
+
+/** A ring label's value: [current], and what a tap makes it, [next]; null for an option at its end, which shows only [current]. */
+internal data class RingValue(val current: String, val next: String?)
+
+/**
+ * A ring label's value forms, fullest first: [currents] and [nexts] pair up form by form
+ * (the shorter list's last repeating), then the shortest pair said once more with shared
+ * words dropped ([ViewRing.compact]); repeats are dropped. With [nexts] null, the currents alone.
+ */
+internal fun ringForms(currents: List<String>, nexts: List<String>?): List<RingValue> {
+    if (nexts == null) return currents.distinct().map { RingValue(it, null) }
+    val n = max(currents.size, nexts.size)
+    val pairs = List(n) { RingValue(currents[min(it, currents.lastIndex)], nexts[min(it, nexts.lastIndex)]) }
+    val last = pairs.last()
+    val (c, x) = ViewRing.compact(last.current, last.next!!)
+    return (pairs + RingValue(c, x)).distinct()
 }
 
 /**
@@ -149,8 +161,12 @@ internal object RingGeometry {
         }
     }
 
-    /** Labels laid out on a ring of [radius]: their [boxes], how much they [overlap] the rest, and how many sit [aside] rather than outward. */
-    class Placement(val radius: Float, val boxes: List<Box>, val overlap: Float, val aside: Int)
+    /**
+     * Labels laid out on a ring of [radius]: their [boxes], how much they [overlap] the rest,
+     * how many sit [aside] rather than outward, and which of them overlap another label or a
+     * round button ([clashing]).
+     */
+    class Placement(val radius: Float, val boxes: List<Box>, val overlap: Float, val aside: Int, val clashing: Set<Int> = emptySet())
 
     /**
      * The largest radius at which a [width] x [height] box, centered ([ox], [oy]) off the spot
@@ -174,31 +190,46 @@ internal object RingGeometry {
      * ([labels], width to height) [reach] off each button's center: the largest radius up to
      * [want] that keeps the buttons within [bounds] and, down to buttons [spacing] apart center
      * to center, the labels outward, clear of each other and of every button ([pad] apart).
-     * Where no radius does, the one whose labels overlap least, the fewest of them aside
-     * ([place]).
+     * Where no radius does and [grow] is above 1, the smallest radius up to [grow] times
+     * [want] that keeps the labels clear, outward where one does. Else the one whose labels
+     * overlap least, the fewest of them aside ([place]).
      */
     fun arrange(
         angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, want: Float,
-        spacing: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>
+        spacing: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>, grow: Float = 1f
     ): Placement {
         val buttons = angles.minOfOrNull { room(it, cx, cy, bounds, 0f, 0f, button, button) } ?: want
         val most = min(want, max(buttons, button))
         val least = min(max(radius(angles.size, spacing, 0f), spacing), most)
+        fun better(p: Placement, than: Placement) = p.overlap < than.overlap || (p.overlap == than.overlap && p.aside < than.aside)
         var best = place(angles, cx, cy, bounds, button, most, reach, pad, labels)
         if (best.overlap == 0f && best.aside == 0) return best
         for (s in 1..STEPS) {
             val p = place(angles, cx, cy, bounds, button, most - (most - least) * s / STEPS, reach, pad, labels)
-            if (p.overlap < best.overlap || (p.overlap == best.overlap && p.aside < best.aside)) best = p
+            if (better(p, best)) best = p
             if (best.overlap == 0f && best.aside == 0) break
         }
-        return best
+        val top = min(want * grow, max(buttons, button))
+        if (best.overlap == 0f || top <= most) return best
+        var clear: Placement? = null
+        for (s in 1..STEPS) {
+            val p = place(angles, cx, cy, bounds, button, most + (top - most) * s / STEPS, reach, pad, labels)
+            if (p.overlap > 0f) {
+                if (clear == null && better(p, best)) best = p
+                continue
+            }
+            if (clear == null || p.aside < clear.aside) clear = p
+            if (p.aside == 0) break
+        }
+        return clear ?: best
     }
 
     /**
      * Where each label goes beside its button on a ring of [radius] (as in [arrange]), in
      * order: outward when that lies within [bounds] clear of the hub, the buttons and the
-     * labels before it ([pad] apart; its own button only untouched); else the nearest side
-     * that does; else, moved within [bounds], the side where it overlaps least.
+     * labels before it ([pad] apart; its own button only untouched), slid along that side up
+     * to half its size where need be ([SLIDES]); else the nearest side that does; else, moved
+     * within [bounds], the side where it overlaps least.
      */
     fun place(
         angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, radius: Float,
@@ -216,24 +247,62 @@ internal object RingGeometry {
             var pick: Box? = null
             var least = Float.MAX_VALUE
             var out = true
-            for ((k, side) in sides(angle).withIndex()) {
+            search@ for ((k, side) in sides(angle).withIndex()) {
                 val (ox, oy) = labelCenter(side, reach, w, h)
-                val box = Box.around(bx + ox, by + oy, w, h).let { if (it.within(bounds)) it else it.movedInto(bounds) }
-                val o = taken.sumOf { box.overlap(it, pad).toDouble() }.toFloat() +
-                    round.withIndex().sumOf { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad).toDouble() }.toFloat()
-                if (o < least) {
-                    pick = box
-                    least = o
-                    out = k == 0
+                // Beside the button to its left or right, a label may slide up or down; above or below it, sideways.
+                val beside = abs(cos(Math.toRadians(side))) >= abs(sin(Math.toRadians(side)))
+                for (slide in SLIDES) {
+                    val sx = if (beside) 0f else slide * w
+                    val sy = if (beside) slide * h else 0f
+                    val box = Box.around(bx + ox + sx, by + oy + sy, w, h).let { if (it.within(bounds)) it else it.movedInto(bounds) }
+                    val o = taken.sumOf { box.overlap(it, pad).toDouble() }.toFloat() +
+                        round.withIndex().sumOf { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad).toDouble() }.toFloat()
+                    if (o < least) {
+                        pick = box
+                        least = o
+                        out = k == 0
+                    }
+                    if (o == 0f) break@search
                 }
-                if (o == 0f) break
             }
             boxes += pick!!
             taken += pick
             overlap += least
             if (!out) aside++
         }
-        return Placement(radius, boxes, overlap, aside)
+        val clashing = HashSet<Int>()
+        for ((i, box) in boxes.withIndex()) {
+            for (j in i + 1 until boxes.size) if (box.overlap(boxes[j], pad) > 0f) clashing += listOf(i, j)
+            if (round.withIndex().any { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad) > 0f }) clashing += i
+        }
+        return Placement(radius, boxes, overlap, aside, clashing)
+    }
+
+    /**
+     * Picks each label's form: [forms] holds each label's sizes (width to height), fullest
+     * first. All start fullest; while the labels laid out ([lay]) overlap, each one that
+     * clashes takes its next shorter form, or, with [all], once those are at their shortest,
+     * each other one, leaving them room. The first layout clear of overlap wins; else the
+     * one that overlaps least, the fewest labels aside. Returns it with the form indexes.
+     */
+    fun fit(forms: List<List<Pair<Float, Float>>>, all: Boolean = false, lay: (List<Pair<Float, Float>>) -> Placement): Pair<Placement, List<Int>> {
+        val pick = IntArray(forms.size)
+        var best: Placement? = null
+        var bestPick = pick.toList()
+        while (true) {
+            val p = lay(forms.indices.map { forms[it][pick[it]] })
+            val b = best
+            if (b == null || p.overlap < b.overlap || (p.overlap == b.overlap && p.aside < b.aside)) {
+                best = p
+                bestPick = pick.toList()
+            }
+            if (p.overlap == 0f) break
+            val shorter = p.clashing.filter { pick[it] < forms[it].lastIndex }
+                .ifEmpty { if (all) forms.indices.filter { pick[it] < forms[it].lastIndex } else emptyList() }
+            if (shorter.isEmpty()) break
+            for (i in shorter) pick[i]++
+        }
+        return best!! to bestPick
     }
 
     /** The sides a label of a button at [angle] may take: outward first, then the nearest ones, inward last. */
@@ -254,6 +323,9 @@ internal object RingGeometry {
     private const val EPS = 0.01f
     private const val AXIS = 1e-6
     private const val STEPS = 32
+
+    /** How far a label may slide along its side, as shares of its own size, nearest first. */
+    private val SLIDES = floatArrayOf(0f, -0.25f, 0.25f, -0.5f, 0.5f)
 }
 
 /**

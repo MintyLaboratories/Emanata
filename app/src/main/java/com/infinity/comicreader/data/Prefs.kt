@@ -418,6 +418,16 @@ class Prefs(context: Context) {
         get() = bool(KEY_QUICK_FAB, true)
         set(v) = put(KEY_QUICK_FAB, v)
 
+    /** What a tap on the grid/list button does: one of the view ring's actions, Layout by default. */
+    var fabTap: RingOption
+        get() = RingOption.of(sp.getString(KEY_FAB_TAP, null)) ?: RingOption.LAYOUT
+        set(v) = put(KEY_FAB_TAP, v.key)
+
+    /** The view ring's options, in order. */
+    var ringOptions: RingOptions
+        get() = RingOptions.decode(sp.getString(KEY_RING_OPTIONS, null))
+        set(v) = put(KEY_RING_OPTIONS, v.encode())
+
     /** True when Compact and Make compatible replace each book with its new file; off, the new file goes beside it. */
     var compactInPlace: Boolean
         get() = bool(KEY_COMPACT_IN_PLACE, false)
@@ -694,6 +704,8 @@ class Prefs(context: Context) {
         private const val KEY_PATHVIEW = "pref_list_pathview"
         private const val KEY_LIST_STATUSBAR = "pref_list_statusbar"
         private const val KEY_QUICK_FAB = "pref_list_quickfab"
+        const val KEY_FAB_TAP = "pref_fab_tap"
+        private const val KEY_RING_OPTIONS = "pref_view_ring"
         const val KEY_HANDED = "pref_handed"
         private const val KEY_COMPACT_IN_PLACE = "pref_compact_in_place"
         private const val KEY_SUGGEST_REPACK = "pref_suggest_repack"
@@ -739,7 +751,7 @@ class Prefs(context: Context) {
             KEY_RESUME_MODE, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR,
             KEY_PINCH_PEEK, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
-            KEY_QUICK_FAB, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES,
+            KEY_QUICK_FAB, KEY_FAB_TAP, KEY_RING_OPTIONS, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES,
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,

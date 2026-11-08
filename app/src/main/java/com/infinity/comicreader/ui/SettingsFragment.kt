@@ -241,6 +241,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
+        findPreference<ListPreference>(Prefs.KEY_FAB_TAP)?.apply {
+            val (names, values) = RingOptionsDialog.tapChoices(requireContext())
+            entries = names
+            entryValues = values
+            value = prefs.fabTap.key
+        }
+
+        findPreference<Preference>("view_ring")?.let { pref ->
+            pref.summary = RingOptionsDialog.summary(requireContext(), prefs)
+            pref.setOnPreferenceClickListener {
+                RingOptionsDialog.show(requireContext(), prefs) {
+                    if (isAdded) pref.summary = RingOptionsDialog.summary(requireContext(), prefs)
+                }
+                true
+            }
+        }
+
         findPreference<Preference>("more_actions")?.let { pref ->
             pref.summary = MoreActionsDialog.summary(requireContext(), prefs)
             pref.setOnPreferenceClickListener {

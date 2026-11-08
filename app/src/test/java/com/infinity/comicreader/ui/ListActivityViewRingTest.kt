@@ -22,7 +22,10 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RingOption
+import com.infinity.comicreader.data.RingOptions
 import com.infinity.comicreader.data.SortKey
+import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -37,6 +40,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowChoreographer
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
@@ -67,6 +71,8 @@ class ListActivityViewRingTest {
         (1..12).forEach { File(dir, "Book %02d.cbz".format(it)).createNewFile() }
         File(dir, "Folder").mkdirs()
         prefs.lastPath = dir.absolutePath
+        // Layout first, then the default ring: Browse shows six.
+        prefs.ringOptions = RingOptions.DEFAULT.with(RingOption.SECTIONS, false).with(RingOption.LAYOUT, true).moved(6, 0)
     }
 
     private fun settle(ms: Long = 20) = repeat(3) {
@@ -114,7 +120,8 @@ class ListActivityViewRingTest {
         settle()
     }
 
-    private fun ListActivity.labelOf(option: RingOption) = viewRing.label(option)!!.text.toString()
+    /** [option]'s label as read, without the break the value may take after its arrow. */
+    private fun ListActivity.labelOf(option: RingOption) = viewRing.label(option)!!.text.toString().replace("\u200B", "")
 
     private fun center(v: View): Pair<Float, Float> {
         val at = IntArray(2).also { v.getLocationInWindow(it) }
@@ -125,7 +132,7 @@ class ListActivityViewRingTest {
     fun aLongPressFansTheTabsOptionsOutTowardTheInside() {
         val list = launch()
         list.openRing()
-        val options = ViewRing.options(Prefs.TAB_BROWSE)
+        val options = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)
         val (fx, fy) = center(list.fab())
         for (o in options) {
             val b = list.viewRing.button(o)
@@ -141,8 +148,8 @@ class ListActivityViewRingTest {
         val (hx, hy) = center(list.viewRing.hub()!!)
         assertEquals(fx, hx, 1f)
         assertEquals(fy, hy, 1f)
-        assertEquals("Layout\nGrid", list.labelOf(RingOption.LAYOUT))
-        assertEquals("Folders first\nOn", list.labelOf(RingOption.FOLDERS_FIRST))
+        assertEquals("Layout\nGrid→List", list.labelOf(RingOption.LAYOUT))
+        assertEquals("Folders first\nOn→Off", list.labelOf(RingOption.FOLDERS_FIRST))
         assertNull(list.viewRing.button(RingOption.SECTIONS))
     }
 
@@ -154,10 +161,10 @@ class ListActivityViewRingTest {
     /** Every label shows whole on screen, clear of every round button, the hub and each other. */
     private fun ListActivity.assertLabelsClear(tab: String) {
         val screen = box(window.decorView)
-        val round = (ViewRing.options(tab).map { viewRing.button(it)!! } + viewRing.hub()!!).map { b ->
+        val round = (ViewRing.options(tab, prefs.ringOptions).map { viewRing.button(it)!! } + viewRing.hub()!!).map { b ->
             center(b).let { (x, y) -> Triple(x, y, b.width / 2f) }
         }
-        val labels = ViewRing.options(tab).map { it to box(viewRing.label(it)!!) }
+        val labels = ViewRing.options(tab, prefs.ringOptions).map { it to box(viewRing.label(it)!!) }
         for ((o, l) in labels) {
             assertTrue("$o $l on $screen", l.within(screen))
             for ((x, y, r) in round) assertEquals("$o $l on $x, $y", 0f, l.overlap(x, y, r), 0f)
@@ -170,7 +177,7 @@ class ListActivityViewRingTest {
     fun labelsStayClearInANarrowWindow() {
         val list = launch()
         list.openRing()
-        val full = RingGeometry.radius(ViewRing.options(Prefs.TAB_BROWSE).size, 112f, 136f)
+        val full = RingGeometry.radius(ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions).size, 112f, 136f)
         val (fx, fy) = center(list.fab())
         val (lx, ly) = center(list.viewRing.button(RingOption.FOLDERS_FIRST)!!)
         // The ring shrank to fit its labels.
@@ -190,17 +197,18 @@ class ListActivityViewRingTest {
         settle()
         list.openRing()
         val (fx, _) = center(list.fab())
-        for (o in ViewRing.options(Prefs.TAB_BROWSE)) assertTrue("$o", center(list.viewRing.button(o)!!).first >= fx - 1)
+        for (o in ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)) assertTrue("$o", center(list.viewRing.button(o)!!).first >= fx - 1)
         list.assertLabelsClear(Prefs.TAB_BROWSE)
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aRoomyWindowKeepsEveryLabelOutward() {
         val list = launch()
         list.openRing()
         list.assertLabelsClear(Prefs.TAB_BROWSE)
         val (fx, fy) = center(list.fab())
-        for (o in ViewRing.options(Prefs.TAB_BROWSE)) {
+        for (o in ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)) {
             val (bx, by) = center(list.viewRing.button(o)!!)
             val (lx, ly) = center(list.viewRing.label(o)!!)
             // Outward: farther from the hub than its button.
@@ -215,7 +223,7 @@ class ListActivityViewRingTest {
         settle()
         list.openRing()
         val (fx, _) = center(list.fab())
-        for (o in ViewRing.options(Prefs.TAB_BROWSE)) {
+        for (o in ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions)) {
             assertTrue("$o", center(list.viewRing.button(o)!!).first >= fx - 1)
         }
     }
@@ -227,21 +235,21 @@ class ListActivityViewRingTest {
         list.tap(RingOption.LAYOUT)
         assertFalse(prefs.view(Prefs.TAB_BROWSE).grid)
         assertFalse(list.recycler().layoutManager is GridLayoutManager)
-        assertEquals("Layout\nList", list.labelOf(RingOption.LAYOUT))
-        assertEquals("Larger\nNormal", list.labelOf(RingOption.LARGER))
+        assertEquals("Layout\nList→Grid", list.labelOf(RingOption.LAYOUT))
+        assertEquals("Larger\nNormal→Large", list.labelOf(RingOption.LARGER))
 
         list.tap(RingOption.LARGER)
         assertEquals(ListDensity.LARGE, prefs.view(Prefs.TAB_BROWSE).density)
-        assertEquals("Smaller\nLarge", list.labelOf(RingOption.SMALLER))
+        assertEquals("Smaller\nLarge→Normal", list.labelOf(RingOption.SMALLER))
 
         list.tap(RingOption.DETAIL)
         assertEquals(DetailDisplay.DENSE, prefs.view(Prefs.TAB_BROWSE).detail)
-        assertEquals("Details\nDense", list.labelOf(RingOption.DETAIL))
+        assertEquals("Details\nDense→Hidden", list.labelOf(RingOption.DETAIL))
 
         list.tap(RingOption.SORT)
         assertTrue(prefs.sort(Prefs.TAB_BROWSE).by.flipped)
         assertEquals(SortKey.NAME, prefs.sort(Prefs.TAB_BROWSE).by.key)
-        assertEquals("Sort\nName – Z → A", list.labelOf(RingOption.SORT))
+        assertEquals("Sort\nName ↓→Name ↑", list.labelOf(RingOption.SORT))
 
         list.tap(RingOption.FOLDERS_FIRST)
         assertFalse(prefs.sort(Prefs.TAB_BROWSE).foldersFirst)
@@ -253,11 +261,14 @@ class ListActivityViewRingTest {
         prefs.setGridSize(Prefs.TAB_BROWSE, 5, 0)
         val list = launch()
         list.openRing()
-        assertEquals("Smaller\n5 columns", list.labelOf(RingOption.SMALLER))
+        assertEquals("Smaller\n5 columns→6 columns", list.labelOf(RingOption.SMALLER))
         list.tap(RingOption.SMALLER)
         assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
         assertEquals(6, (list.recycler().layoutManager as GridLayoutManager).spanCount)
         assertFalse(list.viewRing.button(RingOption.SMALLER)!!.isEnabled)
+        // At its end: the size alone.
+        assertEquals("Smaller\n6 columns", list.labelOf(RingOption.SMALLER))
+        assertEquals("Larger\n6 columns→5 columns", list.labelOf(RingOption.LARGER))
         list.tap(RingOption.LARGER)
         assertEquals(5, prefs.view(Prefs.TAB_BROWSE).columns)
         assertTrue(list.viewRing.button(RingOption.SMALLER)!!.isEnabled)
@@ -265,12 +276,13 @@ class ListActivityViewRingTest {
 
     @Test
     fun favoritesToggleSections() {
+        prefs.ringOptions = RingOptions.DEFAULT
         val list = launch(tab = 1)
         list.openRing()
-        assertEquals("Sections\nOn", list.labelOf(RingOption.SECTIONS))
+        assertEquals("Sections\nOn→Off", list.labelOf(RingOption.SECTIONS))
         list.tap(RingOption.SECTIONS)
         assertFalse(prefs.groupFavorites)
-        assertEquals("Sections\nOff", list.labelOf(RingOption.SECTIONS))
+        assertEquals("Sections\nOff→On", list.labelOf(RingOption.SECTIONS))
         assertNull(list.viewRing.button(RingOption.FOLDERS_FIRST))
     }
 
@@ -339,6 +351,121 @@ class ListActivityViewRingTest {
         assertEquals(list.viewRing.button(RingOption.SMALLER)!!.alpha, list.viewRing.label(RingOption.SMALLER)!!.alpha, 0.01f)
         assertTrue(list.viewRing.label(RingOption.SMALLER)!!.alpha < 0.5f)
         assertEquals(1f, list.viewRing.label(RingOption.LARGER)!!.alpha, 0.01f)
+    }
+
+    // ------------------------------------------------------------------ chosen in Settings
+
+    private fun ListActivity.ringShows(): List<RingOption> = RingOption.entries.filter { viewRing.button(it) != null }
+
+    @Test
+    fun byDefaultTheRingLeavesLayoutToTheButton() {
+        prefs.ringOptions = RingOptions.DEFAULT
+        val list = launch()
+        list.openRing()
+        assertEquals(listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT, RingOption.FOLDERS_FIRST), list.ringShows())
+        list.viewRing.close(animate = false)
+        val history = launch(tab = 2)
+        history.openRing()
+        assertEquals(listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT), history.ringShows())
+    }
+
+    @Test
+    fun theRingShowsTheThreeToSixChosenInTheirOrder() {
+        prefs.ringOptions = RingOptions.DEFAULT.moved(4, 0).with(RingOption.LARGER, false).with(RingOption.DETAIL, false).with(RingOption.SECTIONS, false)
+        val list = launch()
+        list.openRing()
+        assertEquals(setOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), list.ringShows().toSet())
+        // In order from the top of the arc inward: the first highest.
+        val tops = listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT).map { center(list.viewRing.button(it)!!).second }
+        assertEquals(tops.sorted(), tops)
+        list.viewRing.close(animate = false)
+
+        prefs.ringOptions = RingOptions.DEFAULT.with(RingOption.DETAIL, false).with(RingOption.FOLDERS_FIRST, false)
+            .with(RingOption.LAYOUT, true).with(RingOption.TITLE_LINES, true)
+        val favorites = launch(tab = 1)
+        favorites.openRing()
+        assertEquals(6, favorites.ringShows().size)
+        assertEquals("Title lines\nDouble line→Bounce", favorites.labelOf(RingOption.TITLE_LINES))
+        favorites.tap(RingOption.TITLE_LINES)
+        assertEquals(TitleDisplay.BOUNCE, prefs.titleDisplay)
+        assertEquals("Title lines\nBounce→Marquee", favorites.labelOf(RingOption.TITLE_LINES))
+        favorites.assertLabelsClear(Prefs.TAB_FAVORITES)
+    }
+
+    @Test
+    fun theButtonsTapRunsTheChosenActionAndItsIconSaysSo() {
+        prefs.fabTap = RingOption.SMALLER
+        prefs.setGridSize(Prefs.TAB_BROWSE, 5, 0)
+        val list = launch()
+        val fab = list.fab()
+        assertTrue(fab.contentDescription.toString().startsWith("Smaller: 5 columns, tap for 6 columns"))
+        assertEquals(255, fab.imageAlpha)
+        fab.performClick()
+        settle()
+        assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        // At its end: grayed, and a tap changes nothing.
+        assertTrue(fab.imageAlpha < 128)
+        fab.performClick()
+        settle()
+        assertEquals(6, prefs.view(Prefs.TAB_BROWSE).columns)
+        // The long press still opens the ring.
+        list.openRing()
+    }
+
+    @Test
+    fun aTabOnlyTapActionTogglesTheLayoutElsewhere() {
+        prefs.fabTap = RingOption.FOLDERS_FIRST
+        val list = launch()
+        list.fab().performClick()
+        settle()
+        assertFalse(prefs.sort(Prefs.TAB_BROWSE).foldersFirst)
+        assertTrue(prefs.view(Prefs.TAB_BROWSE).grid)
+        val history = launch(tab = 2)
+        assertEquals(history.getString(R.string.menu_grid), history.fab().contentDescription.toString())
+        history.fab().performClick()
+        settle()
+        assertTrue(prefs.view(Prefs.TAB_HISTORY).grid)
+    }
+
+    /** The open ring's radius against the first ring's, in dp, and its buttons' spacing. */
+    private fun ListActivity.assertSmallerRing(tab: String) {
+        val density = resources.displayMetrics.density
+        val options = ViewRing.options(tab, prefs.ringOptions)
+        val first = RingGeometry.radius(options.size, 112f, 136f)
+        val radius = viewRing.ringRadius / density
+        assertTrue("radius $radius of $first", radius <= first * 0.7f)
+        val centers = options.map { center(viewRing.button(it)!!) }
+        for ((a, b) in centers.zipWithNext()) assertTrue("buttons ${hypot(a.first - b.first, a.second - b.second) / density} dp apart", hypot(a.first - b.first, a.second - b.second) >= 56 * density)
+        for (o in options) assertTrue("$o reachable", viewRing.button(o)!!.width >= 48 * density)
+        assertLabelsClear(tab)
+    }
+
+    @Test
+    fun theRingIsTwoThirdsTheFirstAtFullWidth() {
+        for (left in listOf(false, true)) {
+            prefs.leftHanded = left
+            val list = launch()
+            settle()
+            list.openRing()
+            val n = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions).size
+            assertEquals(RingGeometry.radius(n, 75f, 91f), list.viewRing.ringRadius / list.resources.displayMetrics.density, 1f)
+            list.assertSmallerRing(Prefs.TAB_BROWSE)
+            list.viewRing.close(animate = false)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h800dp")
+    fun theSmallerRingFitsA400dpWindowForBothHands() {
+        for (left in listOf(false, true)) {
+            prefs.leftHanded = left
+            val list = launch()
+            settle()
+            list.openRing()
+            list.assertSmallerRing(Prefs.TAB_BROWSE)
+            list.viewRing.close(animate = false)
+        }
     }
 
     @Test
@@ -665,7 +792,7 @@ class ListActivityViewRingTest {
         val list = launch()
         val finger = list.pressAndHold()
         finger.moveTo(list.viewRing.button(RingOption.LAYOUT)!!)
-        val others = ViewRing.options(Prefs.TAB_FAVORITES).map { ViewRingOverlay.Item(it, R.drawable.ic_sort, "Name", "Value") }
+        val others = ViewRing.options(Prefs.TAB_FAVORITES).map { ViewRingOverlay.Item(it, R.drawable.ic_sort, "Name", listOf(RingValue("Value", null))) }
         list.viewRing.refresh(others)
         assertFalse(list.viewRing.following)
         for (o in ViewRing.options(Prefs.TAB_FAVORITES)) assertFalse("$o", list.viewRing.button(o)!!.isPressed)

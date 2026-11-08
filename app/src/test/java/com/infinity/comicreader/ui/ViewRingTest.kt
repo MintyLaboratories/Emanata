@@ -3,7 +3,10 @@ package com.infinity.comicreader.ui
 import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.RingOption
+import com.infinity.comicreader.data.RingOptions
 import com.infinity.comicreader.data.TabView
+import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,12 +18,101 @@ import kotlin.math.hypot
 class ViewRingTest {
 
     @Test
-    fun everyTabGetsTheCommonFivePlusItsOwn() {
-        val common = listOf(RingOption.LAYOUT, RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT)
+    fun byDefaultEveryTabGetsTheCommonFourPlusItsOwnButNoLayout() {
+        val common = listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.DETAIL, RingOption.SORT)
         assertEquals(common + RingOption.FOLDERS_FIRST, ViewRing.options(Prefs.TAB_BROWSE))
         assertEquals(common + RingOption.SECTIONS, ViewRing.options(Prefs.TAB_FAVORITES))
         assertEquals(common, ViewRing.options(Prefs.TAB_HISTORY))
         assertEquals(common, ViewRing.options(Prefs.TAB_BOOKMARKS))
+    }
+
+    @Test
+    fun theRingFollowsTheChosenOptionsInTheirOrder() {
+        // Three, one of them Browse's own: the other tabs show two.
+        val three = RingOptions.DEFAULT.moved(4, 0).with(RingOption.LARGER, false).with(RingOption.DETAIL, false).with(RingOption.SECTIONS, false)
+        assertEquals(listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), three.visible)
+        assertEquals(listOf(RingOption.FOLDERS_FIRST, RingOption.SMALLER, RingOption.SORT), ViewRing.options(Prefs.TAB_BROWSE, three))
+        assertEquals(listOf(RingOption.SMALLER, RingOption.SORT), ViewRing.options(Prefs.TAB_HISTORY, three))
+        // Six with Layout and Title lines: Sections and Folders first each in their tab.
+        val six = RingOptions.DEFAULT.with(RingOption.DETAIL, false).with(RingOption.FOLDERS_FIRST, false).with(RingOption.LAYOUT, true).with(RingOption.TITLE_LINES, true)
+        assertEquals(6, six.visible.size)
+        // No seventh, and no fewer than three.
+        assertEquals(six, six.with(RingOption.DETAIL, true))
+        assertEquals(three, three.with(RingOption.SORT, false))
+        assertEquals(
+            listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.SORT, RingOption.SECTIONS, RingOption.LAYOUT, RingOption.TITLE_LINES),
+            ViewRing.options(Prefs.TAB_FAVORITES, six)
+        )
+        assertEquals(listOf(RingOption.SMALLER, RingOption.LARGER, RingOption.SORT, RingOption.LAYOUT, RingOption.TITLE_LINES), ViewRing.options(Prefs.TAB_BOOKMARKS, six))
+    }
+
+    @Test
+    fun theButtonsTapRunsItsActionWhereItApplies() {
+        assertEquals(RingOption.SMALLER, ViewRing.tapAction(Prefs.TAB_HISTORY, RingOption.SMALLER))
+        assertEquals(RingOption.FOLDERS_FIRST, ViewRing.tapAction(Prefs.TAB_BROWSE, RingOption.FOLDERS_FIRST))
+        assertEquals(RingOption.LAYOUT, ViewRing.tapAction(Prefs.TAB_FAVORITES, RingOption.FOLDERS_FIRST))
+        assertEquals(RingOption.LAYOUT, ViewRing.tapAction(Prefs.TAB_BROWSE, RingOption.SECTIONS))
+    }
+
+    @Test
+    fun titleLinesGoRound() {
+        assertEquals(TitleDisplay.BOUNCE, ViewRing.nextTitle(TitleDisplay.DOUBLE))
+        assertEquals(TitleDisplay.HIDDEN, ViewRing.nextTitle(TitleDisplay.MARQUEE))
+    }
+
+    @Test
+    fun sharedWordsAreSaidOnce() {
+        assertEquals("Dir. LTR" to "RTL", ViewRing.compact("Dir. LTR", "Dir. RTL"))
+        assertEquals("4" to "5 columns", ViewRing.compact("4 columns", "5 columns"))
+        assertEquals("Grid" to "List", ViewRing.compact("Grid", "List"))
+        assertEquals("On" to "On", ViewRing.compact("On", "On"))
+        // A word in the middle alone is no shared start or end.
+        assertEquals("a b c" to "d b e", ViewRing.compact("a b c", "d b e"))
+    }
+
+    @Test
+    fun formsPairFullestFirstThenSayShortestOnce() {
+        assertEquals(
+            listOf(
+                RingValue("Reading direction left-to-right first", "Reading direction right-to-left first"),
+                RingValue("Reading direction LTR", "Reading direction RTL"),
+                RingValue("Dir. LTR", "Dir. RTL"),
+                RingValue("Dir. LTR", "RTL")
+            ),
+            ringForms(
+                listOf("Reading direction left-to-right first", "Reading direction LTR", "Dir. LTR"),
+                listOf("Reading direction right-to-left first", "Reading direction RTL", "Dir. RTL")
+            )
+        )
+        // The shorter side's last form repeats.
+        assertEquals(listOf(RingValue("Comfortable", "Dense"), RingValue("Comfy", "Dense")), ringForms(listOf("Comfortable", "Comfy"), listOf("Dense")))
+        // At the end: the current value alone.
+        assertEquals(listOf(RingValue("6 × 4", null), RingValue("6×4", null)), ringForms(listOf("6 × 4", "6×4"), null))
+    }
+
+    @Test
+    fun fitShortensOnlyClashingLabelsTillClear() {
+        // Label 1 clashes at its full form and clears at its second; label 0 never clashes.
+        val forms = listOf(listOf(10f to 10f, 5f to 10f), listOf(30f to 10f, 20f to 10f, 10f to 10f))
+        val (placed, pick) = RingGeometry.fit(forms) { sizes ->
+            val clash = sizes[1].first > 20f
+            RingGeometry.Placement(1f, emptyList(), if (clash) 3f else 0f, 0, if (clash) setOf(1) else emptySet())
+        }
+        assertEquals(listOf(0, 1), pick)
+        assertEquals(0f, placed.overlap, 0f)
+        // Never clear: the least overlap, with every clashing label at its shortest.
+        val (worst, last) = RingGeometry.fit(forms) { sizes -> RingGeometry.Placement(1f, emptyList(), sizes[0].first + sizes[1].first, 0, setOf(0, 1)) }
+        assertEquals(listOf(1, 2), last)
+        assertEquals(15f, worst.overlap, 0f)
+        // A clashing label at its shortest: with all, the others give way.
+        val stuck = { sizes: List<Pair<Float, Float>> ->
+            val clash = sizes[0].first > 5f
+            RingGeometry.Placement(1f, emptyList(), if (clash) 1f else 0f, 0, if (clash) setOf(1) else emptySet())
+        }
+        assertEquals(listOf(0, 0), RingGeometry.fit(forms, lay = stuck).second)
+        val (room, way) = RingGeometry.fit(forms, all = true, lay = stuck)
+        assertEquals(listOf(1, 2), way)
+        assertEquals(0f, room.overlap, 0f)
     }
 
     @Test

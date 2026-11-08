@@ -6,6 +6,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
+import android.text.Layout
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
@@ -30,16 +31,19 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.shape.MaterialShapeDrawable
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.RingOption
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
  * The view ring: over a scrim, round buttons fanned on a quarter arc from the floating
  * button toward the screen's inside ([RingGeometry]), each with its setting's name and
- * current value beside it. A tap on a button or its label runs [onTap] (the caller writes
- * the setting and calls [refresh]); a long press runs [onLongTap] where an item has a
- * [Item.longLabel]. The hub in the button's place, a tap on the scrim, or Back ([close])
- * closes it.
+ * what a tap does, "current→next", beside it: the current part muted, the next in the label
+ * color. Each label takes the fullest of its value's forms that fits on two lines, shorter
+ * ones where labels would overlap ([RingGeometry.fit]); cut with "…" only when none fits. A
+ * tap on a button or its label runs [onTap] (the caller writes the setting and calls
+ * [refresh]); a long press runs [onLongTap] where an item has a [Item.longLabel]. The hub in
+ * the button's place, a tap on the scrim, or Back ([close]) closes it.
  *
  * The finger that opened it may also drag without lifting ([follow], [drag]): the button it
  * points at lights up, lifting there runs [onTap] and closes the ring, lifting on the hub
@@ -47,14 +51,18 @@ import kotlin.math.roundToInt
  */
 internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
-    /** One button: [name] and [value] show beside it; [enabled] false grays it out. */
+    /**
+     * One button: [name] and the first of its value's [forms] that fits show beside it; TalkBack
+     * hears [spoken], the value in full words. [enabled] false grays it out.
+     */
     data class Item(
         val option: RingOption,
         @DrawableRes val icon: Int,
         val name: String,
-        val value: String,
+        val forms: List<RingValue>,
         val enabled: Boolean = true,
-        val longLabel: String? = null
+        val longLabel: String? = null,
+        val spoken: RingValue = forms.first()
     )
 
     var onTap: (RingOption) -> Unit = {}
@@ -172,8 +180,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         }
         this.items = items
         for (item in items) buttons[item.option]?.let { (button, label) -> bind(button, label, item) }
-        // The buttons stay; a label whose text grew may take another side.
-        val placed = RingGeometry.place(angles(), cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), sizes())
+        // The buttons stay; a label whose text grew may take another side or a shorter form.
+        val angles = angles()
+        val placed = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), it) }
         for ((i, pair) in buttons.values.withIndex()) placeLabel(pair.second, placed.boxes[i])
     }
 
@@ -331,11 +340,90 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The buttons' angles, toward the overlay's inside from the hub. */
     private fun angles() = RingGeometry.angles(buttons.size, left = cx > (bounds.left + bounds.right) / 2)
 
-    /** Each label's measured width and height, in the ring's order. */
-    private fun sizes(): List<Pair<Float, Float>> = buttons.values.map { (_, label) ->
+    /** The widest a label grows before it wraps: [LABEL_MAX_DP], or less on a narrow screen. */
+    private fun labelMax() = minOf(LABEL_MAX_DP * density, bounds.width * LABEL_MAX_SHARE).roundToInt()
+
+    /** [label]'s measured width and height. */
+    private fun size(label: TextView): Pair<Float, Float> {
         val spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         label.measure(spec, spec)
-        label.measuredWidth.toFloat() to label.measuredHeight.toFloat()
+        return label.measuredWidth.toFloat() to label.measuredHeight.toFloat()
+    }
+
+    /** A label's look to try: value form [form] wrapped at [width], and the [size] it takes. */
+    private class Shape(val form: Int, val width: Int, val size: Pair<Float, Float>)
+
+    /**
+     * The shapes [label] may take for [item], most wanted first: each value form that fits
+     * ([fits]) at the widest, then wrapped onto two lines, narrower; for none, the shortest
+     * form cut with "…" on its last line.
+     */
+    private fun shapes(label: TextView, item: Item): List<Shape> {
+        val wide = labelMax()
+        label.maxLines = Int.MAX_VALUE
+        label.ellipsize = null
+        val out = ArrayList<Shape>()
+        for (k in item.forms.indices) {
+            label.text = text(label, item, k)
+            label.maxWidth = wide
+            val size = size(label)
+            if (!fits(label)) continue
+            out += Shape(k, wide, size)
+            val layout = label.layout ?: continue
+            if (layout.lineCount != 2) continue
+            // On one line: a narrower label with the value on two.
+            val sides = label.totalPaddingLeft + label.totalPaddingRight
+            for (share in NARROW_SHARES) {
+                val width = (maxOf(layout.getLineWidth(0), layout.getLineWidth(1) * share) + sides).toInt() + 1
+                if (width >= size.first) break
+                label.maxWidth = width
+                val narrow = size(label)
+                if (fits(label) && label.layout.lineCount == 1 + VALUE_LINES) {
+                    out += Shape(k, width, narrow)
+                    break
+                }
+            }
+        }
+        if (out.isNotEmpty()) return out
+        label.maxLines = 1 + VALUE_LINES
+        label.ellipsize = TextUtils.TruncateAt.END
+        label.maxWidth = wide
+        label.text = text(label, item, item.forms.lastIndex)
+        return listOf(Shape(item.forms.lastIndex, wide, size(label)))
+    }
+
+    /**
+     * Gives each label the most wanted of its [shapes] and keeps the labels laid out by [lay]
+     * clear of each other ([RingGeometry.fit], shortening [all] where need be). Returns the
+     * labels' placement.
+     */
+    private fun fitLabels(all: Boolean = false, lay: (List<Pair<Float, Float>>) -> RingGeometry.Placement): RingGeometry.Placement {
+        val pairs = buttons.values.toList()
+        val usable = pairs.mapIndexed { i, (_, label) -> shapes(label, items[i]) }
+        val (placed, pick) = RingGeometry.fit(usable.map { shapes -> shapes.map { it.size } }, all, lay)
+        for ((i, pair) in pairs.withIndex()) {
+            val shape = usable[i][pick[i]]
+            pair.second.maxWidth = shape.width
+            pair.second.text = text(pair.second, items[i], shape.form)
+        }
+        return placed
+    }
+
+    /** True when [label], just measured, shows its name on one line and its value on at most two, no word split. */
+    private fun fits(label: TextView): Boolean {
+        val layout: Layout = label.layout ?: return true
+        if (layout.lineCount > 1 + VALUE_LINES) return false
+        val text = label.text
+        for (line in 0 until layout.lineCount - 1) {
+            val last = text.getOrNull(layout.getLineEnd(line) - 1) ?: continue
+            // The name's line ends at the line break; the value's lines at a space, a hyphen or the arrow's break.
+            if (line == 0) {
+                if (last != '\n') return false
+            } else if (last != ' ' && last != BREAK && last != '-') {
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -351,9 +439,11 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
                 setOnClickListener { if (isOpen) onTap(item.option) }
             }
             val label = TextView(activity).apply {
-                maxWidth = (LABEL_MAX_DP * density).roundToInt()
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
+                // Its text changes between measures, which reads its layout params before it is placed.
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                maxWidth = labelMax()
+                breakStrategy = Layout.BREAK_STRATEGY_BALANCED
+                hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
                 val h = (12 * density).roundToInt()
                 val v = (6 * density).roundToInt()
                 setPadding(h, v, h, v)
@@ -371,7 +461,10 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val angles = angles()
         val want = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density)
         val spacing = size + LABEL_GAP_DP * density
-        val placed = RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), sizes())
+        fun arrange(grow: Float, all: Boolean = false) =
+            fitLabels(all) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
+        // Shorter labels first; a larger ring only where even those overlap; at last as large as the room allows, every label short.
+        val placed = arrange(1f).takeIf { it.overlap == 0f } ?: arrange(GROW).takeIf { it.overlap == 0f } ?: arrange(Float.MAX_VALUE, all = true)
         radius = placed.radius
         for ((i, pair) in buttons.values.withIndex()) {
             val (button, label) = pair
@@ -394,7 +487,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         label.animate().cancel()
         button.alpha = if (item.enabled) 1f else DISABLED_ALPHA
         label.alpha = button.alpha
-        button.contentDescription = activity.getString(R.string.view_ring_item, item.name, item.value)
+        val next = item.spoken.next
+        button.contentDescription = if (next == null) activity.getString(R.string.view_ring_item, item.name, item.spoken.current)
+        else activity.getString(R.string.view_ring_item_next, item.name, item.spoken.current, next)
         if (item.longLabel != null) {
             button.setOnLongClickListener {
                 if (isOpen) onLongTap(item.option)
@@ -403,15 +498,32 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             label.setOnLongClickListener { button.performLongClick() }
             ViewCompat.replaceAccessibilityAction(button, AccessibilityActionCompat.ACTION_LONG_CLICK, item.longLabel, null)
         }
+        label.text = text(label, item, 0)
+    }
+
+    /**
+     * [item]'s label with value form [form]: the name small and muted, then on the next line
+     * "current→" in the outline color and the next value in the label color, a line may break after the
+     * arrow; only the current value for one with no next.
+     */
+    private fun text(label: TextView, item: Item, form: Int): CharSequence {
         val variant = MaterialColors.getColor(label, M.attr.colorOnSurfaceVariant)
+        val muted = MaterialColors.getColor(label, M.attr.colorOutline)
         val strong = MaterialColors.getColor(label, M.attr.colorOnSurface)
-        label.text = SpannableStringBuilder().apply {
+        val value = item.forms[form]
+        return SpannableStringBuilder().apply {
             append(item.name, ForegroundColorSpan(variant), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(RelativeSizeSpan(0.85f), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             append('\n')
             val start = length
-            append(item.value)
-            setSpan(ForegroundColorSpan(strong), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val next = value.next
+            if (next == null) {
+                append(value.current, ForegroundColorSpan(strong), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } else {
+                append(value.current + ARROW, ForegroundColorSpan(muted), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                append(BREAK)
+                append(next, ForegroundColorSpan(strong), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             setSpan(StyleSpan(Typeface.BOLD), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
@@ -461,14 +573,34 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     /** The scrim the ring shows on; for tests. */
     internal fun scrim(): View? = root
 
+    /** The open ring's radius; for tests. */
+    internal val ringRadius: Float get() = radius
+
     private companion object {
         /** Material's scrim: black at 32%. */
         val SCRIM = Color.argb(82, 0, 0, 0)
         const val BUTTON_DP = 56
-        const val SPACING_DP = 112f
-        const val MIN_RADIUS_DP = 136f
+        /** Two thirds of the first ring's 112 and 136 dp. */
+        const val SPACING_DP = 75f
+        const val MIN_RADIUS_DP = 91f
+
+        /** How much larger the ring grows first where its labels cannot clear each other: back to the first ring's size. */
+        const val GROW = 1.5f
         const val LABEL_GAP_DP = 8f
-        const val LABEL_MAX_DP = 200f
+        const val LABEL_MAX_DP = 320f
+
+        /** The share of the room's width a label may take. */
+        const val LABEL_MAX_SHARE = 0.75f
+
+        /** The lines a value may take. */
+        const val VALUE_LINES = 2
+
+        /** A one-line value's widths, as shares, tried when wrapping it onto two lines. */
+        val NARROW_SHARES = floatArrayOf(0.55f, 0.7f, 0.85f)
+        const val ARROW = "→"
+
+        /** Where a value may break: after its arrow. */
+        const val BREAK = '\u200B'
         const val MARGIN_DP = 8f
         const val LABEL_PAD_DP = 4f
         const val DISABLED_ALPHA = 0.38f

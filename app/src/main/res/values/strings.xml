@@ -374,6 +374,38 @@
         <item quantity="one">%1$d column</item>
         <item quantity="other">%1$d columns</item>
     </plurals>
+    <string name="view_ring_item_next">%1$s: %2$s, tap for %3$s</string>
+    <string name="view_ring_grid_short">%1$d×%2$d</string>
+    <string name="view_ring_title_lines">Title lines</string>
+    <!-- Short forms, used where a ring label's full value does not fit. -->
+    <string name="density_extra_large_short">XL</string>
+    <string name="detail_comfortable_short">Comfy</string>
+    <string name="title_single_short">1 line</string>
+    <string name="title_middle_short">Middle</string>
+    <string name="title_double_short">2 lines</string>
+    <string name="sort_accessed_short">Acc.</string>
+    <string name="sort_length_short">Len.</string>
+    <string name="sort_type_short">Type</string>
+    <string name="sort_direction_short">Dir.</string>
+    <string name="sort_up">↑</string>
+    <string name="sort_down">↓</string>
+    <string name="sort_newest_short">newest</string>
+    <string name="sort_oldest_short">oldest</string>
+    <string name="sort_recent_short">recent</string>
+    <string name="sort_largest_short">largest</string>
+    <string name="sort_smallest_short">smallest</string>
+    <string name="sort_longest_short">longest</string>
+    <string name="sort_shortest_short">shortest</string>
+    <string name="sort_archives_short">archives</string>
+    <string name="sort_images_short">images</string>
+    <string name="sort_ltr_short">LTR</string>
+    <string name="sort_rtl_short">RTL</string>
+    <!-- Settings: the grid/list button's tap and the view ring's options. -->
+    <string name="pref_fab_tap">Grid/list button tap</string>
+    <string name="pref_view_ring">View ring options</string>
+    <string name="view_ring_pick">Pick 3 to 6. Folders first shows in Browse only, Sections in Favorites only.</string>
+    <string name="view_ring_folders_first_tab">Folders first (Browse)</string>
+    <string name="view_ring_sections_tab">Sections (Favorites)</string>
     <string name="select_all">Select all</string>
     <string name="selection_unfavorite">Unfavorite</string>
     <string name="selection_remove">Remove</string>

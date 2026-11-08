@@ -10,7 +10,6 @@ import com.infinity.comicreader.data.CoverFocus
 import com.infinity.comicreader.data.CoverStyle
 import com.infinity.comicreader.data.CropAnchor
 import com.infinity.comicreader.data.EntryType
-import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.data.ThumbFit
 import com.infinity.comicreader.reader.BookDirection
@@ -30,7 +29,9 @@ import java.io.File
  * `mode crops`. Books are archives, PDFs and folders holding pages directly, in path order,
  * named by index only. Each cover is made as the library makes it: a wraparound (by its
  * book's inner pages) shows the front its barcode tells, else its text
- * ([SmartCrop.textFront]), else the half its reading direction (from its contents) starts on.
+ * ([CoverArt.textFront]), else all of it (Fit on blur), and says whether barcode and text
+ * agree, which lets it set reading direction ([Wraparound.Fronts.agreed]); a wraparound shown
+ * whole is not measured further.
  * One JSON object per book ([log]): the focus of the part shown and its time, and for each box
  * shape the axis cropped, the share kept and where each anchor starts, as shares of that axis,
  * whether each cuts the tallest text line, and whether the default fit (Auto) crops at all.
@@ -73,23 +74,19 @@ internal class CoverCropSurvey(
         else -> "archive"
     }
 
-    private class Loaded(val bitmap: Bitmap, val innerRatio: Double?, val rightToLeft: Boolean)
+    private class Loaded(val bitmap: Bitmap, val innerRatio: Double?)
 
     private fun load(book: File): Loaded? {
         if (book.isDirectory) {
             val first = pages(book).firstOrNull() ?: return null
-            return Loaded(Decoders.decode(first, Target(capPixels = CAP)), null, false)
+            return Loaded(Decoders.decode(first, Target(capPixels = CAP)), null)
         }
         val cover = PageSources.openCover(book, "UTF-8", context.cacheDir, 0).use { it.loadPage(0, Target(capPixels = CAP)) }
         var ratio: Double? = null
-        var rtl = false
-        runCatching {
-            PageSources.open(book, "UTF-8", context.cacheDir, copyNested = false).use { s ->
-                if (Wraparound.isCandidate(cover.width, cover.height)) ratio = BookDirection.innerRatio(s)
-                rtl = BookDirection.fromContents(book, s).detected?.direction == ReadingDirection.RTL
-            }
+        if (Wraparound.isCandidate(cover.width, cover.height)) runCatching {
+            PageSources.open(book, "UTF-8", context.cacheDir, copyNested = false).use { ratio = BookDirection.innerRatio(it) }
         }
-        return Loaded(cover, ratio, rtl)
+        return Loaded(cover, ratio)
     }
 
     private fun cover(book: File, o: JSONObject) {
@@ -98,8 +95,14 @@ internal class CoverCropSurvey(
         try {
             o.put("w", src.width).put("h", src.height)
             val region = if (Wraparound.isWraparound(src.width, src.height, loaded.innerRatio)) {
-                val (half, rule, ms) = front(src, loaded.innerRatio, loaded.rightToLeft)
-                o.put("wrap", JSONObject().put("rule", rule).put("half", half.name).put("rtl", loaded.rightToLeft).put("ms", Stats.round1(ms)))
+                val t = SystemClock.elapsedRealtimeNanos()
+                val fronts = fronts(src, loaded.innerRatio)
+                val half = fronts.shown
+                val rule = if (fronts.barcode != null) "barcode" else if (half != null) "text" else "blur"
+                o.put("wrap", JSONObject().put("rule", rule).put("half", half?.name ?: JSONObject.NULL)
+                    .put("direction", fronts.agreed != null).put("ms", Stats.round1((SystemClock.elapsedRealtimeNanos() - t) / 1e6)))
+                // Fit on blur: never cropped, so there is nothing more to measure.
+                if (half == null) return
                 columns(src, half, loaded.innerRatio)
             } else {
                 Rect(0, 0, src.width, src.height)
@@ -120,17 +123,9 @@ internal class CoverCropSurvey(
         }
     }
 
-    /** The front half shown, the rule that picked it and the time text took (0 when it was not asked). */
-    private fun front(src: Bitmap, innerRatio: Double?, rightToLeft: Boolean): Triple<Wraparound.Half, String, Double> {
-        CoverArt.frontOf(src)?.let { return Triple(it, "barcode", 0.0) }
-        val t = SystemClock.elapsedRealtimeNanos()
-        val (left, right) = Wraparound.Half.entries.map { columns(src, it, innerRatio) }
-        val l = CoverArt.focusOf(src, left, detect)
-        val r = CoverArt.focusOf(src, right, detect)
-        val byText = if (l.keep && r.keep) SmartCrop.textFront(l, left.width(), r, right.width(), src.height) else null
-        val ms = (SystemClock.elapsedRealtimeNanos() - t) / 1e6
-        return if (byText != null) Triple(byText, "text", ms) else Triple(Wraparound.shownFront(null, rightToLeft), "direction", ms)
-    }
+    /** What its barcode and its text each tell of wraparound [src]'s front; text is looked at even after a barcode, for agreement. */
+    private fun fronts(src: Bitmap, innerRatio: Double?): Wraparound.Fronts =
+        Wraparound.Fronts(CoverArt.frontOf(src), CoverArt.textFront(src, innerRatio, { s, region -> CoverArt.focusOf(s, region, detect) }))
 
     private fun columns(src: Bitmap, half: Wraparound.Half, innerRatio: Double?): Rect =
         Wraparound.frontColumns(src.width, src.height, half, innerRatio).let { Rect(it[0], 0, it[1], src.height) }

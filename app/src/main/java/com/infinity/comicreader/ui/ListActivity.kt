@@ -1655,8 +1655,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /**
      * [entry] with the page count read from its book when it has none of its own, less
      * the pages it hides ([hidden] counts by path), and the direction detected in it when
-     * its folder has none set, so a wraparound cover without a barcode shows the half the
-     * book starts on.
+     * its folder has none set.
      */
     private fun withFacts(entry: BookEntry, hidden: Map<BookId, Int>): BookEntry {
         if (entry.isDir) return entry

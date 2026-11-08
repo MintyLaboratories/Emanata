@@ -18,7 +18,8 @@ import kotlin.math.roundToInt
 
 /**
  * Makes a cover of exactly the box size from a full-size image: cropped to fill
- * the box, or whole over a blurred, filled copy of itself, as [CoverStyle] says.
+ * the box, or whole over a blurred, filled copy of itself, as [CoverStyle] says
+ * (always whole for a wraparound whose front nothing tells).
  * All resizing of the cover itself is Lanczos3.
  */
 object CoverArt {
@@ -66,10 +67,11 @@ object CoverArt {
     /**
      * [src] as a [width] x [height] cover. A wraparound, judged against its book's
      * typical inner page of shape [innerRatio] ([Wraparound.isWraparound]), shows its
-     * front: the half [front] tells (the one without the barcode by default, [frontOf]),
-     * else the half a book read [rightToLeft] or not starts on; one inner page wide
-     * from the outer edge, so the spine is left out. [focus] tells the Smart crop anchor
-     * where to look in the part shown, asked only when it crops.
+     * front, the half [front] tells (the one without the barcode by default, [frontOf]),
+     * one inner page wide from the outer edge, so the spine is left out; when [front]
+     * tells none, the whole wraparound over a blurred copy of itself, whatever [style]
+     * says. [focus] tells the Smart crop anchor where to look in the part shown, asked
+     * only when it crops.
      */
     fun cover(
         src: Bitmap,
@@ -77,12 +79,11 @@ object CoverArt {
         height: Int,
         style: CoverStyle,
         innerRatio: Double? = null,
-        rightToLeft: Boolean = false,
         front: (Bitmap) -> Wraparound.Half? = ::frontOf,
         focus: (Bitmap, Rect) -> CoverFocus = { _, _ -> CoverFocus.NONE }
     ): Bitmap {
         if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style, focus = focus)
-        val half = Wraparound.shownFront(front(src), rightToLeft)
+        val half = front(src) ?: return compose(src, width, height, style, fit = true)
         val (left, right) = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
         return compose(src, width, height, style, Rect(left, 0, right, src.height), focus = focus)
     }

@@ -62,11 +62,11 @@ object Thumbs {
     private const val NO_FRONT = -1
 
     /**
-     * The front half of wraparound cover [src] of [entry], each half as wide as an inner page of
-     * [innerRatio]: by its barcode, found once per cover image ([imageKey]), else by its tallest
-     * text ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when
-     * neither tells; then [unsure] too when the detector did not run. Without a barcode the
-     * cover sets no reading direction, which [knownFront] then tells.
+     * The front half [src], the wraparound cover of [entry], shows ([Wraparound.Fronts.shown]):
+     * by its barcode, found once per cover image ([imageKey]), else by its tallest text
+     * ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when neither
+     * tells; then [unsure] too when the detector did not run. Without a barcode the cover sets
+     * no reading direction, which [knownFront] then tells.
      */
     private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
@@ -136,16 +136,6 @@ object Thumbs {
     }
     private const val QUICK_BYTES = 24 * 1024 * 1024
 
-    /**
-     * Whether each cover made this session depends on its book's direction, by [key]: true for a
-     * wraparound without a barcode ([CoverArt.cover]). One that does not is found under either
-     * direction's key ([directionMatters]).
-     */
-    private val directional = LruCache<String, Boolean>(4096)
-
-    /** False once [entry]'s cover was made this session and shows the same whichever way the book reads. */
-    fun directionMatters(entry: BookEntry): Boolean = directional.get(key(entry)) ?: true
-
     /** Each book's typical inner page shape ([Wraparound.innerRatio]) by [key]; NaN when it has none. */
     private val inners = LruCache<String, Double>(1024)
 
@@ -164,8 +154,7 @@ object Thumbs {
     /**
      * The cover of [entry], exactly [width] x [height]. Blocking — call from a background
      * dispatcher. Returns null when no cover exists, or once [canceled] turns true between
-     * its steps (nothing is kept then). A wraparound without a barcode shows the half its
-     * [BookEntry.direction] starts on, so the direction is part of the key.
+     * its steps (nothing is kept then).
      */
     fun load(
         context: Context,
@@ -195,7 +184,7 @@ object Thumbs {
         canceled: () -> Boolean = { false }
     ): Cover? {
         cached(context, entry, width, height, style)?.let { return Cover(it, full = true) }
-        either(context, entry, width, height, style) { quicks.get(it) }?.let { return Cover(it, full = false) }
+        quicks.get(coverKey(context, entry, width, height, style))?.let { return Cover(it, full = false) }
         return make(context, entry, charset, width, height, style, canceled, quickFirst = entry.bookmarkPage < 0)
     }
 
@@ -219,7 +208,6 @@ object Thumbs {
         if (found != null) cached(context, found, width, height, style)?.let { return Cover(it, full = true) }
         val entry = found ?: listed
         val page = entry.bookmarkPage
-        val rightToLeft = entry.direction == ReadingDirection.RTL
         val k = coverKey(context, entry, width, height, style)
         val disk = diskFile(context, k)
 
@@ -231,13 +219,12 @@ object Thumbs {
             full.recycle()
             return null
         }
-        var sided = false
         // A focus found without the detector holds for this cover in memory only.
         var lasting = true
         val cover = try {
             CoverArt.cover(
-                full, width, height, style, made.innerRatio, rightToLeft,
-                front = { src -> frontOf(context, entry, src, made.innerRatio, made.full) { lasting = false }.also { if (it == null) sided = true } },
+                full, width, height, style, made.innerRatio,
+                front = { src -> frontOf(context, entry, src, made.innerRatio, made.full) { lasting = false } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
                 focus = { src, region -> focusOf(context, entry, src, region, find = made.full).also { if (!it.keep) lasting = false } }
             )
@@ -251,7 +238,6 @@ object Thumbs {
             return Cover(cover, full = false)
         }
         quicks.remove(k)
-        directional.put(key(entry), sided)
         val bitmap = if (page < 0) cover else {
             val (w, h) = CoverArt.pageBox(width, height)
             val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear, scaling = style.scaling))
@@ -286,31 +272,19 @@ object Thumbs {
 
     /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
     fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? =
-        either(context, entry, width, height, style) { memory.get(it) }
+        memory.get(coverKey(context, entry, width, height, style))
 
     /**
      * The cover of [entry] as [load] makes it, when one was made before: from memory or
      * disk, never generated. Blocking; null when there is none yet.
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
-        inMemory(context, entry, width, height, style)?.let { return it }
-        return either(context, entry, width, height, style) { k ->
-            val disk = diskFile(context, k)
-            if (!disk.isFile) return@either null
-            // Stored at the box size: the decode is the file as it is.
-            runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(k, it) }
-        }
-    }
-
-    /**
-     * What [find] gives for the key of [entry]'s cover, else for the other direction's key when
-     * the cover shows the same either way ([directionMatters]).
-     */
-    private fun <T> either(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle, find: (String) -> T?): T? {
-        val rightToLeft = entry.direction == ReadingDirection.RTL
-        find(coverKey(context, entry, width, height, style, rightToLeft))?.let { return it }
-        if (directionMatters(entry)) return null
-        return find(coverKey(context, entry, width, height, style, !rightToLeft))
+        val k = coverKey(context, entry, width, height, style)
+        memory.get(k)?.let { return it }
+        val disk = diskFile(context, k)
+        if (!disk.isFile) return null
+        // Stored at the box size: the decode is the file as it is.
+        return runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(k, it) }
     }
 
     /** The book index of [entry]'s bookmarked page, which counts pages as shown ([Library.hiddenPages]). */
@@ -322,20 +296,13 @@ object Thumbs {
         if (entry.isDir) null else entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
 
     /**
-     * What a cover is cached by: its file, box size, style, the direction it starts on, the
-     * hidden pages that move it ([hiddenTag]), a bookmark's page in the book, and the book's
-     * own file name charset, which may reorder its pages ([NameCharset.overrides]).
+     * What a cover is cached by: its file, box size, style, the hidden pages that move it
+     * ([hiddenTag]), a bookmark's page in the book, and the book's own file name charset,
+     * which may reorder its pages ([NameCharset.overrides]).
      */
-    private fun coverKey(
-        context: Context,
-        entry: BookEntry,
-        width: Int,
-        height: Int,
-        style: CoverStyle,
-        rightToLeft: Boolean = entry.direction == ReadingDirection.RTL
-    ): String {
+    private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        return "${key(entry)}|${width}x$height|${style.key}|${if (rightToLeft) "rtl" else "ltr"}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
+        return "${key(entry)}|${width}x$height|${style.key}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
     }
 
     /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */
@@ -414,7 +381,6 @@ object Thumbs {
         inners.evictAll()
         barcodes.evictAll()
         fronts.evictAll()
-        directional.evictAll()
         focuses.evictAll()
         focusStore(context).clear()
         runCatching { File(context.cacheDir, DISK_DIR).deleteRecursively() }

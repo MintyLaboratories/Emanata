@@ -11,9 +11,9 @@ import kotlin.math.roundToInt
 
 /**
  * Wraparound covers: back and front side by side, about twice as wide as one of
- * the book's inner pages. The front is the half without the barcode; without one,
- * the half a book in its reading direction starts on: the right one left to
- * right, the left one right to left. Free of Android types.
+ * the book's inner pages. The front is the half without the barcode, else the half
+ * with the taller title ([Fronts]); reading direction never picks it. Free of
+ * Android types.
  */
 object Wraparound {
     /** Width / height of a wraparound when the book's inner pages are unknown: a cover is about 0.65, two of them about 1.3. */
@@ -72,14 +72,14 @@ object Wraparound {
         return if (ratios.size % 2 == 1) ratios[mid] else (ratios[mid - 1] + ratios[mid]) / 2
     }
 
-    /** The half to show: the one the barcode told ([barcodeFront]), else the one a book read [rightToLeft] or not starts on. */
-    fun shownFront(barcodeFront: Half?, rightToLeft: Boolean): Half = barcodeFront ?: if (rightToLeft) Half.LEFT else Half.RIGHT
-
     /**
      * What names a wraparound's front: the half without the barcode ([barcode]) and the half
      * with the taller title ([text]), each null when it tells nothing.
      */
     data class Fronts(val barcode: Half?, val text: Half?) {
+        /** The half a cover shows: the barcode's, else the text's; null when neither tells, so it shows whole. */
+        val shown: Half? get() = barcode ?: text
+
         /** The half that sets reading direction: only one both name. */
         val agreed: Half? get() = barcode?.takeIf { it == text }
     }

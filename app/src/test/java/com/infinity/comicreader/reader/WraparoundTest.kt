@@ -92,12 +92,14 @@ class WraparoundTest {
     }
 
     @Test
-    fun withoutABarcodeTheFrontFollowsTheReadingDirection() {
-        assertEquals(Wraparound.Half.RIGHT, Wraparound.shownFront(null, rightToLeft = false))
-        assertEquals(Wraparound.Half.LEFT, Wraparound.shownFront(null, rightToLeft = true))
-        // The barcode outranks the direction.
-        assertEquals(Wraparound.Half.RIGHT, Wraparound.shownFront(Wraparound.Half.RIGHT, rightToLeft = true))
-        assertEquals(Wraparound.Half.LEFT, Wraparound.shownFront(Wraparound.Half.LEFT, rightToLeft = false))
+    fun theBarcodeShowsTheFrontBeforeTheText() {
+        val left = Wraparound.Half.LEFT
+        val right = Wraparound.Half.RIGHT
+        assertEquals(right, Wraparound.Fronts(right, left).shown)
+        assertEquals(left, Wraparound.Fronts(left, null).shown)
+        assertEquals(left, Wraparound.Fronts(null, left).shown)
+        // Neither tells: shown whole, never by reading direction.
+        assertNull(Wraparound.Fronts(null, null).shown)
     }
 
     @Test

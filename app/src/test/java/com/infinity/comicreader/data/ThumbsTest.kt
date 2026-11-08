@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -230,18 +231,31 @@ class ThumbsTest {
     }
 
     @Test
-    fun aWraparoundWithoutBarcodeShowsTheHalfItsDirectionStartsOn() {
+    fun aWraparoundWithoutBarcodeOrTitleShowsWholeOverItsBlur() {
         val file = File(context.cacheDir, "plain.png")
         file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
-        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
-        val ltr = Thumbs.load(context, entry.copy(direction = ReadingDirection.LTR), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertEquals(Color.RED, ltr.getPixel(5, 100))
-        assertEquals(Color.RED, ltr.getPixel(125, 100))
-        val rtl = Thumbs.load(context, entry.copy(direction = ReadingDirection.RTL), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertEquals(Color.BLUE, rtl.getPixel(5, 100))
-        assertEquals(Color.BLUE, rtl.getPixel(125, 100))
-        // Each direction is its own cover.
-        assertEquals(2, File(context.cacheDir, "covers").listFiles()!!.size)
+        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified(), direction = ReadingDirection.RTL)
+        // Fill asked for, yet both halves show, full width, between bands of blur.
+        val thumb = Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(Color.BLUE, thumb.getPixel(30, 100))
+        assertEquals(Color.RED, thumb.getPixel(100, 100))
+        val above = thumb.getPixel(65, 10)
+        assertEquals(255, Color.alpha(above))
+        assertTrue("dimmed blur: $above", Color.blue(above) < 250 && Color.red(above) < 250)
+        // Not from the reading direction: one cover either way.
+        assertSame(thumb, Thumbs.inMemory(context, entry.copy(direction = ReadingDirection.LTR), 130, 200, CoverStyle(ThumbFit.FILL)))
+        assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
+        // Nor does it set the direction.
+        assertTrue(Thumbs.frontKnown(file))
+        assertNull(Thumbs.knownFront(file))
+    }
+
+    @Test
+    fun aWraparoundWithABarcodeLeavesItsDirectionToTheReader() {
+        // Whether the text agrees is looked at only when the book is read.
+        val entry = wraparound(true, "coded.png")
+        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertFalse(Thumbs.frontKnown(entry.file))
     }
 
     @Test
@@ -262,43 +276,33 @@ class ThumbsTest {
         assertEquals(Color.BLUE, thumb.getPixel(5, 100))
         assertEquals(Color.BLUE, thumb.getPixel(125, 100))
         assertEquals(2, calls[0])
-        // Chosen from the image: the same either way the book reads.
-        assertFalse(Thumbs.directionMatters(entry))
         Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertEquals(2, calls[0])
         // The text alone sets no direction.
-        assertTrue(Thumbs.frontKnown(file))
         assertNull(Thumbs.knownFront(file))
     }
 
     @Test
-    fun aWraparoundWithABarcodeLeavesItsDirectionToTheReader() {
-        // Whether the text agrees is looked at only when the book is read.
-        val entry = wraparound(true, "coded.png")
-        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertFalse(Thumbs.frontKnown(entry.file))
-    }
-
-    @Test
-    fun aCoverThatLooksTheSameEitherWayIsFoundForBothDirections() {
-        val book = cover(name = "plain cover.png")
-        assertTrue("unknown until made", Thumbs.directionMatters(book))
-        Thumbs.load(context, book, "UTF-8", 50, 75, CoverStyle(ThumbFit.FILL))!!
-        val rtl = book.copy(direction = ReadingDirection.RTL)
-        assertFalse(Thumbs.directionMatters(rtl))
-        assertNotNull(Thumbs.inMemory(context, rtl, 50, 75, CoverStyle(ThumbFit.FILL)))
-
-        val file = File(context.cacheDir, "sided.png")
+    fun aWraparoundWhoseTitleWasNotLookedForIsWholeAndNotKept() {
+        Thumbs.detector = { _, _ -> null }
+        val file = File(context.cacheDir, "unread.png")
         file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
-        val sided = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
-        Thumbs.load(context, sided, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertTrue(Thumbs.directionMatters(sided))
-        assertNull(Thumbs.inMemory(context, sided.copy(direction = ReadingDirection.RTL), 130, 200, CoverStyle(ThumbFit.FILL)))
+        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
+        val thumb = Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(Color.BLUE, thumb.getPixel(30, 100))
+        assertEquals(Color.RED, thumb.getPixel(100, 100))
+        assertNull(File(context.cacheDir, "covers").listFiles()?.firstOrNull())
     }
 
     @Test
     fun aBookCoverTwoInnerPagesWideShowsItsFrontWithoutTheSpine() {
-        // Back blue, a green spine 60 wide, front red; inner pages 2:3 at another scale.
+        // Back blue, a green spine 60 wide, front red with a title; inner pages 2:3 at another scale.
+        Thumbs.detector = { _, bitmap ->
+            val w = bitmap.width
+            val h = bitmap.height
+            val red = Color.red(bitmap.getPixel(w / 2, h / 2)) > 200
+            ScoreMap(w, h, FloatArray(w * h) { i -> if (red && i / w in h / 10 until h / 4 && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+        }
         val file = Fixtures.zip(
             File(context.cacheDir, "wrapped.cbz"),
             Fixtures.entry("00.png", bands(660, 450, 300, Color.BLUE, Color.GREEN, Color.RED)),

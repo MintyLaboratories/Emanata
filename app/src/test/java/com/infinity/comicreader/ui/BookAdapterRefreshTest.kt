@@ -148,8 +148,8 @@ class BookAdapterRefreshTest {
         assertTrue(!RowChanges.sameRows(listOf(a.copy(bookmarkPage = 1)), listOf(a.copy(bookmarkPage = 2))))
     }
 
-    /** Covers made once [release] opens, by a source that says whether the direction moves them. */
-    private class Sided(private val matters: Boolean) : CoverSource {
+    /** Covers made once [release] opens. */
+    private class Gated : CoverSource {
         val release = CountDownLatch(1)
 
         override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? = null
@@ -178,13 +178,11 @@ class BookAdapterRefreshTest {
             style: CoverStyle,
             canceled: () -> Boolean
         ): Thumbs.Cover? = load(context, entry, charset, width, height, style, canceled)?.let { Thumbs.Cover(it, full = true) }
-
-        override fun directionMatters(entry: BookEntry) = matters
     }
 
     @Test
-    fun aDirectionFoundRedrawsOnlyTheTextOfACoverThatLooksTheSameEitherWay() {
-        adapter.covers = Sided(matters = false)
+    fun aDirectionFoundRedrawsOnlyTheText() {
+        adapter.covers = Gated()
         adapter.submit(listOf(book("a.cbz"), book("b.cbz")))
         layout()
         val cover = BitmapDrawable(recycler.resources, Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888))
@@ -199,28 +197,31 @@ class BookAdapterRefreshTest {
     }
 
     @Test
-    fun aDirectionThatMovesTheCoverKeepsTheOldOneUntilTheNewIsDrawn() {
+    fun aMovedCoverKeepsTheOldOneUntilTheNewIsDrawn() {
         prefs.thumbnails = true
-        val sided = Sided(matters = true)
-        adapter.covers = sided
-        adapter.submit(listOf(book("a.cbz")))
+        val id = BookId(0x1234)
+        val a = book("a.cbz").copy(id = id)
+        val first = Gated()
+        adapter.covers = first
+        adapter.submit(listOf(a))
         layout()
-        sided.release.countDown()
+        first.release.countDown()
         until { holder(0).thumb.drawable != null }
-        val first = holder(0).thumb.drawable
+        val shown = holder(0).thumb.drawable
         events.clear()
 
-        val waiting = Sided(matters = true)
+        val waiting = Gated()
         adapter.covers = waiting
-        adapter.submit(listOf(book("a.cbz").copy(direction = ReadingDirection.RTL)))
+        adapter.hiddenPages = { Library.Hidden(emptyMap(), emptyMap(), emptyMap(), mapOf(id to 2)) }
+        adapter.submit(listOf(a))
         layout()
         assertEquals(listOf("changed 0 cover"), events)
-        assertSame("the old cover stays meanwhile", first, holder(0).thumb.drawable)
+        assertSame("the old cover stays meanwhile", shown, holder(0).thumb.drawable)
         assertEquals(View.GONE, holder(0).placeholder.visibility)
 
         waiting.release.countDown()
-        until { holder(0).thumb.drawable !== first }
-        assertNotSame(first, holder(0).thumb.drawable)
+        until { holder(0).thumb.drawable !== shown }
+        assertNotSame(shown, holder(0).thumb.drawable)
         adapter.release()
     }
 

@@ -25,7 +25,6 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
-import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.reader.NameCharset
@@ -318,11 +317,10 @@ class BookAdapter(
 
     /**
      * Everything the cover of [item] is made from: two entries with the same id show the same
-     * cover. The direction counts only for a cover not known to look the same either way.
+     * cover.
      */
     private fun coverId(item: BookEntry): String =
         "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
-            "${item.direction == ReadingDirection.RTL && covers.directionMatters(item)}|" +
             "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
 
     init {
@@ -470,8 +468,8 @@ class BookAdapter(
 
     /**
      * Binds [item] to [holder]. A cover already drawn there for the same [coverId] stays as it
-     * is (a refresh, a re-sort); one of the same book stays until its new cover replaces it (a
-     * direction found, another cover style); else the type icon stands in until the cover is loaded.
+     * is (a refresh, a re-sort); one of the same book stays until its new cover replaces it
+     * (another cover style, a cover page given); else the type icon stands in until the cover is loaded.
      */
     private fun bindBook(holder: BookHolder, item: BookEntry) {
         val context = holder.itemView.context

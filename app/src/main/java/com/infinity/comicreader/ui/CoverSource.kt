@@ -28,9 +28,6 @@ interface CoverSource {
         canceled: () -> Boolean
     ): Thumbs.Cover?
 
-    /** False when the cover of [entry] is known to show the same whichever way the book reads ([Thumbs.directionMatters]). */
-    fun directionMatters(entry: BookEntry): Boolean = true
-
     companion object {
         val THUMBS: CoverSource = object : CoverSource {
             override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle) =
@@ -58,8 +55,6 @@ interface CoverSource {
                 style: CoverStyle,
                 canceled: () -> Boolean
             ) = Thumbs.loadFirst(context, entry, charset, width, height, style, canceled)
-
-            override fun directionMatters(entry: BookEntry) = Thumbs.directionMatters(entry)
         }
     }
 }

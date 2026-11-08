@@ -454,8 +454,17 @@ object Calibration {
     }
 
     /**
+     * The threads born during a GPU run of calibration's ([before] to [after], each the live
+     * thread ids): the GPU driver's, which run inside the app and do calibration's work, so
+     * they count as calibration's own from then on ([skips]). Another of the app's threads
+     * born just then would be missed, its CPU time still measured.
+     */
+    fun bornDuringGpuRun(before: Set<Int>, after: Set<Int>): Set<Int> = after - before
+
+    /**
      * The threads a sample's check of the app's other threads leaves out whole: calibration's
-     * [own] (the one timing, the one preparing pages), the [ui] threads (the app drawing
+     * [own] (the one timing, the one preparing pages, GPU driver threads born during its GPU
+     * runs: [bornDuringGpuRun]), the [ui] threads (the app drawing
      * itself, left out of CPU times too) and the runtime's housekeeping ([housekeeping], by
      * [name]). Threads that ran calibration's native work are not among them: what they did
      * besides is counted ([othersMs]).

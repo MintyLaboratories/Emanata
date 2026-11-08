@@ -27,6 +27,9 @@ internal class TaskCpu(private val tasks: File) {
         return out
     }
 
+    /** The ids of this process's live threads. */
+    fun tids(): Set<Int> = tasks.list().orEmpty().mapNotNullTo(HashSet()) { it.toIntOrNull() }
+
     /** The name of thread [tid] (its `comm`), "" when unknown. */
     fun name(tid: Int): String = names.getOrPut(tid) { runCatching { File(tasks, "$tid/comm").readText().trim() }.getOrDefault("") }
 

@@ -353,7 +353,7 @@ object Calibrator {
         private val cores = CpuCores.device
         private val coreCount = maxOf(cores.capacities.size, Runtime.getRuntime().availableProcessors())
 
-        /** Calibration's own threads: this one, and the one preparing pages. */
+        /** Calibration's own threads: this one, the one preparing pages, and those born during GPU runs ([Calibration.bornDuringGpuRun]). */
         private val own = mutableSetOf(Process.myTid())
 
         private var preparing: Thread? = null
@@ -535,6 +535,7 @@ object Calibrator {
             timing = true
             // What the ledger counted between runs is not this run's.
             if (LibPixels.loaded) LibPixels.ledgerNs(coreCount)
+            val threadsBefore = if (candidate.gpu) tasks.tids() else null
             val cpu0 = cpuMs()
             val t0 = System.nanoTime()
             val ok = when (candidate.kind) {
@@ -555,9 +556,10 @@ object Calibrator {
                     PlatformPages.placed(candidate.pinned) { runCatching { decodeJpeg(bytes) }.getOrDefault(false) }
                 }
             }
-            if (!ok) return null
             val wall = (System.nanoTime() - t0) / 1e6
             val cpu = (cpuMs() - cpu0).coerceAtLeast(0.0)
+            threadsBefore?.let { before -> Calibration.bornDuringGpuRun(before, tasks.tids()).let { born -> synchronized(own) { own += born } } }
+            if (!ok) return null
             val coreNs = if (LibPixels.loaded) LibPixels.ledgerNs(coreCount) else LongArray(0)
             val now = clockCaps.read()
             if (Calibration.capped(caps, now)) cappedNow = true

@@ -378,6 +378,16 @@ class CalibrationTest {
     }
 
     @Test
+    fun threadsBornDuringAGpuRunAreCalibrationsOwn() {
+        val born = Calibration.bornDuringGpuRun(setOf(1, 2, 3), setOf(1, 3, 40, 41))
+        assertEquals(setOf(40, 41), born)
+        val skip = Calibration.skips(own = setOf(10) + born, ui = listOf(1)) { "" }
+        assertTrue(skip(40))
+        assertTrue(skip(41))
+        assertFalse(skip(3))
+    }
+
+    @Test
     fun threadsThatEndedDuringASampleCountFromTheProcessTime() {
         val before = mapOf(1 to 0L, 2 to 10_000_000L, 3 to 0L)
         // 1 still there (+40 ms); 2 ended; 3 ended, a JPEG XL worker the ledger counted 20 ms for; 4 born (+5 ms).

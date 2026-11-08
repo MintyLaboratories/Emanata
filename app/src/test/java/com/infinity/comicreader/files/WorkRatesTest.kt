@@ -96,16 +96,6 @@ class WorkRatesTest {
     }
 
     @Test
-    fun aForgottenShareGoesBackToItsSeed() {
-        val rates = WorkRates()
-        repeat(20) { rates.read(WorkRates.share("a"), Container.ZIP, 64 * mb, 64.0) }
-        repeat(20) { rates.read(WorkRates.share("ab"), Container.ZIP, 64 * mb, 64.0) }
-        rates.forgetShare("a")
-        assertEquals(WorkRates.SHARE_READ, rates.readRate(WorkRates.share("a"), Container.ZIP), 1.0)
-        assertTrue(rates.readRate(WorkRates.share("ab"), Container.ZIP) < 2.0 * mb)
-    }
-
-    @Test
     fun theRecordReadsBackAsItWasWritten() {
         val rates = WorkRates()
         repeat(5) { rates.page(Step.upscale("Model 2x"), ImageKind.PNG, 3 * mb, 12.0) }

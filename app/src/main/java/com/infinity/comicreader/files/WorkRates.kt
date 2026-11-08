@@ -130,13 +130,6 @@ class WorkRates(private val seeds: Seeds = Seeds()) {
     /** A book of action [op] took [seconds] beyond reading, converting and writing. */
     fun book(op: String, seconds: Double) = add(bookKey(op), 1.0, seconds, CAP_BOOKS)
 
-    /** Forgets what was measured at share [id]. */
-    @Synchronized
-    fun forgetShare(id: String) {
-        val loc = share(id)
-        tallies.keys.removeAll { it.startsWith("read/$loc/") || it.startsWith("write/$loc/") }
-    }
-
     @Synchronized
     private fun add(key: String, amount: Double, seconds: Double, cap: Double) {
         if (amount <= 0 || !(seconds >= 0) || seconds.isInfinite()) return

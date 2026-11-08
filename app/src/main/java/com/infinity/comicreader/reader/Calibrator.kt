@@ -714,6 +714,7 @@ object Calibrator {
 
             /** The encoded pages' formats and qualities, for [method]. */
             const val PAGE_QUALITIES = "jxl q91 hare, jpeg q90"
+
             private const val STEP_MS = 50L
 
             /** The longest [release] waits for pages still being made. */

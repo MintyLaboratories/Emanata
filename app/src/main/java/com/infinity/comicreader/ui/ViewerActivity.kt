@@ -2932,14 +2932,17 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
         openChapter(prev, 0)
     }
 
+    /** Opens [target] at [page] in place; a large book on a share over a metered connection asks first ([LargeBookWarning]). */
     private fun openChapter(target: File, page: Int) {
-        saveHistory()
-        val intent = Intent(this, ViewerActivity::class.java)
-            .putExtra(EXTRA_PATH, target.absolutePath)
-            .putExtra(EXTRA_PAGE, page)
-        // singleTop + onNewIntent: the reader reloads in place, so the back stack
-        // never grows one activity per chapter.
-        startActivity(intent)
+        LargeBookWarning.check(this, target) {
+            saveHistory()
+            val intent = Intent(this, ViewerActivity::class.java)
+                .putExtra(EXTRA_PATH, target.absolutePath)
+                .putExtra(EXTRA_PAGE, page)
+            // singleTop + onNewIntent: the reader reloads in place, so the back stack
+            // never grows one activity per chapter.
+            startActivity(intent)
+        }
     }
 
     private fun chapterLabel(f: File): String {

@@ -439,29 +439,6 @@
             app:summary="@string/pref_suggest_repack_desc"
             app:title="@string/pref_suggest_repack" />
         <ListPreference
-            app:defaultValue="2048"
-            app:entries="@array/network_cache_entries"
-            app:entryValues="@array/network_cache_values"
-            app:key="pref_network_cache"
-            app:summary="@string/pref_network_cache_desc"
-            app:title="@string/pref_network_cache" />
-        <ListPreference
-            app:defaultValue="30"
-            app:entries="@array/network_timeout_entries"
-            app:entryValues="@array/network_timeout_values"
-            app:key="pref_network_timeout"
-            app:title="@string/pref_network_timeout"
-            app:useSimpleSummaryProvider="true">
-            <extra
-                android:name="advanced"
-                android:value="true" />
-        </ListPreference>
-        <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:key="pref_similar_shares"
-            app:summary="@string/pref_similar_shares_desc"
-            app:title="@string/pref_similar_shares" />
-        <ListPreference
             app:defaultValue="2:3"
             app:entries="@array/cover_shape_entries"
             app:entryValues="@array/cover_shape_values"
@@ -520,6 +497,55 @@
             app:key="pref_pinch_peek"
             app:title="@string/pref_pinch_peek"
             app:useSimpleSummaryProvider="true" />
+    </com.infinity.comicreader.ui.CollapsibleCategory>
+
+    <com.infinity.comicreader.ui.CollapsibleCategory
+        app:key="section_network"
+        app:title="@string/pref_cat_network">
+        <ListPreference
+            app:defaultValue="2048"
+            app:entries="@array/network_cache_entries"
+            app:entryValues="@array/network_cache_values"
+            app:key="pref_network_cache"
+            app:summary="@string/pref_network_cache_desc"
+            app:title="@string/pref_network_cache" />
+        <ListPreference
+            app:defaultValue="30"
+            app:entries="@array/network_timeout_entries"
+            app:entryValues="@array/network_timeout_values"
+            app:key="pref_network_timeout"
+            app:title="@string/pref_network_timeout"
+            app:useSimpleSummaryProvider="true">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_similar_shares"
+            app:summary="@string/pref_similar_shares_desc"
+            app:title="@string/pref_similar_shares" />
+        <!-- Opens a multiple choice; stored by Prefs as a comma-separated string. -->
+        <Preference
+            app:key="pref_metered_skip"
+            app:persistent="false"
+            app:title="@string/pref_metered_skip" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pref_metered_warn"
+            app:title="@string/pref_metered_warn" />
+        <ListPreference
+            app:defaultValue="100"
+            app:dependency="pref_metered_warn"
+            app:entries="@array/metered_warn_entries"
+            app:entryValues="@array/metered_warn_values"
+            app:key="pref_metered_warn_mb"
+            app:title="@string/pref_metered_warn_mb"
+            app:useSimpleSummaryProvider="true" />
+        <Preference
+            app:key="pref_slow_skip"
+            app:persistent="false"
+            app:title="@string/pref_slow_skip" />
     </com.infinity.comicreader.ui.CollapsibleCategory>
 
     <com.infinity.comicreader.ui.CollapsibleCategory

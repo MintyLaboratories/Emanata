@@ -173,11 +173,13 @@ class CleanupActivity : AppCompatActivity() {
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
         pinch = PinchPeek(this, list, { prefs.pinchPeek }, ::peekTarget) { entry, page ->
-            startActivity(
-                Intent(this, ViewerActivity::class.java)
-                    .putExtra(ViewerActivity.EXTRA_PATH, entry.file.absolutePath)
-                    .putExtra(ViewerActivity.EXTRA_PAGE, page)
-            )
+            LargeBookWarning.check(this, entry.file) {
+                startActivity(
+                    Intent(this, ViewerActivity::class.java)
+                        .putExtra(ViewerActivity.EXTRA_PATH, entry.file.absolutePath)
+                        .putExtra(ViewerActivity.EXTRA_PAGE, page)
+                )
+            }
         }
 
         selectButton.visibility = if (mode == MODE_DUPES && !readOnly) View.VISIBLE else View.GONE

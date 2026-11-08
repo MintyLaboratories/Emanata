@@ -75,6 +75,16 @@
     <string name="share_password_none">No password is stored</string>
     <string name="share_thumbnails">Load thumbnails</string>
     <string name="share_thumbnails_hint">Turn off for slow drives: covers already made still show</string>
+    <string name="share_speed">Speed</string>
+    <string name="share_speed_auto">Auto</string>
+    <string name="share_speed_fast">Fast</string>
+    <string name="share_speed_slow">Slow</string>
+    <string name="share_speed_rate">%1$s/s</string>
+    <string name="share_speed_first_byte">first byte in %1$d ms</string>
+    <string name="share_speed_measured_fast">Measured %1$s: fast</string>
+    <string name="share_speed_measured_slow">Measured %1$s: slow</string>
+    <string name="share_speed_unmeasured">Not measured yet: reading books from it measures it</string>
+    <string name="share_speed_hint">Auto counts a share slow below 2 MB/s or over 1 s to the first byte. Slow shares skip what Settings › Network › On slow shares, skip says.</string>
     <string name="share_http_warning">Plain http: the password and comics cross the network unencrypted</string>
     <string name="share_save_failed">The password could not be stored securely; try again</string>
     <string name="share_problem_empty">Enter the share\'s path, such as nas.local/share/folder</string>
@@ -118,7 +128,7 @@
     <string name="pref_network_cache">Network cache</string>
     <string name="pref_network_timeout">Network timeout</string>
     <string name="pref_similar_shares">Include network shares in similar search</string>
-    <string name="pref_similar_shares_desc">Find duplicate files also works in share folders, reading books there read-only, one at a time. Skipped on a metered connection.</string>
+    <string name="pref_similar_shares_desc">Find duplicate files also works in share folders, reading books there read-only, one at a time, unless hashing is skipped on metered connections or slow shares.</string>
     <string name="pref_network_cache_desc">Space for PDFs and images fetched from network shares, and pages unpacked from solid archives there; the least recently read go first</string>
     <string name="share_fetching">Fetching from the share… %1$d%%</string>
     <string name="network_waiting">Waiting for network location…</string>
@@ -951,6 +961,24 @@
     <string name="pref_cat_reader">Reader</string>
     <string name="pref_cat_gestures">Gestures &amp; controls</string>
     <string name="pref_cat_list">Library</string>
+    <string name="pref_cat_network">Network</string>
+    <string name="pref_metered_skip">Skip on metered connections</string>
+    <string name="pref_slow_skip">On slow shares, skip</string>
+    <string name="pref_metered_warn">Warn before opening a large book on a metered connection</string>
+    <string name="pref_metered_warn_mb">Large book size</string>
+    <string name="net_skip_covers">Covers from shares</string>
+    <string name="net_skip_covers_slow">Covers of books not on screen</string>
+    <string name="net_skip_hashing">Similar-books hashing on shares</string>
+    <string name="net_skip_hashing_slow">Background hashing</string>
+    <string name="net_skip_read_ahead">Read-ahead on shares</string>
+    <string name="net_skip_read_ahead_slow">Read-ahead beyond the page shown</string>
+    <string name="net_skip_downloads">Automatic model or detector downloads</string>
+    <string name="net_skip_any">Any network use I didn\'t start</string>
+    <string name="net_skip_none">Nothing: opening a book, searching, Download and Compare always run</string>
+    <string name="net_skip_explicit">%1$s. Opening a book, searching, Download and Compare always run</string>
+    <string name="big_book_title">Large book on a metered connection</string>
+    <string name="big_book_msg">%1$s is %2$s. Opening it on this metered connection may use up to that much data.</string>
+    <string name="big_book_open">Open anyway</string>
     <string name="pref_cat_cache">Storage &amp; cache</string>
 
     <string name="pref_theme">Theme</string>
@@ -1301,6 +1329,22 @@
         <item>2048</item>
         <item>4096</item>
         <item>8192</item>
+    </string-array>
+    <string-array name="metered_warn_entries">
+        <item>25 MB</item>
+        <item>50 MB</item>
+        <item>100 MB</item>
+        <item>200 MB</item>
+        <item>500 MB</item>
+        <item>1 GB</item>
+    </string-array>
+    <string-array name="metered_warn_values" translatable="false">
+        <item>25</item>
+        <item>50</item>
+        <item>100</item>
+        <item>200</item>
+        <item>500</item>
+        <item>1000</item>
     </string-array>
     <string-array name="network_timeout_entries">
         <item>10 s</item>

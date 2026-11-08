@@ -180,6 +180,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         val library = Library(requireContext())
         setUpSections(prefs)
         setUpBattery()
+        setUpNetwork(prefs)
         setUpAi(prefs)
 
         findPreference<Preference>("pref_theme")?.setOnPreferenceChangeListener { _, value ->
@@ -494,6 +495,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
         show()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { settings.reader.collect { show() } }
+        }
+    }
+
+    /** The skip choices for metered connections and slow shares, each a multiple choice showing what it skips. */
+    private fun setUpNetwork(prefs: Prefs) {
+        for (kind in NetSkipDialog.Kind.entries) {
+            val key = if (kind == NetSkipDialog.Kind.METERED) Prefs.KEY_METERED_SKIP else Prefs.KEY_SLOW_SKIP
+            val pref = findPreference<Preference>(key) ?: continue
+            fun chosen() = if (kind == NetSkipDialog.Kind.METERED) prefs.meteredSkip else prefs.slowSkip
+            pref.summary = NetSkipDialog.summary(requireContext(), kind, chosen())
+            pref.setOnPreferenceClickListener {
+                NetSkipDialog.show(requireContext(), kind, chosen()) { skips ->
+                    if (kind == NetSkipDialog.Kind.METERED) prefs.meteredSkip = skips else prefs.slowSkip = skips
+                    if (isAdded) pref.summary = NetSkipDialog.summary(requireContext(), kind, skips)
+                }
+                true
+            }
         }
     }
 

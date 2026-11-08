@@ -2873,11 +2873,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
     }
 
+    /** Opens [file] at [page] in the reader; a large book on a share over a metered connection asks first ([LargeBookWarning]). */
     private fun openViewer(file: File, page: Int) {
-        val intent = Intent(this, ViewerActivity::class.java)
-        intent.putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath)
-        intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
-        startActivity(intent)
+        LargeBookWarning.check(this, file) {
+            val intent = Intent(this, ViewerActivity::class.java)
+            intent.putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath)
+            intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
+            startActivity(intent)
+        }
     }
 
     /** Opens a book at [file]; returns a folder there for the caller to browse. Both by canonical path. */

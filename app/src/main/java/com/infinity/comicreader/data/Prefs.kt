@@ -362,6 +362,9 @@ class Prefs(context: Context) {
             .apply()
     }
 
+    /** Grid [columns] across, 0 auto; rows stay as they are. */
+    fun setGridColumns(tab: String, columns: Int) = put(viewKey(tab, VIEW_COLUMNS), columns.coerceIn(0, TabView.MAX_CELLS))
+
     /** How [tab] orders its entries. */
     fun sort(tab: String): TabSort {
         val def = TabSort.defaultFor(tab)
@@ -380,6 +383,9 @@ class Prefs(context: Context) {
         if (then == null) e.remove(sortKey(tab, SORT_THEN)) else e.putString(sortKey(tab, SORT_THEN), then.encode())
         e.apply()
     }
+
+    /** Orders [tab] by [level] first; the rest of its sort stays as it is. */
+    fun setSortBy(tab: String, level: SortLevel) = put(sortKey(tab, SORT_BY), level.encode())
 
     /** What [tab] hides. */
     fun filter(tab: String): LibraryFilter = LibraryFilter.decode(sp.getString(filterKey(tab), null))

@@ -34,12 +34,12 @@ object UpstreamBackup {
             val columns = (values["pref_grid_columns"] as? String)?.toIntOrNull()
             for (tab in TABS) {
                 prefs.setGrid(tab, grid)
-                if (columns != null) prefs.setGridSize(tab, columns, prefs.view(tab).rows)
+                if (columns != null) prefs.setGridColumns(tab, columns)
             }
         }
         if ("pref_sort" in values || "pref_sort_dir" in values) {
             val level = sortLevel(values["pref_sort"] as? String, values["pref_sort_dir"] == "desc")
-            if (level != SortLevel(SortKey.NAME)) for (tab in TABS) prefs.setSort(tab, prefs.sort(tab).copy(by = level))
+            if (level != SortLevel(SortKey.NAME)) for (tab in TABS) prefs.setSortBy(tab, level)
         }
         if (values["pref_show_filenames"] == false) {
             prefs.titleDisplay = TitleDisplay.HIDDEN

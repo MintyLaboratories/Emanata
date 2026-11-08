@@ -144,7 +144,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
-class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.Host {
+class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.Host, LargeBookWarning.Host {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
@@ -2874,13 +2874,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     }
 
     /** Opens [file] at [page] in the reader; a large book on a share over a metered connection asks first ([LargeBookWarning]). */
-    private fun openViewer(file: File, page: Int) {
-        LargeBookWarning.check(this, file) {
-            val intent = Intent(this, ViewerActivity::class.java)
-            intent.putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath)
-            intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
-            startActivity(intent)
-        }
+    private fun openViewer(file: File, page: Int) = LargeBookWarning.check(this, file, page)
+
+    override fun openConfirmed(path: String, page: Int) {
+        val intent = Intent(this, ViewerActivity::class.java)
+        intent.putExtra(ViewerActivity.EXTRA_PATH, path)
+        intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
+        startActivity(intent)
     }
 
     /** Opens a book at [file]; returns a folder there for the caller to browse. Both by canonical path. */

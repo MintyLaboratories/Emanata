@@ -175,7 +175,7 @@ import kotlin.math.abs
  * [Library], falling back to the defaults in [Prefs]. Changes made elsewhere,
  * such as in the settings screen, apply live through [SettingsRepository].
  */
-class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
+class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning.Host {
 
     private lateinit var prefs: Prefs
     private lateinit var library: Library
@@ -2933,16 +2933,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading {
     }
 
     /** Opens [target] at [page] in place; a large book on a share over a metered connection asks first ([LargeBookWarning]). */
-    private fun openChapter(target: File, page: Int) {
-        LargeBookWarning.check(this, target) {
-            saveHistory()
-            val intent = Intent(this, ViewerActivity::class.java)
-                .putExtra(EXTRA_PATH, target.absolutePath)
-                .putExtra(EXTRA_PAGE, page)
-            // singleTop + onNewIntent: the reader reloads in place, so the back stack
-            // never grows one activity per chapter.
-            startActivity(intent)
-        }
+    private fun openChapter(target: File, page: Int) = LargeBookWarning.check(this, target, page)
+
+    override fun openConfirmed(path: String, page: Int) {
+        saveHistory()
+        val intent = Intent(this, ViewerActivity::class.java)
+            .putExtra(EXTRA_PATH, path)
+            .putExtra(EXTRA_PAGE, page)
+        // singleTop + onNewIntent: the reader reloads in place, so the back stack
+        // never grows one activity per chapter.
+        startActivity(intent)
     }
 
     private fun chapterLabel(f: File): String {

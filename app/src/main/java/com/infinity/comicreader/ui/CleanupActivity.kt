@@ -69,7 +69,7 @@ import java.util.concurrent.atomic.AtomicReference
  * and a way to stop, and none of them is ever selected for you. In a share folder
  * ([Prefs.similarShares]) everything is read only and nothing can be deleted.
  */
-class CleanupActivity : AppCompatActivity() {
+class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
 
     private sealed class Row {
         /** A header; [similar] marks the similar-books one. */
@@ -137,6 +137,14 @@ class CleanupActivity : AppCompatActivity() {
     /** True while a progress update waits on the main thread, so updates from many reads coalesce. */
     private val progressPosted = AtomicBoolean(false)
 
+    override fun openConfirmed(path: String, page: Int) {
+        startActivity(
+            Intent(this, ViewerActivity::class.java)
+                .putExtra(ViewerActivity.EXTRA_PATH, path)
+                .putExtra(ViewerActivity.EXTRA_PAGE, page)
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = Library(this)
@@ -173,13 +181,7 @@ class CleanupActivity : AppCompatActivity() {
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
         pinch = PinchPeek(this, list, { prefs.pinchPeek }, ::peekTarget) { entry, page ->
-            LargeBookWarning.check(this, entry.file) {
-                startActivity(
-                    Intent(this, ViewerActivity::class.java)
-                        .putExtra(ViewerActivity.EXTRA_PATH, entry.file.absolutePath)
-                        .putExtra(ViewerActivity.EXTRA_PAGE, page)
-                )
-            }
+            LargeBookWarning.check(this, entry.file, page)
         }
 
         selectButton.visibility = if (mode == MODE_DUPES && !readOnly) View.VISIBLE else View.GONE

@@ -258,9 +258,9 @@ object Calibrator : CalibrationControl {
 
     private fun changed() = listeners.forEach { runCatching { it() } }
 
-    /** A screen other than the reader came to the front: a run sent to the background that the reader or another app stopped starts again, a few times a launch at most. */
+    /** A screen other than the reader came to the front: a run sent to the background that the reader or another app stopped starts again, due or asked for in Settings, a few times a launch at most. */
     private fun resumeInBackground() {
-        if (!inBackground || running || !due() || backgroundTries >= BACKGROUND_TRIES) return
+        if (!inBackground || running || backgroundTries >= BACKGROUND_TRIES) return
         backgroundTries++
         begin(Mode(underSaver = lastMode.underSaver))
     }

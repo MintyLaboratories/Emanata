@@ -1559,9 +1559,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         BookIds.known(book)?.let { factsCache.keepSlices(it, checked) }
     }
 
-    /** Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover. */
+    /**
+     * Starts [detectAfterOpen] when [contents] left a costly ComicInfo or an unread cover; not
+     * while background reads of a share book are held back ([sharedHeld]).
+     */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
-        if (!BookDirection.hasCover(book)) return
+        if (!BookDirection.hasCover(book) || sharedHeld(book)) return
         val coverPending = knownCover(book, src) == null && !DirectionDetection.outranksCover(contents.detected)
         if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }

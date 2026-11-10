@@ -20,6 +20,10 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var slowReads: LongRange? = null
 
+    /** How long [slow] holds a call at most, in real time, so a test that never opens it still ends. */
+    @Volatile
+    var slowCapMs = 10_000L
+
     /** Calls [slow] holds now. */
     val held = java.util.concurrent.atomic.AtomicInteger()
 
@@ -68,7 +72,7 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
         slow?.takeIf { holds }?.let {
             held.incrementAndGet()
             try {
-                it.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                it.await(slowCapMs, java.util.concurrent.TimeUnit.MILLISECONDS)
             } finally {
                 held.decrementAndGet()
             }

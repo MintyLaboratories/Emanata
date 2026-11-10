@@ -74,7 +74,8 @@ class ListActivityStartFolderTest {
         File(dir, "Series").mkdirs()
         File(dir, "Series/001.cbz").writeBytes(ByteArray(10))
         File(dir, "Loose.cbz").writeBytes(ByteArray(10))
-        fake = FakeRemoteFs(dir)
+        // A held share answers only when a test (or tearDown) opens it, however long a busy machine takes.
+        fake = FakeRemoteFs(dir).apply { slowCapMs = 120_000 }
         ShareStore.defaultBox = AesGcmBox { SecretKeySpec(ByteArray(32) { it.toByte() }, "AES") }
         ShareStore(context).put(FakeRemoteFs.share())
         Remotes.init(context)

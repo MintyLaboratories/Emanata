@@ -96,6 +96,22 @@ class MlKitLinesTest {
     }
 
     @Test
+    fun thicknessNotBoxSizePicksTheTitle() {
+        // An upright title, and a thin line turned 45 degrees whose box is far taller than the title's.
+        val title = line(200.0, 100.0, 300.0, 60.0)
+        val turned = line(200.0, 400.0, 300.0, 50.0, degrees = 45.0)
+        val boxes = MlKitLines.boxes(listOf(turned, title), 400, 600)
+        assertTrue(min(boxes[0].width, boxes[0].height) > 3 * boxes[1].glyph)
+        val focus = SmartCrop.focus(boxes, 400, 600, FloatArray(0), FloatArray(0))
+        assertEquals(boxes[1].top / 600, focus.title!!.top, eps)
+        // Its letters are near the title's size: it stays with it.
+        assertEquals(2, focus.lines.size)
+        // By the box rule alone the turned line would be the title.
+        val byBox = SmartCrop.focus(boxes.map { it.copy(thickness = null) }, 400, 600, FloatArray(0), FloatArray(0))
+        assertEquals(boxes[0].top / 600, byBox.title!!.top, eps)
+    }
+
+    @Test
     fun withoutCornersItsBoundsServeAndTheBoxRuleSizesIt() {
         val b = MlKitLines.box(FoundLine(null, 10.0, 20.0, 50.0, 140.0, 0.5f), 400, 600)!!
         assertEquals(SmartCrop.TextBox(10.0, 20.0, 50.0, 140.0, 0.5f), b)

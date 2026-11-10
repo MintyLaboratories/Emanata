@@ -833,14 +833,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Keep it simple off (or once chosen), in Settings, the reader's sheet and
   Models alike. Artifact removal and descreen are advanced settings;
   the switch's summary shows the whole chain, hidden steps included, and warns
-  when its models together may run past a page's time. **Models by page
-  size** (advanced) is one slider with two handles on the size a page is
-  shown at, as a share of its side after the 8 MP reduction: upscaling models
-  run on pages shown above the upscale handle (100% by default, never below
-  50%, where an upscale is always resampled away), artifact removal above the
-  cleanup handle (50% by default, down to Always). The handles may cross; a
-  sentence under the slider says what they do. Descreen runs at every size.
-  A chosen model
+  when its models together may run past a page's time. A chosen model
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). **Import a model…**
@@ -865,6 +858,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   **This book**), kept with its other data; **Default** follows Settings, and
   a change there changes the default. Processed pages are kept on disk (up to
   1 GB and a tenth of the free space, cleared by Clear cache).
+- **Models by page size** (Settings → AI processing, advanced): one slider
+  with two handles on the size a page is shown at, as a share of its side
+  after the 8 MP reduction. Upscaling models run on pages shown above the
+  upscale handle (100% by default, never below 50%, where an upscale is
+  always resampled away); artifact removal runs above the cleanup handle
+  (50% by default, down to Always). The handles may cross; a sentence under
+  the slider says what they do. Descreen, when chosen, runs at every size.
+  With Keep it simple on, sizes set away from the defaults show in the AI
+  processing switch's summary.
 - **Optimizing for this device**: at first launch, once the library shows, a
   full-screen calibration times how fast the device decodes and resizes pages
   (about 40 s; a comic page whose gutters slide one at a time keeps it company)

@@ -1,10 +1,13 @@
 package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.GrayPages
 import com.infinity.comicreader.ai.ModelCatalog
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,22 +94,31 @@ class GrayRunsTest {
     }
 
     @Test
-    fun lumaDiffIsZeroForTheKotlinCollapse() {
+    fun collapsedOutputHasNoSpread() {
         val raw = intArrayOf(rgb(200, 100, 150), rgb(0, 0, 255), gray(77), rgb(255, 255, 0))
-        val collapsed = raw.map(GrayPages::luma).toIntArray()
-        assertEquals(0, GrayRuns.lumaDiff(raw, collapsed))
-        assertEquals(0, GrayRuns.spread(collapsed, 2).max)
+        assertEquals(255, GrayRuns.spread(raw, 2).max)
+        assertEquals(0, GrayRuns.spread(raw.map(GrayPages::luma).toIntArray(), 2).max)
     }
 
     @Test
-    fun lumaDiffMeasuresTheWorstChannel() {
-        val raw = intArrayOf(gray(100), rgb(200, 100, 150))
-        val l = GrayPages.luma(raw[1]) and 0xFF
-        // One step off on one channel, and a pixel left colored.
-        val collapsed = intArrayOf(rgb(100, 100, 101), rgb(l, l, l))
-        assertEquals(1, GrayRuns.lumaDiff(raw, collapsed))
-        assertEquals(50, GrayRuns.lumaDiff(intArrayOf(rgb(200, 100, 150)), intArrayOf(rgb(l, l + 50, l))))
-        assertEquals(255, GrayRuns.lumaDiff(raw, IntArray(1)))
+    fun aGpuLineThatOpenedOnTheCpuIsVoid() {
+        assertNotNull(GrayRuns.engineProblem(askedGpu = true, onGpu = false))
+        assertNull(GrayRuns.engineProblem(askedGpu = true, onGpu = true))
+        assertNull(GrayRuns.engineProblem(askedGpu = false, onGpu = false))
+    }
+
+    @Test
+    fun aCollapsedOrFailedRawRunFails() {
+        assertNull(GrayRuns.runProblem(rawCollapsed = false, rawFallback = null, chainRan = 1, chainFallback = null))
+        assertNotNull(GrayRuns.runProblem(rawCollapsed = true, rawFallback = null, chainRan = 1, chainFallback = null))
+        assertNotNull(GrayRuns.runProblem(rawCollapsed = false, rawFallback = Fallback.FAILED, chainRan = 1, chainFallback = null))
+    }
+
+    @Test
+    fun aChainThatSkipsTheModelFails() {
+        assertNotNull(GrayRuns.runProblem(rawCollapsed = false, rawFallback = null, chainRan = 0, chainFallback = Fallback.UNNEEDED))
+        assertNotNull(GrayRuns.runProblem(rawCollapsed = false, rawFallback = null, chainRan = 0, chainFallback = null))
+        assertNotNull(GrayRuns.runProblem(rawCollapsed = false, rawFallback = null, chainRan = 0, chainFallback = Fallback.TIMEOUT))
     }
 
     @Test

@@ -1,16 +1,17 @@
 package com.infinity.comicreader.debug
 
+import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.GrayPages
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Pure parts of [AiCheckService]'s `gray` run: a black-and-white screentone page, and how much
- * color a model's output on it holds before and after the collapse to gray ([GrayPages]).
+ * Pure parts of [AiCheckService]'s `gray` run: a black-and-white screentone page, how much
+ * color a model's output on it holds before and after the collapse to gray ([GrayPages]), and
+ * what voids or fails a run.
  */
 internal object GrayRuns {
     /** Catalog ids of the models a `gray` run checks by default: the descreen models. */
@@ -89,7 +90,10 @@ internal object GrayRuns {
 
     /**
      * How colored [px] (ARGB, rows [width] wide) is, from each pixel's spread: the difference
-     * between its largest and smallest of red, green and blue ([GrayPages.spreadOf]).
+     * between its largest and smallest of red, green and blue ([GrayPages.spreadOf]). On a
+     * model's output this is the 8-bit page as the next step reads it: each channel rounded and
+     * clamped to 0..255, so a tint where the model overshoots (paper past white, ink past black)
+     * is clipped away and the largest spread can be under the model's own.
      */
     fun spread(px: IntArray, width: Int): Spread {
         var most = 0
@@ -119,18 +123,23 @@ internal object GrayRuns {
     }
 
     /**
-     * The largest difference, over pixels and channels, between [collapsed] and [raw] collapsed
-     * to [GrayPages.luma]: how far the native collapse is from the Kotlin one. 255 when the
-     * sizes differ.
+     * Why a model's `gray` line is void, else null: [askedGpu] but it opened on the CPU
+     * ([onGpu] false), so it says nothing about the GPU.
      */
-    fun lumaDiff(raw: IntArray, collapsed: IntArray): Int {
-        if (raw.size != collapsed.size) return 255
-        var worst = 0
-        for (i in raw.indices) {
-            val want = GrayPages.luma(raw[i])
-            val got = collapsed[i]
-            for (shift in 0..16 step 8) worst = maxOf(worst, abs(((want shr shift) and 0xFF) - ((got shr shift) and 0xFF)))
-        }
-        return worst
+    fun engineProblem(askedGpu: Boolean, onGpu: Boolean): String? =
+        if (askedGpu && !onGpu) "engineMismatch: asked gpu, opened on cpu" else null
+
+    /**
+     * Why a model's `gray` line fails, else null: its raw run, meant to keep the model's color,
+     * was collapsed ([rawCollapsed]) or fell back ([rawFallback]); or the reader's chain at the
+     * check's display size did not run it ([chainRan] 0, [chainFallback]), so the page shown
+     * says nothing of the collapse. Descreen models run at every display size.
+     */
+    fun runProblem(rawCollapsed: Boolean, rawFallback: Fallback?, chainRan: Int, chainFallback: Fallback?): String? = when {
+        rawCollapsed -> "raw run collapsed: its color is gone"
+        rawFallback != null -> "raw run fell back: ${rawFallback.name}"
+        chainFallback == Fallback.UNNEEDED || (chainRan == 0 && chainFallback == null) -> "chain skipped the model"
+        chainFallback != null -> "chain fell back: ${chainFallback.name}"
+        else -> null
     }
 }

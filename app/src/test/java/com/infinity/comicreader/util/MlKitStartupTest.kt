@@ -18,10 +18,13 @@ class MlKitStartupTest {
 
     @Test
     fun mlKitDoesNotStartWithTheApp() {
-        val providers = context.packageManager
-            .getPackageInfo(context.packageName, PackageManager.GET_PROVIDERS).providers.orEmpty()
-            .map { it.name }
-        assertTrue("merged manifest not read", "com.infinity.comicreader.files.BookProvider" in providers)
+        val info = context.packageManager.getPackageInfo(
+            context.packageName, PackageManager.GET_PROVIDERS or PackageManager.GET_SERVICES)
+        val providers = info.providers.orEmpty().map { it.name }
+        val services = info.services.orEmpty().map { it.name }
+        // Declared by the same ML Kit library manifest as MlKitInitProvider: proves that manifest was merged.
+        assertTrue("ML Kit's manifest not merged",
+            "com.google.mlkit.common.internal.MlKitComponentDiscoveryService" in services)
         assertFalse("MlKitInitProvider registered", "com.google.mlkit.common.internal.MlKitInitProvider" in providers)
     }
 }

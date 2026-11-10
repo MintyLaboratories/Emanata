@@ -12,6 +12,8 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiThresholds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -146,6 +148,26 @@ class AiSizeSliderTest {
         slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
         slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
         assertEquals(95, slider.thresholds.upscalePct)
+    }
+
+    @Test
+    fun keyFocusRingsTheHandleTheArrowsMove() {
+        assertNull(slider.focusedHandle())
+        // Robolectric runs in touch mode, where a key focus never lands on its own.
+        slider.isFocusableInTouchMode = true
+        assertTrue(slider.requestFocus())
+        // Focus search picks the nearer handle by geometry; up and down then pick each one.
+        assertNotNull(slider.focusedHandle())
+        slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))
+        assertEquals(AiSizeSlider.Handle.UPSCALE, slider.focusedHandle())
+        slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertEquals(AiThresholds(105, 50), slider.thresholds)
+        slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN))
+        assertEquals(AiSizeSlider.Handle.CLEANUP, slider.focusedHandle())
+        slider.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertEquals(AiThresholds(105, 55), slider.thresholds)
+        slider.clearFocus()
+        assertNull(slider.focusedHandle())
     }
 
     @Test

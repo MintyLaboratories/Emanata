@@ -66,7 +66,14 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private val labelGap = dp(6f)
     private val padX = dp(8f)
 
+    /** Room around a bubble for the key focus ring: its gap plus half its stroke. */
+    private val ring = dp(RING_GAP_DP + RING_STROKE_DP / 2)
+
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val focusRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(RING_STROKE_DP)
+    }
     private val dashed = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(2f)
@@ -90,7 +97,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     /** Room each side of the axis for a bubble or label centered at its end. */
     private val inset: Float by lazy {
-        AiSizeScale.LABELS.maxOf { bubbleText.measureText(AiSizeText.value(context, it)) } / 2 + padX
+        AiSizeScale.LABELS.maxOf { bubbleText.measureText(AiSizeText.value(context, it)) } / 2 + padX + ring
     }
 
     /** The axis labels drawn at this width: from the left, each one too close to the last drawn is skipped. */
@@ -120,7 +127,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
         return out
     }
 
-    private val trackTop get() = paddingTop + bubbleH + pointer
+    private val trackTop get() = paddingTop + ring + bubbleH + pointer
     private val trackMid get() = trackTop + band
     private val trackBottom get() = trackMid + band
     private val labelsTop get() = trackBottom + pointer + bubbleH + labelGap
@@ -182,6 +189,12 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
 
         bubble(canvas, Handle.UPSCALE, upX)
         bubble(canvas, Handle.CLEANUP, cleanX)
+        focusedHandle()?.let { h ->
+            bubbleBounds(h, rect)
+            rect.inset(-dp(RING_GAP_DP), -dp(RING_GAP_DP))
+            focusRing.color = if (h == Handle.UPSCALE) upscaleColor else cleanupColor
+            canvas.drawRoundRect(rect, rect.height() / 2, rect.height() / 2, focusRing)
+        }
 
         val fm = labelText.fontMetrics
         val baseline = labelsTop - fm.ascent
@@ -211,7 +224,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private fun bubbleBounds(h: Handle, out: RectF) {
         val x = xOf(pct(h))
         val half = bubbleText.measureText(AiSizeText.value(context, pct(h))) / 2 + padX
-        val top = if (h == Handle.UPSCALE) paddingTop.toFloat() else trackBottom + pointer
+        val top = if (h == Handle.UPSCALE) paddingTop + ring else trackBottom + pointer
         out.set(x - half, top, x + half, top + bubbleH)
     }
 
@@ -289,6 +302,9 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
         return true
     }
 
+    /** The handle ringed as the one keys move while the view has key focus, else null. */
+    internal fun focusedHandle(): Handle? = if (isFocused) keyHandle() else null
+
     /** The handle keys move: the one accessibility focus is on, else upscale. */
     private fun keyHandle(): Handle =
         if (access.keyboardFocusedVirtualViewId == Handle.CLEANUP.ordinal) Handle.CLEANUP else Handle.UPSCALE
@@ -319,6 +335,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
         access.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        invalidate()
     }
 
     // ---------------------------------------------------------------- accessibility
@@ -335,6 +352,8 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     /** Each handle as its own slider for accessibility services, moved a stop per scroll action. */
     private inner class Access : ExploreByTouchHelper(this@AiSizeSlider) {
         private val bounds = RectF()
+
+        override fun onVirtualViewKeyboardFocusChanged(virtualViewId: Int, hasFocus: Boolean) = invalidate()
 
         override fun getVirtualViewAt(x: Float, y: Float): Int = handleAt(y).ordinal
 
@@ -381,5 +400,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
         const val TEXT_SP = 12f
         const val BUBBLE_DP = 24f
         const val BUBBLE_PAD_DP = 4f
+        const val RING_GAP_DP = 3f
+        const val RING_STROKE_DP = 2f
     }
 }

@@ -10,9 +10,12 @@ import java.util.zip.ZipFile
 
 class NoticesTest {
 
+    /** The app's build directory, as Gradle passes it to the test JVM. */
+    private val buildDir by lazy { File(checkNotNull(System.getProperty("emanata.buildDir")) { "run through Gradle: emanata.buildDir unset" }) }
+
     /** `group:name` of every module in the resolved release classpath, written by `releaseModules`. */
     private fun shippedArtifacts(): List<String> =
-        File("build/notices/release-modules.txt").readLines().filter { it.isNotBlank() }
+        File(buildDir, "notices/release-modules.txt").readLines().filter { it.isNotBlank() }
 
     @Test
     fun everyShippedModuleHasANotice() {
@@ -45,7 +48,7 @@ class NoticesTest {
     @Test
     fun theApkLeavesOutOkHttpsPublicSuffixList() {
         // MPL-2.0 data, unused without cookies; packaging excludes it.
-        val jar = File("build/intermediates/merged_java_res/release/mergeReleaseJavaResource/base.jar")
+        val jar = File(buildDir, "intermediates/merged_java_res/release/mergeReleaseJavaResource/base.jar")
         assertTrue("no merged resources at $jar", jar.isFile)
         val names = ZipFile(jar).use { zip -> zip.entries().toList().map { it.name } }
         assertTrue("okhttp3/internal/publicsuffix/ shipped", names.none { it.startsWith("okhttp3/internal/publicsuffix/") })

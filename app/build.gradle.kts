@@ -140,8 +140,9 @@ val releaseModules = tasks.register("releaseModules") {
 }
 tasks.withType<Test>().configureEach {
     inputs.files(releaseModules)
-    // NoticesTest reads the Java resources the release APK packs.
+    // NoticesTest reads the Java resources the release APK packs, under this build directory.
     dependsOn("mergeReleaseJavaResource")
+    systemProperty("emanata.buildDir", layout.buildDirectory.get().asFile.absolutePath)
 }
 
 dependencies {

@@ -19,7 +19,7 @@ import java.util.concurrent.FutureTask
  * Picks the text detector ([CoverTextDetector]) the Smart crop anchor finds cover text with:
  * Google's ML Kit when the user turned it on ([optedIn], off by default), Play services is there
  * ([play]) and ML Kit has not failed this session; PP-OCR ([ppocr]) otherwise. Covers of books
- * marked right to left always use PP-OCR ([forBook]): ML Kit's recognizer reads Latin script only.
+ * marked right to left always use PP-OCR ([rightToLeft]): ML Kit's recognizer reads Latin script only.
  *
  * The pick holds for the session, so no cover mixes detectors: it changes when the setting does,
  * and once, for the rest of the session, when ML Kit fails. ML Kit's model is a module Play
@@ -126,9 +126,6 @@ class CoverTextDetectors(
 
     /** The detector of covers of books marked right to left: PP-OCR. */
     fun rightToLeft(): CoverTextDetector = ppocr()
-
-    /** The detector of a book's cover: [rightToLeft]'s for a book marked right to left, else the [session]'s. */
-    fun forBook(rightToLeft: Boolean): CoverTextDetector = if (rightToLeft) rightToLeft() else session()
 
     /**
      * Gives ML Kit a new try when the setting is on: what was given up this session is forgotten,

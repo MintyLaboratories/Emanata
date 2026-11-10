@@ -155,11 +155,8 @@ class CoverTextDetectorsTest {
     @Test
     fun booksMarkedRightToLeftUsePpOcr() {
         val d = detectors(FakePlay())
-        assertEquals(TextDetector.ID, d.forBook(rightToLeft = true).id)
-        assertEquals("mlkit", d.forBook(rightToLeft = false).id)
+        assertEquals("mlkit", d.session().id)
         assertEquals(TextDetector.ID, d.rightToLeft().id)
-        on = false
-        assertEquals(TextDetector.ID, d.forBook(rightToLeft = false).id)
     }
 
     @Test

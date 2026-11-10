@@ -135,7 +135,10 @@ object SmartCrop {
     /** Steps tried along an axis when looking for its most detailed part. */
     private const val STEPS = 64
 
-    /** A region of text in score map pixels, [right] and [bottom] exclusive, after growing it. */
+    /**
+     * A region of text in the pixels of what it was found on, [right] and [bottom] exclusive,
+     * after growing it: a score map's ([boxes]), the image given a detector's ([CoverTextDetector.lines]).
+     */
     data class TextBox(val left: Double, val top: Double, val right: Double, val bottom: Double, val score: Float) {
         val width: Double get() = right - left
         val height: Double get() = bottom - top
@@ -144,7 +147,7 @@ object SmartCrop {
         val glyph: Double get() = min(width, height)
     }
 
-    /** `[width, height]` of the detector's input for a [w] x [h] cover: at most [INPUT_SIDE], multiples of [STRIDE]. */
+    /** `[width, height]` of PP-OCR's input for a [w] x [h] cover: at most [INPUT_SIDE], multiples of [STRIDE]. */
     fun inputSize(w: Int, h: Int): IntArray {
         val scale = min(1.0, INPUT_SIDE.toDouble() / max(w, h))
         fun side(v: Int) = (Math.round(v * scale / STRIDE) * STRIDE).toInt().coerceAtLeast(STRIDE)
@@ -223,7 +226,7 @@ object SmartCrop {
     }
 
     /**
-     * The focus of a cover from its text [boxes] on a [w] x [h] map and its detail [rows] and
+     * The focus of a cover from its text [boxes] on the [w] x [h] image searched ([CoverTextDetector.lines]) and its detail [rows] and
      * [columns] ([detail]): the tallest text of at least [MIN_GLYPH], the line holding it, and
      * every line of [SAME_SIZE] or more of its size; the detail only without such text.
      */

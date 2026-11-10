@@ -13,6 +13,12 @@ interface CoverTextDetector {
     val id: String
 
     /**
+     * `[width, height]` a [w] x [h] part of a cover is stretched to before [lines] looks at it
+     * (and its detail is measured): PP-OCR's input by default ([SmartCrop.inputSize]).
+     */
+    fun inputSize(w: Int, h: Int): IntArray = SmartCrop.inputSize(w, h)
+
+    /**
      * The lines of text on [src], in its pixels; empty where the detector never runs, null when
      * it did not run this time. Blocking; one image at a time.
      */

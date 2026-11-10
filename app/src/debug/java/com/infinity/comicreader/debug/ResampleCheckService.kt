@@ -35,6 +35,7 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CancellationException
 import java.util.zip.CRC32
 import kotlin.concurrent.thread
 import kotlin.math.abs
@@ -61,7 +62,8 @@ import kotlin.random.Random
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each, and a CRC-32 of
  *   each engine's outputs (`digest`): equal digests across builds mean bit-identical output.
- *   Also the GPU band with a stop callback, and trimming ([checkGpuBand]).
+ *   Also the GPU band with a stop callback, and trimming ([checkGpuBand]); then a GPU job
+ *   canceled before its second chunk ([canceledGpuCheck]).
  * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default 1848x2772 on every
  *   device, so runs compare across devices; `screen`: the 2000x3000 page fit to this screen
  *   held upright, as calibration does)
@@ -251,6 +253,56 @@ class ResampleCheckService : Service() {
             }
         } finally {
             page.recycle()
+        }
+        canceledGpuCheck()
+    }
+
+    /**
+     * A GPU job canceled before its second chunk: it throws [CancellationException], not
+     * failing (which the CPU would take over), or rethrows what canceling threw; the next
+     * GPU job still matches the model. `polls` counts the asks: one before the job begins,
+     * then one per chunk started.
+     */
+    private fun canceledGpuCheck() {
+        val c = Case(3000, 4000, Resampler.Window.of(3000, 4000), 600, 800, Scaling.DEFAULT)
+        val src = noise(c.srcW, c.srcH, 1, true)
+        try {
+            for (throwing in listOf(false, true)) {
+                var polls = 0
+                val dst = Bitmap.createBitmap(c.dstW, c.dstH, Bitmap.Config.ARGB_8888)
+                val outcome = try {
+                    val canceled = {
+                        val stop = ++polls >= 3
+                        check(!(stop && throwing)) { "canceling failed" }
+                        stop
+                    }
+                    if (NativeResampler.resample(src, dst, c.window, false, c.scaling, canceled, PixelEngine.GPU, fallback = false)) "finished" else "failed"
+                } catch (e: CancellationException) {
+                    "canceled"
+                } catch (e: IllegalStateException) {
+                    "rethrown"
+                } finally {
+                    dst.recycle()
+                }
+                val expected = if (throwing) "rethrown" else "canceled"
+                log(
+                    JSONObject().put("check", "gpu canceled before its 2nd chunk").put("throwing", throwing).put("outcome", outcome)
+                        .put("polls", polls).put("ok", outcome == expected && polls == 3)
+                )
+            }
+            val model = Resampler.resample(premultipliedPixels(src), c.srcW, c.srcH, c.window, c.dstW, c.dstH, false, c.scaling, premultiplied = true)
+            val dst = Bitmap.createBitmap(c.dstW, c.dstH, Bitmap.Config.ARGB_8888)
+            try {
+                val ran = NativeResampler.resample(src, dst, c.window, false, c.scaling, engine = PixelEngine.GPU, fallback = false)
+                val got = premultipliedPixels(dst)
+                var worst = 0
+                for (k in got.indices) worst = max(worst, channelDiff(got[k], model[k]))
+                log(JSONObject().put("check", "gpu after the canceled ones").put("ran", ran).put("maxDiff", worst).put("ok", ran && worst <= 1))
+            } finally {
+                dst.recycle()
+            }
+        } finally {
+            src.recycle()
         }
     }
 

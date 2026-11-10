@@ -250,7 +250,20 @@ static const char * DOWN =
     "  outp[j * dims.x + x] = p;\n"
     "}\n";
 
-static GLuint compile(const char * source)
+// Logs the driver's reason shader or program `object` of `label` failed.
+static void log_failure(const char * label, GLuint object, int linking)
+{
+    char reason[512] = "";
+    if (linking) {
+        glGetProgramInfoLog(object, sizeof(reason), NULL, reason);
+    } else {
+        glGetShaderInfoLog(object, sizeof(reason), NULL, reason);
+    }
+    __android_log_print(ANDROID_LOG_WARN, TAG, "%s: %s failed: %s", label, linking ? "link" : "compile", reason);
+}
+
+// A compute program of source; 0, logged under label, when it does not compile or link.
+static GLuint compile(const char * label, const char * source)
 {
     const GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
     glShaderSource(shader, 1, &source, NULL);
@@ -258,6 +271,7 @@ static GLuint compile(const char * source)
     GLint ok = 0;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
+        log_failure(label, shader, 0);
         glDeleteShader(shader);
         return 0;
     }
@@ -267,6 +281,7 @@ static GLuint compile(const char * source)
     glDeleteShader(shader);
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
     if (!ok) {
+        log_failure(label, program, 1);
         glDeleteProgram(program);
         return 0;
     }
@@ -308,7 +323,7 @@ static int gl_begin(void)
         glGetIntegerv(GL_MINOR_VERSION, &minor);
         glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
         if (major < 3 || (major == 3 && minor < 1) || blocks < 4) return -1;
-        down_program = compile(DOWN);
+        down_program = compile("down", DOWN);
         if (down_program == 0) return -1;
         lut_linear = buffer(256 * sizeof(float), rs_to_linear(), GL_STATIC_DRAW);
         lut_encode = buffer(65536, rs_from_linear(), GL_STATIC_DRAW);
@@ -491,7 +506,13 @@ static GLuint across_program(int taps, int ringed)
     if (source == NULL) return 0;
     memcpy(source, head, (size_t)head_len);
     memcpy(source + head_len, ACROSS, body_len + 1);
-    across_kept[key][ringed].program = compile(source);
+    char label[48];
+    if (wide) {
+        snprintf(label, sizeof(label), "across wide ring=%d", ringed);
+    } else {
+        snprintf(label, sizeof(label), "across taps=%d ring=%d", taps, ringed);
+    }
+    across_kept[key][ringed].program = compile(label, source);
     across_kept[key][ringed].tried = 1;
     free(source);
     return across_kept[key][ringed].program;
@@ -549,12 +570,17 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     const int64_t compiling = stamp(g);
     g->across = across_program(g->taps, ax->ring > 0);
     g->trace.compile_ns = stamp(g) - compiling;
+    if (g->across == 0) {
+        g->chunk = 0;
+        rs_gpu_close(g);
+        return NULL;
+    }
     g->axis_x = axis_buffer(ax, g->taps);
     g->axis_y = axis_buffer(ay, 0);
     g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
     g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);
     g->out = buffer((GLsizeiptr)((size_t)ax->len * g->chunk * 4), NULL, GL_STREAM_READ);
-    if (g->across == 0 || g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
+    if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
         g->chunk = 0;
         rs_gpu_close(g);
         return NULL;

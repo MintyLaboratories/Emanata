@@ -172,7 +172,11 @@ internal class MlKitTextDetector(
     companion object {
         private const val TAG = "MlKitTextDetector"
 
-        /** Its [CoverTextDetector.id]: ML Kit text recognition v2, Latin script. */
+        /**
+         * Its [CoverTextDetector.id]: ML Kit text recognition v2, Latin script. Play services
+         * updates the model on its own, unseen by the app, so focuses found by an earlier model
+         * keep this id: a known limit of the unbundled model.
+         */
         const val ID = "mlkit-latin-v2"
 
         /** The longest wait for ML Kit's answer on one cover; the first includes loading its model. */

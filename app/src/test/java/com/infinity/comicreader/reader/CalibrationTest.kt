@@ -17,6 +17,7 @@ class CalibrationTest {
     private companion object {
         const val PINNED_V3 = "ba2b68cf"
         const val PINNED_V4 = "07355a12"
+        const val PINNED_V5 = "e3dc759c"
     }
 
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
@@ -31,12 +32,12 @@ class CalibrationTest {
         val c = Calibration.candidates(tablet, 8, gpu = true, jxl = true)
         assertEquals(
             listOf(
-                pixels(1, true), pixels(2, true), pixels(4, true), pixels(8, false), gpu,
+                pixels(1, true), pixels(2, true), pixels(4, true), pixels(8, false), gpu.copy(pinned = false), gpu,
                 jxl(2, true), jxl(4, true), jxl(8, false)
             ),
             c
         )
-        assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[7].key))
+        assertEquals(listOf("pixels/1/big", "pixels/gpu/any", "pixels/gpu/big", "jxl/8/any"), listOf(c[0].key, c[4].key, c[5].key, c[8].key))
         // No large cores to pin the GPU's calling thread to.
         assertFalse(Calibration.candidates(CpuCores(IntArray(8) { 1024 }), 8, gpu = true, jxl = false).single { it.gpu }.pinned)
     }
@@ -325,7 +326,7 @@ class CalibrationTest {
     @Test
     fun theMethodIsPinnedToItsVersion() {
         // Never edit a pinned hash: a change to the method bumps Calibration.VERSION and pins its hash beside the others.
-        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4)
+        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4, 5 to PINNED_V5)
         val hash = "%08x".format(Calibrator.method().hashCode())
         assertEquals("The calibration method changed: bump Calibration.VERSION and pin $hash for it", pinned[Calibration.VERSION], hash)
         assertEquals(pinned.size, pinned.values.toSet().size)
@@ -348,14 +349,20 @@ class CalibrationTest {
     }
 
     @Test
-    fun gpuRunsAreWeighedByWhereTheirCallingThreadRan() {
+    fun gpuPlacementsAreWeighedByWhereTheirCallerRanButNeverBeatTheCpuOnIt() {
         val caps = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)
         // The ledger counts only the band's calling thread (6 of 30 ms, pinned to a middle core); the
         // driver's threads it does not count are taken to run there too.
-        val gpuMs = Calibration.weighted(30.0, longArrayOf(0, 0, 0, 0, 0, 6_000_000, 0, 0), caps)
-        assertEquals(30.0 * Calibration.coreWeight(805, 1024), gpuMs, 1e-9)
+        val bigMs = Calibration.weighted(30.0, longArrayOf(0, 0, 0, 0, 0, 6_000_000, 0, 0), caps)
+        assertEquals(30.0 * Calibration.coreWeight(805, 1024), bigMs, 1e-9)
+        val littleMs = Calibration.weighted(30.0, longArrayOf(6_000_000, 0, 0, 0, 0, 0, 0, 0), caps)
+        assertTrue(littleMs < bigMs)
+        // Equally fast: the caller left on the little cores costs less, so it wins.
+        val cpu = Timing(pixels(4, true), 50.0, 101.0)
+        val placed = Calibration.tuning(listOf(cpu, Timing(gpu, 30.0, 30.0, weightedMs = bigMs), Timing(gpu.copy(pinned = false), 31.0, 30.0, weightedMs = littleMs)), Tuning.defaults(tablet, 8))
+        assertEquals(PixelEngine.GPU to false, placed.engine to placed.gpuPinned)
         // Its weighed CPU time never makes the GPU win: only its wall time does.
-        val cheap = Timing(gpu, 33.0, 30.0, weightedMs = gpuMs)
+        val cheap = Timing(gpu, 33.0, 30.0, weightedMs = littleMs)
         assertEquals(PixelEngine.NATIVE, Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), cheap), Tuning.defaults(tablet, 8)).engine)
     }
 

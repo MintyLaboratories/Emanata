@@ -994,6 +994,7 @@
     <string name="calibration_banner_later">Later</string>
     <string name="calibration_banner_skip">Skip</string>
     <string name="setup_resize_gpu">Resizing on the GPU</string>
+    <string name="setup_resize_gpu_big">Resizing on the GPU, fed by big cores</string>
     <string name="setup_jpeg_big">JPEG on big cores</string>
     <string name="setup_jpeg_any">JPEG on any core</string>
     <plurals name="setup_resize_big">

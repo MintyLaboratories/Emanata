@@ -366,6 +366,7 @@ class CalibrationScreenActivityTest {
         assertEquals("Resizing on 1 big core", name(Candidate.Kind.PIXELS, 1, true))
         assertEquals("Resizing on 8 cores", name(Candidate.Kind.PIXELS, 8, false))
         assertEquals("Resizing on the GPU", name(Candidate.Kind.PIXELS, 1, false, gpu = true))
+        assertEquals("Resizing on the GPU, fed by big cores", name(Candidate.Kind.PIXELS, 1, true, gpu = true))
         assertEquals("JPEG XL on 2 big cores", name(Candidate.Kind.JXL, 2, true))
         assertEquals("JPEG XL on 8 cores", name(Candidate.Kind.JXL, 8, false))
         assertEquals("JPEG on big cores", name(Candidate.Kind.JPEG, 1, true))

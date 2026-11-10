@@ -71,15 +71,19 @@ data class Tuning(
 
 /**
  * A setup calibration times: resampling ([PIXELS]) or JPEG XL decoding ([JXL]) on [threads]
- * workers, or the GPU; or a platform JPEG decode ([JPEG]), its thread pinned or not.
+ * workers, or the GPU with its calling thread; or a platform JPEG decode ([JPEG]), its thread
+ * pinned or not.
  */
 data class Candidate(val kind: Kind, val threads: Int, val pinned: Boolean, val gpu: Boolean = false) {
     enum class Kind(val key: String) { PIXELS("pixels"), JXL("jxl"), JPEG("jpeg") }
 
-    val key: String get() = when {
-        gpu -> "${kind.key}/gpu"
-        kind == Kind.JPEG -> "${kind.key}/${if (pinned) "big" else "any"}"
-        else -> "${kind.key}/$threads/${if (pinned) "big" else "any"}"
+    val key: String get() {
+        val on = if (pinned) "big" else "any"
+        return when {
+            gpu -> "${kind.key}/gpu/$on"
+            kind == Kind.JPEG -> "${kind.key}/$on"
+            else -> "${kind.key}/$threads/$on"
+        }
     }
 }
 
@@ -124,7 +128,7 @@ object Calibration {
      * again ([fingerprint]). A test pins a hash of what the method is made of ([method],
      * [Calibrator.method]) to each version.
      */
-    const val VERSION = 4
+    const val VERSION = 5
 
     /** Rounds a run times every setup in ([CalibrationRun]). */
     const val ROUNDS = 5
@@ -199,7 +203,7 @@ object Calibration {
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large
      * core and one per core for resampling (with the GPU when [gpu]), 2, one per large core
      * and one per core for JPEG XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
-     * left to the system. The GPU's calling thread is pinned there as one worker. With [jpeg], a platform JPEG decode of a 4K-class page pinned to the large cores and
+     * left to the system. The GPU's calling thread is timed left to the system and, where there are large cores, pinned there as one worker. With [jpeg], a platform JPEG decode of a 4K-class page pinned to the large cores and
      * one left to the system, where there are large cores to pin to.
      */
     fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean, jpeg: Boolean = false): List<Candidate> {
@@ -208,7 +212,7 @@ object Calibration {
         fun of(kind: Candidate.Kind, counts: List<Int>) = counts.filter { it in 1..all }.distinct().sorted()
             .map { Candidate(kind, it, pinned = cores.big != 0L && it <= cores.bigCount) }
         val out = ArrayList(of(Candidate.Kind.PIXELS, listOf(1, 2, big, all)))
-        if (gpu) out += Candidate(Candidate.Kind.PIXELS, 1, pinned = cores.big != 0L, gpu = true)
+        if (gpu) out += listOf(false, true).filter { !it || cores.big != 0L }.map { Candidate(Candidate.Kind.PIXELS, 1, pinned = it, gpu = true) }
         if (jxl) out += of(Candidate.Kind.JXL, listOf(2, big, all))
         if (jpeg && cores.big != 0L) out += listOf(Candidate(Candidate.Kind.JPEG, 1, pinned = true), Candidate(Candidate.Kind.JPEG, 1, pinned = false))
         return out

@@ -362,6 +362,15 @@
             app:dependency="pref_ai"
             app:key="pref_ai_upscale"
             app:title="@string/pref_ai_upscale" />
+        <!-- Stores Prefs.aiThresholds itself, under two keys. -->
+        <com.infinity.comicreader.ui.AiSizePreference
+            app:dependency="pref_ai"
+            app:key="pref_ai_sizes"
+            app:title="@string/pref_ai_sizes">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </com.infinity.comicreader.ui.AiSizePreference>
         <Preference
             app:key="ai_models"
             app:persistent="false"

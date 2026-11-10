@@ -189,10 +189,10 @@ object Notices {
             "PaddleOCR text detector", APACHE_2, "https://github.com/PaddlePaddle/PaddleOCR", APACHE,
             note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, modified: converted to ncnn, " +
                 "weights stored in fp16, and its 8 squeeze-and-excite reshape layers rewritten as plain reshapes " +
-                "(see text-detector/NOTICE in the app's assets). It may instead be downloaded, unchanged, as a third " +
+                "(see text-detector/NOTICE in the app's assets). Debug builds can download, unchanged, a third " +
                 "party's ncnn conversion of the same model (Apache-2.0) from a pinned Hugging Face repository " +
-                "(${ModelCatalog.DETECTOR_REPOSITORY}). Finds where text is on covers for the Smart crop " +
-                "anchor, on this device only."
+                "(${ModelCatalog.DETECTOR_REPOSITORY}) to compare it with this one, and use it instead once they " +
+                "match. Finds where text is on covers for the Smart crop anchor, on this device only."
         ),
         Notice(
             "ML Kit Text Recognition v2", PROPRIETARY_GOOGLE, ML_KIT_TERMS_URL,

@@ -30,7 +30,8 @@ import kotlin.random.Random
  * their score maps, lines and Smart crop focuses are compared ([compare]). Downloads the model
  * first ([download]) when it is not in place. Logs one JSON object per page, then, whatever
  * happened, its [verdict]: [OK], [FAIL] (the copies differ, or the check could not run) or
- * [INCONCLUSIVE] (no page held text to judge by).
+ * [INCONCLUSIVE] (no page held text to judge by). Unless [OK], it deletes the downloaded model
+ * again: the app runs a download only once it passed.
  */
 internal class DetectorParity(
     private val context: Context,
@@ -81,8 +82,15 @@ internal class DetectorParity(
         } catch (e: Exception) {
             log(JSONObject().put("failed", "${e.javaClass.simpleName}: ${e.message}"))
         } finally {
+            if (verdict != OK) remove()
             say(verdict)
         }
+    }
+
+    /** Deletes the downloaded model, so the app runs the assets' copy, not one that did not pass; logs whether it went. */
+    private fun remove() {
+        val removed = runCatching { ModelStore.of(context).delete(ModelCatalog.TEXT_DETECTOR) }.getOrDefault(false)
+        log(JSONObject().put("removed", removed))
     }
 
     /** The [verdict] on the pages compared; [FAIL] when the check cannot run. */

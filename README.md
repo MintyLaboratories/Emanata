@@ -1005,7 +1005,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   fifth tile, the pace of the tiles after the first (which carries the GPU's
   warm-up) says it will be; the page then gets its plain Lanczos3 rendering
   (`AiPages`).
-  An upscaling model does not run for a page shown no larger than it is.
+  By default an upscaling model does not run for a page shown no larger than
+  it is.
   Output is capped at 32 MP, pages must be readable ARGB_8888 and opaque (pixels
   read when the bitmap says it has alpha), and the model's buffers are freed
   after every page. Every ncnn call on a model runs on the thread it opened on,
@@ -1038,10 +1039,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   starts at the first page the reader will see processed for at least half a
   turn, pages kept on disk are read back first, and the page under way goes on
   while the reader has not passed it. A page is decoded again at full detail
-  (up to 8 MP), run through each model in turn (an upscaler skipped where the
-  page would show no larger, `AiPages.chain`) and resampled to exactly the
+  (up to 8 MP), run through the models its display size calls for, in turn
+  (`AiPages.steps`, `AiPages.chain`), and resampled to exactly the
   plain page's size and crop, so it swaps in without a jump; it replaces the
-  plain page in the page cache. A model refused for memory as it opens (what
+  plain page in the page cache. The display size is the shown side over the
+  side of the model's input (after the 8 MP reduction and any model before
+  it), decided for each render at its size: an upscaler runs above the upscale
+  threshold (100 % by default, never below 50 %), an artifact-removal model
+  above the cleanup threshold (50 % by default, or always), and a descreen
+  model at every size (`AiThresholds`). A page none of whose models would run
+  is skipped before it is decoded. A model refused for memory as it opens (what
   is free changes) puts its pages off and is tried once more with them, no
   sooner than the queue's first back-off (15 s), before its pages show
   without it until the reader closes its models (left, or its book's chain
@@ -1064,9 +1071,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page. The queue pauses while the reader is out of sight; models close when
   its UI hides and when no open book runs them. Processed pages are kept in
   `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
-  where libjxl is missing), keyed by Book ID, page, size, crop and the chain
-  with its models' checksums, trimmed least recently read first to 1 GB and a
-  tenth of the free space; they show even while AI is paused.
+  where libjxl is missing), keyed by Book ID, page, size, crop, the chain
+  with its models' checksums and the thresholds that decide its models,
+  trimmed least recently read first to 1 GB and a tenth of the free space;
+  they show even while AI is paused.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
   bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
   licenses, all fetched unchanged from OpenComic AI's model repository at a

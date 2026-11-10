@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,14 +51,18 @@ class PixelKernelsTest {
     }
 
     @Test
-    fun bandResultsDiffer() {
-        assertEquals(3, setOf(PixelKernels.BAND_DONE, PixelKernels.BAND_FAILED, PixelKernels.BAND_CANCELED).size)
+    fun gpuBandPassesOnWhatStopThrows() {
+        val k = Bands()
+        val thrown = IllegalStateException("stop")
+        val caught = runCatching { k.gpuBand(1, 0, 5, 0) { throw thrown } }.exceptionOrNull()
+        assertSame(thrown, caught)
+        assertTrue(k.bands.isEmpty())
     }
 
+    /** Without the guard on [LibPixels.loaded], each call would throw [UnsatisfiedLinkError]. */
     @Test
-    fun trimAndTraceDoNothingWithoutNativeCode() {
+    fun trimAndTraceSkipUnloadedLibrary() {
         assertFalse(LibPixels.loaded)
-        Bands().trim()
         LibPixels.trim()
         LibPixels.trace(true)
         LibPixels.trace(false)

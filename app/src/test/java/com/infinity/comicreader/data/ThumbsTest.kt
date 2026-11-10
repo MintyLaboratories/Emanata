@@ -10,6 +10,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.infinity.comicreader.ai.CoverTextDetector
+import com.infinity.comicreader.ai.CoverTextDetectors
+import com.infinity.comicreader.ai.PlayServices
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
@@ -296,6 +298,61 @@ class ThumbsTest {
         assertEquals(2, calls[0])
         Thumbs.load(context, entry, "UTF-8", 80, 40, smart)
         assertEquals(2, calls[0])
+    }
+
+    @Test
+    fun oneDetectorMakesACoverWhenThePickChangesMeanwhile() {
+        var a = 0
+        var b = 0
+        val first = coverText("a") { bitmap ->
+            a++
+            textMap(bitmap, 0.85, 0.92)
+        }
+        val second = coverText("b") { bitmap ->
+            b++
+            textMap(bitmap, 0.02, 0.1)
+        }
+        // The pick changes after the cover's key was made: the cached lookup and the key ask first.
+        var asked = 0
+        Thumbs.detector = { if (++asked <= 2) first else second }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, a)
+        assertEquals(0, b)
+        Thumbs.detector = { first }
+        assertNotNull(Thumbs.cached(context, entry, 120, 60, smart))
+        Thumbs.detector = { second }
+        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+    }
+
+    /** Play services there, with ML Kit's module installed. */
+    private class Play : PlayServices {
+        override fun available() = true
+
+        override fun moduleInstalled(): Boolean? = true
+
+        override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
+            done(true)
+            return {}
+        }
+    }
+
+    @Test
+    fun anMlKitThatDoesNotStartLeavesCoversToPpOcr() {
+        val pp = textAt(0.85, 0.92, id = TextDetector.ID)
+        val ppocr = Thumbs.detector(context)
+        val selector = CoverTextDetectors({ true }, Play(), CoverTextDetectors.MlKit("mlkit") { throw IllegalStateException("no context") }, { ppocr })
+        Thumbs.detector = { selector.session() }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        // Keys under ML Kit are made without starting it.
+        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
+        assertEquals(CoverTextDetectors.Why.FAILED, selector.status().why)
+        assertEquals(0, pp[0])
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, pp[0])
     }
 
     @Test

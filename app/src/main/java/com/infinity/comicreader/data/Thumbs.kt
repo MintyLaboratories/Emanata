@@ -72,15 +72,23 @@ object Thumbs {
      * A book's full cover image ([find]), its page at book index [page], also settles what it tells
      * of reading direction ([settle]): the half its barcode and text agree on, none without a
      * barcode; left open when the text was not looked at. A smaller first layer settles nothing,
-     * not even what its barcode tells. One [detector] finds both halves' text and labels what
-     * is settled ([CoverFront.version]).
+     * not even what its barcode tells. [detector] finds both halves' text and labels what is
+     * settled ([CoverFront.version]).
      */
-    private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, page: Int?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
+    private fun frontOf(
+        context: Context,
+        entry: BookEntry,
+        src: Bitmap,
+        innerRatio: Double?,
+        page: Int?,
+        find: Boolean,
+        detector: CoverTextDetector,
+        unsure: () -> Unit
+    ): Wraparound.Half? {
         val k = imageKey(context, entry)
         val known = barcodes.get(k)
         val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
         else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
-        val detector = detectorFor(context, entry)
         val version = SmartCrop.version(detector.id)
         val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find, detector) }
         val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page))?.version != version
@@ -153,15 +161,12 @@ object Thumbs {
     /** [style]'s part of a cover's key ([CoverStyle.key]) under the [detector] in use. */
     fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
 
-    /** [style]'s part of [entry]'s cover key under the detector of its cover ([detectorFor]). */
-    private fun styleKey(context: Context, style: CoverStyle, entry: BookEntry): String = style.key(detectorFor(context, entry).id)
-
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
      * cover by [detector] and kept unless it did not run ([CoverFocus.keep]); without [find],
      * only one found before ([CoverFocus.NONE] when none was).
      */
-    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true, detector: CoverTextDetector = detectorFor(context, entry)): CoverFocus {
+    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean, detector: CoverTextDetector): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
         val id = detector.id
@@ -270,7 +275,9 @@ object Thumbs {
         if (found != null) cached(context, found, width, height, style)?.let { return Cover(it, full = true) }
         val entry = found ?: listed
         val page = entry.bookmarkPage
-        val k = coverKey(context, entry, width, height, style)
+        // One detector for the key, focus and front, even when the session's pick changes meanwhile.
+        val detector = detectorFor(context, entry)
+        val k = coverKey(context, entry, width, height, style, detector)
         val disk = diskFile(context, k)
 
         val hidden = Library(context).hiddenAll()
@@ -288,9 +295,9 @@ object Thumbs {
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio,
-                front = { src -> frontOf(context, entry, src, made.innerRatio, coverPage, made.full) { lasting = false } },
+                front = { src -> frontOf(context, entry, src, made.innerRatio, coverPage, made.full, detector) { lasting = false } },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
-                focus = { src, region -> focusOf(context, entry, src, region, find = made.full).also { if (!it.keep) lasting = false } }
+                focus = { src, region -> focusOf(context, entry, src, region, made.full, detector).also { if (!it.keep) lasting = false } }
             )
         } catch (t: Throwable) {
             return null
@@ -364,9 +371,16 @@ object Thumbs {
      * ([detectorFor]), the hidden pages that move it ([hiddenTag]), a bookmark's page in the book,
      * and the book's own file name charset, which may reorder its pages ([NameCharset.overrides]).
      */
-    private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
+    private fun coverKey(
+        context: Context,
+        entry: BookEntry,
+        width: Int,
+        height: Int,
+        style: CoverStyle,
+        detector: CoverTextDetector = detectorFor(context, entry)
+    ): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        return "${key(entry)}|${width}x$height|${styleKey(context, style, entry)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
+        return "${key(entry)}|${width}x$height|${style.key(detector.id)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
     }
 
     /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */

@@ -44,11 +44,12 @@ data class CoverStyle(
     val scaling: Scaling = Scaling.DEFAULT
 ) {
     /**
-     * Part of the cache key: one token per setting a cover shows; Smart's with its cover-focus
-     * version ([SmartCrop.version]) under text [detector] ([CoverTextDetector.id]).
+     * Part of the cache key: one token per setting a cover shows, and the cover-focus version
+     * ([SmartCrop.version]) under text [detector] ([CoverTextDetector.id]), which picks the Smart
+     * crop and, in every style, the half a wraparound without a barcode shows.
      */
     fun key(detector: String): String =
-        "${fit.key}|${anchor.key}" + (if (anchor == CropAnchor.SMART) SmartCrop.version(detector) else "") + (if (linear) "|linear" else "") + scaling.shrinkKey.let { if (it.isEmpty()) "" else "|$it" }
+        "${fit.key}|${anchor.key}|${SmartCrop.version(detector)}" + (if (linear) "|linear" else "") + scaling.shrinkKey.let { if (it.isEmpty()) "" else "|$it" }
 
     /** True when a [srcW] x [srcH] cover fills a [boxW] x [boxH] box (cropped) rather than fits inside it. */
     fun fills(srcW: Int, srcH: Int, boxW: Int, boxH: Int): Boolean = when (fit) {

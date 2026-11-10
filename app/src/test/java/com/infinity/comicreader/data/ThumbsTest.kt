@@ -163,11 +163,31 @@ class ThumbsTest {
         assertEquals(1, second[0])
         assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("b"))).isFile)
         assertFalse(storeA.exists())
-        // A cover the detector plays no part in is the one made before.
+    }
+
+    @Test
+    fun anotherDetectorShowsAnotherHalfOfAWraparoundWithoutBarcodeInAnyStyle() {
+        val file = File(context.cacheDir, "switched.png")
+        file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
+        val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified(), direction = ReadingDirection.LTR)
         val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
-        val made = Thumbs.load(context, entry, "UTF-8", 120, 60, top)
-        textAt(0.85, 0.92, id = "a")
-        assertSame(made, Thumbs.inMemory(context, entry, 120, 60, top))
+        titledHalf(Color.BLUE, "a")
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 130, 200, top)!!.getPixel(65, 100))
+        assertNotNull(Thumbs.inMemory(context, entry, 130, 200, top))
+        // Another detector sees the title on the red half: that cover is not the one made before.
+        titledHalf(Color.RED, "b")
+        assertNull(Thumbs.inMemory(context, entry, 130, 200, top))
+        assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 130, 200, top)!!.getPixel(65, 100))
+    }
+
+    /** Stands in a detector known as [id] seeing a title on halves whose middle is [color] only. */
+    private fun titledHalf(color: Int, id: String) {
+        standIn(id) { bitmap ->
+            val w = bitmap.width
+            val h = bitmap.height
+            val titled = bitmap.getPixel(w / 2, h / 2) == color
+            ScoreMap(w, h, FloatArray(w * h) { i -> if (titled && i / w in h / 10 until h / 4 && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+        }
     }
 
     @Test

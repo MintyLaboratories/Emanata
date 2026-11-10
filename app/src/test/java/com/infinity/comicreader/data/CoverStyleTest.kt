@@ -62,15 +62,11 @@ class CoverStyleTest {
     }
 
     @Test
-    fun smartCoversAreKnownByTheirRulesAndDetector() {
-        val smart = CoverStyle(anchor = CropAnchor.SMART)
-        assertEquals("auto|smart${SmartCrop.RULES}-$D", smart.key(D))
-        // Another detector finds other text: its Smart covers are others.
-        assertNotEquals(smart.key(D), smart.key("other"))
-        assertEquals("auto|top", CoverStyle().key(D))
-        // Covers the detector plays no part in keep their key.
-        assertEquals(CoverStyle().key(D), CoverStyle().key("other"))
-        assertEquals(CoverStyle(ThumbFit.FIT, CropAnchor.CENTER).key(D), CoverStyle(ThumbFit.FIT, CropAnchor.CENTER).key("other"))
+    fun coversAreKnownByTheirRulesAndDetector() {
+        assertEquals("auto|smart|${SmartCrop.RULES}-$D", CoverStyle(anchor = CropAnchor.SMART).key(D))
+        assertEquals("auto|top|${SmartCrop.RULES}-$D", CoverStyle().key(D))
+        // Another detector finds other text: a Smart crop elsewhere, in any style another half of a wraparound.
+        for (f in ThumbFit.entries) for (a in CropAnchor.entries) assertNotEquals(CoverStyle(f, a).key(D), CoverStyle(f, a).key("other"))
     }
 
     private companion object {

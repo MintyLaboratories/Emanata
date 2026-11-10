@@ -56,7 +56,8 @@ static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
 // Across programs by tap count (1..UNROLL unrolled, UNROLL + 1 looping) and anti-ringing
-// off or on, compiled on first use; program 0 where it did not compile.
+// off or on, compiled on first use; program 0 where it did not compile. They belong to
+// the context: whatever deletes them or the context clears this (across_forget).
 static struct {
     int tried;
     GLuint program;
@@ -65,6 +66,8 @@ static GLuint down_program;
 static GLuint lut_linear;
 static GLuint lut_encode;
 static atomic_int tracing;
+// Set by a trim that found a job holding the GPU lock; that job's rs_gpu_close frees.
+static atomic_int trim_owed;
 // Timer queries: 0 untried, 1 loaded, -1 unavailable; loaded by the first traced job.
 static int tq_state = 0;
 static gen_queries_fn gen_queries;
@@ -302,6 +305,8 @@ static int gl_begin(void)
 {
     if (gl_state == 0) {
         gl_state = -1;
+        // Programs of an earlier context went with it.
+        memset(across_kept, 0, sizeof(across_kept));
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (display == EGL_NO_DISPLAY || !eglInitialize(display, NULL, NULL)) return -1;
         const EGLint config_attrs[] = { EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT_KHR, EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_NONE };
@@ -518,6 +523,17 @@ static GLuint across_program(int taps, int ringed)
     return across_kept[key][ringed].program;
 }
 
+// Deletes the kept across programs, the context current; they compile again on next use.
+static void across_forget(void)
+{
+    for (int i = 0; i < UNROLL + 2; i++) {
+        for (int r = 0; r < 2; r++) {
+            if (across_kept[i][r].program != 0) glDeleteProgram(across_kept[i][r].program);
+        }
+    }
+    memset(across_kept, 0, sizeof(across_kept));
+}
+
 // Source rows output rows y0 until y1 read: first in *r0, the count returned.
 static int rows_of(const rs_axis * ay, int y0, int y1, int * r0)
 {
@@ -724,6 +740,12 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque)
 
 void rs_gpu_trim(void)
 {
+    // Owed before the trylock, so a job that holds the lock now sees it as it closes.
+    atomic_store(&trim_owed, 1);
+    if (pthread_mutex_trylock(&gl_lock) != 0) return;
+    if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && gl_begin() == 0) across_forget();
+    gl_end();
+    pthread_mutex_unlock(&gl_lock);
 }
 
 void rs_gpu_close(rs_gpu * g)
@@ -739,7 +761,10 @@ void rs_gpu_close(rs_gpu * g)
     const int chunk = g->chunk;
     const int64_t done = stamp(g);
     free(g);
+    if (atomic_exchange(&trim_owed, 0)) across_forget();
     gl_end();
     pthread_mutex_unlock(&gl_lock);
+    // A trim owed after the exchange above, its trylock failed while this job held the lock.
+    if (atomic_load(&trim_owed)) rs_gpu_trim();
     if (trace.on) trace_log(&trace, job, chunk, done - t, done - trace.opened);
 }

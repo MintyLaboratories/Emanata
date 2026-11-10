@@ -96,7 +96,7 @@ object PngPageCodec : PageCodec {
  * Pages processed by AI ([AiPages.chain]) on disk under [dir], one file per page at the size
  * it shows, named after the book ([CacheFiles.nameOf]) so [forget] finds all of one book's,
  * and a hash of its key ([keyOf]): the book, page, size and crop shown, the chain with its
- * models' versions, and the AI thresholds that decide its models, so nothing stale is ever read. Kept under [maxBytes], and a tenth of the
+ * models' versions, and which of its models ran, so nothing stale is ever read. Kept under [maxBytes], and a tenth of the
  * space it and the free space take together ([limit]), by dropping the least recently read
  * first, every [trimEvery] writes and at startup. Writes run on [writer], off the
  * AI thread; a file appears whole or not at all.
@@ -187,11 +187,12 @@ class ProcessedStore(
 
         /**
          * Key of page [index], stored as [entry] (null when unnamed), of book [book] (its Book
-         * ID key), made for [target] at [width] x [height] by the chain [signature] names under
-         * the threshold [handles] that decide its models ([AiPages.handles]).
+         * ID key), made for [target] at [width] x [height] by the chain [signature] names
+         * running [run]: the models that ran ([AiPages.runKey]), or where they are not known
+         * before the page's decode, the thresholds that decide them ([AiPages.handles]).
          */
-        fun keyOf(book: String, index: Int, entry: String?, target: Target, width: Int, height: Int, signature: String, handles: String): String =
-            "$book|$index|${entry.orEmpty()}|${width}x$height|$target|$signature|$handles"
+        fun keyOf(book: String, index: Int, entry: String?, target: Target, width: Int, height: Int, signature: String, run: String): String =
+            "$book|$index|${entry.orEmpty()}|${width}x$height|$target|$signature|$run"
 
         /**
          * Keeps [dir] under [maxBytes] and its [limit] with [free] bytes free, least recently

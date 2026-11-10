@@ -93,6 +93,9 @@ class ReaderAi internal constructor(
     /** How long a page took from start to shown, by chain ([AiChain.signature]), smoothed. */
     private val pageTimes = ConcurrentHashMap<String, Long>()
 
+    /** Page sizes read so far, by book key, page and entry ([placeOf]): [stored] decides the models that run from them without a read. */
+    private val sizes = ConcurrentHashMap<String, IntArray>()
+
     /** Models opened so far by model id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
@@ -136,21 +139,37 @@ class ReaderAi internal constructor(
 
     override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean {
         val chain = chainFor(source.bookKey)
-        if (chain.isEmpty() || source.isVector) return false
-        return keyOf(source, index, target, width, height, chain, thresholds())?.let(store::has) == true
+        if (chain.isEmpty() || source.isVector || source.bookKey == null) return false
+        val thresholds = thresholds()
+        // Called on the main thread: a page size not read yet is not read here.
+        val size = sizes[placeOf(source, index)]
+        if (size != null) return runKeyOf(chain, target, size, width, height, thresholds)?.let { stored(source, index, target, width, height, chain, it) } == true
+        // Any copy the chain's models may have made: the run is not known without the page's size.
+        return runKeys(chain.size).any { stored(source, index, target, width, height, chain, it) } ||
+            stored(source, index, target, width, height, chain, AiPages.handles(chain.map(ChainModel::of), thresholds))
     }
 
+    private fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, run: String): Boolean =
+        keyOf(source, index, target, width, height, chain, run)?.let(store::has) == true
+
     /**
-     * The key [store] keeps page [index] of [source] by, made by [chain] under [thresholds] for
-     * [target] at [width] x [height]; null for a book without a key.
+     * The key [store] keeps page [index] of [source] by, made by [chain] for [target] at
+     * [width] x [height] running [run] ([runKeyOf]); null for a book without a key.
      */
-    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, thresholds: AiThresholds): String? =
+    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, run: String): String? =
         source.bookKey?.let {
-            ProcessedStore.keyOf(
-                it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain),
-                AiPages.handles(chain.map(ChainModel::of), thresholds)
-            )
+            ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain), run)
         }
+
+    /** Where page [index] of [source] is, for [sizes]. */
+    private fun placeOf(source: PageSource, index: Int): String = "${source.bookKey}|${HiddenPages.bookIndex(source, index)}|${source.pageName(index)}"
+
+    /** Page [index]'s size, read once per page of a keyed book; null when [source] cannot tell it cheaply. */
+    private fun sizeOf(source: PageSource, index: Int): IntArray? {
+        if (source.bookKey == null) return source.pageSize(index)
+        val place = placeOf(source, index)
+        return sizes[place] ?: source.pageSize(index)?.also { sizes[place] = it }
+    }
 
     override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val t0 = SystemClock.elapsedRealtime()
@@ -168,7 +187,13 @@ class ReaderAi internal constructor(
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val thresholds = thresholds()
-        val key = keyOf(source, index, target, width, height, chain, thresholds)
+        val chainModels = chain.map(ChainModel::of)
+        val size = sizeOf(source, index)
+        // Decided before the decode, from the page's size, so the key names the models that run: thresholds that run the same ones share it.
+        val planned = size?.let { planned(chain, target, it, width, height, thresholds) }
+        if (planned != null && planned.isEmpty()) return AiOutcome.Skipped(Fallback.UNNEEDED)
+        val runKey = planned?.let { p -> AiPages.runKey(p.map { it.index }) } ?: AiPages.handles(chainModels, thresholds)
+        val key = keyOf(source, index, target, width, height, chain, runKey)
         val t0 = SystemClock.elapsedRealtime()
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = SystemClock.elapsedRealtime() - t0) }
@@ -179,8 +204,6 @@ class ReaderAi internal constructor(
                 return AiOutcome.Later
             }
         }
-        val size = source.pageSize(index)
-        if (size != null && unneeded(chain, target, size, width, height, thresholds)) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val opened = chain.mapIndexed { i, m ->
             session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
@@ -192,7 +215,8 @@ class ReaderAi internal constructor(
             val readable = if (input.config == Bitmap.Config.ARGB_8888) input else input.copy(Bitmap.Config.ARGB_8888, false)
             try {
                 val shownPlan = plan.copy(width = width, height = height)
-                val steps = AiPages.steps(chain.map(ChainModel::of), readable.width, readable.height, shownPlan, thresholds)
+                val steps = planned?.let { p -> AiPages.stepsOf(p.map { it.index }, chainModels, readable.width, readable.height) }
+                    ?: AiPages.steps(chainModels, readable.width, readable.height, shownPlan, thresholds)
                 val run = Urgency.later {
                     AiPages.chain(
                         opened, readable, shownPlan, target.scaling, target.linear, limitsFor(chain, steps), canceled, gate, hold = held,
@@ -350,23 +374,37 @@ class ReaderAi internal constructor(
         const val MAX_INPUT_PIXELS = 8_000_000L
 
         /**
-         * True when no model of [chain] runs ([AiPages.steps] under [thresholds]) on a [size] page
-         * shown as [target] lays it out at [width] x [height]: nothing to do. Measured against
-         * the chain's input, the page reduced to [MAX_INPUT_PIXELS] as [enhance] decodes it.
-         * Unknown before an auto-crop finds its box, as the crop changes the size.
+         * The models of [chain] that run ([AiPages.steps] under [thresholds]) on a [size] page
+         * shown as [target] lays it out at [width] x [height], each with its input's pixels;
+         * null when unknown: before an auto-crop finds its box (the crop changes the size), or
+         * for a size that tells nothing. Measured against the chain's input, the page reduced
+         * to [MAX_INPUT_PIXELS] as [enhance] decodes it.
          */
-        internal fun unneeded(
+        internal fun planned(
             chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds()
-        ): Boolean {
-            if ((target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0 || width <= 0 || height <= 0) return false
+        ): List<ChainStep>? {
+            if ((target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0 || width <= 0 || height <= 0) return null
             val a = target.area(size[0], size[1])
             val w = (a[2] - a[0]).toDouble()
             val h = (a[3] - a[1]).toDouble()
-            if (w <= 0 || h <= 0) return false
+            if (w <= 0 || h <= 0) return null
             val input = target.detail(size, MAX_INPUT_PIXELS * 4).plan(w, h)
             val shown = target.plan(input.width.toDouble(), input.height.toDouble()).copy(width = width, height = height)
-            return AiPages.steps(chain.map(ChainModel::of), input.width, input.height, shown, thresholds).isEmpty()
+            return AiPages.steps(chain.map(ChainModel::of), input.width, input.height, shown, thresholds)
         }
+
+        /** True when no model of [chain] runs on a [size] page shown as [target] lays it out at [width] x [height] ([planned]): nothing to do. */
+        internal fun unneeded(
+            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds()
+        ): Boolean = planned(chain, target, size, width, height, thresholds)?.isEmpty() == true
+
+        /** The models of [chain] that run on such a page ([planned]) as a processed page's key part ([AiPages.runKey]); null when unknown. */
+        internal fun runKeyOf(chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds): String? =
+            planned(chain, target, size, width, height, thresholds)?.let { p -> AiPages.runKey(p.map { it.index }) }
+
+        /** The key parts ([AiPages.runKey]) of every set of models a chain of [n] may run, none aside. */
+        internal fun runKeys(n: Int): List<String> =
+            (1 until (1 shl n)).map { mask -> AiPages.runKey((0 until n).filter { mask shr it and 1 == 1 }) }
 
         /** [bitmap] immutable, copied if need be, so it shows and is written to disk at once; the GPU keeps its texture. */
         private fun immutable(bitmap: Bitmap): Bitmap {

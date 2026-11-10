@@ -63,8 +63,11 @@ class ReaderAiTest {
     /** The thresholds [ai] reads for each page. */
     private var thresholds = AiThresholds()
 
+    /** The store of every reader [reader] makes. */
+    private val store by lazy { ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }) }
+
     private fun reader(): ReaderAi = ReaderAi(
-        prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), runtime,
+        prefs, { own[it] }, models, store, runtime,
         { stop }, { downloads += it.id }, threads = 2, thresholds = { thresholds }
     )
 
@@ -205,18 +208,55 @@ class ReaderAiTest {
     }
 
     @Test
-    fun theThresholdsAreReadForEachPageAndKeyItsStoredCopy() {
+    fun theThresholdsAreReadForEachPageAndTheModelsThatRanKeyItsStoredCopy() {
         install(upscale)
+        // Shown at 67 % of its side.
         val b = bookOf(60, 90)
         assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
         thresholds = AiThresholds(upscalePct = 50)
         assertFalse(ai.stored(b, 0, target, 40, 60))
         assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
         assertTrue(ai.stored(b, 0, target, 40, 60))
-        thresholds = AiThresholds(upscalePct = 60)
-        assertFalse("made under other thresholds", ai.stored(b, 0, target, 40, 60))
-        thresholds = AiThresholds(upscalePct = 50, cleanupPct = 120)
-        assertTrue("the cleanup handle decides no model of this chain", ai.stored(b, 0, target, 40, 60))
+        thresholds = AiThresholds(upscalePct = 60, cleanupPct = 120)
+        assertTrue("the same model runs", ai.stored(b, 0, target, 40, 60))
+        assertTrue((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        assertEquals("read back, not made again", 1, b.loads.get())
+        thresholds = AiThresholds(upscalePct = 70)
+        assertFalse("the upscaler no longer runs", ai.stored(b, 0, target, 40, 60))
+        assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+    }
+
+    @Test
+    fun thresholdsThatRunOtherModelsMissTheStoredCopy() {
+        val cleanup = ModelCatalog.forStep(AiStep.ARTIFACTS).first()
+        prefs.setAiModel(AiStep.ARTIFACTS, cleanup.id)
+        ai.refresh()
+        install(cleanup)
+        install(upscale)
+        val b = bookOf(60, 90)
+        thresholds = AiThresholds(upscalePct = 50)
+        assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        thresholds = AiThresholds(upscalePct = 50, cleanupPct = 60)
+        assertTrue("both still run", (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        thresholds = AiThresholds(upscalePct = 50, cleanupPct = 70)
+        assertFalse("the cleanup no longer runs", ai.stored(b, 0, target, 40, 60))
+        assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        assertEquals(2, b.loads.get())
+    }
+
+    @Test
+    fun aPageStoredBeforeIsFoundBeforeItsSizeIsRead() {
+        install(upscale)
+        val b = bookOf()
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+        val fresh = reader()
+        try {
+            assertTrue("by any set of the chain's models", fresh.stored(b, 0, target, 40, 60))
+            assertFalse(fresh.stored(b, 1, target, 40, 60))
+        } finally {
+            fresh.close()
+        }
+        assertEquals(listOf("r0", "r1", "r0,1", "r2", "r0,2", "r1,2", "r0,1,2"), ReaderAi.runKeys(3))
     }
 
     private fun until(done: () -> Boolean) {

@@ -97,12 +97,23 @@ class AiStepsTest {
     }
 
     @Test
-    fun theKeyHoldsOnlyTheHandlesThatDecideTheChain() {
+    fun theFallbackKeyHoldsOnlyTheHandlesThatDecideTheChain() {
         val t = AiThresholds(upscalePct = 80, cleanupPct = AiThresholds.ALWAYS)
         assertEquals("u80c0", AiPages.handles(listOf(clean, descreen, up), t))
         assertEquals("u80", AiPages.handles(listOf(up), t))
         assertEquals("c0", AiPages.handles(listOf(clean), t))
         assertEquals("", AiPages.handles(listOf(descreen), t))
         assertTrue(AiPages.handles(listOf(up), t) != AiPages.handles(listOf(up), AiThresholds(upscalePct = 81)))
+    }
+
+    @Test
+    fun aRunKeyNamesTheModelsThatRanAndTheirStepsFollowFromIt() {
+        assertEquals("r0,2", AiPages.runKey(listOf(0, 2)))
+        assertEquals("r", AiPages.runKey(emptyList()))
+        val models = listOf(up, clean, up)
+        val steps = AiPages.steps(models, 1000, 1500, shown(150))
+        assertEquals("the second upscale would show at 75 %", listOf(0, 1), steps.map { it.index })
+        assertEquals(listOf(ChainStep(0, 1_500_000), ChainStep(1, 6_000_000)), AiPages.stepsOf(listOf(0, 1), models, 1000, 1500))
+        assertEquals(steps, AiPages.stepsOf(steps.map { it.index }, models, 1000, 1500))
     }
 }

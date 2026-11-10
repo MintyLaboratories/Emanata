@@ -1072,9 +1072,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   its UI hides and when no open book runs them. Processed pages are kept in
   `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
   where libjxl is missing), keyed by Book ID, page, size, crop, the chain
-  with its models' checksums and the thresholds that decide its models,
-  trimmed least recently read first to 1 GB and a tenth of the free space;
-  they show even while AI is paused.
+  with its models' checksums and which of its models ran (decided from the
+  page's size before its decode, so thresholds that run the same models share
+  a page), trimmed least recently read first to 1 GB and a tenth of the free
+  space; they show even while AI is paused.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
   bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
   licenses, all fetched unchanged from OpenComic AI's model repository at a

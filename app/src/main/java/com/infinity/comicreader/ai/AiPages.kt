@@ -227,12 +227,21 @@ internal object AiPages {
 
     /**
      * The handles of [thresholds] that decide some of [models] ([ChainModel.rule]), as part of a
-     * processed page's key: "u" and the upscale handle, "c" and the cleanup one; empty when
-     * no handle does (descreen alone).
+     * processed page's key where the models that run are not known before its decode: "u" and
+     * the upscale handle, "c" and the cleanup one; empty when no handle does (descreen alone).
      */
     fun handles(models: List<ChainModel>, thresholds: AiThresholds): String = buildString {
         if (models.any { it.rule == AiStep.UPSCALE }) append("u").append(thresholds.upscalePct)
         if (models.any { it.rule == AiStep.ARTIFACTS }) append("c").append(thresholds.cleanupPct)
+    }
+
+    /** The models that run, [run] (indices into the chain), as part of a processed page's key: "r" and the indices, as "r0,2". */
+    fun runKey(run: List<Int>): String = run.joinTo(StringBuilder("r"), ",").toString()
+
+    /** The models [run] (indices into [models], in order) as the steps of a chain on a [width] x [height] input. */
+    fun stepsOf(run: List<Int>, models: List<ChainModel>, width: Int, height: Int): List<ChainStep> {
+        var scale = 1
+        return run.map { i -> ChainStep(i, width.toLong() * height * scale * scale).also { scale *= models[i].scale } }
     }
 
     /** [plan] for a source [scale] times larger. */

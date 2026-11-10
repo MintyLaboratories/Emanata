@@ -7,8 +7,8 @@
 // - Each axis' taps go up once per job: four ints per output (start, count, anti-ringing
 //   range) followed by its weights, the across axis' tap-major so lanes read them in a row.
 // - The across pass runs one thread per output column and ROWS source rows, its taps in
-//   registers and its tap loop unrolled to the axis' stride: a program per stride and
-//   anti-ringing on or off, compiled on first use and kept with the context.
+//   registers and its tap loop unrolled to the most taps a column reads: a program per
+//   tap count and anti-ringing on or off, compiled on first use and kept with the context.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks, the GPU time of each pass where the
@@ -33,7 +33,7 @@
 #define GROUP 64
 // Source rows each across thread filters.
 #define ROWS 8
-// Across programs kept, one per stride and anti-ringing; the oldest goes when full.
+// Across programs kept, one per tap count and anti-ringing; the oldest goes when full.
 #define ACROSS_KEPT 16
 #define TAG "ResampleGpu"
 
@@ -53,7 +53,7 @@ static int gl_state = 0;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
-// Across programs by stride (taps) and anti-ringing (ringed), 0 where it did not compile;
+// Across programs by tap count (taps) and anti-ringing (ringed), 0 where it did not compile;
 // across_next is the slot replaced next when full.
 static struct {
     int used;
@@ -111,7 +111,7 @@ struct rs_gpu {
     rs_trace trace;
 };
 
-// Prefixed with "#version 310 es" and defines of TAPS (the across stride), ROWS and RING (1 with anti-ringing).
+// Prefixed with "#version 310 es" and defines of TAPS (the most taps a column reads), ROWS and RING (1 with anti-ringing).
 static const char * ACROSS =
     "precision highp float;\n"
     "precision highp int;\n"
@@ -421,13 +421,25 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
                         ms(total_ns), gpu, (unsigned long long)t->cores);
 }
 
-// An axis' taps as the shaders read them: start, count, anti-ringing range, then `stride`
-// weights per output, output-major (output i's tap t at i * stride + t) or, `tap_major`,
-// tap-major (at t * len + i); taps past an output's count weigh 0.
-static GLuint axis_buffer(const rs_axis * a, int tap_major)
+// The most taps any output of a reads.
+static int taps_of(const rs_axis * a)
+{
+    int taps = 1;
+    for (int i = 0; i < a->len; i++) {
+        if (a->count[i] > taps) taps = a->count[i];
+    }
+    return taps;
+}
+
+// An axis' taps as the shaders read them: start, count, anti-ringing range, then the
+// weights: with `taps` 0, `stride` per output, output-major (output i's tap t at
+// i * stride + t); else `taps` per output, tap-major (at t * len + i). Taps past an
+// output's count weigh 0.
+static GLuint axis_buffer(const rs_axis * a, int taps)
 {
     const size_t len = (size_t)a->len;
-    const size_t stride = (size_t)a->stride;
+    const size_t stride = taps > 0 ? (size_t)taps : (size_t)a->stride;
+    const int tap_major = taps > 0;
     const size_t words = 4 * len + len * stride;
     uint32_t * data = calloc(words, 4);
     if (data == NULL) return 0;
@@ -441,7 +453,7 @@ static GLuint axis_buffer(const rs_axis * a, int tap_major)
     for (size_t i = 0; i < len; i++) {
         const size_t n = (size_t)a->count[i] < stride ? (size_t)a->count[i] : stride;
         for (size_t t = 0; t < n; t++) {
-            weights[tap_major ? t * len + i : i * stride + t] = a->weights[i * stride + t];
+            weights[tap_major ? t * len + i : i * stride + t] = a->weights[i * (size_t)a->stride + t];
         }
     }
     const GLuint b = buffer((GLsizeiptr)(words * 4), data, GL_STATIC_DRAW);
@@ -525,8 +537,9 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         if (rows > g->max_rows) g->max_rows = rows;
     }
     const size_t src_w = (size_t)(ax->end - ax->first);
-    g->across = across_program(ax->stride, ax->ring > 0);
-    g->axis_x = axis_buffer(ax, 1);
+    const int taps = taps_of(ax);
+    g->across = across_program(taps, ax->ring > 0);
+    g->axis_x = axis_buffer(ax, taps);
     g->axis_y = axis_buffer(ay, 0);
     g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
     g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);

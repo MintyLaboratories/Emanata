@@ -87,11 +87,9 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private val path = Path()
 
     /** Room each side of the axis for a bubble or label centered at its end. */
-    private val inset: Float
-        get() {
-            val widest = AiSizeScale.LABELS.maxOf { bubbleText.measureText(AiSizeText.value(context, it)) }
-            return widest / 2 + padX
-        }
+    private val inset: Float by lazy {
+        AiSizeScale.LABELS.maxOf { bubbleText.measureText(AiSizeText.value(context, it)) } / 2 + padX
+    }
 
     private val trackTop get() = paddingTop + bubbleH + pointer
     private val trackMid get() = trackTop + band

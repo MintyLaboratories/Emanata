@@ -106,7 +106,7 @@ class ResampleCheckService : Service() {
         )
         val sustained = if (asked != null) timed else listOf(
             Setup(PixelEngine.KOTLIN, processors, Cores.ANY), Setup(PixelEngine.NATIVE, now, Cores.BIG),
-            Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.BIG)
+            Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY), Setup(PixelEngine.GPU, 1, Cores.BIG)
         )
         val filters = intent?.getStringExtra("filters")?.split(',')?.map { ScaleFilter.of(it.trim()) } ?: listOf(ScaleFilter.LANCZOS3)
         val rings = intent?.getStringExtra("rings")?.split(',')?.mapNotNull { it.trim().toIntOrNull()?.coerceIn(0, 100) }

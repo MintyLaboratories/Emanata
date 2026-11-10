@@ -145,8 +145,8 @@ internal object AiPages {
      * [src] through [sessions]' models in turn, then resampled as [plan] (in [src]'s pixels)
      * and [scaling] say; no bitmap when the chain falls back ([ChainRun.fallback]), when
      * nothing else is made: the page shows as it would without AI. Only the models of [steps]
-     * run (by default as before the AI thresholds: an upscaler where the page shows larger than
-     * its input to it, every 1x model); the chain falls back as [Fallback.UNNEEDED] when
+     * run (by default: an upscaler where the page shows larger than its input to it, and every
+     * 1x model); the chain falls back as [Fallback.UNNEEDED] when
      * [steps] is empty. All models share [limits]' time, toward which
      * time [hold] held them back does not count. [expect] gives the milliseconds a model is
      * expected to take on an input of so many pixels (0: unknown): a chain expected to take

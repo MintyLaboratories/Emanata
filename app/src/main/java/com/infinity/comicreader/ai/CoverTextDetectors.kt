@@ -206,7 +206,7 @@ class CoverTextDetectors(
                 gaveUp != null -> null
                 module == Module.READY -> return true
                 module == Module.DOWNLOADING && check == null && now() - askedAt < RECHECK_MS -> null
-                else -> check ?: FutureTask { asked(installed()) }.also {
+                else -> check ?: newCheck().also {
                     check = it
                     askedAt = now()
                     mine = true
@@ -224,6 +224,19 @@ class CoverTextDetectors(
         } catch (e: ExecutionException) {
             false
         }
+    }
+
+    /** A check of the module ([asked]); dropped as [check] when it ends, even by an error. */
+    private fun newCheck(): FutureTask<Boolean> {
+        lateinit var task: FutureTask<Boolean>
+        task = FutureTask {
+            try {
+                asked(installed())
+            } finally {
+                synchronized(lock) { if (check === task) check = null }
+            }
+        }
+        return task
     }
 
     /**
@@ -264,7 +277,15 @@ class CoverTextDetectors(
             stop?.invoke()
             return true
         }
-        val requested = play.requestModule { ok -> requested(number, ok) }
+        val requested = try {
+            play.requestModule { ok -> requested(number, ok) }
+        } catch (e: Exception) {
+            requested(number, false)
+            return false
+        } catch (e: LinkageError) {
+            requested(number, false)
+            return false
+        }
         synchronized(lock) {
             if (request == number && module == Module.DOWNLOADING) {
                 cancel = requested
@@ -276,10 +297,16 @@ class CoverTextDetectors(
         return synchronized(lock) { gaveUp == null && module == Module.READY }
     }
 
-    /** What Play services tells of the module ([PlayServices.moduleInstalled]); null when it fails to. */
+    /**
+     * What Play services tells of the module ([PlayServices.moduleInstalled]); null when it fails
+     * to. ML Kit missing its classes is given up ([Why.FAILED]).
+     */
     private fun installed(): Boolean? = try {
         play.moduleInstalled()
     } catch (e: Exception) {
+        null
+    } catch (e: LinkageError) {
+        synchronized(lock) { giveUp(Why.FAILED) }
         null
     }
 

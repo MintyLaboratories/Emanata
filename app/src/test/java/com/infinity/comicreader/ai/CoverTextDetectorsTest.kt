@@ -30,7 +30,11 @@ class CoverTextDetectorsTest {
     private val line = listOf(SmartCrop.TextBox(1.0, 2.0, 30.0, 8.0, 1f))
 
     /** Play services as a test sets it: there or not, the module installed or not, and requests answered by hand. */
-    private class FakePlay(var there: Boolean = true, val installed: () -> Boolean? = { true }) : PlayServices {
+    private class FakePlay(
+        var there: Boolean = true,
+        val installed: () -> Boolean? = { true },
+        val request: () -> Unit = {}
+    ) : PlayServices {
         @Volatile
         var asked = 0
         val requests = mutableListOf<(Boolean) -> Unit>()
@@ -44,6 +48,7 @@ class CoverTextDetectorsTest {
         }
 
         override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
+            request()
             requests += done
             return { canceled++ }
         }
@@ -273,6 +278,34 @@ class CoverTextDetectorsTest {
         assertEquals("one miss is not enough", Use.ML_KIT, d.status().use)
         assertNull(d.session().lines(image))
         assertEquals(CoverTextDetectors.CHECK_TRIES, play.asked)
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.MODULE_FAILED), d.status())
+    }
+
+    @Test
+    fun aModuleCheckMissingMlKitsClassesLeavesPpOcrForTheSession() {
+        val play = FakePlay(installed = { throw NoClassDefFoundError("module install client") })
+        val d = detectors(play)
+        assertNull(d.session().lines(image))
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.FAILED), d.status())
+        assertEquals(TextDetector.ID, d.session().id)
+    }
+
+    @Test
+    fun aCheckEndingInAnErrorIsAskedAgain() {
+        var fail = true
+        val play = FakePlay(installed = { if (fail) throw StackOverflowError("check") else true })
+        val d = detectors(play)
+        assertNull(d.session().lines(image))
+        fail = false
+        assertEquals(line, d.session().lines(image))
+        assertEquals(2, play.asked)
+    }
+
+    @Test
+    fun aRequestPlayServicesThrowsAtLeavesPpOcrForTheSession() {
+        val play = FakePlay(installed = { false }, request = { throw IllegalStateException("no client") })
+        val d = detectors(play)
+        assertNull(d.session().lines(image))
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.MODULE_FAILED), d.status())
     }
 

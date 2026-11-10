@@ -2,8 +2,11 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Color
 import android.os.Looper
 import android.os.SystemClock
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -83,6 +86,21 @@ class AiSizePreferenceTest {
         touch(slider, MotionEvent.ACTION_UP, 999f, 2f)
         assertEquals(AiThresholds(), slider.thresholds)
         assertEquals(AiThresholds(), Prefs(context).aiThresholds)
+    }
+
+    @Test
+    fun theSentencesColorsDimWithTheSlider() {
+        fun colors(view: View): List<Int> {
+            val text = view.findViewById<TextView>(R.id.ai_sizes_sentence).text as Spanned
+            return text.getSpans(0, text.length, ForegroundColorSpan::class.java).sortedBy { text.getSpanStart(it) }.map { it.foregroundColor }
+        }
+        val fragment = settings()
+        val off = bind(fragment)
+        val slider = off.findViewById<AiSizeSlider>(R.id.ai_sizes_slider)
+        val full = listOf(slider.upscaleColor, slider.cleanupColor)
+        assertTrue(colors(off).zip(full).all { (shown, color) -> Color.alpha(shown) < Color.alpha(color) })
+        fragment.findPreference<TwoStatePreference>(Prefs.KEY_AI)!!.performClick()
+        assertEquals(full, colors(bind(fragment)))
     }
 
     @Test

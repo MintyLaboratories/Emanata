@@ -15,6 +15,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
@@ -24,6 +25,7 @@ import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiThresholds
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * The AI size setting's slider: one axis ([AiSizeScale]) with two independent handles that may
@@ -158,6 +160,9 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
         super.setEnabled(enabled)
         alpha = if (enabled) 1f else DISABLED_ALPHA
     }
+
+    /** [color] as this slider shows it: dimmed like the slider while it is off. */
+    fun shown(color: Int): Int = if (isEnabled) color else ColorUtils.setAlphaComponent(color, (Color.alpha(color) * DISABLED_ALPHA).roundToInt())
 
     override fun onDraw(canvas: Canvas) {
         val start = axisStart()

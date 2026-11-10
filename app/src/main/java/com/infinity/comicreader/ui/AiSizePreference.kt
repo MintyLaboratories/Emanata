@@ -28,7 +28,7 @@ class AiSizePreference @JvmOverloads constructor(context: Context, attrs: Attrib
         val slider = holder.findViewById(R.id.ai_sizes_slider) as AiSizeSlider
         val sentence = holder.findViewById(R.id.ai_sizes_sentence) as TextView
         fun show(t: AiThresholds) {
-            sentence.text = AiSizeText.sentence(context, t, slider.upscaleColor, slider.cleanupColor)
+            sentence.text = AiSizeText.sentence(context, t, slider.shown(slider.upscaleColor), slider.shown(slider.cleanupColor))
         }
         slider.thresholds = prefs.aiThresholds
         show(slider.thresholds)

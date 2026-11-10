@@ -374,6 +374,25 @@ class CoverTextDetectorsTest {
     }
 
     @Test
+    fun turningTheSettingOffDropsTheDownloadRequest() {
+        val play = play(installed = false)
+        val d = detectors(play)
+        d.session().lines(image)
+        on = false
+        d.settingChanged()
+        assertEquals(1, play.canceled)
+        // Its late answer changes nothing.
+        play.requests.single()(true)
+        assertEquals(0, d.arrivals)
+        on = true
+        d.settingChanged()
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+        assertNull("asked about again", d.session().lines(image))
+        assertEquals(2, play.asked)
+        assertEquals(2, play.requests.size)
+    }
+
+    @Test
     fun turnedOffMlKitDoesNotRun() {
         val d = detectors(FakePlay())
         val detector = d.session()

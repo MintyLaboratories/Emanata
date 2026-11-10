@@ -129,11 +129,20 @@ class CoverTextDetectors(
 
     /**
      * Gives ML Kit a new try when the setting is on: what was given up this session is forgotten,
-     * and a download under way gets a new [DOWNLOAD_WAIT_MS]. The app's ([shared]) hears of
-     * every change of the setting.
+     * and a download under way gets a new [DOWNLOAD_WAIT_MS]. Turned off, a download request
+     * under way is dropped. The app's ([shared]) hears of every change of the setting.
      */
     fun settingChanged() {
-        if (!optedIn()) return
+        if (!optedIn()) {
+            val stop = synchronized(lock) {
+                if (module != Module.DOWNLOADING) return
+                module = Module.UNKNOWN
+                request++
+                cancel.also { cancel = null }
+            }
+            stop?.invoke()
+            return
+        }
         synchronized(lock) {
             gaveUp = null
             failures = 0

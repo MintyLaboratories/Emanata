@@ -20,7 +20,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -32,13 +31,16 @@ class PageAdapterReadAheadTest {
 
     /** Pages whose loads wait until their latch opens ([hold]); each load started is listed in order. */
     private class HeldSource(override val pageCount: Int) : PageSource {
-        val started: MutableList<Int> = Collections.synchronizedList(ArrayList())
+        private val loads = ArrayList<Int>()
+
+        /** A copy, safe to read while decoders add to it. */
+        val started: List<Int> get() = synchronized(loads) { loads.toList() }
         private val held = ConcurrentHashMap<Int, CountDownLatch>()
 
         fun hold(page: Int) = CountDownLatch(1).also { held[page] = it }
 
         override fun loadPage(index: Int, target: Target): Bitmap {
-            started += index
+            synchronized(loads) { loads += index }
             held[index]?.await(5, TimeUnit.SECONDS)
             return Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
         }
@@ -92,13 +94,16 @@ class PageAdapterReadAheadTest {
 
     /** Loads that wait while [holds] says so, until [open]; each load started is listed with its target. */
     private class GatedSource(override val pageCount: Int, private val holds: (Int, Target) -> Boolean) : PageSource {
-        val started: MutableList<Pair<Int, Target>> = Collections.synchronizedList(ArrayList())
+        private val loads = ArrayList<Pair<Int, Target>>()
+
+        /** A copy, safe to read while decoders add to it. */
+        val started: List<Pair<Int, Target>> get() = synchronized(loads) { loads.toList() }
         private val gate = CountDownLatch(1)
 
         fun open() = gate.countDown()
 
         override fun loadPage(index: Int, target: Target): Bitmap {
-            started += index to target
+            synchronized(loads) { loads += index to target }
             if (holds(index, target)) gate.await(5, TimeUnit.SECONDS)
             return Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
         }
@@ -148,9 +153,10 @@ class PageAdapterReadAheadTest {
         source.open()
         idleUntil(rv, { source.started.any { it.first >= 2 } })
         // The pair's own decodes, with their shared crop, came before reading ahead.
-        val firstAhead = source.started.indexOfFirst { it.first >= 2 }
+        val started = source.started
+        val firstAhead = started.indexOfFirst { it.first >= 2 }
         assertTrue(firstAhead > 0)
-        assertEquals(setOf(0, 1), source.started.take(firstAhead).filter { it.second.box != null }.map { it.first }.toSet())
+        assertEquals(setOf(0, 1), started.take(firstAhead).filter { it.second.box != null }.map { it.first }.toSet())
         adapter.release()
     }
 

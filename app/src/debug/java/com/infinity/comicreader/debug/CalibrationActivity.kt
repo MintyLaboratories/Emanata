@@ -124,7 +124,8 @@ class CalibrationActivity : Activity() {
             Calibrator.outcome?.let { appendLine("Last run: $it") }
             appendLine("Tuning: ${Calibrator.tuning?.toJson()}")
             appendLine(
-                "In effect: pixels ${NativeResampler.engine.key} ${NativeResampler.threads}/${NativeResampler.laterThreads} " +
+                "In effect: pixels ${NativeResampler.engine.key}${if (NativeResampler.gpuUsable) "" else " (GPU off)"} " +
+                    "${NativeResampler.threads}/${NativeResampler.laterThreads} " +
                     "pinned ${NativeResampler.pinned}, GPU caller pinned ${NativeResampler.gpuPinned}; jxl ${JxlPages.threads}/${JxlPages.laterThreads} pinned ${JxlPages.pinned}; " +
                     "platform JPEG pinned ${PlatformPages.jpegPinned}"
             )

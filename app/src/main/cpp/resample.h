@@ -84,6 +84,10 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque);
 
 void rs_gpu_close(rs_gpu * g);
 
+// 0 once the GPU path is off for the process: no usable GPU, a chunk that hung, or jobs
+// that failed in a row; nonzero before (untried included). Never blocks.
+int rs_gpu_usable(void);
+
 // Frees what the GPU path keeps between jobs: its buffers, and with `programs` its across
 // programs. Never blocks on the GPU lock: while a job holds it (pthread_mutex_trylock
 // fails), it leaves a flag that the job's rs_gpu_close honors.

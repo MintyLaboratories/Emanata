@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ScheduledFuture
@@ -62,6 +63,12 @@ internal interface PixelKernels {
     fun trim(programs: Boolean) {}
 
     /**
+     * False once the GPU path turned itself off for the process: no usable GPU, a chunk that
+     * hung or jobs that failed in a row. Quick; true by default.
+     */
+    fun gpuUsable(): Boolean = true
+
+    /**
      * Asked before each chunk of a GPU band and every 100 ms while it waits for the GPU, on
      * its thread; true stops the band. Runs while
      * the band holds the GPU: it must only read a flag (an AtomicBoolean, a job's isActive),
@@ -100,6 +107,8 @@ internal object LibPixels : PixelKernels {
     override fun trim(programs: Boolean) {
         if (loaded) nTrim(programs)
     }
+
+    override fun gpuUsable(): Boolean = loaded && nGpuUsable()
 
     /**
      * Pins the calling thread to [cores] (bit n = core n), or ends its pin for every core's bit
@@ -177,6 +186,9 @@ internal object LibPixels : PixelKernels {
 
     @JvmStatic
     private external fun nTrim(programs: Boolean)
+
+    @JvmStatic
+    private external fun nGpuUsable(): Boolean
 }
 
 /**
@@ -295,6 +307,22 @@ object NativeResampler {
         }
     }
 
+    /**
+     * False once the GPU path turned itself off for the process ([PixelKernels.gpuUsable]):
+     * GPU jobs then go to the CPU at once.
+     */
+    val gpuUsable: Boolean
+        get() = kernels?.gpuUsable() == true
+
+    private val gpuOffNoted = AtomicBoolean()
+
+    /** Logs once per process that GPU jobs go to the CPU. */
+    private fun noteGpuOff() {
+        if (gpuOffNoted.compareAndSet(false, true)) Log.w(TAG, "GPU path off for this process: GPU jobs go to the CPU")
+    }
+
+    private const val TAG = "NativeResampler"
+
     /** [trim]s unless pages are resampled on the GPU, whose buffers serve them alone. */
     fun trimUnlessGpu() {
         if (engine != PixelEngine.GPU) trim()
@@ -336,10 +364,15 @@ object NativeResampler {
         val ax = Resampler.axis(src.width, window.x, window.width, dst.width, scaling)
         val ay = Resampler.axis(src.height, window.y, window.height, dst.height, scaling)
         if (engine == PixelEngine.GPU) {
-            val done = try {
-                run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin ?: gpuPinned)
-            } finally {
-                trimWhenIdle(k)
+            val done = if (!k.gpuUsable()) {
+                noteGpuOff()
+                false
+            } else {
+                try {
+                    run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin ?: gpuPinned)
+                } finally {
+                    trimWhenIdle(k)
+                }
             }
             if (done) return true
             if (!fallback) return false

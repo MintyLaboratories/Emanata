@@ -37,8 +37,11 @@ class NativeResamplerTest {
      * fake's own: the native chunks show on the device, in the "ResampleGpu" trace.
      */
     private class FakeKernels(
-        val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1, val gpuThrows: Throwable? = null
+        val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1, val gpuThrows: Throwable? = null,
+        val usable: Boolean = true
     ) : PixelKernels {
+        override fun gpuUsable() = usable
+
         class Job(val src: Bitmap, val dst: Bitmap, val linear: Boolean, val workers: Int, val gpu: Boolean) {
             val axes = arrayOfNulls<Resampler.Axis>(2)
             var ended = false
@@ -357,6 +360,18 @@ class NativeResamplerTest {
         NativeResampler.cores = CpuCores(IntArray(8) { 1024 })
         gpu(126)
         assertEquals(setOf(0L), k.jobs.last().cores.toSet())
+    }
+
+    @Test
+    fun aGpuPathTurnedOffSendsJobsToTheCpuWithoutTryingIt() {
+        val k = use(FakeKernels(usable = false))
+        assertFalse(NativeResampler.gpuUsable)
+        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(listOf(false), k.jobs.map { it.gpu })
+        assertFalse(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, fallback = false).first)
+        assertEquals(1, k.jobs.size)
+        use(FakeKernels())
+        assertTrue(NativeResampler.gpuUsable)
     }
 
     @Test

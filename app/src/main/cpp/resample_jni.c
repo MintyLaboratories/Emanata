@@ -253,6 +253,14 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv 
     rs_gpu_trim(programs == JNI_TRUE);
 }
 
+// False once the GPU path is off for the process (rs_gpu_usable).
+EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuUsable(JNIEnv * env, jclass clazz)
+{
+    (void)env;
+    (void)clazz;
+    return rs_gpu_usable() ? JNI_TRUE : JNI_FALSE;
+}
+
 // Opens the core ledger (core_ledger.h), resetting it, or closes it.
 EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedger(JNIEnv * env, jclass clazz, jboolean open)
 {

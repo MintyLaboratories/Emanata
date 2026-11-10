@@ -20,6 +20,8 @@
 //   the context; wider axes share a program per anti-ringing that loops over the taps.
 // - Each program's uniform locations are looked up once, when it compiles.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
+// - A chunk the GPU has not done within WAIT_LIMIT_NS, or FAILURES_OFF jobs failed in a
+//   row, turn the GPU path off for the process (rs_gpu_usable says so).
 // - The context, the down program and the tables stay for the process. The buffers stay
 //   from job to job, grown as a job needs (or fit to it, past a budget), until rs_gpu_trim
 //   frees them, and the across programs when asked: at once or, while a job runs, when it
@@ -74,8 +76,11 @@ typedef void (GL_APIENTRY * end_query_fn)(GLenum target);
 typedef void (GL_APIENTRY * query_u64_fn)(GLuint id, GLenum pname, GLuint64 * value);
 
 static pthread_mutex_t gl_lock = PTHREAD_MUTEX_INITIALIZER;
-// 0 untried, 1 ready, -1 unusable.
-static int gl_state = 0;
+// 0 untried, 1 ready, -1 unusable; written under gl_lock, read anywhere (rs_gpu_usable).
+static atomic_int gl_state = 0;
+// Jobs that failed in a row, under gl_lock; FAILURES_OFF of them turn the GPU path off.
+static int failed_in_row;
+#define FAILURES_OFF 3
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
@@ -824,6 +829,7 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         // Which buffer failed is unknown: none stays.
         drop_kept();
         g->chunk = 0;
+        g->failed = 1;
         rs_gpu_close(g);
         return NULL;
     }
@@ -1059,6 +1065,11 @@ static void trim_owed_now(void)
     }
 }
 
+int rs_gpu_usable(void)
+{
+    return gl_state >= 0;
+}
+
 void rs_gpu_trim(int programs)
 {
     // Owed before the trylock, so a job or trim that holds the lock now sees it as it ends.
@@ -1086,10 +1097,15 @@ void rs_gpu_close(rs_gpu * g)
     } else if (failed) {
         free_kept("after failure", 0);
     }
+    failed_in_row = failed || hung ? failed_in_row + 1 : 0;
     if (hung) {
         // Later jobs would queue behind the hung work and wait as long: the CPU takes them.
         gl_state = -1;
         __android_log_print(ANDROID_LOG_WARN, TAG, "a chunk took over %llu s: GPU path off", WAIT_LIMIT_NS / 1000000000ull);
+    } else if (failed_in_row >= FAILURES_OFF && gl_state == 1) {
+        // Each would upload, fail and be redone on the CPU: the CPU takes them at once.
+        gl_state = -1;
+        __android_log_print(ANDROID_LOG_WARN, TAG, "%d jobs failed in a row: GPU path off", failed_in_row);
     }
     gl_end();
     pthread_mutex_unlock(&gl_lock);

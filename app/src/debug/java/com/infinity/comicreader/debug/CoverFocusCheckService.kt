@@ -19,6 +19,7 @@ import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelFiles
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFocus
@@ -64,7 +65,8 @@ import kotlin.concurrent.thread
  * slower cores, which each line's `cpuset` tells.
  *
  * Both modes run the model the app runs ([TextDetector.copy]: the downloaded one when in
- * place, else the assets' copy), its id ([TextDetector.Copy.id]) in a line's `model`. With
+ * place, else the assets' copy), or the one `--es copy assets|downloaded` names, its id
+ * ([TextDetector.Copy.id]) in a line's `model`. With
  * `--es mode parity` (no `dir`), [DetectorParity] instead downloads the model when it is not in
  * place and compares it with the assets' copy on synthetic covers, ending with "PARITY: OK",
  * "PARITY: FAIL" or "PARITY: INCONCLUSIVE".
@@ -83,6 +85,7 @@ class CoverFocusCheckService : Service() {
         val busy = intent?.getBooleanExtra("busy", false) ?: false
         val crops = intent?.getStringExtra("mode") == "crops"
         val parity = intent?.getStringExtra("mode") == "parity"
+        val pin = intent?.getStringExtra("copy")
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
@@ -91,9 +94,9 @@ class CoverFocusCheckService : Service() {
                 } else if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else if (crops) {
-                    survey(File(dir), marked)
+                    survey(File(dir), marked, pin)
                 } else {
-                    run(File(dir), count, setups, reps, marked, shared, busy)
+                    run(File(dir), count, setups, reps, marked, shared, busy, pin)
                 }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", t.toString()))
@@ -106,13 +109,13 @@ class CoverFocusCheckService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean, shared: Boolean, busy: Boolean) {
+    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean, shared: Boolean, busy: Boolean, pin: String?) {
         val all = dir.walkTopDown().filter { it.isFile && Formats.isOpenable(it.name) && Formats.typeOf(it.name) != com.infinity.comicreader.data.EntryType.IMAGE }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath }).toList()
         val step = maxOf(1.0, all.size.toDouble() / count)
         val picked = (0 until minOf(count, all.size)).map { all[(it * step).toInt()] }
         log(JSONObject().put("books", all.size).put("picked", picked.size).put("setups", JSONArray(setups)).put("lane", if (shared) "shared" else "own").put("busy", busy))
-        val copy = model() ?: return
+        val copy = model(pin) ?: return
         val files = copy.files
         val detectors = setups.associateWith { s ->
             TextDetector(LibNcnn, { files }, gpu = s == "gpu", threads = s.removePrefix("cpu").toIntOrNull() ?: TextDetector.THREADS)
@@ -128,8 +131,8 @@ class CoverFocusCheckService : Service() {
         (detectors.values + app).forEach { it.close() }
     }
 
-    private fun survey(dir: File, marked: Boolean) {
-        val copy = model() ?: return
+    private fun survey(dir: File, marked: Boolean, pin: String?) {
+        val copy = model(pin) ?: return
         val app = TextDetector(LibNcnn.cpuLane, { copy.files }, filesId = copy.id)
         try {
             val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
@@ -139,9 +142,13 @@ class CoverFocusCheckService : Service() {
         }
     }
 
-    /** The app's model, its id in the log; null, logged as failed, when there is none. */
-    private fun model(): TextDetector.Copy? {
-        val copy = TextDetector.copy(this)
+    /** The copy of the model [pin] names ("assets" or "downloaded"), else the app's, its id in the log; null, logged as failed, when there is none. */
+    private fun model(pin: String?): TextDetector.Copy? {
+        val copy = when (pin) {
+            "assets" -> TextDetector.install(this)?.let { TextDetector.Copy(it, TextDetector.ID) }
+            "downloaded" -> TextDetector.downloaded(ModelStore.of(this))?.let { TextDetector.Copy(it, TextDetector.DOWNLOADED_ID) }
+            else -> TextDetector.copy(this)
+        }
         log(if (copy == null) JSONObject().put("failed", "no model") else JSONObject().put("model", copy.id))
         return copy
     }

@@ -188,7 +188,7 @@ internal class MlKitTextDetector(
         /** Runs a continuation on the thread that completed the task, never the main thread's queue. */
         private val DIRECT = Executor { it.run() }
 
-        /** Times idle closes; a cancelled one leaves its queue at once. */
+        /** Times idle closes; a canceled one leaves its queue at once. */
         private val closer = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "mlkit-text-idle").apply { isDaemon = true } }.apply { removeOnCancelPolicy = true }
 
         /**

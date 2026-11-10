@@ -95,11 +95,13 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Robolectric bitmaps live on the test JVM's heap; the 512 MB default runs out (-PtestHeap, default 2g).
-        // A fresh JVM every 50 classes: what each class leaves behind adds up across the whole suite.
+        // A fresh JVM every 10 classes: activities tests never destroy stay listening to app singletons,
+        // and Robolectric's legacy graphics never frees their themes: up to ~100 MB per class; 20 such
+        // classes filled 2 GB, and pages then failed to decode or convert.
         // Test JVMs in parallel: -PtestForks (default 2). A run past 30 minutes fails instead of hanging.
         unitTests.all {
             it.maxHeapSize = providers.gradleProperty("testHeap").getOrElse("2g")
-            it.forkEvery = 50
+            it.forkEvery = 10
             it.maxParallelForks = providers.gradleProperty("testForks").map(String::toInt).getOrElse(2)
             it.timeout.set(Duration.ofMinutes(30))
         }

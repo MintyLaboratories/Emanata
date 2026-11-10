@@ -48,6 +48,31 @@ object Thumbs {
 
     private val memory = object : LruCache<String, Bitmap>(maxBytes()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+
+        override fun entryRemoved(evicted: Boolean, key: String, oldValue: Bitmap, newValue: Bitmap?) {
+            if (newValue == null) provisional.remove(key)
+        }
+    }
+
+    /**
+     * Covers in [memory] whose focus was found without the detector running ([CoverFocus.keep]),
+     * by key: the [arrivals] they were made at. One made before ML Kit's module arrived is made
+     * again ([fromMemory]).
+     */
+    private val provisional = ConcurrentHashMap<String, Int>()
+
+    /** How often a detector's model arrived this session ([CoverTextDetectors.arrivals]). Tests stand in their own. */
+    @Volatile
+    internal var arrivals: (Context) -> Int = { CoverTextDetectors.shared(it).arrivals }
+
+    /** The cover in [memory] under [k], unless it was made without the detector, which has since arrived. */
+    private fun fromMemory(context: Context, k: String): Bitmap? {
+        val made = provisional[k]
+        if (made != null && made != arrivals(context)) {
+            memory.remove(k)
+            return null
+        }
+        return memory.get(k)
     }
 
     private fun maxBytes(): Int {
@@ -314,6 +339,7 @@ object Thumbs {
             val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear, scaling = style.scaling))
             if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
+        if (lasting) provisional.remove(k) else provisional[k] = arrivals(context)
         memory.put(k, bitmap)
         if (lasting) runCatching {
             disk.parentFile?.mkdirs()
@@ -343,7 +369,7 @@ object Thumbs {
 
     /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
     fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? =
-        memory.get(coverKey(context, entry, width, height, style))
+        fromMemory(context, coverKey(context, entry, width, height, style))
 
     /**
      * The cover of [entry] as [load] makes it, when one was made before: from memory or
@@ -351,7 +377,7 @@ object Thumbs {
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
         val k = coverKey(context, entry, width, height, style)
-        memory.get(k)?.let { return it }
+        fromMemory(context, k)?.let { return it }
         val disk = diskFile(context, k)
         if (!disk.isFile) return null
         // Stored at the box size: the decode is the file as it is.
@@ -457,6 +483,7 @@ object Thumbs {
 
     fun clear(context: Context) {
         memory.evictAll()
+        provisional.clear()
         quicks.evictAll()
         inners.evictAll()
         barcodes.evictAll()

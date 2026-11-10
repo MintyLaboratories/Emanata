@@ -135,11 +135,13 @@ class ThumbsTest {
 
     private val detector = Thumbs.detector
     private val rtlDetector = Thumbs.rtlDetector
+    private val arrivals = Thumbs.arrivals
 
     @After
     fun dropDetector() {
         Thumbs.detector = detector
         Thumbs.rtlDetector = rtlDetector
+        Thumbs.arrivals = arrivals
     }
 
     @Test
@@ -324,6 +326,29 @@ class ThumbsTest {
         assertNotNull(Thumbs.cached(context, entry, 120, 60, smart))
         Thumbs.detector = { second }
         assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+    }
+
+    @Test
+    fun aCoverMadeWhileTheDetectorsModelDownloadsIsMadeAgainOnceItArrives() {
+        var arrived = 0
+        Thumbs.arrivals = { arrived }
+        var works = false
+        var calls = 0
+        standIn { bitmap ->
+            calls++
+            if (works) textMap(bitmap, 0.85, 0.92) else null
+        }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
+        assertNotNull("kept in memory meanwhile", Thumbs.inMemory(context, entry, 120, 60, smart))
+        works = true
+        arrived++
+        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(2, calls)
+        arrived++
+        assertNotNull("one found with the detector stays", Thumbs.inMemory(context, entry, 120, 60, smart))
     }
 
     /** Play services there, with ML Kit's module installed. */

@@ -1106,7 +1106,8 @@ class PageAdapter(
         val chapter = strip.chapterOf(page)
         val seg = chapter.value
         seg.loads.incrementAndGet()
-        scope.launch {
+        // Queued, so its item binds again outside a layout pass, however soon the measure ends.
+        scope.launch(AppDispatchers.mainQueued) {
             try {
                 withContext(AppDispatchers.io) {
                     gate.withPermit {
@@ -1309,8 +1310,9 @@ class PageAdapter(
         entry.deferred = deferred
         pending[key] = entry
         deferred.invokeOnCompletion { error ->
-            // Runs on the decoder thread; hop back before touching [pending].
-            scope.launch {
+            // Runs on the decoder thread, or inline here when the decode already ended: queued on
+            // the main thread, after the bind asking for it has asked for the rest of its item.
+            scope.launch(AppDispatchers.mainQueued) {
                 if (pending[key] === entry) pending.remove(key)
                 if (error == null) {
                     onLoaded?.invoke(pageIndex)

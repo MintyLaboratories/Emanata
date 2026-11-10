@@ -28,4 +28,7 @@ object AppDispatchers {
 
     /** For touching views and adapters. */
     val main: CoroutineDispatcher = Dispatchers.Main.immediate
+
+    /** The main thread, always queued behind the work running on it now. */
+    val mainQueued: CoroutineDispatcher = Dispatchers.Main
 }

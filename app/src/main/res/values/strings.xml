@@ -1085,7 +1085,7 @@
     <string name="ai_sizes_upscale">Upscale pages shown larger than %1$s.</string>
     <string name="ai_sizes_cleanup">Clean up pages shown larger than %1$s.</string>
     <string name="ai_sizes_cleanup_always">Clean up pages at every size.</string>
-    <string name="ai_sizes_descreen">Descreen at every size.</string>
+    <string name="ai_sizes_descreen">Descreen, when chosen, runs at every size.</string>
     <string name="ai_size_own">their pixels</string>
     <string name="ai_size_half">half size</string>
     <string name="ai_size_quarter">quarter size</string>

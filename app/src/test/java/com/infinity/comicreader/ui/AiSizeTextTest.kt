@@ -26,7 +26,7 @@ class AiSizeTextTest {
     @Test
     fun defaults() {
         assertEquals(
-            "Upscale pages shown larger than their pixels. Clean up pages shown larger than half size. Descreen at every size.",
+            "Upscale pages shown larger than their pixels. Clean up pages shown larger than half size. Descreen, when chosen, runs at every size.",
             sentence(100, 50)
         )
     }
@@ -34,7 +34,7 @@ class AiSizeTextTest {
     @Test
     fun upscaleAtTheFloorAndCleanupAlways() {
         assertEquals(
-            "Upscale pages shown larger than half size. Clean up pages at every size. Descreen at every size.",
+            "Upscale pages shown larger than half size. Clean up pages at every size. Descreen, when chosen, runs at every size.",
             sentence(50, AiThresholds.ALWAYS)
         )
     }
@@ -42,7 +42,7 @@ class AiSizeTextTest {
     @Test
     fun crossedHandles() {
         assertEquals(
-            "Upscale pages shown larger than 60% size. Clean up pages shown larger than 150% size. Descreen at every size.",
+            "Upscale pages shown larger than 60% size. Clean up pages shown larger than 150% size. Descreen, when chosen, runs at every size.",
             sentence(60, 150)
         )
     }
@@ -50,7 +50,7 @@ class AiSizeTextTest {
     @Test
     fun theEnds() {
         assertEquals(
-            "Upscale pages shown larger than twice their size. Clean up pages shown larger than quarter size. Descreen at every size.",
+            "Upscale pages shown larger than twice their size. Clean up pages shown larger than quarter size. Descreen, when chosen, runs at every size.",
             sentence(200, 25)
         )
     }

@@ -7,18 +7,38 @@
 // - Each axis' taps go up once per job: four ints per output (start, count, anti-ringing
 //   range) followed by its weights.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
+// - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
+//   milliseconds each step took over all its chunks, the GPU time of each pass where the
+//   driver has GL_EXT_disjoint_timer_query, and the cores its copies ran on.
 
+#define _GNU_SOURCE
 #include "resample.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl31.h>
+#include <android/log.h>
 #include <pthread.h>
+#include <sched.h>
+#include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define CHUNK_BYTES (32u << 20)
 #define GROUP 64
+#define TAG "ResampleGpu"
+
+// GL_EXT_disjoint_timer_query's enums and the entry points tracing uses.
+#define TIME_ELAPSED 0x88BF
+#define QUERY_RESULT 0x8866
+#define GPU_DISJOINT 0x8FBB
+typedef void (GL_APIENTRY * gen_queries_fn)(GLsizei n, GLuint * ids);
+typedef void (GL_APIENTRY * delete_queries_fn)(GLsizei n, const GLuint * ids);
+typedef void (GL_APIENTRY * begin_query_fn)(GLenum target, GLuint id);
+typedef void (GL_APIENTRY * end_query_fn)(GLenum target);
+typedef void (GL_APIENTRY * query_u64_fn)(GLuint id, GLenum pname, GLuint64 * value);
 
 static pthread_mutex_t gl_lock = PTHREAD_MUTEX_INITIALIZER;
 // 0 untried, 1 ready, -1 unusable.
@@ -30,6 +50,38 @@ static GLuint across_program;
 static GLuint down_program;
 static GLuint lut_linear;
 static GLuint lut_encode;
+static atomic_int tracing;
+// Timer queries: 0 untried, 1 loaded, -1 unavailable; loaded by the first traced job.
+static int tq_state = 0;
+static gen_queries_fn gen_queries;
+static delete_queries_fn delete_queries;
+static begin_query_fn begin_query;
+static end_query_fn end_query;
+static query_u64_fn query_u64;
+
+// What one traced job's steps took, summed over its chunks; untraced, all stay 0.
+typedef struct {
+    int on;
+    // With a timer query per pass (queries: across, down).
+    int timed;
+    // Some timer query result is unreliable: the GPU changed clocks or was reset meanwhile.
+    int disjoint;
+    GLuint queries[2];
+    int64_t opened;
+    int64_t lock_ns;
+    int64_t begin_ns;
+    int64_t alloc_ns;
+    int64_t upload_ns;
+    int64_t submit_ns;
+    int64_t wait_ns;
+    int64_t copy_ns;
+    uint64_t across_ns;
+    uint64_t down_ns;
+    // Cores the copies ran on, bit n = core n.
+    uint64_t cores;
+    int chunks;
+    int rows;
+} rs_trace;
 
 struct rs_gpu {
     const rs_job * job;
@@ -40,6 +92,7 @@ struct rs_gpu {
     GLuint out;
     int chunk;
     int max_rows;
+    rs_trace trace;
 };
 
 static const char * ACROSS =
@@ -221,6 +274,108 @@ static void gl_end(void)
     if (display != EGL_NO_DISPLAY) eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
+void rs_gpu_trace(int on)
+{
+    atomic_store(&tracing, on != 0);
+}
+
+static int64_t now_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec;
+}
+
+// Now, while g traces; else 0, so sums of differences stay 0.
+static int64_t stamp(const rs_gpu * g)
+{
+    return g->trace.on ? now_ns() : 0;
+}
+
+// Adds the calling thread's core to g's trace.
+static void note_core(rs_gpu * g)
+{
+    if (!g->trace.on) return;
+    const int cpu = sched_getcpu();
+    if (cpu >= 0 && cpu < 64) g->trace.cores |= 1ull << cpu;
+}
+
+// Loads the timer query entry points once, the context current; 1 when the driver has them.
+static int tq_load(void)
+{
+    if (tq_state == 0) {
+        tq_state = -1;
+        GLint count = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+        for (GLint i = 0; i < count; i++) {
+            const char * name = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+            if (name == NULL || strcmp(name, "GL_EXT_disjoint_timer_query") != 0) continue;
+            gen_queries = (gen_queries_fn)eglGetProcAddress("glGenQueriesEXT");
+            delete_queries = (delete_queries_fn)eglGetProcAddress("glDeleteQueriesEXT");
+            begin_query = (begin_query_fn)eglGetProcAddress("glBeginQueryEXT");
+            end_query = (end_query_fn)eglGetProcAddress("glEndQueryEXT");
+            query_u64 = (query_u64_fn)eglGetProcAddress("glGetQueryObjectui64vEXT");
+            if (gen_queries != NULL && delete_queries != NULL && begin_query != NULL && end_query != NULL && query_u64 != NULL) {
+                tq_state = 1;
+            }
+            break;
+        }
+    }
+    return tq_state == 1;
+}
+
+// Starts timing pass `which` (0 across, 1 down) on the GPU, when g has timer queries.
+static void query_begin(const rs_gpu * g, int which)
+{
+    if (g->trace.timed) begin_query(TIME_ELAPSED, g->trace.queries[which]);
+}
+
+static void query_end(const rs_gpu * g)
+{
+    if (g->trace.timed) end_query(TIME_ELAPSED);
+}
+
+// Adds both passes' GPU time to g's trace, once the GPU finished them.
+static void query_collect(rs_gpu * g)
+{
+    if (!g->trace.timed) return;
+    GLuint64 across = 0, down = 0;
+    query_u64(g->trace.queries[0], QUERY_RESULT, &across);
+    query_u64(g->trace.queries[1], QUERY_RESULT, &down);
+    GLint disjoint = 0;
+    glGetIntegerv(GPU_DISJOINT, &disjoint);
+    if (disjoint) g->trace.disjoint = 1;
+    g->trace.across_ns += across;
+    g->trace.down_ns += down;
+}
+
+static double ms(int64_t ns)
+{
+    return (double)ns / 1e6;
+}
+
+// Logs one line for a traced job of job's geometry, total_ns long; chunk 0 when it did not open.
+static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t free_ns, int64_t total_ns)
+{
+    const rs_axis * ax = &job->ax;
+    const rs_axis * ay = &job->ay;
+    char gpu[64];
+    if (t->timed) {
+        snprintf(gpu, sizeof(gpu), "across=%.2f down=%.2f%s", ms((int64_t)t->across_ns), ms((int64_t)t->down_ns),
+                 t->disjoint ? " disjoint" : "");
+    } else {
+        snprintf(gpu, sizeof(gpu), "across=- down=-");
+    }
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+                        "src=%dx%d dst=%dx%d taps=%d/%d ring=%.2f/%.2f linear=%d chunk=%d chunks=%d rows=%d%s "
+                        "lock=%.2f begin=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f free=%.2f total=%.2f %s "
+                        "cores=0x%llx",
+                        ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, ax->ring, ay->ring,
+                        job->linear, chunk, t->chunks, t->rows, chunk == 0 ? " failed" : "", ms(t->lock_ns), ms(t->begin_ns),
+                        ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns), ms(t->wait_ns), ms(t->copy_ns), ms(free_ns),
+                        ms(total_ns), gpu, (unsigned long long)t->cores);
+}
+
 // An axis' taps as the shaders read them: start, count, anti-ringing range, then weights.
 static GLuint axis_buffer(const rs_axis * a)
 {
@@ -254,14 +409,23 @@ static int rows_of(const rs_axis * ay, int y0, int y1, int * r0)
 
 rs_gpu * rs_gpu_open(const rs_job * job)
 {
+    rs_trace trace = { 0 };
+    trace.on = atomic_load(&tracing);
+    if (trace.on) trace.opened = now_ns();
     pthread_mutex_lock(&gl_lock);
+    int64_t t = trace.on ? now_ns() : 0;
+    trace.lock_ns = t - trace.opened;
     rs_gpu * g = calloc(1, sizeof(*g));
     if (g == NULL || gl_begin() != 0) {
         free(g);
         gl_end();
         pthread_mutex_unlock(&gl_lock);
+        if (trace.on) trace_log(&trace, job, 0, 0, now_ns() - trace.opened);
         return NULL;
     }
+    g->trace = trace;
+    g->trace.begin_ns = stamp(g) - t;
+    t = stamp(g);
     g->job = job;
     const rs_axis * ax = &job->ax;
     const rs_axis * ay = &job->ay;
@@ -283,8 +447,17 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);
     g->out = buffer((GLsizeiptr)((size_t)ax->len * g->chunk * 4), NULL, GL_STREAM_READ);
     if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
+        g->chunk = 0;
         rs_gpu_close(g);
         return NULL;
+    }
+    g->trace.alloc_ns = stamp(g) - t;
+    if (g->trace.on && tq_load()) {
+        gen_queries(2, g->trace.queries);
+        // Reading the flag clears it.
+        GLint disjoint;
+        glGetIntegerv(GPU_DISJOINT, &disjoint);
+        g->trace.timed = glGetError() == GL_NO_ERROR;
     }
     return g;
 }
@@ -296,8 +469,9 @@ static GLint uniform(GLuint program, const char * name)
 }
 
 // Copies source rows r0 until r0 + rows, the part the across taps read, into src; 0 on success.
-static int upload(const rs_gpu * g, GLuint src, int r0, int rows)
+static int upload(rs_gpu * g, GLuint src, int r0, int rows)
 {
+    const int64_t t = stamp(g);
     const rs_job * job = g->job;
     const rs_axis * ax = &job->ax;
     const size_t src_w = (size_t)(ax->end - ax->first);
@@ -305,10 +479,14 @@ static int upload(const rs_gpu * g, GLuint src, int r0, int rows)
     uint8_t * up = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(src_w * rows * 4),
                                     GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (up == NULL) return -1;
+    note_core(g);
     for (int r = 0; r < rows; r++) {
         memcpy(up + (size_t)r * src_w * 4, job->src + (size_t)(r0 + r) * job->src_stride + (size_t)ax->first * 4, src_w * 4);
     }
-    return glUnmapBuffer(GL_SHADER_STORAGE_BUFFER) ? 0 : -1;
+    const int ok = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    g->trace.upload_ns += stamp(g) - t;
+    g->trace.rows += rows;
+    return ok ? 0 : -1;
 }
 
 // Filters the `rows` source rows in src across into mid, fp32 rows as wide as the output.
@@ -350,17 +528,23 @@ static void run_down(const rs_gpu * g, GLuint mid, GLuint out, int y0, int y1, i
 }
 
 // Copies output rows y0 until y1 from out into the destination, waiting for the GPU; 0 on success.
-static int readback(const rs_gpu * g, GLuint out, int y0, int y1)
+static int readback(rs_gpu * g, GLuint out, int y0, int y1)
 {
     const rs_job * job = g->job;
     const size_t row_bytes = (size_t)job->ax.len * 4;
+    const int64_t t = stamp(g);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, out);
     const uint8_t * down = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(row_bytes * (y1 - y0)), GL_MAP_READ_BIT);
     if (down == NULL) return -1;
+    const int64_t mapped = stamp(g);
+    g->trace.wait_ns += mapped - t;
+    note_core(g);
     for (int y = y0; y < y1; y++) {
         memcpy(job->dst + (size_t)y * job->dst_stride, down + (size_t)(y - y0) * row_bytes, row_bytes);
     }
-    return glUnmapBuffer(GL_SHADER_STORAGE_BUFFER) ? 0 : -1;
+    const int ok = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    g->trace.copy_ns += stamp(g) - mapped;
+    return ok ? 0 : -1;
 }
 
 // Output rows y0 until y1, within one chunk: upload, across, down, readback.
@@ -369,9 +553,17 @@ static int chunk(rs_gpu * g, int y0, int y1)
     int r0;
     const int rows = rows_of(&g->job->ay, y0, y1, &r0);
     if (upload(g, g->src, r0, rows) != 0) return -1;
+    const int64_t t = stamp(g);
+    query_begin(g, 0);
     run_across(g, g->src, g->mid, rows);
+    query_end(g);
+    query_begin(g, 1);
     run_down(g, g->mid, g->out, y0, y1, r0);
+    query_end(g);
+    g->trace.submit_ns += stamp(g) - t;
     if (readback(g, g->out, y0, y1) != 0) return -1;
+    query_collect(g);
+    g->trace.chunks++;
     return glGetError() == GL_NO_ERROR ? 0 : -1;
 }
 
@@ -389,11 +581,18 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1)
 
 void rs_gpu_close(rs_gpu * g)
 {
+    const int64_t t = stamp(g);
     const GLuint buffers[] = { g->axis_x, g->axis_y, g->src, g->mid, g->out };
     for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
         if (buffers[i] != 0) glDeleteBuffers(1, &buffers[i]);
     }
+    if (g->trace.timed) delete_queries(2, g->trace.queries);
+    const rs_trace trace = g->trace;
+    const rs_job * job = g->job;
+    const int chunk = g->chunk;
+    const int64_t done = stamp(g);
     free(g);
     gl_end();
     pthread_mutex_unlock(&gl_lock);
+    if (trace.on) trace_log(&trace, job, chunk, done - t, done - trace.opened);
 }

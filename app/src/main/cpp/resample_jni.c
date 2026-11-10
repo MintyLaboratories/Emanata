@@ -174,6 +174,14 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
     return r == 0;
 }
 
+// Turns on or off one log line per GPU job with the time of each step (rs_gpu_trace).
+EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrace(JNIEnv * env, jclass clazz, jboolean on)
+{
+    (void)env;
+    (void)clazz;
+    rs_gpu_trace(on == JNI_TRUE);
+}
+
 // Opens the core ledger (core_ledger.h), resetting it, or closes it.
 EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedger(JNIEnv * env, jclass clazz, jboolean open)
 {

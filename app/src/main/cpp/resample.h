@@ -75,4 +75,7 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1);
 
 void rs_gpu_close(rs_gpu * g);
 
+// Turns on or off one log line per GPU job, under "ResampleGpu": the time of each step.
+void rs_gpu_trace(int on);
+
 #endif

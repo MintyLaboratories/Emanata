@@ -80,6 +80,19 @@ internal object LibPixels : PixelKernels {
         return HashMap<Int, Long>(n * 2).apply { for (i in 0 until n) put(tids[i], ns[i]) }
     }
 
+    /**
+     * Turns on or off a log line per GPU job under "ResampleGpu": milliseconds per step (lock,
+     * context, allocation, upload, submit, wait, copy, free), each pass's GPU time where the
+     * driver has timer queries, and the cores the copies ran on. Off by default; debug checks
+     * only. Does nothing where the native library is not loaded.
+     */
+    fun trace(on: Boolean) {
+        if (loaded) nTrace(on)
+    }
+
+    @JvmStatic
+    private external fun nTrace(on: Boolean)
+
     @JvmStatic
     private external fun nPin(cores: Long): Long
 

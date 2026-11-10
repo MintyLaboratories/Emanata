@@ -23,6 +23,7 @@ import com.infinity.comicreader.debug.ResampleRuns.Cores
 import com.infinity.comicreader.debug.ResampleRuns.Setup
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.CpuCores
+import com.infinity.comicreader.reader.LibPixels
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
 import com.infinity.comicreader.reader.Resampler
@@ -47,7 +48,7 @@ import kotlin.random.Random
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
  *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
- *  [--es size 1848x2772|screen]`
+ *  [--es size 1848x2772|screen] [--ez trace true]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]), to the fastest alone (`prime`),
@@ -80,7 +81,9 @@ import kotlin.random.Random
  * (1) from before it started to after it ended: warm cores run slower.
  *
  * Results go to the log under "ResampleCheck", one JSON object per line, ending with "done",
- * and to `files/bench/resample.jsonl` in the app's external files.
+ * and to `files/bench/resample.jsonl` in the app's external files. With `trace`, every GPU
+ * job also logs what its steps took under "ResampleGpu" ([LibPixels.trace]); off by default,
+ * so timings compare with untraced builds.
  */
 class ResampleCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -110,6 +113,7 @@ class ResampleCheckService : Service() {
         val asSized = intent?.getStringExtra("size")
         val screen = Calibrator.screenSize(this)
         val size = ResampleRuns.size(asSized, screen.first, screen.second)
+        val trace = intent?.getBooleanExtra("trace", false) ?: false
         thread(name = "resample-check") { Calibrator.hold {
             val keptEngine = NativeResampler.engine
             val keptThreads = NativeResampler.threads
@@ -117,6 +121,7 @@ class ResampleCheckService : Service() {
             val keptPinned = NativeResampler.pinned
             val keptLittle = NativeResampler.laterOnLittle
             val keptPrime = NativeResampler.onPrime
+            LibPixels.trace(trace)
             try {
                 out.parentFile?.mkdirs()
                 if (asked != null && timed.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
@@ -138,6 +143,7 @@ class ResampleCheckService : Service() {
                 NativeResampler.pinned = keptPinned
                 NativeResampler.laterOnLittle = keptLittle
                 NativeResampler.onPrime = keptPrime
+                LibPixels.trace(false)
                 Log.i(TAG, "done")
                 stopSelfResult(startId)
             }

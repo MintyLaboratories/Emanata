@@ -41,10 +41,14 @@ typedef struct {
     // Ops in order: 's' start, 'f' finish, 'd' drop, 'q' a stop question.
     char log[OPS];
     int ops;
-    // Fail the nth start or finish (1-based; 0 never); answer stop from the nth question on.
+    // Fail the nth start or finish (1-based; 0 never); answer stop from the nth question on;
+    // stop the nth finish while it waits.
     int fail_start;
     int fail_finish;
     int stop_from;
+    int stop_finish;
+    // Finishes handed no stop or another band's.
+    int unhanded;
     int questions;
     int bad;
 } band;
@@ -68,10 +72,13 @@ static int start(void * ctx, int slot, int y0, int y1)
     return 0;
 }
 
-static int finish(void * ctx, int slot)
+static int stop(void * opaque);
+
+static int finish(void * ctx, int slot, rs_stop asked, void * opaque)
 {
     band * b = ctx;
     note(b, 'f');
+    if (asked != NULL && (asked != stop || opaque != b)) b->unhanded++;
     if (slot < 0 || slot >= b->slots || b->y1[slot] == 0) {
         b->bad++;
         return -1;
@@ -80,13 +87,15 @@ static int finish(void * ctx, int slot)
     if (index != b->last_finished + 1) b->bad++;
     b->last_finished = index;
     if (index < OPS) b->started_before_finish[index] = b->starts - index;
-    const int failed = ++b->finishes == b->fail_finish;
-    if (!failed) {
+    ++b->finishes;
+    const int failed = b->finishes == b->fail_finish;
+    const int stopped = b->finishes == b->stop_finish;
+    if (!failed && !stopped) {
         for (int y = b->y0[slot]; y < b->y1[slot]; y++) b->copied[y]++;
     }
     b->y1[slot] = 0;
     b->in_flight--;
-    return failed ? -1 : 0;
+    return failed ? -1 : stopped ? 1 : 0;
 }
 
 static void drop(void * ctx, int slot)
@@ -159,6 +168,7 @@ static void test_complete(void)
                         }
                         // Asked before each start and each finish of the drain.
                         if (asked) CHECK(b.questions == n + (n < slots ? n : slots));
+                        CHECK(b.unhanded == 0);
                     }
                 }
             }
@@ -213,6 +223,28 @@ static void test_stop_in_drain(void)
     CHECK(strcmp(b.log, "qsqsqfsqdd") == 0);
 }
 
+// Stopped while a finish waits: 1, no op after it but drops, nothing left in flight.
+static void test_stop_while_waiting(void)
+{
+    for (int slots = 1; slots <= 3; slots++) {
+        const int n = chunks_of(6, 0, 50);
+        for (int k = 1; k <= n; k++) {
+            band b;
+            init(&b, 6, slots);
+            b.stop_finish = k;
+            CHECK(run(&b, 0, 50, 1) == 1);
+            CHECK(b.bad == 0 && b.unhanded == 0);
+            CHECK(b.in_flight == 0);
+            CHECK(b.finishes == k);
+            CHECK(b.starts == b.finishes + b.drops);
+            b.log[b.ops] = 0;
+            const char * last = b.log + strlen(b.log);
+            while (last > b.log && last[-1] == 'd') last--;
+            CHECK(last > b.log && last[-1] == 'f');
+        }
+    }
+}
+
 // A failed start or finish: -1, no op after it but drops, nothing left in flight.
 static void test_failures(void)
 {
@@ -253,6 +285,7 @@ int main(void)
     test_reuse_order();
     test_stop();
     test_stop_in_drain();
+    test_stop_while_waiting();
     test_failures();
     test_bad_arguments();
     if (failures != 0) {

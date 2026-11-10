@@ -59,6 +59,8 @@
 _Static_assert(SLOTS <= RS_SLOTS_MAX, "more slots than rs_chunks_run takes");
 // Longest wait for one chunk; past it the GPU counts as hung.
 #define WAIT_LIMIT_NS 10000000000ull
+// A chunk is waited for in slices this long, a band's stop asked between them.
+#define WAIT_SLICE_NS 100000000ull
 #define TAG "ResampleGpu"
 
 // GL_EXT_disjoint_timer_query's enums and the entry points tracing uses.
@@ -960,14 +962,26 @@ static void drop_fence(void * ctx, int slot)
     g->fence[slot] = NULL;
 }
 
-// Waits for slot's chunk in flight, then copies its rows into the destination; 0 on success.
-static int finish(void * ctx, int slot)
+// Waits for slot's chunk in flight in WAIT_SLICE_NS slices, asking stop (NULL: never) after
+// each, then copies its rows into the destination; 0 on success, 1 once stopped.
+static int finish(void * ctx, int slot, rs_stop stop, void * opaque)
 {
     rs_gpu * g = ctx;
     const int64_t t = stamp(g);
-    const GLenum waited = glClientWaitSync(g->fence[slot], GL_SYNC_FLUSH_COMMANDS_BIT, WAIT_LIMIT_NS);
+    const int64_t began = now_ns();
+    GLenum waited = GL_TIMEOUT_EXPIRED;
+    int stopped = 0;
+    for (GLbitfield flags = GL_SYNC_FLUSH_COMMANDS_BIT; (uint64_t)(now_ns() - began) < WAIT_LIMIT_NS; flags = 0) {
+        waited = glClientWaitSync(g->fence[slot], flags, WAIT_SLICE_NS);
+        if (waited != GL_TIMEOUT_EXPIRED) break;
+        if (stop != NULL && stop(opaque)) {
+            stopped = 1;
+            break;
+        }
+    }
     drop_fence(g, slot);
     g->trace.wait_ns += stamp(g) - t;
+    if (stopped) return 1;
     if (waited == GL_TIMEOUT_EXPIRED) g->hung = 1;
     if (waited != GL_ALREADY_SIGNALED && waited != GL_CONDITION_SATISFIED) return -1;
     if (readback(g, g->out[slot], g->y0[slot], g->y1[slot]) != 0) return -1;

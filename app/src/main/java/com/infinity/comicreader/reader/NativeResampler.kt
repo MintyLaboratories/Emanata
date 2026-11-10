@@ -62,7 +62,8 @@ internal interface PixelKernels {
     fun trim(programs: Boolean) {}
 
     /**
-     * Asked before each chunk of a GPU band, on its thread; true stops the band. Runs while
+     * Asked before each chunk of a GPU band and every 100 ms while it waits for the GPU, on
+     * its thread; true stops the band. Runs while
      * the band holds the GPU: it must only read a flag (an AtomicBoolean, a job's isActive),
      * never block, take locks, do I/O or call [PixelKernels].
      */

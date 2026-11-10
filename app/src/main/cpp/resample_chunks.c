@@ -15,8 +15,9 @@ int rs_chunks_run(const rs_chunk_ops * ops, void * ctx, int chunk, int slots, in
         const int end = next < y1 ? next : y1;
         if (busy[slot]) {
             busy[slot] = 0;
-            if (ops->finish(ctx, slot) != 0) {
-                r = -1;
+            const int f = ops->finish(ctx, slot, stop, opaque);
+            if (f != 0) {
+                r = f > 0 ? 1 : -1;
                 break;
             }
         }
@@ -36,8 +37,9 @@ int rs_chunks_run(const rs_chunk_ops * ops, void * ctx, int chunk, int slots, in
         if (r == 0 && stop != NULL && stop(opaque)) r = 1;
         if (r != 0) {
             ops->drop(ctx, s);
-        } else if (ops->finish(ctx, s) != 0) {
-            r = -1;
+        } else {
+            const int f = ops->finish(ctx, s, stop, opaque);
+            if (f != 0) r = f > 0 ? 1 : -1;
         }
     }
     return r;

@@ -15,7 +15,7 @@
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - The context, the down program and the tables stay for the process. The buffers stay
 //   from job to job, grown as a job needs (or fit to it, past a budget), until rs_gpu_trim
-//   frees them with the across programs.
+//   frees them with the across programs: at once or, while a job runs, when it closes.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
 //   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
@@ -81,7 +81,7 @@ static GLint down_at[D_UNIFORMS];
 static GLuint lut_linear;
 static GLuint lut_encode;
 static atomic_int tracing;
-// Set by a trim that found a job holding the GPU lock; that job's rs_gpu_close frees.
+// Set by a trim that found the GPU lock held; the job (or trim) holding it frees at its end.
 static atomic_int trim_owed;
 // Timer queries: 0 untried, 1 loaded, -1 unavailable; loaded by the first traced job.
 static int tq_state = 0;
@@ -903,57 +903,81 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque)
     return 0;
 }
 
+// Across programs kept, failed compiles included.
+static int across_count(void)
+{
+    int n = 0;
+    for (int i = 0; i < UNROLL + 2; i++) {
+        for (int r = 0; r < 2; r++) n += across_kept[i][r].tried;
+    }
+    return n;
+}
+
 static int any_kept(void)
 {
     return kept_src.name != 0 || kept_mid.name != 0 || kept_out.name != 0 || kept_ax.name != 0 || kept_ay.name != 0;
 }
 
-// Deletes the kept buffers, gl_lock held and the context current, and logs it (rare: logged
-// whether tracing or not) as freed `when` ("now", "at close" or "after failure").
-static void free_kept(const char * when)
+// Deletes the kept buffers, and with `programs` the across programs, gl_lock held and the
+// context current, and logs it (rare: logged whether tracing or not) as freed `when`
+// ("now", "at close" or "after failure").
+static void free_kept(const char * when, int programs)
 {
-    if (!any_kept()) return;
+    const int forgotten = programs ? across_count() : 0;
+    if (!any_kept() && forgotten == 0) return;
     const int64_t t = now_ns();
     const int64_t kept = kept_bytes();
     drop_kept();
+    if (forgotten > 0) across_forget();
     // Deletion is queued until the driver sees a flush.
     glFlush();
     // Leaves no error for the next job to fail on.
     (void)glGetError();
-    __android_log_print(ANDROID_LOG_INFO, TAG, "trim %s freed=%.1fMB in %.2f ms", when, (double)kept / (1 << 20),
-                        ms(now_ns() - t));
+    __android_log_print(ANDROID_LOG_INFO, TAG, "trim %s freed=%.1fMB programs=%d in %.2f ms", when,
+                        (double)kept / (1 << 20), forgotten, ms(now_ns() - t));
 }
 
 void rs_gpu_trim(void)
 {
-    // Owed before the trylock, so a job that holds the lock now sees it as it closes.
+    // Owed before the trylock, so a job or trim that holds the lock now sees it as it ends.
     atomic_store(&trim_owed, 1);
-    if (pthread_mutex_trylock(&gl_lock) != 0) return;
-    if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && gl_begin() == 0) {
-        free_kept("now");
-        across_forget();
+    while (atomic_load(&trim_owed) && pthread_mutex_trylock(&gl_lock) == 0) {
+        if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && (any_kept() || across_count() > 0)) {
+            // The calling thread may have a context of its own current (the main one, say):
+            // it gets it back.
+            const EGLDisplay was_display = eglGetCurrentDisplay();
+            const EGLContext was_context = eglGetCurrentContext();
+            const EGLSurface was_draw = eglGetCurrentSurface(EGL_DRAW);
+            const EGLSurface was_read = eglGetCurrentSurface(EGL_READ);
+            if (gl_begin() == 0) free_kept("now", 1);
+            if (was_context != EGL_NO_CONTEXT && was_context != context) {
+                eglMakeCurrent(was_display, was_draw, was_read, was_context);
+            } else {
+                gl_end();
+            }
+        }
+        pthread_mutex_unlock(&gl_lock);
     }
-    gl_end();
-    pthread_mutex_unlock(&gl_lock);
 }
 
 void rs_gpu_close(rs_gpu * g)
 {
     const int64_t t = stamp(g);
     if (g->trace.timed) delete_queries(2, g->trace.queries);
-    if (g->failed) free_kept("after failure");
+    const int failed = g->failed;
     const rs_trace trace = g->trace;
     const rs_job * job = g->job;
     const int chunk = g->chunk;
     const int64_t done = stamp(g);
     free(g);
     if (atomic_exchange(&trim_owed, 0)) {
-        free_kept("at close");
-        across_forget();
+        free_kept("at close", 1);
+    } else if (failed) {
+        free_kept("after failure", 0);
     }
     gl_end();
     pthread_mutex_unlock(&gl_lock);
-    // A trim owed after the exchange above, its trylock failed while this job held the lock.
+    // A trim owed after the exchange above: its trylock failed while this job held the lock.
     if (atomic_load(&trim_owed)) rs_gpu_trim();
     if (trace.on) trace_log(&trace, job, chunk, done - t, done - trace.opened);
 }

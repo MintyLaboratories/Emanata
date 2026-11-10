@@ -31,9 +31,10 @@ class NativeResamplerTest {
     /**
      * Native code as the JVM can have it: a job's bands written from [Resampler]'s
      * premultiplied model, every call recorded. Begins on the GPU only when [gpu], fails
-     * the band [failAt] when set. A GPU band runs in chunks of [chunk] rows ending on its
-     * multiples, as the native one does, each recorded as a band; it fails at the chunk
-     * [failGpuAt] when set, and throws [gpuThrows] when set.
+     * the band [failAt] when set. A GPU band runs in chunks of [chunk] rows, asking its stop
+     * before each and recording the answer, each chunk recorded as a band; it fails at the
+     * chunk [failGpuAt] when set, and throws [gpuThrows] when set. The chunking is the
+     * fake's own: the native chunks show on the device, in the "ResampleGpu" trace.
      */
     private class FakeKernels(
         val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1, val gpuThrows: Throwable? = null
@@ -52,6 +53,9 @@ class NativeResamplerTest {
 
             /** The rows of each GPU band asked for. */
             val gpuBands: MutableList<Pair<Int, Int>> = Collections.synchronizedList(ArrayList())
+
+            /** What each GPU band's stop answered, in turn; null for a band given none. */
+            val stops: MutableList<Boolean?> = Collections.synchronizedList(ArrayList())
         }
 
         val jobs = ArrayList<Job>()
@@ -92,7 +96,9 @@ class NativeResamplerTest {
             gpuThrows?.let { throw it }
             var y = y0
             while (y < y1) {
-                if (stop?.stop() == true) return PixelKernels.BAND_CANCELED
+                val stopped = stop?.stop()
+                j.stops += stopped
+                if (stopped == true) return PixelKernels.BAND_CANCELED
                 val end = minOf(y1, (y / chunk + 1) * chunk)
                 if (j.bands.size == failGpuAt || !band(job, 0, y, end, cores)) return PixelKernels.BAND_FAILED
                 y = end
@@ -256,25 +262,24 @@ class NativeResamplerTest {
         val job = k.jobs.single()
         assertTrue(job.gpu && job.ended && job.workers == 1)
         assertEquals(listOf(0 to 120), job.gpuBands)
-        // Its chunks, in order, every row once.
-        assertEquals(List(8) { Triple(0, it * 16, minOf(120, it * 16 + 16)) }, job.bands)
+        assertTrue(job.stops.isNotEmpty() && null !in job.stops)
         assertEquals(setOf(0b1111_0000L), job.cores.toSet())
         assertEquals(setOf(Thread.currentThread().name), job.threads)
         assertArrayEquals(job.result, IntArray(40 * 120).also { dst.getPixels(it, 0, 40, 0, 0, 40, 120) })
     }
 
     @Test
-    fun cancelingIsAskedBeforeEachGpuChunk() {
+    fun theGpuBandStopsAsCancelingSays() {
         val k = use(FakeKernels())
         var polls = 0
         assertThrows(CancellationException::class.java) {
             resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { ++polls > 3 })
         }
-        // Asked before the job began, before each of two chunks and the third, which never ran; no fallback to the CPU.
-        assertEquals(4, polls)
+        // Asked once before the job began, then each time the band asked its stop; no fallback to the CPU.
         val job = k.jobs.single()
+        assertEquals(listOf(false, false, true), job.stops)
+        assertEquals(1 + job.stops.size, polls)
         assertTrue(job.ended)
-        assertEquals(2, job.bands.size)
     }
 
     @Test
@@ -293,19 +298,18 @@ class NativeResamplerTest {
         assertThrows(IllegalStateException::class.java) {
             resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { check(++polls < 3); false })
         }
-        assertEquals(1, k.jobs.single().bands.size)
+        assertEquals(listOf(false), k.jobs.single().stops)
         assertTrue(k.jobs.single().ended)
     }
 
     @Test
-    fun aFailedGpuChunkFallsBackToTheCpuUnlessAskedNot() {
+    fun aFailedGpuBandFallsBackToTheCpuUnlessAskedNot() {
         val k = use(FakeKernels(failGpuAt = 2))
         assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
         assertEquals(listOf(true, false), k.jobs.map { it.gpu })
         assertTrue(k.jobs.all { it.ended })
         val strict = use(FakeKernels(failGpuAt = 2))
         assertFalse(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, fallback = false).first)
-        assertEquals(2, strict.jobs.single().bands.size)
         assertTrue(strict.jobs.single().ended)
     }
 

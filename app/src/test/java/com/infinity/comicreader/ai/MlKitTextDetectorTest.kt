@@ -84,6 +84,8 @@ class MlKitTextDetectorTest {
         // ML Kit reads a copy of its own.
         assertNotSame(image, finder.seen.single())
         assertEquals(400, finder.seen.single().width)
+        assertTrue(finder.seen.single().isRecycled)
+        assertFalse(image.isRecycled)
         d.close()
     }
 
@@ -117,6 +119,7 @@ class MlKitTextDetectorTest {
         assertNull(linesOff(d))
         assertTrue(d.isOpen)
         assertEquals(1L, finder.closed.count)
+        assertTrue(finder.seen.single().isRecycled)
         d.close()
     }
 
@@ -127,6 +130,8 @@ class MlKitTextDetectorTest {
         assertNull(linesOff(d))
         assertFalse(d.isOpen)
         assertEquals(0L, finders.single().closed.count)
+        // ML Kit may still read its copy.
+        assertFalse(finders.single().seen.single().isRecycled)
         assertNull(linesOff(d))
         assertEquals(2, finders.size)
     }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
 import org.junit.Assert.assertEquals
@@ -39,17 +40,17 @@ class CoverStyleTest {
     @Test
     fun eachStyleHasItsOwnKey() {
         val keys = ThumbFit.entries.flatMap { f ->
-            CropAnchor.entries.flatMap { a -> listOf(true, false).map { CoverStyle(f, a, it).key } }
+            CropAnchor.entries.flatMap { a -> listOf(true, false).map { CoverStyle(f, a, it).key(D) } }
         }
         assertEquals(keys.size, keys.toSet().size)
-        assertNotEquals(CoverStyle().key, CoverStyle(linear = true).key)
+        assertNotEquals(CoverStyle().key(D), CoverStyle(linear = true).key(D))
     }
 
     @Test
     fun coversKeepTheirKeyWhenOnlyEnlargingChanges() {
-        assertEquals(CoverStyle().key, CoverStyle(scaling = Scaling(upRing = 40)).key)
-        assertNotEquals(CoverStyle().key, CoverStyle(scaling = Scaling(downRing = 20)).key)
-        assertNotEquals(CoverStyle().key, CoverStyle(scaling = Scaling(ScaleFilter.HERMITE)).key)
+        assertEquals(CoverStyle().key(D), CoverStyle(scaling = Scaling(upRing = 40)).key(D))
+        assertNotEquals(CoverStyle().key(D), CoverStyle(scaling = Scaling(downRing = 20)).key(D))
+        assertNotEquals(CoverStyle().key(D), CoverStyle(scaling = Scaling(ScaleFilter.HERMITE)).key(D))
     }
 
     @Test
@@ -61,8 +62,18 @@ class CoverStyleTest {
     }
 
     @Test
-    fun smartCoversAreKnownByTheirRulesVersion() {
-        assertTrue(CoverStyle(anchor = CropAnchor.SMART).key.contains("smart${SmartCrop.RULES}"))
-        assertEquals("auto|top", CoverStyle().key)
+    fun smartCoversAreKnownByTheirRulesAndDetector() {
+        val smart = CoverStyle(anchor = CropAnchor.SMART)
+        assertEquals("auto|smart${SmartCrop.RULES}-$D", smart.key(D))
+        // Another detector finds other text: its Smart covers are others.
+        assertNotEquals(smart.key(D), smart.key("other"))
+        assertEquals("auto|top", CoverStyle().key(D))
+        // Covers the detector plays no part in keep their key.
+        assertEquals(CoverStyle().key(D), CoverStyle().key("other"))
+        assertEquals(CoverStyle(ThumbFit.FIT, CropAnchor.CENTER).key(D), CoverStyle(ThumbFit.FIT, CropAnchor.CENTER).key("other"))
+    }
+
+    private companion object {
+        const val D = TextDetector.ID
     }
 }

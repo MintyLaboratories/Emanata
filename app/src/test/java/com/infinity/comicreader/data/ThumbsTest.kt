@@ -10,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
 import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
@@ -107,9 +108,9 @@ class ThumbsTest {
     }
 
     /** Stands in a detector seeing text across rows [top] to [bottom] (shares of the height) of every image; counts its calls. */
-    private fun textAt(top: Double, bottom: Double): IntArray {
+    private fun textAt(top: Double, bottom: Double, id: String = "fake"): IntArray {
         val calls = intArrayOf(0)
-        standIn { bitmap ->
+        standIn(id) { bitmap ->
             calls[0]++
             val w = bitmap.width
             val h = bitmap.height
@@ -118,9 +119,9 @@ class ThumbsTest {
         return calls
     }
 
-    /** Stands in a detector whose lines are the text of the score map [map] gives each image. */
-    private fun standIn(map: (Bitmap) -> ScoreMap?) {
-        val stand = coverText(map = map)
+    /** Stands in a detector known as [id] whose lines are the text of the score map [map] gives each image. */
+    private fun standIn(id: String = "fake", map: (Bitmap) -> ScoreMap?) {
+        val stand = coverText(id, map)
         Thumbs.detector = { stand }
     }
 
@@ -144,6 +145,35 @@ class ThumbsTest {
         // Another size uses the focus found.
         Thumbs.load(context, entry, "UTF-8", 100, 40, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))
         assertEquals(1, calls[0])
+    }
+
+    @Test
+    fun anotherDetectorFindsFocusesAndSmartCoversAgain() {
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val first = textAt(0.85, 0.92, id = "a")
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, first[0])
+        val storeA = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("a")))
+        assertTrue(storeA.isFile)
+        assertEquals(SmartCrop.version("a"), Thumbs.coverVersion(context))
+        // Another detector sees the text at the top: its own focus, store and cover.
+        val second = textAt(0.02, 0.1, id = "b")
+        assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, second[0])
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("b"))).isFile)
+        assertFalse(storeA.exists())
+        // A cover the detector plays no part in is the one made before.
+        val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
+        val made = Thumbs.load(context, entry, "UTF-8", 120, 60, top)
+        textAt(0.85, 0.92, id = "a")
+        assertSame(made, Thumbs.inMemory(context, entry, 120, 60, top))
+    }
+
+    @Test
+    fun theAppsDetectorIsPpOcr() {
+        Thumbs.detector = detector
+        assertEquals(SmartCrop.version(TextDetector.ID), Thumbs.coverVersion(context))
     }
 
     @Test

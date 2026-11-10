@@ -325,7 +325,7 @@ class BookAdapter(
      */
     private fun coverId(item: BookEntry): String =
         "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
-            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyle.key}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
+            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyleKey}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
 
     init {
         setHasStableIds(true)

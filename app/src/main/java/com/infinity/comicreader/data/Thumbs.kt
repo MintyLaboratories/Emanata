@@ -99,25 +99,39 @@ object Thumbs {
         if (id != null) runCatching { BookFactsCache(context).keepCover(id, front) }
     }
 
-    /** Where the Smart crop anchor looks on each cover, by [imageKey] and the part shown; kept across sessions in [focusStore]. */
+    /** Where the Smart crop anchor looks on each cover, by [imageKey], the part shown and the [coverVersion]; kept across sessions in [focusStore]. */
     private val focuses = LruCache<String, CoverFocus>(1024)
     private const val FOCUS_PREFIX = "cover-focus"
-    private const val FOCUS_FILE = "$FOCUS_PREFIX-${SmartCrop.RULES}.txt"
+
+    /** The focus store's file for cover-focus version [version]. */
+    internal fun focusFile(version: String): String = "$FOCUS_PREFIX-$version.txt"
+
+    /** A focus store and the cover-focus version it holds focuses of. */
+    private class Focuses(val version: String, val store: FocusStore)
 
     @Volatile
-    private var focusStore: FocusStore? = null
+    private var focusStore: Focuses? = null
 
-    /** The focus store of the current [SmartCrop.RULES]; those of others are deleted. */
-    private fun focusStore(context: Context): FocusStore = focusStore ?: synchronized(this) {
-        focusStore ?: run {
-            context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && !f.name.startsWith(FOCUS_FILE) }?.forEach { it.delete() }
-            FocusStore(File(context.cacheDir, FOCUS_FILE)).also { focusStore = it }
+    /** The focus store of cover-focus [version]; those of others are deleted. */
+    private fun focusStore(context: Context, version: String = coverVersion(context)): FocusStore {
+        focusStore?.let { if (it.version == version) return it.store }
+        synchronized(this) {
+            focusStore?.let { if (it.version == version) return it.store }
+            val file = focusFile(version)
+            context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && !f.name.startsWith(file) }?.forEach { it.delete() }
+            return FocusStore(File(context.cacheDir, file)).also { focusStore = Focuses(version, it) }
         }
     }
 
     /** Finds text on covers for the Smart crop anchor: the app's detector ([TextDetector]). Tests stand in their own. */
     @Volatile
     internal var detector: (Context) -> CoverTextDetector = { TextDetector.shared(it) }
+
+    /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
+    fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)
+
+    /** [style]'s part of a cover's key ([CoverStyle.key]) under the [detector] in use. */
+    fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
@@ -127,12 +141,14 @@ object Thumbs {
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val k = "${imageKey(context, entry)}|$part"
+        val detector = detector(context)
+        val version = SmartCrop.version(detector.id)
+        val k = "${imageKey(context, entry)}|$part|$version"
         focuses.get(k)?.let { return it }
-        val store = focusStore(context)
+        val store = focusStore(context, version)
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
-        val focus = CoverArt.focusOf(src, region, detector(context))
+        val focus = CoverArt.focusOf(src, region, detector)
         if (!focus.keep) return focus
         store.put(k, focus)
         focuses.put(k, focus)
@@ -318,13 +334,13 @@ object Thumbs {
         if (entry.isDir) null else entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
 
     /**
-     * What a cover is cached by: its file, box size, style, the hidden pages that move it
-     * ([hiddenTag]), a bookmark's page in the book, and the book's own file name charset,
-     * which may reorder its pages ([NameCharset.overrides]).
+     * What a cover is cached by: its file, box size, style under the [detector] in use
+     * ([styleKey]), the hidden pages that move it ([hiddenTag]), a bookmark's page in the book,
+     * and the book's own file name charset, which may reorder its pages ([NameCharset.overrides]).
      */
     private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        return "${key(entry)}|${width}x$height|${style.key}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
+        return "${key(entry)}|${width}x$height|${styleKey(context, style)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
     }
 
     /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */

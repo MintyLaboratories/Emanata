@@ -319,6 +319,9 @@ class Prefs(context: Context) {
     /** How covers are made from their images. */
     val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight, thumbScaling)
 
+    /** [coverStyle]'s key under the cover text detector in use ([Thumbs.styleKey]). */
+    val coverStyleKey: String get() = Thumbs.styleKey(app, coverStyle)
+
     /** The library toolbar's buttons, in order. */
     var toolbarButtons: ToolbarButtons
         get() = ToolbarButtons.decode(sp.getString(KEY_TOOLBAR_BUTTONS, null))

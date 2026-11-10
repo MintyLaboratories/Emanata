@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.reader.Box
 import com.infinity.comicreader.reader.Wraparound
@@ -83,11 +84,16 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
  */
 object SmartCrop {
     /**
-     * The version of these rules and of the detector: focuses and Smart covers found under
-     * another are found again. Raise it with any change to what a focus holds or how a crop
-     * follows it.
+     * The version of these rules, part of [version]. Raise it with any change to what a focus
+     * holds or how a crop follows it.
      */
     const val RULES = 2
+
+    /**
+     * The cover-focus version: of these rules ([RULES]) and of the text detector by its
+     * [CoverTextDetector.id]. Focuses and Smart covers found under another are found again.
+     */
+    fun version(detector: String): String = "$RULES-$detector"
 
     /** The detector's input: its longer side at most this, both sides multiples of [STRIDE]. */
     const val INPUT_SIDE = 640

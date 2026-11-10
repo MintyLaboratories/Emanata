@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.reader.Wraparound
+import com.infinity.comicreader.testing.coverText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -146,5 +147,22 @@ class BookFactsCacheTest {
         assertEquals(BookFacts(6, 2020, cover = CoverFront(0, Wraparound.Half.RIGHT)), read.get(a))
         assertEquals(CoverFront(2, null), read.get(b)?.cover)
         assertNull(read.get(c))
+    }
+
+    @Test
+    fun coversFoundByAnotherDetectorAreLookedAtAgain() {
+        val app = Thumbs.detector
+        try {
+            Thumbs.detector = { coverText("a") { null } }
+            BookFactsCache(context).apply { put(a, BookFacts(5, 0)); keepCover(a, CoverFront(0, Wraparound.Half.RIGHT)) }
+            BookFactsCache.reset()
+            assertEquals(CoverFront(0, Wraparound.Half.RIGHT), BookFactsCache(context).apply { load() }.get(a)?.cover)
+            BookFactsCache.reset()
+            Thumbs.detector = { coverText("b") { null } }
+            // The facts stay; what the cover told goes.
+            assertEquals(BookFacts(5, 0), BookFactsCache(context).apply { load() }.get(a))
+        } finally {
+            Thumbs.detector = app
+        }
     }
 }

@@ -15,7 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * one row per book in a small database, and held in memory once [load]ed.
  */
 class BookFactsCache(context: Context) {
-    private val store = storeFor(context.applicationContext)
+    private val app = context.applicationContext
+    private val store = storeFor(app)
 
     /** The facts stored for book [id]; null when unknown, not [load]ed yet, or [id] is. Never blocks. */
     fun get(id: BookId?): BookFacts? = id?.let { store.loaded?.get(it.value) }
@@ -29,9 +30,10 @@ class BookFactsCache(context: Context) {
         synchronized(store) {
             if (store.loaded != null) return
             val map = ConcurrentHashMap<Long, BookFacts>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES, COVER, COVER_RULES), null, null, null, null, null).use { c ->
+            val version = Thumbs.coverVersion(app)
+            store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES, COVER, COVER_VERSION), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) {
-                    val cover = if (c.getInt(6) == SmartCrop.RULES) decodeCover(c.getInt(5)) else null
+                    val cover = if (c.getString(6) == version) decodeCover(c.getInt(5)) else null
                     map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)), cover)
                 }
             }
@@ -79,7 +81,7 @@ class BookFactsCache(context: Context) {
             put(DIRECTION, facts.detected?.encode() ?: 0)
             put(SLICES, encodeSlices(facts.slices))
             put(COVER, encodeCover(facts.cover))
-            put(COVER_RULES, SmartCrop.RULES)
+            put(COVER_VERSION, Thumbs.coverVersion(app))
         }
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -112,7 +114,7 @@ class BookFactsCache(context: Context) {
             db.execSQL(
                 "CREATE TABLE $TABLE ($ID INTEGER PRIMARY KEY, $PAGES INTEGER NOT NULL, " +
                     "$YEAR INTEGER NOT NULL, $DIRECTION INTEGER NOT NULL DEFAULT 0, $SLICES INTEGER NOT NULL DEFAULT $UNCHECKED, " +
-                    "$COVER INTEGER NOT NULL DEFAULT $UNCHECKED, $COVER_RULES INTEGER NOT NULL DEFAULT 0)"
+                    "$COVER INTEGER NOT NULL DEFAULT $UNCHECKED, $COVER_VERSION TEXT NOT NULL DEFAULT '')"
             )
         }
 
@@ -133,14 +135,14 @@ class BookFactsCache(context: Context) {
         private const val SLICES = "slices"
         private const val COVER = "cover"
 
-        /** The [SmartCrop.RULES] [COVER] was found by; covers found by others are looked at again. */
-        private const val COVER_RULES = "cover_rules"
+        /** The cover-focus version ([Thumbs.coverVersion]) [COVER] was found under; covers found under others are looked at again. */
+        private const val COVER_VERSION = "cover_version"
 
         /** [SLICES] of a book not checked for slices, [COVER] of one whose cover was not looked at; 0 is one whose pages are not, or whose cover tells nothing. */
         private const val UNCHECKED = -1
 
         /** Of the table and what its numbers mean ([DirectionDetection.Detected.encode]); another starts it over. */
-        private const val VERSION = 7
+        private const val VERSION = 8
 
         private fun encodeSlices(checked: Slices.Checked?): Int = checked?.let { it.found?.encode() ?: 0 } ?: UNCHECKED
 

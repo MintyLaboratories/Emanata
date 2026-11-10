@@ -66,6 +66,12 @@ class SmartCropTest {
     }
 
     @Test
+    fun theVersionNamesTheRulesAndTheDetector() {
+        assertEquals("${SmartCrop.RULES}-a", SmartCrop.version("a"))
+        assertTrue(SmartCrop.version("a") != SmartCrop.version("b"))
+    }
+
+    @Test
     fun faintThinAndBelowThresholdRegionsAreNotText() {
         assertTrue(SmartCrop.boxes(map(50, 50, intArrayOf(10, 10, 30, 20), score = 0.5f)).isEmpty())
         assertTrue(SmartCrop.boxes(map(50, 50, intArrayOf(10, 10, 30, 12))).isEmpty())

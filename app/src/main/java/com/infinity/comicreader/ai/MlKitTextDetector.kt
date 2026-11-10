@@ -50,14 +50,15 @@ internal class MlKitTextDetector(
 
     /**
      * The lines on [src], in its pixels; null when ML Kit failed or gave no answer in time.
-     * ML Kit reads a copy, so [src] may be recycled once this returns.
+     * ML Kit reads a copy, so [src] may be recycled once this returns. Throws when the client
+     * does not open, ML Kit's classes failing to link included ([IllegalStateException]).
      */
     @Synchronized
     override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
         check(!mainThread()) { "ML Kit's text detector waits for its answer: not on the main thread" }
         closing?.cancel(false)
         try {
-            val f = finder ?: open().also { finder = it }
+            val f = finder ?: opened().also { finder = it }
             val copy = src.copy(Bitmap.Config.ARGB_8888, false) ?: return null
             val found = try {
                 Tasks.await(f.find(copy), timeoutMs, TimeUnit.MILLISECONDS)
@@ -74,6 +75,13 @@ internal class MlKitTextDetector(
             val run = ++runs
             closing = closer.schedule({ closeAfter(run) }, idleMs, TimeUnit.MILLISECONDS)
         }
+    }
+
+    /** A new client ([open]); ML Kit's classes failing to link as an [IllegalStateException]. */
+    private fun opened(): LineFinder = try {
+        open()
+    } catch (e: LinkageError) {
+        throw IllegalStateException("ML Kit's classes do not link", e)
     }
 
     /** Closes the client unless it ran again since [run]. */
@@ -119,12 +127,17 @@ internal class MlKitTextDetector(
 
         private val closer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "mlkit-text-idle").apply { isDaemon = true } }
 
-        /** The detector on Play services' recognizer; ML Kit starts on its first use, not before. */
+        /**
+         * The detector on Play services' recognizer. Loads ML Kit's classes, so where they are
+         * missing or do not link this throws ([LinkageError]); ML Kit starts on first use, not before.
+         */
         fun create(context: Context): MlKitTextDetector {
             val app = context.applicationContext
+            val options = TextRecognizerOptions.DEFAULT_OPTIONS
+            listOf(MlKitContext::class.java, TextRecognition::class.java, InputImage::class.java, Tasks::class.java, Recognizer::class.java)
             return MlKitTextDetector({
                 MlKitContext.initializeIfNeeded(app)
-                Recognizer(TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS))
+                Recognizer(TextRecognition.getClient(options))
             })
         }
 

@@ -9,6 +9,7 @@ import com.google.android.gms.tasks.TaskCompletionSource
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.text.Text
 import com.infinity.comicreader.data.SmartCrop
+import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -139,6 +140,25 @@ class MlKitTextDetectorTest {
         } catch (e: java.util.concurrent.ExecutionException) {
             assertTrue(e.cause is IllegalStateException)
         }
+        assertFalse(d.isOpen)
+    }
+
+    @Test
+    fun classesThatDoNotLinkFailTheRunAsAnException() {
+        val d = MlKitTextDetector({ throw NoClassDefFoundError("com/example/Missing") })
+        try {
+            linesOff(d)
+            fail("opened")
+        } catch (e: java.util.concurrent.ExecutionException) {
+            assertTrue(e.cause is IllegalStateException)
+            assertTrue(e.cause!!.cause is NoClassDefFoundError)
+        }
+        assertFalse(d.isOpen)
+    }
+
+    @Test
+    fun creatingItStartsNothing() {
+        val d = MlKitTextDetector.create(ApplicationProvider.getApplicationContext())
         assertFalse(d.isOpen)
     }
 

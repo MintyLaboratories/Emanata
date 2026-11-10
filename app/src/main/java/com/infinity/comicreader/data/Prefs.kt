@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.AiThresholds
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetSkip
@@ -555,6 +556,14 @@ class Prefs(context: Context) {
     /** Sets [step]'s model to model id [id], or none for null. */
     fun setAiModel(step: AiStep, id: String?) = put(aiKey(step), id ?: AI_NONE)
 
+    /** The display sizes at which the chain's models run: the AI setting's two handles, each kept in its range. */
+    var aiThresholds: AiThresholds
+        get() = AiThresholds.of(
+            integer(KEY_AI_UPSCALE_ABOVE, AiThresholds.UPSCALE_DEFAULT),
+            integer(KEY_AI_CLEANUP_ABOVE, AiThresholds.CLEANUP_DEFAULT)
+        )
+        set(v) = sp.edit().putInt(KEY_AI_UPSCALE_ABOVE, v.upscalePct).putInt(KEY_AI_CLEANUP_ABOVE, v.cleanupPct).apply()
+
     // ---------------------------------------------------------------- ui state
 
     var lastPath: String?
@@ -773,6 +782,8 @@ class Prefs(context: Context) {
         private const val KEY_SAVER_SCANS = "pref_saver_scans"
         private const val KEY_SAVER_AI = "pref_saver_ai"
         const val KEY_AI = "pref_ai"
+        const val KEY_AI_UPSCALE_ABOVE = "pref_ai_upscale_above"
+        const val KEY_AI_CLEANUP_ABOVE = "pref_ai_cleanup_above"
 
         /** The stored value of a step without a model. */
         const val AI_NONE = "none"
@@ -792,7 +803,7 @@ class Prefs(context: Context) {
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI,
-            KEY_SIMILAR_SHARES, KEY_METERED_SKIP, KEY_SLOW_SKIP, KEY_METERED_WARN, KEY_METERED_WARN_MB
+            KEY_AI_UPSCALE_ABOVE, KEY_AI_CLEANUP_ABOVE, KEY_SIMILAR_SHARES, KEY_METERED_SKIP, KEY_SLOW_SKIP, KEY_METERED_WARN, KEY_METERED_WARN_MB
         ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** The Language setting's values (`locale_values`). */

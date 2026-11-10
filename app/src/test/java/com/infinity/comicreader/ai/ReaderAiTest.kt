@@ -63,12 +63,15 @@ class ReaderAiTest {
     /** The thresholds [ai] reads for each page. */
     private var thresholds = AiThresholds()
 
+    /** Milliseconds on the clock of a reader made by [reader]. */
+    private var now = 0L
+
     /** The store of every reader [reader] makes. */
     private val store by lazy { ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }) }
 
     private fun reader(): ReaderAi = ReaderAi(
         prefs, { own[it] }, models, store, runtime,
-        { stop }, { downloads += it.id }, threads = 2, thresholds = { thresholds }
+        { stop }, { downloads += it.id }, threads = 2, clock = { now }, thresholds = { thresholds }
     )
 
     private fun install(m: CatalogModel) {
@@ -79,8 +82,10 @@ class ReaderAiTest {
         }
     }
 
-    /** A book of [count] pages of [w] x [h], counting full loads. */
-    private class Book(val w: Int, val h: Int, override val bookKey: String?, override val isVector: Boolean = false) : PageSource {
+    /** A book of [count] pages of [w] x [h], counting full loads, each calling [onLoad] with its index. */
+    private class Book(
+        val w: Int, val h: Int, override val bookKey: String?, override val isVector: Boolean = false, val onLoad: (Int) -> Unit = {}
+    ) : PageSource {
         val loads = AtomicInteger()
         override val pageCount = 3
 
@@ -90,6 +95,7 @@ class ReaderAiTest {
 
         override fun loadPage(index: Int, target: Target): Bitmap {
             loads.incrementAndGet()
+            onLoad(index)
             val r = Random(index)
             val px = IntArray(w * h) { 0xFF000000.toInt() or r.nextInt(1 shl 24) }
             return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
@@ -439,6 +445,23 @@ class ReaderAiTest {
         assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
         assertTrue("measured: fake models are fast", ai.pageMs(b) < before)
         assertTrue(ai.rateOf(upscale) < ReaderAi.priorRate(upscale))
+    }
+
+    @Test
+    fun aPagesTimeFollowsTheModelsItsLastPageRan() {
+        val cleanup = ModelCatalog.forStep(AiStep.ARTIFACTS).first()
+        prefs.setAiModel(AiStep.ARTIFACTS, cleanup.id)
+        ai.refresh()
+        install(cleanup)
+        install(upscale)
+        // Pages 0 and 2 shown enlarged run both models in 1 s; page 1 shown at 67 % runs the cleanup alone in 0.1 s.
+        val b = Book(30, 45, "id:${book.hex}") { now += if (it == 1) 100 else 1_000 }
+        assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+        assertEquals(1_000, ai.pageMs(b))
+        assertTrue(ai.enhance(b, 1, Target(20, 30), 20, 30) { false } is AiOutcome.Done)
+        assertEquals(100, ai.pageMs(b))
+        assertTrue(ai.enhance(b, 2, target, 40, 60) { false } is AiOutcome.Done)
+        assertEquals("not averaged with the cheaper page", 1_000, ai.pageMs(b))
     }
 
     @Test

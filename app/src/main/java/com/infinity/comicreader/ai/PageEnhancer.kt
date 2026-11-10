@@ -90,8 +90,11 @@ class ReaderAi internal constructor(
     /** Each model's milliseconds per megapixel of input as measured here, by model id ([rateOf]). */
     private val rates = ConcurrentHashMap<String, Double>()
 
-    /** How long a page took from start to shown, by chain ([AiChain.signature]), smoothed. */
+    /** How long a page took from start to shown, by chain ([AiChain.signature]) and the models that ran ([AiPages.runKey]), smoothed. */
     private val pageTimes = ConcurrentHashMap<String, Long>()
+
+    /** The models that ran on each chain's last page made ([AiPages.runKey]), by chain ([AiChain.signature]). */
+    private val lastRuns = ConcurrentHashMap<String, String>()
 
     /** Page sizes read so far, by book key, page and entry ([placeOf]): [stored] decides the models that run from them without a read. */
     private val sizes = ConcurrentHashMap<String, IntArray>()
@@ -132,10 +135,12 @@ class ReaderAi internal constructor(
 
     override fun enhances(source: PageSource): Boolean = !source.isVector && chainFor(source.bookKey).isNotEmpty()
 
+    /** The time of a page that runs the models its chain ran on its last page made: pages shown alike run alike. */
     override fun pageMs(source: PageSource): Long {
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty()) return 0
-        return pageTimes[AiChain.signature(chain)] ?: chain.sumOf { (rateOf(it) * REFERENCE_MP).toLong() }
+        val signature = AiChain.signature(chain)
+        return lastRuns[signature]?.let { pageTimes["$signature|$it"] } ?: chain.sumOf { (rateOf(it) * REFERENCE_MP).toLong() }
     }
 
     /**
@@ -201,6 +206,7 @@ class ReaderAi internal constructor(
     private fun enhanceNow(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
+        val t0 = clock()
         val thresholds = thresholds()
         val chainModels = chain.map(ChainModel::of)
         val size = sizeOf(source, index)
@@ -209,9 +215,8 @@ class ReaderAi internal constructor(
         if (planned != null && planned.isEmpty()) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val runKey = planned?.let { p -> AiPages.runKey(p.map { it.index }) } ?: AiPages.handles(chainModels, thresholds)
         val key = keyOf(source, index, target, width, height, chain, runKey)
-        val t0 = SystemClock.elapsedRealtime()
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
-        key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = SystemClock.elapsedRealtime() - t0) }
+        key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = clock() - t0) }
         if (gate() != null) return AiOutcome.Later
         val files = chain.map { m ->
             models.files(m) ?: run {
@@ -248,8 +253,11 @@ class ReaderAi internal constructor(
                 }
                 val shown = immutable(out)
                 key?.let { store.put(it, shown) }
-                val ms = SystemClock.elapsedRealtime() - t0
-                pageTimes.merge(AiChain.signature(chain), ms) { old, now -> (old + now) / 2 }
+                val ms = clock() - t0
+                val signature = AiChain.signature(chain)
+                val ran = AiPages.runKey(steps.map { it.index })
+                pageTimes.merge("$signature|$ran", ms) { old, now -> (old + now) / 2 }
+                lastRuns[signature] = ran
                 return AiOutcome.Done(shown, ms = run.ms)
             } finally {
                 if (readable !== input) readable.recycle()

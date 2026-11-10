@@ -47,19 +47,27 @@ internal object ResampleRuns {
         Cores.ANY -> 0L
     }
 
-    /** One engine setup: [threads] CPU workers (Kotlin's, or native code's) on [cores]; the GPU has neither. */
+    /**
+     * One engine setup: [threads] CPU workers (Kotlin's, or native code's) on [cores]; the GPU
+     * has one calling thread, on [cores] as a native worker would be.
+     */
     data class Setup(val engine: PixelEngine, val threads: Int, val cores: Cores) {
-        val key: String get() = if (engine == PixelEngine.GPU) engine.key else "${engine.key}/$threads/${cores.key}"
+        val key: String get() = when {
+            engine != PixelEngine.GPU -> "${engine.key}/$threads/${cores.key}"
+            cores == Cores.ANY -> engine.key
+            else -> "${engine.key}/${cores.key}"
+        }
 
         companion object {
             /**
              * `engine[/threads[/cores]]`, as `native/4/big`, `native/1/little`, `native/2/prime`,
-             * `kotlin/8` or `gpu`; threads default to [threads], cores to any. Null when unreadable.
+             * `kotlin/8`, `gpu` or `gpu/big` (the GPU's threads are always 1); threads default to
+             * [threads], cores to any. Null when unreadable.
              */
             fun of(text: String, threads: Int): Setup? {
                 val parts = text.trim().split('/')
                 val engine = PixelEngine.of(parts[0]) ?: return null
-                if (engine == PixelEngine.GPU) return Setup(engine, 1, Cores.ANY)
+                if (engine == PixelEngine.GPU) return (if (parts.size > 1) Cores.of(parts.last()) ?: return null else Cores.ANY).let { Setup(engine, 1, it) }
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { Cores.of(it) ?: return null } ?: Cores.ANY
                 if (n !in 1..16 || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null

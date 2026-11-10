@@ -47,13 +47,15 @@ import kotlin.random.Random
  * [sustain]). Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
- *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu] [--ei reps 10]
+ *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu,gpu/big] [--ei reps 10]
  *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
  *  [--es size 1848x2772|screen] [--ez trace true]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]), to the fastest alone (`prime`),
  * or left to the system (`any`); a little setup runs as work nobody waits on (`Urgency`).
+ * The GPU's calling thread is placed the same way (`gpu/big`); plain `gpu` leaves it to the
+ * system.
  *
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
@@ -99,11 +101,12 @@ class ResampleCheckService : Service() {
         val asked = intent?.getStringExtra("setups")?.split(',')
         val timed = asked?.mapNotNull { Setup.of(it, now) } ?: listOf(
             Setup(PixelEngine.KOTLIN, processors, Cores.ANY), Setup(PixelEngine.NATIVE, now, Cores.BIG),
-            Setup(PixelEngine.NATIVE, now, Cores.ANY), Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY)
+            Setup(PixelEngine.NATIVE, now, Cores.ANY), Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY),
+            Setup(PixelEngine.GPU, 1, Cores.BIG)
         )
         val sustained = if (asked != null) timed else listOf(
             Setup(PixelEngine.KOTLIN, processors, Cores.ANY), Setup(PixelEngine.NATIVE, now, Cores.BIG),
-            Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.ANY)
+            Setup(PixelEngine.NATIVE, later, Cores.LITTLE), Setup(PixelEngine.GPU, 1, Cores.BIG)
         )
         val filters = intent?.getStringExtra("filters")?.split(',')?.map { ScaleFilter.of(it.trim()) } ?: listOf(ScaleFilter.LANCZOS3)
         val rings = intent?.getStringExtra("rings")?.split(',')?.mapNotNull { it.trim().toIntOrNull()?.coerceIn(0, 100) }

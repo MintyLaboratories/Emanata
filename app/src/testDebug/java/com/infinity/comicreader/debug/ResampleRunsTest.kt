@@ -30,12 +30,15 @@ class ResampleRunsTest {
         assertEquals(Setup(PixelEngine.NATIVE, 1, Cores.LITTLE), Setup.of(" native/1/little ", 2))
         assertEquals(Setup(PixelEngine.NATIVE, 2, Cores.ANY), Setup.of("native", 2))
         assertEquals(Setup(PixelEngine.KOTLIN, 8, Cores.ANY), Setup.of("kotlin/8", 2))
-        assertEquals(Setup(PixelEngine.GPU, 1, Cores.ANY), Setup.of("gpu/4/big", 2))
+        assertEquals(Setup(PixelEngine.GPU, 1, Cores.BIG), Setup.of("gpu/4/big", 2))
+        assertEquals(Setup(PixelEngine.GPU, 1, Cores.LITTLE), Setup.of("gpu/little", 2))
         assertEquals("native/4/big", Setup.of("native/4/big", 2)!!.key)
         assertEquals("gpu", Setup.of("gpu", 2)!!.key)
+        assertEquals("gpu", Setup.of("gpu/1/any", 2)!!.key)
+        assertEquals("gpu/big", Setup.of("gpu/1/big", 2)!!.key)
         assertEquals(Setup(PixelEngine.NATIVE, 2, Cores.PRIME), Setup.of("native/2/prime", 4))
         assertEquals("native/1/prime", Setup.of("native/1/prime", 4)!!.key)
-        for (bad in listOf("cuda", "native/x", "native/0", "native/4/mid", "kotlin/4/big", "kotlin/8/prime")) assertNull(bad, Setup.of(bad, 2))
+        for (bad in listOf("cuda", "native/x", "native/0", "native/4/mid", "kotlin/4/big", "kotlin/8/prime", "gpu/mid")) assertNull(bad, Setup.of(bad, 2))
     }
 
     @Test

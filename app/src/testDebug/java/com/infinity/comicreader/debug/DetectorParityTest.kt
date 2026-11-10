@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.reader.Box
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,13 +15,13 @@ class DetectorParityTest {
 
     private fun box(l: Double, t: Double, r: Double, b: Double) = SmartCrop.TextBox(l, t, r, b, 0.9f)
 
-    /** A 64 x 64 map with one line of text: rows 10 until 20, columns 8 until 56. */
-    private val line = map(64, 64) { x, y -> if (x in 8 until 56 && y in 10 until 20) 0.95f else 0.02f }
+    /** A 320 x 320 map with one line of text: rows 50 until 100, columns 40 until 280. */
+    private val line = map(320, 320) { x, y -> if (x in 40 until 280 && y in 50 until 100) 0.95f else 0.02f }
 
     @Test
     fun theSameMapAndLinesAreOk() {
-        val lines = SmartCrop.lines(line, 64, 64)
-        val c = DetectorParity.compare(line, line, lines, lines)
+        val lines = SmartCrop.lines(line, 320, 320)
+        val c = DetectorParity.compare(line, line, lines, lines, 320, 320)
         assertEquals(0.0, c.meanDiff, 0.0)
         assertEquals(1.0, c.textIou, 0.0)
         assertEquals(1, c.lines)
@@ -31,8 +32,8 @@ class DetectorParityTest {
     @Test
     fun aFewEdgePixelsApartAreStillOk() {
         // One edge column of the line falls below the threshold, as fp16 weights may make it.
-        val other = map(64, 64) { x, y -> if (x in 8 until 55 && y in 10 until 20) 0.95f else if (x == 55 && y in 10 until 20) 0.2f else 0.02f }
-        val c = DetectorParity.compare(line, other, SmartCrop.lines(line, 64, 64), SmartCrop.lines(other, 64, 64))
+        val other = map(320, 320) { x, y -> if (x in 40 until 279 && y in 50 until 100) 0.95f else if (x == 279 && y in 50 until 100) 0.2f else 0.02f }
+        val c = DetectorParity.compare(line, other, SmartCrop.lines(line, 320, 320), SmartCrop.lines(other, 320, 320), 320, 320)
         assertTrue(c.maxDiff > 0.7)
         assertTrue(c.meanDiff < 0.005)
         assertTrue(c.textIou > 0.95)
@@ -41,10 +42,10 @@ class DetectorParityTest {
 
     @Test
     fun aMissingOrMovedLineFails() {
-        val none = map(64, 64) { _, _ -> 0.02f }
-        assertFalse(DetectorParity.compare(line, none, SmartCrop.lines(line, 64, 64), emptyList()).ok)
-        val moved = map(64, 64) { x, y -> if (x in 8 until 56 && y in 30 until 40) 0.95f else 0.02f }
-        val c = DetectorParity.compare(line, moved, SmartCrop.lines(line, 64, 64), SmartCrop.lines(moved, 64, 64))
+        val none = map(320, 320) { _, _ -> 0.02f }
+        assertFalse(DetectorParity.compare(line, none, SmartCrop.lines(line, 320, 320), emptyList(), 320, 320).ok)
+        val moved = map(320, 320) { x, y -> if (x in 40 until 280 && y in 150 until 200) 0.95f else 0.02f }
+        val c = DetectorParity.compare(line, moved, SmartCrop.lines(line, 320, 320), SmartCrop.lines(moved, 320, 320), 320, 320)
         assertEquals(1, c.otherLines)
         assertEquals(0, c.matched)
         assertFalse(c.ok)
@@ -54,9 +55,31 @@ class DetectorParityTest {
     fun aTallerGlyphFailsThoughTheLinesOverlap() {
         val a = listOf(box(0.0, 0.0, 100.0, 20.0))
         val b = listOf(box(0.0, 0.0, 100.0, 22.0))
-        val c = DetectorParity.compare(line, line, a, b)
+        val c = DetectorParity.compare(line, line, a, b, 100, 100)
         assertEquals(1, c.matched)
         assertFalse(c.ok)
+    }
+
+    @Test
+    fun smallLinesLeftUnmatchedDoNotCountButAreTold() {
+        val title = box(10.0, 10.0, 90.0, 30.0)
+        // Glyphs of 4 px on a 100 px side: too small for any focus.
+        val a = listOf(title, box(10.0, 50.0, 14.0, 54.0))
+        val b = listOf(title, box(13.0, 50.0, 17.0, 54.0))
+        val c = DetectorParity.compare(line, line, a, b, 100, 100)
+        assertEquals(1, c.matched)
+        assertEquals(2, c.big)
+        assertEquals(2, c.bigMatched)
+        assertEquals(listOf(0.04, 0.04), c.unmatched)
+        assertEquals(0.0, c.focusDiff, 0.0)
+        assertTrue(c.ok)
+    }
+
+    @Test
+    fun focusesApartByTheirFarthestEdge() {
+        assertEquals(0.0, DetectorParity.apart(null, null), 0.0)
+        assertEquals(1.0, DetectorParity.apart(Box(0.1, 0.1, 0.5, 0.2), null), 0.0)
+        assertEquals(0.03, DetectorParity.apart(Box(0.1, 0.1, 0.5, 0.2), Box(0.1, 0.12, 0.5, 0.23)), 1e-9)
     }
 
     @Test

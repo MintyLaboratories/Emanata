@@ -14,6 +14,7 @@ import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.reader.Box
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
@@ -24,12 +25,19 @@ import kotlin.random.Random
 /**
  * Checks that the downloaded text detector ([ModelCatalog.TEXT_DETECTOR]) finds what the copy
  * in the app's assets finds: both run as the app runs them on synthetic covers ([PAGES]), and
- * their score maps and lines are compared ([compare]). Downloads the model first when it is
- * not in place. Logs one JSON object per page, then "PARITY: OK" or "PARITY: FAIL".
+ * their score maps, lines and Smart crop focuses are compared ([compare]). Downloads the model
+ * first when it is not in place. Logs one JSON object per page, then "PARITY: OK" or
+ * "PARITY: FAIL".
  */
 internal class DetectorParity(private val context: Context, private val log: (JSONObject) -> Unit, private val say: (String) -> Unit) {
 
-    /** One page's comparison: score differences, text-pixel overlap, and lines found by each and matched. */
+    /**
+     * One page's comparison: score differences, text-pixel overlap, lines found by each and
+     * matched, the lines large enough for a focus ([big]) and matched, the glyphs of the lines
+     * left unmatched as shares of the image's shorter side, the tallest glyphs, and how far the
+     * two focuses' title and text boxes are apart ([focusDiff], a share of the side; 1 when only
+     * one has it).
+     */
     data class Comparison(
         val meanDiff: Double,
         val maxDiff: Double,
@@ -37,12 +45,16 @@ internal class DetectorParity(private val context: Context, private val log: (JS
         val lines: Int,
         val otherLines: Int,
         val matched: Int,
+        val big: Int,
+        val bigMatched: Int,
+        val unmatched: List<Double>,
         val tallest: Double,
-        val otherTallest: Double
+        val otherTallest: Double,
+        val focusDiff: Double
     ) {
-        /** True when the two find the same text: close maps, the same lines, the same tallest glyph. */
+        /** True when the two find the same text where the Smart crop looks: close maps, the same large lines, the same focus. */
         val ok: Boolean
-            get() = meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && lines == otherLines && matched == lines &&
+            get() = meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && bigMatched == big && focusDiff <= FOCUS_DIFF &&
                 abs(tallest - otherTallest) <= GLYPH_DIFF * max(tallest, otherTallest)
     }
 
@@ -68,13 +80,14 @@ internal class DetectorParity(private val context: Context, private val log: (JS
                     if (ma == null || mb == null || ma === TextDetector.ABSENT || mb === TextDetector.ABSENT) {
                         return fail("page $i: assets ${ma != null}, downloaded ${mb != null}")
                     }
-                    val c = compare(ma, mb, SmartCrop.lines(ma, page.width, page.height), SmartCrop.lines(mb, page.width, page.height))
+                    val c = compare(ma, mb, SmartCrop.lines(ma, page.width, page.height), SmartCrop.lines(mb, page.width, page.height), page.width, page.height)
                     ok = ok && c.ok
                     log(
                         JSONObject().put("parity", i).put("w", page.width).put("h", page.height)
                             .put("meanDiff", r5(c.meanDiff)).put("maxDiff", r5(c.maxDiff)).put("textIou", r5(c.textIou))
                             .put("lines", JSONArray(listOf(c.lines, c.otherLines))).put("matched", c.matched)
-                            .put("tallest", JSONArray(listOf(r5(c.tallest), r5(c.otherTallest))))
+                            .put("big", c.big).put("bigMatched", c.bigMatched).put("unmatched", JSONArray(c.unmatched.map(::r5)))
+                            .put("tallest", JSONArray(listOf(r5(c.tallest), r5(c.otherTallest)))).put("focusDiff", r5(c.focusDiff))
                             .put("ms", JSONArray(listOf(Stats.round1(msA), Stats.round1(msB)))).put("ok", c.ok)
                     )
                 } finally {
@@ -157,8 +170,17 @@ internal class DetectorParity(private val context: Context, private val log: (JS
         /** Most difference of the tallest glyphs, as a share of the larger. */
         const val GLYPH_DIFF = 0.05
 
-        /** Compares two score maps of one image, and the lines found in each ([SmartCrop.lines]). */
-        fun compare(a: ScoreMap, b: ScoreMap, linesA: List<SmartCrop.TextBox>, linesB: List<SmartCrop.TextBox>): Comparison {
+        /** Most distance of the focuses' title and text box edges, as a share of the side. */
+        const val FOCUS_DIFF = 0.01
+
+        /** The least glyph, as a share of the shorter side, of a line a focus may hold: a peer ([SmartCrop.SAME_SIZE]) of the least tallest text ([SmartCrop.MIN_GLYPH]). */
+        const val BIG_GLYPH = SmartCrop.SAME_SIZE * SmartCrop.MIN_GLYPH
+
+        /**
+         * Compares two score maps of one [w] x [h] image, the lines found in each
+         * ([SmartCrop.lines], in the image's pixels), and the focuses those lines make.
+         */
+        fun compare(a: ScoreMap, b: ScoreMap, linesA: List<SmartCrop.TextBox>, linesB: List<SmartCrop.TextBox>, w: Int, h: Int): Comparison {
             require(a.width == b.width && a.height == b.height) { "${a.width}x${a.height} vs ${b.width}x${b.height}" }
             var sum = 0.0
             var most = 0.0
@@ -173,21 +195,37 @@ internal class DetectorParity(private val context: Context, private val log: (JS
                 if (ta && tb) both++
                 if (ta || tb) either++
             }
-            val left = linesB.toMutableList()
-            var matched = 0
+            val side = min(w, h).toDouble()
+            val leftA = linesA.toMutableList()
+            val leftB = linesB.toMutableList()
             for (l in linesA) {
-                val best = left.maxByOrNull { iou(l, it) } ?: continue
+                val best = leftB.maxByOrNull { iou(l, it) } ?: continue
                 if (iou(l, best) >= LINE_IOU) {
-                    matched++
-                    left -= best
+                    leftA -= l
+                    leftB -= best
                 }
             }
+            val isBig = { l: SmartCrop.TextBox -> l.glyph >= BIG_GLYPH * side }
+            val big = linesA.count(isBig) + linesB.count(isBig)
+            val bigLeft = leftA.count(isBig) + leftB.count(isBig)
+            val none = FloatArray(SmartCrop.BINS)
+            val fa = SmartCrop.focus(linesA, w, h, none, none)
+            val fb = SmartCrop.focus(linesB, w, h, none, none)
             return Comparison(
                 if (a.values.isEmpty()) 0.0 else sum / a.values.size, most,
                 if (either == 0) 1.0 else both.toDouble() / either,
-                linesA.size, linesB.size, matched,
-                linesA.maxOfOrNull { it.glyph } ?: 0.0, linesB.maxOfOrNull { it.glyph } ?: 0.0
+                linesA.size, linesB.size, linesA.size - leftA.size,
+                big, big - bigLeft, (leftA + leftB).map { it.glyph / side }.sortedDescending(),
+                linesA.maxOfOrNull { it.glyph } ?: 0.0, linesB.maxOfOrNull { it.glyph } ?: 0.0,
+                max(apart(fa.title, fb.title), apart(fa.text, fb.text))
             )
+        }
+
+        /** The largest distance of [a]'s and [b]'s edges; 0 when neither is there, 1 when only one is. */
+        fun apart(a: Box?, b: Box?): Double = when {
+            a == null && b == null -> 0.0
+            a == null || b == null -> 1.0
+            else -> maxOf(abs(a.left - b.left), abs(a.top - b.top), abs(a.right - b.right), abs(a.bottom - b.bottom))
         }
 
         /** Intersection over union of two lines. */

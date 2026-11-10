@@ -442,11 +442,13 @@ class ReaderAi internal constructor(
             val app = context.applicationContext
             val library = Library(app)
             val models = ModelStore.of(app)
+            val prefs = Prefs(app)
             return ReaderAi(
-                Prefs(app), library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
+                prefs, library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
                 AiConditions.gate(app),
                 { m -> if (m is CatalogModel && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
-                memory = { ModelMemory.of(app) }
+                memory = { ModelMemory.of(app) },
+                thresholds = { prefs.aiThresholds }
             )
         }
     }

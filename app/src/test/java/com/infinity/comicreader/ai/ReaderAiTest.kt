@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.os.PowerManager
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.BookId
@@ -20,6 +21,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -273,6 +275,27 @@ class ReaderAiTest {
         assertFalse(ai.thresholdsMoved())
         thresholds = AiThresholds()
         assertTrue(ai.thresholdsMoved())
+    }
+
+    @Test
+    fun theAppsReaderFollowsTheStoredHandles() {
+        // Battery saver pauses AI: a page some model would run on is put off before any download or decode.
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        val app = ReaderAi.of(context)
+        try {
+            // Shown at 67 % of its side: under the default upscale handle.
+            val b = bookOf(60, 90)
+            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            assertFalse(app.thresholdsMoved())
+            prefs.aiThresholds = AiThresholds(upscalePct = 60)
+            assertTrue(app.thresholdsMoved())
+            assertEquals("the upscale runs: put off", AiOutcome.Later, app.enhance(b, 0, target, 40, 60) { false })
+            prefs.aiThresholds = AiThresholds(upscalePct = 70)
+            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            assertEquals(0, b.loads.get())
+        } finally {
+            app.close()
+        }
     }
 
     private fun until(done: () -> Boolean) {

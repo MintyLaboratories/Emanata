@@ -44,6 +44,31 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun theTextDetectorIsPinnedToARevisionWithChecksums() {
+        val d = ModelCatalog.TEXT_DETECTOR
+        assertTrue(ModelCatalog.DETECTOR_REVISION.matches(Regex("[0-9a-f]{40}")))
+        assertTrue(ModelCatalog.DETECTOR_REPOSITORY.startsWith("https://huggingface.co/"))
+        for (f in d.files) {
+            assertTrue(f.url, f.url.startsWith("${ModelCatalog.DETECTOR_REPOSITORY}/resolve/${ModelCatalog.DETECTOR_REVISION}/") && f.url.endsWith("/" + f.name))
+            assertTrue(f.sha256, f.sha256.matches(Regex("[0-9a-f]{64}")))
+        }
+        assertEquals(listOf(d.param, d.bin), d.files)
+        assertTrue(d.bin.bytes > d.param.bytes)
+        assertEquals(d.param.bytes + d.bin.bytes, d.bytes)
+    }
+
+    @Test
+    fun theStoreKeepsEverySetAndNoIdsClash() {
+        val ids = ModelCatalog.sets.map { it.id }
+        assertEquals(ModelCatalog.all.size + ModelCatalog.tools.size, ids.size)
+        assertEquals(ids.size, ids.toSet().size)
+        for (id in ids) assertTrue(id, id.matches(Regex("[a-z0-9][a-z0-9._-]*")) && ".." !in id)
+        for (reserved in listOf(ModelStore.USER, ModelStore.STAGING, ModelImports.CHECKING)) assertTrue(reserved, reserved !in ids)
+        assertTrue(ModelCatalog.TEXT_DETECTOR in ModelCatalog.sets)
+        assertTrue(ModelCatalog.all.none { it.id == ModelCatalog.TEXT_DETECTOR.id })
+    }
+
+    @Test
     fun cleanupStepsKeepTheSizeAndUpscalersEnlarge() {
         for (m in ModelCatalog.all) {
             if (m.step == AiStep.UPSCALE) assertTrue(m.id, m.scale in 2..4) else assertEquals(m.id, 1, m.scale)

@@ -88,6 +88,14 @@ data class CatalogModel(
 }
 
 /**
+ * A model the app runs for itself, not on pages: [name] for people, its ncnn files [param] and
+ * [bin], downloaded into [ModelStore] like the catalog's models.
+ */
+data class ToolModel(override val id: String, val name: String, val param: ModelFile, val bin: ModelFile) : FileSet {
+    override val files: List<ModelFile> get() = listOf(param, bin)
+}
+
+/**
  * The models the app offers: ncnn conversions that load and run in the tile engine
  * ([Sessions]) and, started cool (thermal headroom below 0.7), take a synthetic 1000 x 1500
  * page through in at most [MAX_PAGE_MS] on the reference tablet's GPU ([CatalogModel.pageMs];
@@ -212,6 +220,30 @@ object ModelCatalog {
             pageMs = 14_000
         ),
     )
+
+    /** The repository the covers' text detector comes from, and the revision it is fetched at. */
+    const val DETECTOR_REPOSITORY = "https://huggingface.co/assafvayner/translatte-ocr-ncnn"
+    const val DETECTOR_REVISION = "cbb0b8d2265d44c08e0387ae637d612695afb5d8"
+    private const val DETECTOR_BASE = "$DETECTOR_REPOSITORY/resolve/$DETECTOR_REVISION/det/"
+
+    /**
+     * The covers' text detector ([TextDetector]): PP-OCRv5 mobile det (Apache-2.0), an ncnn
+     * conversion of PaddlePaddle's ONNX release by the repository's author (Apache-2.0),
+     * fetched unchanged. The one in the app's assets has the same layers, biases and weights
+     * but for fp16 storage (here fp32, so twice the bytes), and computes its squeeze-and-excite
+     * steps as inner products (here 1 x 1 convolutions plus two reshapes).
+     */
+    val TEXT_DETECTOR = ToolModel(
+        "ppocrv5-mobile-det", "PP-OCRv5 mobile text detector",
+        ModelFile("inference.ncnn.param", DETECTOR_BASE + "inference.ncnn.param", 24_256, "19359eea27e9f38b493a40ac11acbb95bbe6cbe174866e9e043cbe6a786f3ce6"),
+        ModelFile("inference.ncnn.bin", DETECTOR_BASE + "inference.ncnn.bin", 4_685_856, "7f4635ba0c8933707ad5cb3ceadaba8a7165fbb906fc1378ae8249de0b2132d8")
+    )
+
+    /** The app's own models. */
+    val tools: List<ToolModel> = listOf(TEXT_DETECTOR)
+
+    /** Every file set the store keeps ([ModelStore.prune]): the catalog's models and the app's own. */
+    val sets: List<FileSet> get() = all + tools
 
     /** The longest [CatalogModel.pageMs] the catalog takes, and the budget of a whole chain ([AiChain.slow]). */
     const val MAX_PAGE_MS = PageLimits.DEFAULT_TIMEOUT_MS * 2 / 3

@@ -49,6 +49,10 @@ class ModelStore(val root: File) {
         is UserModel -> userFiles(userDir(model.id)).takeIf { it.param.isFile && it.bin.isFile }
     }
 
+    /** [model]'s files; null until [installed]. */
+    fun files(model: ToolModel): ModelFiles? =
+        if (installed(model)) ModelFiles(target(model, model.param), target(model, model.bin)) else null
+
     /** True once [model]'s files are in place: downloaded and verified, or imported. */
     fun installed(model: AiModel): Boolean = when (model) {
         is CatalogModel -> installed(model as FileSet)
@@ -73,7 +77,7 @@ class ModelStore(val root: File) {
      * what an import left, and imported models' folders that do not read; imported models and
      * the marker of a check ([ModelImports.CHECKING]) stay. Blocking.
      */
-    fun prune(catalog: Collection<FileSet> = ModelCatalog.all) {
+    fun prune(catalog: Collection<FileSet> = ModelCatalog.sets) {
         val ids = catalog.map { it.id }.toSet() + USER + ModelImports.CHECKING
         root.listFiles()?.filter { it.name !in ids }?.forEach { it.deleteRecursively() }
         userRoot.listFiles()?.filter { it.isDirectory && userModel(it) == null }?.forEach { it.deleteRecursively() }

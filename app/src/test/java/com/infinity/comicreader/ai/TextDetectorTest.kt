@@ -116,6 +116,55 @@ class TextDetectorTest {
         assertTrue(off.asked.isEmpty())
     }
 
+    /** A runtime that opens only files in [opens], noting each open's files. */
+    private class FilesRuntime(private val opens: Set<ModelFiles>) : InferenceRuntime {
+        val asked = ArrayList<ModelFiles>()
+        override val available = true
+        override fun gpu(): GpuInfo? = null
+        override fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? {
+            asked += files
+            return if (files in opens) MapModel() else null
+        }
+    }
+
+    @Test
+    fun filesThatDoNotOpenFallBackToTheOthers() {
+        val downloaded = fakeFiles(tmp.newFolder("downloaded"))
+        val assets = fakeFiles(tmp.newFolder("assets"))
+        val runtime = FilesRuntime(setOf(assets))
+        val detector = TextDetector(runtime, { downloaded }, fallback = { assets })
+        assertNotNull(detector.detect(image))
+        assertEquals(listOf(downloaded, assets), runtime.asked)
+        detector.close()
+        // The same files are not tried twice; nothing opens, so nothing is tried again.
+        val none = FilesRuntime(emptySet())
+        val same = TextDetector(none, { assets }, fallback = { assets })
+        assertNull(same.detect(image))
+        assertNull(same.detect(image))
+        assertEquals(listOf(assets), none.asked)
+    }
+
+    @Test
+    fun theDownloadedModelIsUsedOnceVerifiedElseTheAssets() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val store = ModelStore.of(context)
+        val d = ModelCatalog.TEXT_DETECTOR
+        store.delete(d)
+        assertNull(TextDetector.downloaded(store))
+        assertEquals(File(context.noBackupFilesDir, "${TextDetector.DIR}/${TextDetector.PARAM}"), TextDetector.files(context)!!.param)
+        // In place at its size but not yet verified: not used.
+        store.dir(d).mkdirs()
+        for (f in d.files) java.io.RandomAccessFile(store.target(d, f), "rw").use { it.setLength(f.bytes) }
+        assertNull(TextDetector.downloaded(store))
+        for (f in d.files) store.stamped(d, f)
+        val files = TextDetector.downloaded(store)!!
+        assertEquals(ModelFiles(store.target(d, d.param), store.target(d, d.bin)), files)
+        assertEquals(files, TextDetector.files(context))
+        store.prune()
+        assertEquals(files, TextDetector.files(context))
+        store.delete(d)
+    }
+
     @Test
     fun theShippedModelHasTheSizesTheAppChecks() {
         val dir = File("src/main/assets/${TextDetector.DIR}")

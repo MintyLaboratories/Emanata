@@ -14,18 +14,20 @@ import java.util.concurrent.TimeUnit
 /**
  * Finds where text is in an image (not what it says), as a score map ([ScoreMap]: near 1 on
  * the core of each line of text): PaddleOCR's mobile text detector (PP-OCRv5 mobile det,
- * Apache-2.0), converted to ncnn by `tools/text-detector/convert.py` and shipped in the app's
- * assets. For the Smart crop anchor of covers. Opened through [runtime] on first use, on the
- * [gpu] or [threads] CPU threads, and closed after [idleMs] without use, so its memory goes
- * when covers are done. Feed it images whose sides are multiples of 32. Its [lines] are the
- * map's text regions ([SmartCrop.lines]).
+ * Apache-2.0), downloaded ([ModelCatalog.TEXT_DETECTOR]) or, until it is, the copy in the app's
+ * assets, converted to ncnn by `tools/text-detector/convert.py`. For the Smart crop anchor of
+ * covers. Opened through [runtime] on first use from [files], or [fallback] where those do not
+ * open, on the [gpu] or [threads] CPU threads, and closed after [idleMs] without use, so its
+ * memory goes when covers are done. Feed it images whose sides are multiples of 32. Its
+ * [lines] are the map's text regions ([SmartCrop.lines]).
  */
 internal class TextDetector(
     private val runtime: InferenceRuntime,
     private val files: () -> ModelFiles?,
     private val gpu: Boolean = false,
     private val threads: Int = THREADS,
-    private val idleMs: Long = IDLE_MS
+    private val idleMs: Long = IDLE_MS,
+    private val fallback: () -> ModelFiles? = { null }
 ) : CoverTextDetector {
     override val id: String get() = ID
 
@@ -70,6 +72,7 @@ internal class TextDetector(
     private fun open(): TileModel? {
         val f = files()
         val m = f?.let { runtime.open(it, gpu, threads, fp16 = true) }
+            ?: fallback()?.takeIf { it != f }?.let { runtime.open(it, gpu, threads, fp16 = true) }
         if (m == null) {
             Log.w(TAG, "text detector does not open")
             broken = true
@@ -128,8 +131,15 @@ internal class TextDetector(
 
         /** The app's detector, on [LibNcnn.cpuLane]: apart from AI page tiles. */
         fun shared(context: Context): TextDetector = shared ?: synchronized(this) {
-            shared ?: TextDetector(LibNcnn.cpuLane, { install(context.applicationContext) }).also { shared = it }
+            val app = context.applicationContext
+            shared ?: TextDetector(LibNcnn.cpuLane, { files(app) }, fallback = { install(app) }).also { shared = it }
         }
+
+        /** The model's files: the downloaded ones ([downloaded]) when in place, else the assets' copy ([install]). */
+        fun files(context: Context): ModelFiles? = downloaded(ModelStore.of(context)) ?: install(context)
+
+        /** The downloaded model's files in [store]; null until it is downloaded and verified. */
+        fun downloaded(store: ModelStore): ModelFiles? = store.files(ModelCatalog.TEXT_DETECTOR)
 
         /**
          * The model's files, copied from the assets to the app's no-backup files (ncnn reads files

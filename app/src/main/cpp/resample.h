@@ -71,6 +71,8 @@ typedef struct rs_gpu rs_gpu;
 rs_gpu * rs_gpu_open(const rs_job * job);
 
 // Asked with its opaque pointer before each chunk of a GPU band; nonzero stops the band.
+// Runs on the band's thread with the GPU lock held and the context current: it must only
+// read a flag, never block, take locks, call into the GPU path or GL.
 typedef int (*rs_stop)(void * opaque);
 
 // Filters output rows y0 until y1, asking stop (NULL: never) before each chunk; 0 on

@@ -51,7 +51,11 @@ internal interface PixelKernels {
     /** Frees what the GPU path keeps between jobs, for when memory runs low; by default nothing. */
     fun trim() {}
 
-    /** Asked before each chunk of a GPU band, on its thread; true stops the band. */
+    /**
+     * Asked before each chunk of a GPU band, on its thread; true stops the band. Runs while
+     * the band holds the GPU: it must only read a flag (an AtomicBoolean, a job's isActive),
+     * never block, take locks, do I/O or call [PixelKernels].
+     */
     fun interface Stop {
         fun stop(): Boolean
     }

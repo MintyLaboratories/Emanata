@@ -169,11 +169,18 @@ static int stop_now(void * opaque)
 }
 
 // Filters output rows y0 until y1 of a GPU job, asking stop (NULL: never) before each
-// chunk; rs_gpu_band's result. The GPU path runs where it is called: `cores` is unused.
+// chunk, on the calling thread pinned to `cores` (0 = any) and counted by the core ledger
+// while it runs, its row copies included; rs_gpu_band's result.
 static int gpu_band(handle * h, int y0, int y1, uint64_t cores, rs_stop stop, void * opaque)
 {
-    (void)cores;
-    return h->on_gpu != NULL ? rs_gpu_band(h->on_gpu, y0, y1, stop, opaque) : -1;
+    if (h->on_gpu == NULL) return -1;
+    cpu_set_t kept;
+    const int pinned = jr_pin(cores, &kept);
+    cl_begin();
+    const int r = rs_gpu_band(h->on_gpu, y0, y1, stop, opaque);
+    cl_end();
+    if (pinned) jr_unpin();
+    return r;
 }
 
 // Moves the calling thread onto `cores` (bit n = core n), or every core for -1, until moved

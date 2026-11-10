@@ -178,7 +178,7 @@ internal object LibPixels : PixelKernels {
  * Resamples a bitmap with native code, reading and writing pixels where the bitmaps hold
  * them: no row copies through Java arrays, no lock on the output. The taps are
  * [Resampler.axis]'s, the bands [Resampler.inBands]'s; the GPU takes the bands one at a
- * time on the calling thread.
+ * time on the calling thread, pinned to the large cores for its row copies.
  *
  * CPU workers are pinned to the large cores ([CpuCores]): work someone waits on
  * ([Urgency]) runs on [threads] of them, other work (pages read ahead, previews) on
@@ -280,7 +280,8 @@ object NativeResampler {
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
      * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
      * each band, whether someone waits on the result. [workers] above 0 sets the CPU
-     * workers whatever the urgency, [pin] whether they are pinned, for timing a setup.
+     * workers whatever the urgency, [pin] whether they are pinned, for timing a setup; the
+     * GPU's calling thread is pinned to the large cores either way.
      */
     fun resample(
         src: Bitmap,
@@ -331,7 +332,7 @@ object NativeResampler {
             val failed = AtomicBoolean()
             try {
                 Resampler.inBands(dst.height, most, canceled, { if (urgent()) now else later }) { worker, y0, y1 ->
-                    val on = if (!pin) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
+                    val on = if (gpu) c.big else if (!pin) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
                     k.band(job, worker, y0, y1, on).also { if (!it) failed.set(true) }
                 }
             } catch (e: CancellationException) {

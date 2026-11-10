@@ -232,8 +232,26 @@ class NativeResamplerTest {
         val job = k.jobs.single()
         assertTrue(job.gpu && job.ended && job.workers == 1)
         assertTrue(job.bands.all { it.first == 0 })
-        assertEquals(setOf(0L), job.cores.toSet())
+        assertEquals(setOf(0b1111_0000L), job.cores.toSet())
         assertEquals(setOf(Thread.currentThread().name), job.threads)
+    }
+
+    @Test
+    fun gpuCallerStaysOnTheLargeCoresWhateverTheWorkersPinning() {
+        val k = use(FakeKernels())
+        NativeResampler.pinned = false
+        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        NativeResampler.pinned = true
+        NativeResampler.laterOnLittle = true
+        assertTrue(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, urgent = { false }).first)
+        NativeResampler.laterOnLittle = false
+        NativeResampler.onPrime = true
+        assertTrue(resample(noise(64, 64), 40, 122, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(List(3) { setOf(0b1111_0000L) }, k.jobs.map { it.cores.toSet() })
+        // One kind of core: nothing to pin to.
+        NativeResampler.cores = CpuCores(IntArray(8) { 1024 })
+        assertTrue(resample(noise(64, 64), 40, 123, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(setOf(0L), k.jobs.last().cores.toSet())
     }
 
     @Test

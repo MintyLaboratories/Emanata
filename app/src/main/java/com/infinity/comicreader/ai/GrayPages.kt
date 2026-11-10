@@ -13,16 +13,22 @@ object GrayPages {
     private const val ROWS = 16
 
     /**
-     * True when [page] is gray: every pixel's red, green and blue are equal. A one-channel source
-     * (gray JPEG, PNG, JPEG XL) is, as its decoder writes the channel to all three; a color file
-     * of a gray page is when its chroma is exactly neutral. Read up to its first colored pixel;
-     * a chain finds it in the read that looks for transparency ([TileEngine.scan]). Translucent
-     * pixels count by their color channels alone.
+     * Most a gray page's pixel may have between its red, green and blue: a one-channel file with
+     * a gray color profile decodes into RGB with channels rounded a code apart.
+     */
+    const val TOLERANCE = 1
+
+    /**
+     * True when [page] is gray: every pixel's red, green and blue within [TOLERANCE]. A
+     * one-channel source (gray JPEG, PNG, JPEG XL) is, as its decoder writes the channel to all
+     * three; a color file of a gray page is when its chroma is neutral. Read up to its first
+     * colored pixel; a chain finds it in the read that looks for transparency ([TileEngine.scan]).
+     * Translucent pixels count by their color channels alone.
      */
     fun isGray(page: Bitmap): Boolean = TileEngine.scan(page, findGray = true, alpha = false).gray
 
-    /** True when [argb]'s red, green and blue are equal. */
-    fun isGray(argb: Int): Boolean = ((argb xor (argb ushr 8)) and 0xFFFF) == 0
+    /** True when [argb]'s red, green and blue are within [TOLERANCE]; at once when equal. */
+    fun isGray(argb: Int): Boolean = ((argb xor (argb ushr 8)) and 0xFFFF) == 0 || spreadOf(argb) <= TOLERANCE
 
     /**
      * The largest difference between a pixel's red, green and blue over [page] (ARGB_8888):

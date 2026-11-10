@@ -44,17 +44,21 @@ class GrayPagesTest {
     @Test
     fun oneColoredPixelMakesAPageColor() {
         val px = grayPage(40, 50)
-        // The last pixel read, a code apart in blue only.
-        px[px.size - 1] = px[px.size - 1] xor 1
+        // The last pixel read, two codes apart in blue only.
+        px[px.size - 1] = gray(100) + 2
         val page = bitmapOf(px, 40, 50)
         assertFalse(GrayPages.isGray(page))
-        assertEquals(1, GrayPages.spread(page))
+        assertEquals(2, GrayPages.spread(page))
     }
 
     @Test
-    fun aPixelIsGrayWhenItsThreeChannelsAreEqual() {
+    fun aPixelIsGrayWhenItsChannelsAreAtMostACodeApart() {
         for (v in 0..255) assertTrue(GrayPages.isGray(gray(v, a = v)))
-        for (c in intArrayOf(0xFF010000.toInt(), 0xFF000100.toInt(), 0xFF000001.toInt(), 0xFF7F7F80.toInt(), 0xFF807F80.toInt())) {
+        // A code apart, as a decoder's color conversion rounds a gray pixel.
+        for (c in intArrayOf(0xFF010000.toInt(), 0xFF000001.toInt(), 0xFF7F7F80.toInt(), 0xFF807F80.toInt(), 0xFFACADAC.toInt())) {
+            assertTrue(Integer.toHexString(c), GrayPages.isGray(c))
+        }
+        for (c in intArrayOf(0xFF020000.toInt(), 0xFF000200.toInt(), 0xFF000002.toInt(), 0xFF7E7F80.toInt(), 0xFF204060.toInt())) {
             assertFalse(Integer.toHexString(c), GrayPages.isGray(c))
         }
     }

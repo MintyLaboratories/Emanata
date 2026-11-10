@@ -61,7 +61,8 @@ internal class MlKitTextDetector(
      * The lines on [src], in its pixels; null when ML Kit failed or gave no answer in time.
      * ML Kit reads a copy, so [src] may be recycled once this returns; the copy is recycled once
      * ML Kit is done with it. Throws when the client does not open, ML Kit's classes failing to
-     * link included ([IllegalStateException]).
+     * link included ([IllegalStateException]), and when interrupted ([InterruptedException]),
+     * the thread left interrupted.
      */
     override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
         check(!mainThread()) { "ML Kit's text detector waits for its answer: not on the main thread" }
@@ -81,6 +82,10 @@ internal class MlKitTextDetector(
                         Log.w(TAG, "text recognition failed: ${e.cause}")
                         copy.recycle()
                         return null
+                    } catch (e: InterruptedException) {
+                        // Stopped from outside: the thread stays interrupted, whoever catches this.
+                        Thread.currentThread().interrupt()
+                        throw e
                     }
                     copy.recycle()
                     return MlKitLines.boxes(found, src.width, src.height)

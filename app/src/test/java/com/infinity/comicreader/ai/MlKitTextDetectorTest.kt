@@ -157,6 +157,25 @@ class MlKitTextDetectorTest {
     }
 
     @Test
+    fun anInterruptedWaitLeavesTheThreadInterruptedAndKeepsTheClient() {
+        val finder = Finder { TaskCompletionSource<List<FoundLine>>().task }
+        val d = MlKitTextDetector({ finder }, timeoutMs = 5_000)
+        val run = worker.submit<String> {
+            Thread.currentThread().interrupt()
+            try {
+                d.lines(image)
+                "returned"
+            } catch (e: InterruptedException) {
+                "interrupted: ${Thread.currentThread().isInterrupted}"
+            }
+        }
+        assertEquals("interrupted: true", run.get(5, TimeUnit.SECONDS))
+        assertTrue(d.isOpen)
+        assertFalse(finder.seen.single().isRecycled)
+        d.close()
+    }
+
+    @Test
     fun aClientThatDoesNotOpenFailsTheRun() {
         val d = MlKitTextDetector({ throw IllegalStateException("no Play services") })
         try {

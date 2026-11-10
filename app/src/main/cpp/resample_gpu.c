@@ -56,7 +56,7 @@
 // Chunks in flight at once, each with its own source and output buffers.
 #define SLOTS 2
 _Static_assert(SLOTS <= RS_SLOTS_MAX, "more slots than rs_chunks_run takes");
-// Longest wait for one chunk before the job counts as failed.
+// Longest wait for one chunk; past it the GPU counts as hung.
 #define WAIT_LIMIT_NS 10000000000ull
 #define TAG "ResampleGpu"
 
@@ -189,6 +189,8 @@ struct rs_gpu {
     GLsizeiptr out_bytes;
     // A chunk failed: the kept buffers may be bad, so they go at close.
     int failed;
+    // A chunk's fence did not signal within WAIT_LIMIT_NS.
+    int hung;
     rs_trace trace;
 };
 
@@ -962,6 +964,7 @@ static int finish(void * ctx, int slot)
     const GLenum waited = glClientWaitSync(g->fence[slot], GL_SYNC_FLUSH_COMMANDS_BIT, WAIT_LIMIT_NS);
     drop_fence(g, slot);
     g->trace.wait_ns += stamp(g) - t;
+    if (waited == GL_TIMEOUT_EXPIRED) g->hung = 1;
     if (waited != GL_ALREADY_SIGNALED && waited != GL_CONDITION_SATISFIED) return -1;
     if (readback(g, g->out[slot], g->y0[slot], g->y1[slot]) != 0) return -1;
     query_collect(g, slot);
@@ -1045,6 +1048,7 @@ void rs_gpu_close(rs_gpu * g)
     // A stopped band drops chunks before reading their errors: one left means a failure.
     if (glGetError() != GL_NO_ERROR) g->failed = 1;
     const int failed = g->failed;
+    const int hung = g->hung;
     const rs_trace trace = g->trace;
     const rs_job * job = g->job;
     const int chunk = g->chunk;
@@ -1054,6 +1058,11 @@ void rs_gpu_close(rs_gpu * g)
         free_kept("at close", 1);
     } else if (failed) {
         free_kept("after failure", 0);
+    }
+    if (hung) {
+        // Later jobs would queue behind the hung work and wait as long: the CPU takes them.
+        gl_state = -1;
+        __android_log_print(ANDROID_LOG_WARN, TAG, "a chunk took over %llu s: GPU path off", WAIT_LIMIT_NS / 1000000000ull);
     }
     gl_end();
     pthread_mutex_unlock(&gl_lock);

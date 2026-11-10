@@ -9,6 +9,7 @@ import com.google.android.gms.tasks.TaskCompletionSource
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.text.Text
 import com.infinity.comicreader.data.SmartCrop
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -42,6 +43,11 @@ class MlKitTextDetectorTest {
     private val image = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
 
     private val worker = Executors.newSingleThreadExecutor()
+
+    @After
+    fun stopWorker() {
+        worker.shutdownNow()
+    }
 
     /** [d]'s lines on [image], asked on a worker thread as covers are. */
     private fun linesOff(d: MlKitTextDetector): List<SmartCrop.TextBox>? = worker.submit<List<SmartCrop.TextBox>?> { d.lines(image) }.get(5, TimeUnit.SECONDS)

@@ -207,10 +207,10 @@ class ReaderAiTest {
     }
 
     @Test
-    fun zoomingChangesWhichModelsRun() {
+    fun theRenderSizeChangesWhichModelsRun() {
         val size = intArrayOf(80, 120)
         assertTrue("shown at half its side", ReaderAi.unneeded(upscales, target, size, 40, 60))
-        assertFalse("zoomed in to twice that", ReaderAi.unneeded(upscales, target, size, 160, 240))
+        assertFalse("laid out at twice that", ReaderAi.unneeded(upscales, target, size, 160, 240))
     }
 
     @Test

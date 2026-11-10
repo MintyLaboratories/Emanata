@@ -79,7 +79,7 @@ class AiStepsTest {
     }
 
     @Test
-    fun zoomingChangesWhichModelsRun() {
+    fun theRenderSizeChangesWhichModelsRun() {
         val chain = listOf(clean, descreen, up)
         val t = AiThresholds()
         assertEquals(listOf(1), AiPages.steps(chain, 1000, 1500, shown(40), t).map { it.index })

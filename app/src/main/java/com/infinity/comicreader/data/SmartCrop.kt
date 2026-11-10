@@ -14,26 +14,33 @@ import kotlin.math.min
  * about that size (a title of several lines, the title among them); null and empty where no
  * text of a title's size was found. [rows] and [columns] are its detail (edge energy) along
  * each axis in equal bins, summing to 1 (all zero on a blank cover), for covers without such
- * text (empty with it).
+ * text (empty with it). [glyph] is the size of the title's letters ([SmartCrop.TextBox.glyph])
+ * as a share of the shorter side of the image searched; 0 without a title, or when unknown.
  * Found once per cover and kept ([encode]), unless not [keep]: its text was looked for but the
  * detector did not run, so it holds detail alone, right for this cover made now only.
  */
-class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, val columns: FloatArray, val keep: Boolean = true) {
+class CoverFocus(
+    val title: Box?, val lines: List<Box>, val rows: FloatArray, val columns: FloatArray,
+    val glyph: Double = 0.0, val keep: Boolean = true
+) {
     /** Every line of [lines] together; null without any. */
     val text: Box? = if (lines.isEmpty()) null else Box(lines.minOf { it.left }, lines.minOf { it.top }, lines.maxOf { it.right }, lines.maxOf { it.bottom })
 
-    /** A short line of text [decode] reads back: boxes to 4 decimals, detail a byte a bin (as hex) scaled to its axis' most. */
+    /** A short line of text [decode] reads back: boxes and [glyph] to 4 decimals, detail a byte a bin (as hex) scaled to its axis' most. */
     fun encode(): String = listOf(
         title?.let(::box).orEmpty(),
         lines.joinToString("/") { box(it) },
         hex(rows),
-        hex(columns)
+        hex(columns),
+        if (title == null) "" else q(glyph)
     ).joinToString(";")
 
     override fun equals(other: Any?): Boolean =
-        other is CoverFocus && title == other.title && lines == other.lines && rows.contentEquals(other.rows) && columns.contentEquals(other.columns)
+        other is CoverFocus && title == other.title && lines == other.lines && rows.contentEquals(other.rows) &&
+            columns.contentEquals(other.columns) && glyph == other.glyph
 
-    override fun hashCode(): Int = ((title.hashCode() * 31 + lines.hashCode()) * 31 + rows.contentHashCode()) * 31 + columns.contentHashCode()
+    override fun hashCode(): Int =
+        (((title.hashCode() * 31 + lines.hashCode()) * 31 + rows.contentHashCode()) * 31 + columns.contentHashCode()) * 31 + glyph.hashCode()
 
     override fun toString(): String = "CoverFocus(title=$title, lines=$lines)"
 
@@ -60,7 +67,7 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
 
         /** What [encode] wrote; null when [s] is not that. */
         fun decode(s: String?): CoverFocus? {
-            val parts = s?.split(';')?.takeIf { it.size == 4 } ?: return null
+            val parts = s?.split(';')?.takeIf { it.size == 5 } ?: return null
             fun box(p: String): Box? {
                 val v = p.split(',').map { it.toDoubleOrNull() ?: return null }
                 return if (v.size == 4) Box(v[0], v[1], v[2], v[3]) else null
@@ -68,7 +75,8 @@ class CoverFocus(val title: Box?, val lines: List<Box>, val rows: FloatArray, va
             val title = if (parts[0].isEmpty()) null else box(parts[0]) ?: return null
             val lines = if (parts[1].isEmpty()) emptyList() else parts[1].split('/').map { box(it) ?: return null }
             if ((title == null) != lines.isEmpty()) return null
-            return CoverFocus(title, lines, unhex(parts[2]) ?: return null, unhex(parts[3]) ?: return null)
+            val glyph = if (parts[4].isEmpty()) 0.0 else parts[4].toDoubleOrNull() ?: return null
+            return CoverFocus(title, lines, unhex(parts[2]) ?: return null, unhex(parts[3]) ?: return null, glyph)
         }
     }
 }
@@ -87,7 +95,7 @@ object SmartCrop {
      * The version of these rules, part of [version]. Raise it with any change to what a focus
      * holds or how a crop follows it.
      */
-    const val RULES = 2
+    const val RULES = 3
 
     /**
      * The cover-focus version: of these rules ([RULES]) and of the text detector by its
@@ -231,8 +239,8 @@ object SmartCrop {
 
     /**
      * The focus of a cover from its text [boxes] on the [w] x [h] image searched ([CoverTextDetector.lines]) and its detail [rows] and
-     * [columns] ([detail]): the tallest text of at least [MIN_GLYPH], the line holding it, and
-     * every line of [SAME_SIZE] or more of its size; the detail only without such text.
+     * [columns] ([detail]): the tallest text of at least [MIN_GLYPH], the line holding it, its
+     * size, and every line of [SAME_SIZE] or more of its size; the detail only without such text.
      */
     fun focus(boxes: List<TextBox>, w: Int, h: Int, rows: FloatArray, columns: FloatArray): CoverFocus {
         val minGlyph = MIN_GLYPH * min(w, h)
@@ -241,7 +249,7 @@ object SmartCrop {
         val peers = big.filter { it.glyph >= SAME_SIZE * tallest.glyph }
         // The tallest text's line: its peers beside it, sharing most of its height.
         val line = peers.filter { overlap(it.top, it.bottom, tallest.top, tallest.bottom) >= 0.5 * min(it.height, tallest.height) }
-        return CoverFocus(union(line, w, h), peers.map { union(listOf(it), w, h) }, FloatArray(0), FloatArray(0))
+        return CoverFocus(union(line, w, h), peers.map { union(listOf(it), w, h) }, FloatArray(0), FloatArray(0), tallest.glyph / min(w, h))
     }
 
     private fun overlap(a0: Double, a1: Double, b0: Double, b1: Double): Double = max(0.0, min(a1, b1) - max(a0, b0))
@@ -318,12 +326,12 @@ object SmartCrop {
 
     /**
      * The front of a wraparound [height] tall from the focus of each half as shown, [left] of
-     * [leftWidth] and [right] of [rightWidth]: the one whose title's letters are at least
-     * [FRONT_MARGIN] times as tall as the other's (a half without a title has none); null
-     * when neither is.
+     * [leftWidth] and [right] of [rightWidth]: the one whose title's letters ([CoverFocus.glyph],
+     * else its box's shorter side) are at least [FRONT_MARGIN] times as tall as the other's (a
+     * half without a title has none); null when neither is.
      */
     fun textFront(left: CoverFocus, leftWidth: Int, right: CoverFocus, rightWidth: Int, height: Int): Wraparound.Half? {
-        fun glyph(f: CoverFocus, w: Int) = f.title?.let { min(it.width * w, it.height * height) } ?: 0.0
+        fun glyph(f: CoverFocus, w: Int) = f.title?.let { if (f.glyph > 0) f.glyph * min(w, height) else min(it.width * w, it.height * height) } ?: 0.0
         val l = glyph(left, leftWidth)
         val r = glyph(right, rightWidth)
         return when {

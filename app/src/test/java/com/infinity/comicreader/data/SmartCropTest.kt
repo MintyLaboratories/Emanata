@@ -190,6 +190,26 @@ class SmartCropTest {
     }
 
     @Test
+    fun aWraparoundsFrontGoesByTheTitlesLettersNotItsBox() {
+        // Left: a turned title, its box far taller than its letters. Right: an upright one with larger letters.
+        val turned = CoverFocus(Box(0.1, 0.1, 0.9, 0.4), listOf(Box(0.1, 0.1, 0.9, 0.4)), flat(), flat(), glyph = 0.1)
+        val upright = CoverFocus(Box(0.1, 0.1, 0.9, 0.25), listOf(Box(0.1, 0.1, 0.9, 0.25)), flat(), flat(), glyph = 0.15)
+        assertEquals(Wraparound.Half.RIGHT, SmartCrop.textFront(turned, 600, upright, 600, 1000))
+        // By their boxes alone the turned one would win.
+        val byBox = { f: CoverFocus -> CoverFocus(f.title, f.lines, f.rows, f.columns) }
+        assertEquals(Wraparound.Half.LEFT, SmartCrop.textFront(byBox(turned), 600, byBox(upright), 600, 1000))
+    }
+
+    @Test
+    fun aFocusHoldsItsTitlesLetterSize() {
+        val title = SmartCrop.TextBox(0.0, 0.0, 100.0, 30.0, 0.9f)
+        val turned = SmartCrop.TextBox(0.0, 60.0, 100.0, 140.0, 0.9f, thickness = 24.0)
+        assertEquals(0.3, SmartCrop.focus(listOf(title, turned), 100, 150, flat(), flat()).glyph, 1e-9)
+        assertEquals(0.24, SmartCrop.focus(listOf(turned), 100, 150, flat(), flat()).glyph, 1e-9)
+        assertEquals(0.0, SmartCrop.focus(emptyList(), 100, 150, flat(), flat()).glyph, 0.0)
+    }
+
+    @Test
     fun noCropNoOffset() {
         assertEquals(0.0, SmartCrop.offset(focus(Box(0.0, 0.8, 1.0, 0.9)), 1000.0, 1000.0, vertical = true), 1e-9)
     }
@@ -226,10 +246,11 @@ class SmartCropTest {
 
     @Test
     fun focusSurvivesEncoding() {
-        val f = CoverFocus(Box(0.1, 0.2, 0.3, 0.4), listOf(Box(0.1, 0.2, 0.3, 0.4), Box(0.05, 0.4, 0.95, 0.5)), flat(), flat())
+        val f = CoverFocus(Box(0.1, 0.2, 0.3, 0.4), listOf(Box(0.1, 0.2, 0.3, 0.4), Box(0.05, 0.4, 0.95, 0.5)), flat(), flat(), glyph = 0.1234)
         val back = CoverFocus.decode(f.encode())
         assertNotNull(back)
-        assertEquals(f.title, back!!.title)
+        assertEquals(0.1234, back!!.glyph, 0.0)
+        assertEquals(f.title, back.title)
         assertEquals(f.lines, back.lines)
         assertEquals(Box(0.05, 0.2, 0.95, 0.5), back.text)
         assertEquals(CoverFocus.NONE, CoverFocus.decode(CoverFocus.NONE.encode()))
@@ -237,12 +258,13 @@ class SmartCropTest {
         val rows = FloatArray(SmartCrop.BINS) { (it + 1).toFloat() }.let { v -> FloatArray(v.size) { v[it] / v.sum() } }
         val untitled = CoverFocus(null, emptyList(), rows, FloatArray(SmartCrop.BINS))
         val line = untitled.encode()
-        assertTrue(line, line.length <= 2 + 4 * SmartCrop.BINS + 1)
+        assertTrue(line, line.length <= 2 + 4 * SmartCrop.BINS + 2)
         val read = CoverFocus.decode(line)!!
         assertNull(read.title)
         for (i in rows.indices) assertEquals(rows[i], read.rows[i], rows[i] * 0.03f)
         assertTrue(read.columns.all { it == 0f })
         assertNull(CoverFocus.decode("nonsense"))
-        assertNull(CoverFocus.decode("a,b;;;"))
+        assertNull(CoverFocus.decode("a,b;;;;"))
+        assertNull(CoverFocus.decode(f.encode().substringBeforeLast(';') + ";x"))
     }
 }

@@ -162,7 +162,21 @@ class ThumbsTest {
         assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
         assertEquals(1, second[0])
         assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("b"))).isFile)
-        assertFalse(storeA.exists())
+        // The first's stay for its turn again.
+        assertTrue(storeA.isFile)
+    }
+
+    @Test
+    fun focusesOfOtherRulesAndUnknownDetectorsAreDeleted() {
+        val old = File(context.cacheDir, Thumbs.focusFile("1-${TextDetector.ID}")).apply { writeText("") }
+        val gone = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("gone"))).apply { writeText("") }
+        val app = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.ID))).apply { writeText("") }
+        textAt(0.85, 0.92, id = "swept")
+        Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        assertFalse(old.exists())
+        assertFalse(gone.exists())
+        assertTrue(app.isFile)
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("swept"))).isFile)
     }
 
     @Test

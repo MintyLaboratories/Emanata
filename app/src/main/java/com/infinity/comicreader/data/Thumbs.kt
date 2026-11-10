@@ -23,6 +23,7 @@ import com.infinity.comicreader.util.Hashes
 import com.infinity.comicreader.util.NaturalOrder
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Cover thumbnails for library rows. Images decode directly; archives and PDFs
@@ -109,20 +110,21 @@ object Thumbs {
     /** The focus store's file for cover-focus version [version]. */
     internal fun focusFile(version: String): String = "$FOCUS_PREFIX-$version.txt"
 
-    /** A focus store and the cover-focus version it holds focuses of. */
-    private class Focuses(val version: String, val store: FocusStore)
+    /** Focus stores opened, by file path: one per cover-focus version, so detectors taking turns each keep theirs. */
+    private val focusStores = ConcurrentHashMap<String, FocusStore>()
 
-    @Volatile
-    private var focusStore: Focuses? = null
-
-    /** The focus store of cover-focus [version]; those of others are deleted. */
-    private fun focusStore(context: Context, version: String = coverVersion(context)): FocusStore {
-        focusStore?.let { if (it.version == version) return it.store }
+    /**
+     * The focus store of cover-focus [version]. Opening one deletes the stores of versions no
+     * detector of the app finds under these rules ([CoverTextDetector.IDS]), unless open.
+     */
+    private fun focusStore(context: Context, version: String): FocusStore {
+        val file = File(context.cacheDir, focusFile(version))
+        focusStores[file.path]?.let { return it }
         synchronized(this) {
-            focusStore?.let { if (it.version == version) return it.store }
-            val file = focusFile(version)
-            context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && !f.name.startsWith(file) }?.forEach { it.delete() }
-            return FocusStore(File(context.cacheDir, file)).also { focusStore = Focuses(version, it) }
+            focusStores[file.path]?.let { return it }
+            val kept = CoverTextDetector.IDS.map { focusFile(SmartCrop.version(it)) } + focusStores.keys.map { File(it).name } + file.name
+            context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && kept.none { f.name.startsWith(it) } }?.forEach { it.delete() }
+            return FocusStore(file).also { focusStores[file.path] = it }
         }
     }
 
@@ -424,7 +426,8 @@ object Thumbs {
         barcodes.evictAll()
         fronts.evictAll()
         focuses.evictAll()
-        focusStore(context).clear()
+        synchronized(this) { focusStores.values.forEach { it.clear() } }
+        context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) }?.forEach { it.delete() }
         runCatching { File(context.cacheDir, DISK_DIR).deleteRecursively() }
     }
 

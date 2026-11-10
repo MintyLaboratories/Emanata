@@ -17,4 +17,9 @@ interface CoverTextDetector {
      * it did not run this time. Blocking; one image at a time.
      */
     fun lines(src: Bitmap): List<SmartCrop.TextBox>?
+
+    companion object {
+        /** The [id]s of the app's detectors: covers' focuses found by each are kept, of others deleted. */
+        val IDS: Set<String> = setOf(TextDetector.ID)
+    }
 }

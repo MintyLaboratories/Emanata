@@ -2,9 +2,15 @@
 // shaders on an offscreen context of our own, in fp32.
 // - Output rows go in chunks: the source rows a chunk's taps read are copied into a
 //   buffer, filtered across into an fp32 buffer as wide as the output, then down into
-//   packed bytes, which are copied into the destination. Chunks are sized so one chunk's
-//   source rows and fp32 ones together stay under CHUNK_BYTES, whatever the scale, then
-//   evened out; they end on multiples of that size, whatever rows a band asks for.
+//   packed bytes, which are copied into the destination. Chunks are sized so the source
+//   rows of every slot a job uses (below) and one chunk's fp32 rows together stay under
+//   CHUNK_BYTES, whatever the scale, then evened out; they end on multiples of that size,
+//   whatever rows a band asks for.
+// - Chunks overlap, in the order resample_chunks.c sets: a job of more than one chunk takes
+//   turns on SLOTS pairs of source and output buffers, and a fence per chunk tells when the
+//   GPU is done with its pair. While the GPU filters one chunk, the CPU copies the one
+//   before out and the one after in. The fp32 buffer is shared: a barrier keeps each
+//   across pass after the down pass before it.
 // - Each axis' taps go up once per job, unless the last job's were the same: four ints
 //   per output (start, count, anti-ringing range) followed by its weights, the across
 //   axis' tap-major so lanes read them in a row.
@@ -25,6 +31,7 @@
 
 #define _GNU_SOURCE
 #include "resample.h"
+#include "resample_chunks.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -46,6 +53,11 @@
 #define ROWS 8
 // Most taps the across pass unrolls; wider axes share one looping program.
 #define UNROLL 32
+// Chunks in flight at once, each with its own source and output buffers.
+#define SLOTS 2
+_Static_assert(SLOTS <= RS_SLOTS_MAX, "more slots than rs_chunks_run takes");
+// Longest wait for one chunk before the job counts as failed.
+#define WAIT_LIMIT_NS 10000000000ull
 #define TAG "ResampleGpu"
 
 // GL_EXT_disjoint_timer_query's enums and the entry points tracing uses.
@@ -109,20 +121,21 @@ typedef struct {
 } kept_axis;
 
 // What jobs keep for the next, under gl_lock.
-static kept_buffer kept_src;
+static kept_buffer kept_src[SLOTS];
 static kept_buffer kept_mid;
-static kept_buffer kept_out;
+static kept_buffer kept_out[SLOTS];
 static kept_axis kept_ax;
 static kept_axis kept_ay;
 
 // What one traced job's steps took, summed over its chunks; untraced, all stay 0.
 typedef struct {
     int on;
-    // With a timer query per pass (queries: across, down).
+    // With a timer query per pass and slot (queries: across, down of slot 0, then slot 1...).
     int timed;
     // Some timer query result is unreliable: the GPU changed clocks or was reset meanwhile.
     int disjoint;
-    GLuint queries[2];
+    GLuint queries[2 * SLOTS];
+    int slots;
     int64_t opened;
     int64_t lock_ns;
     int64_t begin_ns;
@@ -155,12 +168,18 @@ struct rs_gpu {
     int taps;
     GLuint axis_x;
     GLuint axis_y;
-    GLuint src;
+    GLuint src[SLOTS];
     GLuint mid;
-    GLuint out;
+    GLuint out[SLOTS];
+    // Per slot: the fence of its chunk in flight (NULL: none) and that chunk's output rows.
+    GLsync fence[SLOTS];
+    int y0[SLOTS];
+    int y1[SLOTS];
+    // Slots this job takes turns on: 1 when one chunk takes all its rows.
+    int slots;
     int chunk;
     int max_rows;
-    // Bytes of src, mid and out this job uses, from offset 0: the ranges bound.
+    // Bytes of each src, mid and each out this job uses, from offset 0: the ranges bound.
     GLsizeiptr src_bytes;
     GLsizeiptr mid_bytes;
     GLsizeiptr out_bytes;
@@ -452,7 +471,7 @@ static int tq_load(void)
     return tq_state == 1;
 }
 
-// Starts timing pass `which` (0 across, 1 down) on the GPU, when g has timer queries.
+// Starts timer query `which` (2 * slot, + 1 for the down pass) on the GPU, when g has timer queries.
 static void query_begin(const rs_gpu * g, int which)
 {
     if (g->trace.timed) begin_query(TIME_ELAPSED, g->trace.queries[which]);
@@ -463,17 +482,15 @@ static void query_end(const rs_gpu * g)
     if (g->trace.timed) end_query(TIME_ELAPSED);
 }
 
-// Adds both passes' GPU time to g's trace, waiting for the GPU to finish them; the wait
-// counts in wait_ns. Called after readback, so it blocks only on what the map waited for.
-// With chunks in flight, collect a slot's results only after its fence signaled (or poll
-// QUERY_RESULT_AVAILABLE and collect the rest at close), else tracing serializes them.
-static void query_collect(rs_gpu * g)
+// Adds both passes' GPU time of slot's chunk to g's trace; the wait counts in wait_ns.
+// Called once the chunk's fence signaled, so the results are there.
+static void query_collect(rs_gpu * g, int slot)
 {
     if (!g->trace.timed) return;
     const int64_t t = stamp(g);
     GLuint64 across = 0, down = 0;
-    query_u64(g->trace.queries[0], QUERY_RESULT, &across);
-    query_u64(g->trace.queries[1], QUERY_RESULT, &down);
+    query_u64(g->trace.queries[2 * slot], QUERY_RESULT, &across);
+    query_u64(g->trace.queries[2 * slot + 1], QUERY_RESULT, &down);
     GLint disjoint = 0;
     glGetIntegerv(GPU_DISJOINT, &disjoint);
     if (disjoint) g->trace.disjoint = 1;
@@ -500,13 +517,14 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
         snprintf(gpu, sizeof(gpu), "across=- down=-");
     }
     __android_log_print(ANDROID_LOG_INFO, TAG,
-                        "src=%dx%d dst=%dx%d taps=%d/%d across_taps=%d ring=%.2f/%.2f linear=%d chunk=%d chunks=%d rows=%d%s "
-                        "lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f free=%.2f "
-                        "total=%.2f %s cores=0x%llx made=%d kept=%.1fMB",
+                        "src=%dx%d dst=%dx%d taps=%d/%d across_taps=%d ring=%.2f/%.2f linear=%d chunk=%d slots=%d chunks=%d "
+                        "rows=%d%s lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f "
+                        "free=%.2f total=%.2f %s cores=0x%llx made=%d kept=%.1fMB",
                         ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, t->across_taps,
-                        ax->ring, ay->ring, job->linear, chunk, t->chunks, t->rows, chunk == 0 ? " failed" : "", ms(t->lock_ns),
-                        ms(t->begin_ns), ms(t->compile_ns), ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns), ms(t->wait_ns), ms(t->copy_ns), ms(free_ns),
-                        ms(total_ns), gpu, (unsigned long long)t->cores, t->made, (double)t->kept / (1 << 20));
+                        ax->ring, ay->ring, job->linear, chunk, t->slots, t->chunks, t->rows, chunk == 0 ? " failed" : "",
+                        ms(t->lock_ns), ms(t->begin_ns), ms(t->compile_ns), ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns),
+                        ms(t->wait_ns), ms(t->copy_ns), ms(free_ns), ms(total_ns), gpu, (unsigned long long)t->cores, t->made,
+                        (double)t->kept / (1 << 20));
 }
 
 // The most taps any output of a reads.
@@ -686,9 +704,11 @@ static void drop_buffer(kept_buffer * k)
 // Deletes every kept buffer, the context current.
 static void drop_kept(void)
 {
-    drop_buffer(&kept_src);
+    for (int s = 0; s < SLOTS; s++) {
+        drop_buffer(&kept_src[s]);
+        drop_buffer(&kept_out[s]);
+    }
     drop_buffer(&kept_mid);
-    drop_buffer(&kept_out);
     drop_axis(&kept_ax);
     drop_axis(&kept_ay);
 }
@@ -696,7 +716,9 @@ static void drop_kept(void)
 // Bytes the kept buffers hold.
 static int64_t kept_bytes(void)
 {
-    return (int64_t)kept_src.size + kept_mid.size + kept_out.size + kept_ax.size + kept_ay.size;
+    int64_t bytes = (int64_t)kept_mid.size + kept_ax.size + kept_ay.size;
+    for (int s = 0; s < SLOTS; s++) bytes += (int64_t)kept_src[s].size + kept_out[s].size;
+    return bytes;
 }
 
 rs_gpu * rs_gpu_open(const rs_job * job)
@@ -721,11 +743,18 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->job = job;
     const rs_axis * ax = &job->ax;
     const rs_axis * ay = &job->ay;
-    // Output rows per chunk: as many as keep their source and fp32 rows under CHUNK_BYTES.
+    const size_t src_w = (size_t)(ax->end - ax->first);
+    // Output rows per chunk: as many as keep the source rows of each slot and one chunk's
+    // fp32 rows under CHUNK_BYTES. One slot while one chunk takes all rows, else SLOTS.
     const double per_row = (double)(ay->end - ay->first) / ay->len;
-    const double budget = (double)CHUNK_BYTES / ((double)ax->len * 16 + (double)(ax->end - ax->first) * 4);
-    int chunk = (int)((budget - ay->stride) / (per_row > 1 ? per_row : 1));
-    chunk = chunk < 8 ? 8 : chunk > 1024 ? 1024 : chunk;
+    int chunk = 0;
+    for (g->slots = 1;; g->slots = SLOTS) {
+        const double budget = (double)CHUNK_BYTES / ((double)ax->len * 16 + (double)g->slots * src_w * 4);
+        chunk = (int)((budget - ay->stride) / (per_row > 1 ? per_row : 1));
+        chunk = chunk < 8 ? 8 : chunk > 1024 ? 1024 : chunk;
+        if (chunk >= ay->len || g->slots == SLOTS) break;
+    }
+    g->trace.slots = g->slots;
     // As many chunks, of equal size, so the last is no stub.
     const int chunks = (ay->len + chunk - 1) / chunk;
     g->chunk = (ay->len + chunks - 1) / chunks;
@@ -735,7 +764,6 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         const int rows = rows_of(ay, y, y1, &r0);
         if (rows > g->max_rows) g->max_rows = rows;
     }
-    const size_t src_w = (size_t)(ax->end - ax->first);
     g->taps = taps_of(ax);
     g->trace.across_taps = g->taps;
     const int64_t compiling = stamp(g);
@@ -757,14 +785,28 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->out_bytes = (GLsizeiptr)((size_t)ax->len * g->chunk * 4);
     // Each buffer grows to its own largest job, so wide-row jobs (thumbnails) and tall ones
     // (pages) together could keep far more than either needs: past CHUNK_BYTES plus this
-    // job's output, buffers larger than this job needs shrink to it.
-    GLsizeiptr most = (GLsizeiptr)CHUNK_BYTES + rounded(g->out_bytes) + 2 * GROW_STEP;
-    const GLsizeiptr own = rounded(g->src_bytes) + rounded(g->mid_bytes) + rounded(g->out_bytes);
+    // job's outputs, buffers larger than this job needs shrink to it, and the slots it
+    // leaves unused go.
+    const int slots = g->slots;
+    GLsizeiptr most = (GLsizeiptr)CHUNK_BYTES + slots * rounded(g->out_bytes) + (slots + 1) * GROW_STEP;
+    const GLsizeiptr own = slots * (rounded(g->src_bytes) + rounded(g->out_bytes)) + rounded(g->mid_bytes);
     if (most < own) most = own;
-    const int fit = grown(&kept_src, g->src_bytes) + grown(&kept_mid, g->mid_bytes) + grown(&kept_out, g->out_bytes) > most;
-    g->src = grow(&kept_src, g->src_bytes, GL_STREAM_DRAW, fit, &made);
+    GLsizeiptr would = grown(&kept_mid, g->mid_bytes);
+    for (int s = 0; s < SLOTS; s++) {
+        would += s < slots ? grown(&kept_src[s], g->src_bytes) + grown(&kept_out[s], g->out_bytes)
+                           : kept_src[s].size + kept_out[s].size;
+    }
+    const int fit = would > most;
     g->mid = grow(&kept_mid, g->mid_bytes, GL_DYNAMIC_COPY, fit, &made);
-    g->out = grow(&kept_out, g->out_bytes, GL_STREAM_READ, fit, &made);
+    for (int s = 0; s < SLOTS; s++) {
+        if (s < slots) {
+            g->src[s] = grow(&kept_src[s], g->src_bytes, GL_STREAM_DRAW, fit, &made);
+            g->out[s] = grow(&kept_out[s], g->out_bytes, GL_STREAM_READ, fit, &made);
+        } else if (fit) {
+            drop_buffer(&kept_src[s]);
+            drop_buffer(&kept_out[s]);
+        }
+    }
     if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
         // Which buffer failed is unknown: none stays.
         drop_kept();
@@ -779,13 +821,13 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         // Clears errors left over, so the probe below sees only its own.
         for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {
         }
-        gen_queries(2, g->trace.queries);
+        gen_queries(2 * SLOTS, g->trace.queries);
         // Reading the flag clears it.
         GLint disjoint;
         glGetIntegerv(GPU_DISJOINT, &disjoint);
         g->trace.timed = glGetError() == GL_NO_ERROR;
         if (!g->trace.timed) {
-            delete_queries(2, g->trace.queries);
+            delete_queries(2 * SLOTS, g->trace.queries);
             memset(g->trace.queries, 0, sizeof(g->trace.queries));
         }
     }
@@ -872,40 +914,60 @@ static int readback(rs_gpu * g, GLuint out, int y0, int y1)
     return ok ? 0 : -1;
 }
 
-// Output rows y0 until y1, within one chunk: upload, across, down, readback.
-static int chunk(rs_gpu * g, int y0, int y1)
+// Starts output rows y0 until y1, within one chunk, in slot's buffers: upload, then across
+// and down queued behind a fence, flushed so the GPU starts; 0 on success.
+static int submit(void * ctx, int slot, int y0, int y1)
 {
+    rs_gpu * g = ctx;
     int r0;
     const int rows = rows_of(&g->job->ay, y0, y1, &r0);
-    if (upload(g, g->src, r0, rows) != 0) return -1;
+    if (upload(g, g->src[slot], r0, rows) != 0) return -1;
     const int64_t t = stamp(g);
-    query_begin(g, 0);
-    run_across(g, g->src, g->mid, rows);
+    // mid is shared: the last chunk's down pass reads it before this across pass writes it.
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    query_begin(g, 2 * slot);
+    run_across(g, g->src[slot], g->mid, rows);
     query_end(g);
-    query_begin(g, 1);
-    run_down(g, g->mid, g->out, y0, y1, r0);
+    query_begin(g, 2 * slot + 1);
+    run_down(g, g->mid, g->out[slot], y0, y1, r0);
     query_end(g);
+    g->fence[slot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glFlush();
+    g->y0[slot] = y0;
+    g->y1[slot] = y1;
     g->trace.submit_ns += stamp(g) - t;
-    if (readback(g, g->out, y0, y1) != 0) return -1;
-    query_collect(g);
+    return g->fence[slot] != NULL ? 0 : -1;
+}
+
+// Forgets slot's chunk in flight, if any, without waiting for it.
+static void drop_fence(void * ctx, int slot)
+{
+    rs_gpu * g = ctx;
+    if (g->fence[slot] != NULL) glDeleteSync(g->fence[slot]);
+    g->fence[slot] = NULL;
+}
+
+// Waits for slot's chunk in flight, then copies its rows into the destination; 0 on success.
+static int finish(void * ctx, int slot)
+{
+    rs_gpu * g = ctx;
+    const int64_t t = stamp(g);
+    const GLenum waited = glClientWaitSync(g->fence[slot], GL_SYNC_FLUSH_COMMANDS_BIT, WAIT_LIMIT_NS);
+    drop_fence(g, slot);
+    g->trace.wait_ns += stamp(g) - t;
+    if (waited != GL_ALREADY_SIGNALED && waited != GL_CONDITION_SATISFIED) return -1;
+    if (readback(g, g->out[slot], g->y0[slot], g->y1[slot]) != 0) return -1;
+    query_collect(g, slot);
     g->trace.chunks++;
     return glGetError() == GL_NO_ERROR ? 0 : -1;
 }
 
 int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque)
 {
-    // Chunks end on multiples of the chunk size, each within one rs_gpu_open sized its buffers for.
-    for (int y = y0; y < y1;) {
-        if (stop != NULL && stop(opaque)) return 1;
-        const int next = (y / g->chunk + 1) * g->chunk;
-        const int end = next < y1 ? next : y1;
-        if (chunk(g, y, end) != 0) {
-            g->failed = 1;
-            return -1;
-        }
-        y = end;
-    }
-    return 0;
+    static const rs_chunk_ops ops = { submit, finish, drop_fence };
+    const int r = rs_chunks_run(&ops, g, g->chunk, g->slots, y0, y1, stop, opaque);
+    if (r < 0) g->failed = 1;
+    return r;
 }
 
 // Across programs kept, failed compiles included.
@@ -920,7 +982,10 @@ static int across_count(void)
 
 static int any_kept(void)
 {
-    return kept_src.name != 0 || kept_mid.name != 0 || kept_out.name != 0 || kept_ax.name != 0 || kept_ay.name != 0;
+    for (int s = 0; s < SLOTS; s++) {
+        if (kept_src[s].name != 0 || kept_out[s].name != 0) return 1;
+    }
+    return kept_mid.name != 0 || kept_ax.name != 0 || kept_ay.name != 0;
 }
 
 // Deletes the kept buffers, and with `programs` the across programs, gl_lock held and the
@@ -968,7 +1033,10 @@ void rs_gpu_trim(void)
 void rs_gpu_close(rs_gpu * g)
 {
     const int64_t t = stamp(g);
-    if (g->trace.timed) delete_queries(2, g->trace.queries);
+    for (int s = 0; s < SLOTS; s++) drop_fence(g, s);
+    if (g->trace.timed) delete_queries(2 * SLOTS, g->trace.queries);
+    // A stopped band drops chunks before reading their errors: one left means a failure.
+    if (glGetError() != GL_NO_ERROR) g->failed = 1;
     const int failed = g->failed;
     const rs_trace trace = g->trace;
     const rs_job * job = g->job;

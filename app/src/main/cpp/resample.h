@@ -70,13 +70,15 @@ typedef struct rs_gpu rs_gpu;
 // Opens job on the GPU, its axes already filled; NULL when there is no usable GPU.
 rs_gpu * rs_gpu_open(const rs_job * job);
 
-// Asked with its opaque pointer before each chunk of a GPU band; nonzero stops the band.
+// Asked with its opaque pointer between the chunks of a GPU band; nonzero stops the band.
 // Runs on the band's thread with the GPU lock held and the context current: it must only
 // read a flag, never block, take locks, call into the GPU path or GL.
 typedef int (*rs_stop)(void * opaque);
 
-// Filters output rows y0 until y1, asking stop (NULL: never) before each chunk; 0 on
-// success, -1 on a GPU error, 1 once stopped.
+// Filters output rows y0 until y1, asking stop (NULL: never) before each chunk starts and
+// before each of the last ones is copied out; 0 on success, -1 on a GPU error, 1 once
+// stopped. Chunks overlap: the GPU filters one while the next one's rows go up; once
+// stopped, rows of chunks already started may be missing.
 int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque);
 
 void rs_gpu_close(rs_gpu * g);

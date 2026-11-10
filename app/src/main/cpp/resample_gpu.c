@@ -8,7 +8,8 @@
 //   range) followed by its weights, the across axis' tap-major so lanes read them in a row.
 // - The across pass runs one thread per output column and ROWS source rows, its taps in
 //   registers and its tap loop unrolled to the most taps a column reads: a program per
-//   tap count and anti-ringing on or off, compiled on first use and kept with the context.
+//   tap count up to UNROLL and anti-ringing on or off, compiled on first use and kept with
+//   the context; wider axes share a program per anti-ringing that loops over the taps.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks, the GPU time of each pass where the
@@ -33,8 +34,8 @@
 #define GROUP 64
 // Source rows each across thread filters.
 #define ROWS 8
-// Across programs kept, one per tap count and anti-ringing; the oldest goes when full.
-#define ACROSS_KEPT 16
+// Most taps the across pass unrolls; wider axes share one looping program.
+#define UNROLL 32
 #define TAG "ResampleGpu"
 
 // GL_EXT_disjoint_timer_query's enums and the entry points tracing uses.
@@ -53,15 +54,12 @@ static int gl_state = 0;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
-// Across programs by tap count (taps) and anti-ringing (ringed), 0 where it did not compile;
-// across_next is the slot replaced next when full.
+// Across programs by tap count (1..UNROLL unrolled, UNROLL + 1 looping) and anti-ringing
+// off or on, compiled on first use; program 0 where it did not compile.
 static struct {
-    int used;
-    int taps;
-    int ringed;
+    int tried;
     GLuint program;
-} across_kept[ACROSS_KEPT];
-static int across_next;
+} across_kept[UNROLL + 2][2];
 static GLuint down_program;
 static GLuint lut_linear;
 static GLuint lut_encode;
@@ -101,6 +99,8 @@ typedef struct {
 struct rs_gpu {
     const rs_job * job;
     GLuint across;
+    // The most taps a column reads.
+    int taps;
     GLuint axis_x;
     GLuint axis_y;
     GLuint src;
@@ -111,7 +111,9 @@ struct rs_gpu {
     rs_trace trace;
 };
 
-// Prefixed with "#version 310 es" and defines of TAPS (the most taps a column reads), ROWS and RING (1 with anti-ringing).
+// Prefixed with "#version 310 es" and defines of WIDE (1: the tap loop runs to the uniform
+// taps; 0: it is unrolled to TAPS), TAPS (the most taps a column reads, while not WIDE),
+// ROWS and RING (1 with anti-ringing).
 static const char * ACROSS =
     "precision highp float;\n"
     "precision highp int;\n"
@@ -124,6 +126,10 @@ static const char * ACROSS =
     "uniform ivec4 dims;\n"
     "uniform int first;\n"
     "uniform float ring;\n"
+    "#if WIDE\n"
+    "uniform int taps;\n"
+    "#define TAPS taps\n"
+    "#endif\n"
     "vec4 px(int i) {\n"
     "  uint p = src[i];\n"
     "  uvec4 b = uvec4(p & 255u, (p >> 8) & 255u, (p >> 16) & 255u, p >> 24);\n"
@@ -144,13 +150,13 @@ static const char * ACROSS =
     "  int s = int(ax[4 * x]) - first;\n"
     "  int last = dims.z - 1;\n"
     "  int wb = 4 * dims.x + x;\n"
-    // Up to 32 taps' weights stay in registers; more are read per tap.
-    "#if TAPS <= 32\n"
+    // Unrolled, the weights stay in registers; wide, they are read per tap.
+    "#if WIDE\n"
+    "#define W(t) uintBitsToFloat(ax[wb + (t) * dims.x])\n"
+    "#else\n"
     "  float w[TAPS];\n"
     "  for (int t = 0; t < TAPS; t++) w[t] = uintBitsToFloat(ax[wb + t * dims.x]);\n"
     "#define W(t) w[t]\n"
-    "#else\n"
-    "#define W(t) uintBitsToFloat(ax[wb + (t) * dims.x])\n"
     "#endif\n"
     "#if RING\n"
     "  int n = int(ax[4 * x + 1]);\n"
@@ -461,33 +467,29 @@ static GLuint axis_buffer(const rs_axis * a, int taps)
     return b;
 }
 
-// The across program for `taps` taps per output, anti-ringed or not, compiled on first use
-// with the context current; 0 when it does not compile (tried once while kept).
+// The across program for `taps` taps per output (past UNROLL, the looping one), anti-ringed
+// or not, compiled on first use with the context current; 0 when it does not compile
+// (tried once).
 static GLuint across_program(int taps, int ringed)
 {
-    for (int i = 0; i < ACROSS_KEPT; i++) {
-        if (across_kept[i].used && across_kept[i].taps == taps && across_kept[i].ringed == ringed) {
-            return across_kept[i].program;
-        }
-    }
-    char head[96];
-    const int head_len = snprintf(head, sizeof(head), "#version 310 es\n#define TAPS %d\n#define ROWS %d\n#define RING %d\n",
-                                  taps, ROWS, ringed);
+    const int wide = taps > UNROLL;
+    const int key = wide ? UNROLL + 1 : taps;
+    if (across_kept[key][ringed].tried) return across_kept[key][ringed].program;
+    char head[112];
+    const int head_len = wide ? snprintf(head, sizeof(head), "#version 310 es\n#define WIDE 1\n#define ROWS %d\n#define RING %d\n",
+                                         ROWS, ringed)
+                              : snprintf(head, sizeof(head),
+                                         "#version 310 es\n#define WIDE 0\n#define TAPS %d\n#define ROWS %d\n#define RING %d\n",
+                                         taps, ROWS, ringed);
     const size_t body_len = strlen(ACROSS);
     char * source = malloc((size_t)head_len + body_len + 1);
     if (source == NULL) return 0;
     memcpy(source, head, (size_t)head_len);
     memcpy(source + head_len, ACROSS, body_len + 1);
-    const GLuint program = compile(source);
+    across_kept[key][ringed].program = compile(source);
+    across_kept[key][ringed].tried = 1;
     free(source);
-    const int slot = across_next;
-    across_next = (across_next + 1) % ACROSS_KEPT;
-    if (across_kept[slot].program != 0) glDeleteProgram(across_kept[slot].program);
-    across_kept[slot].used = 1;
-    across_kept[slot].taps = taps;
-    across_kept[slot].ringed = ringed;
-    across_kept[slot].program = program;
-    return program;
+    return across_kept[key][ringed].program;
 }
 
 // Source rows output rows y0 until y1 read: first in *r0, the count returned.
@@ -537,9 +539,9 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         if (rows > g->max_rows) g->max_rows = rows;
     }
     const size_t src_w = (size_t)(ax->end - ax->first);
-    const int taps = taps_of(ax);
-    g->across = across_program(taps, ax->ring > 0);
-    g->axis_x = axis_buffer(ax, taps);
+    g->taps = taps_of(ax);
+    g->across = across_program(g->taps, ax->ring > 0);
+    g->axis_x = axis_buffer(ax, g->taps);
     g->axis_y = axis_buffer(ay, 0);
     g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
     g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);
@@ -607,6 +609,8 @@ static void run_across(const rs_gpu * g, GLuint src, GLuint mid, int rows)
     glUniform4i(uniform(g->across, "dims"), ax->len, rows, ax->end - ax->first, job->linear);
     glUniform1i(uniform(g->across, "first"), ax->first);
     glUniform1f(uniform(g->across, "ring"), ax->ring);
+    // Only the looping program has it; elsewhere location -1 is ignored.
+    glUniform1i(uniform(g->across, "taps"), g->taps);
     glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)((rows + ROWS - 1) / ROWS), 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }

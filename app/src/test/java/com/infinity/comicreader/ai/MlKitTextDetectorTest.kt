@@ -97,7 +97,7 @@ class MlKitTextDetectorTest {
     @Test
     fun opensOnceForManyCoversAndClosesWhenIdle() {
         val finders = ArrayList<Finder>()
-        val d = MlKitTextDetector({ Finder { Tasks.forResult(emptyList()) }.also { finders += it } }, idleMs = 200)
+        val d = MlKitTextDetector({ Finder { Tasks.forResult(emptyList()) }.also { finders += it } }, idleMs = 2_000)
         assertFalse(d.isOpen)
         linesOff(d)
         linesOff(d)

@@ -102,10 +102,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   kept. **Use Google ML Kit for cover text** (off by default, offered only
   where Google Play services is there) finds the lines with ML Kit instead,
   except on books read right to left (its recognizer reads Latin script only).
-  Play services downloads ML Kit's model on the first cover; meanwhile covers
-  crop by their detail alone, not kept. When the network settings hold that
-  download back, or ML Kit fails, PP-OCR finds the lines for the rest of the
-  session. Settings → AI processing → **Models** shows the detector in use.
+  When on, Play services downloads ML Kit's model and ML Kit sends usage data
+  to Google under the [ML Kit terms](https://developers.google.com/ml-kit/terms);
+  covers never leave the device. Until the model arrives, covers crop by their
+  detail alone and are made again once it does. When the network settings
+  hold that download back, it takes over 10 minutes, or ML Kit fails, PP-OCR
+  finds the lines for the rest of the session or until the setting is turned
+  on again. Settings → AI processing → **Models** shows the detector in use.
   Another detector finds every focus again.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.

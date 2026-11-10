@@ -453,11 +453,18 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     }
     g->trace.alloc_ns = stamp(g) - t;
     if (g->trace.on && tq_load()) {
+        // Clears errors left over, so the probe below sees only its own.
+        for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {
+        }
         gen_queries(2, g->trace.queries);
         // Reading the flag clears it.
         GLint disjoint;
         glGetIntegerv(GPU_DISJOINT, &disjoint);
         g->trace.timed = glGetError() == GL_NO_ERROR;
+        if (!g->trace.timed) {
+            delete_queries(2, g->trace.queries);
+            memset(g->trace.queries, 0, sizeof(g->trace.queries));
+        }
     }
     return g;
 }

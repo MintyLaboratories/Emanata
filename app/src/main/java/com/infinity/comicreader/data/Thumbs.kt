@@ -304,6 +304,8 @@ object Thumbs {
         val page = entry.bookmarkPage
         // One detector for the key, focus and front, even when the session's pick changes meanwhile.
         val detector = detectorFor(context, entry)
+        // Arrivals before the detector looks: one during its look makes a cover without text again.
+        val arrivedBefore = arrivals(context)
         val k = coverKey(context, entry, width, height, style, detector)
         val disk = diskFile(context, k)
 
@@ -341,7 +343,7 @@ object Thumbs {
             val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear, scaling = style.scaling))
             if (front == null) cover else CoverArt.withPage(cover, front).also { front.recycle() }
         }
-        if (lasting) provisional.remove(k) else provisional[k] = arrivals(context)
+        if (lasting) provisional.remove(k) else provisional[k] = arrivedBefore
         memory.put(k, bitmap)
         if (lasting) runCatching {
             disk.parentFile?.mkdirs()

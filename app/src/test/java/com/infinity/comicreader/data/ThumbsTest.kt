@@ -352,6 +352,21 @@ class ThumbsTest {
         assertNotNull("one found with the detector stays", Thumbs.inMemory(context, entry, 120, 60, smart))
     }
 
+    @Test
+    fun aModelArrivingWhileACoverIsMadeWithoutItMakesItAgain() {
+        var arrived = 0
+        Thumbs.arrivals = { arrived }
+        standIn { _ ->
+            // Arrives as the detector found nothing.
+            arrived++
+            null
+        }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
+        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+    }
+
     /** Play services there, with ML Kit's module installed. */
     private class Play : PlayServices {
         override fun available() = true

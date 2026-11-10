@@ -61,7 +61,6 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private fun dp(v: Float) = v * density
     private fun Float.sp() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, this, resources.displayMetrics)
 
-    private val bubbleH = dp(24f)
     private val pointer = dp(6f)
     private val band = dp(4f)
     private val labelGap = dp(6f)
@@ -86,9 +85,39 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private val rect = RectF()
     private val path = Path()
 
+    /** A bubble's height: its text's line plus padding, at least [BUBBLE_DP] at any font scale. */
+    internal val bubbleH: Float = bubbleText.fontMetrics.let { maxOf(dp(BUBBLE_DP), it.descent - it.ascent + 2 * dp(BUBBLE_PAD_DP)) }
+
     /** Room each side of the axis for a bubble or label centered at its end. */
     private val inset: Float by lazy {
         AiSizeScale.LABELS.maxOf { bubbleText.measureText(AiSizeText.value(context, it)) } / 2 + padX
+    }
+
+    /** The axis labels drawn at this width: from the left, each one too close to the last drawn is skipped. */
+    private var labels = AiSizeScale.LABELS
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        labels = shownLabels()
+    }
+
+    /** Where [pct]'s axis label spans, left to right. */
+    internal fun labelSpan(pct: Int): ClosedFloatingPointRange<Float> {
+        val half = labelText.measureText(AiSizeText.value(context, pct)) / 2
+        return (xOf(pct) - half)..(xOf(pct) + half)
+    }
+
+    /** The axis labels that fit side by side at the current width, from the left. */
+    internal fun shownLabels(): List<Int> {
+        val out = ArrayList<Int>(AiSizeScale.LABELS.size)
+        var right = Float.NEGATIVE_INFINITY
+        for (pct in AiSizeScale.LABELS) {
+            val span = labelSpan(pct)
+            if (span.start < right + labelGap) continue
+            out += pct
+            right = span.endInclusive
+        }
+        return out
     }
 
     private val trackTop get() = paddingTop + bubbleH + pointer
@@ -156,7 +185,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
 
         val fm = labelText.fontMetrics
         val baseline = labelsTop - fm.ascent
-        for (pct in AiSizeScale.LABELS) canvas.drawText(AiSizeText.value(context, pct), xOf(pct), baseline, labelText)
+        for (pct in labels) canvas.drawText(AiSizeText.value(context, pct), xOf(pct), baseline, labelText)
     }
 
     /** [h]'s handle at [x]: a bubble with its value, pointing at the track from its side. */
@@ -350,5 +379,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
     private companion object {
         const val DISABLED_ALPHA = 0.38f
         const val TEXT_SP = 12f
+        const val BUBBLE_DP = 24f
+        const val BUBBLE_PAD_DP = 4f
     }
 }

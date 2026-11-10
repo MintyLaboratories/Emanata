@@ -131,6 +131,10 @@ class AiSizeSliderTest {
         slider.onTouchEvent(event(MotionEvent.ACTION_DOWN, x, top))
         slider.onTouchEvent(event(MotionEvent.ACTION_MOVE, x + 30f, top + 60f))
         assertTrue(changes.isEmpty())
+        // The settings list takes the gesture over as a scroll.
+        slider.onTouchEvent(event(MotionEvent.ACTION_CANCEL, x + 30f, top + 200f))
+        assertTrue(changes.isEmpty())
+        assertEquals(AiThresholds(), slider.thresholds)
     }
 
     @Test

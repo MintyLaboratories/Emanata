@@ -75,6 +75,17 @@ class AiSizePreferenceTest {
     }
 
     @Test
+    fun withAiProcessingOffTheSliderIgnoresTouches() {
+        val view = bind(settings())
+        val slider = view.findViewById<AiSizeSlider>(R.id.ai_sizes_slider)
+        assertFalse(slider.isEnabled)
+        touch(slider, MotionEvent.ACTION_DOWN, 999f, 2f)
+        touch(slider, MotionEvent.ACTION_UP, 999f, 2f)
+        assertEquals(AiThresholds(), slider.thresholds)
+        assertEquals(AiThresholds(), Prefs(context).aiThresholds)
+    }
+
+    @Test
     fun showsTheStoredHandlesAndTheirSentence() {
         Prefs(context).aiThresholds = AiThresholds(60, 150)
         val view = bind(settings())

@@ -392,6 +392,39 @@ static GLuint buffer(GLsizeiptr size, const void * data, GLenum usage)
     return b;
 }
 
+// Runs one tiny dispatch, waits on its fence and maps what it wrote, on the opening thread
+// before any band pins it: driver threads started lazily by a first dispatch, fence or map
+// start here and keep this thread's cores, not a band's. Best effort: errors are cleared.
+static void warm_up(void)
+{
+    static const char * WARM =
+        "#version 310 es\n"
+        "layout(local_size_x = 1) in;\n"
+        "layout(std430, binding = 0) writeonly buffer Out { uint v[]; };\n"
+        "void main() { v[0] = 1u; }\n";
+    const GLuint program = compile("warm-up", WARM);
+    if (program != 0) {
+        const GLuint out = buffer(4, NULL, GL_STREAM_READ);
+        glUseProgram(program);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, out);
+        glDispatchCompute(1, 1, 1);
+        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        const GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (fence != NULL) {
+            glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, WAIT_LIMIT_NS);
+            glDeleteSync(fence);
+        }
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, out);
+        if (glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, 4, GL_MAP_READ_BIT) != NULL) glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
+        glUseProgram(0);
+        glDeleteBuffers(1, &out);
+        glDeleteProgram(program);
+    }
+    for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {
+    }
+}
+
 // Makes the context current, creating it and the programs the first time; 0 when usable.
 static int gl_begin(void)
 {
@@ -426,6 +459,7 @@ static int gl_begin(void)
         lut_linear = buffer(256 * sizeof(float), rs_to_linear(), GL_STATIC_DRAW);
         lut_encode = buffer(65536, rs_from_linear(), GL_STATIC_DRAW);
         if (glGetError() != GL_NO_ERROR) return -1;
+        warm_up();
         gl_state = 1;
         return 0;
     }

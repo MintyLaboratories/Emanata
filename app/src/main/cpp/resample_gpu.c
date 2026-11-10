@@ -289,57 +289,89 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     return g;
 }
 
-static int chunk(rs_gpu * g, int y0, int y1)
+// A uniform's location in program.
+static GLint uniform(GLuint program, const char * name)
+{
+    return glGetUniformLocation(program, name);
+}
+
+// Copies source rows r0 until r0 + rows, the part the across taps read, into src; 0 on success.
+static int upload(const rs_gpu * g, GLuint src, int r0, int rows)
 {
     const rs_job * job = g->job;
     const rs_axis * ax = &job->ax;
-    const rs_axis * ay = &job->ay;
-    int r0;
-    const int rows = rows_of(ay, y0, y1, &r0);
     const size_t src_w = (size_t)(ax->end - ax->first);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, g->src);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, src);
     uint8_t * up = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(src_w * rows * 4),
                                     GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (up == NULL) return -1;
     for (int r = 0; r < rows; r++) {
         memcpy(up + (size_t)r * src_w * 4, job->src + (size_t)(r0 + r) * job->src_stride + (size_t)ax->first * 4, src_w * 4);
     }
-    if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) return -1;
+    return glUnmapBuffer(GL_SHADER_STORAGE_BUFFER) ? 0 : -1;
+}
 
+// Filters the `rows` source rows in src across into mid, fp32 rows as wide as the output.
+static void run_across(const rs_gpu * g, GLuint src, GLuint mid, int rows)
+{
+    const rs_job * job = g->job;
+    const rs_axis * ax = &job->ax;
     glUseProgram(across_program);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g->src);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, src);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_x);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g->mid);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mid);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_linear);
-    glUniform4i(glGetUniformLocation(across_program, "dims"), ax->len, rows, (GLint)src_w, job->linear);
-    glUniform1i(glGetUniformLocation(across_program, "first"), ax->first);
-    glUniform1i(glGetUniformLocation(across_program, "stride"), ax->stride);
-    glUniform1f(glGetUniformLocation(across_program, "ring"), ax->ring);
+    glUniform4i(uniform(across_program, "dims"), ax->len, rows, ax->end - ax->first, job->linear);
+    glUniform1i(uniform(across_program, "first"), ax->first);
+    glUniform1i(uniform(across_program, "stride"), ax->stride);
+    glUniform1f(uniform(across_program, "ring"), ax->ring);
     glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)rows, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
 
+// Filters mid down into out as packed bytes: output rows y0 until y1, mid's first row being source row r0.
+static void run_down(const rs_gpu * g, GLuint mid, GLuint out, int y0, int y1, int r0)
+{
+    const rs_job * job = g->job;
+    const rs_axis * ax = &job->ax;
+    const rs_axis * ay = &job->ay;
     glUseProgram(down_program);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g->mid);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mid);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_y);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g->out);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, out);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_encode);
-    glUniform4i(glGetUniformLocation(down_program, "dims"), ax->len, y1 - y0, y0, job->linear);
-    glUniform1i(glGetUniformLocation(down_program, "firstRow"), r0);
-    glUniform1i(glGetUniformLocation(down_program, "stride"), ay->stride);
-    glUniform1f(glGetUniformLocation(down_program, "ring"), ay->ring);
-    glUniform1i(glGetUniformLocation(down_program, "len"), ay->len);
+    glUniform4i(uniform(down_program, "dims"), ax->len, y1 - y0, y0, job->linear);
+    glUniform1i(uniform(down_program, "firstRow"), r0);
+    glUniform1i(uniform(down_program, "stride"), ay->stride);
+    glUniform1f(uniform(down_program, "ring"), ay->ring);
+    glUniform1i(uniform(down_program, "len"), ay->len);
     glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)(y1 - y0), 1);
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+}
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, g->out);
-    const size_t row_bytes = (size_t)ax->len * 4;
+// Copies output rows y0 until y1 from out into the destination, waiting for the GPU; 0 on success.
+static int readback(const rs_gpu * g, GLuint out, int y0, int y1)
+{
+    const rs_job * job = g->job;
+    const size_t row_bytes = (size_t)job->ax.len * 4;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, out);
     const uint8_t * down = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(row_bytes * (y1 - y0)), GL_MAP_READ_BIT);
     if (down == NULL) return -1;
     for (int y = y0; y < y1; y++) {
         memcpy(job->dst + (size_t)y * job->dst_stride, down + (size_t)(y - y0) * row_bytes, row_bytes);
     }
-    if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) return -1;
+    return glUnmapBuffer(GL_SHADER_STORAGE_BUFFER) ? 0 : -1;
+}
+
+// Output rows y0 until y1, within one chunk: upload, across, down, readback.
+static int chunk(rs_gpu * g, int y0, int y1)
+{
+    int r0;
+    const int rows = rows_of(&g->job->ay, y0, y1, &r0);
+    if (upload(g, g->src, r0, rows) != 0) return -1;
+    run_across(g, g->src, g->mid, rows);
+    run_down(g, g->mid, g->out, y0, y1, r0);
+    if (readback(g, g->out, y0, y1) != 0) return -1;
     return glGetError() == GL_NO_ERROR ? 0 : -1;
 }
 

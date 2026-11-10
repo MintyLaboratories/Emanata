@@ -125,7 +125,7 @@ class CalibrationActivity : Activity() {
             appendLine("Tuning: ${Calibrator.tuning?.toJson()}")
             appendLine(
                 "In effect: pixels ${NativeResampler.engine.key} ${NativeResampler.threads}/${NativeResampler.laterThreads} " +
-                    "pinned ${NativeResampler.pinned}; jxl ${JxlPages.threads}/${JxlPages.laterThreads} pinned ${JxlPages.pinned}; " +
+                    "pinned ${NativeResampler.pinned}, GPU caller pinned ${NativeResampler.gpuPinned}; jxl ${JxlPages.threads}/${JxlPages.laterThreads} pinned ${JxlPages.pinned}; " +
                     "platform JPEG pinned ${PlatformPages.jpegPinned}"
             )
             appendLine("Cores: large ${java.lang.Long.toBinaryString(cores.big)} little ${java.lang.Long.toBinaryString(cores.little)} prime ${java.lang.Long.toBinaryString(cores.prime)}")

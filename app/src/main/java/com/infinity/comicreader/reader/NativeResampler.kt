@@ -184,7 +184,8 @@ internal object LibPixels : PixelKernels {
  * CPU workers are pinned to the large cores ([CpuCores]): work someone waits on
  * ([Urgency]) runs on [threads] of them, other work (pages read ahead, previews) on
  * [laterThreads], growing to [threads] once it is waited on. A GPU band's calling thread,
- * which copies its rows to and from the GPU, is placed as a CPU worker would be.
+ * which copies its rows to and from the GPU, is placed as a CPU worker would be when
+ * [gpuPinned].
  */
 object NativeResampler {
     /**
@@ -211,6 +212,10 @@ object NativeResampler {
     /** Whether workers are pinned to the large cores ([CpuCores]); off leaves placement to the system. */
     @Volatile
     var pinned: Boolean = true
+
+    /** Whether the GPU's calling thread is pinned as a CPU worker would be ([pinned] aside); off leaves it to the system. */
+    @Volatile
+    var gpuPinned: Boolean = true
 
     /** Pins work nobody waits on to the little cores instead, for A/B runs (slower and, by the power model, costlier). */
     @Volatile
@@ -282,8 +287,9 @@ object NativeResampler {
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
      * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
      * each band, whether someone waits on the result. [workers] above 0 sets the CPU
-     * workers whatever the urgency, [pin] whether they (or the GPU's calling thread) are
-     * pinned, for timing a setup.
+     * workers whatever the urgency, [pin] whether they or the GPU's calling thread are
+     * pinned, for timing a setup; null pins CPU workers as [pinned] says and the GPU's
+     * caller as [gpuPinned] does.
      */
     fun resample(
         src: Bitmap,
@@ -296,7 +302,7 @@ object NativeResampler {
         fallback: Boolean = true,
         urgent: () -> Boolean = Urgency.current(),
         workers: Int = 0,
-        pin: Boolean = pinned
+        pin: Boolean? = null
     ): Boolean {
         if (engine == PixelEngine.KOTLIN || !fits(src) || !fits(dst)) return false
         val k = kernels ?: return false
@@ -304,14 +310,14 @@ object NativeResampler {
         val ay = Resampler.axis(src.height, window.y, window.height, dst.height, scaling)
         if (engine == PixelEngine.GPU) {
             val done = try {
-                run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin)
+                run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin ?: gpuPinned)
             } finally {
                 trimWhenIdle(k)
             }
             if (done) return true
             if (!fallback) return false
         }
-        return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent, workers, pin)
+        return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent, workers, pin ?: pinned)
     }
 
     /** True for ARGB_8888 pixels held premultiplied, as an opaque bitmap's are too (it reports them as not). */

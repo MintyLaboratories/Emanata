@@ -100,6 +100,7 @@ class NativeResamplerTest {
         NativeResampler.threads = 4
         NativeResampler.laterThreads = 1
         NativeResampler.pinned = true
+        NativeResampler.gpuPinned = true
         NativeResampler.laterOnLittle = false
         NativeResampler.onPrime = false
     }
@@ -109,6 +110,7 @@ class NativeResamplerTest {
         NativeResampler.kernels = null
         NativeResampler.cores = null
         NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.gpuPinned = true
         NativeResampler.onPrime = false
         windows.clear()
     }
@@ -251,11 +253,15 @@ class NativeResamplerTest {
         NativeResampler.onPrime = true
         gpu(123)
         NativeResampler.onPrime = false
-        NativeResampler.pinned = false
+        NativeResampler.gpuPinned = false
         gpu(124)
         assertEquals(listOf(0b1111_0000L, 0b0000_1111L, 0b1111_0000L, 0b1000_0000L, 0L), k.jobs.map { it.cores.toSet().single() })
-        // Unpinned for one setup's timing, whatever pinned says.
-        NativeResampler.pinned = true
+        // Its own setting, apart from the CPU workers'.
+        NativeResampler.gpuPinned = true
+        NativeResampler.pinned = false
+        gpu(125)
+        assertEquals(setOf(0b1111_0000L), k.jobs.last().cores.toSet())
+        // Unpinned for one setup's timing, whatever gpuPinned says.
         val dst = Bitmap.createBitmap(40, 125, Bitmap.Config.ARGB_8888)
         windows[40 to 125] = Resampler.Window.of(64, 64) to Scaling.DEFAULT
         assertTrue(NativeResampler.resample(page, dst, Resampler.Window.of(64, 64), false, Scaling.DEFAULT, engine = PixelEngine.GPU, pin = false))
@@ -272,6 +278,18 @@ class NativeResamplerTest {
         val (done, _) = resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU)
         assertTrue(done)
         assertFalse(k.jobs.single().gpu)
+    }
+
+    @Test
+    fun theCpuFallbackKeepsItsOwnPinning() {
+        val k = use(FakeKernels(gpu = false))
+        NativeResampler.pinned = false
+        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(setOf(0L), k.jobs.single().cores.toSet())
+        NativeResampler.pinned = true
+        NativeResampler.gpuPinned = false
+        assertTrue(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(setOf(0b1111_0000L), k.jobs.last().cores.toSet())
     }
 
     @Test

@@ -11,7 +11,9 @@ import kotlin.math.abs
  * [jxlThreads], pinned or not. Pages read ahead get the same budget as pages on screen: one
  * often comes on screen mid-decode, and fewer JPEG XL threads for them measured slower fast
  * page turns for little less CPU time at reading pace. Platform JPEG decodes are pinned to
- * the large cores with the other platform formats when [jpegPinned] ([PlatformPages]).
+ * the large cores with the other platform formats when [jpegPinned] ([PlatformPages]). The
+ * GPU's calling thread is pinned to the large cores when [gpuPinned]; the CPU workers keep
+ * their own setup, which the GPU falls back to.
  */
 data class Tuning(
     val engine: PixelEngine,
@@ -19,7 +21,8 @@ data class Tuning(
     val pixelPinned: Boolean,
     val jxlThreads: Int,
     val jxlPinned: Boolean,
-    val jpegPinned: Boolean = true
+    val jpegPinned: Boolean = true,
+    val gpuPinned: Boolean = true
 ) {
     /** Makes this the tuning pages are decoded and resampled with from now on. */
     fun apply() {
@@ -27,6 +30,7 @@ data class Tuning(
         NativeResampler.threads = pixelThreads
         NativeResampler.laterThreads = pixelThreads
         NativeResampler.pinned = pixelPinned
+        NativeResampler.gpuPinned = gpuPinned
         JxlPages.threads = jxlThreads
         JxlPages.laterThreads = jxlThreads
         JxlPages.pinned = jxlPinned
@@ -34,18 +38,19 @@ data class Tuning(
     }
 
     fun toJson(): JSONObject = JSONObject().put("engine", engine.key).put("pixelThreads", pixelThreads).put("pixelPinned", pixelPinned)
-        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned).put("jpegPinned", jpegPinned)
+        .put("jxlThreads", jxlThreads).put("jxlPinned", jxlPinned).put("jpegPinned", jpegPinned).put("gpuPinned", gpuPinned)
 
     companion object {
         /**
          * Before any calibration: native CPU code, one worker and one JPEG XL thread per large
-         * core ([CpuCores]), pinned there; nothing pinned where there are no large cores to pin
-         * to ([CpuCores.big] 0), so these match the setups calibration times there.
+         * core ([CpuCores]), pinned there with the GPU's caller; nothing pinned where there are
+         * no large cores to pin to ([CpuCores.big] 0), so these match the setups calibration
+         * times there.
          */
         fun defaults(cores: CpuCores, processors: Int): Tuning {
             val n = NativeResampler.defaultThreads(cores, processors)
             val pinned = cores.big != 0L
-            return Tuning(PixelEngine.NATIVE, n, pinned, n, pinned, pinned)
+            return Tuning(PixelEngine.NATIVE, n, pinned, n, pinned, pinned, pinned)
         }
 
         /** The tuning [json] holds; null when it holds none. */
@@ -55,7 +60,7 @@ data class Tuning(
                     PixelEngine.of(j.getString("engine")) ?: return null,
                     j.getInt("pixelThreads").coerceIn(1, MAX_THREADS), j.getBoolean("pixelPinned"),
                     j.getInt("jxlThreads").coerceIn(1, MAX_THREADS), j.getBoolean("jxlPinned"),
-                    j.optBoolean("jpegPinned", true)
+                    j.optBoolean("jpegPinned", true), j.getBoolean("gpuPinned")
                 )
             }.getOrNull()
         }
@@ -157,8 +162,8 @@ object Calibration {
      * group) to the core it is on at the tick, so unpinned threads are followed wherever the
      * system moves them; the rest of [cpuMs] (the runtime, glue code, the GPU driver's
      * threads) is taken to run where they did. [cpuMs] as is where capacities are unknown or
-     * the ledger counted nothing (platform decodes). The GPU's is recorded, never picked on
-     * ([gpuWins]).
+     * the ledger counted nothing (platform decodes). The GPU's only picks where its caller
+     * runs, never the GPU over the CPU ([gpuWins]).
      */
     fun weighted(cpuMs: Double, coreNs: LongArray, capacities: IntArray): Double {
         val top = capacities.maxOrNull()?.takeIf { it > 0 } ?: return cpuMs
@@ -293,23 +298,21 @@ object Calibration {
     }
 
     /**
-     * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]; the GPU
-     * pinned as it was timed, which its CPU fallback then follows too); [before]
-     * keeps its resampling setup near the edge ([STAY_MARGIN]) when a calibration chose it ([chosen]).
+     * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]): the CPU
+     * workers' setup even when the GPU wins, since the GPU falls back to it, and the GPU's
+     * caller placed as its fastest, least costly timing was; [before] keeps its resampling
+     * setups near the edge ([STAY_MARGIN]) when a calibration chose them ([chosen]).
      */
     fun tuning(timings: List<Timing>, before: Tuning, chosen: Boolean = false): Tuning {
         var t = before
         val stay = if (chosen) STAY_MARGIN else 0.0
         val pixels = timings.filter { it.candidate.kind == Candidate.Kind.PIXELS }
-        val gpu = pixels.firstOrNull { it.candidate.gpu }
         val cpu = pixels.filter { !it.candidate.gpu }
-        if (gpu != null && gpuWins(gpu, cpu)) {
-            t = t.copy(engine = PixelEngine.GPU, pixelPinned = gpu.candidate.pinned)
-        } else {
-            pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned), stay = stay)?.candidate?.let { c ->
-                t = t.copy(engine = PixelEngine.NATIVE, pixelThreads = c.threads, pixelPinned = c.pinned)
-            }
+        pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned), stay = stay)?.candidate?.let { c ->
+            t = t.copy(engine = PixelEngine.NATIVE, pixelThreads = c.threads, pixelPinned = c.pinned)
         }
+        val gpu = pick(pixels.filter { it.candidate.gpu }, Candidate(Candidate.Kind.PIXELS, 1, before.gpuPinned, gpu = true), stay = stay)
+        if (gpu != null && gpuWins(gpu, cpu)) t = t.copy(engine = PixelEngine.GPU, gpuPinned = gpu.candidate.pinned)
         val jxl = timings.filter { it.candidate.kind == Candidate.Kind.JXL }
         pick(jxl, Candidate(Candidate.Kind.JXL, before.jxlThreads, before.jxlPinned))?.candidate?.let { c ->
             t = t.copy(jxlThreads = c.threads, jxlPinned = c.pinned)

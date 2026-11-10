@@ -105,12 +105,24 @@ class CalibrationTest {
         assertEquals(PixelEngine.NATIVE, asFast.engine)
         val other = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), before)
         assertEquals(PixelEngine.GPU, other.engine)
-        // The GPU runs pinned as it was timed, whatever the CPU setup before it.
-        assertTrue(other.pixelPinned)
+        // The GPU's caller is placed as it was timed; the CPU workers it falls back to keep the CPU's own pick.
+        assertTrue(other.gpuPinned)
+        assertEquals(4 to true, other.pixelThreads to other.pixelPinned)
         val unpinned = before.copy(pixelThreads = 8, pixelPinned = false)
-        assertTrue(Calibration.tuning(listOf(Timing(pixels(8, false), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), unpinned).pixelPinned)
+        val wide = Calibration.tuning(listOf(Timing(pixels(8, false), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), unpinned)
+        assertEquals(PixelEngine.GPU, wide.engine)
+        assertTrue(wide.gpuPinned)
+        assertEquals(8 to false, wide.pixelThreads to wide.pixelPinned)
         val anywhere = gpu.copy(pinned = false)
-        assertFalse(Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(anywhere, 25.0, 20.0)), before).pixelPinned)
+        val loose = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(anywhere, 25.0, 20.0)), before)
+        assertFalse(loose.gpuPinned)
+        assertEquals(4 to true, loose.pixelThreads to loose.pixelPinned)
+        // Of the GPU's placements, the least CPU time weighed among the fast wins; the noise keeps the one in effect.
+        val both = listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0), Timing(anywhere, 26.0, 20.0, weightedMs = 12.0))
+        assertFalse(Calibration.tuning(both, before).gpuPinned)
+        val close = listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0), Timing(anywhere, 26.0, 20.0, weightedMs = 19.5))
+        assertTrue(Calibration.tuning(close, before).gpuPinned)
+        assertFalse(Calibration.tuning(close, before.copy(gpuPinned = false)).gpuPinned)
         // Not beyond the spread of the runs.
         val noisy = listOf(Timing(pixels(4, true), 34.0, 101.0, wallSpreadMs = 12.0), Timing(gpu, 25.0, 20.0))
         assertEquals(PixelEngine.NATIVE, Calibration.tuning(noisy, before).engine)
@@ -136,7 +148,7 @@ class CalibrationTest {
     fun defaultsAreOnePerLargeCorePinned() {
         assertEquals(Tuning(PixelEngine.NATIVE, 4, true, 4, true), Tuning.defaults(tablet, 8))
         // No large cores to pin to: unpinned, as every setup calibration times there.
-        assertEquals(Tuning(PixelEngine.NATIVE, 8, false, 8, false, false), Tuning.defaults(allBig, 8))
+        assertEquals(Tuning(PixelEngine.NATIVE, 8, false, 8, false, false, false), Tuning.defaults(allBig, 8))
     }
 
     @Test
@@ -234,10 +246,14 @@ class CalibrationTest {
             JxlPages.laterThreads = 1
             chosen.apply()
             assertEquals(4, JxlPages.laterThreads)
+            chosen.copy(pixelPinned = true, gpuPinned = false).apply()
+            assertTrue(NativeResampler.pinned)
+            assertFalse(NativeResampler.gpuPinned)
             chosen.copy(jpegPinned = false).apply()
             assertFalse(PlatformPages.jpegPinned)
         } finally {
             PlatformPages.jpegPinned = true
+            NativeResampler.gpuPinned = true
             NativeResampler.engine = kept[0] as PixelEngine
             NativeResampler.threads = kept[1] as Int
             NativeResampler.laterThreads = kept[2] as Int
@@ -250,8 +266,9 @@ class CalibrationTest {
 
     @Test
     fun tuningRoundTripsAndRejectsJunk() {
-        val t = Tuning(PixelEngine.GPU, 6, false, 3, true, false)
+        val t = Tuning(PixelEngine.GPU, 6, false, 3, true, false, gpuPinned = false)
         assertEquals(t, Tuning.of(org.json.JSONObject(t.toJson().toString())))
+        assertNull(Tuning.of(org.json.JSONObject(t.toJson().apply { remove("gpuPinned") }.toString())))
         // Kept before platform JPEG was calibrated: pinned.
         assertTrue(Tuning.of(org.json.JSONObject(t.toJson().apply { remove("jpegPinned") }.toString()))!!.jpegPinned)
         assertNull(Tuning.of(null))

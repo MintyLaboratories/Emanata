@@ -469,7 +469,7 @@ class ResampleCheckService : Service() {
         NativeResampler.onPrime = setup.cores == Cores.PRIME
         val urgent = setup.cores != Cores.LITTLE
         try {
-            check(NativeResampler.resample(src, dst, window, false, scaling, engine = setup.engine, fallback = false, urgent = { urgent })) {
+            check(NativeResampler.resample(src, dst, window, false, scaling, engine = setup.engine, fallback = false, urgent = { urgent }, pin = NativeResampler.pinned)) {
                 "${setup.key} did not run"
             }
         } catch (t: Throwable) {

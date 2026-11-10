@@ -33,10 +33,10 @@ class NativeResamplerTest {
      * premultiplied model, every call recorded. Begins on the GPU only when [gpu], fails
      * the band [failAt] when set. A GPU band runs in chunks of [chunk] rows ending on its
      * multiples, as the native one does, each recorded as a band; it fails at the chunk
-     * [failGpuAt] when set.
+     * [failGpuAt] when set, and throws [gpuThrows] when set.
      */
     private class FakeKernels(
-        val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1
+        val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1, val gpuThrows: Throwable? = null
     ) : PixelKernels {
         class Job(val src: Bitmap, val dst: Bitmap, val linear: Boolean, val workers: Int, val gpu: Boolean) {
             val axes = arrayOfNulls<Resampler.Axis>(2)
@@ -89,6 +89,7 @@ class NativeResamplerTest {
             val j = jobs[job.toInt() - 1]
             check(j.gpu && !j.ended)
             j.gpuBands += y0 to y1
+            gpuThrows?.let { throw it }
             var y = y0
             while (y < y1) {
                 if (stop?.stop() == true) return PixelKernels.BAND_CANCELED
@@ -305,6 +306,18 @@ class NativeResamplerTest {
         val strict = use(FakeKernels(failGpuAt = 2))
         assertFalse(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, fallback = false).first)
         assertEquals(2, strict.jobs.single().bands.size)
+        assertTrue(strict.jobs.single().ended)
+    }
+
+    @Test
+    fun aMismatchedGpuEntryPointFallsBackToTheCpuUnlessAskedNot() {
+        // As when the native side cannot find the stop callback's method.
+        val k = use(FakeKernels(gpuThrows = NoSuchMethodError("stop")))
+        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(listOf(true, false), k.jobs.map { it.gpu })
+        assertTrue(k.jobs.all { it.ended })
+        val strict = use(FakeKernels(gpuThrows = UnsatisfiedLinkError("nGpuBand")))
+        assertFalse(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, fallback = false).first)
         assertTrue(strict.jobs.single().ended)
     }
 

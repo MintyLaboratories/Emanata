@@ -348,7 +348,13 @@ object NativeResampler {
         try {
             if (!k.axis(job, false, ax) || !k.axis(job, true, ay)) return false
             if (gpu) {
-                return when (k.gpuBand(job, 0, dst.height, place(c, pinning, urgent)) { canceled() }) {
+                // A native library that does not match its Kotlin side fails the GPU job alone.
+                val band = try {
+                    k.gpuBand(job, 0, dst.height, place(c, pinning, urgent)) { canceled() }
+                } catch (e: LinkageError) {
+                    PixelKernels.BAND_FAILED
+                }
+                return when (band) {
                     PixelKernels.BAND_DONE -> true
                     PixelKernels.BAND_CANCELED -> throw CancellationException("Resampling canceled")
                     else -> false

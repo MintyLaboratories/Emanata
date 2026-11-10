@@ -9,6 +9,7 @@ import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverFront
+import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.testing.coverText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -100,7 +101,7 @@ class BookDirectionCoverTest {
             runs = title
             assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(src, null, detect) { kept += it })
         }
-        assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT)), kept)
+        assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT, V)), kept)
     }
 
     @Test
@@ -109,10 +110,21 @@ class BookDirectionCoverTest {
         val calls = IntArray(1)
         // Without a barcode, no text is looked for, and that it tells nothing is kept.
         book(barcode = false).use { assertNull(BookDirection.coverFrontOnce(it, null, titleOn(Color.RED, calls)) { f -> kept += f }) }
-        assertEquals(listOf(CoverFront(0, null)), kept)
+        assertEquals(listOf(CoverFront(0, null, V)), kept)
         // A cover looked at before is not decoded again.
-        book().use { assertEquals(Wraparound.Half.LEFT, BookDirection.coverFrontOnce(it, CoverFront(0, Wraparound.Half.LEFT), titleOn(Color.RED, calls)) { f -> kept += f }) }
+        book().use { assertEquals(Wraparound.Half.LEFT, BookDirection.coverFrontOnce(it, CoverFront(0, Wraparound.Half.LEFT, V), titleOn(Color.RED, calls)) { f -> kept += f }) }
         assertEquals(0, calls[0])
         assertEquals(1, kept.size)
     }
+
+    @Test
+    fun aCoverLookedAtByAnotherDetectorIsLookedAtAgain() {
+        val kept = ArrayList<CoverFront>()
+        val other = CoverFront(0, Wraparound.Half.LEFT, SmartCrop.version("other"))
+        book().use { assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(it, other, titleOn(Color.RED)) { f -> kept += f }) }
+        assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT, V)), kept)
+    }
+
+    /** The cover-focus version of [coverText]'s detectors. */
+    private val V = SmartCrop.version("fake")
 }

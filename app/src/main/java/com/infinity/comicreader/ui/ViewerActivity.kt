@@ -95,6 +95,7 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
+import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.SpreadOverrides
@@ -1589,10 +1590,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         return contents.copy(detected = DirectionDetection.withCover(contents.detected, knownCover(target, src)?.half))
     }
 
-    /** What [book]'s cover, the first page of [src], told of reading direction before: this session, else as kept with its facts; null when never looked at. */
-    private fun knownCover(book: File, src: PageSource): CoverFront? {
+    /**
+     * What [book]'s cover, the first page of [src], told of reading direction before under
+     * cover-focus [version]: this session, else as kept with its facts; null when never looked
+     * at under it.
+     */
+    private fun knownCover(book: File, src: PageSource, version: String = Thumbs.coverVersion(applicationContext)): CoverFront? {
         val page = HiddenPages.bookIndex(src, 0)
-        return Thumbs.knownFront(book, page) ?: factsCache.get(BookIds.known(book))?.cover?.takeIf { it.page == page }
+        return Thumbs.knownFront(book, page)?.takeIf { it.version == version }
+            ?: factsCache.cover(BookIds.known(book), version)?.takeIf { it.page == page }
     }
 
     /** Keeps what [book]'s cover told, for this session and with the library's facts of it, so later opens need no look. Blocking. */
@@ -1629,9 +1635,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                     }
                 }
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
-                val app = applicationContext
+                val detector = Thumbs.detector(applicationContext)
                 val front = runCatching {
-                    BookDirection.coverFrontOnce(src, knownCover(book, src), Thumbs.detector(app)) { if (isActive) keepCover(book, it) }
+                    BookDirection.coverFrontOnce(src, knownCover(book, src, SmartCrop.version(detector.id)), detector) { if (isActive) keepCover(book, it) }
                 }.getOrNull()
                 ensureActive()
                 DirectionDetection.withCover(contents, front)

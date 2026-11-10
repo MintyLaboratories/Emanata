@@ -6,6 +6,7 @@ import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFront
+import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.util.Formats
 import java.io.File
 
@@ -128,14 +129,16 @@ object BookDirection {
 
     /**
      * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]
-     * when looked at before, else found now and handed to [keep], unless it could not tell this
-     * time, which leaves it to be looked at again. Blocking.
+     * when looked at before under [detector]'s cover-focus version, else found now and handed
+     * to [keep], unless it could not tell this time, which leaves it to be looked at again.
+     * Blocking.
      */
-    fun coverFrontOnce(source: PageSource, known: CoverFront?, detector: CoverTextDetector?, keep: (CoverFront) -> Unit): Wraparound.Half? {
-        if (known != null) return known.half
+    fun coverFrontOnce(source: PageSource, known: CoverFront?, detector: CoverTextDetector, keep: (CoverFront) -> Unit): Wraparound.Half? {
+        val version = SmartCrop.version(detector.id)
+        if (known != null && known.version == version) return known.half
         var told = true
         val half = coverFront(source, detector) { told = false }
-        if (told) keep(CoverFront(HiddenPages.bookIndex(source, 0), half))
+        if (told) keep(CoverFront(HiddenPages.bookIndex(source, 0), half, version))
         return half
     }
 }

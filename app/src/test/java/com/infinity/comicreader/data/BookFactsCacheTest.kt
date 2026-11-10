@@ -7,7 +7,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Slices
 import com.infinity.comicreader.reader.Wraparound
-import com.infinity.comicreader.testing.coverText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -134,35 +133,39 @@ class BookFactsCacheTest {
     @Test
     fun coversAreKeptWithFactsAndThroughRereads() {
         val cache = BookFactsCache(context)
-        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT))
+        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT, V))
         assertNull(cache.get(a))
         cache.put(a, BookFacts(5, 0))
         cache.put(b, BookFacts(5, 0))
-        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT))
-        cache.keepCover(b, CoverFront(2, null))
+        cache.keepCover(a, CoverFront(0, Wraparound.Half.RIGHT, V))
+        cache.keepCover(b, CoverFront(2, null, V))
         // Facts read again do not say what the cover told.
         cache.put(a, BookFacts(6, 2020))
         BookFactsCache.reset()
         val read = BookFactsCache(context).apply { load() }
-        assertEquals(BookFacts(6, 2020, cover = CoverFront(0, Wraparound.Half.RIGHT)), read.get(a))
-        assertEquals(CoverFront(2, null), read.get(b)?.cover)
+        assertEquals(BookFacts(6, 2020, cover = CoverFront(0, Wraparound.Half.RIGHT, V)), read.get(a))
+        assertEquals(CoverFront(2, null, V), read.get(b)?.cover)
         assertNull(read.get(c))
     }
 
     @Test
-    fun coversFoundByAnotherDetectorAreLookedAtAgain() {
-        val app = Thumbs.detector
-        try {
-            Thumbs.detector = { coverText("a") { null } }
-            BookFactsCache(context).apply { put(a, BookFacts(5, 0)); keepCover(a, CoverFront(0, Wraparound.Half.RIGHT)) }
-            BookFactsCache.reset()
-            assertEquals(CoverFront(0, Wraparound.Half.RIGHT), BookFactsCache(context).apply { load() }.get(a)?.cover)
-            BookFactsCache.reset()
-            Thumbs.detector = { coverText("b") { null } }
-            // The facts stay; what the cover told goes.
-            assertEquals(BookFacts(5, 0), BookFactsCache(context).apply { load() }.get(a))
-        } finally {
-            Thumbs.detector = app
-        }
+    fun coversKeepTheVersionTheyWereFoundUnder() {
+        BookFactsCache(context).apply { put(a, BookFacts(5, 0)); keepCover(a, CoverFront(0, Wraparound.Half.RIGHT, "a")) }
+        BookFactsCache.reset()
+        val read = BookFactsCache(context).apply { load() }
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, "a"), read.cover(a, "a"))
+        // Under another version the cover was not looked at; the facts stay.
+        assertNull(read.cover(a, "b"))
+        assertEquals(5, read.get(a)?.pages)
+        // Facts and slices stored later keep the cover's own version.
+        read.put(a, BookFacts(6, 0))
+        read.keepSlices(a, Slices.Checked(null))
+        BookFactsCache.reset()
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, "a"), BookFactsCache(context).apply { load() }.cover(a, "a"))
+    }
+
+    private companion object {
+        /** A cover-focus version. */
+        const val V = "1-test"
     }
 }

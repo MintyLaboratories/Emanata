@@ -334,10 +334,25 @@ class ThumbsTest {
         val (book, id) = wrapBook(true, "agreed.cbz")
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
         // For the reader this session, and with the book's facts for later ones.
-        assertEquals(CoverFront(0, Wraparound.Half.RIGHT), Thumbs.knownFront(book.file, 0))
-        assertEquals(CoverFront(0, Wraparound.Half.RIGHT), BookFactsCache(context).get(id)?.cover)
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, Thumbs.coverVersion(context)), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, Thumbs.coverVersion(context)), BookFactsCache(context).get(id)?.cover)
         // Another cover page is another image.
         assertNull(Thumbs.knownFront(book.file, 1))
+    }
+
+    @Test
+    fun anotherDetectorSettlesTheDirectionAgain() {
+        titledHalf(Color.RED, "a")
+        val (book, id) = wrapBook(true, "relooked.cbz")
+        Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, SmartCrop.version("a")), Thumbs.knownFront(book.file, 0))
+        // Another detector sees the title on the barcode's side: the barcode alone tells nothing.
+        titledHalf(Color.WHITE, "b")
+        Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        val found = CoverFront(0, null, SmartCrop.version("b"))
+        assertEquals(found, Thumbs.knownFront(book.file, 0))
+        assertEquals(found, BookFactsCache(context).cover(id, SmartCrop.version("b")))
+        assertNull(BookFactsCache(context).cover(id, SmartCrop.version("a")))
     }
 
     @Test
@@ -345,8 +360,8 @@ class ThumbsTest {
         titleOn(Color.WHITE)
         val (book, id) = wrapBook(true, "disagreed.cbz")
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
-        assertEquals(CoverFront(0, null), Thumbs.knownFront(book.file, 0))
-        assertEquals(CoverFront(0, null), BookFactsCache(context).get(id)?.cover)
+        assertEquals(CoverFront(0, null, Thumbs.coverVersion(context)), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, null, Thumbs.coverVersion(context)), BookFactsCache(context).get(id)?.cover)
     }
 
     @Test
@@ -354,7 +369,7 @@ class ThumbsTest {
         titleOn(Color.RED)
         val (book, _) = wrapBook(false, "uncoded.cbz")
         Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertEquals(CoverFront(0, null), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, null, Thumbs.coverVersion(context)), Thumbs.knownFront(book.file, 0))
     }
 
     @Test
@@ -644,7 +659,7 @@ class ThumbsTest {
         assertFalse(Thumbs.loadFirst(context, book, "UTF-8", 100, 150)!!.full)
         assertNull(Thumbs.knownFront(file, 0))
         Thumbs.load(context, book, "UTF-8", 100, 150)!!
-        assertEquals(CoverFront(0, null), Thumbs.knownFront(file, 0))
+        assertEquals(CoverFront(0, null, Thumbs.coverVersion(context)), Thumbs.knownFront(file, 0))
     }
 
     @Test

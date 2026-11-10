@@ -107,9 +107,10 @@ data class BookFacts(
 /**
  * What the cover of a book, its page at book index [page], tells of its reading direction:
  * the front [half] its barcode and its tallest text agree on ([Wraparound.Fronts.agreed]);
- * null [half] when it tells nothing, as when it is no wraparound.
+ * null [half] when it tells nothing, as when it is no wraparound. Found under cover-focus
+ * [version] ([SmartCrop.version]); under another, the cover is looked at again.
  */
-data class CoverFront(val page: Int, val half: Wraparound.Half?)
+data class CoverFront(val page: Int, val half: Wraparound.Half?, val version: String)
 
 /**
  * Sort and filter values of entries: what each entry holds, folder sizes found

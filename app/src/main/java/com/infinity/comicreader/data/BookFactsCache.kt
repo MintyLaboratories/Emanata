@@ -15,11 +15,13 @@ import java.util.concurrent.ConcurrentHashMap
  * one row per book in a small database, and held in memory once [load]ed.
  */
 class BookFactsCache(context: Context) {
-    private val app = context.applicationContext
-    private val store = storeFor(app)
+    private val store = storeFor(context.applicationContext)
 
     /** The facts stored for book [id]; null when unknown, not [load]ed yet, or [id] is. Never blocks. */
     fun get(id: BookId?): BookFacts? = id?.let { store.loaded?.get(it.value) }
+
+    /** What book [id]'s cover told of its reading direction under cover-focus [version] ([CoverFront.version]); null when not looked at under it. Never blocks. */
+    fun cover(id: BookId?, version: String): CoverFront? = get(id)?.cover?.takeIf { it.version == version }
 
     /** True once [load] has run, so [get] answers from everything stored. */
     val isLoaded: Boolean get() = store.loaded != null
@@ -30,11 +32,9 @@ class BookFactsCache(context: Context) {
         synchronized(store) {
             if (store.loaded != null) return
             val map = ConcurrentHashMap<Long, BookFacts>()
-            val version = Thumbs.coverVersion(app)
             store.helper.readableDatabase.query(TABLE, arrayOf(ID, PAGES, YEAR, DIRECTION, SLICES, COVER, COVER_VERSION), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) {
-                    val cover = if (c.getString(6) == version) decodeCover(c.getInt(5)) else null
-                    map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)), cover)
+                    map[c.getLong(0)] = BookFacts(c.getInt(1), c.getInt(2), DirectionDetection.Detected.decode(c.getInt(3)), decodeSlices(c.getInt(4)), decodeCover(c.getInt(5), c.getString(6)))
                 }
             }
             store.loaded = map
@@ -81,7 +81,7 @@ class BookFactsCache(context: Context) {
             put(DIRECTION, facts.detected?.encode() ?: 0)
             put(SLICES, encodeSlices(facts.slices))
             put(COVER, encodeCover(facts.cover))
-            put(COVER_VERSION, Thumbs.coverVersion(app))
+            put(COVER_VERSION, facts.cover?.version.orEmpty())
         }
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -135,7 +135,7 @@ class BookFactsCache(context: Context) {
         private const val SLICES = "slices"
         private const val COVER = "cover"
 
-        /** The cover-focus version ([Thumbs.coverVersion]) [COVER] was found under; covers found under others are looked at again. */
+        /** The cover-focus version [COVER] was found under ([CoverFront.version]). */
         private const val COVER_VERSION = "cover_version"
 
         /** [SLICES] of a book not checked for slices, [COVER] of one whose cover was not looked at; 0 is one whose pages are not, or whose cover tells nothing. */
@@ -152,8 +152,8 @@ class BookFactsCache(context: Context) {
         /** A [CoverFront] as one number: its page times 3 plus 0 for no half, else 1 + the half's ordinal. */
         private fun encodeCover(front: CoverFront?): Int = front?.let { it.page * 3 + (it.half?.ordinal?.plus(1) ?: 0) } ?: UNCHECKED
 
-        private fun decodeCover(value: Int): CoverFront? =
-            if (value < 0) null else CoverFront(value / 3, Wraparound.Half.entries.getOrNull(value % 3 - 1))
+        private fun decodeCover(value: Int, version: String): CoverFront? =
+            if (value < 0) null else CoverFront(value / 3, Wraparound.Half.entries.getOrNull(value % 3 - 1), version)
         private val LOCK = Any()
 
         /** Shared by every instance: one process, one database (a new one when its file moves, as between tests). */

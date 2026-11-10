@@ -71,23 +71,26 @@ object Thumbs {
      * A book's full cover image ([find]), its page at book index [page], also settles what it tells
      * of reading direction ([settle]): the half its barcode and text agree on, none without a
      * barcode; left open when the text was not looked at. A smaller first layer settles nothing,
-     * not even what its barcode tells.
+     * not even what its barcode tells. One [detector] finds both halves' text and labels what
+     * is settled ([CoverFront.version]).
      */
     private fun frontOf(context: Context, entry: BookEntry, src: Bitmap, innerRatio: Double?, page: Int?, find: Boolean, unsure: () -> Unit): Wraparound.Half? {
         val k = imageKey(context, entry)
         val known = barcodes.get(k)
         val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
         else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
-        val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find) }
-        val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page)) == null
+        val detector = detector(context)
+        val version = SmartCrop.version(detector.id)
+        val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find, detector) }
+        val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page))?.version != version
         if (barcode == null) {
-            if (open) settle(context, entry, CoverFront(page!!, null))
+            if (open) settle(context, entry, CoverFront(page!!, null, version))
             return CoverArt.textFront(src, innerRatio, focus, unsure)
         }
         if (open) {
             var read = true
             val text = CoverArt.textFront(src, innerRatio, focus) { read = false }
-            if (read) settle(context, entry, CoverFront(page!!, Wraparound.Fronts(barcode, text).agreed))
+            if (read) settle(context, entry, CoverFront(page!!, Wraparound.Fronts(barcode, text).agreed, version))
         }
         return barcode
     }
@@ -135,13 +138,12 @@ object Thumbs {
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
-     * cover and kept unless the detector did not run ([CoverFocus.keep]); without [find], only
-     * one found before ([CoverFocus.NONE] when none was).
+     * cover by [detector] and kept unless it did not run ([CoverFocus.keep]); without [find],
+     * only one found before ([CoverFocus.NONE] when none was).
      */
-    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true): CoverFocus {
+    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true, detector: CoverTextDetector = detector(context)): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val detector = detector(context)
         val version = SmartCrop.version(detector.id)
         val k = "${imageKey(context, entry)}|$part|$version"
         focuses.get(k)?.let { return it }
@@ -155,7 +157,7 @@ object Thumbs {
         return focus
     }
 
-    /** What book [file]'s cover, its page at book index [page], told of its reading direction this session, by the library or the reader; null when not looked at. */
+    /** What book [file]'s cover, its page at book index [page], told of its reading direction this session, by the library or the reader, under any [CoverFront.version]; null when not looked at. */
     fun knownFront(file: File, page: Int): CoverFront? = fronts.get(frontKey(key(file), BookIds.known(file), page))
 
     /** Remembers what book [file]'s cover told ([knownFront]), so it is looked at once. */

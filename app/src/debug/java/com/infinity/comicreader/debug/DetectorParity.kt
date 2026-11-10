@@ -29,7 +29,8 @@ import kotlin.random.Random
  * in the app's assets finds: both run as the app runs them on synthetic covers ([PAGES]), and
  * their score maps, lines and Smart crop focuses are compared ([compare]). Downloads the model
  * first ([download]) when it is not in place. Logs one JSON object per page, then, whatever
- * happened, "PARITY: OK" or "PARITY: FAIL".
+ * happened, its [verdict]: [OK], [FAIL] (the copies differ, or the check could not run) or
+ * [INCONCLUSIVE] (no page held text to judge by).
  */
 internal class DetectorParity(
     private val context: Context,
@@ -64,24 +65,28 @@ internal class DetectorParity(
         val evidence: Boolean get() = big > 0 && titles == 2
 
         /** True when the two find the same text where the Smart crop looks: close maps, the same large lines, the same focus. */
-        val ok: Boolean
-            get() = evidence && meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && bigMatched == big && focusDiff <= FOCUS_DIFF &&
+        val same: Boolean
+            get() = meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && bigMatched == big && focusDiff <= FOCUS_DIFF &&
                 abs(tallest - otherTallest) <= GLYPH_DIFF * max(tallest, otherTallest)
+
+        /** True when the two find the same text ([same]) on a page that holds text a focus uses ([evidence]). */
+        val ok: Boolean get() = evidence && same
     }
 
-    /** Runs the check; ends with "PARITY: OK" or "PARITY: FAIL" on every path. */
+    /** Runs the check; ends with its verdict ([OK], [FAIL] or [INCONCLUSIVE]) on every path. */
     fun run() {
-        var ok = false
+        var verdict = FAIL
         try {
-            ok = check()
+            verdict = check()
         } catch (e: Exception) {
             log(JSONObject().put("failed", "${e.javaClass.simpleName}: ${e.message}"))
         } finally {
-            say(if (ok) "PARITY: OK" else "PARITY: FAIL")
+            say(verdict)
         }
     }
 
-    private fun check(): Boolean {
+    /** The [verdict] on the pages compared; [FAIL] when the check cannot run. */
+    private fun check(): String {
         val assets = TextDetector.install(context) ?: return fail("no asset model")
         val store = ModelStore.of(context)
         val model = ModelCatalog.TEXT_DETECTOR
@@ -97,7 +102,7 @@ internal class DetectorParity(
         val downloaded = TextDetector.downloaded(store) ?: return fail("no downloaded model")
         val a = TextDetector(LibNcnn.cpuLane, { assets })
         val b = TextDetector(LibNcnn.cpuLane, { downloaded })
-        var ok = true
+        val compared = ArrayList<Comparison>()
         try {
             for ((i, size) in PAGES.withIndex()) {
                 val page = page(size[0], size[1], i)
@@ -108,14 +113,14 @@ internal class DetectorParity(
                         return fail("page $i: assets ${ma != null}, downloaded ${mb != null}")
                     }
                     val c = compare(ma, mb, SmartCrop.lines(ma, page.width, page.height), SmartCrop.lines(mb, page.width, page.height), page.width, page.height)
-                    ok = ok && c.ok
+                    compared += c
                     log(
                         JSONObject().put("parity", i).put("w", page.width).put("h", page.height)
                             .put("meanDiff", r5(c.meanDiff)).put("maxDiff", r5(c.maxDiff)).put("textIou", r5(c.textIou))
                             .put("lines", JSONArray(listOf(c.lines, c.otherLines))).put("matched", c.matched)
                             .put("big", c.big).put("bigMatched", c.bigMatched).put("unmatched", JSONArray(c.unmatched.map(::r5)))
                             .put("tallest", JSONArray(listOf(r5(c.tallest), r5(c.otherTallest)))).put("focusDiff", r5(c.focusDiff))
-                            .put("titles", c.titles).put("evidence", c.evidence)
+                            .put("titles", c.titles).put("same", c.same).put("evidence", c.evidence)
                             .put("ms", JSONArray(listOf(Stats.round1(msA), Stats.round1(msB)))).put("ok", c.ok)
                     )
                 } finally {
@@ -126,13 +131,13 @@ internal class DetectorParity(
             a.close()
             b.close()
         }
-        return ok
+        return verdict(compared)
     }
 
-    /** Logs why the check failed; false. */
-    private fun fail(why: String): Boolean {
+    /** Logs why the check could not run; [FAIL]. */
+    private fun fail(why: String): String {
         log(JSONObject().put("failed", why))
-        return false
+        return FAIL
     }
 
     /** [d]'s map of [page] after one warm-up run, and the median time of [REPS] runs. */
@@ -201,6 +206,18 @@ internal class DetectorParity(
         private const val TITLE = 0.2f
 
         private const val REPS = 3
+
+        /** The check's last line: the copies find the same text, differ, or no page held text to judge by. */
+        const val OK = "PARITY: OK"
+        const val FAIL = "PARITY: FAIL"
+        const val INCONCLUSIVE = "PARITY: INCONCLUSIVE"
+
+        /** [FAIL] when a page shows the copies differ ([Comparison.same]), else [OK] when every page holds [Comparison.evidence], else [INCONCLUSIVE]. */
+        fun verdict(pages: List<Comparison>): String = when {
+            pages.any { !it.same } -> FAIL
+            pages.isNotEmpty() && pages.all { it.evidence } -> OK
+            else -> INCONCLUSIVE
+        }
 
         /** Most mean difference of the two score maps. */
         const val MEAN_DIFF = 0.005

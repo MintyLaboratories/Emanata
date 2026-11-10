@@ -40,9 +40,24 @@ class DetectorParityTest {
         assertEquals(0, c.titles)
         assertEquals(0.0, c.focusDiff, 0.0)
         assertFalse(c.evidence)
+        assertTrue(c.same)
         assertFalse(c.ok)
         // Nor are no lines at all.
         assertFalse(DetectorParity.compare(line, line, emptyList(), emptyList(), 100, 100).ok)
+    }
+
+    @Test
+    fun theVerdictTellsDifferentCopiesFromPagesWithoutEvidence() {
+        val lines = SmartCrop.lines(line, 320, 320)
+        val judged = DetectorParity.compare(line, line, lines, lines, 320, 320)
+        val small = listOf(box(10.0, 50.0, 60.0, 54.0))
+        val unjudged = DetectorParity.compare(line, line, small, small, 100, 100)
+        val none = map(320, 320) { _, _ -> 0.02f }
+        val differs = DetectorParity.compare(line, none, lines, emptyList(), 320, 320)
+        assertEquals(DetectorParity.OK, DetectorParity.verdict(listOf(judged, judged)))
+        assertEquals(DetectorParity.INCONCLUSIVE, DetectorParity.verdict(listOf(judged, unjudged)))
+        assertEquals(DetectorParity.INCONCLUSIVE, DetectorParity.verdict(emptyList()))
+        assertEquals(DetectorParity.FAIL, DetectorParity.verdict(listOf(unjudged, differs)))
     }
 
     @Test

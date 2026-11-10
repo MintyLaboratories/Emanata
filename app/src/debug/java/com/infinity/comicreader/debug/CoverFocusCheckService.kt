@@ -66,8 +66,8 @@ import kotlin.concurrent.thread
  * Both modes run the model the app runs ([TextDetector.copy]: the downloaded one when in
  * place, else the assets' copy), its id ([TextDetector.Copy.id]) in a line's `model`. With
  * `--es mode parity` (no `dir`), [DetectorParity] instead downloads the model when it is not in
- * place and compares it with the assets' copy on synthetic covers, ending with "PARITY: OK" or
- * "PARITY: FAIL".
+ * place and compares it with the assets' copy on synthetic covers, ending with "PARITY: OK",
+ * "PARITY: FAIL" or "PARITY: INCONCLUSIVE".
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null

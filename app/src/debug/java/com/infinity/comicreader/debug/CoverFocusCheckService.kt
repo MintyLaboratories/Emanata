@@ -87,7 +87,7 @@ class CoverFocusCheckService : Service() {
             try {
                 out.parentFile?.mkdirs()
                 if (parity) {
-                    DetectorParity(this, ::log) { Log.i(TAG, it) }.run()
+                    DetectorParity(this, ::log, say = { Log.i(TAG, it) }).run()
                 } else if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else if (crops) {

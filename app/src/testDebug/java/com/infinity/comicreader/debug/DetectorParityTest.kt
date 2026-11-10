@@ -26,7 +26,23 @@ class DetectorParityTest {
         assertEquals(1.0, c.textIou, 0.0)
         assertEquals(1, c.lines)
         assertEquals(1, c.matched)
+        assertEquals(2, c.titles)
+        assertTrue(c.evidence)
         assertTrue(c.ok)
+    }
+
+    @Test
+    fun aPageWithoutTextForAFocusIsNoEvidence() {
+        // The same small lines in both: nothing a focus uses, so nothing to judge by.
+        val small = listOf(box(10.0, 50.0, 60.0, 54.0), box(10.0, 70.0, 60.0, 74.0))
+        val c = DetectorParity.compare(line, line, small, small, 100, 100)
+        assertEquals(0, c.big)
+        assertEquals(0, c.titles)
+        assertEquals(0.0, c.focusDiff, 0.0)
+        assertFalse(c.evidence)
+        assertFalse(c.ok)
+        // Nor are no lines at all.
+        assertFalse(DetectorParity.compare(line, line, emptyList(), emptyList(), 100, 100).ok)
     }
 
     @Test

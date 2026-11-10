@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.SystemClock
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloader
@@ -17,6 +18,7 @@ import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.reader.Box
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -26,17 +28,22 @@ import kotlin.random.Random
  * Checks that the downloaded text detector ([ModelCatalog.TEXT_DETECTOR]) finds what the copy
  * in the app's assets finds: both run as the app runs them on synthetic covers ([PAGES]), and
  * their score maps, lines and Smart crop focuses are compared ([compare]). Downloads the model
- * first when it is not in place. Logs one JSON object per page, then "PARITY: OK" or
- * "PARITY: FAIL".
+ * first ([download]) when it is not in place. Logs one JSON object per page, then, whatever
+ * happened, "PARITY: OK" or "PARITY: FAIL".
  */
-internal class DetectorParity(private val context: Context, private val log: (JSONObject) -> Unit, private val say: (String) -> Unit) {
+internal class DetectorParity(
+    private val context: Context,
+    private val log: (JSONObject) -> Unit,
+    private val say: (String) -> Unit,
+    private val download: (ModelStore, FileSet) -> Unit = { store, set -> ModelDownloader(store).download(set) }
+) {
 
     /**
      * One page's comparison: score differences, text-pixel overlap, lines found by each and
      * matched, the lines large enough for a focus ([big]) and matched, the glyphs of the lines
-     * left unmatched as shares of the image's shorter side, the tallest glyphs, and how far the
-     * two focuses' title and text boxes are apart ([focusDiff], a share of the side; 1 when only
-     * one has it).
+     * left unmatched as shares of the image's shorter side, the tallest glyphs, how far the two
+     * focuses' title and text boxes are apart ([focusDiff], a share of the side; 1 when only one
+     * has it), and how many of the two focuses have a title ([titles]).
      */
     data class Comparison(
         val meanDiff: Double,
@@ -50,21 +57,41 @@ internal class DetectorParity(private val context: Context, private val log: (JS
         val unmatched: List<Double>,
         val tallest: Double,
         val otherTallest: Double,
-        val focusDiff: Double
+        val focusDiff: Double,
+        val titles: Int
     ) {
+        /** True when the page holds text a focus uses: large lines, and a title in both focuses. */
+        val evidence: Boolean get() = big > 0 && titles == 2
+
         /** True when the two find the same text where the Smart crop looks: close maps, the same large lines, the same focus. */
         val ok: Boolean
-            get() = meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && bigMatched == big && focusDiff <= FOCUS_DIFF &&
+            get() = evidence && meanDiff <= MEAN_DIFF && textIou >= TEXT_IOU && bigMatched == big && focusDiff <= FOCUS_DIFF &&
                 abs(tallest - otherTallest) <= GLYPH_DIFF * max(tallest, otherTallest)
     }
 
+    /** Runs the check; ends with "PARITY: OK" or "PARITY: FAIL" on every path. */
     fun run() {
+        var ok = false
+        try {
+            ok = check()
+        } catch (e: Exception) {
+            log(JSONObject().put("failed", "${e.javaClass.simpleName}: ${e.message}"))
+        } finally {
+            say(if (ok) "PARITY: OK" else "PARITY: FAIL")
+        }
+    }
+
+    private fun check(): Boolean {
         val assets = TextDetector.install(context) ?: return fail("no asset model")
         val store = ModelStore.of(context)
         val model = ModelCatalog.TEXT_DETECTOR
         if (!store.installed(model)) {
             val t = SystemClock.elapsedRealtime()
-            ModelDownloader(store).download(model)
+            try {
+                download(store, model)
+            } catch (e: IOException) {
+                return fail("download: ${e.message}")
+            }
             log(JSONObject().put("downloaded", model.bytes).put("ms", SystemClock.elapsedRealtime() - t))
         }
         val downloaded = TextDetector.downloaded(store) ?: return fail("no downloaded model")
@@ -88,6 +115,7 @@ internal class DetectorParity(private val context: Context, private val log: (JS
                             .put("lines", JSONArray(listOf(c.lines, c.otherLines))).put("matched", c.matched)
                             .put("big", c.big).put("bigMatched", c.bigMatched).put("unmatched", JSONArray(c.unmatched.map(::r5)))
                             .put("tallest", JSONArray(listOf(r5(c.tallest), r5(c.otherTallest)))).put("focusDiff", r5(c.focusDiff))
+                            .put("titles", c.titles).put("evidence", c.evidence)
                             .put("ms", JSONArray(listOf(Stats.round1(msA), Stats.round1(msB)))).put("ok", c.ok)
                     )
                 } finally {
@@ -98,12 +126,13 @@ internal class DetectorParity(private val context: Context, private val log: (JS
             a.close()
             b.close()
         }
-        say(if (ok) "PARITY: OK" else "PARITY: FAIL")
+        return ok
     }
 
-    private fun fail(why: String) {
+    /** Logs why the check failed; false. */
+    private fun fail(why: String): Boolean {
         log(JSONObject().put("failed", why))
-        say("PARITY: FAIL")
+        return false
     }
 
     /** [d]'s map of [page] after one warm-up run, and the median time of [REPS] runs. */
@@ -118,7 +147,11 @@ internal class DetectorParity(private val context: Context, private val log: (JS
         return map to ms[ms.size / 2]
     }
 
-    /** A synthetic cover: a two-tone ground, a panel, lines of text from large to small, and dots. */
+    /**
+     * A synthetic cover: a two-tone ground, a panel, a title large enough for a focus on every
+     * shape ([TITLE] of the shorter side, narrowed to fit), lines of text from large to small,
+     * and dots.
+     */
     private fun page(w: Int, h: Int, seed: Int): Bitmap {
         val r = Random(seed)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -132,10 +165,15 @@ internal class DetectorParity(private val context: Context, private val log: (JS
             c.drawCircle(r.nextFloat() * w, r.nextFloat() * h, 4f + r.nextFloat() * 12, p)
         }
         p.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-        var y = h * 0.04f
-        for ((k, share) in listOf(0.11f, 0.06f, 0.035f, 0.022f).withIndex()) {
+        p.color = Color.BLACK
+        val title = TITLES[seed % TITLES.size]
+        p.textSize = TITLE * min(w, h)
+        p.textSize *= min(1f, w * 0.88f / p.measureText(title))
+        var y = h * 0.04f + p.textSize * 1.1f
+        c.drawText(title, w * 0.06f, y, p)
+        for ((k, share) in listOf(0.06f, 0.035f, 0.022f).withIndex()) {
             p.textSize = share * h
-            p.color = if (k % 2 == 0) Color.BLACK else Color.rgb(150, 20, 20)
+            p.color = if (k % 2 == 0) Color.rgb(150, 20, 20) else Color.BLACK
             y += p.textSize * 1.3f
             c.drawText(WORDS[(seed + k) % WORDS.size], w * 0.06f, y, p)
         }
@@ -155,6 +193,12 @@ internal class DetectorParity(private val context: Context, private val log: (JS
         )
 
         private val WORDS = listOf("THE SAMPLE", "Volume 7", "an invented story", "NORTH WIND", "Issue 12")
+
+        /** Short titles, so one fits large on every page shape. */
+        private val TITLES = listOf("ATLAS", "NOVA", "ORBIT", "ECHO")
+
+        /** The title's size as a share of the shorter side: its line well above [SmartCrop.MIN_GLYPH]. */
+        private const val TITLE = 0.2f
 
         private const val REPS = 3
 
@@ -217,7 +261,8 @@ internal class DetectorParity(private val context: Context, private val log: (JS
                 linesA.size, linesB.size, linesA.size - leftA.size,
                 big, big - bigLeft, (leftA + leftB).map { it.glyph / side }.sortedDescending(),
                 linesA.maxOfOrNull { it.glyph } ?: 0.0, linesB.maxOfOrNull { it.glyph } ?: 0.0,
-                max(apart(fa.title, fb.title), apart(fa.text, fb.text))
+                max(apart(fa.title, fb.title), apart(fa.text, fb.text)),
+                listOf(fa, fb).count { it.title != null }
             )
         }
 

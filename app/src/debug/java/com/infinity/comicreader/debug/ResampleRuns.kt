@@ -61,13 +61,18 @@ internal object ResampleRuns {
         companion object {
             /**
              * `engine[/threads[/cores]]`, as `native/4/big`, `native/1/little`, `native/2/prime`,
-             * `kotlin/8`, `gpu` or `gpu/big` (the GPU's threads are always 1); threads default to
-             * [threads], cores to any. Null when unreadable.
+             * `kotlin/8`, `gpu` or `gpu/big` (the GPU's threads are always 1, so `gpu/1/big` and
+             * `gpu/1` read as `gpu/big` and `gpu`); threads default to [threads], cores to any.
+             * Null when unreadable.
              */
             fun of(text: String, threads: Int): Setup? {
                 val parts = text.trim().split('/')
                 val engine = PixelEngine.of(parts[0]) ?: return null
-                if (engine == PixelEngine.GPU) return (if (parts.size > 1) Cores.of(parts.last()) ?: return null else Cores.ANY).let { Setup(engine, 1, it) }
+                if (engine == PixelEngine.GPU) {
+                    val rest = parts.drop(1).let { if (it.firstOrNull()?.toIntOrNull() != null) it.drop(1) else it }
+                    if (rest.size > 1) return null
+                    return Setup(engine, 1, rest.firstOrNull()?.let { Cores.of(it) ?: return null } ?: Cores.ANY)
+                }
                 val n = parts.getOrNull(1)?.toIntOrNull() ?: if (parts.size > 1) return null else threads
                 val cores = parts.getOrNull(2)?.let { Cores.of(it) ?: return null } ?: Cores.ANY
                 if (n !in 1..16 || (engine == PixelEngine.KOTLIN && cores != Cores.ANY)) return null

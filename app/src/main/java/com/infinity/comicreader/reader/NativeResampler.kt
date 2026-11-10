@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,7 +89,7 @@ internal object LibPixels : PixelKernels {
 
     override fun end(job: Long) = nEnd(job)
 
-    /** Does nothing where the native library is not loaded. */
+    /** Never blocks; does nothing where the native library is not loaded. */
     override fun trim() {
         if (loaded) nTrim()
     }
@@ -213,6 +214,22 @@ object NativeResampler {
 
     internal var kernels: PixelKernels? = null
         get() = field ?: LibPixels.takeIf { it.loaded }
+
+    /**
+     * Frees the buffers the GPU path keeps between jobs once memory runs low or the UI
+     * hides, on the calling thread; true when [level] asks for it.
+     */
+    fun onTrimMemory(level: Int): Boolean {
+        @Suppress("DEPRECATION")
+        if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return false
+        trim()
+        return true
+    }
+
+    /** Frees the buffers the GPU path keeps between jobs; never blocks ([PixelKernels.trim]). */
+    fun trim() {
+        kernels?.trim()
+    }
 
     /** One worker per large core; where speeds are unknown, at most 4. */
     internal fun defaultThreads(cores: CpuCores, processors: Int): Int =

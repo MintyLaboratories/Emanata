@@ -845,15 +845,18 @@ object Calibrator : CalibrationControl {
         private var released = false
 
         /**
-         * Ends the run: closes the core ledger and recycles the pages, waiting a little for
-         * one still being made, which stops at its next step ([prepare]); one that takes longer
-         * recycles them itself.
+         * Ends the run: closes the core ledger, frees the GPU path's buffers unless pages are
+         * now resampled there, and recycles the pages, waiting a little for one still being
+         * made, which stops at its next step ([prepare]); one that takes longer recycles them
+         * itself.
          */
         fun release() {
             released = true
             val t = preparing
             t?.join(RELEASE_WAIT_MS)
             if (LibPixels.loaded) LibPixels.ledger(false)
+            // The GPU path's buffers serve GPU pages alone.
+            if (NativeResampler.engine != PixelEngine.GPU) NativeResampler.trim()
             if (t == null || !t.isAlive) recycle()
         }
 

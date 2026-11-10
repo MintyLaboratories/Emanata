@@ -23,6 +23,7 @@ import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeeds
 import com.infinity.comicreader.reader.Calibrator
+import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSizes
@@ -65,11 +66,15 @@ class App : Application() {
         cleanCaches()
     }
 
-    /** Share reads keep only their latest run once memory runs low, or the app is in the background list. */
+    /**
+     * Share reads keep only their latest run once memory runs low, or the app is in the
+     * background list; the GPU resampler frees its buffers then and once the UI hides.
+     */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         @Suppress("DEPRECATION")
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && level != ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) RemoteChannel.trim()
+        NativeResampler.onTrimMemory(level)
     }
 
     /**

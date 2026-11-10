@@ -99,7 +99,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   its size, or at least that line. Only title-sized text counts:
   credits alone never move a crop. A cover without such text keeps its most
   detailed part when far more detailed than its top. Found once per cover and
-  kept.
+  kept. **Use Google ML Kit for cover text** (off by default, offered only
+  where Google Play services is there) finds the lines with ML Kit instead,
+  except on books read right to left (its recognizer reads Latin script only).
+  Play services downloads ML Kit's model on the first cover; meanwhile covers
+  crop by their detail alone, not kept. When the network settings hold that
+  download back, or ML Kit fails, PP-OCR finds the lines for the rest of the
+  session. Settings → AI → **Models** shows the detector in use. Another
+  detector finds every focus again.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

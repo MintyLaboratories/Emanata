@@ -176,9 +176,11 @@ object Thumbs {
     @Volatile
     internal var rtlDetector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).rightToLeft() }
 
-    /** The detector of [entry]'s cover: [rtlDetector] for a book marked right to left ([BookEntry.direction]), else [detector]. */
-    private fun detectorFor(context: Context, entry: BookEntry): CoverTextDetector =
-        if (entry.direction == ReadingDirection.RTL) rtlDetector(context) else detector(context)
+    /** The detector of [entry]'s cover: that of a book marked right to left ([BookEntry.direction]) or not ([detectorFor]). */
+    private fun detectorFor(context: Context, entry: BookEntry): CoverTextDetector = detectorFor(context, entry.direction == ReadingDirection.RTL)
+
+    /** The detector of the cover of a book marked [rightToLeft] or not: [rtlDetector] or [detector]. */
+    fun detectorFor(context: Context, rightToLeft: Boolean): CoverTextDetector = if (rightToLeft) rtlDetector(context) else detector(context)
 
     /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
     fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)

@@ -6,6 +6,7 @@ import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFront
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.util.Formats
 import java.io.File
@@ -126,6 +127,15 @@ object BookDirection {
             page.recycle()
         }
     }
+
+    /**
+     * True when a book is marked right to left as the library marks it ([BookEntry.direction]):
+     * by its folder's direction when set ([folderDir]), else by what was [detected] (null while
+     * detection is off), else by the default direction ([defaultDir]). Its cover's text is then
+     * found by PP-OCR ([Thumbs.detectorFor]).
+     */
+    fun markedRightToLeft(folderDir: String?, detected: ReadingDirection?, defaultDir: String): Boolean =
+        (folderDir ?: detected?.key ?: defaultDir) == ReadingDirection.RTL.key
 
     /**
      * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]

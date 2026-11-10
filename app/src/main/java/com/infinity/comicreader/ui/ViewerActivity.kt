@@ -64,6 +64,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.ModelCatalog
@@ -1574,7 +1575,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
         if (!BookDirection.hasCover(book) || sharedHeld(book)) return
-        val coverPending = knownCover(book, src) == null && !DirectionDetection.outranksCover(contents.detected)
+        val coverPending = knownCover(book, src, contents.detected) == null && !DirectionDetection.outranksCover(contents.detected)
         if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }
 
@@ -1587,19 +1588,30 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (!BookDirection.hasCover(target)) return BookDirection.fromContents(target, src, siblings)
         factsCache.load()
         val contents = BookDirection.fromContents(target, src, siblings, factsCache.get(BookIds.known(target)))
-        return contents.copy(detected = DirectionDetection.withCover(contents.detected, knownCover(target, src)?.half))
+        return contents.copy(detected = DirectionDetection.withCover(contents.detected, knownCover(target, src, contents.detected)?.half))
     }
 
     /**
-     * What [book]'s cover, the first page of [src], told of reading direction before under
-     * cover-focus [version]: this session, else as kept with its facts; null when never looked
-     * at under it.
+     * What [book]'s cover, the first page of [src], told of reading direction before under the
+     * cover-focus version of its detector ([coverDetector], with [detected]): this session, else
+     * as kept with its facts; null when never looked at under it.
      */
-    private fun knownCover(book: File, src: PageSource, version: String = Thumbs.coverVersion(applicationContext)): CoverFront? {
+    private fun knownCover(book: File, src: PageSource, detected: DirectionDetection.Detected?): CoverFront? {
+        val version = SmartCrop.version(coverDetector(detected).id)
         val page = HiddenPages.bookIndex(src, 0)
         return Thumbs.knownFront(book, page)?.takeIf { it.version == version }
             ?: factsCache.cover(BookIds.known(book), version)?.takeIf { it.page == page }
     }
+
+    /**
+     * The detector of the open book's cover, as the library picks it ([Thumbs.detectorFor]): PP-OCR
+     * for a book marked right to left by its folder, else by what was [detected], else by default
+     * ([BookDirection.markedRightToLeft]).
+     */
+    private fun coverDetector(detected: DirectionDetection.Detected?): CoverTextDetector = Thumbs.detectorFor(
+        applicationContext,
+        BookDirection.markedRightToLeft(folderLayout?.takeIf { it.dirChosen }?.dir, detected?.direction?.takeIf { prefs.detectDirection }, prefs.readingDir)
+    )
 
     /** Keeps what [book]'s cover told, for this session and with the library's facts of it, so later opens need no look. Blocking. */
     private fun keepCover(book: File, front: CoverFront) {
@@ -1635,9 +1647,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                     }
                 }
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
-                val detector = Thumbs.detector(applicationContext)
+                val detector = coverDetector(contents)
                 val front = runCatching {
-                    BookDirection.coverFrontOnce(src, knownCover(book, src, SmartCrop.version(detector.id)), detector) { if (isActive) keepCover(book, it) }
+                    BookDirection.coverFrontOnce(src, knownCover(book, src, contents), detector) { if (isActive) keepCover(book, it) }
                 }.getOrNull()
                 ensureActive()
                 DirectionDetection.withCover(contents, front)

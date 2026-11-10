@@ -15,6 +15,7 @@ import com.infinity.comicreader.ai.PlayServices
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
+import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Wraparound
@@ -378,6 +379,23 @@ class ThumbsTest {
         assertEquals(0, pp[0])
         assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
         assertEquals(1, pp[0])
+    }
+
+    @Test
+    fun theReaderPicksTheDetectorOfABooksCoverAsTheLibraryDoes() {
+        val usual = coverText("usual") { null }
+        val rtl = coverText("rtl") { null }
+        Thumbs.detector = { usual }
+        Thumbs.rtlDetector = { rtl }
+        assertSame(rtl, Thumbs.detectorFor(context, rightToLeft = true))
+        assertSame(usual, Thumbs.detectorFor(context, rightToLeft = false))
+        // The folder's direction first, then what was detected, then the default.
+        assertTrue(BookDirection.markedRightToLeft("rtl", ReadingDirection.LTR, "ltr"))
+        assertFalse(BookDirection.markedRightToLeft("ltr", ReadingDirection.RTL, "rtl"))
+        assertTrue(BookDirection.markedRightToLeft(null, ReadingDirection.RTL, "ltr"))
+        assertFalse(BookDirection.markedRightToLeft(null, ReadingDirection.TTB, "rtl"))
+        assertTrue(BookDirection.markedRightToLeft(null, null, "rtl"))
+        assertFalse(BookDirection.markedRightToLeft(null, null, "ltr"))
     }
 
     @Test

@@ -16,8 +16,16 @@ object BookDirection {
     /** True when [file] is a book whose first page may be a wraparound cover; a loose page is not its folder's cover. */
     fun hasCover(file: File): Boolean = !Formats.isImageName(file.name)
 
-    /** What a book's contents told: [detected]; [complete] is false when its ComicInfo was left unread for its cost. */
-    data class Contents(val detected: DirectionDetection.Detected?, val complete: Boolean = true)
+    /**
+     * What a book's contents told: [detected]; [complete] is false when its ComicInfo was left
+     * unread for its cost. [withoutCover] is what they told before a cover's verdict was added
+     * to [detected], as the library's facts hold it: what picks the cover's detector.
+     */
+    data class Contents(
+        val detected: DirectionDetection.Detected?,
+        val complete: Boolean = true,
+        val withoutCover: DirectionDetection.Detected? = detected
+    )
 
     /**
      * What [source], opened from [file], tells without its cover. A single image stands for

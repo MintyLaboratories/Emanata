@@ -1575,7 +1575,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      */
     private fun detectLater(book: File, src: PageSource, contents: BookDirection.Contents) {
         if (!BookDirection.hasCover(book) || sharedHeld(book)) return
-        val coverPending = knownCover(book, src, contents.detected) == null && !DirectionDetection.outranksCover(contents.detected)
+        val coverPending = knownCover(book, src, contents.withoutCover) == null && !DirectionDetection.outranksCover(contents.detected)
         if (!contents.complete || coverPending) detectAfterOpen(book, src, contents)
     }
 
@@ -1593,8 +1593,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * What [book]'s cover, the first page of [src], told of reading direction before under the
-     * cover-focus version of its detector ([coverDetector], with [detected]): this session, else
-     * as kept with its facts; null when never looked at under it.
+     * cover-focus version of its detector ([coverDetector], with [detected]: what the contents
+     * told without the cover's verdict, as the library picks it): this session, else as kept
+     * with its facts; null when never looked at under it.
      */
     private fun knownCover(book: File, src: PageSource, detected: DirectionDetection.Detected?): CoverFront? {
         val version = SmartCrop.version(coverDetector(detected).id)
@@ -1633,6 +1634,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         lateDetectionJob = lifecycleScope.launch {
             val found = withContext(AppDispatchers.io) {
                 var contents = before.detected
+                // What picks the cover's detector: the contents without the cover's own verdict.
+                var plain = before.withoutCover
                 if (!before.complete) {
                     val facts = runCatching { BookFactsReader.read(book, charset, cacheDir) }.getOrNull()
                     ensureActive()
@@ -1644,12 +1647,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                             if (facts.slices == null) BookDirection.checkedSlices(book)?.let { factsCache.keepSlices(id, it) }
                         }
                         contents = facts.detected
+                        plain = facts.detected
                     }
                 }
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
-                val detector = coverDetector(contents)
+                val detector = coverDetector(plain)
                 val front = runCatching {
-                    BookDirection.coverFrontOnce(src, knownCover(book, src, contents), detector) { if (isActive) keepCover(book, it) }
+                    BookDirection.coverFrontOnce(src, knownCover(book, src, plain), detector) { if (isActive) keepCover(book, it) }
                 }.getOrNull()
                 ensureActive()
                 DirectionDetection.withCover(contents, front)

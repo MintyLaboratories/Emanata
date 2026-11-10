@@ -62,7 +62,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libjxl)
 
-add_library(avifjni SHARED avif_jni.c book_id_jni.c core_ledger.c jxl_jni.c jxl_page.c jxl_runner.c resample.c resample_gpu.c resample_jni.c)
+add_library(avifjni SHARED avif_jni.c book_id_jni.c core_ledger.c jxl_jni.c jxl_page.c jxl_runner.c resample.c resample_chunks.c resample_gpu.c resample_jni.c)
 target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}" "${CMAKE_CURRENT_LIST_DIR}/jxl_headers" "${libjxl_SOURCE_DIR}/lib/include")
 target_link_libraries(avifjni PRIVATE avif jnigraphics log dl EGL GLESv3 m)
 target_compile_options(avifjni PRIVATE -Wall -Wextra)

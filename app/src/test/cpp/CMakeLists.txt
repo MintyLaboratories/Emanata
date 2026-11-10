@@ -1,5 +1,6 @@
 # Host unit tests of native logic that needs no Android: the JPEG XL parallel runner
-# (jxl_runner.c). Linux (or WSL) with a C compiler:
+# (jxl_runner.c) and the GPU resampler's chunk order (resample_chunks.c). Linux (or WSL)
+# with a C compiler:
 #
 #     cmake -S app/src/test/cpp -B build/native-test && cmake --build build/native-test && ctest --test-dir build/native-test
 cmake_minimum_required(VERSION 3.22)
@@ -29,3 +30,8 @@ target_include_directories(jxl_runner_test PRIVATE "${MAIN}" "${MAIN}/jxl_header
 target_compile_options(jxl_runner_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(jxl_runner_test PRIVATE Threads::Threads)
 add_test(NAME jxl_runner COMMAND jxl_runner_test)
+
+add_executable(resample_chunks_test resample_chunks_test.c "${MAIN}/resample_chunks.c")
+target_include_directories(resample_chunks_test PRIVATE "${MAIN}")
+target_compile_options(resample_chunks_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME resample_chunks COMMAND resample_chunks_test)

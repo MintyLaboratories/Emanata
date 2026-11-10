@@ -92,6 +92,16 @@ class ListActivityStartFolderTest {
         Thread.sleep(20)
     }
 
+    /** [idle], then idles on until [done], while a share's late answer comes back on its own thread; 5 s at most. */
+    private fun idleUntil(done: () -> Boolean) {
+        idle()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!done() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+    }
+
     private fun launch(): ListActivity = start().get()
 
     private fun start(): ActivityController<ListActivity> = Robolectric.buildActivity(ListActivity::class.java).setup().also { idle() }
@@ -232,7 +242,7 @@ class ListActivityStartFolderTest {
         assertEquals(activity.getString(R.string.network_wait_gave_up, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
         // Still asked in the background: once it answers, it is offered, and opens without listing it again.
         fake.slow!!.countDown()
-        idle()
+        idleUntil { activity.note() != null }
         assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
         activity.findViewById<View>(com.google.android.material.R.id.snackbar_action).performClick()
         idle()
@@ -251,7 +261,7 @@ class ListActivityStartFolderTest {
         // A disk spinning up for 20 s, within the default timeout.
         idleFor(Remotes.SPIN_UP_MS - ListActivity.SHARE_DIALOG_MS)
         fake.slow!!.countDown()
-        idle()
+        idleUntil { !dialog.isShowing && activity.crumbs().size == 2 }
         assertFalse("closed by itself", dialog.isShowing)
         assertEquals(listOf("Share A", "Series"), activity.crumbs())
         assertEquals(listOf("001.cbz"), activity.titles())
@@ -272,7 +282,7 @@ class ListActivityStartFolderTest {
         assertEquals(listOf("Device", "Comics"), activity.crumbs())
         assertNull("asked for, so not said", ShadowToast.getTextOfLatestToast())
         fake.slow!!.countDown()
-        idle()
+        idleUntil { activity.note() != null }
         assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
     }
 
@@ -357,7 +367,7 @@ class ListActivityStartFolderTest {
         assertEquals(listOf("Device", "Comics"), activity.crumbs())
         // One listing all along, offered once it answers.
         fake.slow!!.countDown()
-        idle()
+        idleUntil { activity.note() != null }
         assertEquals(activity.getString(R.string.share_answering, "Share A"), activity.note())
         assertEquals(1, fake.lists)
     }
@@ -379,7 +389,7 @@ class ListActivityStartFolderTest {
         val activity = launch()
         idleFor(Remotes.answerMs + 100)
         fake.slow!!.countDown()
-        idle()
+        idleUntil { activity.note() != null }
         assertEquals(activity.getString(R.string.share_denied_named, "Share A"), activity.note())
         assertNull(activity.noteWithin(ListActivity.SHARE_RETRY_MAX_MS / 1000 * 2))
         assertEquals("signed in once", 1, fake.attempts)

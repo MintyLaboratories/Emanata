@@ -13,14 +13,16 @@ features and customizability.
   exception, ML Kit, is optional and off by default (below).
 - **No required connection:** works offline. The network is used only for the
   network shares you add, while the app shows something on them: a folder, a
-  book, a cover, a favorite, or a share's free space in the Locations sheet;
-  the app sends nothing on its own unless ML Kit is on.
+  book, a cover, a favorite, or a share's free space in the Locations sheet
+  (and, with ML Kit on, for its usage metrics); the app sends nothing else on
+  its own.
 - **Optional ML Kit (off by default):** a setting lets the Smart crop find
   cover text with Google's ML Kit through Google Play services. When you turn
   it on, Play services downloads ML Kit's model, and Google may collect usage
   data under the [ML Kit terms](https://developers.google.com/ml-kit/terms):
   ML Kit sends usage and performance metrics to Google and may fetch updates.
-  Covers never leave the device. While it is off, ML Kit never starts.
+  Covers never leave the device. While it is off, ML Kit never starts, but
+  metrics queued while it was on may still be sent after you turn it off.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -560,7 +562,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shares, similar-books hashing on shares, read-ahead on shares (pages
   beyond those shown, and the next chapter in a strip), automatic
   model or detector downloads, or any network use you didn't start (all of
-  them by default). Opening a book, a search, Download and Compare always
+  them by default). ML Kit's usage metrics (with ML Kit on) are sent by
+  Google's library on its own schedule; Skip on metered connections does not
+  hold them back. Opening a book, a search, Download and Compare always
   run; Find duplicate files counts reading share files as hashing, and its
   Compare reads them anyway. **Warn before opening a large book on a metered connection** (on, 100
   MB by default) asks before a larger book on a share opens: Open anyway or
@@ -1315,8 +1319,8 @@ estimated from the tiles run in 60 or 120 s):
 - `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
-  add and AI models you download, and ML Kit's usage metrics while you have
-  ML Kit on; the app sends nothing else on its own.
+  add and AI models you download, and ML Kit's usage metrics (recorded only
+  while you have ML Kit on); the app sends nothing else on its own.
 - `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
   move or delete goes on with the app in the background or the screen off,
   shown in a notification with its progress (and Cancel). The device is kept

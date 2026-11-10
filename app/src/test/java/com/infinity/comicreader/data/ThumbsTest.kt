@@ -9,6 +9,7 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
@@ -230,6 +231,35 @@ class ThumbsTest {
         assertEquals(Color.BLUE, thumb.getPixel(50, 48))
         assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
         Thumbs.load(context, entry, "UTF-8", 80, 40, smart)!!
+        assertEquals(2, calls[0])
+    }
+
+    @Test
+    fun aFocusFoundAfterTheDetectorSwitchedCopiesIsNeitherKeptNorStored() {
+        var id = "a"
+        var switch = true
+        val calls = intArrayOf(0)
+        val switching = object : CoverTextDetector {
+            override val id: String get() = id
+
+            override fun lines(src: Bitmap): List<SmartCrop.TextBox> {
+                calls[0]++
+                if (switch) id = "b"
+                return emptyList()
+            }
+        }
+        Thumbs.detector = { switching }
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
+        assertEquals(1, calls[0])
+        assertNull(File(context.cacheDir, "covers").listFiles()?.firstOrNull())
+        // Back under the first id, the focus is found again: none was kept under it.
+        id = "a"
+        switch = false
+        Thumbs.load(context, entry, "UTF-8", 100, 50, smart)
+        assertEquals(2, calls[0])
+        Thumbs.load(context, entry, "UTF-8", 80, 40, smart)
         assertEquals(2, calls[0])
     }
 

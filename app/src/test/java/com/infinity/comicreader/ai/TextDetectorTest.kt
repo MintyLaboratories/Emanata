@@ -151,18 +151,90 @@ class TextDetectorTest {
         val d = ModelCatalog.TEXT_DETECTOR
         store.delete(d)
         assertNull(TextDetector.downloaded(store))
-        assertEquals(File(context.noBackupFilesDir, "${TextDetector.DIR}/${TextDetector.PARAM}"), TextDetector.files(context)!!.param)
+        val assets = TextDetector.copy(context)!!
+        assertEquals(File(context.noBackupFilesDir, "${TextDetector.DIR}/${TextDetector.PARAM}"), assets.files.param)
+        assertEquals(TextDetector.ID, assets.id)
         // In place at its size but not yet verified: not used.
-        store.dir(d).mkdirs()
-        for (f in d.files) java.io.RandomAccessFile(store.target(d, f), "rw").use { it.setLength(f.bytes) }
+        placeDownload(store)
         assertNull(TextDetector.downloaded(store))
         for (f in d.files) store.stamped(d, f)
         val files = TextDetector.downloaded(store)!!
         assertEquals(ModelFiles(store.target(d, d.param), store.target(d, d.bin)), files)
-        assertEquals(files, TextDetector.files(context))
+        assertEquals(TextDetector.Copy(files, TextDetector.DOWNLOADED_ID), TextDetector.copy(context))
         store.prune()
-        assertEquals(files, TextDetector.files(context))
+        assertEquals(files, TextDetector.copy(context)!!.files)
         store.delete(d)
+    }
+
+    /** Puts the downloaded model's files in [store] at their sizes, not yet verified. */
+    private fun placeDownload(store: ModelStore) {
+        val d = ModelCatalog.TEXT_DETECTOR
+        store.dir(d).mkdirs()
+        for (f in d.files) java.io.RandomAccessFile(store.target(d, f), "rw").use { it.setLength(f.bytes) }
+    }
+
+    /** Puts the downloaded model in [store], verified. */
+    private fun download(store: ModelStore) {
+        placeDownload(store)
+        for (f in ModelCatalog.TEXT_DETECTOR.files) store.stamped(ModelCatalog.TEXT_DETECTOR, f)
+    }
+
+    @Test
+    fun eachCopyHasItsOwnIdKeptForTheDetectorsLife() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val store = ModelStore.of(context)
+        val d = ModelCatalog.TEXT_DETECTOR
+        store.delete(d)
+        val assets = TextDetector.install(context)!!
+        val runtime = FilesRuntime(setOf(assets, ModelFiles(store.target(d, d.param), store.target(d, d.bin))))
+        val before = TextDetector.forApp(context, runtime)
+        assertEquals(TextDetector.ID, before.id)
+        download(store)
+        val after = TextDetector.forApp(context, runtime)
+        assertEquals(TextDetector.DOWNLOADED_ID, after.id)
+        assertTrue(TextDetector.DOWNLOADED_ID.startsWith(TextDetector.ID + "-"))
+        assertTrue(TextDetector.DOWNLOADED_ID != TextDetector.ID)
+        // A download that lands while a detector lives is not used by it.
+        assertNotNull(before.detect(image))
+        assertEquals(listOf(assets), runtime.asked)
+        assertEquals(TextDetector.ID, before.id)
+        assertNotNull(after.detect(image))
+        assertEquals(store.target(d, d.param), runtime.asked.last().param)
+        before.close()
+        after.close()
+        store.delete(d)
+    }
+
+    @Test
+    fun aCopyThatDoesNotOpenFallsBackForGoodUnderTheFallbacksId() {
+        val downloaded = fakeFiles(tmp.newFolder("downloaded"))
+        val assets = fakeFiles(tmp.newFolder("assets"))
+        val runtime = FilesRuntime(setOf(assets))
+        val detector = TextDetector(runtime, { downloaded }, idleMs = 50, fallback = { assets }, filesId = "dl", fallbackId = "assets")
+        assertEquals("dl", detector.id)
+        // The run that falls back finds nothing for the id its caller read.
+        assertNull(detector.lines(image))
+        assertEquals("assets", detector.id)
+        assertEquals(emptyList<Any>(), detector.lines(image))
+        // Closed when idle, it opens the fallback again without trying the copy that failed.
+        val until = System.currentTimeMillis() + 5_000
+        while (detector.isOpen && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertFalse(detector.isOpen)
+        assertNotNull(detector.detect(image))
+        assertEquals(listOf(downloaded, assets, assets), runtime.asked)
+        assertEquals("assets", detector.id)
+        detector.close()
+    }
+
+    @Test
+    fun missingFilesFallBackToo() {
+        val assets = fakeFiles(tmp.newFolder("assets"))
+        val runtime = FilesRuntime(setOf(assets))
+        val detector = TextDetector(runtime, { null }, fallback = { assets }, filesId = "dl", fallbackId = "assets")
+        assertNull(detector.lines(image))
+        assertEquals("assets", detector.id)
+        assertEquals(listOf(assets), runtime.asked)
+        detector.close()
     }
 
     @Test

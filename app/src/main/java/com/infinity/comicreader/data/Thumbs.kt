@@ -151,13 +151,17 @@ object Thumbs {
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true, detector: CoverTextDetector = detector(context)): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val version = SmartCrop.version(detector.id)
+        val id = detector.id
+        val version = SmartCrop.version(id)
         val k = "${imageKey(context, entry)}|$part|$version"
         focuses.get(k)?.let { return it }
         val store = focusStore(context, version)
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
-        val focus = CoverArt.focusOf(src, region, detector)
+        val focus = CoverArt.focusOf(src, region, detector).let { f ->
+            // Found after the detector switched to a copy of another id: not under this version.
+            if (f.keep && detector.id != id) CoverFocus(f.title, f.lines, f.rows, f.columns, keep = false) else f
+        }
         if (!focus.keep) return focus
         store.put(k, focus)
         focuses.put(k, focus)

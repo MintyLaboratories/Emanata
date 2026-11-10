@@ -14,12 +14,14 @@ import java.util.concurrent.TimeUnit
 /**
  * Finds where text is in an image (not what it says), as a score map ([ScoreMap]: near 1 on
  * the core of each line of text): PaddleOCR's mobile text detector (PP-OCRv5 mobile det,
- * Apache-2.0), downloaded ([ModelCatalog.TEXT_DETECTOR]) or, until it is, the copy in the app's
- * assets, converted to ncnn by `tools/text-detector/convert.py`. For the Smart crop anchor of
- * covers. Opened through [runtime] on first use from [files], or [fallback] where those do not
- * open, on the [gpu] or [threads] CPU threads, and closed after [idleMs] without use, so its
- * memory goes when covers are done. Feed it images whose sides are multiples of 32. Its
- * [lines] are the map's text regions ([SmartCrop.lines]).
+ * Apache-2.0). Two copies: the app's assets, converted to ncnn by `tools/text-detector/convert.py`,
+ * and a third-party ncnn conversion downloaded unchanged ([ModelCatalog.TEXT_DETECTOR]); their
+ * maps differ slightly, so each has its own [id]. For the Smart crop anchor of covers. Opened
+ * through [runtime] on first use from [files] (id [filesId]); once those do not open, from
+ * [fallback] (id [fallbackId]) for the rest of its life. Runs on the [gpu] or [threads] CPU
+ * threads, and closes after [idleMs] without use, so its memory goes when covers are done. Feed
+ * it images whose sides are multiples of 32. Its [lines] are the map's text regions
+ * ([SmartCrop.lines]).
  */
 internal class TextDetector(
     private val runtime: InferenceRuntime,
@@ -27,11 +29,23 @@ internal class TextDetector(
     private val gpu: Boolean = false,
     private val threads: Int = THREADS,
     private val idleMs: Long = IDLE_MS,
-    private val fallback: () -> ModelFiles? = { null }
+    private val fallback: () -> ModelFiles? = { null },
+    private val filesId: String = ID,
+    private val fallbackId: String = ID
 ) : CoverTextDetector {
-    override val id: String get() = ID
+    /** True once [files] did not open: [fallback] runs from then on. */
+    @Volatile
+    private var fellBack = false
 
-    override fun lines(src: Bitmap): List<SmartCrop.TextBox>? = detect(src)?.let { SmartCrop.lines(it, src.width, src.height) }
+    override val id: String get() = if (fellBack) fallbackId else filesId
+
+    /** Null too on the run that fell back to a copy of another [id]: what it found is not under the id the caller read. */
+    override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
+        val asked = id
+        val map = detect(src) ?: return null
+        if (id != asked) return null
+        return SmartCrop.lines(map, src.width, src.height)
+    }
 
     private var model: TileModel? = null
 
@@ -70,9 +84,16 @@ internal class TextDetector(
     val isOpen: Boolean @Synchronized get() = model != null
 
     private fun open(): TileModel? {
-        val f = files()
-        val m = f?.let { runtime.open(it, gpu, threads, fp16 = true) }
-            ?: fallback()?.takeIf { it != f }?.let { runtime.open(it, gpu, threads, fp16 = true) }
+        var tried: ModelFiles? = null
+        if (!fellBack) {
+            tried = files()
+            tried?.let(::load)?.let {
+                model = it
+                return it
+            }
+            fellBack = true
+        }
+        val m = fallback()?.takeIf { it != tried }?.let(::load)
         if (m == null) {
             Log.w(TAG, "text detector does not open")
             broken = true
@@ -80,6 +101,11 @@ internal class TextDetector(
         model = m
         return m
     }
+
+    private fun load(f: ModelFiles): TileModel? = runtime.open(f, gpu, threads, fp16 = true)
+
+    /** One copy of the model: its files and its [CoverTextDetector.id]. */
+    data class Copy(val files: ModelFiles, val id: String)
 
     /** Closes the model; the next [detect] opens it again. */
     @Synchronized
@@ -93,8 +119,11 @@ internal class TextDetector(
     companion object {
         private const val TAG = "TextDetector"
 
-        /** Its [CoverTextDetector.id]: PP-OCRv5 mobile det. */
+        /** Its [CoverTextDetector.id] with the assets' copy: PP-OCRv5 mobile det. */
         const val ID = "ppocrv5"
+
+        /** Its [CoverTextDetector.id] with the downloaded copy: [ID] and the start of its files' SHA-256. */
+        val DOWNLOADED_ID: String = ModelCatalog.TEXT_DETECTOR.let { "$ID-${it.param.sha256.take(6)}${it.bin.sha256.take(6)}" }
 
         /**
          * CPU threads it runs on, of the large cores. On the reference tablet a cover's input took
@@ -129,14 +158,29 @@ internal class TextDetector(
         @Volatile
         private var shared: TextDetector? = null
 
-        /** The app's detector, on [LibNcnn.cpuLane]: apart from AI page tiles. */
+        /** The app's detector ([forApp]) on [LibNcnn.cpuLane], apart from AI page tiles; made once per process. */
         fun shared(context: Context): TextDetector = shared ?: synchronized(this) {
-            val app = context.applicationContext
-            shared ?: TextDetector(LibNcnn.cpuLane, { files(app) }, fallback = { install(app) }).also { shared = it }
+            shared ?: forApp(context, LibNcnn.cpuLane).also { shared = it }
         }
 
-        /** The model's files: the downloaded ones ([downloaded]) when in place, else the assets' copy ([install]). */
-        fun files(context: Context): ModelFiles? = downloaded(ModelStore.of(context)) ?: install(context)
+        /**
+         * A detector on [runtime] of the copy in place now, kept for its life: the downloaded one
+         * ([downloaded], id [DOWNLOADED_ID]) falling back to the assets' ([install], id [ID]), else
+         * the assets' alone. A download that lands later is used from the next process on.
+         */
+        fun forApp(context: Context, runtime: InferenceRuntime): TextDetector {
+            val app = context.applicationContext
+            val store = ModelStore.of(app)
+            return if (downloaded(store) != null) {
+                TextDetector(runtime, { downloaded(store) }, fallback = { install(app) }, filesId = DOWNLOADED_ID)
+            } else {
+                TextDetector(runtime, { install(app) })
+            }
+        }
+
+        /** The copy [forApp] picks now: the downloaded one ([downloaded]) when in place, else the assets' ([install]). */
+        fun copy(context: Context): Copy? =
+            downloaded(ModelStore.of(context))?.let { Copy(it, DOWNLOADED_ID) } ?: install(context)?.let { Copy(it, ID) }
 
         /** The downloaded model's files in [store]; null until it is downloaded and verified. */
         fun downloaded(store: ModelStore): ModelFiles? = store.files(ModelCatalog.TEXT_DETECTOR)

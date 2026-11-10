@@ -26,6 +26,7 @@ import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.LibPixels
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
+import com.infinity.comicreader.reader.PixelKernels
 import com.infinity.comicreader.reader.Resampler
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
@@ -58,6 +59,7 @@ import kotlin.random.Random
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
  *   Kotlin path on an opaque page; the largest channel difference of each, and a CRC-32 of
  *   each engine's outputs (`digest`): equal digests across builds mean bit-identical output.
+ *   Also the GPU band with a stop callback, and trimming ([checkGpuBand]).
  * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default 1848x2772 on every
  *   device, so runs compare across devices; `screen`: the 2000x3000 page fit to this screen
  *   held upright, as calibration does)
@@ -220,6 +222,7 @@ class ResampleCheckService : Service() {
                     .put("pixelsOff", off).put("pixels", pixels).put("digest", "%08x".format(digest.value)).put("ok", failed == 0 && worst <= 1)
             )
         }
+        checkGpuBand()
         // The shipping Kotlin path reads and writes unpremultiplied: on an opaque page both agree.
         val page = SyntheticPage.draw(2000, 3000)
         val window = Resampler.Window.of(2000, 3000)
@@ -249,6 +252,66 @@ class ResampleCheckService : Service() {
     }
 
     private class Case(val srcW: Int, val srcH: Int, val window: Resampler.Window, val dstW: Int, val dstH: Int, val scaling: Scaling)
+
+    /**
+     * [LibPixels.gpuBand] on a cover from a large page (several chunks), against the GPU's
+     * [LibPixels.band]: with no stop the same pixels; a stop saying so on its second call
+     * cancels after exactly two calls; what a stop throws reaches the caller and the next job
+     * still runs; then [LibPixels.trim].
+     */
+    private fun checkGpuBand() {
+        val src = noise(3000, 4000, 7, opaque = true)
+        val window = Resampler.Window.of(3000, 4000)
+        val ax = Resampler.axis(3000, window.x, window.width, 128, Scaling.DEFAULT)
+        val ay = Resampler.axis(4000, window.y, window.height, 171, Scaling.DEFAULT)
+        val result = JSONObject().put("check", "gpu band")
+        val made = ArrayList<Bitmap>()
+
+        // One GPU job filtering all rows through gpuBand; null when it could not open.
+        fun gpuBand(stop: PixelKernels.Stop?): Pair<Int, Bitmap>? {
+            val dst = Bitmap.createBitmap(128, 171, Bitmap.Config.ARGB_8888).also { made += it }
+            val job = LibPixels.begin(src, dst, false, 1, true)
+            if (job == 0L) return null
+            try {
+                if (!LibPixels.axis(job, false, ax) || !LibPixels.axis(job, true, ay)) return null
+                return LibPixels.gpuBand(job, 0, 171, 0, stop) to dst
+            } finally {
+                LibPixels.end(job)
+            }
+        }
+
+        try {
+            val banded = Bitmap.createBitmap(128, 171, Bitmap.Config.ARGB_8888).also { made += it }
+            val ran = NativeResampler.resample(src, banded, window, false, Scaling.DEFAULT, engine = PixelEngine.GPU, fallback = false)
+            val plain = gpuBand(null)
+            val same = ran && plain != null && digest(plain.second) == digest(banded)
+            result.put("band", ran).put("done", plain?.first).put("sameAsBand", same)
+            var calls = 0
+            val canceled = gpuBand { ++calls == 2 }
+            result.put("canceled", canceled?.first).put("stopCalls", calls)
+            val thrown = IllegalStateException("stop")
+            val caught = runCatching { gpuBand { throw thrown } }.exceptionOrNull()
+            result.put("rethrown", caught === thrown)
+            val after = gpuBand(null)
+            val sameAfter = ran && after != null && digest(after.second) == digest(banded)
+            result.put("afterThrow", after?.first).put("sameAfterThrow", sameAfter)
+            LibPixels.trim()
+            result.put("trimmed", true).put(
+                "ok", same && plain?.first == PixelKernels.BAND_DONE && canceled?.first == PixelKernels.BAND_CANCELED && calls == 2 &&
+                    caught === thrown && after?.first == PixelKernels.BAND_DONE && sameAfter
+            )
+        } catch (t: Throwable) {
+            result.put("failed", "${t.javaClass.simpleName}: ${t.message}").put("ok", false)
+        } finally {
+            src.recycle()
+            made.forEach { it.recycle() }
+        }
+        log(result)
+    }
+
+    /** A CRC-32 of [b]'s pixels as it holds them in memory. */
+    private fun digest(b: Bitmap): Long =
+        CRC32().apply { premultipliedPixels(b).forEach { p -> for (s in 0..24 step 8) update(p ushr s) } }.value
 
     // ------------------------------------------------------------------ time
 

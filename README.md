@@ -833,7 +833,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Keep it simple off (or once chosen), in Settings, the reader's sheet and
   Models alike. Artifact removal and descreen are advanced settings;
   the switch's summary shows the whole chain, hidden steps included, and warns
-  when its models together may run past a page's time. A chosen model
+  when its models together may run past a page's time. **Models by page
+  size** (advanced) is one slider with two handles on the size a page is
+  shown at, as a share of its side after the 8 MP reduction: upscaling models
+  run on pages shown above the upscale handle (100% by default, never below
+  50%, where an upscale is always resampled away), artifact removal above the
+  cleanup handle (50% by default, down to Always). The handles may cross; a
+  sentence under the slider says what they do. Descreen runs at every size.
+  A chosen model
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). **Import a model…**

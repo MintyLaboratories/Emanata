@@ -48,7 +48,10 @@ internal interface PixelKernels {
 
     fun end(job: Long)
 
-    /** Frees what the GPU path keeps between jobs, for when memory runs low; by default nothing. */
+    /**
+     * Frees what the GPU path keeps between jobs, for when memory runs low; by default
+     * nothing. Never blocks: while a job runs, it frees once that job ends.
+     */
     fun trim() {}
 
     /**

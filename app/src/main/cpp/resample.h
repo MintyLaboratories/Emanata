@@ -81,7 +81,10 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque);
 
 void rs_gpu_close(rs_gpu * g);
 
-// Frees what the GPU path keeps between jobs; nothing outlives a job yet.
+// Frees what the GPU path keeps between jobs; nothing outlives a job yet. Never blocks, so
+// any thread may call it, the main one included: while a job holds the GPU lock
+// (pthread_mutex_trylock fails), it leaves a flag that the job's rs_gpu_close honors
+// before unlocking.
 void rs_gpu_trim(void);
 
 // Turns on or off one log line per GPU job, under "ResampleGpu": the time of each step.

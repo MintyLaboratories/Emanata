@@ -63,8 +63,11 @@ class ModelStore(val root: File) {
     fun bytesHeld(set: FileSet): Long =
         set.files.sumOf { (if (has(set, it)) it.bytes else 0L) + part(set, it).length() }
 
-    /** Bytes held by every folder under [root], catalog models or not. */
-    fun bytesUsed(): Long = root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    /** Bytes held under [root], catalog models or not, but for the folders of the app's own models ([skip]). */
+    fun bytesUsed(skip: Collection<FileSet> = ModelCatalog.tools): Long {
+        val skipped = skip.map { it.id }.toSet()
+        return root.listFiles().orEmpty().filter { it.name !in skipped }.sumOf { top -> top.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+    }
 
     /** Deletes [set]'s folder, parts included; true when nothing of it is left. */
     fun delete(set: FileSet): Boolean {

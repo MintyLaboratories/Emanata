@@ -269,6 +269,20 @@ class ModelDownloaderTest {
     }
 
     @Test
+    fun theAppsOwnModelsAreLeftOutOfTheBytesUsed() {
+        val m = model()
+        ModelDownloader(store).download(m)
+        val models = store.bytesUsed()
+        assertTrue(models >= m.bytes)
+        // The detector's folder, as the app's own model, does not count.
+        val d = ModelCatalog.TEXT_DETECTOR
+        store.dir(d).mkdirs()
+        File(store.dir(d), d.bin.name).writeBytes(ByteArray(1000))
+        assertEquals(models, store.bytesUsed())
+        assertEquals(models + 1000, store.bytesUsed(skip = emptyList()))
+    }
+
+    @Test
     fun contentRangeStartIsRead() {
         assertEquals(100L, ModelDownloader.contentRangeStart("bytes 100-199/200"))
         assertEquals(0L, ModelDownloader.contentRangeStart("bytes 0-9/10"))

@@ -150,6 +150,7 @@ class CoverTextDetectorsTest {
     @Test
     fun withoutMlKitInTheAppPpOcr() {
         val d = detectors(FakePlay(), mlKit = null)
+        assertFalse("no setting", d.offered())
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.UNAVAILABLE), d.status())
     }
 

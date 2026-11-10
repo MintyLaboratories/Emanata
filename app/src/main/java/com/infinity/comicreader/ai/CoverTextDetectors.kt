@@ -118,8 +118,8 @@ class CoverTextDetectors(
         return status
     }
 
-    /** True where the setting can turn ML Kit on: Play services is there. */
-    fun offered(): Boolean = play.available()
+    /** True where the setting can turn ML Kit on: ML Kit is part of the app and Play services is there. */
+    fun offered(): Boolean = mlKit != null && play.available()
 
     /** The detector of covers of books not marked right to left: the session's pick. */
     fun session(): CoverTextDetector = if (status().use == Use.ML_KIT) gate else ppocr()

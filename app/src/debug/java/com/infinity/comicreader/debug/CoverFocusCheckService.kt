@@ -18,6 +18,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.LibNcnn
+import com.infinity.comicreader.ai.ModelFiles
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFocus
@@ -61,6 +63,11 @@ import kotlin.concurrent.thread
  * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`. Start it
  * with the app's library shown: with no window shown the system soon moves the process to fewer,
  * slower cores, which each line's `cpuset` tells.
+ *
+ * Both modes run the model the app runs ([TextDetector.files]: the downloaded one when in
+ * place, else the assets' copy), named in a line's `model`. With `--es mode parity` (no
+ * `dir`), [DetectorParity] instead downloads the model when it is not in place and compares it
+ * with the assets' copy on synthetic covers, ending with "PARITY: OK" or "PARITY: FAIL".
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -75,10 +82,13 @@ class CoverFocusCheckService : Service() {
         val shared = intent?.getStringExtra("lane") == "shared"
         val busy = intent?.getBooleanExtra("busy", false) ?: false
         val crops = intent?.getStringExtra("mode") == "crops"
+        val parity = intent?.getStringExtra("mode") == "parity"
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
-                if (dir == null) {
+                if (parity) {
+                    DetectorParity(this, ::log) { Log.i(TAG, it) }.run()
+                } else if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else if (crops) {
                     survey(File(dir), marked)
@@ -102,10 +112,7 @@ class CoverFocusCheckService : Service() {
         val step = maxOf(1.0, all.size.toDouble() / count)
         val picked = (0 until minOf(count, all.size)).map { all[(it * step).toInt()] }
         log(JSONObject().put("books", all.size).put("picked", picked.size).put("setups", JSONArray(setups)).put("lane", if (shared) "shared" else "own").put("busy", busy))
-        val files = TextDetector.install(this) ?: run {
-            log(JSONObject().put("failed", "no model"))
-            return
-        }
+        val files = model() ?: return
         val detectors = setups.associateWith { s ->
             TextDetector(LibNcnn, { files }, gpu = s == "gpu", threads = s.removePrefix("cpu").toIntOrNull() ?: TextDetector.THREADS)
         }
@@ -121,10 +128,7 @@ class CoverFocusCheckService : Service() {
     }
 
     private fun survey(dir: File, marked: Boolean) {
-        val files = TextDetector.install(this) ?: run {
-            log(JSONObject().put("failed", "no model"))
-            return
-        }
+        val files = model() ?: return
         val app = TextDetector(LibNcnn.cpuLane, { files })
         try {
             val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
@@ -134,8 +138,16 @@ class CoverFocusCheckService : Service() {
         }
     }
 
+    /** The app's model files, named in the log; null, logged as failed, when there are none. */
+    private fun model(): ModelFiles? {
+        val files = TextDetector.files(this)
+        val downloaded = files != null && files == TextDetector.downloaded(ModelStore.of(this))
+        log(if (files == null) JSONObject().put("failed", "no model") else JSONObject().put("model", if (downloaded) "downloaded" else "assets"))
+        return files
+    }
+
     /** Runs the detector on the GPU on the AI tiles' thread until [stop], which logs its runs. */
-    private inner class Load(files: com.infinity.comicreader.ai.ModelFiles) {
+    private inner class Load(files: ModelFiles) {
         private val detector = TextDetector(LibNcnn, { files }, gpu = true)
         private val input = Bitmap.createBitmap(448, 640, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GRAY) }
         private val ms = ArrayList<Double>()

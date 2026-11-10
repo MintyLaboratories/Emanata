@@ -1111,6 +1111,17 @@
     <string name="ai_model_does_not_open">%1$s doesn\'t run on this device, so pages show without it</string>
     <string name="ai_models_summary">%1$d downloaded, %2$s</string>
     <string name="ai_models_title">AI models</string>
+    <string name="cover_text_section">Cover text</string>
+    <string name="cover_text_ppocr">PP-OCRv5 mobile text detector</string>
+    <string name="cover_text_mlkit">Google ML Kit Text Recognition v2</string>
+    <string name="cover_text_details_ppocr">Finds where text is on covers for the Smart crop · runs on this device · Apache-2.0</string>
+    <string name="cover_text_details_mlkit">Finds where text is on covers for the Smart crop · through Google Play services · ML Kit terms</string>
+    <string name="cover_text_in_use">In use</string>
+    <string name="cover_text_in_use_mlkit">In use; books read right to left use PP-OCRv5</string>
+    <string name="cover_text_downloading">Google Play services is downloading ML Kit\'s model; covers find their text once it is done</string>
+    <string name="cover_text_held_back">In use: ML Kit\'s model download waits for a connection the network settings allow; ML Kit is tried again when the app restarts</string>
+    <string name="cover_text_module_failed">In use: Google Play services did not download ML Kit\'s model; ML Kit is tried again when the app restarts</string>
+    <string name="cover_text_failed">In use: ML Kit failed; it is tried again when the app restarts</string>
     <string name="ai_models_intro">Models download when chosen in Settings or here, and run on this device only.</string>
     <string name="ai_step_artifacts">Artifact removal</string>
     <string name="ai_step_descreen">Descreen</string>

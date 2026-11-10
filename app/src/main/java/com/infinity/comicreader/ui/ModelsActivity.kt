@@ -37,6 +37,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
+import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
@@ -168,6 +169,27 @@ object ModelText {
     fun imported(context: Context, m: UserModel): String =
         context.getString(R.string.ai_model_info_imported, details(context, m), m.pageSeconds)
 
+    /** The model manager's row of the cover text detector: its name, what it is, and whether and why it is in use. */
+    data class CoverTextRow(val title: String, val details: String, val status: String)
+
+    /** The row of the cover text detector in use as [s] tells. */
+    fun coverText(context: Context, s: CoverTextDetectors.Status): CoverTextRow {
+        val ml = s.use == CoverTextDetectors.Use.ML_KIT
+        val status = when {
+            s.downloading -> R.string.cover_text_downloading
+            ml -> R.string.cover_text_in_use_mlkit
+            s.why == CoverTextDetectors.Why.HELD_BACK -> R.string.cover_text_held_back
+            s.why == CoverTextDetectors.Why.MODULE_FAILED -> R.string.cover_text_module_failed
+            s.why == CoverTextDetectors.Why.FAILED -> R.string.cover_text_failed
+            else -> R.string.cover_text_in_use
+        }
+        return CoverTextRow(
+            context.getString(if (ml) R.string.cover_text_mlkit else R.string.cover_text_ppocr),
+            context.getString(if (ml) R.string.cover_text_details_mlkit else R.string.cover_text_details_ppocr),
+            context.getString(status)
+        )
+    }
+
     /** Why an import was refused, in a sentence; a page time rounded up, so one just past a limit never reads as at it. */
     fun refusal(context: Context, r: ImportState.Refused): String = when (r.why) {
         ModelRefusal.RUNTIME -> context.getString(R.string.ai_refused_runtime)
@@ -223,6 +245,9 @@ class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore
     private lateinit var prefs: Prefs
     private val rows = HashMap<String, View>()
+
+    /** The cover text detector's row ([showCoverText]). */
+    private var coverTextRow: View? = null
 
     /** The imported models the rows were built for. */
     private var builtFor: List<UserModel>? = null
@@ -311,6 +336,41 @@ class ModelsActivity : AppCompatActivity() {
             }
             list.addView(card)
         }
+        addCoverText(list)
+    }
+
+    /** A card with the cover text detector in use: not an AI model, but one the app runs on covers. */
+    private fun addCoverText(list: LinearLayout) {
+        val title = layoutInflater.inflate(R.layout.item_section_title, list, false) as TextView
+        title.setText(R.string.cover_text_section)
+        list.addView(title)
+        val card = layoutInflater.inflate(R.layout.card_models, list, false) as MaterialCardView
+        card.id = R.id.cover_text_card
+        val rowsBox = card.findViewById<LinearLayout>(R.id.card_rows)
+        val row = layoutInflater.inflate(R.layout.item_model, rowsBox, false)
+        row.findViewById<MaterialButton>(R.id.action).isVisible = false
+        row.isClickable = false
+        rowsBox.addView(row)
+        list.addView(card)
+        coverTextRow = row
+        showCoverText()
+    }
+
+    /** Shows which cover text detector is in use and why ([CoverTextDetectors.status]). */
+    private fun showCoverText() {
+        val row = coverTextRow ?: return
+        val shown = ModelText.coverText(this, CoverTextDetectors.shared(this).status())
+        row.findViewById<TextView>(R.id.title).text = shown.title
+        row.findViewById<TextView>(R.id.subtitle).text = shown.details
+        row.findViewById<TextView>(R.id.status).apply {
+            text = shown.status
+            isVisible = true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        showCoverText()
     }
 
     /** Every row's state, and the space models take, as [d] and the store say. */

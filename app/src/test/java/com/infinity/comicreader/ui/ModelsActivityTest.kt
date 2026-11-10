@@ -73,10 +73,10 @@ class ModelsActivityTest {
         }
     }
 
-    /** Every model row, in screen order. */
+    /** Every model row, in screen order; not the cover text detector's. */
     private fun rows(activity: ModelsActivity): List<View> {
         val list = activity.findViewById<LinearLayout>(R.id.models_list)
-        return (0 until list.childCount).map { list.getChildAt(it) }.flatMap { v ->
+        return (0 until list.childCount).map { list.getChildAt(it) }.filter { it.id != R.id.cover_text_card }.flatMap { v ->
             val box = v.findViewById<LinearLayout>(R.id.card_rows) ?: return@flatMap emptyList()
             (0 until box.childCount).map { box.getChildAt(it) }
         }

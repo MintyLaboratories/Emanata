@@ -45,4 +45,6 @@
     <!-- A view ring button's offset from the hub, for its fly-out. -->
     <item name="view_ring_dx" type="id" />
     <item name="view_ring_dy" type="id" />
+    <!-- The model manager's card of the cover text detector. -->
+    <item name="cover_text_card" type="id" />
 </resources>

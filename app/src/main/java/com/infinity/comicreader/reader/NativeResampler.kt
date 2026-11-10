@@ -128,9 +128,10 @@ internal object LibPixels : PixelKernels {
     /**
      * Turns on or off a log line per GPU job under "ResampleGpu": milliseconds per step (lock,
      * context, shader compile, allocation, upload, submit, wait, copy, free), each pass's GPU
-     * time where the driver has timer queries, the across pass' tap count, and the cores the
-     * copies ran on. Off by default; debug checks
-     * only. Does nothing where the native library is not loaded.
+     * time where the driver has timer queries, the across pass' tap count, the cores the
+     * copies ran on, and the buffers made and bytes kept. A trim of the kept buffers logs a
+     * line whether tracing or not. Off by default; debug checks only. Does nothing where the
+     * native library is not loaded.
      */
     fun trace(on: Boolean) {
         if (loaded) nTrace(on)

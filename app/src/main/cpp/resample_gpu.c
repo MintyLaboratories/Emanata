@@ -19,7 +19,8 @@
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
 //   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
-//   the across tap count, and the cores its copies ran on.
+//   the across tap count, the cores its copies ran on, and the buffers it made and the
+//   bytes kept.
 
 #define _GNU_SOURCE
 #include "resample.h"

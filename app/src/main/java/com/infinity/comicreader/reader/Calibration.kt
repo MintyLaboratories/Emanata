@@ -152,11 +152,13 @@ object Calibration {
      * its `cpu_capacity`, [capacities]). Raw CPU time is the wrong proxy on chips with large
      * and little cores: there a decode spread over the little cores too can use less energy
      * than one on the large cores alone, for far more CPU time. The ledger counts the threads
-     * doing the timed work (native resampling bands, JPEG XL decodes and their workers), each
-     * charging its CPU time between ticks (a band, a JPEG XL group) to the core it is on at the
-     * tick, so unpinned threads are followed wherever the system moves them; the rest of
-     * [cpuMs] (the runtime, glue code) is taken to run where they did. [cpuMs] as is where
-     * capacities are unknown or the ledger counted nothing (platform decodes).
+     * doing the timed work (native resampling bands, a GPU band's calling thread, JPEG XL
+     * decodes and their workers), each charging its CPU time between ticks (a band, a JPEG XL
+     * group) to the core it is on at the tick, so unpinned threads are followed wherever the
+     * system moves them; the rest of [cpuMs] (the runtime, glue code, the GPU driver's
+     * threads) is taken to run where they did. [cpuMs] as is where capacities are unknown or
+     * the ledger counted nothing (platform decodes). The GPU's is recorded, never picked on
+     * ([gpuWins]).
      */
     fun weighted(cpuMs: Double, coreNs: LongArray, capacities: IntArray): Double {
         val top = capacities.maxOrNull()?.takeIf { it > 0 } ?: return cpuMs

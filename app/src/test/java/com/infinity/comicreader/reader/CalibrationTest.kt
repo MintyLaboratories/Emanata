@@ -331,6 +331,18 @@ class CalibrationTest {
     }
 
     @Test
+    fun gpuRunsAreWeighedByWhereTheirCallingThreadRan() {
+        val caps = intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024)
+        // The ledger counts only the band's calling thread (6 of 30 ms, pinned to a middle core); the
+        // driver's threads it does not count are taken to run there too.
+        val gpuMs = Calibration.weighted(30.0, longArrayOf(0, 0, 0, 0, 0, 6_000_000, 0, 0), caps)
+        assertEquals(30.0 * Calibration.coreWeight(805, 1024), gpuMs, 1e-9)
+        // Its weighed CPU time never makes the GPU win: only its wall time does.
+        val cheap = Timing(gpu, 33.0, 30.0, weightedMs = gpuMs)
+        assertEquals(PixelEngine.NATIVE, Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), cheap), Tuning.defaults(tablet, 8)).engine)
+    }
+
+    @Test
     fun weighedCpuTimeBreaksTiesSoLittleCoresCanWin() {
         // The measured chip: 6 little cores (capacity 435) and 2 large ones (1024). On battery alone, JPEG XL on 8 threads
         // used 19 % less energy per page than on the 2 large cores, for 2.1x the CPU time (970 against 2070 ms a page).

@@ -105,8 +105,9 @@ internal object LibPixels : PixelKernels {
 
     /**
      * Opens the core ledger (resetting it) or closes it: while open, native resampling bands
-     * and JPEG XL decodes count their threads' CPU time core by core ([ledgerNs]) and thread
-     * by thread ([ledgerThreads]). Calibration only.
+     * (a GPU band on its calling thread, not the driver's) and JPEG XL decodes count their
+     * threads' CPU time core by core ([ledgerNs]) and thread by thread ([ledgerThreads]).
+     * Calibration only.
      */
     fun ledger(open: Boolean) = nLedger(open)
 

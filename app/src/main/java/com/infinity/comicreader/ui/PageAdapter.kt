@@ -1109,8 +1109,9 @@ class PageAdapter(
         val chapter = strip.chapterOf(page)
         val seg = chapter.value
         seg.loads.incrementAndGet()
-        // Queued, so its item binds again outside a layout pass, however soon the measure ends.
-        scope.launch(AppDispatchers.mainQueued) {
+        // Starts at once: it asks for a decoder in call order, and its finally runs even when a
+        // release comes next. It resumes from the IO pool, so posted outside any layout pass.
+        scope.launch {
             try {
                 withContext(inOrder) {
                     gate.withPermit {

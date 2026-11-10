@@ -176,6 +176,76 @@ class PageAdapterReadAheadTest {
         adapter.release()
     }
 
+    /** Runs [block] with adapters made to decode one page at a time. */
+    private fun withOneDecoder(block: () -> Unit) {
+        val threads = PageAdapter.decodeThreads
+        PageAdapter.decodeThreads = 1
+        try {
+            block()
+        } finally {
+            PageAdapter.decodeThreads = threads
+        }
+    }
+
+    @Test
+    fun oneDecoderTakesPagesInTheOrderTheyAreAskedFor() = withOneDecoder {
+        val source = HeldSource(8)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 2, behind = true)
+        val ahead = source.hold(5)
+        adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 4)
+        // Read ahead asks for 5, 6, then 3 behind; 6 and 3 wait for the decoder 5 holds.
+        idleUntil { 5 in source.started }
+        stillAfterAWhile { source.started == listOf(4, 5) }
+        ahead.countDown()
+        idleUntil { source.started.size >= 4 }
+        assertEquals(listOf(4, 5, 6, 3), source.started)
+        adapter.release()
+    }
+
+    @Test
+    fun aPairsCropMeasuresTakeTheDecoderBeforeReadingAheadAskedForAfterThem() = withOneDecoder {
+        val source = GatedSource(4) { _, _ -> false }
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            twoPage = true, autoCrop = true, preload = 3,
+            pageLayout = PageLayout.of(listOf(intArrayOf(0), intArrayOf(1, 2), intArrayOf(3)), spread = true, rtl = false, joined = emptySet())
+        )
+        val rv = recycler(adapter)
+        // After page 0, reading ahead asks for the crops of pair 1-2, then for page 3.
+        idleUntil(rv, { source.started.size >= 4 })
+        val started = source.started.take(4)
+        assertEquals(started.toString(), listOf(0, 1, 2, 3), started.map { it.first })
+        assertTrue(started.toString(), started.slice(1..2).all { it.second.box == null })
+        adapter.release()
+    }
+
+    /** Pages that load at once; counts its closes. */
+    private class ClosingSource(override val pageCount: Int) : PageSource {
+        @Volatile
+        var closes = 0
+
+        override fun loadPage(index: Int, target: Target): Bitmap = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+
+        override fun close() {
+            closes++
+        }
+    }
+
+    @Test
+    fun aMeasureReleasedInTheBindsPassStillClosesTheSource() {
+        val source = ClosingSource(4)
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            twoPage = true, autoCrop = true, preload = 0,
+            pageLayout = PageLayout.of(listOf(intArrayOf(0, 1), intArrayOf(2, 3)), spread = true, rtl = false, joined = emptySet())
+        )
+        // The pair's bind asks for its crop; the adapter is released before the main thread idles.
+        adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), adapter.getItemViewType(0)), 0)
+        adapter.release()
+        idleUntil { source.closes > 0 }
+        assertEquals(1, source.closes)
+    }
+
     @Test
     fun withoutBehindNothingBeforeTheScreenDecodes() {
         val source = HeldSource(8)

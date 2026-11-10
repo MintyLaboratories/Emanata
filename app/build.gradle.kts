@@ -1,6 +1,7 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.FileInputStream
+import java.time.Duration
 import java.util.Properties
 
 plugins {
@@ -93,11 +94,14 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        // Robolectric bitmaps live on the test JVM's heap; the 512 MB default runs out.
+        // Robolectric bitmaps live on the test JVM's heap; the 512 MB default runs out (-PtestHeap, default 2g).
         // A fresh JVM every 50 classes: what each class leaves behind adds up across the whole suite.
+        // Test JVMs in parallel: -PtestForks (default 2). A run past 30 minutes fails instead of hanging.
         unitTests.all {
-            it.maxHeapSize = "2g"
+            it.maxHeapSize = providers.gradleProperty("testHeap").getOrElse("2g")
             it.forkEvery = 50
+            it.maxParallelForks = providers.gradleProperty("testForks").map(String::toInt).getOrElse(2)
+            it.timeout.set(Duration.ofMinutes(30))
         }
     }
 

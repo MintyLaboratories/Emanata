@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -244,7 +245,7 @@ object NativeResampler {
 
     /**
      * Frees the buffers the GPU path keeps between jobs once memory runs low or the UI
-     * hides, on the calling thread; true when [level] asks for it. From API 34 on, apps get
+     * hides ([trim]); true when [level] asks for it. From API 34 on, apps get
      * only [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN] and
      * [ComponentCallbacks2.TRIM_MEMORY_BACKGROUND]; in front, [idleTrimMs] frees them.
      */
@@ -255,9 +256,20 @@ object NativeResampler {
         return true
     }
 
-    /** Frees the buffers and compiled shaders the GPU path keeps between jobs; never blocks ([PixelKernels.trim]). */
+    /**
+     * Frees the buffers and compiled shaders the GPU path keeps between jobs ([PixelKernels.trim])
+     * on the idle timer's thread: its GL calls take milliseconds, kept off the caller (the main
+     * thread, say).
+     */
     fun trim() {
-        kernels?.trim(programs = true)
+        val k = kernels ?: return
+        idleTimer.execute { k.trim(programs = true) }
+    }
+
+    /** Returns once the trims asked for so far ran. */
+    @VisibleForTesting
+    internal fun awaitTrims() {
+        idleTimer.submit {}.get()
     }
 
     /** Milliseconds after the last GPU job at which the GPU path's buffers are freed. */

@@ -17,7 +17,7 @@ import java.util.Collections
 
 /**
  * [NativeResampler.trim] and its callers: which memory trims, engine changes and ends of
- * calibration free the GPU path's buffers, on the calling thread.
+ * calibration free the GPU path's buffers, on the idle timer's thread.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -69,6 +69,7 @@ class ResampleTrimTest {
             ComponentCallbacks2.TRIM_MEMORY_COMPLETE
         )
         for (level in levels) assertTrue(NativeResampler.onTrimMemory(level))
+        NativeResampler.awaitTrims()
         assertEquals(levels.size, k.threads.size)
     }
 
@@ -77,27 +78,31 @@ class ResampleTrimTest {
     fun keepsBuffersWhileMemoryIsModerate() {
         val k = Trims().also { NativeResampler.kernels = it }
         assertFalse(NativeResampler.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE))
+        NativeResampler.awaitTrims()
         assertEquals(0, k.threads.size)
     }
 
     @Test
-    fun trimsOnTheCallingThread() {
+    fun memoryTrimsRunOffTheCallingThread() {
         val k = Trims().also { NativeResampler.kernels = it }
         assertTrue(NativeResampler.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN))
-        assertEquals(listOf(Thread.currentThread().name), k.threads)
+        NativeResampler.awaitTrims()
+        assertEquals(listOf("resample-idle"), k.threads)
     }
 
     @Test
-    fun trimRunsOnTheCallingThread() {
+    fun trimRunsOffTheCallingThread() {
         val k = Trims().also { NativeResampler.kernels = it }
         NativeResampler.trim()
-        assertEquals(listOf(Thread.currentThread().name), k.threads)
+        NativeResampler.awaitTrims()
+        assertEquals(listOf("resample-idle"), k.threads)
     }
 
     @Test
     fun appTrimsOnceTheUiHides() {
         val k = Trims().also { NativeResampler.kernels = it }
         App().onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN)
+        NativeResampler.awaitTrims()
         assertEquals(1, k.threads.size)
     }
 
@@ -106,9 +111,11 @@ class ResampleTrimTest {
         val k = Trims().also { NativeResampler.kernels = it }
         NativeResampler.engine = PixelEngine.NATIVE
         NativeResampler.trimUnlessGpu()
+        NativeResampler.awaitTrims()
         assertEquals(1, k.threads.size)
         NativeResampler.engine = PixelEngine.GPU
         NativeResampler.trimUnlessGpu()
+        NativeResampler.awaitTrims()
         assertEquals(1, k.threads.size)
     }
 
@@ -118,10 +125,13 @@ class ResampleTrimTest {
         NativeResampler.engine = PixelEngine.NATIVE
         NativeResampler.engine = PixelEngine.GPU
         NativeResampler.engine = PixelEngine.GPU
+        NativeResampler.awaitTrims()
         assertEquals(0, k.threads.size)
         NativeResampler.engine = PixelEngine.KOTLIN
+        NativeResampler.awaitTrims()
         assertEquals(1, k.threads.size)
         NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.awaitTrims()
         assertEquals(1, k.threads.size)
     }
 
@@ -145,6 +155,7 @@ class ResampleTrimTest {
         assertTrue(NativeResampler.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN))
         NativeResampler.engine = PixelEngine.GPU
         NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.awaitTrims()
         assertEquals(listOf(true, true), k.programs)
     }
 

@@ -237,20 +237,32 @@ class NativeResamplerTest {
     }
 
     @Test
-    fun gpuCallerStaysOnTheLargeCoresWhateverTheWorkersPinning() {
+    fun gpuCallerIsPlacedAsACpuWorkerWouldBe() {
         val k = use(FakeKernels())
-        NativeResampler.pinned = false
-        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
-        NativeResampler.pinned = true
+        val page = noise(64, 64)
+        fun gpu(h: Int, urgent: Boolean = true) =
+            assertTrue(resample(page, 40, h, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, urgent = { urgent }).first)
+        // Large cores whether waited on or not, as CPU workers.
+        gpu(120, urgent = false)
         NativeResampler.laterOnLittle = true
-        assertTrue(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, urgent = { false }).first)
+        gpu(121, urgent = false)
+        gpu(122)
         NativeResampler.laterOnLittle = false
         NativeResampler.onPrime = true
-        assertTrue(resample(noise(64, 64), 40, 122, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
-        assertEquals(List(3) { setOf(0b1111_0000L) }, k.jobs.map { it.cores.toSet() })
+        gpu(123)
+        NativeResampler.onPrime = false
+        NativeResampler.pinned = false
+        gpu(124)
+        assertEquals(listOf(0b1111_0000L, 0b0000_1111L, 0b1111_0000L, 0b1000_0000L, 0L), k.jobs.map { it.cores.toSet().single() })
+        // Unpinned for one setup's timing, whatever pinned says.
+        NativeResampler.pinned = true
+        val dst = Bitmap.createBitmap(40, 125, Bitmap.Config.ARGB_8888)
+        windows[40 to 125] = Resampler.Window.of(64, 64) to Scaling.DEFAULT
+        assertTrue(NativeResampler.resample(page, dst, Resampler.Window.of(64, 64), false, Scaling.DEFAULT, engine = PixelEngine.GPU, pin = false))
+        assertEquals(setOf(0L), k.jobs.last().cores.toSet())
         // One kind of core: nothing to pin to.
         NativeResampler.cores = CpuCores(IntArray(8) { 1024 })
-        assertTrue(resample(noise(64, 64), 40, 123, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        gpu(126)
         assertEquals(setOf(0L), k.jobs.last().cores.toSet())
     }
 

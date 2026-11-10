@@ -1,8 +1,8 @@
 // JNI binding of resample.h for com.infinity.comicreader.reader.LibPixels: a job locks the
 // pixels of a source and a destination ARGB_8888 bitmap until it ends, takes each axis'
 // taps (checked to stay inside both bitmaps), then filters bands of output rows on the
-// CPU, from several threads at once with a worker index each, or on the GPU. A CPU band
-// may run pinned to a set of cores.
+// CPU, from several threads at once with a worker index each, or on the GPU. A band may
+// run pinned to a set of cores.
 
 #define _GNU_SOURCE
 #include <android/bitmap.h>
@@ -170,7 +170,9 @@ static int stop_now(void * opaque)
 
 // Filters output rows y0 until y1 of a GPU job, asking stop (NULL: never) before each
 // chunk, on the calling thread pinned to `cores` (0 = any) and counted by the core ledger
-// while it runs, its row copies included; rs_gpu_band's result.
+// while it runs, its row copies included; rs_gpu_band's result. Opening and closing the
+// job stay where the thread was: threads the GPU driver starts while its context is made
+// inherit the starter's cores for good.
 static int gpu_band(handle * h, int y0, int y1, uint64_t cores, rs_stop stop, void * opaque)
 {
     if (h->on_gpu == NULL) return -1;

@@ -178,11 +178,12 @@ internal object LibPixels : PixelKernels {
  * Resamples a bitmap with native code, reading and writing pixels where the bitmaps hold
  * them: no row copies through Java arrays, no lock on the output. The taps are
  * [Resampler.axis]'s, the bands [Resampler.inBands]'s; the GPU takes the bands one at a
- * time on the calling thread, pinned to the large cores for its row copies.
+ * time on the calling thread.
  *
  * CPU workers are pinned to the large cores ([CpuCores]): work someone waits on
  * ([Urgency]) runs on [threads] of them, other work (pages read ahead, previews) on
- * [laterThreads], growing to [threads] once it is waited on.
+ * [laterThreads], growing to [threads] once it is waited on. A GPU band's calling thread,
+ * which copies its rows to and from the GPU, is placed as a CPU worker would be.
  */
 object NativeResampler {
     /**
@@ -280,8 +281,8 @@ object NativeResampler {
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
      * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
      * each band, whether someone waits on the result. [workers] above 0 sets the CPU
-     * workers whatever the urgency, [pin] whether they are pinned, for timing a setup; the
-     * GPU's calling thread is pinned to the large cores either way.
+     * workers whatever the urgency, [pin] whether they (or the GPU's calling thread) are
+     * pinned, for timing a setup.
      */
     fun resample(
         src: Bitmap,
@@ -324,7 +325,6 @@ object NativeResampler {
         val later = (if (workers > 0) workers else laterThreads).coerceAtLeast(1)
         val most = if (gpu) 1 else maxOf(now, later)
         val c = cores!!
-        val pin = pinning && !gpu
         val job = k.begin(src, dst, linear, most, gpu)
         if (job == 0L) return false
         try {
@@ -332,7 +332,7 @@ object NativeResampler {
             val failed = AtomicBoolean()
             try {
                 Resampler.inBands(dst.height, most, canceled, { if (urgent()) now else later }) { worker, y0, y1 ->
-                    val on = if (gpu) c.big else if (!pin) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
+                    val on = if (!pinning) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
                     k.band(job, worker, y0, y1, on).also { if (!it) failed.set(true) }
                 }
             } catch (e: CancellationException) {

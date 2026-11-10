@@ -191,8 +191,9 @@ internal object LibPixels : PixelKernels {
  */
 object NativeResampler {
     /**
-     * The GPU path's revision, part of what calibration is made of ([Calibration.method]):
-     * bumped with [Calibration.VERSION] when the GPU path changes enough to time it again.
+     * The GPU path's revision, part of what calibration is made of ([Calibration.method]): it
+     * sets the method's pinned hash apart for a [Calibration.VERSION] bump that changes only
+     * the GPU path. Never changed without such a bump.
      */
     internal const val GPU_REVISION = 2
 

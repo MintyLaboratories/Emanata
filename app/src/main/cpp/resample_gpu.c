@@ -12,8 +12,9 @@
 //   the context; wider axes share a program per anti-ringing that loops over the taps.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
-//   milliseconds each step took over all its chunks, the GPU time of each pass where the
-//   driver has GL_EXT_disjoint_timer_query, and the cores its copies ran on.
+//   milliseconds each step took over all its chunks (compile: the across program's, on its
+//   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
+//   the across tap count, and the cores its copies ran on.
 
 #define _GNU_SOURCE
 #include "resample.h"
@@ -83,6 +84,8 @@ typedef struct {
     int64_t opened;
     int64_t lock_ns;
     int64_t begin_ns;
+    // Compiling the across program, when the job is its first use.
+    int64_t compile_ns;
     int64_t alloc_ns;
     int64_t upload_ns;
     int64_t submit_ns;
@@ -94,6 +97,8 @@ typedef struct {
     uint64_t cores;
     int chunks;
     int rows;
+    // The across program's tap loop length.
+    int across_taps;
 } rs_trace;
 
 struct rs_gpu {
@@ -418,12 +423,12 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
         snprintf(gpu, sizeof(gpu), "across=- down=-");
     }
     __android_log_print(ANDROID_LOG_INFO, TAG,
-                        "src=%dx%d dst=%dx%d taps=%d/%d ring=%.2f/%.2f linear=%d chunk=%d chunks=%d rows=%d%s "
-                        "lock=%.2f begin=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f free=%.2f total=%.2f %s "
-                        "cores=0x%llx",
-                        ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, ax->ring, ay->ring,
-                        job->linear, chunk, t->chunks, t->rows, chunk == 0 ? " failed" : "", ms(t->lock_ns), ms(t->begin_ns),
-                        ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns), ms(t->wait_ns), ms(t->copy_ns), ms(free_ns),
+                        "src=%dx%d dst=%dx%d taps=%d/%d across_taps=%d ring=%.2f/%.2f linear=%d chunk=%d chunks=%d rows=%d%s "
+                        "lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f free=%.2f "
+                        "total=%.2f %s cores=0x%llx",
+                        ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, t->across_taps,
+                        ax->ring, ay->ring, job->linear, chunk, t->chunks, t->rows, chunk == 0 ? " failed" : "", ms(t->lock_ns),
+                        ms(t->begin_ns), ms(t->compile_ns), ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns), ms(t->wait_ns), ms(t->copy_ns), ms(free_ns),
                         ms(total_ns), gpu, (unsigned long long)t->cores);
 }
 
@@ -540,7 +545,10 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     }
     const size_t src_w = (size_t)(ax->end - ax->first);
     g->taps = taps_of(ax);
+    g->trace.across_taps = g->taps;
+    const int64_t compiling = stamp(g);
     g->across = across_program(g->taps, ax->ring > 0);
+    g->trace.compile_ns = stamp(g) - compiling;
     g->axis_x = axis_buffer(ax, g->taps);
     g->axis_y = axis_buffer(ay, 0);
     g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
@@ -551,7 +559,7 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         rs_gpu_close(g);
         return NULL;
     }
-    g->trace.alloc_ns = stamp(g) - t;
+    g->trace.alloc_ns = stamp(g) - t - g->trace.compile_ns;
     if (g->trace.on && tq_load()) {
         // Clears errors left over, so the probe below sees only its own.
         for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {

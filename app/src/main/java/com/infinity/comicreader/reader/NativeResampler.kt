@@ -123,8 +123,9 @@ internal object LibPixels : PixelKernels {
 
     /**
      * Turns on or off a log line per GPU job under "ResampleGpu": milliseconds per step (lock,
-     * context, allocation, upload, submit, wait, copy, free), each pass's GPU time where the
-     * driver has timer queries, and the cores the copies ran on. Off by default; debug checks
+     * context, shader compile, allocation, upload, submit, wait, copy, free), each pass's GPU
+     * time where the driver has timer queries, the across pass' tap count, and the cores the
+     * copies ran on. Off by default; debug checks
      * only. Does nothing where the native library is not loaded.
      */
     fun trace(on: Boolean) {

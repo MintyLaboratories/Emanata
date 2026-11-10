@@ -128,7 +128,12 @@ object Thumbs {
         }
     }
 
-    /** Finds text on covers for the Smart crop anchor: the app's detector ([TextDetector]). Tests stand in their own. */
+    /**
+     * Finds text on covers for the Smart crop anchor: the app's detector ([TextDetector]). Tests
+     * stand in their own. Asked on every cover key, list binds on the main thread included: it
+     * answers at once, without I/O, and its [CoverTextDetector.id] changes only when the
+     * detector chosen does, as every cover's key and focus store follow it.
+     */
     @Volatile
     internal var detector: (Context) -> CoverTextDetector = { TextDetector.shared(it) }
 

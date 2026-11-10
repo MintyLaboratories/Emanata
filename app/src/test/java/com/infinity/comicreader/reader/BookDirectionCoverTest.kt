@@ -125,6 +125,24 @@ class BookDirectionCoverTest {
         assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT, V)), kept)
     }
 
+    @Test
+    fun whatACoverToldAfterTheDetectorSwitchedCopiesIsNotKept() {
+        val kept = ArrayList<CoverFront>()
+        val title = titleOn(Color.RED)
+        var current = "fake"
+        // Switches to another id before its first lines, as a copy that falls back would.
+        val switching = object : CoverTextDetector {
+            override val id: String get() = current
+
+            override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
+                current = "other"
+                return title.lines(src)
+            }
+        }
+        book().use { assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(it, null, switching) { f -> kept += f }) }
+        assertTrue(kept.isEmpty())
+    }
+
     /** The cover-focus version of [coverText]'s detectors. */
     private val V = SmartCrop.version("fake")
 }

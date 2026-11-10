@@ -130,15 +130,16 @@ object BookDirection {
     /**
      * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]
      * when looked at before under [detector]'s cover-focus version, else found now and handed
-     * to [keep], unless it could not tell this time, which leaves it to be looked at again.
-     * Blocking.
+     * to [keep], unless it could not tell this time or the detector switched to a copy of
+     * another id meanwhile, which leaves it to be looked at again. Blocking.
      */
     fun coverFrontOnce(source: PageSource, known: CoverFront?, detector: CoverTextDetector, keep: (CoverFront) -> Unit): Wraparound.Half? {
-        val version = SmartCrop.version(detector.id)
+        val id = detector.id
+        val version = SmartCrop.version(id)
         if (known != null && known.version == version) return known.half
         var told = true
         val half = coverFront(source, detector) { told = false }
-        if (told) keep(CoverFront(HiddenPages.bookIndex(source, 0), half, version))
+        if (told && detector.id == id) keep(CoverFront(HiddenPages.bookIndex(source, 0), half, version))
         return half
     }
 }

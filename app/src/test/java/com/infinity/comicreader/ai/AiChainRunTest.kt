@@ -165,11 +165,26 @@ class AiChainRunTest {
 
     @Test
     fun stepsLeaveOutAnUpscalerWhereThePageShowsNoLarger() {
-        val shrink = Plan(30, 45, 0.0, 0.0, 60.0, 90.0)
-        assertEquals(listOf(ChainStep(0, 5400L)), AiPages.steps(listOf(1, 2), 60, 90, shrink))
-        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 5400L)), AiPages.steps(listOf(1, 2), 60, 90, plan))
+        val shrink = Plan(40, 60, 0.0, 0.0, 60.0, 90.0)
+        val clean = ChainModel(AiStep.ARTIFACTS, 1)
+        val up = ChainModel(AiStep.UPSCALE, 2)
+        assertEquals(listOf(ChainStep(0, 5400L)), AiPages.steps(listOf(clean, up), 60, 90, shrink))
+        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 5400L)), AiPages.steps(listOf(clean, up), 60, 90, plan))
         // A second upscaler reads the first's output, four times the pixels.
         val big = Plan(240, 360, 0.0, 0.0, 60.0, 90.0)
-        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 21600L)), AiPages.steps(listOf(2, 2), 60, 90, big))
+        assertEquals(listOf(ChainStep(0, 5400L), ChainStep(1, 21600L)), AiPages.steps(listOf(up, up), 60, 90, big))
+    }
+
+    @Test
+    fun theChainRunsOnlyTheStepsItIsGiven() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 1)
+        val sessions = listOf(session(clean), session(up))
+        val before = clean.runs.get()
+        val run = AiPages.chain(sessions, page(60, 90), plan, steps = listOf(ChainStep(1, 5400L)))
+        assertNull(run.fallback)
+        assertEquals(1, run.ran)
+        assertEquals(before, clean.runs.get())
+        assertEquals(Fallback.UNNEEDED, AiPages.chain(sessions, page(60, 90), plan, steps = emptyList()).fallback)
     }
 }

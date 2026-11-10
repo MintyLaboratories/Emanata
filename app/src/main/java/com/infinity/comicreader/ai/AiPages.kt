@@ -81,18 +81,33 @@ class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val m
 /** A model of a chain that runs on a page: [index] in the chain, on an input of [pixels]. */
 data class ChainStep(val index: Int, val pixels: Long)
 
+/** A model of a chain as the step decisions ([AiPages.steps]) see it: what it does ([step]) and times larger out than in ([scale]). */
+data class ChainModel(val step: AiStep, val scale: Int) {
+    /** The step whose rule ([AiThresholds.runs]) decides it: Upscale for any enlarging model, Artifacts for a 1x one picked as Upscale. */
+    val rule: AiStep
+        get() = when {
+            scale > 1 -> AiStep.UPSCALE
+            step == AiStep.UPSCALE -> AiStep.ARTIFACTS
+            else -> step
+        }
+
+    companion object {
+        fun of(m: AiModel) = ChainModel(m.step, m.scale)
+    }
+}
+
 /**
  * Pages through a model, then to their display size by Lanczos3; a run that falls back
- * leaves the page as it would be without AI: the page itself by Lanczos3. An upscaling model
- * does not run for a page shown no larger than it is ([Fallback.UNNEEDED]): the resampling
- * after it would throw its added pixels away. A gray page stays gray: each model's output on it
- * is collapsed to gray before anything reads it ([GrayPages]).
+ * leaves the page as it would be without AI: the page itself by Lanczos3. Which models run
+ * depends on the size the page shows at ([steps], [AiThresholds]). A gray page stays gray: each
+ * model's output on it is collapsed to gray before anything reads it ([GrayPages]).
  */
 internal object AiPages {
     /**
      * [src] rendered as [plan] (in [src]'s pixels) and [scaling] say: through [session]'s model
-     * and then resampled, or, when the run falls back, [src] resampled alone. The model's output
-     * is collapsed to gray with [gray], or with [gray] null when [src] is gray ([GrayPages]).
+     * and then resampled, or, when the run falls back, [src] resampled alone. An upscaling model
+     * runs only where [thresholds] let it ([Fallback.UNNEEDED]); a 1x one always runs. The model's
+     * output is collapsed to gray with [gray], or with [gray] null when [src] is gray ([GrayPages]).
      * Throws [java.util.concurrent.CancellationException] once [canceled].
      */
     fun render(
@@ -104,9 +119,10 @@ internal object AiPages {
         limits: PageLimits = PageLimits(),
         canceled: () -> Boolean = { false },
         gate: () -> Fallback? = { null },
-        gray: Boolean? = null
+        gray: Boolean? = null,
+        thresholds: AiThresholds = AiThresholds()
     ): AiRendered {
-        val run = if (session.geometry.scale > 1 && plan.shrinks()) {
+        val run = if (session.geometry.scale > 1 && !thresholds.upscales(AiThresholds.shownPercent(plan))) {
             PageRun(null, Fallback.UNNEEDED, RunStats.NONE)
         } else {
             TileEngine.run(session, src, limits, canceled, gate, gray = gray)
@@ -128,9 +144,10 @@ internal object AiPages {
     /**
      * [src] through [sessions]' models in turn, then resampled as [plan] (in [src]'s pixels)
      * and [scaling] say; no bitmap when the chain falls back ([ChainRun.fallback]), when
-     * nothing else is made: the page shows as it would without AI. An upscaling model is
-     * skipped where the page shows no larger than its input to it; the chain falls back as
-     * [Fallback.UNNEEDED] when every model is. All models share [limits]' time, toward which
+     * nothing else is made: the page shows as it would without AI. Only the models of [steps]
+     * run (by default as before the AI thresholds: an upscaler where the page shows larger than
+     * its input to it, every 1x model); the chain falls back as [Fallback.UNNEEDED] when
+     * [steps] is empty. All models share [limits]' time, toward which
      * time [hold] held them back does not count. [expect] gives the milliseconds a model is
      * expected to take on an input of so many pixels (0: unknown): a chain expected to take
      * longer than the limit falls back at once, and each model stops as soon as it would leave
@@ -150,10 +167,13 @@ internal object AiPages {
         clock: () -> Long = SystemClock::elapsedRealtime,
         hold: () -> Boolean = { false },
         expect: (index: Int, pixels: Long) -> Long = { _, _ -> 0L },
-        onStep: (index: Int, pixels: Long, stats: RunStats) -> Unit = { _, _, _ -> }
+        onStep: (index: Int, pixels: Long, stats: RunStats) -> Unit = { _, _, _ -> },
+        steps: List<ChainStep> = steps(
+            sessions.map { ChainModel(AiStep.ARTIFACTS, it.geometry.scale) }, src.width, src.height, plan,
+            AiThresholds(cleanupPct = AiThresholds.ALWAYS)
+        )
     ): ChainRun {
         val start = clock()
-        val steps = steps(sessions.map { it.geometry.scale }, src.width, src.height, plan)
         if (steps.isEmpty()) return ChainRun(null, Fallback.UNNEEDED, 0, 0)
         val expected = steps.map { expect(it.index, it.pixels).coerceAtLeast(0) }
         if (expected.sum() > limits.timeoutMs) return ChainRun(null, Fallback.TIMEOUT, 0, 0, early = true)
@@ -188,17 +208,19 @@ internal object AiPages {
     }
 
     /**
-     * The models of a chain, by their [scales], that run on a [width] x [height] page shown as
-     * [plan], each with its input's pixels: an upscaler is left out where the page shows no
-     * larger than its input.
+     * The [models] of a chain that run on a [width] x [height] page shown as [plan], each with
+     * its input's pixels: those [thresholds] let run at the size the page shows at against
+     * their input ([AiThresholds.shownPercent]), the models before them having enlarged it.
+     * [width] x [height] is the chain's input: the page after its reduction to
+     * [ReaderAi.MAX_INPUT_PIXELS], as [plan] is in its pixels.
      */
-    fun steps(scales: List<Int>, width: Int, height: Int, plan: Plan): List<ChainStep> {
+    fun steps(models: List<ChainModel>, width: Int, height: Int, plan: Plan, thresholds: AiThresholds = AiThresholds()): List<ChainStep> {
         val out = ArrayList<ChainStep>()
         var scale = 1
-        for ((i, s) in scales.withIndex()) {
-            if (s > 1 && scaled(plan, scale).shrinks()) continue
+        for ((i, m) in models.withIndex()) {
+            if (!thresholds.runs(m.rule, AiThresholds.shownPercent(plan, scale))) continue
             out += ChainStep(i, width.toLong() * height * scale * scale)
-            scale *= s
+            scale *= m.scale
         }
         return out
     }

@@ -60,9 +60,12 @@ class ReaderAiTest {
     @After
     fun tearDown() = ai.close()
 
+    /** The thresholds [ai] reads for each page. */
+    private var thresholds = AiThresholds()
+
     private fun reader(): ReaderAi = ReaderAi(
         prefs, { own[it] }, models, ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }), runtime,
-        { stop }, { downloads += it.id }, threads = 2
+        { stop }, { downloads += it.id }, threads = 2, thresholds = { thresholds }
     )
 
     private fun install(m: CatalogModel) {
@@ -167,11 +170,47 @@ class ReaderAiTest {
 
     @Test
     fun anUpscaleIsUnneededOnlyWhenThePageShowsNoLarger() {
-        val chain = listOf(upscale)
-        assertTrue(ReaderAi.unneeded(chain, target, intArrayOf(80, 120)))
-        assertFalse(ReaderAi.unneeded(chain, target, intArrayOf(30, 45)))
-        assertFalse("a crop to be found may enlarge", ReaderAi.unneeded(chain, target.copy(autoCrop = true), intArrayOf(80, 120)))
-        assertFalse("a cleanup runs at any size", ReaderAi.unneeded(listOf(ModelCatalog.forStep(AiStep.ARTIFACTS).first()), target, intArrayOf(80, 120)))
+        assertTrue(ReaderAi.unneeded(upscales, target, intArrayOf(80, 120), 40, 60))
+        assertFalse(ReaderAi.unneeded(upscales, target, intArrayOf(30, 45), 40, 60))
+        assertFalse("a crop to be found may change the size", ReaderAi.unneeded(upscales, target.copy(autoCrop = true), intArrayOf(80, 120), 40, 60))
+        assertFalse("the upscale handle lowered", ReaderAi.unneeded(upscales, target, intArrayOf(60, 90), 40, 60, AiThresholds(upscalePct = 50)))
+    }
+
+    private val upscales = listOf(upscale)
+
+    @Test
+    fun aCleanupIsUnneededAtOrBelowItsHandleButADescreenNever() {
+        val cleanup = listOf(ModelCatalog.forStep(AiStep.ARTIFACTS).first())
+        assertTrue("shown at half its side", ReaderAi.unneeded(cleanup, target, intArrayOf(80, 120), 40, 60))
+        assertFalse(ReaderAi.unneeded(cleanup, target, intArrayOf(78, 117), 40, 60))
+        assertFalse("always", ReaderAi.unneeded(cleanup, target, intArrayOf(800, 1200), 40, 60, AiThresholds(cleanupPct = AiThresholds.ALWAYS)))
+        val descreen = listOf(ModelCatalog.forStep(AiStep.DESCREEN).first())
+        assertFalse(ReaderAi.unneeded(descreen, target, intArrayOf(800, 1200), 40, 60, AiThresholds(cleanupPct = 200)))
+        assertFalse("a descreen keeps the chain running", ReaderAi.unneeded(cleanup + descreen + upscales, target, intArrayOf(800, 1200), 40, 60))
+    }
+
+    @Test
+    fun unneededMeasuresAgainstThePageReducedToTheChainsInput() {
+        // 4000 x 6000 (24 MP) is read reduced to fit 8 MP: 2309 x 3464.
+        val size = intArrayOf(4000, 6000)
+        assertFalse("75 % of the source, 130 % of the input", ReaderAi.unneeded(upscales, Target(3000, 4500), size, 3000, 4500))
+        assertTrue("55 % of the source, 95 % of the input", ReaderAi.unneeded(upscales, Target(2200, 3300), size, 2200, 3300))
+    }
+
+    @Test
+    fun zoomingChangesWhichModelsRun() {
+        val size = intArrayOf(80, 120)
+        assertTrue("shown at half its side", ReaderAi.unneeded(upscales, target, size, 40, 60))
+        assertFalse("zoomed in to twice that", ReaderAi.unneeded(upscales, target, size, 160, 240))
+    }
+
+    @Test
+    fun theThresholdsAreReadForEachPage() {
+        install(upscale)
+        val b = bookOf(60, 90)
+        assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+        thresholds = AiThresholds(upscalePct = 50)
+        assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
     }
 
     private fun until(done: () -> Boolean) {

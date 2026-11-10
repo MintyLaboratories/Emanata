@@ -53,7 +53,8 @@ interface PageEnhancer {
  * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
  * model is still downloading ([download] starts one missing, unless its download failed: a pick
  * or Settings starts that again); skips pages of vector books,
- * pages drawn in bands, and pages an upscaler would only shrink.
+ * pages drawn in bands, and pages shown at a size where no model of the chain runs
+ * ([thresholds], read for each page: [AiPages.steps]).
  */
 class ReaderAi internal constructor(
     private val prefs: Prefs,
@@ -68,7 +69,9 @@ class ReaderAi internal constructor(
     /** The memory a model may take as it opens ([ModelMemory]). */
     private val memory: () -> Long = { Long.MAX_VALUE },
     /** Milliseconds on a clock that never jumps. */
-    private val clock: () -> Long = SystemClock::elapsedRealtime
+    private val clock: () -> Long = SystemClock::elapsedRealtime,
+    /** The display sizes at which the chain's models run, as set now. */
+    private val thresholds: () -> AiThresholds = { AiThresholds() }
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -158,6 +161,7 @@ class ReaderAi internal constructor(
     private fun enhanceNow(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
+        val thresholds = thresholds()
         val key = keyOf(source, index, target, width, height, chain)
         val t0 = SystemClock.elapsedRealtime()
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
@@ -170,7 +174,7 @@ class ReaderAi internal constructor(
             }
         }
         val size = source.pageSize(index)
-        if (size != null && unneeded(chain, target, size)) return AiOutcome.Skipped(Fallback.UNNEEDED)
+        if (size != null && unneeded(chain, target, size, width, height, thresholds)) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val opened = chain.mapIndexed { i, m ->
             session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
@@ -182,12 +186,12 @@ class ReaderAi internal constructor(
             val readable = if (input.config == Bitmap.Config.ARGB_8888) input else input.copy(Bitmap.Config.ARGB_8888, false)
             try {
                 val shownPlan = plan.copy(width = width, height = height)
-                val steps = AiPages.steps(chain.map { it.scale }, readable.width, readable.height, shownPlan)
+                val steps = AiPages.steps(chain.map(ChainModel::of), readable.width, readable.height, shownPlan, thresholds)
                 val run = Urgency.later {
                     AiPages.chain(
                         opened, readable, shownPlan, target.scaling, target.linear, limitsFor(chain, steps), canceled, gate, hold = held,
                         expect = { i, px -> (rateOf(chain[i]) * px / 1e6).toLong() },
-                        onStep = { i, px, stats -> learn(chain[i], px, stats) }
+                        onStep = { i, px, stats -> learn(chain[i], px, stats) }, steps = steps
                     )
                 }
                 val out = run.bitmap ?: return when (run.fallback) {
@@ -340,15 +344,22 @@ class ReaderAi internal constructor(
         const val MAX_INPUT_PIXELS = 8_000_000L
 
         /**
-         * True when [chain] only enlarges and a [size] page shows as [target] no larger than it
-         * is: nothing to do. Unknown before an auto-crop finds its box, as the crop may enlarge.
+         * True when no model of [chain] runs ([AiPages.steps] under [thresholds]) on a [size] page
+         * shown as [target] lays it out at [width] x [height]: nothing to do. Measured against
+         * the chain's input, the page reduced to [MAX_INPUT_PIXELS] as [enhance] decodes it.
+         * Unknown before an auto-crop finds its box, as the crop changes the size.
          */
-        internal fun unneeded(chain: List<AiModel>, target: Target, size: IntArray): Boolean {
-            if (chain.any { it.scale <= 1 } || (target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0) return false
+        internal fun unneeded(
+            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds()
+        ): Boolean {
+            if ((target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0 || width <= 0 || height <= 0) return false
             val a = target.area(size[0], size[1])
             val w = (a[2] - a[0]).toDouble()
             val h = (a[3] - a[1]).toDouble()
-            return w > 0 && h > 0 && target.plan(w, h).shrinks()
+            if (w <= 0 || h <= 0) return false
+            val input = target.detail(size, MAX_INPUT_PIXELS * 4).plan(w, h)
+            val shown = target.plan(input.width.toDouble(), input.height.toDouble()).copy(width = width, height = height)
+            return AiPages.steps(chain.map(ChainModel::of), input.width, input.height, shown, thresholds).isEmpty()
         }
 
         /** [bitmap] immutable, copied if need be, so it shows and is written to disk at once; the GPU keeps its texture. */

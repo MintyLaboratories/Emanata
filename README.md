@@ -1071,33 +1071,33 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   to gray (luma) before the next model or the resampling reads it, so no model
   adds color to it; a scan with a paper tint or chroma noise counts as color
   and keeps what the models make (`GrayPages`). A page none of whose models
-  would run is skipped before it is decoded. A model refused for memory as it opens (what
-  is free changes) puts its pages off and is tried once more with them, no
-  sooner than the queue's first back-off (15 s), before its pages show
-  without it until the reader closes its models (left, or its book's chain
-  changed); pages it skipped are tried again once the reader returns. The AI
-  sheet says which model did not open and why. A page's time is 30 s, or for
-  a slower chain 2.5x the catalog's cool time for its input (warmth, and the
-  background priority of the AI thread), up to 120 s; each model keeps back
-  what the models after it are expected to take, and a chain expected to
+  would run is skipped before it is decoded. A model refused for memory as it
+  opens (what is free changes) puts its pages off and is tried once more with
+  them, no sooner than the queue's first back-off (15 s), before its pages
+  show without it until the reader closes its models (left, or its book's
+  chain changed); pages it skipped are tried again once the reader returns.
+  The AI sheet says which model did not open and why. A page's time is 30 s,
+  or for a slower chain 2.5x the catalog's cool time for its input (warmth,
+  and the background priority of the AI thread), up to 120 s; each model keeps
+  back what the models after it are expected to take, and a chain expected to
   run past its time at the rates measured on the device falls back before any
   model runs (a run cut short after four tiles or more counts as its whole
   input: its first tile once, the rest at their pace; one cut shorter teaches
-  nothing; those rates drift back toward the catalog's with
-  each such page). Tiles wait while the reader is touched or scrolling, so the GPU
-  leaves its frames alone. Heat or battery saver (`AiConditions`) or a model
-  still downloading puts the queue off for 15 s, doubling to 2 min (a page
-  wanted first meanwhile is tried at once, a model download ending or failing
-  wakes it, and a failed download is not retried until picked again); a page
-  that times out or fails keeps its plain rendering. Vector books and pages
-  drawn in bands are not processed; a zoom renders its detail from the plain
-  page. The queue pauses while the reader is out of sight; models close when
-  its UI hides and when no open book runs them. Processed pages are kept in
+  nothing; those rates drift back toward the catalog's with each such page).
+  Tiles wait while the reader is touched or scrolling, so the GPU leaves its
+  frames alone. Heat or battery saver (`AiConditions`) or a model still
+  downloading puts the queue off for 15 s, doubling to 2 min (a page wanted
+  first meanwhile is tried at once, a model download ending or failing wakes
+  it, and a failed download is not retried until picked again); a page that
+  times out or fails keeps its plain rendering. Vector books and pages drawn
+  in bands are not processed; a zoom renders its detail from the plain page.
+  The queue pauses while the reader is out of sight; models close when its UI
+  hides and when no open book runs them. Processed pages are kept in
   `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG
-  where libjxl is missing), keyed by Book ID, page, size, crop, the chain
-  with its models' checksums and which of its models ran (decided from the
-  page's size before its decode, so thresholds that run the same models share
-  a page), trimmed least recently read first to 1 GB and a tenth of the free
+  where libjxl is missing), keyed by Book ID, page, size, crop, the chain with
+  its models' checksums and which of its models ran (decided from the page's
+  size before its decode, so thresholds that run the same models share a
+  page), trimmed least recently read first to 1 GB and a tenth of the free
   space; they show even while AI is paused. When the thresholds move, the
   reader shows its pages again through the models their sizes call for.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never

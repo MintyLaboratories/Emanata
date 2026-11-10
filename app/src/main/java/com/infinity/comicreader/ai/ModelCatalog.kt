@@ -53,6 +53,15 @@ enum class ModelBlurb {
 /** One file of a model: stored as [name], downloaded from [url], [bytes] long with SHA-256 [sha256] (lowercase hex). */
 data class ModelFile(val name: String, val url: String, val bytes: Long, val sha256: String)
 
+/** Files downloaded together into one folder of [ModelStore], named by [id]: [files], fetched in order. */
+interface FileSet {
+    val id: String
+    val files: List<ModelFile>
+
+    /** Bytes to download. */
+    val bytes: Long get() = files.sumOf { it.bytes }
+}
+
 /**
  * A model the app offers to download: [name] for people, run at [step], [scale] times larger
  * out than in, from [source]. Its ncnn files are [param] and [bin]. [pageMs]: its time for a
@@ -69,8 +78,8 @@ data class CatalogModel(
     val bin: ModelFile,
     override val pageMs: Long = 0,
     val blurb: ModelBlurb? = null
-) : AiModel {
-    val files: List<ModelFile> get() = listOf(param, bin)
+) : AiModel, FileSet {
+    override val files: List<ModelFile> get() = listOf(param, bin)
 
     /** Bytes to download. */
     override val bytes: Long get() = param.bytes + bin.bytes

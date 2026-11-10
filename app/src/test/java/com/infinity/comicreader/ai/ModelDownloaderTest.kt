@@ -234,6 +234,40 @@ class ModelDownloaderTest {
         assertEquals(0, store.bytesHeld(m))
     }
 
+    /** A set of files that is not a catalog model. */
+    private data class Set(override val id: String, override val files: List<ModelFile>) : FileSet
+
+    private fun set(id: String, vararg sizes: Int): Set {
+        val r = Random(id.hashCode())
+        return Set(id, sizes.mapIndexed { i, n -> serve("/s/$id/file$i", r.nextBytes(n)) })
+    }
+
+    @Test
+    fun aSetOfAnyFilesDownloadsInOrderAndInstalls() {
+        val s = set("three-files", 10, 70_000, 300)
+        assertEquals(70_310L, s.bytes)
+        assertFalse(store.installed(s))
+        ModelDownloader(store).download(s)
+        assertTrue(store.installed(s))
+        assertEquals(listOf("/s/three-files/file0", "/s/three-files/file1", "/s/three-files/file2"), requests.map { it.path })
+        for ((i, f) in s.files.withIndex()) assertArrayEquals(files["/s/three-files/file$i"], File(store.dir(s), f.name).readBytes())
+        assertEquals(s.bytes, store.bytesHeld(s))
+    }
+
+    @Test
+    fun pruneKeepsSetsInTheCatalogItIsGiven() {
+        val m = model()
+        val s = set("kept-set", 100, 200)
+        val gone = set("gone-set", 100)
+        for (x in listOf(m, s, gone)) ModelDownloader(store).download(x)
+        store.prune(listOf(m, s))
+        assertTrue(store.installed(m))
+        assertTrue(store.installed(s))
+        assertFalse(store.dir(gone).exists())
+        assertTrue(store.delete(s))
+        assertFalse(store.installed(s))
+    }
+
     @Test
     fun contentRangeStartIsRead() {
         assertEquals(100L, ModelDownloader.contentRangeStart("bytes 100-199/200"))

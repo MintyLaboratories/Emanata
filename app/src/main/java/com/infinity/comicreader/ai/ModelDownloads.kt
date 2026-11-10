@@ -56,12 +56,13 @@ object ModelDownloads {
     internal var client: () -> OkHttpClient = { ModelDownloader.defaultClient }
 
     /**
-     * Downloads [model] into [store] unless it is installed or already on its way. One nobody
+     * Downloads [model] (a catalog model or another [FileSet]) into [store] unless it is
+     * installed or already on its way. One nobody
      * asked for ([optional]: started or resumed by the app itself) is not started on a metered
      * connection when the user skips downloads there ([NetPolicy]): it shows as failed for that
      * ([DownloadFailure.METERED]) instead.
      */
-    fun start(store: ModelStore, model: CatalogModel, client: OkHttpClient = this.client(), optional: Boolean = false) {
+    fun start(store: ModelStore, model: FileSet, client: OkHttpClient = this.client(), optional: Boolean = false) {
         if (store.installed(model)) return
         synchronized(jobs) {
             if (jobs[model.id]?.isActive == true) return
@@ -105,7 +106,7 @@ object ModelDownloads {
     }
 
     /** Stops [model]'s download and deletes it from [store]. */
-    fun delete(store: ModelStore, model: CatalogModel) {
+    fun delete(store: ModelStore, model: FileSet) {
         val job = synchronized(jobs) { jobs.remove(model.id) }
         scope.launch {
             job?.cancel()

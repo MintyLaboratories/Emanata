@@ -12,9 +12,9 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
- * Where models live: one folder per catalog model under [root], named by its id, holding its
- * `.param` and `.bin` once downloaded and verified, each with a stamp of the SHA-256 it was
- * verified against (a catalog that changes a file's checksum makes it download again). A file
+ * Where models live: one folder per downloaded [FileSet] (catalog models and the app's own
+ * models) under [root], named by its id, holding its files once downloaded and verified, each
+ * with a stamp of the SHA-256 it was verified against (a catalog that changes a file's checksum makes it download again). A file
  * still downloading is a `.part` beside them, kept to resume from. Imported models
  * ([UserModel]) live under [userRoot], one folder each holding [USER_PARAM], [USER_BIN] and
  * what the user named it and the check measured ([USER_INFO]); one being imported waits in
@@ -22,23 +22,26 @@ import java.util.concurrent.TimeUnit
  * folders of models the catalog dropped).
  */
 class ModelStore(val root: File) {
-    fun dir(model: CatalogModel): File = File(root, model.id)
+    fun dir(set: FileSet): File = File(root, set.id)
 
-    internal fun target(model: CatalogModel, file: ModelFile) = File(dir(model), file.name)
+    internal fun target(set: FileSet, file: ModelFile) = File(dir(set), file.name)
 
-    internal fun part(model: CatalogModel, file: ModelFile) = File(dir(model), file.name + PART)
+    internal fun part(set: FileSet, file: ModelFile) = File(dir(set), file.name + PART)
 
-    private fun stamp(model: CatalogModel, file: ModelFile) = File(dir(model), file.name + STAMP)
+    private fun stamp(set: FileSet, file: ModelFile) = File(dir(set), file.name + STAMP)
 
     /** True once [file] is in place at its size, verified against the catalog's SHA-256. */
-    fun has(model: CatalogModel, file: ModelFile): Boolean =
-        target(model, file).length() == file.bytes && runCatching { stamp(model, file).readText() }.getOrNull() == file.sha256
+    fun has(set: FileSet, file: ModelFile): Boolean =
+        target(set, file).length() == file.bytes && runCatching { stamp(set, file).readText() }.getOrNull() == file.sha256
 
     /** Marks [file], just verified, as in place. */
-    internal fun stamped(model: CatalogModel, file: ModelFile) = stamp(model, file).writeText(file.sha256)
+    internal fun stamped(set: FileSet, file: ModelFile) = stamp(set, file).writeText(file.sha256)
 
-    /** True once both files are in place ([has]). */
-    fun installed(model: CatalogModel): Boolean = model.files.all { has(model, it) }
+    /** True once all of [set]'s files are in place ([has]). */
+    fun installed(set: FileSet): Boolean = set.files.all { has(set, it) }
+
+    /** True once both of [model]'s files are in place ([has]). */
+    fun installed(model: CatalogModel): Boolean = installed(model as FileSet)
 
     /** [model]'s files for [Sessions.open]; null until [installed]. */
     fun files(model: AiModel): ModelFiles? = when (model) {
@@ -48,29 +51,29 @@ class ModelStore(val root: File) {
 
     /** True once [model]'s files are in place: downloaded and verified, or imported. */
     fun installed(model: AiModel): Boolean = when (model) {
-        is CatalogModel -> installed(model)
+        is CatalogModel -> installed(model as FileSet)
         is UserModel -> files(model) != null
     }
 
-    /** Bytes of [model] on disk: files in place and parts. */
-    fun bytesHeld(model: CatalogModel): Long =
-        model.files.sumOf { (if (has(model, it)) it.bytes else 0L) + part(model, it).length() }
+    /** Bytes of [set] on disk: files in place and parts. */
+    fun bytesHeld(set: FileSet): Long =
+        set.files.sumOf { (if (has(set, it)) it.bytes else 0L) + part(set, it).length() }
 
     /** Bytes held by every folder under [root], catalog models or not. */
     fun bytesUsed(): Long = root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-    /** Deletes [model]'s folder, parts included; true when nothing of it is left. */
-    fun delete(model: CatalogModel): Boolean {
-        val d = dir(model)
+    /** Deletes [set]'s folder, parts included; true when nothing of it is left. */
+    fun delete(set: FileSet): Boolean {
+        val d = dir(set)
         return !d.exists() || d.deleteRecursively()
     }
 
     /**
-     * Deletes folders of models no longer in [catalog] (an update dropped or replaced them), what
-     * an import left, and imported models' folders that do not read; imported models and the
-     * marker of a check ([ModelImports.CHECKING]) stay. Blocking.
+     * Deletes folders of file sets no longer in [catalog] (an update dropped or replaced them),
+     * what an import left, and imported models' folders that do not read; imported models and
+     * the marker of a check ([ModelImports.CHECKING]) stay. Blocking.
      */
-    fun prune(catalog: Collection<CatalogModel> = ModelCatalog.all) {
+    fun prune(catalog: Collection<FileSet> = ModelCatalog.all) {
         val ids = catalog.map { it.id }.toSet() + USER + ModelImports.CHECKING
         root.listFiles()?.filter { it.name !in ids }?.forEach { it.deleteRecursively() }
         userRoot.listFiles()?.filter { it.isDirectory && userModel(it) == null }?.forEach { it.deleteRecursively() }
@@ -151,7 +154,7 @@ enum class DownloadFailure {
 class DownloadException(val failure: DownloadFailure, message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /**
- * Downloads catalog models into [store], one file after the other: each into its `.part`,
+ * Downloads file sets (catalog models and the app's own) into [store], one file after the other: each into its `.part`,
  * resumed where it stopped (HTTP Range; a server that sends the whole file again starts it
  * over), then checked against the catalog's size and SHA-256 and renamed into place. A part
  * that does not match is deleted; one cut short is kept.
@@ -159,34 +162,34 @@ class DownloadException(val failure: DownloadFailure, message: String, cause: Th
 class ModelDownloader(private val store: ModelStore, private val client: OkHttpClient = defaultClient) {
 
     /**
-     * Downloads what [model] still lacks. [progress] gets bytes held and the total after each
+     * Downloads what [set] still lacks. [progress] gets bytes held and the total after each
      * chunk; [canceled] is checked between chunks, and throws [CancellationException] (parts
      * kept). Throws [DownloadException] when it cannot finish. Blocking.
      */
     fun download(
-        model: CatalogModel,
+        set: FileSet,
         canceled: () -> Boolean = { false },
         progress: (done: Long, total: Long) -> Unit = { _, _ -> }
     ) {
-        val dir = store.dir(model)
+        val dir = store.dir(set)
         if (!dir.isDirectory && !dir.mkdirs()) throw DownloadException(DownloadFailure.SPACE, "Cannot create $dir")
-        val left = model.bytes - store.bytesHeld(model)
+        val left = set.bytes - store.bytesHeld(set)
         if (left > 0 && dir.usableSpace < left + SPARE_BYTES) {
             throw DownloadException(DownloadFailure.SPACE, "${left shr 20} MB needed, ${dir.usableSpace shr 20} MB free")
         }
         var before = 0L
-        for (file in model.files) {
-            if (!store.has(model, file)) {
-                store.target(model, file).delete()
-                fetch(model, file, canceled) { held -> progress(before + held, model.bytes) }
+        for (file in set.files) {
+            if (!store.has(set, file)) {
+                store.target(set, file).delete()
+                fetch(set, file, canceled) { held -> progress(before + held, set.bytes) }
             }
             before += file.bytes
-            progress(before, model.bytes)
+            progress(before, set.bytes)
         }
     }
 
-    private fun fetch(model: CatalogModel, file: ModelFile, canceled: () -> Boolean, progress: (Long) -> Unit) {
-        val part = store.part(model, file)
+    private fun fetch(set: FileSet, file: ModelFile, canceled: () -> Boolean, progress: (Long) -> Unit) {
+        val part = store.part(set, file)
         if (part.length() > file.bytes) part.delete()
         var restarted = false
         while (part.length() < file.bytes) {
@@ -243,8 +246,8 @@ class ModelDownloader(private val store: ModelStore, private val client: OkHttpC
             part.delete()
             throw DownloadException(DownloadFailure.MISMATCH, "${file.name}: SHA-256 $hash, expected ${file.sha256}")
         }
-        if (!part.renameTo(store.target(model, file))) throw DownloadException(DownloadFailure.SPACE, "Cannot rename ${part.name}")
-        store.stamped(model, file)
+        if (!part.renameTo(store.target(set, file))) throw DownloadException(DownloadFailure.SPACE, "Cannot rename ${part.name}")
+        store.stamped(set, file)
     }
 
     companion object {

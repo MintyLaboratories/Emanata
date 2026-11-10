@@ -310,7 +310,8 @@ class ResampleCheckService : Service() {
 
     /**
      * [LibPixels.gpuBand] on a cover from a large page (several chunks), against the GPU's
-     * [LibPixels.band]: with no stop the same pixels; a stop saying so on its second call
+     * [LibPixels.band] in two bands and [NativeResampler]'s GPU resample: with no stop the
+     * same pixels; a stop saying so on its second call
      * cancels after exactly two calls; what a stop throws reaches the caller and the next job
      * still runs; then [LibPixels.trim].
      */
@@ -335,12 +336,26 @@ class ResampleCheckService : Service() {
             }
         }
 
+        // The same through LibPixels.band, rows 0 until 85 then the rest; false when it could not.
+        fun bands(dst: Bitmap): Boolean {
+            val job = LibPixels.begin(src, dst, false, 1, true)
+            if (job == 0L) return false
+            try {
+                return LibPixels.axis(job, false, ax) && LibPixels.axis(job, true, ay) &&
+                    LibPixels.band(job, 0, 0, 85, 0) && LibPixels.band(job, 0, 85, 171, 0)
+            } finally {
+                LibPixels.end(job)
+            }
+        }
+
         try {
             val banded = Bitmap.createBitmap(128, 171, Bitmap.Config.ARGB_8888).also { made += it }
-            val ran = NativeResampler.resample(src, banded, window, false, Scaling.DEFAULT, engine = PixelEngine.GPU, fallback = false)
+            val ran = bands(banded)
+            val resampled = Bitmap.createBitmap(128, 171, Bitmap.Config.ARGB_8888).also { made += it }
+            val viaResampler = NativeResampler.resample(src, resampled, window, false, Scaling.DEFAULT, engine = PixelEngine.GPU, fallback = false)
             val plain = gpuBand(null)
-            val same = ran && plain != null && digest(plain.second) == digest(banded)
-            result.put("band", ran).put("done", plain?.first).put("sameAsBand", same)
+            val same = ran && viaResampler && plain != null && digest(plain.second) == digest(banded) && digest(resampled) == digest(banded)
+            result.put("band", ran).put("resampler", viaResampler).put("done", plain?.first).put("sameAsBand", same)
             var calls = 0
             val canceled = gpuBand { ++calls == 2 }
             result.put("canceled", canceled?.first).put("stopCalls", calls)

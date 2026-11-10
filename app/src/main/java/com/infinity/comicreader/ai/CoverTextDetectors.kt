@@ -383,7 +383,7 @@ class CoverTextDetectors(
 
     companion object {
         /** ML Kit's detector's [CoverTextDetector.id]: part of the cover-focus version of covers it finds text on. */
-        const val ML_KIT_ID = "mlkit-latin-v2"
+        const val ML_KIT_ID = MlKitTextDetector.ID
 
         /** Failed ML Kit runs in a row that leave PP-OCR for the rest of the session. */
         const val FAILURES = 3
@@ -403,29 +403,35 @@ class CoverTextDetectors(
         /** Tells [shared] of changes of the setting; held here, as preferences hold their listeners weakly. */
         private var listener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
-        /**
-         * The app's: the setting from [Prefs.coverMlKit], Play services as [GmsPlayServices] finds
-         * it (absent while the debug flag [Prefs.debugNoPlayServices] is on in a debuggable build),
-         * PP-OCR as [TextDetector.shared].
-         */
+        /** The app's ([forApp]), told of changes of the setting. */
         fun shared(context: Context): CoverTextDetectors = shared ?: synchronized(this) {
             shared ?: run {
                 val app = context.applicationContext
-                val prefs = Prefs(app)
-                val debuggable = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-                CoverTextDetectors(
-                    optedIn = { prefs.coverMlKit },
-                    play = WithoutPlayServices(GmsPlayServices(app)) { debuggable && prefs.debugNoPlayServices },
-                    // None until ML Kit's detector is part of the app.
-                    mlKit = null,
-                    ppocr = { TextDetector.shared(app) }
-                ).also { d ->
+                forApp(app).also { d ->
                     val l = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == Prefs.KEY_COVER_MLKIT) d.settingChanged() }
                     PreferenceManager.getDefaultSharedPreferences(app).registerOnSharedPreferenceChangeListener(l)
                     listener = l
                     shared = d
                 }
             }
+        }
+
+        /**
+         * The app's detectors: the setting from [Prefs.coverMlKit], [play] (Play services as
+         * [GmsPlayServices] finds it on devices; absent while the debug flag
+         * [Prefs.debugNoPlayServices] is on in a debuggable build), ML Kit as [MlKitTextDetector],
+         * PP-OCR as [TextDetector.shared].
+         */
+        @VisibleForTesting
+        internal fun forApp(app: Context, play: PlayServices = GmsPlayServices(app)): CoverTextDetectors {
+            val prefs = Prefs(app)
+            val debuggable = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+            return CoverTextDetectors(
+                optedIn = { prefs.coverMlKit },
+                play = WithoutPlayServices(play) { debuggable && prefs.debugNoPlayServices },
+                mlKit = MlKit(ML_KIT_ID) { MlKitTextDetector.create(app) },
+                ppocr = { TextDetector.shared(app) }
+            )
         }
 
         /** Stands [detectors] in as the app's ([shared]); null makes it anew. */

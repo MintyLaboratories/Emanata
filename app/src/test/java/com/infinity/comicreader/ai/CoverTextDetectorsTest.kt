@@ -87,6 +87,19 @@ class CoverTextDetectorsTest {
     )
 
     @Test
+    fun theAppsDetectorsOfferMlKitOnceTurnedOn() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
+        val d = CoverTextDetectors.forApp(context, FakePlay())
+        assertTrue("the setting is shown", d.offered())
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.OFF), d.status())
+        Prefs(context).coverMlKit = true
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+        assertEquals(MlKitTextDetector.ID, d.session().id)
+        assertTrue(MlKitTextDetector.ID in CoverTextDetector.IDS)
+    }
+
+    @Test
     fun mlKitIsOffByDefault() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()

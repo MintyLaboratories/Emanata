@@ -32,7 +32,8 @@ internal interface LineFinder : Closeable {
  * Latin script) through Play services, whose module must be on the device. What the lines say
  * is dropped as they are read. Its client ([open]) opens on first use and closes [idleMs] after
  * the last, or when it gave no answer within [timeoutMs] (that cover then gets null). Its
- * [lines] are ML Kit's ([MlKitLines.boxes]). Blocking: never on the main thread.
+ * [lines] are ML Kit's ([MlKitLines.boxes]). [lines] blocks: never on the main thread; [close]
+ * and [isOpen] never wait for it.
  */
 internal class MlKitTextDetector(
     private val open: () -> LineFinder,
@@ -42,7 +43,15 @@ internal class MlKitTextDetector(
 ) : CoverTextDetector {
     override val id: String get() = ID
 
+    /** Held through a run of [lines], so covers take turns. */
+    private val work = Any()
+
+    /** Held briefly for the fields below, never while waiting for ML Kit. */
+    private val state = Any()
     private var finder: LineFinder? = null
+
+    /** The client a run uses now: closing it is left to that run. */
+    private var inUse: LineFinder? = null
     private var closing: ScheduledFuture<*>? = null
 
     /** Counts runs, so a close timed after one run leaves the client to a later one. */
@@ -53,53 +62,95 @@ internal class MlKitTextDetector(
      * ML Kit reads a copy, so [src] may be recycled once this returns. Throws when the client
      * does not open, ML Kit's classes failing to link included ([IllegalStateException]).
      */
-    @Synchronized
     override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
         check(!mainThread()) { "ML Kit's text detector waits for its answer: not on the main thread" }
-        closing?.cancel(false)
-        try {
-            val f = finder ?: opened().also { finder = it }
-            val copy = src.copy(Bitmap.Config.ARGB_8888, false) ?: return null
-            val found = try {
-                Tasks.await(f.find(copy), timeoutMs, TimeUnit.MILLISECONDS)
-            } catch (e: TimeoutException) {
-                Log.w(TAG, "no answer within $timeoutMs ms")
-                close()
-                return null
-            } catch (e: ExecutionException) {
-                Log.w(TAG, "text recognition failed: ${e.cause}")
-                return null
+        synchronized(work) {
+            try {
+                val f = take()
+                var timedOut = false
+                try {
+                    val copy = src.copy(Bitmap.Config.ARGB_8888, false) ?: return null
+                    val found = try {
+                        Tasks.await(f.find(copy), timeoutMs, TimeUnit.MILLISECONDS)
+                    } catch (e: TimeoutException) {
+                        Log.w(TAG, "no answer within $timeoutMs ms")
+                        timedOut = true
+                        return null
+                    } catch (e: ExecutionException) {
+                        Log.w(TAG, "text recognition failed: ${e.cause}")
+                        return null
+                    }
+                    return MlKitLines.boxes(found, src.width, src.height)
+                } finally {
+                    release(f, timedOut)
+                }
+            } finally {
+                synchronized(state) {
+                    val run = ++runs
+                    closing = closer.schedule({ closeAfter(run) }, idleMs, TimeUnit.MILLISECONDS)
+                }
             }
-            return MlKitLines.boxes(found, src.width, src.height)
-        } finally {
-            val run = ++runs
-            closing = closer.schedule({ closeAfter(run) }, idleMs, TimeUnit.MILLISECONDS)
         }
     }
 
-    /** A new client ([open]); ML Kit's classes failing to link as an [IllegalStateException]. */
-    private fun opened(): LineFinder = try {
-        open()
-    } catch (e: LinkageError) {
-        throw IllegalStateException("ML Kit's classes do not link", e)
+    /** The open client, opened when there is none ([open]), now in use. Under [work]. */
+    private fun take(): LineFinder {
+        synchronized(state) {
+            closing?.cancel(false)
+            closing = null
+            finder?.let {
+                inUse = it
+                return it
+            }
+        }
+        val f = try {
+            open()
+        } catch (e: LinkageError) {
+            throw IllegalStateException("ML Kit's classes do not link", e)
+        }
+        synchronized(state) {
+            finder = f
+            inUse = f
+        }
+        return f
     }
 
-    /** Closes the client unless it ran again since [run]. */
-    @Synchronized
+    /** Ends the use of [f]: closes it when it is to be [dropped] or was closed meanwhile ([close]). */
+    private fun release(f: LineFinder, dropped: Boolean) {
+        val done = synchronized(state) {
+            inUse = null
+            when {
+                finder !== f -> f
+                dropped -> f.also { finder = null }
+                else -> null
+            }
+        }
+        done?.let { runCatching { it.close() } }
+    }
+
+    /** Closes the client unless it ran, or runs, since [run]. */
     private fun closeAfter(run: Long) {
-        if (run == runs) close()
+        val f = synchronized(state) {
+            if (run != runs || inUse != null) return
+            detach()
+        }
+        f?.let { runCatching { it.close() } }
     }
 
     /** True while the client is open. */
-    val isOpen: Boolean @Synchronized get() = finder != null
+    val isOpen: Boolean get() = synchronized(state) { finder != null }
 
-    /** Closes the client; the next [lines] opens it again. */
-    @Synchronized
+    /** Closes the client, at once or, while a cover uses it, when that one is done; the next [lines] opens it again. */
     fun close() {
+        val f = synchronized(state) { detach() }
+        f?.let { runCatching { it.close() } }
+    }
+
+    /** Forgets the client and its idle close; returns it unless a cover uses it. Under [state]. */
+    private fun detach(): LineFinder? {
         closing?.cancel(false)
         closing = null
-        finder?.let { runCatching { it.close() } }
-        finder = null
+        return finder.also { finder = null }?.takeIf { it !== inUse }
     }
 
     /** ML Kit's recognizer [client] as a [LineFinder]. */

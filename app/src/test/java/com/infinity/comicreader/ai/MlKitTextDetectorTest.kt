@@ -132,6 +132,26 @@ class MlKitTextDetectorTest {
     }
 
     @Test
+    fun closingWhileACoverWaitsReturnsAtOnceAndClosesAfterIt() {
+        val asked = CountDownLatch(1)
+        val answer = TaskCompletionSource<List<FoundLine>>()
+        val finder = Finder { asked.countDown(); answer.task }
+        val d = MlKitTextDetector({ finder }, timeoutMs = 5_000)
+        val run = worker.submit<List<SmartCrop.TextBox>?> { d.lines(image) }
+        assertTrue(asked.await(5, TimeUnit.SECONDS))
+        val start = System.nanoTime()
+        d.close()
+        assertFalse(d.isOpen)
+        assertTrue(System.nanoTime() - start < TimeUnit.SECONDS.toNanos(1))
+        // The cover in progress keeps its client until it is done.
+        assertEquals(1L, finder.closed.count)
+        answer.setResult(emptyList())
+        assertEquals(emptyList<SmartCrop.TextBox>(), run.get(5, TimeUnit.SECONDS))
+        assertTrue(finder.closed.await(5, TimeUnit.SECONDS))
+        assertFalse(d.isOpen)
+    }
+
+    @Test
     fun aClientThatDoesNotOpenFailsTheRun() {
         val d = MlKitTextDetector({ throw IllegalStateException("no Play services") })
         try {

@@ -338,6 +338,9 @@ class PageAdapter(
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
     private val gate = Semaphore(decodeThreads.coerceIn(1, MAX_DECODE_THREADS))
 
+    /** Where [gate]'s decoders are taken, one at a time: decodes get them in the order they are asked for. */
+    private val inOrder = AppDispatchers.io.limitedParallelism(1)
+
     /** The heap limit the page cache is sized by ([cacheBytes], [fitCache]); tests set it. */
     internal var heapBytes: Long = Runtime.getRuntime().maxMemory()
 
@@ -1109,11 +1112,13 @@ class PageAdapter(
         // Queued, so its item binds again outside a layout pass, however soon the measure ends.
         scope.launch(AppDispatchers.mainQueued) {
             try {
-                withContext(AppDispatchers.io) {
+                withContext(inOrder) {
                     gate.withPermit {
-                        runCatching {
-                            Decoders.measuring({ box, w, h -> bounds[page] = PageBounds.Found(box, w, h) }) {
-                                seg.source.loadPage(page - chapter.first, MEASURE).recycle()
+                        withContext(AppDispatchers.io) {
+                            runCatching {
+                                Decoders.measuring({ box, w, h -> bounds[page] = PageBounds.Found(box, w, h) }) {
+                                    seg.source.loadPage(page - chapter.first, MEASURE).recycle()
+                                }
                             }
                         }
                     }
@@ -1279,27 +1284,30 @@ class PageAdapter(
         val entry = Pending(key, CompletableDeferred())
         val standIn = entry.standIn
         val queued = Traces.queued("page $pageIndex queued")
-        val deferred = scope.async(AppDispatchers.io) {
+        // Decoders are taken in the order pages are asked for; each decode then runs on the IO pool.
+        val deferred = scope.async(inOrder) {
             gate.withPermit {
-                entry.started = true
-                queued.end()
-                val job = coroutineContext.job
-                val bitmap = Traces.section({ "page $pageIndex ${key.target.width}x${key.target.height}" }) {
-                    learning(key) {
-                        Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
-                            // A page read ahead resamples on the later budget until it is shown.
-                            Urgency.during({ entry.waiters > 0 }) {
-                                decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                withContext(AppDispatchers.io) {
+                    entry.started = true
+                    queued.end()
+                    val job = coroutineContext.job
+                    val bitmap = Traces.section({ "page $pageIndex ${key.target.width}x${key.target.height}" }) {
+                        learning(key) {
+                            Decoders.standingIn({ standIn.complete(frozen(it)) }, { entry.waiters > 0 }) {
+                                // A page read ahead resamples on the later budget until it is shown.
+                                Urgency.during({ entry.waiters > 0 }) {
+                                    decode(seg.source, pageIndex - chapter.first, pageIndex, key.target) { job.isCancelled }
+                                }
                             }
-                        }
-                    }?.let { frozen(it) }
+                        }?.let { frozen(it) }
+                    }
+                    if (bitmap != null && bitmap.width > 0) {
+                        cache.put(key, bitmap)
+                        aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
+                        entry.decoded = true
+                    }
+                    bitmap
                 }
-                if (bitmap != null && bitmap.width > 0) {
-                    cache.put(key, bitmap)
-                    aspects[pageIndex] = bitmap.height.toFloat() / bitmap.width.toFloat()
-                    entry.decoded = true
-                }
-                bitmap
             }
         }
         deferred.invokeOnCompletion {

@@ -96,6 +96,10 @@ class ReaderAi internal constructor(
     /** Page sizes read so far, by book key, page and entry ([placeOf]): [stored] decides the models that run from them without a read. */
     private val sizes = ConcurrentHashMap<String, IntArray>()
 
+    /** The thresholds [thresholdsMoved] last saw. */
+    @Volatile
+    private var thresholdsSeen: AiThresholds = thresholds()
+
     /** Models opened so far by model id; a model that would not open maps to none. Worker thread only. */
     private val sessions = HashMap<String, Session?>()
 
@@ -132,6 +136,17 @@ class ReaderAi internal constructor(
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty()) return 0
         return pageTimes[AiChain.signature(chain)] ?: chain.sumOf { (rateOf(it) * REFERENCE_MP).toLong() }
+    }
+
+    /**
+     * True when the thresholds moved since this was last asked (or since this was made): pages
+     * shown processed may need other models now. Only the first caller after a move hears it.
+     */
+    fun thresholdsMoved(): Boolean {
+        val now = thresholds()
+        if (now == thresholdsSeen) return false
+        thresholdsSeen = now
+        return true
     }
 
     /** [m]'s milliseconds per megapixel: as measured here, else from its page time ([AiModel.pageMs]). */

@@ -1075,7 +1075,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   with its models' checksums and which of its models ran (decided from the
   page's size before its decode, so thresholds that run the same models share
   a page), trimmed least recently read first to 1 GB and a tenth of the free
-  space; they show even while AI is paused.
+  space; they show even while AI is paused. When the thresholds move, the
+  reader shows its pages again through the models their sizes call for.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
   bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
   licenses, all fetched unchanged from OpenComic AI's model repository at a

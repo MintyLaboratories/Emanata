@@ -259,6 +259,16 @@ class ReaderAiTest {
         assertEquals(listOf("r0", "r1", "r0,1", "r2", "r0,2", "r1,2", "r0,1,2"), ReaderAi.runKeys(3))
     }
 
+    @Test
+    fun thresholdsMovedIsHeardOnce() {
+        assertFalse(ai.thresholdsMoved())
+        thresholds = AiThresholds(cleanupPct = 60)
+        assertTrue(ai.thresholdsMoved())
+        assertFalse(ai.thresholdsMoved())
+        thresholds = AiThresholds()
+        assertTrue(ai.thresholdsMoved())
+    }
+
     private fun until(done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 10_000
         while (!done() && System.currentTimeMillis() < deadline) Thread.sleep(5)

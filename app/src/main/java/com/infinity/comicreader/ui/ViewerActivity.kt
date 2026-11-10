@@ -804,6 +804,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         updateShareWait()
         started = true
         watchUpright()
+        // Thresholds moved in Settings: the pages shown go through the models their sizes call for now.
+        if (readerAi.thresholdsMoved()) adapter?.aiChanged()
         adapter?.resumeAi()
     }
 
@@ -3952,13 +3954,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Reads the books' AI chains again; the pages shown go through the new chain when this
-     * book's or the next chapter's changed.
+     * book's or the next chapter's changed, or the AI thresholds moved.
      */
     private fun aiChanged() {
         val books = listOfNotNull(source, stripAhead).map { it.bookKey }
         val before = books.map { readerAi.chainFor(it) }
         readerAi.refresh()
-        if (books.map { readerAi.chainFor(it) } != before) adapter?.aiChanged()
+        val moved = readerAi.thresholdsMoved()
+        if (books.map { readerAi.chainFor(it) } != before || moved) adapter?.aiChanged()
         aiBooks()
         syncSheet()
     }

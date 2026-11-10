@@ -33,6 +33,7 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.CRC32
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.max
@@ -54,7 +55,8 @@ import kotlin.random.Random
  *
  * - check: native CPU and GPU against the model on small noise images (every filter,
  *   anti-ringing, linear light, translucency, windows), and the CPU against the shipping
- *   Kotlin path on an opaque page; the largest channel difference of each.
+ *   Kotlin path on an opaque page; the largest channel difference of each, and a CRC-32 of
+ *   each engine's outputs (`digest`): equal digests across builds mean bit-identical output.
  * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default 1848x2772 on every
  *   device, so runs compare across devices; `screen`: the 2000x3000 page fit to this screen
  *   held upright, as calibration does)
@@ -176,6 +178,7 @@ class ResampleCheckService : Service() {
             var failed = 0
             var off = 0L
             var pixels = 0L
+            val digest = CRC32()
             for ((i, c) in cases.withIndex()) {
                 for (linear in listOf(false, true)) {
                     for (opaque in listOf(true, false)) {
@@ -193,6 +196,10 @@ class ResampleCheckService : Service() {
                                 val d = channelDiff(got[k], model[k])
                                 worst = max(worst, d)
                                 if (d > 0) off++
+                                digest.update(got[k])
+                                digest.update(got[k] ushr 8)
+                                digest.update(got[k] ushr 16)
+                                digest.update(got[k] ushr 24)
                             }
                             pixels += got.size
                         } finally {
@@ -204,7 +211,7 @@ class ResampleCheckService : Service() {
             }
             log(
                 JSONObject().put("check", engine.key).put("cases", cases.size * 4).put("failed", failed).put("maxDiff", worst)
-                    .put("pixelsOff", off).put("pixels", pixels).put("ok", failed == 0 && worst <= 1)
+                    .put("pixelsOff", off).put("pixels", pixels).put("digest", "%08x".format(digest.value)).put("ok", failed == 0 && worst <= 1)
             )
         }
         // The shipping Kotlin path reads and writes unpremultiplied: on an opaque page both agree.

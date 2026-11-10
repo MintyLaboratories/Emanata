@@ -31,9 +31,13 @@ class NativeResamplerTest {
     /**
      * Native code as the JVM can have it: a job's bands written from [Resampler]'s
      * premultiplied model, every call recorded. Begins on the GPU only when [gpu], fails
-     * the band [failAt] when set.
+     * the band [failAt] when set. A GPU band runs in chunks of [chunk] rows ending on its
+     * multiples, as the native one does, each recorded as a band; it fails at the chunk
+     * [failGpuAt] when set.
      */
-    private class FakeKernels(val gpu: Boolean = true, val failAt: Int = -1) : PixelKernels {
+    private class FakeKernels(
+        val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1
+    ) : PixelKernels {
         class Job(val src: Bitmap, val dst: Bitmap, val linear: Boolean, val workers: Int, val gpu: Boolean) {
             val axes = arrayOfNulls<Resampler.Axis>(2)
             var ended = false
@@ -45,6 +49,9 @@ class NativeResamplerTest {
 
             /** Bands asked for so far, counted as each call starts: workers race to append [bands]. */
             val calls = AtomicInteger()
+
+            /** The rows of each GPU band asked for. */
+            val gpuBands: MutableList<Pair<Int, Int>> = Collections.synchronizedList(ArrayList())
         }
 
         val jobs = ArrayList<Job>()
@@ -76,6 +83,20 @@ class NativeResamplerTest {
             j.threadIds += Thread.currentThread().id
             j.dst.setPixels(j.result, y0 * j.dst.width, j.dst.width, 0, y0, j.dst.width, y1 - y0)
             return true
+        }
+
+        override fun gpuBand(job: Long, y0: Int, y1: Int, cores: Long, stop: PixelKernels.Stop?): Int {
+            val j = jobs[job.toInt() - 1]
+            check(j.gpu && !j.ended)
+            j.gpuBands += y0 to y1
+            var y = y0
+            while (y < y1) {
+                if (stop?.stop() == true) return PixelKernels.BAND_CANCELED
+                val end = minOf(y1, (y / chunk + 1) * chunk)
+                if (j.bands.size == failGpuAt || !band(job, 0, y, end, cores)) return PixelKernels.BAND_FAILED
+                y = end
+            }
+            return PixelKernels.BAND_DONE
         }
 
         override fun end(job: Long) {
@@ -123,11 +144,11 @@ class NativeResamplerTest {
 
     private fun resample(
         src: Bitmap, w: Int, h: Int, window: Resampler.Window, scaling: Scaling, engine: PixelEngine = PixelEngine.NATIVE,
-        canceled: () -> Boolean = { false }, urgent: () -> Boolean = { true }
+        canceled: () -> Boolean = { false }, urgent: () -> Boolean = { true }, fallback: Boolean = true
     ): Pair<Boolean, Bitmap> {
         windows[w to h] = window to scaling
         val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        return NativeResampler.resample(src, dst, window, false, scaling, canceled, engine, urgent = urgent) to dst
+        return NativeResampler.resample(src, dst, window, false, scaling, canceled, engine, fallback, urgent) to dst
     }
 
     @Test
@@ -227,15 +248,65 @@ class NativeResamplerTest {
     }
 
     @Test
-    fun gpuJobRunsBandsInTurnOnTheCallingThread() {
+    fun gpuJobRunsAsOneBandOnTheCallingThread() {
         val k = use(FakeKernels())
-        val (done, _) = resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU)
+        val (done, dst) = resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU)
         assertTrue(done)
         val job = k.jobs.single()
         assertTrue(job.gpu && job.ended && job.workers == 1)
-        assertTrue(job.bands.all { it.first == 0 })
+        assertEquals(listOf(0 to 120), job.gpuBands)
+        // Its chunks, in order, every row once.
+        assertEquals(List(8) { Triple(0, it * 16, minOf(120, it * 16 + 16)) }, job.bands)
         assertEquals(setOf(0b1111_0000L), job.cores.toSet())
         assertEquals(setOf(Thread.currentThread().name), job.threads)
+        assertArrayEquals(job.result, IntArray(40 * 120).also { dst.getPixels(it, 0, 40, 0, 0, 40, 120) })
+    }
+
+    @Test
+    fun cancelingIsAskedBeforeEachGpuChunk() {
+        val k = use(FakeKernels())
+        var polls = 0
+        assertThrows(CancellationException::class.java) {
+            resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { ++polls > 3 })
+        }
+        // Asked before each of three chunks and the fourth, which never ran; no fallback to the CPU.
+        assertEquals(4, polls)
+        val job = k.jobs.single()
+        assertTrue(job.ended)
+        assertEquals(3, job.bands.size)
+    }
+
+    @Test
+    fun gpuJobCanceledBeforeItStartsWritesNothing() {
+        val k = use(FakeKernels())
+        assertThrows(CancellationException::class.java) {
+            resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { true })
+        }
+        assertTrue(k.jobs.single().ended)
+        assertTrue(k.jobs.single().bands.isEmpty())
+    }
+
+    @Test
+    fun whatCancelingThrowsEndsTheGpuJob() {
+        val k = use(FakeKernels())
+        var polls = 0
+        assertThrows(IllegalStateException::class.java) {
+            resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { check(++polls < 2); false })
+        }
+        assertEquals(1, k.jobs.single().bands.size)
+        assertTrue(k.jobs.single().ended)
+    }
+
+    @Test
+    fun aFailedGpuChunkFallsBackToTheCpuUnlessAskedNot() {
+        val k = use(FakeKernels(failGpuAt = 2))
+        assertTrue(resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU).first)
+        assertEquals(listOf(true, false), k.jobs.map { it.gpu })
+        assertTrue(k.jobs.all { it.ended })
+        val strict = use(FakeKernels(failGpuAt = 2))
+        assertFalse(resample(noise(64, 64), 40, 121, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, fallback = false).first)
+        assertEquals(2, strict.jobs.single().bands.size)
+        assertTrue(strict.jobs.single().ended)
     }
 
     @Test

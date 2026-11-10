@@ -22,8 +22,9 @@ enum class PixelEngine(val key: String) {
 /**
  * What [NativeResampler] needs of native code: a job resampling one ARGB_8888 bitmap into
  * another, both premultiplied, as [Resampler] does with premultiplied rows. A job holds
- * both bitmaps' pixels until [end]. On the device this is [LibPixels]; JVM tests stand in
- * their own, since they cannot load native code.
+ * both bitmaps' pixels until [end]. A CPU job's rows go through [band], a GPU job's through
+ * one [gpuBand] for all of them. On the device this is [LibPixels]; JVM tests stand in their
+ * own, since they cannot load native code.
  */
 internal interface PixelKernels {
     /** A job resampling [src] into [dst] on [workers] CPU workers, or on the GPU; 0 when not possible. */
@@ -178,8 +179,9 @@ internal object LibPixels : PixelKernels {
 /**
  * Resamples a bitmap with native code, reading and writing pixels where the bitmaps hold
  * them: no row copies through Java arrays, no lock on the output. The taps are
- * [Resampler.axis]'s, the bands [Resampler.inBands]'s; the GPU takes the bands one at a
- * time on the calling thread.
+ * [Resampler.axis]'s, the CPU's bands [Resampler.inBands]'s; the GPU takes all rows as one
+ * band ([PixelKernels.gpuBand]) on the calling thread, asking to cancel before each of its
+ * chunks.
  *
  * CPU workers are pinned to the large cores ([CpuCores]): work someone waits on
  * ([Urgency]) runs on [threads] of them, other work (pages read ahead, previews) on
@@ -285,11 +287,12 @@ object NativeResampler {
      * Resamples [window] of [src] into all of [dst] as [scaling] says, with [engine]; false
      * when it is [PixelEngine.KOTLIN] or native code cannot do it, so the caller uses
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
-     * Throws [CancellationException] once [canceled] returns true. [urgent] says, before
-     * each band, whether someone waits on the result. [workers] above 0 sets the CPU
-     * workers whatever the urgency, [pin] whether they or the GPU's calling thread are
-     * pinned, for timing a setup; null pins CPU workers as [pinned] says and the GPU's
-     * caller as [gpuPinned] does.
+     * Throws [CancellationException] once [canceled], asked before each CPU band and each
+     * GPU chunk, returns true. [urgent] says, before each CPU band and once before the GPU
+     * band, whether someone waits on the result. [workers] above 0 sets the CPU workers
+     * whatever the urgency, [pin] whether they or the GPU's calling thread are pinned, for
+     * timing a setup; null pins CPU workers as [pinned] says and the GPU's caller as
+     * [gpuPinned] does.
      */
     fun resample(
         src: Bitmap,
@@ -323,7 +326,7 @@ object NativeResampler {
     /** True for ARGB_8888 pixels held premultiplied, as an opaque bitmap's are too (it reports them as not). */
     private fun fits(b: Bitmap) = b.config == Bitmap.Config.ARGB_8888 && (b.isPremultiplied || !b.hasAlpha())
 
-    /** One job on [k]; false when it could not start or a band failed. */
+    /** One job on [k], a GPU one as a single band; false when it could not start or a band failed. */
     private fun run(
         k: PixelKernels, src: Bitmap, dst: Bitmap, ax: Resampler.Axis, ay: Resampler.Axis, linear: Boolean, gpu: Boolean,
         canceled: () -> Boolean, urgent: () -> Boolean, workers: Int, pinning: Boolean
@@ -336,11 +339,17 @@ object NativeResampler {
         if (job == 0L) return false
         try {
             if (!k.axis(job, false, ax) || !k.axis(job, true, ay)) return false
+            if (gpu) {
+                return when (k.gpuBand(job, 0, dst.height, place(c, pinning, urgent)) { canceled() }) {
+                    PixelKernels.BAND_DONE -> true
+                    PixelKernels.BAND_CANCELED -> throw CancellationException("Resampling canceled")
+                    else -> false
+                }
+            }
             val failed = AtomicBoolean()
             try {
                 Resampler.inBands(dst.height, most, canceled, { if (urgent()) now else later }) { worker, y0, y1 ->
-                    val on = if (!pinning) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
-                    k.band(job, worker, y0, y1, on).also { if (!it) failed.set(true) }
+                    k.band(job, worker, y0, y1, place(c, pinning, urgent)).also { if (!it) failed.set(true) }
                 }
             } catch (e: CancellationException) {
                 if (!failed.get()) throw e
@@ -350,4 +359,8 @@ object NativeResampler {
             k.end(job)
         }
     }
+
+    /** The cores of [c] a band runs on: 0 (any) unless [pinning], else as [onPrime], [laterOnLittle] and [urgent] say. */
+    private fun place(c: CpuCores, pinning: Boolean, urgent: () -> Boolean): Long =
+        if (!pinning) 0L else if (onPrime) c.prime else if (laterOnLittle && !urgent()) c.little else c.big
 }

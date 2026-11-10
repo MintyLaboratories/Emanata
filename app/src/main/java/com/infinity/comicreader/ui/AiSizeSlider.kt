@@ -294,12 +294,14 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     // ---------------------------------------------------------------- accessibility
 
-    /** What [h]'s handle reads as: "Upscale above 100%", or "Clean up pages at every size.". */
-    fun describe(h: Handle): String = when {
-        h == Handle.UPSCALE -> context.getString(R.string.ai_sizes_upscale_handle, AiSizeText.value(context, pct(h)))
-        pct(h) == AiThresholds.ALWAYS -> context.getString(R.string.ai_sizes_cleanup_always)
-        else -> context.getString(R.string.ai_sizes_cleanup_handle, AiSizeText.value(context, pct(h)))
-    }
+    /** [h]'s handle's name: "Upscale" or "Clean up". */
+    fun name(h: Handle): String =
+        context.getString(if (h == Handle.UPSCALE) R.string.ai_sizes_upscale_name else R.string.ai_sizes_cleanup_name)
+
+    /** [h]'s handle's value in words: "Above 100%", or "Always". */
+    fun state(h: Handle): String =
+        if (pct(h) == AiThresholds.ALWAYS) AiSizeText.value(context, pct(h))
+        else context.getString(R.string.ai_sizes_above, AiSizeText.value(context, pct(h)))
 
     /** Each handle as its own slider for accessibility services, moved a stop per scroll action. */
     private inner class Access : ExploreByTouchHelper(this@AiSizeSlider) {
@@ -316,7 +318,9 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
             val h = Handle.entries[virtualViewId]
             val stops = stops(h)
             node.className = "android.widget.SeekBar"
-            node.contentDescription = describe(h)
+            // The name, then the value: services read stateDescription in place of a position within the range.
+            node.contentDescription = name(h)
+            node.stateDescription = state(h)
             node.rangeInfo = RangeInfoCompat.obtain(
                 RangeInfoCompat.RANGE_TYPE_INT, stops.first().toFloat(), stops.last().toFloat(), pct(h).toFloat()
             )

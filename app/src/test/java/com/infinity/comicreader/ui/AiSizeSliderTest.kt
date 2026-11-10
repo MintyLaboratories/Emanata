@@ -153,7 +153,8 @@ class AiSizeSliderTest {
         val provider = slider.accessibilityNodeProvider!!
         val up = provider.createAccessibilityNodeInfo(AiSizeSlider.Handle.UPSCALE.ordinal)!!
         assertEquals("android.widget.SeekBar", up.className)
-        assertEquals("Upscale above 100%", up.contentDescription)
+        assertEquals("Upscale", up.contentDescription)
+        assertEquals("Above 100%", up.stateDescription)
         assertEquals(50f, up.rangeInfo!!.min, 0f)
         assertEquals(100f, up.rangeInfo!!.current, 0f)
         assertTrue(provider.performAction(AiSizeSlider.Handle.UPSCALE.ordinal, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null))
@@ -161,7 +162,8 @@ class AiSizeSliderTest {
 
         slider.thresholds = AiThresholds(100, AiThresholds.ALWAYS)
         val clean = provider.createAccessibilityNodeInfo(AiSizeSlider.Handle.CLEANUP.ordinal)!!
-        assertEquals("Clean up pages at every size.", clean.contentDescription)
+        assertEquals("Clean up", clean.contentDescription)
+        assertEquals("Always", clean.stateDescription)
         assertFalse(provider.performAction(AiSizeSlider.Handle.CLEANUP.ordinal, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null))
     }
 }

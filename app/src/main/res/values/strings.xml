@@ -1093,8 +1093,9 @@
     <string name="ai_size_percent">%1$d%% size</string>
     <string name="ai_size_value">%1$d%%</string>
     <string name="ai_size_always">Always</string>
-    <string name="ai_sizes_upscale_handle">Upscale above %1$s</string>
-    <string name="ai_sizes_cleanup_handle">Clean up above %1$s</string>
+    <string name="ai_sizes_upscale_name">Upscale</string>
+    <string name="ai_sizes_cleanup_name">Clean up</string>
+    <string name="ai_sizes_above">Above %1$s</string>
     <string name="ai_none">None</string>
     <string name="ai_model_entry">%1$s · %2$s</string>
     <string name="ai_model_downloading">%1$s · downloading %2$d%%</string>

@@ -4,14 +4,18 @@
 //   buffer, filtered across into an fp32 buffer as wide as the output, then down into
 //   packed bytes, which are copied into the destination. Chunks are sized so the source
 //   rows and the fp32 ones together stay under CHUNK_BYTES, whatever the scale.
-// - Each axis' taps go up once per job: four ints per output (start, count, anti-ringing
-//   range) followed by its weights, the across axis' tap-major so lanes read them in a row.
+// - Each axis' taps go up once per job, unless the last job's were the same: four ints
+//   per output (start, count, anti-ringing range) followed by its weights, the across
+//   axis' tap-major so lanes read them in a row.
 // - The across pass runs one thread per output column and ROWS source rows, its taps in
 //   registers and its tap loop unrolled to the most taps a column reads: a program per
 //   tap count up to UNROLL and anti-ringing on or off, compiled on first use and kept with
 //   the context; wider axes share a program per anti-ringing that loops over the taps.
 // - Each program's uniform locations are looked up once, when it compiles.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
+// - The context, the down program and the tables stay for the process. The buffers stay
+//   from job to job, grown as a job needs, until rs_gpu_trim frees them with the across
+//   programs.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
 //   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
@@ -33,6 +37,8 @@
 #include <time.h>
 
 #define CHUNK_BYTES (32u << 20)
+// Kept buffers grow in steps of this many bytes, so pages a little larger reuse them.
+#define GROW_STEP (1 << 20)
 #define GROUP 64
 // Source rows each across thread filters.
 #define ROWS 8
@@ -85,6 +91,28 @@ static begin_query_fn begin_query;
 static end_query_fn end_query;
 static query_u64_fn query_u64;
 
+// A buffer kept from job to job: its name (0: none yet) and size in bytes.
+typedef struct {
+    GLuint name;
+    GLsizeiptr size;
+} kept_buffer;
+
+// An axis' taps buffer kept from job to job: its size, the layout axis_buffer made it in
+// (its `taps`), and a copy of the taps it holds (len 0: none).
+typedef struct {
+    GLuint name;
+    GLsizeiptr size;
+    int layout;
+    rs_axis taps;
+} kept_axis;
+
+// What jobs keep for the next, under gl_lock.
+static kept_buffer kept_src;
+static kept_buffer kept_mid;
+static kept_buffer kept_out;
+static kept_axis kept_ax;
+static kept_axis kept_ay;
+
 // What one traced job's steps took, summed over its chunks; untraced, all stay 0.
 typedef struct {
     int on;
@@ -111,6 +139,9 @@ typedef struct {
     int rows;
     // The across program's tap loop length.
     int across_taps;
+    // Buffers the job created or grew, and the bytes kept after it opened.
+    int made;
+    int64_t kept;
 } rs_trace;
 
 struct rs_gpu {
@@ -127,6 +158,12 @@ struct rs_gpu {
     GLuint out;
     int chunk;
     int max_rows;
+    // Bytes of src, mid and out this job uses, from offset 0: the ranges bound.
+    GLsizeiptr src_bytes;
+    GLsizeiptr mid_bytes;
+    GLsizeiptr out_bytes;
+    // A chunk failed: the kept buffers may be bad, so they go at close.
+    int failed;
     rs_trace trace;
 };
 
@@ -463,11 +500,11 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
     __android_log_print(ANDROID_LOG_INFO, TAG,
                         "src=%dx%d dst=%dx%d taps=%d/%d across_taps=%d ring=%.2f/%.2f linear=%d chunk=%d chunks=%d rows=%d%s "
                         "lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f free=%.2f "
-                        "total=%.2f %s cores=0x%llx",
+                        "total=%.2f %s cores=0x%llx made=%d kept=%.1fMB",
                         ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, t->across_taps,
                         ax->ring, ay->ring, job->linear, chunk, t->chunks, t->rows, chunk == 0 ? " failed" : "", ms(t->lock_ns),
                         ms(t->begin_ns), ms(t->compile_ns), ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns), ms(t->wait_ns), ms(t->copy_ns), ms(free_ns),
-                        ms(total_ns), gpu, (unsigned long long)t->cores);
+                        ms(total_ns), gpu, (unsigned long long)t->cores, t->made, (double)t->kept / (1 << 20));
 }
 
 // The most taps any output of a reads.
@@ -571,6 +608,88 @@ static int rows_of(const rs_axis * ay, int y0, int y1, int * r0)
     return hi - lo;
 }
 
+// size rounded up to GROW_STEP.
+static GLsizeiptr rounded(GLsizeiptr size)
+{
+    const GLsizeiptr step = GROW_STEP;
+    return (size + step - 1) / step * step;
+}
+
+// k's buffer, holding at least size bytes, created or grown (its contents lost) as needed;
+// counted in *made. GL errors are left for the caller.
+static GLuint grow(kept_buffer * k, GLsizeiptr size, GLenum usage, int * made)
+{
+    const GLsizeiptr want = rounded(size);
+    if (k->name != 0 && k->size >= want) return k->name;
+    if (k->name == 0) glGenBuffers(1, &k->name);
+    k->size = want;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, k->name);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, k->size, NULL, usage);
+    (*made)++;
+    return k->name;
+}
+
+// Whether axis a has the taps of b, a copy.
+static int same_taps(const rs_axis * a, const rs_axis * b)
+{
+    if (a->len != b->len || a->stride != b->stride || a->first != b->first || a->end != b->end || a->ring != b->ring) {
+        return 0;
+    }
+    const size_t n = (size_t)a->len;
+    if (memcmp(a->start, b->start, n * 4) != 0 || memcmp(a->count, b->count, n * 4) != 0 ||
+        memcmp(a->weights, b->weights, n * (size_t)a->stride * 4) != 0) {
+        return 0;
+    }
+    return a->ring <= 0 || (memcmp(a->ring_lo, b->ring_lo, n * 4) == 0 && memcmp(a->ring_hi, b->ring_hi, n * 4) == 0);
+}
+
+static void drop_axis(kept_axis * k)
+{
+    if (k->name != 0) glDeleteBuffers(1, &k->name);
+    rs_axis_free(&k->taps);
+    k->name = 0;
+    k->size = 0;
+}
+
+// The buffer of a's taps in axis_buffer's layout `taps`: k's while it holds the same taps
+// in that layout, else a new one kept in k (counted in *made); 0 when out of memory.
+static GLuint axis_kept(kept_axis * k, const rs_axis * a, int taps, int * made)
+{
+    if (k->name != 0 && k->layout == taps && same_taps(a, &k->taps)) return k->name;
+    drop_axis(k);
+    k->name = axis_buffer(a, taps);
+    if (k->name == 0) return 0;
+    k->size = (GLsizeiptr)4 * a->len * (4 + (taps > 0 ? taps : a->stride));
+    k->layout = taps;
+    (*made)++;
+    // Without a copy (len 0), the next job makes its own.
+    (void)rs_axis_init(&k->taps, a->len, a->stride, a->start, a->count, a->weights, a->ring, a->ring_lo, a->ring_hi);
+    return k->name;
+}
+
+static void drop_buffer(kept_buffer * k)
+{
+    if (k->name != 0) glDeleteBuffers(1, &k->name);
+    k->name = 0;
+    k->size = 0;
+}
+
+// Deletes every kept buffer, the context current.
+static void drop_kept(void)
+{
+    drop_buffer(&kept_src);
+    drop_buffer(&kept_mid);
+    drop_buffer(&kept_out);
+    drop_axis(&kept_ax);
+    drop_axis(&kept_ay);
+}
+
+// Bytes the kept buffers hold.
+static int64_t kept_bytes(void)
+{
+    return (int64_t)kept_src.size + kept_mid.size + kept_out.size + kept_ax.size + kept_ay.size;
+}
+
 rs_gpu * rs_gpu_open(const rs_job * job)
 {
     rs_trace trace = { 0 };
@@ -615,17 +734,28 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         rs_gpu_close(g);
         return NULL;
     }
-    g->axis_x = axis_buffer(ax, g->taps);
-    g->axis_y = axis_buffer(ay, 0);
-    g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
-    g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);
-    g->out = buffer((GLsizeiptr)((size_t)ax->len * g->chunk * 4), NULL, GL_STREAM_READ);
+    // Clears errors an earlier job left, so the check below judges this job's allocations.
+    for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {
+    }
+    int made = 0;
+    g->axis_x = axis_kept(&kept_ax, ax, g->taps, &made);
+    g->axis_y = axis_kept(&kept_ay, ay, 0, &made);
+    g->src_bytes = (GLsizeiptr)(src_w * g->max_rows * 4);
+    g->mid_bytes = (GLsizeiptr)((size_t)ax->len * g->max_rows * 16);
+    g->out_bytes = (GLsizeiptr)((size_t)ax->len * g->chunk * 4);
+    g->src = grow(&kept_src, g->src_bytes, GL_STREAM_DRAW, &made);
+    g->mid = grow(&kept_mid, g->mid_bytes, GL_DYNAMIC_COPY, &made);
+    g->out = grow(&kept_out, g->out_bytes, GL_STREAM_READ, &made);
     if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
+        // Which buffer failed is unknown: none stays.
+        drop_kept();
         g->chunk = 0;
         rs_gpu_close(g);
         return NULL;
     }
     g->trace.alloc_ns = stamp(g) - t - g->trace.compile_ns;
+    g->trace.made = made;
+    g->trace.kept = kept_bytes();
     if (g->trace.on && tq_load()) {
         // Clears errors left over, so the probe below sees only its own.
         for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {
@@ -670,9 +800,9 @@ static void run_across(const rs_gpu * g, GLuint src, GLuint mid, int rows)
     const rs_job * job = g->job;
     const rs_axis * ax = &job->ax;
     glUseProgram(g->across);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, src);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, src, 0, g->src_bytes);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_x);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mid);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, mid, 0, g->mid_bytes);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_linear);
     glUniform4i(g->across_at[A_DIMS], ax->len, rows, ax->end - ax->first, job->linear);
     glUniform1i(g->across_at[A_FIRST], ax->first);
@@ -690,9 +820,9 @@ static void run_down(const rs_gpu * g, GLuint mid, GLuint out, int y0, int y1, i
     const rs_axis * ax = &job->ax;
     const rs_axis * ay = &job->ay;
     glUseProgram(down_program);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mid);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, mid, 0, g->mid_bytes);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_y);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, out);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, out, 0, g->out_bytes);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_encode);
     glUniform4i(down_at[D_DIMS], ax->len, y1 - y0, y0, job->linear);
     glUniform1i(down_at[D_FIRST_ROW], r0);
@@ -750,10 +880,34 @@ int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque)
         if (stop != NULL && stop(opaque)) return 1;
         const int next = (y / g->chunk + 1) * g->chunk;
         const int end = next < y1 ? next : y1;
-        if (chunk(g, y, end) != 0) return -1;
+        if (chunk(g, y, end) != 0) {
+            g->failed = 1;
+            return -1;
+        }
         y = end;
     }
     return 0;
+}
+
+static int any_kept(void)
+{
+    return kept_src.name != 0 || kept_mid.name != 0 || kept_out.name != 0 || kept_ax.name != 0 || kept_ay.name != 0;
+}
+
+// Deletes the kept buffers, gl_lock held and the context current, and logs it (rare: logged
+// whether tracing or not) as freed `when` ("now", "at close" or "after failure").
+static void free_kept(const char * when)
+{
+    if (!any_kept()) return;
+    const int64_t t = now_ns();
+    const int64_t kept = kept_bytes();
+    drop_kept();
+    // Deletion is queued until the driver sees a flush.
+    glFlush();
+    // Leaves no error for the next job to fail on.
+    (void)glGetError();
+    __android_log_print(ANDROID_LOG_INFO, TAG, "trim %s freed=%.1fMB in %.2f ms", when, (double)kept / (1 << 20),
+                        ms(now_ns() - t));
 }
 
 void rs_gpu_trim(void)
@@ -761,7 +915,10 @@ void rs_gpu_trim(void)
     // Owed before the trylock, so a job that holds the lock now sees it as it closes.
     atomic_store(&trim_owed, 1);
     if (pthread_mutex_trylock(&gl_lock) != 0) return;
-    if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && gl_begin() == 0) across_forget();
+    if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && gl_begin() == 0) {
+        free_kept("now");
+        across_forget();
+    }
     gl_end();
     pthread_mutex_unlock(&gl_lock);
 }
@@ -769,17 +926,17 @@ void rs_gpu_trim(void)
 void rs_gpu_close(rs_gpu * g)
 {
     const int64_t t = stamp(g);
-    const GLuint buffers[] = { g->axis_x, g->axis_y, g->src, g->mid, g->out };
-    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
-        if (buffers[i] != 0) glDeleteBuffers(1, &buffers[i]);
-    }
     if (g->trace.timed) delete_queries(2, g->trace.queries);
+    if (g->failed) free_kept("after failure");
     const rs_trace trace = g->trace;
     const rs_job * job = g->job;
     const int chunk = g->chunk;
     const int64_t done = stamp(g);
     free(g);
-    if (atomic_exchange(&trim_owed, 0)) across_forget();
+    if (atomic_exchange(&trim_owed, 0)) {
+        free_kept("at close");
+        across_forget();
+    }
     gl_end();
     pthread_mutex_unlock(&gl_lock);
     // A trim owed after the exchange above, its trylock failed while this job held the lock.

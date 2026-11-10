@@ -1,13 +1,19 @@
 package com.infinity.comicreader.ai
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.annotation.VisibleForTesting
+import androidx.preference.PreferenceManager
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.NetWork
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
 
 /**
  * Picks the text detector ([CoverTextDetector]) the Smart crop anchor finds cover text with:
@@ -17,19 +23,28 @@ import com.infinity.comicreader.net.NetWork
  *
  * The pick holds for the session, so no cover mixes detectors: it changes when the setting does,
  * and once, for the rest of the session, when ML Kit fails. ML Kit's model is a module Play
- * services downloads: asked about on the first cover, and requested as optional network work
- * ([mayDownload], [NetWork.DOWNLOAD]). While it downloads, ML Kit does not run (a focus found
- * meanwhile is not kept). A request the network policy holds back or Play services refuses, or
- * [FAILURES] failed runs in a row, leave PP-OCR for the rest of the session.
+ * services downloads: asked about once, by the first cover (covers asking meanwhile wait for
+ * that answer), and requested as optional network work ([mayDownload], [NetWork.DOWNLOAD]).
+ * While it downloads, ML Kit does not run (a focus found meanwhile is not kept); the module is
+ * asked about again every [RECHECK_MS], and a download not done within [DOWNLOAD_WAIT_MS] counts
+ * as failed. A request the network policy holds back or Play services refuses, [CHECK_TRIES]
+ * checks Play services does not answer, ML Kit not starting, or [FAILURES] failed runs in a row
+ * leave PP-OCR for the rest of the session, or until the setting is turned on again
+ * ([settingChanged]).
  */
 class CoverTextDetectors(
     private val optedIn: () -> Boolean,
     private val play: PlayServices,
     /** ML Kit's detector; null where the app has none. */
-    private val mlKit: (() -> CoverTextDetector)?,
+    private val mlKit: MlKit?,
     private val ppocr: () -> CoverTextDetector,
-    private val mayDownload: () -> Boolean = { NetPolicy.may(NetWork.DOWNLOAD) }
+    private val mayDownload: () -> Boolean = { NetPolicy.may(NetWork.DOWNLOAD) },
+    /** Milliseconds on a monotonic clock. */
+    private val now: () -> Long = { SystemClock.elapsedRealtime() }
 ) {
+    /** ML Kit's detector: its [id], known without making it, and how to [make] it, which happens only once its module is on the device. */
+    class MlKit(val id: String, val make: () -> CoverTextDetector)
+
     /** A detector covers find text with. */
     enum class Use { ML_KIT, PP_OCR }
 
@@ -47,7 +62,7 @@ class CoverTextDetectors(
         /** Play services could not tell about, or download, the module. */
         MODULE_FAILED,
 
-        /** ML Kit failed [FAILURES] times in a row. */
+        /** ML Kit did not start, or failed [FAILURES] times in a row. */
         FAILED
     }
 
@@ -58,51 +73,98 @@ class CoverTextDetectors(
 
     private val lock = Any()
 
-    /** The setting as last seen: turning it on gives ML Kit a new try. */
-    private var wasOn = false
-
     /** Why ML Kit was given up this session; null while it was not. */
     private var gaveUp: Why? = null
     private var module = Module.UNKNOWN
     private var failures = 0
 
+    /** Checks of the module Play services did not answer. */
+    private var misses = 0
+
+    /** The check of the module under way, which every cover asking meanwhile waits for. */
+    private var check: FutureTask<Boolean>? = null
+
+    /** When the module was last asked about, and when its download was requested ([now]). */
+    private var askedAt = 0L
+    private var requestedAt = 0L
+
+    /** What cancels the download request under way, and its number, so an answer to an earlier one is ignored. */
+    private var cancel: (() -> Unit)? = null
+    private var request = 0
+
+    /** Times ML Kit's module arrived while covers were made without it: covers made before may now find their text. */
+    @Volatile
+    var arrivals = 0
+        private set
+
+    @Volatile
+    private var made: CoverTextDetector? = null
+    private val making = Any()
+
     /** Which detector covers use now and why. Quick: fine on the main thread. */
-    fun status(): Status = synchronized(lock) {
+    fun status(): Status {
         val on = optedIn()
-        if (on && !wasOn) {
-            gaveUp = null
-            failures = 0
+        var stop: (() -> Unit)? = null
+        val status = synchronized(lock) {
+            if (on) stop = expire()
+            when {
+                !on -> Status(Use.PP_OCR, Why.OFF)
+                mlKit == null || !play.available() -> Status(Use.PP_OCR, Why.UNAVAILABLE)
+                gaveUp != null -> Status(Use.PP_OCR, gaveUp)
+                else -> Status(Use.ML_KIT, null, module == Module.DOWNLOADING)
+            }
         }
-        wasOn = on
-        when {
-            !on -> Status(Use.PP_OCR, Why.OFF)
-            mlKit == null || !play.available() -> Status(Use.PP_OCR, Why.UNAVAILABLE)
-            gaveUp != null -> Status(Use.PP_OCR, gaveUp)
-            else -> Status(Use.ML_KIT, null, module == Module.DOWNLOADING)
-        }
+        stop?.invoke()
+        return status
     }
 
     /** True where the setting can turn ML Kit on: Play services is there. */
     fun offered(): Boolean = play.available()
 
-    /** The detector of covers of books not marked right to left, and of a book's direction: the session's pick. */
+    /** The detector of covers of books not marked right to left: the session's pick. */
     fun session(): CoverTextDetector = if (status().use == Use.ML_KIT) gate else ppocr()
 
     /** The detector of covers of books marked right to left: PP-OCR. */
     fun rightToLeft(): CoverTextDetector = ppocr()
 
-    /** The detector of a book's cover; [rightToLeft] tells whether it is marked so, asked only while ML Kit is picked. */
-    fun forBook(rightToLeft: () -> Boolean): CoverTextDetector = if (status().use == Use.ML_KIT && !rightToLeft()) gate else ppocr()
+    /** The detector of a book's cover: [rightToLeft]'s for a book marked right to left, else the [session]'s. */
+    fun forBook(rightToLeft: Boolean): CoverTextDetector = if (rightToLeft) rightToLeft() else session()
 
-    private val ml: CoverTextDetector by lazy { mlKit!!.invoke() }
+    /**
+     * Gives ML Kit a new try when the setting is on: what was given up this session is forgotten,
+     * and a download under way gets a new [DOWNLOAD_WAIT_MS]. The app's ([shared]) hears of
+     * every change of the setting.
+     */
+    fun settingChanged() {
+        if (!optedIn()) return
+        synchronized(lock) {
+            gaveUp = null
+            failures = 0
+            misses = 0
+            if (module == Module.DOWNLOADING) requestedAt = now()
+        }
+    }
 
     /** ML Kit's detector once its module is on the device; counts its failures. */
     private val gate = object : CoverTextDetector {
-        override val id: String get() = ml.id
+        override val id: String get() = mlKit!!.id
+
+        override fun inputSize(w: Int, h: Int): IntArray = (if (ready()) made() else null)?.inputSize(w, h) ?: SmartCrop.inputSize(w, h)
 
         override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
             if (!ready()) return null
-            val found = runCatching { ml.lines(src) }.getOrNull()
+            val ml = made() ?: return null
+            val found = try {
+                ml.lines(src)
+            } catch (e: InterruptedException) {
+                // Stopped from outside: no failure of ML Kit's.
+                Thread.currentThread().interrupt()
+                return null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
             synchronized(lock) {
                 if (found != null) failures = 0
                 else if (++failures >= FAILURES) giveUp(Why.FAILED)
@@ -111,40 +173,138 @@ class CoverTextDetectors(
         }
     }
 
+    /** ML Kit's detector, made on first use; null, and ML Kit given up, when it does not start. */
+    private fun made(): CoverTextDetector? {
+        made?.let { return it }
+        synchronized(making) {
+            made?.let { return it }
+            return try {
+                mlKit!!.make().also { made = it }
+            } catch (e: Exception) {
+                synchronized(lock) { giveUp(Why.FAILED) }
+                null
+            }
+        }
+    }
+
     /**
-     * True when ML Kit may run now: its module is on the device. Asks Play services once; a
-     * module missing is requested when the network policy allows, else ML Kit is given up.
+     * True when ML Kit may run now: its module is on the device. The first cover asks Play
+     * services ([PlayServices.moduleInstalled]), covers asking meanwhile wait for its answer
+     * ([asked]); while the module downloads, it is asked about again every [RECHECK_MS].
      */
     private fun ready(): Boolean {
-        synchronized(lock) {
-            if (gaveUp != null || !optedIn()) return false
-            when (module) {
-                Module.READY -> return true
-                Module.DOWNLOADING -> return false
-                Module.UNKNOWN -> Unit
-            }
-        }
-        val installed = play.moduleInstalled()
-        synchronized(lock) {
-            if (module != Module.UNKNOWN || gaveUp != null) return module == Module.READY && gaveUp == null
+        var mine = false
+        val stop: (() -> Unit)?
+        val task: FutureTask<Boolean>? = synchronized(lock) {
+            if (!optedIn()) return false
+            stop = expire()
             when {
-                installed == true -> module = Module.READY
-                installed == null -> giveUp(Why.MODULE_FAILED)
-                !mayDownload() -> giveUp(Why.HELD_BACK)
-                else -> module = Module.DOWNLOADING
-            }
-            if (module != Module.DOWNLOADING) return module == Module.READY && gaveUp == null
-        }
-        play.requestModule { ok ->
-            synchronized(lock) {
-                if (ok) module = Module.READY
-                else {
-                    module = Module.UNKNOWN
-                    giveUp(Why.MODULE_FAILED)
+                gaveUp != null -> null
+                module == Module.READY -> return true
+                module == Module.DOWNLOADING && check == null && now() - askedAt < RECHECK_MS -> null
+                else -> check ?: FutureTask { asked(installed()) }.also {
+                    check = it
+                    askedAt = now()
+                    mine = true
                 }
             }
         }
-        return false
+        stop?.invoke()
+        if (task == null) return false
+        if (mine) task.run()
+        return try {
+            task.get()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        } catch (e: ExecutionException) {
+            false
+        }
+    }
+
+    /**
+     * Settles what Play services told of the module ([PlayServices.moduleInstalled]): true when
+     * ML Kit may run now. A module missing is requested when the network policy allows, else ML
+     * Kit is given up.
+     */
+    private fun asked(installed: Boolean?): Boolean {
+        val interrupted = Thread.currentThread().isInterrupted
+        var number = 0
+        var stop: (() -> Unit)? = null
+        synchronized(lock) {
+            check = null
+            when {
+                gaveUp != null -> return false
+                module == Module.READY -> return true
+                installed == true -> stop = arrived()
+                module == Module.DOWNLOADING -> return false
+                // An interrupted wait tells nothing of Play services: the next cover asks again.
+                installed == null && interrupted -> return false
+                installed == null -> {
+                    if (++misses >= CHECK_TRIES) giveUp(Why.MODULE_FAILED)
+                    return false
+                }
+                !mayDownload() -> {
+                    giveUp(Why.HELD_BACK)
+                    return false
+                }
+                else -> {
+                    module = Module.DOWNLOADING
+                    requestedAt = now()
+                    number = ++request
+                }
+            }
+        }
+        if (number == 0) {
+            // The module arrived while it downloaded: the request is done with.
+            stop?.invoke()
+            return true
+        }
+        val requested = play.requestModule { ok -> requested(number, ok) }
+        synchronized(lock) {
+            if (request == number && module == Module.DOWNLOADING) {
+                cancel = requested
+                return false
+            }
+        }
+        // Settled, or given up, while it was being requested.
+        requested()
+        return synchronized(lock) { gaveUp == null && module == Module.READY }
+    }
+
+    /** What Play services tells of the module ([PlayServices.moduleInstalled]); null when it fails to. */
+    private fun installed(): Boolean? = try {
+        play.moduleInstalled()
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Settles download request [number]: the module arrived when [ok], else ML Kit is given up. */
+    private fun requested(number: Int, ok: Boolean) = synchronized(lock) {
+        if (number != request || module != Module.DOWNLOADING) return@synchronized
+        cancel = null
+        if (ok) arrived()
+        else {
+            module = Module.UNKNOWN
+            giveUp(Why.MODULE_FAILED)
+        }
+    }
+
+    /** The module is on the device: ML Kit runs from now on. Returns what cancels a request still under way. Under [lock]. */
+    private fun arrived(): (() -> Unit)? {
+        if (module == Module.DOWNLOADING) arrivals++
+        module = Module.READY
+        request++
+        return cancel.also { cancel = null }
+    }
+
+    /** Gives a download not done within [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]); returns what cancels it. Under [lock]. */
+    private fun expire(): (() -> Unit)? {
+        if (module != Module.DOWNLOADING || gaveUp != null || now() - requestedAt < DOWNLOAD_WAIT_MS) return null
+        module = Module.UNKNOWN
+        giveUp(Why.MODULE_FAILED)
+        request++
+        return cancel.also { cancel = null }
     }
 
     /** Leaves ML Kit for [why] for the rest of the session, or until the setting is turned on again. Under [lock]. */
@@ -153,11 +313,26 @@ class CoverTextDetectors(
     }
 
     companion object {
+        /** ML Kit's detector's [CoverTextDetector.id]: part of the cover-focus version of covers it finds text on. */
+        const val ML_KIT_ID = "mlkit-latin-v2"
+
         /** Failed ML Kit runs in a row that leave PP-OCR for the rest of the session. */
         const val FAILURES = 3
 
+        /** Checks of the module Play services does not answer that leave PP-OCR for the rest of the session. */
+        const val CHECK_TRIES = 2
+
+        /** How often a module being downloaded is asked about again. */
+        const val RECHECK_MS = 30_000L
+
+        /** How long a module download may take before PP-OCR is used for the rest of the session. */
+        const val DOWNLOAD_WAIT_MS = 10 * 60_000L
+
         @Volatile
         private var shared: CoverTextDetectors? = null
+
+        /** Tells [shared] of changes of the setting; held here, as preferences hold their listeners weakly. */
+        private var listener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
         /**
          * The app's: the setting from [Prefs.coverMlKit], Play services as [GmsPlayServices] finds
@@ -175,7 +350,12 @@ class CoverTextDetectors(
                     // None until ML Kit's detector is part of the app.
                     mlKit = null,
                     ppocr = { TextDetector.shared(app) }
-                ).also { shared = it }
+                ).also { d ->
+                    val l = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == Prefs.KEY_COVER_MLKIT) d.settingChanged() }
+                    PreferenceManager.getDefaultSharedPreferences(app).registerOnSharedPreferenceChangeListener(l)
+                    listener = l
+                    shared = d
+                }
             }
         }
 

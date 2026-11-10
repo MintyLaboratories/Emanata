@@ -27,8 +27,10 @@ interface CoverTextDetector {
     companion object {
         /**
          * The [id]s of the app's detectors: covers' focuses found by each are kept, of others
-         * deleted. Lazy: [TextDetector]'s own initialization initializes this interface first.
+         * deleted. ML Kit's are kept while PP-OCR stands in for it, so a session that falls back
+         * finds none of them again. Lazy: [TextDetector]'s own initialization initializes this
+         * interface first.
          */
-        val IDS: Set<String> by lazy { setOf(TextDetector.ID, TextDetector.DOWNLOADED_ID) }
+        val IDS: Set<String> by lazy { setOf(TextDetector.ID, TextDetector.DOWNLOADED_ID, CoverTextDetectors.ML_KIT_ID) }
     }
 }

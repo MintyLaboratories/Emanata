@@ -37,7 +37,10 @@ class SettingsCoverTextTest {
 
         override fun moduleInstalled(): Boolean? = true
 
-        override fun requestModule(done: (Boolean) -> Unit) = done(true)
+        override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
+            done(true)
+            return {}
+        }
     }
 
     @Before
@@ -50,7 +53,7 @@ class SettingsCoverTextTest {
 
     private fun withPlayServices(there: Boolean) {
         val prefs = Prefs(context)
-        CoverTextDetectors.standIn(CoverTextDetectors({ prefs.coverMlKit }, Play(there), { coverText("mlkit") { null } }, { coverText("ppocr") { null } }))
+        CoverTextDetectors.standIn(CoverTextDetectors({ prefs.coverMlKit }, Play(there), CoverTextDetectors.MlKit("mlkit") { coverText("mlkit") { null } }, { coverText("ppocr") { null } }))
     }
 
     private fun settings(): PreferenceFragmentCompat {

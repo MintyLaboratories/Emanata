@@ -37,14 +37,17 @@ class ModelsCoverTextTest {
 
         override fun moduleInstalled(): Boolean? = true
 
-        override fun requestModule(done: (Boolean) -> Unit) = done(true)
+        override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
+            done(true)
+            return {}
+        }
     }
 
     @Before
     fun setUp() {
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         val prefs = Prefs(context)
-        CoverTextDetectors.standIn(CoverTextDetectors({ prefs.coverMlKit }, Play(), { coverText("mlkit") { null } }, { coverText("ppocr") { null } }))
+        CoverTextDetectors.standIn(CoverTextDetectors({ prefs.coverMlKit }, Play(), CoverTextDetectors.MlKit("mlkit") { coverText("mlkit") { null } }, { coverText("ppocr") { null } }))
     }
 
     @After

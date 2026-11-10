@@ -1119,9 +1119,9 @@
     <string name="cover_text_in_use">In use</string>
     <string name="cover_text_in_use_mlkit">In use; books read right to left use PP-OCRv5</string>
     <string name="cover_text_downloading">Google Play services is downloading ML Kit\'s model; covers find their text once it is done</string>
-    <string name="cover_text_held_back">In use: ML Kit\'s model download waits for a connection the network settings allow; ML Kit is tried again when the app restarts</string>
-    <string name="cover_text_module_failed">In use: Google Play services did not download ML Kit\'s model; ML Kit is tried again when the app restarts</string>
-    <string name="cover_text_failed">In use: ML Kit failed; it is tried again when the app restarts</string>
+    <string name="cover_text_held_back">In use: ML Kit\'s model download waits for a connection the network settings allow; ML Kit is tried again after a restart or when the setting is turned on again</string>
+    <string name="cover_text_module_failed">In use: Google Play services did not download ML Kit\'s model; ML Kit is tried again after a restart or when the setting is turned on again</string>
+    <string name="cover_text_failed">In use: ML Kit failed; it is tried again after a restart or when the setting is turned on again</string>
     <string name="ai_models_intro">Models download when chosen in Settings or here, and run on this device only.</string>
     <string name="ai_step_artifacts">Artifact removal</string>
     <string name="ai_step_descreen">Descreen</string>

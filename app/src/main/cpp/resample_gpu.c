@@ -144,7 +144,11 @@ typedef struct {
     int64_t alloc_ns;
     int64_t upload_ns;
     int64_t submit_ns;
+    // Fence waits and timer query collection, apart from the waits inside glMapBufferRange:
+    // of source buffers (map_up_ns) and of output ones (map_down_ns).
     int64_t wait_ns;
+    int64_t map_up_ns;
+    int64_t map_down_ns;
     int64_t copy_ns;
     uint64_t across_ns;
     uint64_t down_ns;
@@ -518,12 +522,13 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
     }
     __android_log_print(ANDROID_LOG_INFO, TAG,
                         "src=%dx%d dst=%dx%d taps=%d/%d across_taps=%d ring=%.2f/%.2f linear=%d chunk=%d slots=%d chunks=%d "
-                        "rows=%d%s lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f copy=%.2f "
-                        "free=%.2f total=%.2f %s cores=0x%llx made=%d kept=%.1fMB",
+                        "rows=%d%s lock=%.2f begin=%.2f compile=%.2f alloc=%.2f upload=%.2f submit=%.2f wait=%.2f map=%.2f/%.2f "
+                        "copy=%.2f free=%.2f total=%.2f %s cores=0x%llx made=%d kept=%.1fMB",
                         ax->end - ax->first, ay->end - ay->first, ax->len, ay->len, ax->stride, ay->stride, t->across_taps,
                         ax->ring, ay->ring, job->linear, chunk, t->slots, t->chunks, t->rows, chunk == 0 ? " failed" : "",
                         ms(t->lock_ns), ms(t->begin_ns), ms(t->compile_ns), ms(t->alloc_ns), ms(t->upload_ns), ms(t->submit_ns),
-                        ms(t->wait_ns), ms(t->copy_ns), ms(free_ns), ms(total_ns), gpu, (unsigned long long)t->cores, t->made,
+                        ms(t->wait_ns), ms(t->map_up_ns), ms(t->map_down_ns), ms(t->copy_ns), ms(free_ns), ms(total_ns), gpu,
+                        (unsigned long long)t->cores, t->made,
                         (double)t->kept / (1 << 20));
 }
 
@@ -845,12 +850,14 @@ static int upload(rs_gpu * g, GLuint src, int r0, int rows)
     uint8_t * up = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(src_w * rows * 4),
                                     GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (up == NULL) return -1;
+    const int64_t mapped = stamp(g);
+    g->trace.map_up_ns += mapped - t;
     note_core(g);
     for (int r = 0; r < rows; r++) {
         memcpy(up + (size_t)r * src_w * 4, job->src + (size_t)(r0 + r) * job->src_stride + (size_t)ax->first * 4, src_w * 4);
     }
     const int ok = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-    g->trace.upload_ns += stamp(g) - t;
+    g->trace.upload_ns += stamp(g) - mapped;
     g->trace.rows += rows;
     return ok ? 0 : -1;
 }
@@ -894,7 +901,7 @@ static void run_down(const rs_gpu * g, GLuint mid, GLuint out, int y0, int y1, i
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 }
 
-// Copies output rows y0 until y1 from out into the destination, waiting for the GPU; 0 on success.
+// Copies output rows y0 until y1 from out into the destination; 0 on success.
 static int readback(rs_gpu * g, GLuint out, int y0, int y1)
 {
     const rs_job * job = g->job;
@@ -904,7 +911,7 @@ static int readback(rs_gpu * g, GLuint out, int y0, int y1)
     const uint8_t * down = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(row_bytes * (y1 - y0)), GL_MAP_READ_BIT);
     if (down == NULL) return -1;
     const int64_t mapped = stamp(g);
-    g->trace.wait_ns += mapped - t;
+    g->trace.map_down_ns += mapped - t;
     note_core(g);
     for (int y = y0; y < y1; y++) {
         memcpy(job->dst + (size_t)y * job->dst_stride, down + (size_t)(y - y0) * row_bytes, row_bytes);

@@ -32,6 +32,16 @@ object AiSizeText {
         if (t.cleanupPct == AiThresholds.ALWAYS) context.getString(R.string.ai_sizes_cleanup_always)
         else context.getString(R.string.ai_sizes_cleanup, size(context, t.cleanupPct))
 
+    /** The clauses of [t] that differ from the defaults, for where the slider is hidden; null at the defaults. */
+    fun changed(context: Context, t: AiThresholds): String? {
+        val d = AiThresholds()
+        val clauses = listOfNotNull(
+            upscale(context, t).takeIf { t.upscalePct != d.upscalePct },
+            cleanup(context, t).takeIf { t.cleanupPct != d.cleanupPct }
+        )
+        return if (clauses.isEmpty()) null else context.getString(R.string.ai_sizes_changed, clauses.joinToString(" "))
+    }
+
     /** The sentence under the slider: upscale, cleanup and descreen, the first two in their handles' colors. */
     fun sentence(context: Context, t: AiThresholds, upscaleColor: Int, cleanupColor: Int): CharSequence {
         val out = SpannableStringBuilder()

@@ -1093,6 +1093,7 @@
     <string name="ai_size_percent">%1$d%% size</string>
     <string name="ai_size_value">%1$d%%</string>
     <string name="ai_size_always">Always</string>
+    <string name="ai_sizes_changed">Models by page size: %1$s</string>
     <string name="ai_sizes_upscale_name">Upscale</string>
     <string name="ai_sizes_cleanup_name">Clean up</string>
     <string name="ai_sizes_above">Above %1$s</string>

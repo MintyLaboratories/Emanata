@@ -9,10 +9,12 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
+import androidx.preference.TwoStatePreference
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.AiThresholds
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
@@ -257,6 +259,22 @@ class SettingsAiTest {
         assertFalse(ai.summary.toString().contains(context.getString(R.string.ai_chain_slow)))
         ai.performClick()
         awaitSummary(ai, context.getString(R.string.pref_ai_desc))
+    }
+
+    @Test
+    fun theAiSummaryShowsSizesKeepItSimpleHides() {
+        val prefs = Prefs(context)
+        prefs.aiEnabled = true
+        prefs.aiThresholds = AiThresholds(60, AiThresholds.ALWAYS)
+        assertTrue(prefs.keepSimple)
+        val fragment = settings()
+        val ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
+        val chain = ModelText.chain(context, AiChain.chosen(prefs))
+        awaitSummary(ai, chain + "\n" + AiSizeText.changed(context, prefs.aiThresholds))
+        // With advanced settings shown, the slider says it.
+        fragment.findPreference<TwoStatePreference>("pref_keep_simple")!!.performClick()
+        assertFalse(prefs.keepSimple)
+        awaitSummary(ai, chain)
     }
 
     @Test

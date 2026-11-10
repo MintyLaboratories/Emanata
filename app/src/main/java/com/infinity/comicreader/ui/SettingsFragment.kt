@@ -431,6 +431,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("pref_keep_simple")?.setOnPreferenceChangeListener { _, value ->
             AdvancedSettings.apply(screen, value as Boolean)
             fillAi(value)
+            refreshAi()
             true
         }
     }
@@ -594,7 +595,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val installed = withContext(AppDispatchers.io) { Models.all().filter { store.installed(it) } }
             val used = withContext(AppDispatchers.io) { store.bytesUsed() }
             if (!isAdded) return
-            ai?.summary = if (prefs.aiEnabled) ModelText.chain(context, AiChain.chosen(prefs)) else getString(R.string.pref_ai_desc)
+            // Keep it simple hides the size slider: sizes set away from the defaults show here instead.
+            val sizes = if (prefs.keepSimple) AiSizeText.changed(context, prefs.aiThresholds) else null
+            ai?.summary = if (prefs.aiEnabled) listOfNotNull(ModelText.chain(context, AiChain.chosen(prefs)), sizes).joinToString("\n")
+            else getString(R.string.pref_ai_desc)
             manager?.summary = getString(R.string.ai_models_summary, installed.size, ModelText.size(context, used))
             for ((step, pref) in pickers) {
                 val m = chosen(step, pref.value)

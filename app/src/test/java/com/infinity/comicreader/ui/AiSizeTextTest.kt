@@ -8,6 +8,7 @@ import android.text.style.ForegroundColorSpan
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.ai.AiThresholds
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -68,5 +69,16 @@ class AiSizeTextTest {
     fun handleValues() {
         assertEquals("Always", AiSizeText.value(context, AiThresholds.ALWAYS))
         assertEquals("75%", AiSizeText.value(context, 75))
+    }
+
+    @Test
+    fun changedNamesOnlyTheHandlesOffTheirDefaults() {
+        assertNull(AiSizeText.changed(context, AiThresholds()))
+        assertEquals("Models by page size: Upscale pages shown larger than 60% size.", AiSizeText.changed(context, AiThresholds(60, 50)))
+        assertEquals("Models by page size: Clean up pages at every size.", AiSizeText.changed(context, AiThresholds(100, AiThresholds.ALWAYS)))
+        assertEquals(
+            "Models by page size: Upscale pages shown larger than twice their size. Clean up pages shown larger than quarter size.",
+            AiSizeText.changed(context, AiThresholds(200, 25))
+        )
     }
 }

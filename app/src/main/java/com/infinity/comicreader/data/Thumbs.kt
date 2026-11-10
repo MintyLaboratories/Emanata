@@ -185,8 +185,8 @@ object Thumbs {
     /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
     fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)
 
-    /** [style]'s part of a cover's key ([CoverStyle.key]) under the [detector] in use. */
-    fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
+    /** [style]'s part of the key ([CoverStyle.key]) of the cover of a book marked [rightToLeft] or not, under its detector ([detectorFor]). */
+    fun styleKey(context: Context, style: CoverStyle, rightToLeft: Boolean): String = style.key(detectorFor(context, rightToLeft).id)
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per

@@ -404,6 +404,10 @@ class ThumbsTest {
         Thumbs.rtlDetector = { rtl }
         assertSame(rtl, Thumbs.detectorFor(context, rightToLeft = true))
         assertSame(usual, Thumbs.detectorFor(context, rightToLeft = false))
+        // The list knows each book's cover by its own detector.
+        val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        assertEquals(style.key("rtl"), Thumbs.styleKey(context, style, rightToLeft = true))
+        assertEquals(style.key("usual"), Thumbs.styleKey(context, style, rightToLeft = false))
         // The folder's direction first, then what was detected, then the default.
         assertTrue(BookDirection.markedRightToLeft("rtl", ReadingDirection.LTR, "ltr"))
         assertFalse(BookDirection.markedRightToLeft("ltr", ReadingDirection.RTL, "rtl"))

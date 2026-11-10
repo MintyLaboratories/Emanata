@@ -25,6 +25,7 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.TitleDisplay
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.NetWork
@@ -325,7 +326,7 @@ class BookAdapter(
      */
     private fun coverId(item: BookEntry): String =
         "${item.path}|${item.size}|${item.lastModified}|${item.isDir}|${item.type}|" +
-            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyleKey}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
+            "${item.bookmarkPage}${Thumbs.hiddenTag(item, hiddenPages())}|${prefs.coverStyleKey(item.direction == ReadingDirection.RTL)}|${NameCharset.forBook(item.id, prefs.charset)}|${prefs.thumbnails}|${Remotes.thumbnails(item.path)}|$firstLayerOnly"
 
     init {
         setHasStableIds(true)

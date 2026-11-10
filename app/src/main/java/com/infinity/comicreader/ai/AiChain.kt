@@ -32,7 +32,7 @@ object AiChain {
      * Version of how a chain renders a page ([AiPages.chain]); part of every processed page's
      * key ([signature]), so a change to it never shows pages processed the old way.
      */
-    const val ENGINE = 1
+    const val ENGINE = 2
 
     /** [prefs]' chosen models, one per step at most; empty while AI processing is off. */
     fun chosen(prefs: Prefs): List<AiModel> =

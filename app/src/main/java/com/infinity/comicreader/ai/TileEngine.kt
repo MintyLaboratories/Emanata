@@ -129,7 +129,10 @@ internal object TileEngine {
         }
     }
 
-    /** [src] through [session]'s model, the output [Geometry.scale] times its size. */
+    /**
+     * [src] through [session]'s model, the output [Geometry.scale] times its size; with [gray]
+     * (a gray page, [GrayPages.isGray]), each tile collapsed to gray as it is written ([GrayPages.toGray]).
+     */
     fun run(
         session: Session,
         src: Bitmap,
@@ -138,10 +141,11 @@ internal object TileEngine {
         gate: () -> Fallback? = { null },
         clock: () -> Long = SystemClock::elapsedRealtime,
         hold: () -> Boolean = { false },
+        gray: Boolean = false,
         onTile: (done: Int, of: Int, ms: Long) -> Unit = { _, _, _ -> }
     ): PageRun = exclusive(canceled) {
         try {
-            runAlone(session, src, limits, canceled, gate, clock, hold, onTile)
+            runAlone(session, src, limits, canceled, gate, clock, hold, gray, onTile)
         } finally {
             session.model.trim()
         }
@@ -160,7 +164,7 @@ internal object TileEngine {
 
     private fun runAlone(
         session: Session, src: Bitmap, limits: PageLimits, canceled: () -> Boolean, gate: () -> Fallback?,
-        clock: () -> Long, hold: () -> Boolean, onTile: (Int, Int, Long) -> Unit
+        clock: () -> Long, hold: () -> Boolean, gray: Boolean, onTile: (Int, Int, Long) -> Unit
     ): PageRun {
         if (src.isRecycled || src.config != Bitmap.Config.ARGB_8888) return PageRun(null, Fallback.UNREADABLE, RunStats.NONE)
         val g = session.geometry
@@ -201,6 +205,7 @@ internal object TileEngine {
                 }
                 val t0 = clock()
                 session.model.run(src, t.input, out, t.crop, t.dx, t.dy) ?: return fallback(Fallback.FAILED, i)
+                if (gray) GrayPages.toGray(out, Box(t.dx, t.dy, t.crop.width, t.crop.height))
                 times[i] = clock() - t0
                 onTile(i + 1, tiles.size, times[i])
             }

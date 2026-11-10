@@ -35,6 +35,8 @@ internal class FakeModel(
     private val breaksAbove: Int = Int.MAX_VALUE,
     /** Writes mid-gray whatever the input. */
     private val wrong: Boolean = false,
+    /** Adds this many codes to the red of every output pixel, as a GPU fault can color a gray page. */
+    private val tint: Int = 0,
     /** Working bytes a run holds per input pixel; 0: not counted. */
     private val bytesPerPixel: Long = 0,
     /** Bytes its weights took as it opened; 0: not counted. */
@@ -80,6 +82,7 @@ internal class FakeModel(
                     if (minOf(px, py, n - 1 - px, m - 1 - py) < borderNoise) v = brighter(v, 3)
                     if (n > breaksAbove) v = v xor 0xFFFFFF
                     if (wrong) v = 0xFF808080.toInt()
+                    if (tint != 0) v = redder(v, tint)
                     row[x] = v
                 }
                 dst.setPixels(row, 0, c.width, dx, dy + y, c.width, 1)
@@ -93,6 +96,8 @@ internal class FakeModel(
     /** The output pixel for tile input pixel ([px], [py]): the mean of it and its four taps, black past the tile. */
     private fun pixel(tile: IntArray, n: Int, m: Int, px: Int, py: Int): Int =
         mean(taps) { x, y -> if (x + px in 0 until n && y + py in 0 until m) tile[(y + py) * n + x + px] else 0 }
+
+    private fun redder(v: Int, by: Int): Int = (v and 0xFF00FFFF.toInt()) or (minOf(255, ((v shr 16) and 0xFF) + by) shl 16)
 
     private fun brighter(v: Int, by: Int): Int {
         var out = 0xFF shl 24

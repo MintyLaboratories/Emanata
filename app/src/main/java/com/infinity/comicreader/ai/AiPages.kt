@@ -85,7 +85,8 @@ data class ChainStep(val index: Int, val pixels: Long)
  * Pages through a model, then to their display size by Lanczos3; a run that falls back
  * leaves the page as it would be without AI: the page itself by Lanczos3. An upscaling model
  * does not run for a page shown no larger than it is ([Fallback.UNNEEDED]): the resampling
- * after it would throw its added pixels away.
+ * after it would throw its added pixels away. A gray page stays gray: each model's output on it
+ * is collapsed to gray before anything reads it ([GrayPages]).
  */
 internal object AiPages {
     /**
@@ -106,7 +107,7 @@ internal object AiPages {
         val run = if (session.geometry.scale > 1 && plan.shrinks()) {
             PageRun(null, Fallback.UNNEEDED, RunStats.NONE)
         } else {
-            TileEngine.run(session, src, limits, canceled, gate)
+            TileEngine.run(session, src, limits, canceled, gate, gray = GrayPages.isGray(src))
         }
         val big = run.bitmap
         return Cancellation.during(canceled) {
@@ -154,6 +155,8 @@ internal object AiPages {
         if (steps.isEmpty()) return ChainRun(null, Fallback.UNNEEDED, 0, 0)
         val expected = steps.map { expect(it.index, it.pixels).coerceAtLeast(0) }
         if (expected.sum() > limits.timeoutMs) return ChainRun(null, Fallback.TIMEOUT, 0, 0, early = true)
+        // Read once: each model's output on a gray page is collapsed to gray, so the next model's input stays gray.
+        val gray = GrayPages.isGray(src)
         // The models' own time, without time held.
         var spent = 0L
         var page = src
@@ -165,7 +168,7 @@ internal object AiPages {
                 // Time left for this model: what the models after it are expected to take is kept for them.
                 val left = limits.timeoutMs - spent - expected.drop(n + 1).sum()
                 if (left <= 0) return ChainRun(null, Fallback.TIMEOUT, ran, clock() - start)
-                val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock, hold)
+                val run = TileEngine.run(session, page, limits.copy(timeoutMs = left), canceled, gate, clock, hold, gray)
                 spent += run.stats.totalMs
                 if (run.stats.tiles > 0) onStep(step.index, step.pixels, run.stats)
                 val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)

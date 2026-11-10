@@ -427,7 +427,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     private var autoCrop = false
     private var spreadDisplay = SpreadDisplay.MERGE
 
-    /** What the open book's folder keeps of the layout, or the book itself ([layoutOwn]); null when it follows the defaults. */
+    /**
+     * What the open book's folder keeps of the layout, or the book itself ([layoutOwn]); null when
+     * it follows the defaults. Set on the main thread; also read by direction detection off it.
+     */
+    @Volatile
     private var folderLayout: FolderLayout? = null
 
     /** True while [folderLayout] is the open book's own, from a folder packed into it: kept for the book, not its folder. */

@@ -269,21 +269,20 @@ class NativeResamplerTest {
         assertThrows(CancellationException::class.java) {
             resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { ++polls > 3 })
         }
-        // Asked before each of three chunks and the fourth, which never ran; no fallback to the CPU.
+        // Asked before the job began, before each of two chunks and the third, which never ran; no fallback to the CPU.
         assertEquals(4, polls)
         val job = k.jobs.single()
         assertTrue(job.ended)
-        assertEquals(3, job.bands.size)
+        assertEquals(2, job.bands.size)
     }
 
     @Test
-    fun gpuJobCanceledBeforeItStartsWritesNothing() {
+    fun gpuJobCanceledBeforeItStartsBeginsNothing() {
         val k = use(FakeKernels())
         assertThrows(CancellationException::class.java) {
             resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { true })
         }
-        assertTrue(k.jobs.single().ended)
-        assertTrue(k.jobs.single().bands.isEmpty())
+        assertTrue(k.jobs.isEmpty())
     }
 
     @Test
@@ -291,7 +290,7 @@ class NativeResamplerTest {
         val k = use(FakeKernels())
         var polls = 0
         assertThrows(IllegalStateException::class.java) {
-            resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { check(++polls < 2); false })
+            resample(noise(64, 64), 40, 120, Resampler.Window.of(64, 64), Scaling.DEFAULT, PixelEngine.GPU, canceled = { check(++polls < 3); false })
         }
         assertEquals(1, k.jobs.single().bands.size)
         assertTrue(k.jobs.single().ended)

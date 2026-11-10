@@ -293,12 +293,12 @@ object NativeResampler {
      * Resamples [window] of [src] into all of [dst] as [scaling] says, with [engine]; false
      * when it is [PixelEngine.KOTLIN] or native code cannot do it, so the caller uses
      * [Resampler]; with [fallback] false, also when the GPU was asked for and could not do it.
-     * Throws [CancellationException] once [canceled], asked before each CPU band and each
-     * GPU chunk, returns true. [urgent] says, before each CPU band and once before the GPU
-     * band, whether someone waits on the result. [workers] above 0 sets the CPU workers
-     * whatever the urgency, [pin] whether they or the GPU's calling thread are pinned, for
-     * timing a setup; null pins CPU workers as [pinned] says and the GPU's caller as
-     * [gpuPinned] does.
+     * Throws [CancellationException] once [canceled], asked before each CPU band, a GPU job
+     * and each of its chunks, returns true. [urgent] says, before each CPU band and once
+     * before the GPU band, whether someone waits on the result. [workers] above 0 sets the
+     * CPU workers whatever the urgency, [pin] whether they or the GPU's calling thread are
+     * pinned, for timing a setup; null pins CPU workers as [pinned] says and the GPU's
+     * caller as [gpuPinned] does.
      */
     fun resample(
         src: Bitmap,
@@ -341,6 +341,8 @@ object NativeResampler {
         val later = (if (workers > 0) workers else laterThreads).coerceAtLeast(1)
         val most = if (gpu) 1 else maxOf(now, later)
         val c = cores!!
+        // A GPU job waits for the one before it and sets up the GPU before its band asks.
+        if (gpu && canceled()) throw CancellationException("Resampling canceled")
         val job = k.begin(src, dst, linear, most, gpu)
         if (job == 0L) return false
         try {

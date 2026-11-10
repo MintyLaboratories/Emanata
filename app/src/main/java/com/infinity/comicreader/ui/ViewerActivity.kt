@@ -1631,7 +1631,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 if (DirectionDetection.outranksCover(contents)) return@withContext contents
                 val app = applicationContext
                 val front = runCatching {
-                    BookDirection.coverFrontOnce(src, knownCover(book, src), { Thumbs.detector(app, it) }) { if (isActive) keepCover(book, it) }
+                    BookDirection.coverFrontOnce(src, knownCover(book, src), Thumbs.detector(app)) { if (isActive) keepCover(book, it) }
                 }.getOrNull()
                 ensureActive()
                 DirectionDetection.withCover(contents, front)

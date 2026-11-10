@@ -5,7 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Blur
 import com.infinity.comicreader.reader.Fit
@@ -110,11 +110,11 @@ object CoverArt {
     }
 
     /**
-     * Where the Smart crop anchor looks in [region] of [src]: its text, as [detect] finds it on
-     * the region shrunk to [SmartCrop.inputSize] (none without [detect]), and its detail. When
-     * [detect] gives null or fails, detail alone, not to be kept ([CoverFocus.keep]).
+     * Where the Smart crop anchor looks in [region] of [src]: its text, as [detector] finds it on
+     * the region shrunk to [SmartCrop.inputSize] (none without [detector]), and its detail. When
+     * [detector] gives null or fails, detail alone, not to be kept ([CoverFocus.keep]).
      */
-    fun focusOf(src: Bitmap, region: Rect, detect: ((Bitmap) -> ScoreMap?)?): CoverFocus {
+    fun focusOf(src: Bitmap, region: Rect, detector: CoverTextDetector?): CoverFocus {
         val (w, h) = SmartCrop.inputSize(region.width(), region.height()).let { it[0] to it[1] }
         val plan = Target(w, h, Fit.STRETCH).plan(region.width().toDouble(), region.height().toDouble(), region.left.toDouble(), region.top.toDouble())
         val small = render(src, plan, false)
@@ -126,9 +126,9 @@ object CoverArt {
                 Wraparound.luminance(row, w, luma, y * w)
             }
             val (rows, columns) = SmartCrop.detail(luma, w, h).let { it[0] to it[1] }
-            if (detect == null) return CoverFocus(null, emptyList(), rows, columns)
-            val map = runCatching { detect(small) }.getOrNull() ?: return CoverFocus(null, emptyList(), rows, columns, keep = false)
-            return SmartCrop.focus(SmartCrop.boxes(map), map.width, map.height, rows, columns)
+            if (detector == null) return CoverFocus(null, emptyList(), rows, columns)
+            val lines = runCatching { detector.lines(small) }.getOrNull() ?: return CoverFocus(null, emptyList(), rows, columns, keep = false)
+            return SmartCrop.focus(lines, w, h, rows, columns)
         } finally {
             small.recycle()
         }

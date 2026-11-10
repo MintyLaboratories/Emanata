@@ -1,8 +1,7 @@
 package com.infinity.comicreader.reader
 
-import android.graphics.Bitmap
 import androidx.annotation.VisibleForTesting
-import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
@@ -103,12 +102,12 @@ object BookDirection {
     /**
      * The front half of a wraparound first page, judged against the book's inner pages, that
      * sets reading direction: the one its barcode and its tallest text both name
-     * ([Wraparound.Fronts.agreed]), the text found by [detect] (none without it). Null when it
+     * ([Wraparound.Fronts.agreed]), the text found by [detector] (none without it). Null when it
      * is not one, when either tells nothing, or when they disagree; then [unsure] too when it
      * could not tell this time: the page did not decode, or the detector did not run. Blocking:
      * the page is decoded, and looked at for text only once its barcode tells.
      */
-    fun coverFront(source: PageSource, detect: ((Bitmap) -> ScoreMap?)?, unsure: () -> Unit = {}): Wraparound.Half? {
+    fun coverFront(source: PageSource, detector: CoverTextDetector?, unsure: () -> Unit = {}): Wraparound.Half? {
         if (source.pageCount == 0 || source.isVector) return null
         val size = source.pageSize(0) ?: return null
         if (!Wraparound.isCandidate(size[0], size[1])) return null
@@ -120,7 +119,7 @@ object BookDirection {
         }
         return try {
             val barcode = CoverArt.frontOf(page) ?: return null
-            val text = CoverArt.textFront(page, ratio, { src, region -> CoverArt.focusOf(src, region, detect) }, unsure)
+            val text = CoverArt.textFront(page, ratio, { src, region -> CoverArt.focusOf(src, region, detector) }, unsure)
             Wraparound.Fronts(barcode, text).agreed
         } finally {
             page.recycle()
@@ -132,10 +131,10 @@ object BookDirection {
      * when looked at before, else found now and handed to [keep], unless it could not tell this
      * time, which leaves it to be looked at again. Blocking.
      */
-    fun coverFrontOnce(source: PageSource, known: CoverFront?, detect: ((Bitmap) -> ScoreMap?)?, keep: (CoverFront) -> Unit): Wraparound.Half? {
+    fun coverFrontOnce(source: PageSource, known: CoverFront?, detector: CoverTextDetector?, keep: (CoverFront) -> Unit): Wraparound.Half? {
         if (known != null) return known.half
         var told = true
-        val half = coverFront(source, detect) { told = false }
+        val half = coverFront(source, detector) { told = false }
         if (told) keep(CoverFront(HiddenPages.bookIndex(source, 0), half))
         return half
     }

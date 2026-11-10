@@ -52,6 +52,20 @@ class SmartCropTest {
     }
 
     @Test
+    fun linesAreBoxesInThePixelsOfTheImageSearched() {
+        val m = map(100, 100, intArrayOf(10, 20, 50, 30))
+        assertEquals(SmartCrop.boxes(m), SmartCrop.lines(m, 100, 100))
+        // A map at half the image's size: its boxes twice as large.
+        val line = SmartCrop.lines(m, 200, 300).single()
+        assertEquals(8.0, line.left, 1e-9)
+        assertEquals(42.0, line.top, 1e-9)
+        assertEquals(112.0, line.right, 1e-9)
+        assertEquals(108.0, line.bottom, 1e-9)
+        // No text, and no map where the detector never runs.
+        assertTrue(SmartCrop.lines(ScoreMap(0, 0, FloatArray(0)), 96, 160).isEmpty())
+    }
+
+    @Test
     fun faintThinAndBelowThresholdRegionsAreNotText() {
         assertTrue(SmartCrop.boxes(map(50, 50, intArrayOf(10, 10, 30, 20), score = 0.5f)).isEmpty())
         assertTrue(SmartCrop.boxes(map(50, 50, intArrayOf(10, 10, 30, 12))).isEmpty())

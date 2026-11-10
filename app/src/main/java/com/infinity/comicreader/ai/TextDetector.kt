@@ -3,6 +3,7 @@ package com.infinity.comicreader.ai
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.infinity.comicreader.data.SmartCrop
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -16,7 +17,8 @@ import java.util.concurrent.TimeUnit
  * Apache-2.0), converted to ncnn by `tools/text-detector/convert.py` and shipped in the app's
  * assets. For the Smart crop anchor of covers. Opened through [runtime] on first use, on the
  * [gpu] or [threads] CPU threads, and closed after [idleMs] without use, so its memory goes
- * when covers are done. Feed it images whose sides are multiples of 32.
+ * when covers are done. Feed it images whose sides are multiples of 32. Its [lines] are the
+ * map's text regions ([SmartCrop.lines]).
  */
 internal class TextDetector(
     private val runtime: InferenceRuntime,
@@ -24,7 +26,11 @@ internal class TextDetector(
     private val gpu: Boolean = false,
     private val threads: Int = THREADS,
     private val idleMs: Long = IDLE_MS
-) {
+) : CoverTextDetector {
+    override val id: String get() = ID
+
+    override fun lines(src: Bitmap): List<SmartCrop.TextBox>? = detect(src)?.let { SmartCrop.lines(it, src.width, src.height) }
+
     private var model: TileModel? = null
 
     /** True once the model failed to open: it is not tried again this session. */
@@ -83,6 +89,9 @@ internal class TextDetector(
 
     companion object {
         private const val TAG = "TextDetector"
+
+        /** Its [CoverTextDetector.id]: PP-OCRv5 mobile det. */
+        const val ID = "ppocrv5"
 
         /**
          * CPU threads it runs on, of the large cores. On the reference tablet a cover's input took

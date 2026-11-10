@@ -206,6 +206,17 @@ object SmartCrop {
     }
 
     /**
+     * The text regions of [map] ([boxes]) in the pixels of the [w] x [h] image it was found on.
+     */
+    fun lines(map: ScoreMap, w: Int, h: Int): List<TextBox> {
+        val found = boxes(map)
+        if (found.isEmpty() || (map.width == w && map.height == h)) return found
+        val sx = w.toDouble() / map.width
+        val sy = h.toDouble() / map.height
+        return found.map { TextBox(it.left * sx, it.top * sy, it.right * sx, it.bottom * sy, it.score) }
+    }
+
+    /**
      * The focus of a cover from its text [boxes] on a [w] x [h] map and its detail [rows] and
      * [columns] ([detail]): the tallest text of at least [MIN_GLYPH], the line holding it, and
      * every line of [SAME_SIZE] or more of its size; the detail only without such text.

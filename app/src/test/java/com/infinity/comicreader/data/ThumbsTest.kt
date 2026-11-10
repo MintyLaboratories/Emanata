@@ -1,6 +1,7 @@
 package com.infinity.comicreader.data
 
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.coverText
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -108,13 +109,19 @@ class ThumbsTest {
     /** Stands in a detector seeing text across rows [top] to [bottom] (shares of the height) of every image; counts its calls. */
     private fun textAt(top: Double, bottom: Double): IntArray {
         val calls = intArrayOf(0)
-        Thumbs.detector = { _, bitmap ->
+        standIn { bitmap ->
             calls[0]++
             val w = bitmap.width
             val h = bitmap.height
             ScoreMap(w, h, FloatArray(w * h) { i -> if (i / w in (top * h).toInt() until (bottom * h).toInt() && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
         }
         return calls
+    }
+
+    /** Stands in a detector whose lines are the text of the score map [map] gives each image. */
+    private fun standIn(map: (Bitmap) -> ScoreMap?) {
+        val stand = coverText(map = map)
+        Thumbs.detector = { stand }
     }
 
     private val detector = Thumbs.detector
@@ -143,7 +150,7 @@ class ThumbsTest {
     fun aFocusFoundWithoutTheDetectorIsNeitherKeptNorStored() {
         var works = false
         val calls = intArrayOf(0)
-        Thumbs.detector = { _, bitmap ->
+        standIn { bitmap ->
             calls[0]++
             if (!works) null else ScoreMap(bitmap.width, bitmap.height, FloatArray(bitmap.width * bitmap.height) { i -> if (i / bitmap.width >= bitmap.height * 17 / 20 && i / bitmap.width < bitmap.height * 92 / 100) 0.9f else 0f })
         }
@@ -263,7 +270,7 @@ class ThumbsTest {
 
     /** Stands in a detector seeing a title on halves whose middle is [color]. */
     private fun titleOn(color: Int) {
-        Thumbs.detector = { _, bitmap ->
+        standIn { bitmap ->
             val w = bitmap.width
             val h = bitmap.height
             val titled = bitmap.getPixel(w / 2, h / 2) == color
@@ -302,7 +309,7 @@ class ThumbsTest {
 
     @Test
     fun aBarcodeWhoseTitleWasNotLookedForLeavesTheDirectionOpen() {
-        Thumbs.detector = { _, _ -> null }
+        standIn { null }
         val (book, id) = wrapBook(true, "unlooked.cbz")
         assertEquals(Color.RED, Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
         assertNull(Thumbs.knownFront(book.file, 0))
@@ -315,7 +322,7 @@ class ThumbsTest {
     fun aWraparoundWithoutBarcodeShowsTheHalfWithTheTallerTitle() {
         // Text seen on blue halves only: the left one, though a left-to-right book starts on the right.
         val calls = intArrayOf(0)
-        Thumbs.detector = { _, bitmap ->
+        standIn { bitmap ->
             calls[0]++
             val w = bitmap.width
             val h = bitmap.height
@@ -335,7 +342,7 @@ class ThumbsTest {
 
     @Test
     fun aWraparoundWhoseTitleWasNotLookedForIsWholeAndNotKept() {
-        Thumbs.detector = { _, _ -> null }
+        standIn { null }
         val file = File(context.cacheDir, "unread.png")
         file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
         val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
@@ -348,7 +355,7 @@ class ThumbsTest {
     @Test
     fun aBookCoverTwoInnerPagesWideShowsItsFrontWithoutTheSpine() {
         // Back blue, a green spine 60 wide, front red with a title; inner pages 2:3 at another scale.
-        Thumbs.detector = { _, bitmap ->
+        standIn { bitmap ->
             val w = bitmap.width
             val h = bitmap.height
             val red = Color.red(bitmap.getPixel(w / 2, h / 2)) > 200

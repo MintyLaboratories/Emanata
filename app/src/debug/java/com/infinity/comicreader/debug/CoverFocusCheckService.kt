@@ -128,7 +128,7 @@ class CoverFocusCheckService : Service() {
         val app = TextDetector(LibNcnn.cpuLane, { files })
         try {
             val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
-            CoverCropSurvey(this, { app.detect(it) }, cropsDir, ::log).run(dir)
+            CoverCropSurvey(this, app, cropsDir, ::log).run(dir)
         } finally {
             app.close()
         }
@@ -193,13 +193,12 @@ class CoverFocusCheckService : Service() {
                 }.sorted()
                 small.recycle()
                 val t0 = SystemClock.elapsedRealtimeNanos()
-                val focus = CoverArt.focusOf(cover, region) { app.detect(it) }
+                val focus = CoverArt.focusOf(cover, region, app)
                 val focusMs = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6
-                val map = run {
+                val boxes = run {
                     val s = CoverArt.render(cover, Target(iw, ih, Fit.STRETCH).plan(cover.width.toDouble(), cover.height.toDouble()), false)
-                    app.detect(s).also { s.recycle() }
-                }
-                val boxes = map?.let { SmartCrop.boxes(it) }.orEmpty()
+                    app.lines(s).also { s.recycle() }
+                }.orEmpty()
                 o.put("input", "${iw}x$ih").put("detectMs", times)
                     .put("appMs", JSONObject().put("median", Stats.round1(appMs[appMs.size / 2])).put("most", Stats.round1(appMs.last())))
                     .put("focusMs", Stats.round1(focusMs)).put("boxes", boxes.size)

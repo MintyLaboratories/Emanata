@@ -90,6 +90,25 @@ class TextDetectorTest {
     }
 
     @Test
+    fun itsLinesAreTheMapsTextRegionsOnTheImage() {
+        // A map at half the image's size with one line of text, 8 x 4 at (2, 4).
+        val half = object : TileModel by FakeModel(onGpu = false) {
+            override fun map(src: Bitmap, mean: FloatArray, norm: FloatArray, bgr: Boolean) =
+                ScoreMap(16, 16, FloatArray(256) { i -> if (i % 16 in 2 until 10 && i / 16 in 4 until 8) 0.9f else 0f })
+        }
+        val detector: CoverTextDetector = TextDetector(FakeRuntime(make = { _, _ -> half }), ::files)
+        assertEquals("ppocrv5", detector.id)
+        // Grown by 1.5 * 32 / 24 = 2 on each side, then doubled onto the image.
+        val line = detector.lines(image)!!.single()
+        assertEquals(listOf(0.0, 4.0, 24.0, 20.0), listOf(line.left, line.top, line.right, line.bottom))
+        // A 2 x 2 map's text is too thin to be any.
+        assertEquals(emptyList<Any>(), TextDetector(FakeRuntime(make = { _, _ -> MapModel() }), ::files).lines(image))
+        assertNull(TextDetector(FakeRuntime(make = { _, _ -> null }), ::files).lines(image))
+        assertEquals(emptyList<Any>(), TextDetector(FakeRuntime(available = false, make = { _, _ -> MapModel() }), ::files).lines(image))
+        (detector as TextDetector).close()
+    }
+
+    @Test
     fun missingFilesFindNothingThisTimeAndNoRuntimeNothingEver() {
         assertNull(TextDetector(FakeRuntime(make = { _, _ -> MapModel() }), { null }).detect(image))
         val off = FakeRuntime(available = false, make = { _, _ -> MapModel() })

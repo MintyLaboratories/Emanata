@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
-import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFocus
 import com.infinity.comicreader.data.CoverStyle
@@ -40,15 +40,15 @@ import java.io.File
  */
 internal class CoverCropSurvey(
     private val context: Context,
-    private val detect: (Bitmap) -> ScoreMap?,
+    private val detector: CoverTextDetector,
     private val cropsDir: File?,
     private val log: (JSONObject) -> Unit
 ) {
     fun run(dir: File) {
         val books = books(dir)
-        log(JSONObject().put("survey", books.size))
+        log(JSONObject().put("survey", books.size).put("detector", detector.id))
         // The first run loads the model: kept out of every cover's time.
-        Bitmap.createBitmap(SmartCrop.STRIDE * 4, SmartCrop.STRIDE * 6, Bitmap.Config.ARGB_8888).let { runCatching { detect(it) }; it.recycle() }
+        Bitmap.createBitmap(SmartCrop.STRIDE * 4, SmartCrop.STRIDE * 6, Bitmap.Config.ARGB_8888).let { runCatching { detector.lines(it) }; it.recycle() }
         for ((index, book) in books.withIndex()) {
             val o = JSONObject().put("book", index).put("kind", kind(book)).put("cpuset", cpuset())
             try {
@@ -112,7 +112,7 @@ internal class CoverCropSurvey(
             }
             o.put("rw", region.width()).put("rh", region.height())
             val t = SystemClock.elapsedRealtimeNanos()
-            val focus = CoverArt.focusOf(src, region, detect)
+            val focus = CoverArt.focusOf(src, region, detector)
             o.put("focusMs", Stats.round1((SystemClock.elapsedRealtimeNanos() - t) / 1e6)).put("kept", focus.keep)
             o.put("title", box(focus.title)).put("text", box(focus.text)).put("lines", focus.lines.size)
             for ((label, ratio) in SHAPES) {
@@ -128,7 +128,7 @@ internal class CoverCropSurvey(
 
     /** What its barcode and its text each tell of wraparound [src]'s front; text is looked at even after a barcode, for agreement. */
     private fun fronts(src: Bitmap, innerRatio: Double?): Wraparound.Fronts =
-        Wraparound.Fronts(CoverArt.frontOf(src), CoverArt.textFront(src, innerRatio, { s, region -> CoverArt.focusOf(s, region, detect) }))
+        Wraparound.Fronts(CoverArt.frontOf(src), CoverArt.textFront(src, innerRatio, { s, region -> CoverArt.focusOf(s, region, detector) }))
 
     private fun columns(src: Bitmap, half: Wraparound.Half, innerRatio: Double?): Rect =
         Wraparound.frontColumns(src.width, src.height, half, innerRatio).let { Rect(it[0], 0, it[1], src.height) }

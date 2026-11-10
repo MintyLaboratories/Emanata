@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverFront
+import com.infinity.comicreader.testing.coverText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -49,7 +51,9 @@ class BookDirectionCoverTest {
     }
 
     /** Stands in a detector seeing a title on halves whose middle is [color]; counts its calls in [calls]. */
-    private fun titleOn(color: Int, calls: IntArray = IntArray(1)): (Bitmap) -> ScoreMap = { bitmap ->
+    private fun titleOn(color: Int, calls: IntArray = IntArray(1)): CoverTextDetector = coverText(map = titleMap(color, calls))
+
+    private fun titleMap(color: Int, calls: IntArray = IntArray(1)): (Bitmap) -> ScoreMap = { bitmap ->
         calls[0]++
         val w = bitmap.width
         val h = bitmap.height
@@ -70,9 +74,9 @@ class BookDirectionCoverTest {
     @Test
     fun aBarcodeAloneTellsNothing() {
         assertNull(book().use { BookDirection.coverFront(it, null) })
-        assertNull(book().use { BookDirection.coverFront(it, { TextDetector.ABSENT }) })
+        assertNull(book().use { BookDirection.coverFront(it, coverText { TextDetector.ABSENT }) })
         // The detector did not run.
-        assertNull(book().use { BookDirection.coverFront(it, { null }) })
+        assertNull(book().use { BookDirection.coverFront(it, coverText { null }) })
     }
 
     @Test
@@ -85,9 +89,9 @@ class BookDirectionCoverTest {
     @Test
     fun aDetectorThatDidNotRunLeavesTheCoverToBeLookedAtAgain() {
         val kept = ArrayList<CoverFront>()
-        val title = titleOn(Color.RED)
+        val title = titleMap(Color.RED)
         var runs: (Bitmap) -> ScoreMap? = { null }
-        val detect: (Bitmap) -> ScoreMap? = { runs(it) }
+        val detect = coverText { runs(it) }
         book().use { src ->
             assertNull(BookDirection.coverFrontOnce(src, null, detect) { kept += it })
             runs = { throw IllegalStateException("no model") }

@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
 import android.util.LruCache
-import com.infinity.comicreader.ai.ScoreMap
+import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
@@ -115,12 +115,9 @@ object Thumbs {
         }
     }
 
-    /**
-     * Finds text on a cover for the Smart crop anchor; null when it did not run this time, and an
-     * empty map ([TextDetector.ABSENT]) where it never can. Tests stand in their own.
-     */
+    /** Finds text on covers for the Smart crop anchor: the app's detector ([TextDetector]). Tests stand in their own. */
     @Volatile
-    internal var detector: (Context, Bitmap) -> ScoreMap? = { context, bitmap -> TextDetector.shared(context).detect(bitmap) }
+    internal var detector: (Context) -> CoverTextDetector = { TextDetector.shared(it) }
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
@@ -135,7 +132,7 @@ object Thumbs {
         val store = focusStore(context)
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
-        val focus = CoverArt.focusOf(src, region) { detector(context, it) }
+        val focus = CoverArt.focusOf(src, region, detector(context))
         if (!focus.keep) return focus
         store.put(k, focus)
         focuses.put(k, focus)

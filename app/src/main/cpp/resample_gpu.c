@@ -10,6 +10,7 @@
 //   registers and its tap loop unrolled to the most taps a column reads: a program per
 //   tap count up to UNROLL and anti-ringing on or off, compiled on first use and kept with
 //   the context; wider axes share a program per anti-ringing that loops over the taps.
+// - Each program's uniform locations are looked up once, when it compiles.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
@@ -55,14 +56,22 @@ static int gl_state = 0;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
+// The uniforms of the across programs and of the down one, by index into their names.
+enum { A_DIMS, A_FIRST, A_RING, A_TAPS, A_UNIFORMS };
+static const char * const ACROSS_UNIFORMS[A_UNIFORMS] = { "dims", "first", "ring", "taps" };
+enum { D_DIMS, D_FIRST_ROW, D_STRIDE, D_RING, D_LEN, D_UNIFORMS };
+static const char * const DOWN_UNIFORMS[D_UNIFORMS] = { "dims", "firstRow", "stride", "ring", "len" };
 // Across programs by tap count (1..UNROLL unrolled, UNROLL + 1 looping) and anti-ringing
-// off or on, compiled on first use; program 0 where it did not compile. They belong to
-// the context: whatever deletes them or the context clears this (across_forget).
+// off or on, compiled on first use, with their uniforms' locations; program 0 where it
+// did not compile. They belong to the context: whatever deletes them or the context
+// clears this (across_forget).
 static struct {
     int tried;
     GLuint program;
+    GLint at[A_UNIFORMS];
 } across_kept[UNROLL + 2][2];
 static GLuint down_program;
+static GLint down_at[D_UNIFORMS];
 static GLuint lut_linear;
 static GLuint lut_encode;
 static atomic_int tracing;
@@ -107,6 +116,8 @@ typedef struct {
 struct rs_gpu {
     const rs_job * job;
     GLuint across;
+    // Its uniforms' locations (A_*).
+    GLint across_at[A_UNIFORMS];
     // The most taps a column reads.
     int taps;
     GLuint axis_x;
@@ -291,6 +302,12 @@ static GLuint compile(const char * label, const char * source)
     return program;
 }
 
+// Looks up the locations of program's n uniforms `names` into at (-1: the program has none).
+static void locate(GLuint program, const char * const * names, int n, GLint * at)
+{
+    for (int i = 0; i < n; i++) at[i] = glGetUniformLocation(program, names[i]);
+}
+
 static GLuint buffer(GLsizeiptr size, const void * data, GLenum usage)
 {
     GLuint b = 0;
@@ -330,6 +347,7 @@ static int gl_begin(void)
         if (major < 3 || (major == 3 && minor < 1) || blocks < 4) return -1;
         down_program = compile("down", DOWN);
         if (down_program == 0) return -1;
+        locate(down_program, DOWN_UNIFORMS, D_UNIFORMS, down_at);
         lut_linear = buffer(256 * sizeof(float), rs_to_linear(), GL_STATIC_DRAW);
         lut_encode = buffer(65536, rs_from_linear(), GL_STATIC_DRAW);
         if (glGetError() != GL_NO_ERROR) return -1;
@@ -493,13 +511,16 @@ static GLuint axis_buffer(const rs_axis * a, int taps)
 }
 
 // The across program for `taps` taps per output (past UNROLL, the looping one), anti-ringed
-// or not, compiled on first use with the context current; 0 when it does not compile
-// (tried once).
-static GLuint across_program(int taps, int ringed)
+// or not, compiled on first use with the context current, its uniforms' locations in at;
+// 0 when it does not compile (tried once).
+static GLuint across_program(int taps, int ringed, GLint * at)
 {
     const int wide = taps > UNROLL;
     const int key = wide ? UNROLL + 1 : taps;
-    if (across_kept[key][ringed].tried) return across_kept[key][ringed].program;
+    if (across_kept[key][ringed].tried) {
+        memcpy(at, across_kept[key][ringed].at, sizeof(across_kept[key][ringed].at));
+        return across_kept[key][ringed].program;
+    }
     char head[112];
     const int head_len = wide ? snprintf(head, sizeof(head), "#version 310 es\n#define WIDE 1\n#define ROWS %d\n#define RING %d\n",
                                          ROWS, ringed)
@@ -517,10 +538,13 @@ static GLuint across_program(int taps, int ringed)
     } else {
         snprintf(label, sizeof(label), "across taps=%d ring=%d", taps, ringed);
     }
-    across_kept[key][ringed].program = compile(label, source);
-    across_kept[key][ringed].tried = 1;
+    const GLuint program = compile(label, source);
     free(source);
-    return across_kept[key][ringed].program;
+    if (program != 0) locate(program, ACROSS_UNIFORMS, A_UNIFORMS, across_kept[key][ringed].at);
+    across_kept[key][ringed].program = program;
+    across_kept[key][ringed].tried = 1;
+    memcpy(at, across_kept[key][ringed].at, sizeof(across_kept[key][ringed].at));
+    return program;
 }
 
 // Deletes the kept across programs, the context current; they compile again on next use.
@@ -584,7 +608,7 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->taps = taps_of(ax);
     g->trace.across_taps = g->taps;
     const int64_t compiling = stamp(g);
-    g->across = across_program(g->taps, ax->ring > 0);
+    g->across = across_program(g->taps, ax->ring > 0, g->across_at);
     g->trace.compile_ns = stamp(g) - compiling;
     if (g->across == 0) {
         g->chunk = 0;
@@ -619,12 +643,6 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     return g;
 }
 
-// A uniform's location in program.
-static GLint uniform(GLuint program, const char * name)
-{
-    return glGetUniformLocation(program, name);
-}
-
 // Copies source rows r0 until r0 + rows, the part the across taps read, into src; 0 on success.
 static int upload(rs_gpu * g, GLuint src, int r0, int rows)
 {
@@ -656,11 +674,11 @@ static void run_across(const rs_gpu * g, GLuint src, GLuint mid, int rows)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_x);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mid);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_linear);
-    glUniform4i(uniform(g->across, "dims"), ax->len, rows, ax->end - ax->first, job->linear);
-    glUniform1i(uniform(g->across, "first"), ax->first);
-    glUniform1f(uniform(g->across, "ring"), ax->ring);
+    glUniform4i(g->across_at[A_DIMS], ax->len, rows, ax->end - ax->first, job->linear);
+    glUniform1i(g->across_at[A_FIRST], ax->first);
+    glUniform1f(g->across_at[A_RING], ax->ring);
     // Only the looping program has it; elsewhere location -1 is ignored.
-    glUniform1i(uniform(g->across, "taps"), g->taps);
+    glUniform1i(g->across_at[A_TAPS], g->taps);
     glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)((rows + ROWS - 1) / ROWS), 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
@@ -676,11 +694,11 @@ static void run_down(const rs_gpu * g, GLuint mid, GLuint out, int y0, int y1, i
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_y);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, out);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_encode);
-    glUniform4i(uniform(down_program, "dims"), ax->len, y1 - y0, y0, job->linear);
-    glUniform1i(uniform(down_program, "firstRow"), r0);
-    glUniform1i(uniform(down_program, "stride"), ay->stride);
-    glUniform1f(uniform(down_program, "ring"), ay->ring);
-    glUniform1i(uniform(down_program, "len"), ay->len);
+    glUniform4i(down_at[D_DIMS], ax->len, y1 - y0, y0, job->linear);
+    glUniform1i(down_at[D_FIRST_ROW], r0);
+    glUniform1i(down_at[D_STRIDE], ay->stride);
+    glUniform1f(down_at[D_RING], ay->ring);
+    glUniform1i(down_at[D_LEN], ay->len);
     glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)(y1 - y0), 1);
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 }

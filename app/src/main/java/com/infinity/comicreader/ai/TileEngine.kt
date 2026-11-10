@@ -71,7 +71,7 @@ class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val tota
 /** A page's run: [bitmap] when it finished, else why not ([fallback]); [gray] when its output was collapsed to gray. */
 class PageRun(val bitmap: Bitmap?, val fallback: Fallback?, val stats: RunStats, val gray: Boolean = false)
 
-/** What one read of a page found: whether every pixel is [opaque], and [gray] (every pixel's channels equal) when asked. */
+/** What one read of a page found: whether every pixel is [opaque], and whether it is [gray] ([GrayPages.isGray]) when asked. */
 class PageScan(val opaque: Boolean, val gray: Boolean)
 
 /**

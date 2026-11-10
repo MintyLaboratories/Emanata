@@ -53,11 +53,22 @@ class MlKitLinesTest {
 
     @Test
     fun aLineReadUpwardsIsAsThickAsItIsWide() {
-        // Turned a quarter counterclockwise: short and wide in the image, its letters as wide as the box.
-        val b = MlKitLines.box(line(200.0, 300.0, 60.0, 80.0, degrees = -90.0), 400, 600)!!
-        assertEquals(80.0, b.width, 1e-6)
-        assertEquals(60.0, b.height, 1e-6)
-        assertEquals(80.0, b.glyph, 1e-6)
+        // Turned a quarter counterclockwise: tall and narrow in the image, its letters as wide as the box.
+        val b = MlKitLines.box(line(200.0, 300.0, 300.0, 60.0, degrees = -90.0), 400, 600)!!
+        assertEquals(60.0, b.width, 1e-6)
+        assertEquals(300.0, b.height, 1e-6)
+        assertEquals(60.0, b.glyph, 1e-6)
+    }
+
+    @Test
+    fun theThicknessDoesNotDependOnTheCornerTheCornersStartFrom() {
+        for (degrees in listOf(0.0, 30.0, -90.0, 90.0, 135.0)) {
+            val l = line(200.0, 300.0, 300.0, 40.0, degrees = degrees)
+            for (k in 0 until 4) {
+                val turned = l.copy(corners = l.corners!!.drop(k) + l.corners.take(k))
+                assertEquals("$degrees degrees from corner $k", 40.0, MlKitLines.box(turned, 400, 600)!!.glyph, 1e-6)
+            }
+        }
     }
 
     @Test

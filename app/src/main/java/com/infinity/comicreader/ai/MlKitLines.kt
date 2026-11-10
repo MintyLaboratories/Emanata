@@ -9,8 +9,8 @@ import kotlin.math.min
 data class Corner(val x: Double, val y: Double)
 
 /**
- * A line of text ML Kit found, without what it says: its [corners] clockwise from the top left
- * of its text (null when not given), its axis-aligned bounds [left]..[bottom] in the image's
+ * A line of text ML Kit found, without what it says: its [corners] in order around it, from
+ * whichever corner (null when not given), its axis-aligned bounds [left]..[bottom] in the image's
  * pixels ([right] and [bottom] exclusive) and ML Kit's [confidence].
  */
 data class FoundLine(
@@ -31,9 +31,9 @@ object MlKitLines {
 
     /**
      * [line] as a text box on a [w] x [h] image: the box around its four corners (its bounds
-     * without them), clamped to the image; its thickness the mean of its two sides across the
-     * text (from the top left to the bottom left corner, from the top right to the bottom right),
-     * so a rotated line's letters keep their size; its score ML Kit's confidence, within 0..1.
+     * without them), clamped to the image; its thickness the mean of its two shorter opposite
+     * sides (a line runs along its longer ones, whichever corner its corners start from), so a
+     * rotated line's letters keep their size; its score ML Kit's confidence, within 0..1.
      * Null when the line has no area inside the image or no thickness.
      */
     fun box(line: FoundLine, w: Int, h: Int): SmartCrop.TextBox? {
@@ -43,7 +43,7 @@ object MlKitLines {
         val right = c?.maxOf { it.x } ?: line.right
         val bottom = c?.maxOf { it.y } ?: line.bottom
         if (!(left.isFinite() && top.isFinite() && right.isFinite() && bottom.isFinite())) return null
-        val thickness = c?.let { (side(it[0], it[3]) + side(it[1], it[2])) / 2 }
+        val thickness = c?.let { min(side(it[0], it[3]) + side(it[1], it[2]), side(it[0], it[1]) + side(it[3], it[2])) / 2 }
         if (thickness != null && !(thickness > 0)) return null
         val l = max(0.0, left)
         val t = max(0.0, top)

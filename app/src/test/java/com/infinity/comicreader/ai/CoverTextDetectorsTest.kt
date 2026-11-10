@@ -128,6 +128,13 @@ class CoverTextDetectorsTest {
     }
 
     @Test
+    fun mlKitMissingItsClassesLeavesPpOcrForTheSession() {
+        val d = detectors(FakePlay(), mlKit = { throw NoClassDefFoundError("text recognizer") })
+        assertNull(d.session().lines(image))
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.FAILED), d.status())
+    }
+
+    @Test
     fun withoutPlayServicesPpOcrAndNoSetting() {
         val d = detectors(FakePlay(there = false))
         assertFalse(d.offered())

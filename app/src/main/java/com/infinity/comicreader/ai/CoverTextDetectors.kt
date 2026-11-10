@@ -178,10 +178,17 @@ class CoverTextDetectors(
             return try {
                 mlKit!!.make().also { made = it }
             } catch (e: Exception) {
-                synchronized(lock) { giveUp(Why.FAILED) }
-                null
+                gaveUpMaking()
+            } catch (e: LinkageError) {
+                gaveUpMaking()
             }
         }
+    }
+
+    /** Gives ML Kit up as not starting ([Why.FAILED]); null for [made]. */
+    private fun gaveUpMaking(): CoverTextDetector? {
+        synchronized(lock) { giveUp(Why.FAILED) }
+        return null
     }
 
     /**

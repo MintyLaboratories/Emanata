@@ -105,8 +105,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Play services downloads ML Kit's model on the first cover; meanwhile covers
   crop by their detail alone, not kept. When the network settings hold that
   download back, or ML Kit fails, PP-OCR finds the lines for the rest of the
-  session. Settings → AI → **Models** shows the detector in use. Another
-  detector finds every focus again.
+  session. Settings → AI processing → **Models** shows the detector in use.
+  Another detector finds every focus again.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

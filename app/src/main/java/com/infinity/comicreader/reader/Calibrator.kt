@@ -855,8 +855,7 @@ object Calibrator : CalibrationControl {
             val t = preparing
             t?.join(RELEASE_WAIT_MS)
             if (LibPixels.loaded) LibPixels.ledger(false)
-            // The GPU path's buffers serve GPU pages alone.
-            if (NativeResampler.engine != PixelEngine.GPU) NativeResampler.trim()
+            NativeResampler.trimUnlessGpu()
             if (t == null || !t.isAlive) recycle()
         }
 

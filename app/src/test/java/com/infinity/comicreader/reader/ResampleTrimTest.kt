@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
+import com.infinity.comicreader.App
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,7 +15,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.Collections
 
-/** [NativeResampler.trim] and [NativeResampler.onTrimMemory]: which levels free the GPU path's buffers, on the calling thread. */
+/**
+ * [NativeResampler.trim] and its callers: which memory trims, engine changes and ends of
+ * calibration free the GPU path's buffers, on the calling thread.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class ResampleTrimTest {
@@ -39,6 +43,7 @@ class ResampleTrimTest {
     @After
     fun tearDown() {
         NativeResampler.kernels = null
+        NativeResampler.engine = PixelEngine.NATIVE
     }
 
     @Suppress("DEPRECATION")
@@ -76,6 +81,37 @@ class ResampleTrimTest {
         val k = Trims().also { NativeResampler.kernels = it }
         NativeResampler.trim()
         assertEquals(listOf(Thread.currentThread().name), k.threads)
+    }
+
+    @Test
+    fun appTrimsOnceTheUiHides() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        App().onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN)
+        assertEquals(1, k.threads.size)
+    }
+
+    @Test
+    fun trimsUnlessPagesUseTheGpu() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.trimUnlessGpu()
+        assertEquals(1, k.threads.size)
+        NativeResampler.engine = PixelEngine.GPU
+        NativeResampler.trimUnlessGpu()
+        assertEquals(1, k.threads.size)
+    }
+
+    @Test
+    fun trimsOnceTheEngineLeavesTheGpu() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.engine = PixelEngine.GPU
+        NativeResampler.engine = PixelEngine.GPU
+        assertEquals(0, k.threads.size)
+        NativeResampler.engine = PixelEngine.KOTLIN
+        assertEquals(1, k.threads.size)
+        NativeResampler.engine = PixelEngine.NATIVE
+        assertEquals(1, k.threads.size)
     }
 
     @Test

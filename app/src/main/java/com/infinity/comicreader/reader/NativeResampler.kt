@@ -183,10 +183,16 @@ internal object LibPixels : PixelKernels {
 object NativeResampler {
     /**
      * The engine bitmaps are resampled with; [PixelEngine.GPU] falls back to the native CPU
-     * code and that, where it cannot load, to [Resampler].
+     * code and that, where it cannot load, to [Resampler]. Moving off the GPU frees the
+     * buffers its path keeps.
      */
     @Volatile
     var engine: PixelEngine = PixelEngine.NATIVE
+        set(value) {
+            val was = field
+            field = value
+            if (was == PixelEngine.GPU && value != PixelEngine.GPU) trim()
+        }
 
     /** CPU workers for work someone waits on: one per large core. */
     @Volatile
@@ -229,6 +235,11 @@ object NativeResampler {
     /** Frees the buffers the GPU path keeps between jobs; never blocks ([PixelKernels.trim]). */
     fun trim() {
         kernels?.trim()
+    }
+
+    /** [trim]s unless pages are resampled on the GPU, whose buffers serve them alone. */
+    fun trimUnlessGpu() {
+        if (engine != PixelEngine.GPU) trim()
     }
 
     /** One worker per large core; where speeds are unknown, at most 4. */

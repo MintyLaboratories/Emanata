@@ -335,10 +335,14 @@ static void query_end(const rs_gpu * g)
     if (g->trace.timed) end_query(TIME_ELAPSED);
 }
 
-// Adds both passes' GPU time to g's trace, once the GPU finished them.
+// Adds both passes' GPU time to g's trace, waiting for the GPU to finish them; the wait
+// counts in wait_ns. Called after readback, so it blocks only on what the map waited for.
+// With chunks in flight, collect a slot's results only after its fence signaled (or poll
+// QUERY_RESULT_AVAILABLE and collect the rest at close), else tracing serializes them.
 static void query_collect(rs_gpu * g)
 {
     if (!g->trace.timed) return;
+    const int64_t t = stamp(g);
     GLuint64 across = 0, down = 0;
     query_u64(g->trace.queries[0], QUERY_RESULT, &across);
     query_u64(g->trace.queries[1], QUERY_RESULT, &down);
@@ -347,6 +351,7 @@ static void query_collect(rs_gpu * g)
     if (disjoint) g->trace.disjoint = 1;
     g->trace.across_ns += across;
     g->trace.down_ns += down;
+    g->trace.wait_ns += stamp(g) - t;
 }
 
 static double ms(int64_t ns)

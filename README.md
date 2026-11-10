@@ -9,11 +9,18 @@ features and customizability.
   AVIF, TIFF and more.
 - **Rendering:** Lanczos3 scaling everywhere, including GPU Lanczos3 while
   zooming (Android 13+).
-- **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
+- **Private:** no ads, no analytics, no tracking; clean-room Kotlin. The one
+  exception, ML Kit, is optional and off by default (below).
 - **No required connection:** works offline. The network is used only for the
   network shares you add, while the app shows something on them: a folder, a
   book, a cover, a favorite, or a share's free space in the Locations sheet;
-  the app sends nothing on its own.
+  the app sends nothing on its own unless ML Kit is on.
+- **Optional ML Kit (off by default):** a setting lets the Smart crop find
+  cover text with Google's ML Kit through Google Play services. When you turn
+  it on, Play services downloads ML Kit's model, and Google may collect usage
+  data under the [ML Kit terms](https://developers.google.com/ml-kit/terms):
+  ML Kit sends usage and performance metrics to Google and may fetch updates.
+  Covers never leave the device. While it is off, ML Kit never starts.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -1308,7 +1315,8 @@ estimated from the tiles run in 60 or 120 s):
 - `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
-  add and AI models you download; the app sends nothing on its own.
+  add and AI models you download, and ML Kit's usage metrics while you have
+  ML Kit on; the app sends nothing else on its own.
 - `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
   move or delete goes on with the app in the background or the screen off,
   shown in a notification with its progress (and Cancel). The device is kept
@@ -1379,8 +1387,11 @@ license and NOTICE text under Settings → About (files in
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, converted to ncnn (`tools/text-detector`) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
+| [ML Kit Text Recognition v2](https://developers.google.com/ml-kit/vision/text-recognition/v2) (`play-services-mlkit-text-recognition`, model delivered by Google Play services), with the Play services client libraries | Proprietary (Google Play services): [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms), Android SDK License; open-source parts under Apache-2.0, BSD-3-Clause and MIT |
+| Firebase components, Google Data Transport, javax.inject (used by ML Kit) | Apache-2.0 |
 
-Dual-licensed components are used under Apache-2.0.
+Dual-licensed components are used under Apache-2.0. ML Kit is the one
+proprietary component; it runs only while you have it on (off by default).
 
 AI models for pages are not bundled: the app downloads the ones you choose, unchanged,
 from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)

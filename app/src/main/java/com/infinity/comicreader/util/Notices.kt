@@ -40,10 +40,12 @@ object Notices {
     const val BSD_3 = "BSD 3-Clause License"
     const val DUAL_APACHE = "$APACHE_2 (dual-licensed; used under Apache-2.0)"
     const val GLSLANG = "$BSD_3 and others"
+    const val PROPRIETARY_GOOGLE = "Proprietary (Google Play services)"
 
     const val UPSTREAM_URL = "https://github.com/infinity6901/ComicReader"
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
     const val TIP_URL = "https://ko-fi.com/mmeminty"
+    const val ML_KIT_TERMS_URL = "https://developers.google.com/ml-kit/terms"
 
     /** The statement the UnRAR license requires in the documentation of software using it. */
     const val UNRAR_NOTE = "junrar is derived from the UnRAR source code. All copyrights to RAR and UnRAR " +
@@ -189,6 +191,23 @@ object Notices {
                 "weights stored in fp16, and its 8 squeeze-and-excite reshape layers rewritten as plain reshapes " +
                 "(see text-detector/NOTICE in the app's assets). Finds where text is on covers for the Smart crop " +
                 "anchor, on this device only."
+        ),
+        Notice(
+            "ML Kit Text Recognition v2", PROPRIETARY_GOOGLE, ML_KIT_TERMS_URL,
+            listOf("ml-kit.txt", "ml-kit-open-source.txt", APACHE_TEXT),
+            listOf("com.google.mlkit:*", "com.google.android.gms:*", "com.google.android.odml:*"),
+            note = "Google's ML Kit and Play services client libraries, under the ML Kit Terms of Service. Optional, " +
+                "off by default: when turned on, it finds text on covers for the Smart crop, Google Play services " +
+                "downloads its model, and ML Kit sends usage metrics to Google. Images stay on this device."
+        ),
+        Notice(
+            "Firebase components and Google Data Transport", APACHE_2,
+            "https://github.com/firebase/firebase-android-sdk", APACHE,
+            listOf("com.google.firebase:*", "com.google.android.datatransport:*"), note = "Used by ML Kit."
+        ),
+        Notice(
+            "javax.inject", APACHE_2, "https://github.com/javax-inject/javax-inject", APACHE,
+            listOf("javax.inject:javax.inject"), note = "Used by ML Kit."
         ),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
     )

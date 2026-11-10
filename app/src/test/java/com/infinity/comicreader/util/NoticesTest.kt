@@ -110,6 +110,21 @@ class NoticesTest {
     }
 
     @Test
+    fun mlKitIsMarkedProprietaryWithItsTerms() {
+        val mlKit = Notices.forArtifact("com.google.android.gms:play-services-mlkit-text-recognition")!!
+        assertEquals(Notices.PROPRIETARY_GOOGLE, mlKit.license)
+        assertEquals(Notices.ML_KIT_TERMS_URL, mlKit.url)
+        assertTrue(File(assetDir, mlKit.texts[0]).readText().contains(Notices.ML_KIT_TERMS_URL))
+        assertTrue(mlKit.note!!.contains("off by default"))
+        val readme = File("../README.md").readText()
+        val row = readme.lines().single { it.startsWith("| [ML Kit Text Recognition v2](") }
+        assertTrue(row, row.contains("| ${Notices.PROPRIETARY_GOOGLE}: [ML Kit Terms of Service](${Notices.ML_KIT_TERMS_URL})"))
+        val flat = readme.replace(Regex("\\s+"), " ")
+        assertTrue(flat.contains("**Optional ML Kit (off by default):**"))
+        assertTrue(flat.contains("Google may collect usage data under the [ML Kit terms](${Notices.ML_KIT_TERMS_URL})"))
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

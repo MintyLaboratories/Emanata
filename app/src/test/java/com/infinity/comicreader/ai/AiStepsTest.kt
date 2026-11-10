@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import com.infinity.comicreader.reader.Plan
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Which models of a chain run at a page's display size ([AiPages.steps]), as the AI thresholds' two handles say. */
@@ -93,5 +94,15 @@ class AiStepsTest {
         assertEquals(AiStep.DESCREEN, descreen.rule)
         assertEquals("a 1x model picked as Upscale cleans up", AiStep.ARTIFACTS, ChainModel(AiStep.UPSCALE, 1).rule)
         assertEquals("an enlarging model upscales", AiStep.UPSCALE, ChainModel(AiStep.DESCREEN, 2).rule)
+    }
+
+    @Test
+    fun theKeyHoldsOnlyTheHandlesThatDecideTheChain() {
+        val t = AiThresholds(upscalePct = 80, cleanupPct = AiThresholds.ALWAYS)
+        assertEquals("u80c0", AiPages.handles(listOf(clean, descreen, up), t))
+        assertEquals("u80", AiPages.handles(listOf(up), t))
+        assertEquals("c0", AiPages.handles(listOf(clean), t))
+        assertEquals("", AiPages.handles(listOf(descreen), t))
+        assertTrue(AiPages.handles(listOf(up), t) != AiPages.handles(listOf(up), AiThresholds(upscalePct = 81)))
     }
 }

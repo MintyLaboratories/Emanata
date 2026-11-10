@@ -48,8 +48,8 @@ class ProcessedStoreTest {
     private val target = Target(40, 60)
     private val chain = AiChain.signature(listOf(ModelCatalog.forStep(AiStep.UPSCALE).first()))
 
-    private fun key(book: BookId = a, index: Int = 0, signature: String = chain) =
-        ProcessedStore.keyOf("id:${book.hex}", index, "p$index.jpg", target, 40, 60, signature)
+    private fun key(book: BookId = a, index: Int = 0, signature: String = chain, handles: String = "u100") =
+        ProcessedStore.keyOf("id:${book.hex}", index, "p$index.jpg", target, 40, 60, signature, handles)
 
     @Test
     fun aPageIsReadBackExactly() {
@@ -70,8 +70,9 @@ class ProcessedStoreTest {
         assertNotEquals(base, key(index = 1))
         assertNotEquals(base, key(book = b))
         assertNotEquals(base, key(signature = AiChain.signature(listOf(ModelCatalog.forStep(AiStep.UPSCALE).last()))))
-        assertNotEquals(base, ProcessedStore.keyOf("id:${a.hex}", 0, "p0.jpg", target.copy(autoCrop = true), 40, 60, chain))
-        assertNotEquals(base, ProcessedStore.keyOf("id:${a.hex}", 0, "p0.jpg", target, 41, 60, chain))
+        assertNotEquals(base, key(handles = "u50"))
+        assertNotEquals(base, ProcessedStore.keyOf("id:${a.hex}", 0, "p0.jpg", target.copy(autoCrop = true), 40, 60, chain, "u100"))
+        assertNotEquals(base, ProcessedStore.keyOf("id:${a.hex}", 0, "p0.jpg", target, 41, 60, chain, "u100"))
         val store = ProcessedStore(tmp.root, PngPageCodec, now)
         store.put(base, page(40, 60))
         assertNull(store.get(key(signature = "e0;"), 40, 60))

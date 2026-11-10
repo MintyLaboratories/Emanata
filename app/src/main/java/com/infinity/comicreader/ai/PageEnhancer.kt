@@ -137,13 +137,19 @@ class ReaderAi internal constructor(
     override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean {
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return false
-        return keyOf(source, index, target, width, height, chain)?.let(store::has) == true
+        return keyOf(source, index, target, width, height, chain, thresholds())?.let(store::has) == true
     }
 
-    /** The key [store] keeps page [index] of [source] by, made by [chain] for [target] at [width] x [height]; null for a book without a key. */
-    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>): String? =
+    /**
+     * The key [store] keeps page [index] of [source] by, made by [chain] under [thresholds] for
+     * [target] at [width] x [height]; null for a book without a key.
+     */
+    private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, thresholds: AiThresholds): String? =
         source.bookKey?.let {
-            ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain))
+            ProcessedStore.keyOf(
+                it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain),
+                AiPages.handles(chain.map(ChainModel::of), thresholds)
+            )
         }
 
     override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
@@ -162,7 +168,7 @@ class ReaderAi internal constructor(
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val thresholds = thresholds()
-        val key = keyOf(source, index, target, width, height, chain)
+        val key = keyOf(source, index, target, width, height, chain, thresholds)
         val t0 = SystemClock.elapsedRealtime()
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = SystemClock.elapsedRealtime() - t0) }

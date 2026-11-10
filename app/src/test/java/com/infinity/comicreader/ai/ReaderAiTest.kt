@@ -205,12 +205,18 @@ class ReaderAiTest {
     }
 
     @Test
-    fun theThresholdsAreReadForEachPage() {
+    fun theThresholdsAreReadForEachPageAndKeyItsStoredCopy() {
         install(upscale)
         val b = bookOf(60, 90)
         assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
         thresholds = AiThresholds(upscalePct = 50)
+        assertFalse(ai.stored(b, 0, target, 40, 60))
         assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        assertTrue(ai.stored(b, 0, target, 40, 60))
+        thresholds = AiThresholds(upscalePct = 60)
+        assertFalse("made under other thresholds", ai.stored(b, 0, target, 40, 60))
+        thresholds = AiThresholds(upscalePct = 50, cleanupPct = 120)
+        assertTrue("the cleanup handle decides no model of this chain", ai.stored(b, 0, target, 40, 60))
     }
 
     private fun until(done: () -> Boolean) {

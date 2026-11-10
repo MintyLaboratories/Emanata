@@ -225,6 +225,16 @@ internal object AiPages {
         return out
     }
 
+    /**
+     * The handles of [thresholds] that decide some of [models] ([ChainModel.rule]), as part of a
+     * processed page's key: "u" and the upscale handle, "c" and the cleanup one; empty when
+     * no handle does (descreen alone).
+     */
+    fun handles(models: List<ChainModel>, thresholds: AiThresholds): String = buildString {
+        if (models.any { it.rule == AiStep.UPSCALE }) append("u").append(thresholds.upscalePct)
+        if (models.any { it.rule == AiStep.ARTIFACTS }) append("c").append(thresholds.cleanupPct)
+    }
+
     /** [plan] for a source [scale] times larger. */
     fun scaled(plan: Plan, scale: Int): Plan =
         plan.copy(x = plan.x * scale, y = plan.y * scale, spanW = plan.spanW * scale, spanH = plan.spanH * scale)

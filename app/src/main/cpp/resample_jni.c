@@ -245,12 +245,12 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuBand(
     return r == 0 ? 1 : r > 0 ? -2 : 0;
 }
 
-// Frees what the GPU path keeps between jobs (rs_gpu_trim).
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv * env, jclass clazz)
+// Frees what the GPU path keeps between jobs, the across programs too with `programs` (rs_gpu_trim).
+EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv * env, jclass clazz, jboolean programs)
 {
     (void)env;
     (void)clazz;
-    rs_gpu_trim();
+    rs_gpu_trim(programs == JNI_TRUE);
 }
 
 // Opens the core ledger (core_ledger.h), resetting it, or closes it.

@@ -365,7 +365,7 @@ class ResampleCheckService : Service() {
             val after = gpuBand(null)
             val sameAfter = ran && after != null && digest(after.second) == digest(banded)
             result.put("afterThrow", after?.first).put("sameAfterThrow", sameAfter)
-            LibPixels.trim()
+            LibPixels.trim(programs = true)
             result.put("trimmed", true).put(
                 "ok", same && plain?.first == PixelKernels.BAND_DONE && canceled?.first == PixelKernels.BAND_CANCELED && calls == 2 &&
                     caught === thrown && after?.first == PixelKernels.BAND_DONE && sameAfter

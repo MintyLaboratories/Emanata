@@ -63,7 +63,8 @@ class PixelKernelsTest {
     @Test
     fun trimAndTraceSkipUnloadedLibrary() {
         assertFalse(LibPixels.loaded)
-        LibPixels.trim()
+        LibPixels.trim(programs = true)
+        LibPixels.trim(programs = false)
         LibPixels.trace(true)
         LibPixels.trace(false)
     }

@@ -22,7 +22,8 @@
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - The context, the down program and the tables stay for the process. The buffers stay
 //   from job to job, grown as a job needs (or fit to it, past a budget), until rs_gpu_trim
-//   frees them with the across programs: at once or, while a job runs, when it closes.
+//   frees them, and the across programs when asked: at once or, while a job runs, when it
+//   closes.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
 //   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
@@ -95,8 +96,11 @@ static GLint down_at[D_UNIFORMS];
 static GLuint lut_linear;
 static GLuint lut_encode;
 static atomic_int tracing;
-// Set by a trim that found the GPU lock held; the job (or trim) holding it frees at its end.
+// Set by a trim that found the GPU lock held (OWED_* bits); the job (or trim) holding it
+// frees at its end.
 static atomic_int trim_owed;
+#define OWED_BUFFERS 1
+#define OWED_PROGRAMS 2
 // Timer queries: 0 untried, 1 loaded, -1 unavailable; loaded by the first traced job.
 static int tq_state = 0;
 static gen_queries_fn gen_queries;
@@ -1017,19 +1021,20 @@ static void free_kept(const char * when, int programs)
                         (double)kept / (1 << 20), forgotten, ms(now_ns() - t));
 }
 
-void rs_gpu_trim(void)
+// Frees what trims owe while the GPU lock is free; never blocks on it.
+static void trim_owed_now(void)
 {
-    // Owed before the trylock, so a job or trim that holds the lock now sees it as it ends.
-    atomic_store(&trim_owed, 1);
     while (atomic_load(&trim_owed) && pthread_mutex_trylock(&gl_lock) == 0) {
-        if (atomic_exchange(&trim_owed, 0) && gl_state == 1 && (any_kept() || across_count() > 0)) {
+        const int owed = atomic_exchange(&trim_owed, 0);
+        const int programs = (owed & OWED_PROGRAMS) != 0;
+        if (owed && gl_state == 1 && (any_kept() || (programs && across_count() > 0))) {
             // The calling thread may have a context of its own current (the main one, say):
             // it gets it back.
             const EGLDisplay was_display = eglGetCurrentDisplay();
             const EGLContext was_context = eglGetCurrentContext();
             const EGLSurface was_draw = eglGetCurrentSurface(EGL_DRAW);
             const EGLSurface was_read = eglGetCurrentSurface(EGL_READ);
-            if (gl_begin() == 0) free_kept("now", 1);
+            if (gl_begin() == 0) free_kept("now", programs);
             if (was_context != EGL_NO_CONTEXT && was_context != context) {
                 eglMakeCurrent(was_display, was_draw, was_read, was_context);
             } else {
@@ -1038,6 +1043,13 @@ void rs_gpu_trim(void)
         }
         pthread_mutex_unlock(&gl_lock);
     }
+}
+
+void rs_gpu_trim(int programs)
+{
+    // Owed before the trylock, so a job or trim that holds the lock now sees it as it ends.
+    atomic_fetch_or(&trim_owed, programs ? OWED_BUFFERS | OWED_PROGRAMS : OWED_BUFFERS);
+    trim_owed_now();
 }
 
 void rs_gpu_close(rs_gpu * g)
@@ -1054,8 +1066,9 @@ void rs_gpu_close(rs_gpu * g)
     const int chunk = g->chunk;
     const int64_t done = stamp(g);
     free(g);
-    if (atomic_exchange(&trim_owed, 0)) {
-        free_kept("at close", 1);
+    const int owed = atomic_exchange(&trim_owed, 0);
+    if (owed) {
+        free_kept("at close", (owed & OWED_PROGRAMS) != 0);
     } else if (failed) {
         free_kept("after failure", 0);
     }
@@ -1067,6 +1080,6 @@ void rs_gpu_close(rs_gpu * g)
     gl_end();
     pthread_mutex_unlock(&gl_lock);
     // A trim owed after the exchange above: its trylock failed while this job held the lock.
-    if (atomic_load(&trim_owed)) rs_gpu_trim();
+    trim_owed_now();
     if (trace.on) trace_log(&trace, job, chunk, done - t, done - trace.opened);
 }

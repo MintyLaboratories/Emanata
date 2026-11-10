@@ -54,10 +54,11 @@ internal interface PixelKernels {
     fun end(job: Long)
 
     /**
-     * Frees what the GPU path keeps between jobs, for when memory runs low; by default
-     * nothing. Never blocks: while a job runs, it frees once that job ends.
+     * Frees the buffers the GPU path keeps between jobs, and with [programs] its compiled
+     * shaders too; by default nothing. Never blocks on a job: while one runs, it frees once
+     * that job ends.
      */
-    fun trim() {}
+    fun trim(programs: Boolean) {}
 
     /**
      * Asked before each chunk of a GPU band, on its thread; true stops the band. Runs while
@@ -93,9 +94,9 @@ internal object LibPixels : PixelKernels {
 
     override fun end(job: Long) = nEnd(job)
 
-    /** Never blocks; does nothing where the native library is not loaded. */
-    override fun trim() {
-        if (loaded) nTrim()
+    /** Never blocks on a job; does nothing where the native library is not loaded. */
+    override fun trim(programs: Boolean) {
+        if (loaded) nTrim(programs)
     }
 
     /**
@@ -173,7 +174,7 @@ internal object LibPixels : PixelKernels {
     private external fun nEnd(job: Long)
 
     @JvmStatic
-    private external fun nTrim()
+    private external fun nTrim(programs: Boolean)
 }
 
 /**
@@ -254,9 +255,9 @@ object NativeResampler {
         return true
     }
 
-    /** Frees the buffers the GPU path keeps between jobs; never blocks ([PixelKernels.trim]). */
+    /** Frees the buffers and compiled shaders the GPU path keeps between jobs; never blocks ([PixelKernels.trim]). */
     fun trim() {
-        kernels?.trim()
+        kernels?.trim(programs = true)
     }
 
     /** Milliseconds after the last GPU job at which the GPU path's buffers are freed. */
@@ -270,11 +271,14 @@ object NativeResampler {
     private val idleLock = Any()
     private var idleTrim: ScheduledFuture<*>? = null
 
-    /** Has [k] free the GPU path's buffers [idleTrimMs] from now, unless called again before. */
+    /**
+     * Has [k] free the GPU path's buffers [idleTrimMs] from now, unless called again before;
+     * its compiled shaders, kilobytes that take a compile to remake, stay.
+     */
     private fun trimWhenIdle(k: PixelKernels) {
         synchronized(idleLock) {
             idleTrim?.cancel(false)
-            idleTrim = idleTimer.schedule({ k.trim() }, idleTrimMs, TimeUnit.MILLISECONDS)
+            idleTrim = idleTimer.schedule({ k.trim(programs = false) }, idleTrimMs, TimeUnit.MILLISECONDS)
         }
     }
 

@@ -23,9 +23,10 @@ import java.util.Collections
 @Config(sdk = [34], application = Application::class)
 class ResampleTrimTest {
 
-    /** Kernels that only record the threads their trims ran on. */
+    /** Kernels that only record the threads their trims ran on, and whether each freed the shaders. */
     private class Trims : PixelKernels {
         val threads: MutableList<String> = Collections.synchronizedList(ArrayList())
+        val programs: MutableList<Boolean> = Collections.synchronizedList(ArrayList())
 
         override fun begin(src: Bitmap, dst: Bitmap, linear: Boolean, workers: Int, gpu: Boolean): Long = 0
 
@@ -35,7 +36,8 @@ class ResampleTrimTest {
 
         override fun end(job: Long) {}
 
-        override fun trim() {
+        override fun trim(programs: Boolean) {
+            this.programs += programs
             threads += Thread.currentThread().name
         }
     }
@@ -134,6 +136,16 @@ class ResampleTrimTest {
         while (k.threads.isEmpty() && System.nanoTime() < until) Thread.sleep(10)
         Thread.sleep(300)
         assertEquals(listOf("resample-idle"), k.threads)
+        assertEquals("compiled shaders stay", listOf(false), k.programs)
+    }
+
+    @Test
+    fun memoryTrimsFreeTheShadersToo() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        assertTrue(NativeResampler.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN))
+        NativeResampler.engine = PixelEngine.GPU
+        NativeResampler.engine = PixelEngine.NATIVE
+        assertEquals(listOf(true, true), k.programs)
     }
 
     @Test

@@ -146,6 +146,36 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nAxis(
     return JNI_TRUE;
 }
 
+// Calls a PixelKernels.Stop's stop() between the chunks of a GPU band, on the band's thread.
+typedef struct {
+    JNIEnv * env;
+    jobject callback;
+    jmethodID stop;
+    // What stop() threw, cleared so the band can end before rethrowing it.
+    jthrowable thrown;
+} stop_call;
+
+static int stop_now(void * opaque)
+{
+    stop_call * c = opaque;
+    const jboolean stop = (*c->env)->CallBooleanMethod(c->env, c->callback, c->stop);
+    if ((*c->env)->ExceptionCheck(c->env)) {
+        // An exception stops the band too.
+        c->thrown = (*c->env)->ExceptionOccurred(c->env);
+        (*c->env)->ExceptionClear(c->env);
+        return 1;
+    }
+    return stop;
+}
+
+// Filters output rows y0 until y1 of a GPU job, asking stop (NULL: never) before each
+// chunk; rs_gpu_band's result. The GPU path runs where it is called: `cores` is unused.
+static int gpu_band(handle * h, int y0, int y1, uint64_t cores, rs_stop stop, void * opaque)
+{
+    (void)cores;
+    return h->on_gpu != NULL ? rs_gpu_band(h->on_gpu, y0, y1, stop, opaque) : -1;
+}
+
 // Moves the calling thread onto `cores` (bit n = core n), or every core for -1, until moved
 // again (jr_pin_mask); the cores it could use before, 0 when it stays where it was.
 EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
@@ -164,7 +194,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
     (void)clazz;
     handle * h = (handle *)(intptr_t)job;
     if (h->axes != 3 || worker < 0 || worker >= h->worker_count || y0 < 0 || y1 > h->dst_h || y0 >= y1) return JNI_FALSE;
-    if (h->gpu) return h->on_gpu != NULL && rs_gpu_band(h->on_gpu, y0, y1) == 0;
+    if (h->gpu) return gpu_band(h, y0, y1, (uint64_t)cores, NULL, NULL) == 0;
     cpu_set_t kept;
     const int pinned = jr_pin((uint64_t)cores, &kept);
     cl_begin();
@@ -180,6 +210,38 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrace(JNIEnv
     (void)env;
     (void)clazz;
     rs_gpu_trace(on == JNI_TRUE);
+}
+
+// Filters output rows y0 until y1 of a GPU job on the calling thread, `cores` as nBand
+// says, asking `stop` (null: never) before each chunk: 1 when done, -2 once stopped
+// (rethrowing what stop() threw), 0 on a bad request or a GPU error.
+EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuBand(
+    JNIEnv * env, jclass clazz, jlong job, jint y0, jint y1, jlong cores, jobject stop)
+{
+    (void)clazz;
+    handle * h = (handle *)(intptr_t)job;
+    if (h->axes != 3 || !h->gpu || y0 < 0 || y1 > h->dst_h || y0 >= y1) return 0;
+    stop_call call = { env, stop, NULL, NULL };
+    if (stop != NULL) {
+        const jclass type = (*env)->GetObjectClass(env, stop);
+        call.stop = (*env)->GetMethodID(env, type, "stop", "()Z");
+        (*env)->DeleteLocalRef(env, type);
+        if (call.stop == NULL) return 0;
+    }
+    const int r = gpu_band(h, y0, y1, (uint64_t)cores, stop != NULL ? stop_now : NULL, &call);
+    if (call.thrown != NULL) {
+        (*env)->Throw(env, call.thrown);
+        (*env)->DeleteLocalRef(env, call.thrown);
+    }
+    return r == 0 ? 1 : r > 0 ? -2 : 0;
+}
+
+// Frees what the GPU path keeps between jobs (rs_gpu_trim).
+EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv * env, jclass clazz)
+{
+    (void)env;
+    (void)clazz;
+    rs_gpu_trim();
 }
 
 // Opens the core ledger (core_ledger.h), resetting it, or closes it.

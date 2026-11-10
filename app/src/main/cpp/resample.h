@@ -70,10 +70,17 @@ typedef struct rs_gpu rs_gpu;
 // Opens job on the GPU, its axes already filled; NULL when there is no usable GPU.
 rs_gpu * rs_gpu_open(const rs_job * job);
 
-// Filters output rows y0 until y1; 0 on success, -1 on a GPU error.
-int rs_gpu_band(rs_gpu * g, int y0, int y1);
+// Asked with its opaque pointer before each chunk of a GPU band; nonzero stops the band.
+typedef int (*rs_stop)(void * opaque);
+
+// Filters output rows y0 until y1, asking stop (NULL: never) before each chunk; 0 on
+// success, -1 on a GPU error, 1 once stopped.
+int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque);
 
 void rs_gpu_close(rs_gpu * g);
+
+// Frees what the GPU path keeps between jobs; nothing outlives a job yet.
+void rs_gpu_trim(void);
 
 // Turns on or off one log line per GPU job, under "ResampleGpu": the time of each step.
 void rs_gpu_trace(int on);

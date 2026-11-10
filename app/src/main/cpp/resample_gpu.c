@@ -567,16 +567,21 @@ static int chunk(rs_gpu * g, int y0, int y1)
     return glGetError() == GL_NO_ERROR ? 0 : -1;
 }
 
-int rs_gpu_band(rs_gpu * g, int y0, int y1)
+int rs_gpu_band(rs_gpu * g, int y0, int y1, rs_stop stop, void * opaque)
 {
     // Chunks end on multiples of the chunk size, each within one rs_gpu_open sized its buffers for.
     for (int y = y0; y < y1;) {
+        if (stop != NULL && stop(opaque)) return 1;
         const int next = (y / g->chunk + 1) * g->chunk;
         const int end = next < y1 ? next : y1;
         if (chunk(g, y, end) != 0) return -1;
         y = end;
     }
     return 0;
+}
+
+void rs_gpu_trim(void)
+{
 }
 
 void rs_gpu_close(rs_gpu * g)

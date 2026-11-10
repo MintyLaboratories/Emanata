@@ -34,7 +34,33 @@ internal interface PixelKernels {
      */
     fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean
 
+    /**
+     * Filters output rows [y0] until [y1] of a GPU job on the calling thread, on [cores] as
+     * [band] says, asking [stop] (null: never) before each chunk: [BAND_DONE],
+     * [BAND_CANCELED] once it said so (rethrowing what it threw), else [BAND_FAILED]. By
+     * default, one [band] after asking once.
+     */
+    fun gpuBand(job: Long, y0: Int, y1: Int, cores: Long, stop: Stop?): Int = when {
+        stop?.stop() == true -> BAND_CANCELED
+        band(job, 0, y0, y1, cores) -> BAND_DONE
+        else -> BAND_FAILED
+    }
+
     fun end(job: Long)
+
+    /** Frees what the GPU path keeps between jobs, for when memory runs low; by default nothing. */
+    fun trim() {}
+
+    /** Asked before each chunk of a GPU band, on its thread; true stops the band. */
+    fun interface Stop {
+        fun stop(): Boolean
+    }
+
+    companion object {
+        const val BAND_FAILED = 0
+        const val BAND_DONE = 1
+        const val BAND_CANCELED = -2
+    }
 }
 
 /** The resampler built from source (`src/main/cpp/resample*.c`), through JNI. */
@@ -50,7 +76,15 @@ internal object LibPixels : PixelKernels {
 
     override fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean = nBand(job, worker, y0, y1, cores)
 
+    override fun gpuBand(job: Long, y0: Int, y1: Int, cores: Long, stop: PixelKernels.Stop?): Int =
+        nGpuBand(job, y0, y1, cores, stop)
+
     override fun end(job: Long) = nEnd(job)
+
+    /** Does nothing where the native library is not loaded. */
+    override fun trim() {
+        if (loaded) nTrim()
+    }
 
     /**
      * Pins the calling thread to [cores] (bit n = core n), or ends its pin for every core's bit
@@ -118,7 +152,13 @@ internal object LibPixels : PixelKernels {
     private external fun nBand(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean
 
     @JvmStatic
+    private external fun nGpuBand(job: Long, y0: Int, y1: Int, cores: Long, stop: PixelKernels.Stop?): Int
+
+    @JvmStatic
     private external fun nEnd(job: Long)
+
+    @JvmStatic
+    private external fun nTrim()
 }
 
 /**

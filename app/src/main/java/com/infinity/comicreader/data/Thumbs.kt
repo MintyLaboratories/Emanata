@@ -6,7 +6,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.util.LruCache
 import com.infinity.comicreader.ai.CoverTextDetector
-import com.infinity.comicreader.ai.TextDetector
+import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.HiddenPages
@@ -80,7 +80,7 @@ object Thumbs {
         val known = barcodes.get(k)
         val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
         else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
-        val detector = detector(context)
+        val detector = detectorFor(context, entry)
         val version = SmartCrop.version(detector.id)
         val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find, detector) }
         val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page))?.version != version
@@ -103,7 +103,7 @@ object Thumbs {
         if (id != null) runCatching { BookFactsCache(context).keepCover(id, front) }
     }
 
-    /** Where the Smart crop anchor looks on each cover, by [imageKey], the part shown and the [coverVersion]; kept across sessions in [focusStore]. */
+    /** Where the Smart crop anchor looks on each cover, by [imageKey], the part shown and the cover-focus version; kept across sessions in [focusStore]. */
     private val focuses = LruCache<String, CoverFocus>(1024)
     private const val FOCUS_PREFIX = "cover-focus"
 
@@ -129,14 +129,23 @@ object Thumbs {
     }
 
     /**
-     * Finds text on covers for the Smart crop anchor: the app's detector ([TextDetector]). Tests
-     * stand in their own. Asked on every cover key, list binds on the main thread included: once
-     * made (off the main thread at the app's start, as making it reads storage) it answers at
-     * once, without I/O, and its [CoverTextDetector.id] changes only when the detector chosen
-     * does, as every cover's key and focus store follow it.
+     * Finds text on covers for the Smart crop anchor, and on a book's cover for its direction:
+     * the session's pick ([CoverTextDetectors.session]). Tests stand in their own. Asked on every
+     * cover key, list binds on the main thread included: once made (off the main thread at the
+     * app's start, as making it reads storage) it answers at once, without I/O, and its
+     * [CoverTextDetector.id] changes only when the detector chosen does, as every cover's key and
+     * focus store follow it.
      */
     @Volatile
-    internal var detector: (Context) -> CoverTextDetector = { TextDetector.shared(it) }
+    internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).session() }
+
+    /** Finds text on covers of books marked right to left: PP-OCR ([CoverTextDetectors.rightToLeft]). Tests stand in their own. */
+    @Volatile
+    internal var rtlDetector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).rightToLeft() }
+
+    /** The detector of [entry]'s cover: [rtlDetector] for a book marked right to left ([BookEntry.direction]), else [detector]. */
+    private fun detectorFor(context: Context, entry: BookEntry): CoverTextDetector =
+        if (entry.direction == ReadingDirection.RTL) rtlDetector(context) else detector(context)
 
     /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
     fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)
@@ -144,12 +153,15 @@ object Thumbs {
     /** [style]'s part of a cover's key ([CoverStyle.key]) under the [detector] in use. */
     fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
 
+    /** [style]'s part of [entry]'s cover key under the detector of its cover ([detectorFor]). */
+    private fun styleKey(context: Context, style: CoverStyle, entry: BookEntry): String = style.key(detectorFor(context, entry).id)
+
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
      * cover by [detector] and kept unless it did not run ([CoverFocus.keep]); without [find],
      * only one found before ([CoverFocus.NONE] when none was).
      */
-    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true, detector: CoverTextDetector = detector(context)): CoverFocus {
+    private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean = true, detector: CoverTextDetector = detectorFor(context, entry)): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
         val id = detector.id
@@ -348,13 +360,13 @@ object Thumbs {
         if (entry.isDir) null else entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
 
     /**
-     * What a cover is cached by: its file, box size, style under the [detector] in use
-     * ([styleKey]), the hidden pages that move it ([hiddenTag]), a bookmark's page in the book,
+     * What a cover is cached by: its file, box size, style under the detector of its cover
+     * ([detectorFor]), the hidden pages that move it ([hiddenTag]), a bookmark's page in the book,
      * and the book's own file name charset, which may reorder its pages ([NameCharset.overrides]).
      */
     private fun coverKey(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): String {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        return "${key(entry)}|${width}x$height|${styleKey(context, style)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
+        return "${key(entry)}|${width}x$height|${styleKey(context, style, entry)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
     }
 
     /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */

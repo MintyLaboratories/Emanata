@@ -113,11 +113,16 @@ class ThumbsTest {
         val calls = intArrayOf(0)
         standIn(id) { bitmap ->
             calls[0]++
-            val w = bitmap.width
-            val h = bitmap.height
-            ScoreMap(w, h, FloatArray(w * h) { i -> if (i / w in (top * h).toInt() until (bottom * h).toInt() && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
+            textMap(bitmap, top, bottom)
         }
         return calls
+    }
+
+    /** A score map of [bitmap] with text across rows [top] to [bottom] (shares of the height). */
+    private fun textMap(bitmap: Bitmap, top: Double, bottom: Double): ScoreMap {
+        val w = bitmap.width
+        val h = bitmap.height
+        return ScoreMap(w, h, FloatArray(w * h) { i -> if (i / w in (top * h).toInt() until (bottom * h).toInt() && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
     }
 
     /** Stands in a detector known as [id] whose lines are the text of the score map [map] gives each image. */
@@ -127,10 +132,12 @@ class ThumbsTest {
     }
 
     private val detector = Thumbs.detector
+    private val rtlDetector = Thumbs.rtlDetector
 
     @After
     fun dropDetector() {
         Thumbs.detector = detector
+        Thumbs.rtlDetector = rtlDetector
     }
 
     @Test
@@ -206,6 +213,31 @@ class ThumbsTest {
             val titled = bitmap.getPixel(w / 2, h / 2) == color
             ScoreMap(w, h, FloatArray(w * h) { i -> if (titled && i / w in h / 10 until h / 4 && i % w in w / 10 until w * 9 / 10) 0.9f else 0f })
         }
+    }
+
+    @Test
+    fun aBookMarkedRightToLeftFindsItsTextWithTheRightToLeftDetector() {
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val usual = textAt(0.85, 0.92, id = "usual")
+        var rtlCalls = 0
+        val rtl = coverText("rtl") { bitmap ->
+            rtlCalls++
+            textMap(bitmap, 0.02, 0.1)
+        }
+        Thumbs.rtlDetector = { rtl }
+        val left = cover(name = "left.png").copy(direction = ReadingDirection.LTR)
+        val right = cover(name = "right.png").copy(direction = ReadingDirection.RTL)
+        assertEquals(Color.BLUE, Thumbs.load(context, left, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(Color.RED, Thumbs.load(context, right, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, usual[0])
+        assertEquals(1, rtlCalls)
+        // Each detector's focuses are kept side by side.
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("usual"))).isFile)
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("rtl"))).isFile)
+        Thumbs.clear(context)
+        val unmarked = cover(name = "unmarked.png")
+        assertEquals(Color.BLUE, Thumbs.load(context, unmarked, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, rtlCalls)
     }
 
     @Test

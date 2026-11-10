@@ -191,6 +191,12 @@ internal object LibPixels : PixelKernels {
  */
 object NativeResampler {
     /**
+     * The GPU path's revision, part of what calibration is made of ([Calibration.method]):
+     * bumped with [Calibration.VERSION] when the GPU path changes enough to time it again.
+     */
+    internal const val GPU_REVISION = 2
+
+    /**
      * The engine bitmaps are resampled with; [PixelEngine.GPU] falls back to the native CPU
      * code and that, where it cannot load, to [Resampler]. Moving off the GPU frees the
      * buffers its path keeps.

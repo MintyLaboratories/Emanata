@@ -17,7 +17,7 @@ class CalibrationTest {
     private companion object {
         const val PINNED_V3 = "ba2b68cf"
         const val PINNED_V4 = "07355a12"
-        const val PINNED_V5 = "e3dc759c"
+        const val PINNED_V5 = "56188912"
     }
 
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))

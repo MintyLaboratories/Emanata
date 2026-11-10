@@ -126,7 +126,8 @@ object Calibration {
     /**
      * Bumped whenever the setups timed or the method change: every device then calibrates
      * again ([fingerprint]). A test pins a hash of what the method is made of ([method],
-     * [Calibrator.method]) to each version.
+     * [Calibrator.method]) to each version, the GPU path's revision
+     * ([NativeResampler.GPU_REVISION]) included.
      */
     const val VERSION = 5
 
@@ -138,7 +139,8 @@ object Calibration {
 
     /**
      * What this object's part of the method is made of, as text: the setups timed on a few
-     * kinds of chips, the rules that pick among them, and the bounds that judge samples fair.
+     * kinds of chips, the rules that pick among them, the bounds that judge samples fair, and
+     * the GPU path's revision.
      */
     fun method(): String {
         val chips = listOf(
@@ -151,7 +153,7 @@ object Calibration {
         return listOf(
             setups, TOLERANCE, STAY_MARGIN, JPEG_MARGIN, JPEG_THREADED, CPU_NOISE_SHARE, CPU_NOISE_MS, coreWeight(435, 1024),
             OTHERS_SHARE, OTHERS_FLOOR_MS, HOUSEKEEPING.sorted(), REST_SHARE, REST_MIN_MS, REST_MAX_MS, LIGHT, HOT, BATTERY_LIGHT_C, BATTERY_HOT_C,
-            SPREAD_MADS, ROUNDS, RETRIES
+            SPREAD_MADS, ROUNDS, RETRIES, NativeResampler.GPU_REVISION
         ).joinToString("|")
     }
 

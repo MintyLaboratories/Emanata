@@ -16,8 +16,8 @@ import com.infinity.comicreader.data.SmartCrop
 import java.io.Closeable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
-import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
@@ -125,7 +125,8 @@ internal class MlKitTextDetector(
         /** Runs a continuation on the thread that completed the task, never the main thread's queue. */
         private val DIRECT = Executor { it.run() }
 
-        private val closer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "mlkit-text-idle").apply { isDaemon = true } }
+        /** Times idle closes; a cancelled one leaves its queue at once. */
+        private val closer = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "mlkit-text-idle").apply { isDaemon = true } }.apply { removeOnCancelPolicy = true }
 
         /**
          * The detector on Play services' recognizer. Loads ML Kit's classes, so where they are

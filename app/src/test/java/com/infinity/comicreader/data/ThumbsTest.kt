@@ -172,11 +172,14 @@ class ThumbsTest {
         val old = File(context.cacheDir, Thumbs.focusFile("1-${TextDetector.ID}")).apply { writeText("") }
         val gone = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("gone"))).apply { writeText("") }
         val app = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.ID))).apply { writeText("") }
+        val downloaded = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.DOWNLOADED_ID))).apply { writeText("") }
         textAt(0.85, 0.92, id = "swept")
         Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertFalse(old.exists())
         assertFalse(gone.exists())
+        // Both copies of the app's detector keep theirs.
         assertTrue(app.isFile)
+        assertTrue(downloaded.isFile)
         assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("swept"))).isFile)
     }
 

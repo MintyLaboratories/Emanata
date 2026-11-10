@@ -25,7 +25,10 @@ interface CoverTextDetector {
     fun lines(src: Bitmap): List<SmartCrop.TextBox>?
 
     companion object {
-        /** The [id]s of the app's detectors: covers' focuses found by each are kept, of others deleted. */
-        val IDS: Set<String> = setOf(TextDetector.ID)
+        /**
+         * The [id]s of the app's detectors: covers' focuses found by each are kept, of others
+         * deleted. Lazy: [TextDetector]'s own initialization initializes this interface first.
+         */
+        val IDS: Set<String> by lazy { setOf(TextDetector.ID, TextDetector.DOWNLOADED_ID) }
     }
 }

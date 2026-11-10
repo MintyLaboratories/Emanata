@@ -129,6 +129,15 @@ class NoticesTest {
     }
 
     @Test
+    fun theDownloadedTextDetectorsSourceIsStatedInAboutAndReadme() {
+        val repository = com.infinity.comicreader.ai.ModelCatalog.DETECTOR_REPOSITORY
+        val paddle = Notices.all.single { it.name == "PaddleOCR text detector" }
+        assertTrue(paddle.note!!.contains(repository))
+        assertTrue(paddle.note!!.contains("third party"))
+        assertTrue(File("../README.md").readText().lines().single { it.contains("PP-OCRv5 mobile text detector") }.contains("]($repository)"))
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

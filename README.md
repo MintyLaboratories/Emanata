@@ -1408,7 +1408,7 @@ license and NOTICE text under Settings → About (files in
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
 | [OkHttp](https://github.com/square/okhttp), Okio | Apache-2.0 |
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
-| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, converted to ncnn (`tools/text-detector`) | Apache-2.0 |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, converted to ncnn (`tools/text-detector`); optionally downloaded instead, unchanged, as a third party's ncnn conversion of the same model from a [pinned Hugging Face repository](https://huggingface.co/assafvayner/translatte-ocr-ncnn) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 | [ML Kit Text Recognition v2](https://developers.google.com/ml-kit/vision/text-recognition/v2) (`play-services-mlkit-text-recognition`, model delivered by Google Play services), with the Play services client libraries | Proprietary (Google Play services): [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms), Android SDK License; open-source parts under Apache-2.0, BSD-3-Clause and MIT |
 | Firebase components, Google Data Transport, javax.inject (used by ML Kit) | Apache-2.0 |

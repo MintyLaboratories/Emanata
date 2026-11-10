@@ -68,7 +68,8 @@ class App : Application() {
 
     /**
      * Share reads keep only their latest run once memory runs low, or the app is in the
-     * background list; the GPU resampler frees its buffers then and once the UI hides.
+     * background list; the GPU resampler frees its buffers then and once the UI hides (from
+     * API 34 on, only UI_HIDDEN and BACKGROUND arrive).
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

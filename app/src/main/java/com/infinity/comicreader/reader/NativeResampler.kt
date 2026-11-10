@@ -3,6 +3,9 @@ package com.infinity.comicreader.reader
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Where bitmaps are resampled: [Resampler] in Kotlin, or native code on the CPU or the GPU ([NativeResampler]). */
@@ -223,7 +226,9 @@ object NativeResampler {
 
     /**
      * Frees the buffers the GPU path keeps between jobs once memory runs low or the UI
-     * hides, on the calling thread; true when [level] asks for it.
+     * hides, on the calling thread; true when [level] asks for it. From API 34 on, apps get
+     * only [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN] and
+     * [ComponentCallbacks2.TRIM_MEMORY_BACKGROUND]; in front, [idleTrimMs] frees them.
      */
     fun onTrimMemory(level: Int): Boolean {
         @Suppress("DEPRECATION")
@@ -237,10 +242,32 @@ object NativeResampler {
         kernels?.trim()
     }
 
+    /** Milliseconds after the last GPU job at which the GPU path's buffers are freed. */
+    @Volatile
+    internal var idleTrimMs: Long = IDLE_TRIM_MS
+
+    private val idleTimer by lazy {
+        ScheduledThreadPoolExecutor(1) { r -> Thread(r, "resample-idle").apply { isDaemon = true } }
+            .apply { removeOnCancelPolicy = true }
+    }
+    private val idleLock = Any()
+    private var idleTrim: ScheduledFuture<*>? = null
+
+    /** Has [k] free the GPU path's buffers [idleTrimMs] from now, unless called again before. */
+    private fun trimWhenIdle(k: PixelKernels) {
+        synchronized(idleLock) {
+            idleTrim?.cancel(false)
+            idleTrim = idleTimer.schedule({ k.trim() }, idleTrimMs, TimeUnit.MILLISECONDS)
+        }
+    }
+
     /** [trim]s unless pages are resampled on the GPU, whose buffers serve them alone. */
     fun trimUnlessGpu() {
         if (engine != PixelEngine.GPU) trim()
     }
+
+    /** A minute: page turns at reading pace keep the buffers, a pause frees them. */
+    private const val IDLE_TRIM_MS = 60_000L
 
     /** One worker per large core; where speeds are unknown, at most 4. */
     internal fun defaultThreads(cores: CpuCores, processors: Int): Int =
@@ -272,7 +299,12 @@ object NativeResampler {
         val ax = Resampler.axis(src.width, window.x, window.width, dst.width, scaling)
         val ay = Resampler.axis(src.height, window.y, window.height, dst.height, scaling)
         if (engine == PixelEngine.GPU) {
-            if (run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin)) return true
+            val done = try {
+                run(k, src, dst, ax, ay, linear, gpu = true, canceled, urgent, workers, pin)
+            } finally {
+                trimWhenIdle(k)
+            }
+            if (done) return true
             if (!fallback) return false
         }
         return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent, workers, pin)

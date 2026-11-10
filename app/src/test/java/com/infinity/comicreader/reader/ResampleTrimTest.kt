@@ -44,6 +44,15 @@ class ResampleTrimTest {
     fun tearDown() {
         NativeResampler.kernels = null
         NativeResampler.engine = PixelEngine.NATIVE
+        NativeResampler.idleTrimMs = idleTrimMs
+    }
+
+    private val idleTrimMs = NativeResampler.idleTrimMs
+
+    private fun gpuJob(engine: PixelEngine = PixelEngine.GPU) {
+        val src = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val dst = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        NativeResampler.resample(src, dst, Resampler.Window.of(8, 8), false, Scaling.DEFAULT, engine = engine, fallback = false)
     }
 
     @Suppress("DEPRECATION")
@@ -112,6 +121,28 @@ class ResampleTrimTest {
         assertEquals(1, k.threads.size)
         NativeResampler.engine = PixelEngine.NATIVE
         assertEquals(1, k.threads.size)
+    }
+
+    @Test
+    fun trimsOnceGpuJobsPause() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        NativeResampler.idleTrimMs = 500
+        gpuJob()
+        gpuJob()
+        assertEquals(0, k.threads.size)
+        val until = System.nanoTime() + 5_000_000_000L
+        while (k.threads.isEmpty() && System.nanoTime() < until) Thread.sleep(10)
+        Thread.sleep(300)
+        assertEquals(listOf("resample-idle"), k.threads)
+    }
+
+    @Test
+    fun cpuJobsLeaveNoIdleTrim() {
+        val k = Trims().also { NativeResampler.kernels = it }
+        NativeResampler.idleTrimMs = 10
+        gpuJob(PixelEngine.NATIVE)
+        Thread.sleep(300)
+        assertEquals(0, k.threads.size)
     }
 
     @Test

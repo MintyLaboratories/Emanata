@@ -22,6 +22,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
+import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
@@ -182,6 +183,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setUpBattery()
         setUpNetwork(prefs)
         setUpAi(prefs)
+        setUpCoverText()
 
         findPreference<Preference>("pref_theme")?.setOnPreferenceChangeListener { _, value ->
             val mode = when (value as String) {
@@ -395,6 +397,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             true
         }
+    }
+
+    /** Offers ML Kit for cover text only where Google Play services is there ([CoverTextDetectors.offered]). */
+    private fun setUpCoverText() {
+        val pref = findPreference<Preference>(Prefs.KEY_COVER_MLKIT) ?: return
+        if (!CoverTextDetectors.shared(requireContext()).offered()) pref.parent?.removePreference(pref)
     }
 
     /** Keeps no room for an icon beside [pref] and every setting under it. */

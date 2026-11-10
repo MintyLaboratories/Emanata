@@ -468,6 +468,12 @@
             app:key="pref_crop_anchor"
             app:title="@string/pref_crop_anchor"
             app:useSimpleSummaryProvider="true" />
+        <!-- Shown only where Google Play services is there. -->
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_cover_mlkit"
+            app:summary="@string/pref_cover_mlkit_desc"
+            app:title="@string/pref_cover_mlkit" />
         <SeekBarPreference
             android:max="32"
             app:defaultValue="8"

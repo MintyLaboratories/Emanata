@@ -626,7 +626,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         adapter.firstLayerOnly = s.thrift.firstLayerCovers
         if (s.showHidden != old.showHidden) invalidateOptionsMenu()
         if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
-            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor ||
+            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor || s.coverMlKit != old.coverMlKit ||
             s.thumbScaling.shrinkKey != old.thumbScaling.shrinkKey
         ) {
             adapter.notifyDataSetChanged()

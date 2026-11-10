@@ -11,6 +11,10 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.NetWork
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.FutureTask
@@ -92,10 +96,21 @@ class CoverTextDetectors(
     private var cancel: (() -> Unit)? = null
     private var request = 0
 
-    /** Times ML Kit's module arrived while covers were made without it: covers made before may now find their text. */
+    /** A cover went without ML Kit's text since its module was last known to be on the device. Under [lock]. */
+    private var servedWithout = false
+
+    /**
+     * Times covers made without ML Kit's text may now find it: its module arrived after covers
+     * went without it, or the setting gave ML Kit a new try after it was given up.
+     */
     @Volatile
     var arrivals = 0
         private set
+
+    private val changed = MutableStateFlow(0)
+
+    /** Counts changes that make covers on screen out of date: [arrivals], and ML Kit given up. */
+    val changes: StateFlow<Int> = changed.asStateFlow()
 
     @Volatile
     private var made: CoverTextDetector? = null
@@ -144,6 +159,8 @@ class CoverTextDetectors(
             return
         }
         synchronized(lock) {
+            // Covers made with ML Kit before it was given up went without its text.
+            if (gaveUp != null) arrive()
             gaveUp = null
             failures = 0
             misses = 0
@@ -158,7 +175,10 @@ class CoverTextDetectors(
         override fun inputSize(w: Int, h: Int): IntArray = (if (ready()) made() else null)?.inputSize(w, h) ?: SmartCrop.inputSize(w, h)
 
         override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
-            if (!ready()) return null
+            if (!ready()) {
+                synchronized(lock) { servedWithout = true }
+                return null
+            }
             val ml = made() ?: return null
             val found = try {
                 ml.lines(src)
@@ -332,10 +352,17 @@ class CoverTextDetectors(
 
     /** The module is on the device: ML Kit runs from now on. Returns what cancels a request still under way. Under [lock]. */
     private fun arrived(): (() -> Unit)? {
-        if (module == Module.DOWNLOADING) arrivals++
+        if (module == Module.DOWNLOADING || servedWithout) arrive()
         module = Module.READY
         request++
         return cancel.also { cancel = null }
+    }
+
+    /** Counts an arrival ([arrivals]). Under [lock]. */
+    private fun arrive() {
+        arrivals++
+        servedWithout = false
+        changed.update { it + 1 }
     }
 
     /** Gives a download not done within [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]); returns what cancels it. Under [lock]. */
@@ -349,7 +376,9 @@ class CoverTextDetectors(
 
     /** Leaves ML Kit for [why] for the rest of the session, or until the setting is turned on again. Under [lock]. */
     private fun giveUp(why: Why) {
-        if (gaveUp == null) gaveUp = why
+        if (gaveUp != null) return
+        gaveUp = why
+        changed.update { it + 1 }
     }
 
     companion object {

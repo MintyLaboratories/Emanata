@@ -61,6 +61,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.compact.OutputMarks
 import com.infinity.comicreader.compact.PackFolders
 import com.infinity.comicreader.compact.RebuildTargets
@@ -492,6 +493,19 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 settings.list.collect { applySettings(it) }
+            }
+        }
+        // Covers on screen are made again when ML Kit's model arrives or PP-OCR takes over from it.
+        lifecycleScope.launch {
+            val detectors = CoverTextDetectors.shared(this@ListActivity)
+            var seen = detectors.changes.value
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                detectors.changes.collect {
+                    if (it != seen) {
+                        seen = it
+                        adapter.notifyDataSetChanged()
+                    }
+                }
             }
         }
 

@@ -393,6 +393,37 @@ class CoverTextDetectorsTest {
     }
 
     @Test
+    fun aModuleFoundAfterACheckMissedCountsAsArrived() {
+        var installed: Boolean? = null
+        val d = detectors(FakePlay(installed = { installed }))
+        assertNull("went without text", d.session().lines(image))
+        installed = true
+        assertEquals(line, d.session().lines(image))
+        assertEquals(1, d.arrivals)
+        assertEquals(1, d.changes.value)
+    }
+
+    @Test
+    fun aModuleThereAtOnceIsNoArrival() {
+        val d = detectors(FakePlay())
+        assertEquals(line, d.session().lines(image))
+        assertEquals(0, d.arrivals)
+        assertEquals(0, d.changes.value)
+    }
+
+    @Test
+    fun givingMlKitUpIsAChangeAndANewTryAnArrival() {
+        val d = detectors(FakePlay())
+        ml.found = { null }
+        repeat(CoverTextDetectors.FAILURES) { d.session().lines(image) }
+        assertEquals(1, d.changes.value)
+        assertEquals(0, d.arrivals)
+        d.settingChanged()
+        assertEquals("covers made before are made again", 1, d.arrivals)
+        assertEquals(2, d.changes.value)
+    }
+
+    @Test
     fun turnedOffMlKitDoesNotRun() {
         val d = detectors(FakePlay())
         val detector = d.session()

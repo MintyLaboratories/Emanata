@@ -14,8 +14,8 @@
 // - Each program's uniform locations are looked up once, when it compiles.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - The context, the down program and the tables stay for the process. The buffers stay
-//   from job to job, grown as a job needs, until rs_gpu_trim frees them with the across
-//   programs.
+//   from job to job, grown as a job needs (or fit to it, past a budget), until rs_gpu_trim
+//   frees them with the across programs.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks (compile: the across program's, on its
 //   first use), the GPU time of each pass where the driver has GL_EXT_disjoint_timer_query,
@@ -615,12 +615,19 @@ static GLsizeiptr rounded(GLsizeiptr size)
     return (size + step - 1) / step * step;
 }
 
-// k's buffer, holding at least size bytes, created or grown (its contents lost) as needed;
-// counted in *made. GL errors are left for the caller.
-static GLuint grow(kept_buffer * k, GLsizeiptr size, GLenum usage, int * made)
+// The size k has once grown to hold size bytes.
+static GLsizeiptr grown(const kept_buffer * k, GLsizeiptr size)
+{
+    const GLsizeiptr r = rounded(size);
+    return k->size > r ? k->size : r;
+}
+
+// k's buffer, holding at least size bytes, created or grown (its contents lost) as needed,
+// and with `fit` shrunk to size too; counted in *made. GL errors are left for the caller.
+static GLuint grow(kept_buffer * k, GLsizeiptr size, GLenum usage, int fit, int * made)
 {
     const GLsizeiptr want = rounded(size);
-    if (k->name != 0 && k->size >= want) return k->name;
+    if (k->name != 0 && (fit ? k->size == want : k->size >= want)) return k->name;
     if (k->name == 0) glGenBuffers(1, &k->name);
     k->size = want;
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, k->name);
@@ -743,9 +750,16 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     g->src_bytes = (GLsizeiptr)(src_w * g->max_rows * 4);
     g->mid_bytes = (GLsizeiptr)((size_t)ax->len * g->max_rows * 16);
     g->out_bytes = (GLsizeiptr)((size_t)ax->len * g->chunk * 4);
-    g->src = grow(&kept_src, g->src_bytes, GL_STREAM_DRAW, &made);
-    g->mid = grow(&kept_mid, g->mid_bytes, GL_DYNAMIC_COPY, &made);
-    g->out = grow(&kept_out, g->out_bytes, GL_STREAM_READ, &made);
+    // Each buffer grows to its own largest job, so wide-row jobs (thumbnails) and tall ones
+    // (pages) together could keep far more than either needs: past CHUNK_BYTES plus this
+    // job's output, buffers larger than this job needs shrink to it.
+    GLsizeiptr most = (GLsizeiptr)CHUNK_BYTES + rounded(g->out_bytes) + 2 * GROW_STEP;
+    const GLsizeiptr own = rounded(g->src_bytes) + rounded(g->mid_bytes) + rounded(g->out_bytes);
+    if (most < own) most = own;
+    const int fit = grown(&kept_src, g->src_bytes) + grown(&kept_mid, g->mid_bytes) + grown(&kept_out, g->out_bytes) > most;
+    g->src = grow(&kept_src, g->src_bytes, GL_STREAM_DRAW, fit, &made);
+    g->mid = grow(&kept_mid, g->mid_bytes, GL_DYNAMIC_COPY, fit, &made);
+    g->out = grow(&kept_out, g->out_bytes, GL_STREAM_READ, fit, &made);
     if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
         // Which buffer failed is unknown: none stays.
         drop_kept();

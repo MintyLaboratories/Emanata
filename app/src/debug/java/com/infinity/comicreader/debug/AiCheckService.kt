@@ -23,6 +23,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.GrayPages
 import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.LibNcnn
 import com.infinity.comicreader.ai.ModelCatalog
@@ -67,6 +68,9 @@ import kotlin.math.max
  * or, to import a model as Models does: `--es do import --es model <.param> [--es bin <.bin, else beside it>]
  *  [--es name <name, to take it in>] [--es step artifacts|descreen|upscale]`
  *
+ * or, to check gray pages stay gray: `--es do gray [--es ids <catalog id,id,…, else both descreen models>
+ *  | --es model <.param>] [--es engines gpu,cpu] [--es size 1000x1500] [--ef cool <headroom>] [--ez fp16 true] [--ei threads 4]`
+ *
  * - open: per engine, the time to open, measure and check the model, its geometry, tile size
  *   and precision (the checks themselves go to the log under "AiSessions").
  * - check: tiled output at each size against one tile covering the whole of a `small` page on
@@ -90,6 +94,12 @@ import kotlin.math.max
  *   tile size it chose, given at most `cap` seconds; a page that would take longer stops early
  *   on its pace ([TileEngine]) and reports its time estimated from the tiles run. Waits for
  *   the thermal headroom to fall below `cool` before each model, up to [COOL_MAX_S].
+ * - gray: per model (installed from the catalog, or `model`) and engine, a black-and-white
+ *   screentone page of `size` ([GrayRuns.screentone]) through the model: the color in its raw
+ *   output, before the collapse to gray ([GrayRuns.spread]), the color left after the collapse
+ *   and how far the native collapse is from [GrayPages.luma], and the color in the page as the
+ *   reader shows it at 3/4 size ([AiPages.render]). Given `cool`, first waits for the thermal
+ *   headroom to fall below it. Saves the page, and each raw output holding color, as PNG.
  *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
@@ -127,6 +137,12 @@ class AiCheckService : Service() {
                     require(param != null && param.isFile) { "no model at $param" }
                     val bin = intent?.getStringExtra("bin")?.let(::File) ?: File(param.path.removeSuffix(".param") + ".bin")
                     importModel(param, bin, intent?.getStringExtra("name"), intent?.getStringExtra("step"))
+                    return@hold
+                }
+                if (what == "gray") {
+                    require(size.size == 2) { "unreadable size" }
+                    val ids = intent?.getStringExtra("ids")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: GrayRuns.DESCREEN_IDS
+                    gray(ids, param, engines, size[0], size[1], fp16, threads, timeCool)
                     return@hold
                 }
                 if (what == "survey") {
@@ -453,6 +469,70 @@ class AiCheckService : Service() {
         page.recycle()
         log(JSONObject().put("surveyed", params.size).put("state", state()))
     }
+
+    // ------------------------------------------------------------------ gray
+
+    private fun gray(ids: List<String>, param: File?, engines: List<Boolean>, w: Int, h: Int, fp16: Boolean, threads: Int, cool: Float?) {
+        val store = ModelStore.of(this)
+        val models: List<Pair<String, ModelFiles?>> = if (param != null) {
+            listOf(param.name to ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin")).takeIf { param.isFile && it.bin.isFile })
+        } else {
+            ids.map { id -> id to ModelCatalog.byId(id)?.let(store::files) }
+        }
+        val page = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+            setPixels(GrayRuns.screentone(w, h), 0, w, 0, 0, w, h)
+            setHasAlpha(false)
+        }
+        save(page, "gray-page.png")
+        log(
+            JSONObject().put("gray", models.size).put("page", "${w}x$h").put("pageGray", GrayPages.isGray(page))
+                .put("gpu", LibNcnn.gpu()?.name ?: JSONObject.NULL).put("state", state())
+        )
+        // Shown smaller than its pixels, as descreened pages usually are.
+        val plan = Plan(w * 3 / 4, h * 3 / 4, 0.0, 0.0, w.toDouble(), h.toDouble())
+        for ((name, files) in models) {
+            if (files == null) {
+                log(JSONObject().put("grayModel", name).put("failed", "not installed (do download --ez keep true)"))
+                continue
+            }
+            for (gpu in engines) {
+                val asked = if (gpu) "gpu" else "cpu"
+                val waitedS = cool?.let { coolDown(it, COOL_TIME_MAX_S) } ?: 0L
+                val session = Sessions.open(LibNcnn, files, threads, gpu = gpu, fp16 = fp16)
+                if (session == null) {
+                    log(JSONObject().put("grayModel", name).put("engine", asked).put("failed", "open"))
+                    continue
+                }
+                session.use { s ->
+                    val line = JSONObject().put("grayModel", name).put("engine", asked).put("onGpu", s.model.onGpu).put("fp16", s.fp16)
+                        .put("tile", s.size).put("scale", s.geometry.scale).put("cooledS", waitedS).put("before", state())
+                    val t0 = SystemClock.elapsedRealtime()
+                    val rawRun = TileEngine.run(s, page, UNLIMITED)
+                    line.put("rawMs", SystemClock.elapsedRealtime() - t0)
+                    val outW = rawRun.bitmap?.width ?: 0
+                    val raw = rawRun.bitmap?.let { b -> pixels(b).also { if (GrayRuns.spread(it, outW).max > 0) save(b, "gray-$name-$asked-raw.png"); b.recycle() } }
+                    val collapsedRun = TileEngine.run(s, page, UNLIMITED, gray = true)
+                    val collapsedW = collapsedRun.bitmap?.width ?: 0
+                    val collapsed = collapsedRun.bitmap?.let { b -> pixels(b).also { b.recycle() } }
+                    val rendered = AiPages.render(s, page, plan, Scaling.DEFAULT, limits = UNLIMITED)
+                    line.put("raw", raw?.let { spreadJson(GrayRuns.spread(it, outW)) } ?: (rawRun.fallback?.name ?: "failed"))
+                        .put("collapsed", collapsed?.let { spreadJson(GrayRuns.spread(it, collapsedW)) } ?: (collapsedRun.fallback?.name ?: "failed"))
+                        .put("lumaDiff", if (raw != null && collapsed != null) GrayRuns.lumaDiff(raw, collapsed) else JSONObject.NULL)
+                        .put("rendered", spreadJson(GrayRuns.spread(pixels(rendered.bitmap), rendered.bitmap.width)))
+                        .put("renderFallback", rendered.run.fallback?.name ?: JSONObject.NULL)
+                        .put("after", state())
+                    rendered.bitmap.recycle()
+                    log(line)
+                }
+            }
+        }
+        page.recycle()
+        log(JSONObject().put("grayed", models.size).put("state", state()))
+    }
+
+    private fun spreadJson(s: GrayRuns.Spread): JSONObject =
+        JSONObject().put("max", s.max).put("mean", Stats.round1(s.mean * 100) / 100).put("over2", s.over2).put("over16", s.over16)
+            .put("at", if (s.atX < 0) JSONObject.NULL else "${s.atX},${s.atY}")
 
     /** Waits, up to [maxS] seconds, for the thermal headroom to fall below [below]; the seconds waited. */
     private fun coolDown(below: Float, maxS: Int = COOL_MAX_S): Long {

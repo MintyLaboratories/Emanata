@@ -272,7 +272,7 @@ class AiSizeSlider @JvmOverloads constructor(context: Context, attrs: AttributeS
                 else -> 0
             }
             if (by != 0) {
-                step(keyHandle(), if (layoutDirection == LAYOUT_DIRECTION_RTL) -by else by)
+                step(keyHandle(), by)
                 return true
             }
         }

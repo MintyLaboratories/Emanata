@@ -64,6 +64,21 @@ class GrayPagesTest {
     }
 
     @Test
+    fun aTintedOrChromaNoisyScanIsColor() {
+        val px = grayPage(40, 50)
+        // A warm paper tint: red two codes up, blue one down.
+        val tinted = IntArray(px.size) { i -> gray((px[i] and 0xFF).coerceIn(1, 253)) + 0x020000 - 1 }
+        assertFalse(GrayPages.isGray(bitmapOf(tinted, 40, 50)))
+        // Chroma noise of up to two codes per channel, as a color JPEG of a gray page carries.
+        val r = Random(7)
+        val noisy = IntArray(px.size) { i ->
+            val v = (px[i] and 0xFF).coerceIn(2, 253)
+            0xFF000000.toInt() or ((v + r.nextInt(-2, 3)) shl 16) or ((v + r.nextInt(-2, 3)) shl 8) or (v + r.nextInt(-2, 3))
+        }
+        assertFalse(GrayPages.isGray(bitmapOf(noisy, 40, 50)))
+    }
+
+    @Test
     fun spreadIsTheLargestChannelDifference() {
         val px = grayPage(20, 20)
         px[5] = 0xFF102030.toInt()

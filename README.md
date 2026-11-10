@@ -1066,8 +1066,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   it), decided for each render at its size: an upscaler runs above the upscale
   threshold (100 % by default, never below 50 %), an artifact-removal model
   above the cleanup threshold (50 % by default, or always), and a descreen
-  model at every size (`AiThresholds`). A page none of whose models would run
-  is skipped before it is decoded. A model refused for memory as it opens (what
+  model at every size (`AiThresholds`). On a page whose source is gray (every
+  pixel's red, green and blue within a code), each model's output is collapsed
+  to gray (luma) before the next model or the resampling reads it, so no model
+  adds color to it; a scan with a paper tint or chroma noise counts as color
+  and keeps what the models make (`GrayPages`). A page none of whose models
+  would run is skipped before it is decoded. A model refused for memory as it opens (what
   is free changes) puts its pages off and is tried once more with them, no
   sooner than the queue's first back-off (15 s), before its pages show
   without it until the reader closes its models (left, or its book's chain

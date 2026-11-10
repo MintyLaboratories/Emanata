@@ -6,7 +6,9 @@ import android.graphics.Bitmap
  * Keeps black-and-white pages black and white through AI models. Models get RGB (three equal
  * planes on a gray page) and may tint their output; on a page whose source is gray, each model's
  * output is collapsed back to gray as its tiles are written ([TileEngine.run]), before the
- * next model or the resampling reads it. Color pages are left as the models make them.
+ * next model or the resampling reads it. Color pages are left as the models make them, and so
+ * is a scan of a black-and-white page with a paper tint or chroma noise over [TOLERANCE]: only
+ * sources neutral within a code are found gray.
  */
 object GrayPages {
     /** Rows read at a time. */

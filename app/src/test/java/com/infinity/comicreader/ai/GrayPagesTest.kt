@@ -52,6 +52,14 @@ class GrayPagesTest {
     }
 
     @Test
+    fun aPixelIsGrayWhenItsThreeChannelsAreEqual() {
+        for (v in 0..255) assertTrue(GrayPages.isGray(gray(v, a = v)))
+        for (c in intArrayOf(0xFF010000.toInt(), 0xFF000100.toInt(), 0xFF000001.toInt(), 0xFF7F7F80.toInt(), 0xFF807F80.toInt())) {
+            assertFalse(Integer.toHexString(c), GrayPages.isGray(c))
+        }
+    }
+
+    @Test
     fun spreadIsTheLargestChannelDifference() {
         val px = grayPage(20, 20)
         px[5] = 0xFF102030.toInt()

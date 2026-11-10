@@ -9,12 +9,14 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.concurrent.CancellationException
 import kotlin.random.Random
 
 /** Gray pages stay gray through models that tint them ([AiPages.chain], [AiPages.render], [TileEngine.run]); color pages are left alone. */
@@ -120,6 +122,83 @@ class GrayChainTest {
         val src = bitmapOf(px, 60, 90)
         val run = AiPages.render(session(FakeModel(scale = 2, reach = 1, tint = TINT)), src, plan)
         assertFalse(GrayPages.isGray(run.bitmap))
+    }
+
+    @Test
+    fun aRunFindsAGrayPageInItsOwnRead() {
+        val s = session(FakeModel(scale = 2, reach = 1, tint = TINT))
+        val gray = TileEngine.run(s, grayPage(60, 90), gray = null)
+        assertTrue(gray.gray)
+        assertEquals(0, GrayPages.spread(gray.bitmap!!))
+        val color = TileEngine.run(s, colorPage(60, 90), gray = null)
+        assertFalse(color.gray)
+        val left = TileEngine.run(s, grayPage(60, 90))
+        assertFalse("not asked to look", left.gray)
+        assertEquals(TINT, GrayPages.spread(left.bitmap!!))
+    }
+
+    @Test
+    fun aGrayPageMarkedAsHavingAlphaIsFoundInTheSameRead() {
+        val src = grayPage(60, 90).apply { setHasAlpha(true) }
+        val run = TileEngine.run(session(FakeModel(scale = 2, reach = 1, tint = TINT)), src, gray = null)
+        assertNull(run.fallback)
+        assertTrue(run.gray)
+    }
+
+    @Test
+    fun aTranslucentGrayPageFallsBack() {
+        val src = grayPage(60, 90).apply {
+            setHasAlpha(true)
+            setPixel(30, 80, 0x80404040.toInt())
+        }
+        val run = AiPages.chain(listOf(session(FakeModel(scale = 2, reach = 1, tint = TINT))), src, plan)
+        assertEquals(Fallback.TRANSLUCENT, run.fallback)
+    }
+
+    @Test
+    fun anUnreadablePageFallsBackInAChain() {
+        val sessions = listOf(session(FakeModel(scale = 2, reach = 1, tint = TINT)))
+        val recycled = grayPage(60, 90).apply { recycle() }
+        assertEquals(Fallback.UNREADABLE, AiPages.chain(sessions, recycled, plan).fallback)
+        val small = Bitmap.createBitmap(60, 90, Bitmap.Config.RGB_565)
+        assertEquals(Fallback.UNREADABLE, AiPages.chain(sessions, small, plan).fallback)
+    }
+
+    @Test
+    fun renderLeavesTheModelsOutputAsMadeWhenToldTheChannelsMayDiffer() {
+        val s = session(FakeModel(scale = 2, reach = 1, tint = TINT))
+        val page = grayPage(60, 90)
+        val shown = AiPages.render(s, page, plan, gray = false)
+        assertArrayEquals(
+            pixels(BitmapUtils.resample(modeled(page, 2, 1, gray = false), AiPages.scaled(plan, 2), false, Scaling.DEFAULT)), pixels(shown.bitmap)
+        )
+        assertTrue(GrayPages.spread(shown.bitmap) > 0)
+    }
+
+    @Test
+    fun theScanReadsAGrayPageWholeAndAColorPageToItsFirstColor() {
+        val h = TileEngine.SCAN_ROWS * 3 + 5
+        var reads = 0
+        val counting = { reads++; false }
+        assertTrue(TileEngine.scan(grayPage(20, h), findGray = true, canceled = counting).gray)
+        assertEquals(4, reads)
+        reads = 0
+        val px = pixels(grayPage(20, h))
+        px[3] = 0xFF102030.toInt()
+        assertFalse(TileEngine.scan(bitmapOf(px, 20, h), findGray = true, canceled = counting).gray)
+        assertEquals(1, reads)
+        reads = 0
+        assertTrue(TileEngine.scan(grayPage(20, h), findGray = false, canceled = counting).opaque)
+        assertEquals("no alpha to read, gray not asked", 0, reads)
+    }
+
+    @Test
+    fun theScanStopsOnceCanceled() {
+        var reads = 0
+        assertThrows(CancellationException::class.java) {
+            TileEngine.scan(grayPage(20, TileEngine.SCAN_ROWS * 3), findGray = true, canceled = { ++reads > 1 })
+        }
+        assertEquals(2, reads)
     }
 
     private companion object {

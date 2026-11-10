@@ -15,14 +15,20 @@ object GrayPages {
     /**
      * True when [page] is gray: every pixel's red, green and blue are equal. A one-channel source
      * (gray JPEG, PNG, JPEG XL) is, as its decoder writes the channel to all three; a color file
-     * of a gray page is when its chroma is exactly neutral. Read once per page, on the chain's
-     * input, up to its first colored pixel. Translucent pixels count by their color channels alone.
+     * of a gray page is when its chroma is exactly neutral. Read up to its first colored pixel;
+     * a chain finds it in the read that looks for transparency ([TileEngine.scan]). Translucent
+     * pixels count by their color channels alone.
      */
-    fun isGray(page: Bitmap): Boolean = spread(page, stopAbove = 0) == 0
+    fun isGray(page: Bitmap): Boolean = TileEngine.scan(page, findGray = true, alpha = false).gray
+
+    /** True when [argb]'s red, green and blue are equal. */
+    fun isGray(argb: Int): Boolean = ((argb xor (argb ushr 8)) and 0xFFFF) == 0
 
     /**
      * The largest difference between a pixel's red, green and blue over [page] (ARGB_8888):
-     * 0 on a gray page. Stops reading at the first pixel over [stopAbove].
+     * 0 on a gray page. Stops reading at the first pixel over [stopAbove]. To see what a model
+     * makes of a gray page before the collapse, read it on [TileEngine.run] with gray false
+     * (its default) or [AiPages.render] with gray false; both collapse a gray page otherwise.
      */
     fun spread(page: Bitmap, stopAbove: Int = 255): Int {
         val w = page.width

@@ -91,8 +91,9 @@ data class ChainStep(val index: Int, val pixels: Long)
 internal object AiPages {
     /**
      * [src] rendered as [plan] (in [src]'s pixels) and [scaling] say: through [session]'s model
-     * and then resampled, or, when the run falls back, [src] resampled alone. Throws
-     * [java.util.concurrent.CancellationException] once [canceled].
+     * and then resampled, or, when the run falls back, [src] resampled alone. The model's output
+     * is collapsed to gray with [gray], or with [gray] null when [src] is gray ([GrayPages]).
+     * Throws [java.util.concurrent.CancellationException] once [canceled].
      */
     fun render(
         session: Session,
@@ -102,12 +103,13 @@ internal object AiPages {
         linear: Boolean = false,
         limits: PageLimits = PageLimits(),
         canceled: () -> Boolean = { false },
-        gate: () -> Fallback? = { null }
+        gate: () -> Fallback? = { null },
+        gray: Boolean? = null
     ): AiRendered {
         val run = if (session.geometry.scale > 1 && plan.shrinks()) {
             PageRun(null, Fallback.UNNEEDED, RunStats.NONE)
         } else {
-            TileEngine.run(session, src, limits, canceled, gate, gray = GrayPages.isGray(src))
+            TileEngine.run(session, src, limits, canceled, gate, gray = gray)
         }
         val big = run.bitmap
         return Cancellation.during(canceled) {
@@ -155,8 +157,8 @@ internal object AiPages {
         if (steps.isEmpty()) return ChainRun(null, Fallback.UNNEEDED, 0, 0)
         val expected = steps.map { expect(it.index, it.pixels).coerceAtLeast(0) }
         if (expected.sum() > limits.timeoutMs) return ChainRun(null, Fallback.TIMEOUT, 0, 0, early = true)
-        // Read once: each model's output on a gray page is collapsed to gray, so the next model's input stays gray.
-        val gray = GrayPages.isGray(src)
+        // Found by the first model's read of the page; each model's output on a gray page is collapsed, so the next one's input stays gray.
+        var gray: Boolean? = null
         // The models' own time, without time held.
         var spent = 0L
         var page = src
@@ -172,6 +174,7 @@ internal object AiPages {
                 spent += run.stats.totalMs
                 if (run.stats.tiles > 0) onStep(step.index, step.pixels, run.stats)
                 val out = run.bitmap ?: return ChainRun(null, run.fallback ?: Fallback.FAILED, ran, clock() - start)
+                gray = run.gray
                 if (page !== src) page.recycle()
                 page = out
                 scale *= session.geometry.scale

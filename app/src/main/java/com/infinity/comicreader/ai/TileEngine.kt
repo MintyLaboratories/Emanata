@@ -68,8 +68,11 @@ class RunStats(val tiles: Int, val planned: Int, val tileMs: LongArray, val tota
     }
 }
 
-/** A page's run: [bitmap] when it finished, else why not ([fallback]). */
-class PageRun(val bitmap: Bitmap?, val fallback: Fallback?, val stats: RunStats)
+/** A page's run: [bitmap] when it finished, else why not ([fallback]); [gray] when its output was collapsed to gray. */
+class PageRun(val bitmap: Bitmap?, val fallback: Fallback?, val stats: RunStats, val gray: Boolean = false)
+
+/** What one read of a page found: whether every pixel is [opaque], and [gray] (every pixel's channels equal) when asked. */
+class PageScan(val opaque: Boolean, val gray: Boolean)
 
 /**
  * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size],
@@ -111,8 +114,8 @@ internal object TileEngine {
      */
     internal const val PACE_AFTER = 4
 
-    /** Rows of a page read at a time when looking for transparency. */
-    private const val ALPHA_ROWS = 64
+    /** Rows of a page read at a time when looking for transparency or color. */
+    internal const val SCAN_ROWS = 64
 
     /**
      * [block] run while no page or model check runs; throws [CancellationException] once
@@ -131,7 +134,8 @@ internal object TileEngine {
 
     /**
      * [src] through [session]'s model, the output [Geometry.scale] times its size; with [gray]
-     * (a gray page, [GrayPages.isGray]), each tile collapsed to gray as it is written ([GrayPages.toGray]).
+     * (a gray page), each tile collapsed to gray as it is written ([GrayPages.toGray]); with
+     * [gray] null, as [src] is found to be in the read that looks for transparency ([PageRun.gray]).
      */
     fun run(
         session: Session,
@@ -141,7 +145,7 @@ internal object TileEngine {
         gate: () -> Fallback? = { null },
         clock: () -> Long = SystemClock::elapsedRealtime,
         hold: () -> Boolean = { false },
-        gray: Boolean = false,
+        gray: Boolean? = false,
         onTile: (done: Int, of: Int, ms: Long) -> Unit = { _, _, _ -> }
     ): PageRun = exclusive(canceled) {
         try {
@@ -164,7 +168,7 @@ internal object TileEngine {
 
     private fun runAlone(
         session: Session, src: Bitmap, limits: PageLimits, canceled: () -> Boolean, gate: () -> Fallback?,
-        clock: () -> Long, hold: () -> Boolean, gray: Boolean, onTile: (Int, Int, Long) -> Unit
+        clock: () -> Long, hold: () -> Boolean, gray: Boolean?, onTile: (Int, Int, Long) -> Unit
     ): PageRun {
         if (src.isRecycled || src.config != Bitmap.Config.ARGB_8888) return PageRun(null, Fallback.UNREADABLE, RunStats.NONE)
         val g = session.geometry
@@ -181,7 +185,9 @@ internal object TileEngine {
         val outH = src.height.toLong() * g.scale
         if (outW * outH > limits.maxOutputPixels) return fallback(Fallback.TOO_LARGE, 0)
         gate()?.let { return fallback(it, 0) }
-        if (!opaque(src)) return fallback(Fallback.TRANSLUCENT, 0)
+        val read = scan(src, findGray = gray == null, canceled = canceled)
+        if (!read.opaque) return fallback(Fallback.TRANSLUCENT, 0)
+        val collapse = gray ?: read.gray
         val out = try {
             Bitmap.createBitmap(outW.toInt(), outH.toInt(), Bitmap.Config.ARGB_8888)
         } catch (e: OutOfMemoryError) {
@@ -205,34 +211,49 @@ internal object TileEngine {
                 }
                 val t0 = clock()
                 session.model.run(src, t.input, out, t.crop, t.dx, t.dy) ?: return fallback(Fallback.FAILED, i)
-                if (gray) GrayPages.toGray(out, Box(t.dx, t.dy, t.crop.width, t.crop.height))
+                if (collapse) GrayPages.toGray(out, Box(t.dx, t.dy, t.crop.width, t.crop.height))
                 times[i] = clock() - t0
                 onTile(i + 1, tiles.size, times[i])
             }
             out.setHasAlpha(false)
             kept = true
-            return PageRun(out, null, stats(tiles.size))
+            return PageRun(out, null, stats(tiles.size), collapse)
         } finally {
             if (!kept) out.recycle()
         }
     }
 
+    /** True when every pixel of [src] is opaque ([scan]). */
+    fun opaque(src: Bitmap): Boolean = scan(src, findGray = false).opaque
+
     /**
-     * True when every pixel of [src] is opaque: at once when it says it has no alpha, else by
-     * reading its alpha, [ALPHA_ROWS] rows at a time (decoders mark opaque RGBA pages as
-     * having alpha).
+     * Reads [src] once, [SCAN_ROWS] rows at a time, each until settled: its alpha when [alpha]
+     * (at once opaque when it says it has none; decoders mark opaque RGBA pages as having alpha),
+     * whether it is gray ([GrayPages.isGray]) when [findGray]. A translucent page stops the read.
+     * Throws [CancellationException] once [canceled], checked between reads.
      */
-    fun opaque(src: Bitmap): Boolean {
-        if (!src.hasAlpha()) return true
+    fun scan(src: Bitmap, findGray: Boolean, alpha: Boolean = src.hasAlpha(), canceled: () -> Boolean = { false }): PageScan {
+        var alphaLeft = alpha
+        var gray = findGray
         val w = src.width
-        val rows = IntArray(w * minOf(ALPHA_ROWS, src.height))
+        val h = src.height
+        if (w <= 0 || h <= 0) return PageScan(true, gray)
+        val rows = IntArray(w * minOf(SCAN_ROWS, h))
         var y = 0
-        while (y < src.height) {
-            val n = minOf(ALPHA_ROWS, src.height - y)
+        while (y < h && (alphaLeft || gray)) {
+            if (canceled()) throw CancellationException("AI page canceled")
+            val n = minOf(SCAN_ROWS, h - y)
             src.getPixels(rows, 0, w, 0, y, w, n)
-            for (i in 0 until w * n) if (rows[i] ushr 24 != 0xFF) return false
+            for (i in 0 until w * n) {
+                val p = rows[i]
+                if (alphaLeft && p ushr 24 != 0xFF) return PageScan(opaque = false, gray = false)
+                if (gray && !GrayPages.isGray(p)) {
+                    gray = false
+                    if (!alphaLeft) break
+                }
+            }
             y += n
         }
-        return true
+        return PageScan(opaque = true, gray = gray)
     }
 }

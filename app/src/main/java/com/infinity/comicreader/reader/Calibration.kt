@@ -192,7 +192,7 @@ object Calibration {
      * The setups to time on [cores] with [processors] CPUs: CPU workers 1, 2, one per large
      * core and one per core for resampling (with the GPU when [gpu]), 2, one per large core
      * and one per core for JPEG XL decodes ([jxl]). Workers that fit on the large cores are pinned there; more are
-     * left to the system. With [jpeg], a platform JPEG decode of a 4K-class page pinned to the large cores and
+     * left to the system. The GPU's calling thread is pinned there as one worker. With [jpeg], a platform JPEG decode of a 4K-class page pinned to the large cores and
      * one left to the system, where there are large cores to pin to.
      */
     fun candidates(cores: CpuCores, processors: Int, gpu: Boolean, jxl: Boolean, jpeg: Boolean = false): List<Candidate> {
@@ -201,7 +201,7 @@ object Calibration {
         fun of(kind: Candidate.Kind, counts: List<Int>) = counts.filter { it in 1..all }.distinct().sorted()
             .map { Candidate(kind, it, pinned = cores.big != 0L && it <= cores.bigCount) }
         val out = ArrayList(of(Candidate.Kind.PIXELS, listOf(1, 2, big, all)))
-        if (gpu) out += Candidate(Candidate.Kind.PIXELS, 1, pinned = false, gpu = true)
+        if (gpu) out += Candidate(Candidate.Kind.PIXELS, 1, pinned = cores.big != 0L, gpu = true)
         if (jxl) out += of(Candidate.Kind.JXL, listOf(2, big, all))
         if (jpeg && cores.big != 0L) out += listOf(Candidate(Candidate.Kind.JPEG, 1, pinned = true), Candidate(Candidate.Kind.JPEG, 1, pinned = false))
         return out
@@ -291,7 +291,8 @@ object Calibration {
     }
 
     /**
-     * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]); [before]
+     * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]; the GPU
+     * pinned as it was timed, which its CPU fallback then follows too); [before]
      * keeps its resampling setup near the edge ([STAY_MARGIN]) when a calibration chose it ([chosen]).
      */
     fun tuning(timings: List<Timing>, before: Tuning, chosen: Boolean = false): Tuning {
@@ -301,7 +302,7 @@ object Calibration {
         val gpu = pixels.firstOrNull { it.candidate.gpu }
         val cpu = pixels.filter { !it.candidate.gpu }
         if (gpu != null && gpuWins(gpu, cpu)) {
-            t = t.copy(engine = PixelEngine.GPU)
+            t = t.copy(engine = PixelEngine.GPU, pixelPinned = gpu.candidate.pinned)
         } else {
             pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned), stay = stay)?.candidate?.let { c ->
                 t = t.copy(engine = PixelEngine.NATIVE, pixelThreads = c.threads, pixelPinned = c.pinned)

@@ -24,7 +24,7 @@ class CalibrationTest {
 
     private fun pixels(n: Int, pinned: Boolean) = Candidate(Candidate.Kind.PIXELS, n, pinned)
     private fun jxl(n: Int, pinned: Boolean) = Candidate(Candidate.Kind.JXL, n, pinned)
-    private val gpu = Candidate(Candidate.Kind.PIXELS, 1, pinned = false, gpu = true)
+    private val gpu = Candidate(Candidate.Kind.PIXELS, 1, pinned = true, gpu = true)
 
     @Test
     fun candidatesPinWhatFitsOnTheLargeCores() {
@@ -37,6 +37,8 @@ class CalibrationTest {
             c
         )
         assertEquals(listOf("pixels/1/big", "pixels/gpu", "jxl/8/any"), listOf(c[0].key, c[4].key, c[7].key))
+        // No large cores to pin the GPU's calling thread to.
+        assertFalse(Calibration.candidates(CpuCores(IntArray(8) { 1024 }), 8, gpu = true, jxl = false).single { it.gpu }.pinned)
     }
 
     @Test
@@ -103,6 +105,12 @@ class CalibrationTest {
         assertEquals(PixelEngine.NATIVE, asFast.engine)
         val other = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), before)
         assertEquals(PixelEngine.GPU, other.engine)
+        // The GPU runs pinned as it was timed, whatever the CPU setup before it.
+        assertTrue(other.pixelPinned)
+        val unpinned = before.copy(pixelThreads = 8, pixelPinned = false)
+        assertTrue(Calibration.tuning(listOf(Timing(pixels(8, false), 34.0, 101.0), Timing(gpu, 25.0, 20.0)), unpinned).pixelPinned)
+        val anywhere = gpu.copy(pinned = false)
+        assertFalse(Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(anywhere, 25.0, 20.0)), before).pixelPinned)
         // Not beyond the spread of the runs.
         val noisy = listOf(Timing(pixels(4, true), 34.0, 101.0, wallSpreadMs = 12.0), Timing(gpu, 25.0, 20.0))
         assertEquals(PixelEngine.NATIVE, Calibration.tuning(noisy, before).engine)

@@ -53,8 +53,10 @@ static int gl_state = 0;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
-// Across programs by stride (taps) and anti-ringing (ringed); across_next is the slot replaced next when full.
+// Across programs by stride (taps) and anti-ringing (ringed), 0 where it did not compile;
+// across_next is the slot replaced next when full.
 static struct {
+    int used;
     int taps;
     int ringed;
     GLuint program;
@@ -141,10 +143,15 @@ static const char * ACROSS =
     "  int r1 = min(r0 + ROWS, dims.y);\n"
     "  int s = int(ax[4 * x]) - first;\n"
     "  int last = dims.z - 1;\n"
+    "  int wb = 4 * dims.x + x;\n"
+    // Up to 32 taps' weights stay in registers; more are read per tap.
+    "#if TAPS <= 32\n"
     "  float w[TAPS];\n"
-    "  for (int t = 0; t < TAPS; t++) {\n"
-    "    w[t] = uintBitsToFloat(ax[4 * dims.x + t * dims.x + x]);\n"
-    "  }\n"
+    "  for (int t = 0; t < TAPS; t++) w[t] = uintBitsToFloat(ax[wb + t * dims.x]);\n"
+    "#define W(t) w[t]\n"
+    "#else\n"
+    "#define W(t) uintBitsToFloat(ax[wb + (t) * dims.x])\n"
+    "#endif\n"
     "#if RING\n"
     "  int n = int(ax[4 * x + 1]);\n"
     "  int ra = clamp(int(ax[4 * x + 2]) - first - s, 0, n - 1);\n"
@@ -153,14 +160,14 @@ static const char * ACROSS =
     "  for (int r = r0; r < r1; r++) {\n"
     "    int row = r * dims.z;\n"
     "    vec4 v = px(row + s);\n"
-    "    vec4 acc = w[0] * v;\n"
+    "    vec4 acc = W(0) * v;\n"
     "#if RING\n"
     "    vec4 lo = ra == 0 ? v : vec4(3.4e38);\n"
     "    vec4 hi = ra == 0 ? v : vec4(-3.4e38);\n"
     "#endif\n"
     "    for (int t = 1; t < TAPS; t++) {\n"
     "      v = px(row + min(s + t, last));\n"
-    "      acc += w[t] * v;\n"
+    "      acc += W(t) * v;\n"
     "#if RING\n"
     "      bool in_range = t >= ra && t <= rb;\n"
     "      lo = in_range ? min(lo, v) : lo;\n"
@@ -443,11 +450,11 @@ static GLuint axis_buffer(const rs_axis * a, int tap_major)
 }
 
 // The across program for `taps` taps per output, anti-ringed or not, compiled on first use
-// with the context current; 0 when it does not compile.
+// with the context current; 0 when it does not compile (tried once while kept).
 static GLuint across_program(int taps, int ringed)
 {
     for (int i = 0; i < ACROSS_KEPT; i++) {
-        if (across_kept[i].program != 0 && across_kept[i].taps == taps && across_kept[i].ringed == ringed) {
+        if (across_kept[i].used && across_kept[i].taps == taps && across_kept[i].ringed == ringed) {
             return across_kept[i].program;
         }
     }
@@ -461,10 +468,10 @@ static GLuint across_program(int taps, int ringed)
     memcpy(source + head_len, ACROSS, body_len + 1);
     const GLuint program = compile(source);
     free(source);
-    if (program == 0) return 0;
     const int slot = across_next;
     across_next = (across_next + 1) % ACROSS_KEPT;
     if (across_kept[slot].program != 0) glDeleteProgram(across_kept[slot].program);
+    across_kept[slot].used = 1;
     across_kept[slot].taps = taps;
     across_kept[slot].ringed = ringed;
     across_kept[slot].program = program;

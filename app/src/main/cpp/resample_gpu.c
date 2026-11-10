@@ -2,8 +2,9 @@
 // shaders on an offscreen context of our own, in fp32.
 // - Output rows go in chunks: the source rows a chunk's taps read are copied into a
 //   buffer, filtered across into an fp32 buffer as wide as the output, then down into
-//   packed bytes, which are copied into the destination. Chunks are sized so the source
-//   rows and the fp32 ones together stay under CHUNK_BYTES, whatever the scale.
+//   packed bytes, which are copied into the destination. Chunks are sized so one chunk's
+//   source rows and fp32 ones together stay under CHUNK_BYTES, whatever the scale, then
+//   evened out; they end on multiples of that size, whatever rows a band asks for.
 // - Each axis' taps go up once per job, unless the last job's were the same: four ints
 //   per output (start, count, anti-ringing range) followed by its weights, the across
 //   axis' tap-major so lanes read them in a row.
@@ -724,7 +725,10 @@ rs_gpu * rs_gpu_open(const rs_job * job)
     const double per_row = (double)(ay->end - ay->first) / ay->len;
     const double budget = (double)CHUNK_BYTES / ((double)ax->len * 16 + (double)(ax->end - ax->first) * 4);
     int chunk = (int)((budget - ay->stride) / (per_row > 1 ? per_row : 1));
-    g->chunk = chunk < 8 ? 8 : chunk > 1024 ? 1024 : chunk;
+    chunk = chunk < 8 ? 8 : chunk > 1024 ? 1024 : chunk;
+    // As many chunks, of equal size, so the last is no stub.
+    const int chunks = (ay->len + chunk - 1) / chunk;
+    g->chunk = (ay->len + chunks - 1) / chunks;
     for (int y = 0; y < ay->len; y += g->chunk) {
         int r0;
         const int y1 = y + g->chunk < ay->len ? y + g->chunk : ay->len;

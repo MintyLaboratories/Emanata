@@ -5,7 +5,10 @@
 //   packed bytes, which are copied into the destination. Chunks are sized so the source
 //   rows and the fp32 ones together stay under CHUNK_BYTES, whatever the scale.
 // - Each axis' taps go up once per job: four ints per output (start, count, anti-ringing
-//   range) followed by its weights.
+//   range) followed by its weights, the across axis' tap-major so lanes read them in a row.
+// - The across pass runs one thread per output column and ROWS source rows, its taps in
+//   registers and its tap loop unrolled to the axis' stride: a program per stride and
+//   anti-ringing on or off, compiled on first use and kept with the context.
 // - One job at a time: gl_lock is held from rs_gpu_open to rs_gpu_close, on one thread.
 // - While tracing (rs_gpu_trace), each job logs one line under TAG when it closes: the
 //   milliseconds each step took over all its chunks, the GPU time of each pass where the
@@ -28,6 +31,10 @@
 
 #define CHUNK_BYTES (32u << 20)
 #define GROUP 64
+// Source rows each across thread filters.
+#define ROWS 8
+// Across programs kept, one per stride and anti-ringing; the oldest goes when full.
+#define ACROSS_KEPT 16
 #define TAG "ResampleGpu"
 
 // GL_EXT_disjoint_timer_query's enums and the entry points tracing uses.
@@ -46,7 +53,13 @@ static int gl_state = 0;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
-static GLuint across_program;
+// Across programs by stride (taps) and anti-ringing (ringed); across_next is the slot replaced next when full.
+static struct {
+    int taps;
+    int ringed;
+    GLuint program;
+} across_kept[ACROSS_KEPT];
+static int across_next;
 static GLuint down_program;
 static GLuint lut_linear;
 static GLuint lut_encode;
@@ -85,6 +98,7 @@ typedef struct {
 
 struct rs_gpu {
     const rs_job * job;
+    GLuint across;
     GLuint axis_x;
     GLuint axis_y;
     GLuint src;
@@ -95,8 +109,8 @@ struct rs_gpu {
     rs_trace trace;
 };
 
+// Prefixed with "#version 310 es" and defines of TAPS (the across stride), ROWS and RING (1 with anti-ringing).
 static const char * ACROSS =
-    "#version 310 es\n"
     "precision highp float;\n"
     "precision highp int;\n"
     "layout(local_size_x = 64) in;\n"
@@ -107,7 +121,6 @@ static const char * ACROSS =
     // x: output width, y: rows, z: source pixels per row, w: linear
     "uniform ivec4 dims;\n"
     "uniform int first;\n"
-    "uniform int stride;\n"
     "uniform float ring;\n"
     "vec4 px(int i) {\n"
     "  uint p = src[i];\n"
@@ -119,25 +132,46 @@ static const char * ACROSS =
     "  uvec3 own = min(uvec3(255u), (b.rgb * 255u + b.a / 2u) / b.a);\n"
     "  return vec4(toLinear[int(own.r)] * a, toLinear[int(own.g)] * a, toLinear[int(own.b)] * a, a);\n"
     "}\n"
+    // Column x of source rows ROWS * y on: taps past the column's count weigh 0 and read
+    // at most the row's last pixel; the anti-ringing range comes from the taps' own pixels.
     "void main() {\n"
     "  int x = int(gl_GlobalInvocationID.x);\n"
-    "  int r = int(gl_GlobalInvocationID.y);\n"
-    "  if (x >= dims.x || r >= dims.y) return;\n"
-    "  int row = r * dims.z;\n"
+    "  int r0 = int(gl_GlobalInvocationID.y) * ROWS;\n"
+    "  if (x >= dims.x || r0 >= dims.y) return;\n"
+    "  int r1 = min(r0 + ROWS, dims.y);\n"
     "  int s = int(ax[4 * x]) - first;\n"
-    "  int n = int(ax[4 * x + 1]);\n"
-    "  int wb = 4 * dims.x + x * stride;\n"
-    "  vec4 acc = uintBitsToFloat(ax[wb]) * px(row + s);\n"
-    "  for (int t = 1; t < n; t++) acc += uintBitsToFloat(ax[wb + t]) * px(row + s + t);\n"
-    "  if (ring > 0.0) {\n"
-    "    int ra = clamp(int(ax[4 * x + 2]) - first - s, 0, n - 1);\n"
-    "    int rb = clamp(int(ax[4 * x + 3]) - first - s, ra, n - 1);\n"
-    "    vec4 lo = px(row + s + ra);\n"
-    "    vec4 hi = lo;\n"
-    "    for (int t = ra + 1; t <= rb; t++) { vec4 v = px(row + s + t); lo = min(lo, v); hi = max(hi, v); }\n"
-    "    acc += ring * (min(max(acc, lo), hi) - acc);\n"
+    "  int last = dims.z - 1;\n"
+    "  float w[TAPS];\n"
+    "  for (int t = 0; t < TAPS; t++) {\n"
+    "    w[t] = uintBitsToFloat(ax[4 * dims.x + t * dims.x + x]);\n"
     "  }\n"
-    "  mid[r * dims.x + x] = acc;\n"
+    "#if RING\n"
+    "  int n = int(ax[4 * x + 1]);\n"
+    "  int ra = clamp(int(ax[4 * x + 2]) - first - s, 0, n - 1);\n"
+    "  int rb = clamp(int(ax[4 * x + 3]) - first - s, ra, n - 1);\n"
+    "#endif\n"
+    "  for (int r = r0; r < r1; r++) {\n"
+    "    int row = r * dims.z;\n"
+    "    vec4 v = px(row + s);\n"
+    "    vec4 acc = w[0] * v;\n"
+    "#if RING\n"
+    "    vec4 lo = ra == 0 ? v : vec4(3.4e38);\n"
+    "    vec4 hi = ra == 0 ? v : vec4(-3.4e38);\n"
+    "#endif\n"
+    "    for (int t = 1; t < TAPS; t++) {\n"
+    "      v = px(row + min(s + t, last));\n"
+    "      acc += w[t] * v;\n"
+    "#if RING\n"
+    "      bool in_range = t >= ra && t <= rb;\n"
+    "      lo = in_range ? min(lo, v) : lo;\n"
+    "      hi = in_range ? max(hi, v) : hi;\n"
+    "#endif\n"
+    "    }\n"
+    "#if RING\n"
+    "    acc += ring * (min(max(acc, lo), hi) - acc);\n"
+    "#endif\n"
+    "    mid[r * dims.x + x] = acc;\n"
+    "  }\n"
     "}\n";
 
 static const char * DOWN =
@@ -256,9 +290,8 @@ static int gl_begin(void)
         glGetIntegerv(GL_MINOR_VERSION, &minor);
         glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
         if (major < 3 || (major == 3 && minor < 1) || blocks < 4) return -1;
-        across_program = compile(ACROSS);
         down_program = compile(DOWN);
-        if (across_program == 0 || down_program == 0) return -1;
+        if (down_program == 0) return -1;
         lut_linear = buffer(256 * sizeof(float), rs_to_linear(), GL_STATIC_DRAW);
         lut_encode = buffer(65536, rs_from_linear(), GL_STATIC_DRAW);
         if (glGetError() != GL_NO_ERROR) return -1;
@@ -381,22 +414,61 @@ static void trace_log(const rs_trace * t, const rs_job * job, int chunk, int64_t
                         ms(total_ns), gpu, (unsigned long long)t->cores);
 }
 
-// An axis' taps as the shaders read them: start, count, anti-ringing range, then weights.
-static GLuint axis_buffer(const rs_axis * a)
+// An axis' taps as the shaders read them: start, count, anti-ringing range, then `stride`
+// weights per output, output-major (output i's tap t at i * stride + t) or, `tap_major`,
+// tap-major (at t * len + i); taps past an output's count weigh 0.
+static GLuint axis_buffer(const rs_axis * a, int tap_major)
 {
-    const size_t words = 4 * (size_t)a->len + (size_t)a->len * a->stride;
-    uint32_t * data = malloc(words * 4);
+    const size_t len = (size_t)a->len;
+    const size_t stride = (size_t)a->stride;
+    const size_t words = 4 * len + len * stride;
+    uint32_t * data = calloc(words, 4);
     if (data == NULL) return 0;
-    for (int i = 0; i < a->len; i++) {
+    for (size_t i = 0; i < len; i++) {
         data[4 * i] = (uint32_t)a->start[i];
         data[4 * i + 1] = (uint32_t)a->count[i];
         data[4 * i + 2] = (uint32_t)(a->ring > 0 ? a->ring_lo[i] : a->start[i]);
         data[4 * i + 3] = (uint32_t)(a->ring > 0 ? a->ring_hi[i] : a->start[i]);
     }
-    memcpy(data + 4 * (size_t)a->len, a->weights, (size_t)a->len * a->stride * 4);
+    float * weights = (float *)(data + 4 * len);
+    for (size_t i = 0; i < len; i++) {
+        const size_t n = (size_t)a->count[i] < stride ? (size_t)a->count[i] : stride;
+        for (size_t t = 0; t < n; t++) {
+            weights[tap_major ? t * len + i : i * stride + t] = a->weights[i * stride + t];
+        }
+    }
     const GLuint b = buffer((GLsizeiptr)(words * 4), data, GL_STATIC_DRAW);
     free(data);
     return b;
+}
+
+// The across program for `taps` taps per output, anti-ringed or not, compiled on first use
+// with the context current; 0 when it does not compile.
+static GLuint across_program(int taps, int ringed)
+{
+    for (int i = 0; i < ACROSS_KEPT; i++) {
+        if (across_kept[i].program != 0 && across_kept[i].taps == taps && across_kept[i].ringed == ringed) {
+            return across_kept[i].program;
+        }
+    }
+    char head[96];
+    const int head_len = snprintf(head, sizeof(head), "#version 310 es\n#define TAPS %d\n#define ROWS %d\n#define RING %d\n",
+                                  taps, ROWS, ringed);
+    const size_t body_len = strlen(ACROSS);
+    char * source = malloc((size_t)head_len + body_len + 1);
+    if (source == NULL) return 0;
+    memcpy(source, head, (size_t)head_len);
+    memcpy(source + head_len, ACROSS, body_len + 1);
+    const GLuint program = compile(source);
+    free(source);
+    if (program == 0) return 0;
+    const int slot = across_next;
+    across_next = (across_next + 1) % ACROSS_KEPT;
+    if (across_kept[slot].program != 0) glDeleteProgram(across_kept[slot].program);
+    across_kept[slot].taps = taps;
+    across_kept[slot].ringed = ringed;
+    across_kept[slot].program = program;
+    return program;
 }
 
 // Source rows output rows y0 until y1 read: first in *r0, the count returned.
@@ -446,12 +518,13 @@ rs_gpu * rs_gpu_open(const rs_job * job)
         if (rows > g->max_rows) g->max_rows = rows;
     }
     const size_t src_w = (size_t)(ax->end - ax->first);
-    g->axis_x = axis_buffer(ax);
-    g->axis_y = axis_buffer(ay);
+    g->across = across_program(ax->stride, ax->ring > 0);
+    g->axis_x = axis_buffer(ax, 1);
+    g->axis_y = axis_buffer(ay, 0);
     g->src = buffer((GLsizeiptr)(src_w * g->max_rows * 4), NULL, GL_STREAM_DRAW);
     g->mid = buffer((GLsizeiptr)((size_t)ax->len * g->max_rows * 16), NULL, GL_DYNAMIC_COPY);
     g->out = buffer((GLsizeiptr)((size_t)ax->len * g->chunk * 4), NULL, GL_STREAM_READ);
-    if (g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
+    if (g->across == 0 || g->axis_x == 0 || g->axis_y == 0 || glGetError() != GL_NO_ERROR) {
         g->chunk = 0;
         rs_gpu_close(g);
         return NULL;
@@ -506,16 +579,15 @@ static void run_across(const rs_gpu * g, GLuint src, GLuint mid, int rows)
 {
     const rs_job * job = g->job;
     const rs_axis * ax = &job->ax;
-    glUseProgram(across_program);
+    glUseProgram(g->across);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, src);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g->axis_x);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mid);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lut_linear);
-    glUniform4i(uniform(across_program, "dims"), ax->len, rows, ax->end - ax->first, job->linear);
-    glUniform1i(uniform(across_program, "first"), ax->first);
-    glUniform1i(uniform(across_program, "stride"), ax->stride);
-    glUniform1f(uniform(across_program, "ring"), ax->ring);
-    glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)rows, 1);
+    glUniform4i(uniform(g->across, "dims"), ax->len, rows, ax->end - ax->first, job->linear);
+    glUniform1i(uniform(g->across, "first"), ax->first);
+    glUniform1f(uniform(g->across, "ring"), ax->ring);
+    glDispatchCompute((GLuint)((ax->len + GROUP - 1) / GROUP), (GLuint)((rows + ROWS - 1) / ROWS), 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 

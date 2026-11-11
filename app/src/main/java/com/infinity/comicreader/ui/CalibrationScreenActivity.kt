@@ -290,15 +290,30 @@ class CalibrationScreenActivity : AppCompatActivity() {
          * tablet with 4 large and 4 little cores (Snapdragon 8 Gen 1 class, Android 16), 7
          * calibrations with the page moving against 7 with it still (alternating, thermal
          * status 0) timed JPEG XL decodes at 1.02-1.05x, slower in 6-7 of the 7 moving runs than
-         * the median still one, and resizing on all cores at 0.92x, faster in all 7; the GPU
-         * setup at 1.01x, the other resizing setups at 1.00-1.02x and JPEG at 0.98-0.99x. All
-         * picked the same setups but one still run. Holding the page for the skewed setups (3
-         * runs) left JPEG XL at 1.01-1.03x and moved the GPU setup, which the page starting
-         * again then overlaps, to 0.84x.
+         * the median still one, and resizing on all cores at 0.92x, faster in all 7; the other
+         * resizing setups at 1.00-1.02x and JPEG at 0.98-0.99x. All picked the same setups but
+         * one still run. Holding the page for the skewed setups (3 runs) left JPEG XL at
+         * 1.01-1.03x.
+         *
+         * The GPU setups (pixels/gpu/any and pixels/gpu/big) took about 1.27x as long behind
+         * this screen as in a calibration started from the debug calibration activity: 6
+         * calibrations here at 33.9-36.9 ms per 2000x3000 page (medians 36.1 and 35.4 ms)
+         * against 3 there at 27.8-28.5 ms (medians 27.8 and 28.3 ms), the page moving or still
+         * alike (0.98-0.99x). Resizing on the CPU and JPEG took the same; JPEG XL about 1.02-1.03x.
+         * The cause is unknown: the page, the screen's other UI or composition; a still page
+         * draws no frames of its own. So holding the page does not remove that bias, and
+         * [skewed] leaves the GPU setups out. It counts against the GPU on top of
+         * [Calibration.gpuWins]' margin. Open: whether calibration should match the reader,
+         * which also draws while it resamples (as now), or time the GPU setups without this
+         * screen's page (hidden), pending a comparison of the page shown against hidden.
          */
         const val HOLD_SKEWED = false
 
-        /** JPEG XL decodes and resizing on all [processors] cores: the setups the moving page skews ([HOLD_SKEWED]). */
+        /**
+         * JPEG XL decodes and resizing on all [processors] cores: the setups the moving page
+         * skews ([HOLD_SKEWED]). Not the GPU setups: they are as slow behind this screen with the
+         * page still.
+         */
         fun skewed(c: Candidate, processors: Int = Runtime.getRuntime().availableProcessors()): Boolean =
             c.kind == Candidate.Kind.JXL || (c.kind == Candidate.Kind.PIXELS && !c.gpu && c.threads >= processors)
 

@@ -1299,10 +1299,13 @@ threads 28.8 to 29.3 ms
 (96 to 99 ms of CPU) and 8 unpinned threads 24.5 to 26.6 ms (151 to 160 ms of
 CPU), three calibrations. The GPU ties the chosen setup within the runs' spread
 and is not 20% faster than the fastest one. Whether its lower CPU time saves
-energy is not measured yet. While the calibration screen shows its page, moving
-or still, the GPU setups take about 27% longer and the CPU setups do not; as the
-reader also draws while it resamples, which of the two conditions calibration
-should match is open.
+energy is not measured yet. Behind the calibration screen, its page moving or
+still, the GPU setups took about 27% longer (33.9 to 36.9 ms, six calibrations)
+than in those three, started from the debug calibration activity; resizing on the
+CPU and JPEG took the same, JPEG XL 2 to 3% longer. The cause (the page, the
+screen's other UI or composition) is not known. As the reader also draws while it
+resamples, whether calibration should time the GPU setups with the screen's page
+hidden is open.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

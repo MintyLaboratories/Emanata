@@ -123,8 +123,10 @@ object SmartCrop {
     const val UNCLIP = 1.5
 
     /**
-     * Text whose line ([TextBox.glyph], grown) is thinner than this share of the cover's shorter
-     * side is not a title: creators' names, subtitles, prices.
+     * Text whose letter size ([TextBox.glyph]) is less than this share of the cover's shorter
+     * side is not a title: creators' names, subtitles, prices. A score map's glyph is its line
+     * grown by [UNCLIP]; ML Kit's is its letter height, not grown
+     * ([com.infinity.comicreader.ai.MlKitLines.GROW]), so ML Kit's letters must be taller to count.
      */
     const val MIN_GLYPH = 0.12
 

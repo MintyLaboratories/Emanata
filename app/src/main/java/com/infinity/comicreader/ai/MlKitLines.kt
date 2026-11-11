@@ -33,7 +33,8 @@ object MlKitLines {
      * ML Kit's line boxes hug their letters; PP-OCR's, grown ([SmartCrop.UNCLIP]), are about this
      * many times as tall. Each box grows to it, by the same room on every side, so a crop keeps
      * as much room around a title as with PP-OCR. Its letter size ([SmartCrop.TextBox.glyph]),
-     * which decides what is title-sized ([SmartCrop.MIN_GLYPH]), stays the line's own.
+     * which decides what is title-sized ([SmartCrop.MIN_GLYPH]), stays the line's own letter
+     * height, not grown: PP-OCR's is its grown box, so ML Kit needs taller letters to reach it.
      */
     const val GROW = 1.25
 
@@ -42,7 +43,8 @@ object MlKitLines {
 
     /**
      * [line] as a text box on a [w] x [h] image: the box around its four corners (its bounds
-     * without them), grown by [GROW] times its thickness and clamped to the image; its thickness
+     * without them), grown by (GROW - 1) / 2 times its thickness on every side (to [GROW] times
+     * its height when upright) and clamped to the image; its thickness
      * the mean of its two shorter opposite sides (a line runs along its longer ones, whichever
      * corner its corners start from), so a rotated line's letters keep their size, else (no
      * corners) the shorter side of its bounds within the image; its score ML Kit's confidence,

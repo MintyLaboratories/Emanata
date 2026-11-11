@@ -99,8 +99,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Smart crop:** a text detector marks the lines of text on a cover (where
   text is, not what it says). When the top (centered across) would cut the
   tallest text's line, the crop moves just enough to keep every line of about
-  its size, or at least that line. Only title-sized text counts (letters at
-  least 12% of the cover's shorter side): credits alone never move a crop. A
+  its size, or at least that line. Only title-sized text counts (a letter size
+  of at least 12% of the cover's shorter side, as each detector below measures
+  it): credits alone never move a crop. A
   cover without such text keeps its most detailed part when far more detailed
   than its top. Found once per cover and kept; another detector finds every
   focus again. Two detectors:
@@ -109,7 +110,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     time a cover needs it (the Smart crop, or a wraparound cover's front or
     reading direction, below), as an automatic download that the **Skip on
     metered connections** setting can hold back. Until it is there, covers
-    crop as Top does and are made again once it arrives.
+    crop as Top does and are made again once it arrives. Its letter size is
+    the height of its line's box, which it grows around the text.
   - **Google ML Kit (optional, off by default):** **Use Google ML Kit for
     cover text** (Settings → Library, offered only where Google Play services
     is there) finds the lines with ML Kit's text recognition instead, except
@@ -122,14 +124,20 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     hold that download back, it takes over 10 minutes, or ML Kit fails,
     PP-OCR finds the lines for the rest of the session or until the setting
     is turned on again. ML Kit's line boxes fit their letters more tightly
-    than PP-OCR's, so they are grown by a quarter of their letters' height;
-    what counts as title-sized stays the same.
+    than PP-OCR's, so they are grown by a quarter of their letters' height
+    to keep as much room around a title. Its letter size is its letters' own
+    height, not the grown box, so its 12% bar is higher than PP-OCR's: a line
+    needs letters about 1.4 times as tall (about 1.8 times on title lines).
   - **Compared** on a set of real covers (Snapdragon 8 Gen 1 class tablet,
     Android 16): ML Kit finds title-sized text on about half as many covers
-    as PP-OCR (49% against 94%), so its Smart crop moves less often and more
-    covers keep their top; its detection takes about 10 ms longer per cover
+    as PP-OCR (49% against 94%), mostly because of that higher bar, so its
+    Smart crop moves less often and more covers keep their top. Scaling its
+    letter size up by 1.75 finds about as many titles (93%) but moves crops
+    up to 7 times as often as PP-OCR, so it stays unscaled until such moves
+    are judged by eye. Its detection takes about 10 ms longer per cover
     (median 68 against 57 ms), the whole cover's focus about the same, within
-    run-to-run noise. Hence PP-OCR stays the default.
+    run-to-run noise. PP-OCR stays the default: it finds more titles and
+    needs neither Play services nor ML Kit's usage logging.
   - Settings → AI processing → **Models** shows the detector in use, and
     whether its model is there or downloading (with a Download button while
     it is not).

@@ -1335,7 +1335,9 @@ than in those three, started from the debug calibration activity; resizing on th
 CPU and JPEG took the same, JPEG XL 2 to 3% longer. The cause (the page, the
 screen's other UI or composition) is not known. As the reader also draws while it
 resamples, whether calibration should time the GPU setups with the screen's page
-hidden is open.
+hidden is open. That tablet's verdict holds behind either screen: even from the
+debug activity the GPU (27.8 to 28.3 ms) is slower than 8 unpinned threads (24.5
+to 26.6 ms).
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

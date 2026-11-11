@@ -171,8 +171,8 @@ object Thumbs {
      * the session's pick ([CoverTextDetectors.session]). Tests stand in their own. Asked on every
      * cover key, list binds on the main thread included: once made (off the main thread at the
      * app's start, as making it reads storage) it answers at once, without I/O, and its
-     * [CoverTextDetector.id] changes only when the detector chosen does, as every cover's key and
-     * focus store follow it.
+     * [CoverTextDetector.id] changes only when the detector chosen does, as the keys of covers its
+     * text shaped ([coverKeys]) and its focus store follow it.
      */
     @Volatile
     internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).session() }
@@ -283,7 +283,7 @@ object Thumbs {
         canceled: () -> Boolean = { false }
     ): Cover? {
         cached(context, entry, width, height, style)?.let { return Cover(it, full = true) }
-        quicks.get(coverKey(context, entry, width, height, style))?.let { return Cover(it, full = false) }
+        coverKeys(context, entry, width, height, style).let { quicks.get(it.shaped) ?: quicks.get(it.plain) }?.let { return Cover(it, full = false) }
         return make(context, entry, charset, width, height, style, canceled, quickFirst = entry.bookmarkPage < 0)
     }
 
@@ -311,8 +311,7 @@ object Thumbs {
         val detector = detectorFor(context, entry)
         // Arrivals before the detector looks: one during its look makes a cover without text again.
         val arrivedBefore = arrivals(context)
-        val k = coverKey(context, entry, width, height, style, detector)
-        val disk = diskFile(context, k)
+        val keys = coverKeys(context, entry, width, height, style, detector)
 
         val hidden = Library(context).hiddenAll()
         if (canceled()) return null
@@ -328,10 +327,13 @@ object Thumbs {
         // the detector waits for its model, on disk too, as a waiting cover ([waitingFile]).
         var lasting = true
         var waiting = true
+        // Whether the detector's text may shape the cover, or settle a wraparound's direction: kept under its key then.
+        var byText = false
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio,
                 front = { src ->
+                    byText = true
                     frontOf(context, entry, src, made.innerRatio, coverPage, made.full, detector) { w ->
                         lasting = false
                         if (!w) waiting = false
@@ -339,6 +341,7 @@ object Thumbs {
                 },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
                 focus = { src, region ->
+                    byText = true
                     focusOf(context, entry, src, region, made.full, detector).also {
                         if (!it.keep) {
                             lasting = false
@@ -352,11 +355,14 @@ object Thumbs {
         } finally {
             full.recycle()
         }
+        val k = keys.of(byText)
+        val disk = diskFile(context, k)
         if (!made.full) {
             quicks.put(k, cover)
             return Cover(cover, full = false)
         }
-        quicks.remove(k)
+        quicks.remove(keys.shaped)
+        quicks.remove(keys.plain)
         val bitmap = if (page < 0) cover else {
             val (w, h) = CoverArt.pageBox(width, height)
             val front = pageOf(entry.file, bookPage(context, entry), charset, context.cacheDir, Target(w, h, Fit.INSIDE, linear = style.linear, scaling = style.scaling))
@@ -394,22 +400,28 @@ object Thumbs {
 
     /** The cover of [entry] as [load] makes it, when it is held in memory; null otherwise. Quick enough for the main thread. */
     fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? =
-        fromMemory(context, coverKey(context, entry, width, height, style))
+        coverKeys(context, entry, width, height, style).let { fromMemory(context, it.shaped) ?: fromMemory(context, it.plain) }
 
     /**
      * The cover of [entry] as [load] makes it, when one was made before: from memory or
-     * disk, never generated. Blocking; null when there is none yet. A waiting cover
+     * disk, under either of its keys ([coverKeys]), never generated. Blocking; null when there
+     * is none yet. A waiting cover
      * ([waitingFile]) serves while its detector still waits for its model ([CoverTextDetector.ready],
      * which asks for it), in memory as provisional; once the model is there it is deleted.
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
         val detector = detectorFor(context, entry)
-        val k = coverKey(context, entry, width, height, style, detector)
+        val keys = coverKeys(context, entry, width, height, style, detector)
+        val k = keys.shaped
         fromMemory(context, k)?.let { return it }
-        val disk = diskFile(context, k)
-        // Stored at the box size: the decode is the file as it is.
-        if (disk.isFile) return runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(k, it) }
-        val waiting = waitingFile(disk)
+        fromMemory(context, keys.plain)?.let { return it }
+        for (key in listOf(k, keys.plain)) {
+            val disk = diskFile(context, key)
+            // Stored at the box size: the decode is the file as it is.
+            if (disk.isFile) return runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(key, it) }
+        }
+        // Only a cover the detector's text shaped waits for its model.
+        val waiting = waitingFile(diskFile(context, k))
         if (!waiting.isFile) return null
         // Before the look: an arrival meanwhile makes it again.
         val arrived = arrivals(context)
@@ -432,20 +444,33 @@ object Thumbs {
         if (entry.isDir) null else entry.id ?: BookIds.known(entry.path, entry.size, entry.lastModified)
 
     /**
-     * What a cover is cached by: its file, box size, style under the detector of its cover
-     * ([detectorFor]), the hidden pages that move it ([hiddenTag]), a bookmark's page in the book,
-     * and the book's own file name charset, which may reorder its pages ([NameCharset.overrides]).
+     * What a cover is cached by: its file, box size, style ([CoverStyle.key]), the hidden pages
+     * that move it ([hiddenTag]), a bookmark's page in the book, and the book's own file name
+     * charset, which may reorder its pages ([NameCharset.overrides]); with the detector of its
+     * cover ([detectorFor]) only when that detector looked for its text ([Keys]).
      */
-    private fun coverKey(
+    private fun coverKeys(
         context: Context,
         entry: BookEntry,
         width: Int,
         height: Int,
         style: CoverStyle,
         detector: CoverTextDetector = detectorFor(context, entry)
-    ): String {
+    ): Keys {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
-        return "${key(entry)}|${width}x$height|${style.key(detector.id)}${imageTag(context, entry)}" + if (page >= 0) "|p$page" else ""
+        val head = "${key(entry)}|${width}x$height|"
+        val tail = imageTag(context, entry) + if (page >= 0) "|p$page" else ""
+        return Keys(head + style.key(detector.id) + tail, head + style.key(null) + tail)
+    }
+
+    /**
+     * A cover's keys ([coverKeys]): [shaped], under its detector, for a cover whose text that
+     * detector looked for (a Smart crop, a wraparound: the half one without a barcode shows, and
+     * the direction a book's cover settles); [plain], under none, for any other, which a change
+     * of detector leaves as it is.
+     */
+    private class Keys(val shaped: String, val plain: String) {
+        fun of(byText: Boolean): String = if (byText) shaped else plain
     }
 
     /** What the cover image of [entry] is known by, whatever the box: its [key] and [imageTag]. */

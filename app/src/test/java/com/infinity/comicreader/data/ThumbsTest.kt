@@ -240,6 +240,31 @@ class ThumbsTest {
         assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 130, 200, top)!!.getPixel(65, 100))
     }
 
+    @Test
+    fun coversNoDetectorShapedOutliveAChangeOfDetector() {
+        val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val plain = cover(name = "plain.png")
+        val barcoded = wraparound(true, "barcoded.png")
+        val a = textAt(0.85, 0.92, id = "a")
+        val first = Thumbs.load(context, plain, "UTF-8", 120, 60, top)!!
+        val front = Thumbs.load(context, barcoded, "UTF-8", 130, 200, top)!!
+        val smartA = Thumbs.load(context, plain, "UTF-8", 120, 60, smart)!!
+        assertEquals("only the Smart crop looked", 1, a[0])
+        val files = coverFiles()
+        // Another detector: a cover from the top is the one made before.
+        val b = textAt(0.02, 0.1, id = "b")
+        assertSame(first, Thumbs.inMemory(context, plain, 120, 60, top))
+        assertSame(first, Thumbs.load(context, plain, "UTF-8", 120, 60, top))
+        // A Smart crop and a wraparound, whose text it looks for, are made again.
+        assertNull(Thumbs.inMemory(context, plain, 120, 60, smart))
+        assertNull(Thumbs.inMemory(context, barcoded, 130, 200, top))
+        assertFalse(smartA === Thumbs.load(context, plain, "UTF-8", 120, 60, smart))
+        assertFalse(front === Thumbs.load(context, barcoded, "UTF-8", 130, 200, top))
+        assertEquals(1, b[0])
+        assertEquals(files.size + 2, coverFiles().size)
+    }
+
     /** Stands in a detector known as [id] seeing a title on halves whose middle is [color] only. */
     private fun titledHalf(color: Int, id: String) {
         standIn(id) { bitmap ->

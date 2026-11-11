@@ -69,6 +69,13 @@ class CoverStyleTest {
         for (f in ThumbFit.entries) for (a in CropAnchor.entries) assertNotEquals(CoverStyle(f, a).key(D), CoverStyle(f, a).key("other"))
     }
 
+    @Test
+    fun coversNoDetectorShapedAreKnownWithoutOne() {
+        assertEquals("auto|top", CoverStyle().key(null))
+        assertEquals("fill|smart|linear", CoverStyle(ThumbFit.FILL, CropAnchor.SMART, linear = true).key(null))
+        for (f in ThumbFit.entries) for (a in CropAnchor.entries) assertNotEquals(CoverStyle(f, a).key(D), CoverStyle(f, a).key(null))
+    }
+
     private companion object {
         val D = TextDetector.ID
     }

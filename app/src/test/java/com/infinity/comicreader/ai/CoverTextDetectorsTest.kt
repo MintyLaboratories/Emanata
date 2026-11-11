@@ -38,7 +38,8 @@ class CoverTextDetectorsTest {
         @Volatile
         var asked = 0
         val requests = mutableListOf<(Boolean) -> Unit>()
-        var canceled = 0
+        var detached = 0
+        var released = 0
 
         override fun available() = there
 
@@ -50,7 +51,11 @@ class CoverTextDetectorsTest {
         override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
             request()
             requests += done
-            return { canceled++ }
+            return { detached++ }
+        }
+
+        override fun releaseModule() {
+            released++
         }
     }
 
@@ -74,16 +79,32 @@ class CoverTextDetectorsTest {
     private var mayDownload = true
     private var clock = 1_000L
     private var made = 0
+    private var policyAsked = false
+
+    /** Runs once, at the first read of the setting after the network policy was asked. */
+    private var afterPolicy: (() -> Unit)? = null
 
     private fun detectors(play: PlayServices, mlKit: (() -> CoverTextDetector)? = { ml }) = CoverTextDetectors(
-        { on }, play,
+        {
+            if (policyAsked) afterPolicy?.let {
+                afterPolicy = null
+                it()
+            }
+            on
+        },
+        play,
         mlKit?.let { make ->
             CoverTextDetectors.MlKit("mlkit") {
                 made++
                 make()
             }
         },
-        { pp }, { mayDownload }, { clock }
+        { pp },
+        {
+            policyAsked = true
+            mayDownload
+        },
+        { clock }
     )
 
     @Test
@@ -220,7 +241,8 @@ class CoverTextDetectorsTest {
         assertEquals(line, d.session().lines(image))
         assertEquals(2, play.asked)
         assertEquals(1, d.arrivals)
-        assertEquals("the request is dropped", 1, play.canceled)
+        assertEquals("the request is dropped", 1, play.detached)
+        assertEquals("the module stays wanted", 0, play.released)
         // A late answer to it changes nothing.
         play.requests.single()(false)
         assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
@@ -235,7 +257,8 @@ class CoverTextDetectorsTest {
         assertTrue(d.status().downloading)
         clock += 1
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.MODULE_FAILED), d.status())
-        assertEquals(1, play.canceled)
+        assertEquals(1, play.detached)
+        assertEquals("still turned on: the module stays wanted", 0, play.released)
         assertEquals(TextDetector.ID, d.session().id)
         play.requests.single()(true)
         assertEquals(Why.MODULE_FAILED, d.status().why)
@@ -393,7 +416,8 @@ class CoverTextDetectorsTest {
         d.session().lines(image)
         on = false
         d.settingChanged()
-        assertEquals(1, play.canceled)
+        assertEquals(1, play.detached)
+        assertEquals("the module is released", 1, play.released)
         // Its late answer changes nothing.
         play.requests.single()(true)
         assertEquals(0, d.arrivals)
@@ -403,6 +427,7 @@ class CoverTextDetectorsTest {
         assertNull("asked about again", d.session().lines(image))
         assertEquals(2, play.asked)
         assertEquals(2, play.requests.size)
+        assertEquals(1, play.released)
     }
 
     @Test
@@ -429,12 +454,50 @@ class CoverTextDetectorsTest {
     }
 
     @Test
-    fun turningTheSettingOffWhileTheModuleIsRequestedCancelsIt() {
+    fun turningTheSettingOffAsTheModuleIsAboutToBeRequestedRequestsNothing() {
+        val play = play(installed = false)
+        lateinit var d: CoverTextDetectors
+        // The listener runs once the request is decided on, before it is sent.
+        afterPolicy = {
+            on = false
+            d.settingChanged()
+        }
+        d = detectors(play)
+        assertNull(d.session().lines(image))
+        assertNull("the hook ran", afterPolicy)
+        assertTrue("no download requested", play.requests.isEmpty())
+        assertEquals(0, play.released)
+        on = true
+        d.settingChanged()
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+        assertNull("asked about again", d.session().lines(image))
+        assertEquals(1, play.requests.size)
+    }
+
+    @Test
+    fun theListenerRunningWhileTheModuleIsRequestedDetachesAndReleasesIt() {
+        lateinit var d: CoverTextDetectors
+        val play = FakePlay(installed = { false }, request = {
+            on = false
+            d.settingChanged()
+        })
+        d = detectors(play)
+        assertNull(d.session().lines(image))
+        // Play services may still finish the download: the app stops listening and releases the module.
+        assertEquals(1, play.detached)
+        assertEquals(1, play.released)
+        play.requests.single()(true)
+        assertEquals(0, d.arrivals)
+    }
+
+    @Test
+    fun turningTheSettingOffWhileTheModuleIsRequestedDetachesAndReleasesIt() {
         // The setting reads off before its listener runs.
         val play = FakePlay(installed = { false }, request = { on = false })
         val d = detectors(play)
         assertNull(d.session().lines(image))
-        assertEquals(1, play.canceled)
+        assertEquals(1, play.detached)
+        assertEquals(1, play.released)
         // Its late answer changes nothing.
         play.requests.single()(true)
         assertEquals(0, d.arrivals)

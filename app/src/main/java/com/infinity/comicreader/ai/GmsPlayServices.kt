@@ -87,6 +87,26 @@ class GmsPlayServices(context: Context) : PlayServices {
         return { finish(false) }
     }
 
+    override fun releaseModule() {
+        worker.execute {
+            val recognizer = runCatching { recognizer() }.getOrElse {
+                Log.w(TAG, "ML Kit does not start", it)
+                return@execute
+            }
+            runCatching { ModuleInstall.getClient(app).releaseModules(recognizer) }
+                .onSuccess { task ->
+                    task.addOnCompleteListener(worker) {
+                        if (!it.isSuccessful) Log.w(TAG, "Play services did not release the module", it.exception)
+                        recognizer.close()
+                    }
+                }
+                .onFailure {
+                    Log.w(TAG, "Play services did not release the module", it)
+                    recognizer.close()
+                }
+        }
+    }
+
     /** A recognizer client: what the module install client asks about; closed by the caller. */
     private fun recognizer(): TextRecognizer {
         MlKitContext.initializeIfNeeded(app)

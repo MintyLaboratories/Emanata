@@ -18,9 +18,13 @@ interface PlayServices {
     /**
      * Asks Play services to download the text recognition module; [done] is called once, on any
      * thread, with true once it is installed and false when the download fails or is canceled.
-     * Returns what cancels the request (then [done] says false), if it is still under way.
+     * Returns what detaches the app from the request (then [done] says false) while it is under
+     * way; Play services may still finish the download ([releaseModule] withdraws it).
      */
     fun requestModule(done: (Boolean) -> Unit): () -> Unit
+
+    /** Tells Play services the app no longer needs the module, so it may drop it. Quick: fine on the main thread. */
+    fun releaseModule() {}
 }
 
 /** [real], except that it is never [available] while [absent] says so: a debug flag that simulates a device without Play services. */
@@ -34,4 +38,6 @@ class WithoutPlayServices(private val real: PlayServices, private val absent: ()
         done(false)
         return {}
     }
+
+    override fun releaseModule() = real.releaseModule()
 }

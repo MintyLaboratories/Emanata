@@ -92,8 +92,8 @@ class CoverTextDetectors(
     private var askedAt = 0L
     private var requestedAt = 0L
 
-    /** What cancels the download request under way, and its number, so an answer to an earlier one is ignored. */
-    private var cancel: (() -> Unit)? = null
+    /** What detaches the app from the download request under way, and its number, so an answer to an earlier one is ignored. */
+    private var detach: (() -> Unit)? = null
     private var request = 0
 
     /** A cover went without ML Kit's text since its module was last known to be on the device. Under [lock]. */
@@ -145,8 +145,9 @@ class CoverTextDetectors(
 
     /**
      * Gives ML Kit a new try when the setting is on: what was given up this session is forgotten,
-     * and a download under way gets a new [DOWNLOAD_WAIT_MS]. Turned off, a download request
-     * under way is dropped. The app's ([shared]) hears of every change of the setting.
+     * and a download under way gets a new [DOWNLOAD_WAIT_MS]. Turned off, the app detaches from a
+     * download request under way and releases the module ([PlayServices.releaseModule]); a request
+     * still being sent is released by [asked]. The app's ([shared]) hears of every change of the setting.
      */
     fun settingChanged() {
         if (!optedIn()) {
@@ -154,9 +155,10 @@ class CoverTextDetectors(
                 if (module != Module.DOWNLOADING) return
                 module = Module.UNKNOWN
                 request++
-                cancel.also { cancel = null }
-            }
-            stop?.invoke()
+                detach.also { detach = null }
+            } ?: return
+            stop()
+            release()
             return
         }
         synchronized(lock) {
@@ -272,7 +274,8 @@ class CoverTextDetectors(
     /**
      * Settles what Play services told of the module ([PlayServices.moduleInstalled]): true when
      * ML Kit may run now. A module missing is requested when the network policy allows, else ML
-     * Kit is given up; never once the setting is off, then or while it is being requested.
+     * Kit is given up; never once the setting is off. Turned off while it is being requested, the
+     * app detaches from the request and releases the module.
      */
     private fun asked(installed: Boolean?): Boolean {
         val interrupted = Thread.currentThread().isInterrupted
@@ -309,6 +312,15 @@ class CoverTextDetectors(
             stop?.invoke()
             return true
         }
+        synchronized(lock) {
+            // Settled or turned off since: nothing is requested.
+            if (request != number || module != Module.DOWNLOADING) return gaveUp == null && module == Module.READY
+            if (!optedIn()) {
+                module = Module.UNKNOWN
+                request++
+                return false
+            }
+        }
         val requested = try {
             play.requestModule { ok -> requested(number, ok) }
         } catch (e: Exception) {
@@ -321,7 +333,7 @@ class CoverTextDetectors(
         synchronized(lock) {
             if (request == number && module == Module.DOWNLOADING) {
                 if (optedIn()) {
-                    cancel = requested
+                    detach = requested
                     return false
                 }
                 // Turned off while it was being requested.
@@ -331,7 +343,19 @@ class CoverTextDetectors(
         }
         // Settled, given up or turned off while it was being requested.
         requested()
+        if (!optedIn()) release()
         return synchronized(lock) { gaveUp == null && module == Module.READY }
+    }
+
+    /** Tells Play services the app no longer needs the module ([PlayServices.releaseModule]). */
+    private fun release() {
+        try {
+            play.releaseModule()
+        } catch (e: Exception) {
+            // Play services keeps the module until it drops it on its own.
+        } catch (e: LinkageError) {
+            // ML Kit's classes are missing: there is nothing to release.
+        }
     }
 
     /**
@@ -350,7 +374,7 @@ class CoverTextDetectors(
     /** Settles download request [number]: the module arrived when [ok], else ML Kit is given up. */
     private fun requested(number: Int, ok: Boolean) = synchronized(lock) {
         if (number != request || module != Module.DOWNLOADING) return@synchronized
-        cancel = null
+        detach = null
         if (ok) arrived()
         else {
             module = Module.UNKNOWN
@@ -358,12 +382,12 @@ class CoverTextDetectors(
         }
     }
 
-    /** The module is on the device: ML Kit runs from now on. Returns what cancels a request still under way. Under [lock]. */
+    /** The module is on the device: ML Kit runs from now on. Returns what detaches a request still under way. Under [lock]. */
     private fun arrived(): (() -> Unit)? {
         if (module == Module.DOWNLOADING || servedWithout) arrive()
         module = Module.READY
         request++
-        return cancel.also { cancel = null }
+        return detach.also { detach = null }
     }
 
     /** PP-OCR's model arrived ([DetectorModel]) after covers went without it: they find their text now. */
@@ -379,13 +403,13 @@ class CoverTextDetectors(
         changed.update { it + 1 }
     }
 
-    /** Gives a download not done within [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]); returns what cancels it. Under [lock]. */
+    /** Gives a download not done within [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]); returns what detaches it. Under [lock]. */
     private fun expire(): (() -> Unit)? {
         if (module != Module.DOWNLOADING || gaveUp != null || now() - requestedAt < DOWNLOAD_WAIT_MS) return null
         module = Module.UNKNOWN
         giveUp(Why.MODULE_FAILED)
         request++
-        return cancel.also { cancel = null }
+        return detach.also { detach = null }
     }
 
     /** Leaves ML Kit for [why] for the rest of the session, or until the setting is turned on again. Under [lock]. */

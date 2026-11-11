@@ -95,30 +95,44 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
   (default) or the center of a cover cropped for height, or (Smart,
-  experimental) its tallest text: a text detector (PaddleOCR's mobile
-  detector on ncnn; it finds where text is, not what it says) marks the lines
-  of text. The detector is not in the app: its 2.4 MB model downloads the
-  first time a cover needs it (the Smart crop, or a wraparound cover's front
-  or reading direction, below), as an automatic download that the **Skip on
-  metered connections** setting can hold back. Until it is there, covers crop
-  as Top does and are made again once it arrives. When the top (centered
-  across) would cut the tallest text's line, the crop moves just enough to keep every line of about
-  its size, or at least that line. Only title-sized text counts:
-  credits alone never move a crop. A cover without such text keeps its most
-  detailed part when far more detailed than its top. Found once per cover and
-  kept. **Use Google ML Kit for cover text** (off by default, offered only
-  where Google Play services is there) finds the lines with ML Kit instead,
-  except on books read right to left (its recognizer reads Latin script only).
-  When on, Play services downloads ML Kit's model and ML Kit sends usage data
-  to Google under the [ML Kit terms](https://developers.google.com/ml-kit/terms);
-  covers never leave the device. Until the model arrives, covers crop by their
-  detail alone and are made again once it does. When the network settings
-  hold that download back, it takes over 10 minutes, or ML Kit fails, PP-OCR
-  finds the lines for the rest of the session or until the setting is turned
-  on again. Settings → AI processing → **Models** shows the detector in use,
-  and whether its model is there or downloading (with a Download button while
-  it is not).
-  Another detector finds every focus again.
+  experimental) its tallest text (below).
+- **Smart crop:** a text detector marks the lines of text on a cover (where
+  text is, not what it says). When the top (centered across) would cut the
+  tallest text's line, the crop moves just enough to keep every line of about
+  its size, or at least that line. Only title-sized text counts (letters at
+  least 12% of the cover's shorter side): credits alone never move a crop. A
+  cover without such text keeps its most detailed part when far more detailed
+  than its top. Found once per cover and kept; another detector finds every
+  focus again. Two detectors:
+  - **PP-OCR (default):** PaddleOCR's PP-OCRv5 mobile detector on ncnn, run
+    on the device. It is not in the app: its 2.4 MB model downloads the first
+    time a cover needs it (the Smart crop, or a wraparound cover's front or
+    reading direction, below), as an automatic download that the **Skip on
+    metered connections** setting can hold back. Until it is there, covers
+    crop as Top does and are made again once it arrives.
+  - **Google ML Kit (optional, off by default):** **Use Google ML Kit for
+    cover text** (Settings → Library, offered only where Google Play services
+    is there) finds the lines with ML Kit's text recognition instead, except
+    on books read right to left (its recognizer reads Latin script only). When
+    on, Play services downloads ML Kit's model, and ML Kit, running in the
+    app, sends usage and performance data to Google (Firebase logging) under
+    the [ML Kit terms](https://developers.google.com/ml-kit/terms); covers
+    never leave the device. Until the model arrives, covers crop by their
+    detail alone and are made again once it does. When the network settings
+    hold that download back, it takes over 10 minutes, or ML Kit fails,
+    PP-OCR finds the lines for the rest of the session or until the setting
+    is turned on again. ML Kit's line boxes fit their letters more tightly
+    than PP-OCR's, so they are grown by a quarter of their letters' height;
+    what counts as title-sized stays the same.
+  - **Compared** on a set of real covers (Snapdragon 8 Gen 1 class tablet,
+    Android 16): ML Kit finds title-sized text on about half as many covers
+    as PP-OCR (49% against 94%), so its Smart crop moves less often and more
+    covers keep their top; its detection takes about 10 ms longer per cover
+    (median 68 against 57 ms), the whole cover's focus about the same, within
+    run-to-run noise. Hence PP-OCR stays the default.
+  - Settings → AI processing → **Models** shows the detector in use, and
+    whether its model is there or downloading (with a Download button while
+    it is not).
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

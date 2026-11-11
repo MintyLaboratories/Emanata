@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.os.Looper
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
@@ -177,6 +178,17 @@ class AiQueueTest {
         Thread.sleep(20)
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(w.started.isEmpty())
+    }
+
+    @Test
+    fun workEndingBeforeTheCallerWaitsIsDeliveredAndTheQueueGoesOn() {
+        val w = Work()
+        // Work done inline, as when the worker ends a page before the main thread suspends for it.
+        val q = AiQueue<String>(scope, Dispatchers.Unconfined, w::run, { k, _ -> w.delivered += k })
+        q.want(listOf("a", "b"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("a", "b"), w.delivered)
+        assertNull(q.current)
     }
 
     @Test

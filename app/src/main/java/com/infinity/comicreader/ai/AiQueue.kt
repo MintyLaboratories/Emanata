@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
@@ -136,7 +137,8 @@ internal class AiQueue<K : Any>(
         if (released || paused || job != null || waiting) return
         val key = wanted.firstOrNull { it !in finished } ?: return
         running = key
-        val started = scope.launch {
+        // Started once it is the job: work that ends before the caller suspends goes on inline.
+        val started = scope.launch(start = CoroutineStart.LAZY) {
             val outcome = try {
                 withContext(worker) {
                     val self = coroutineContext.job
@@ -176,6 +178,7 @@ internal class AiQueue<K : Any>(
             next()
         }
         job = started
+        started.start()
     }
 
     companion object {

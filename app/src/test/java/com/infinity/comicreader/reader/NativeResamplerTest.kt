@@ -16,6 +16,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.Collections
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
@@ -35,10 +36,11 @@ class NativeResamplerTest {
      * before each and recording the answer, each chunk recorded as a band; it fails at the
      * chunk [failGpuAt] when set, and throws [gpuThrows] when set. The chunking is the
      * fake's own: the native chunks show on the device, in the "ResampleGpu" trace.
+     * [beforeBand] runs as each CPU band is asked for, on the worker's thread.
      */
     private class FakeKernels(
         val gpu: Boolean = true, val failAt: Int = -1, val chunk: Int = 16, val failGpuAt: Int = -1, val gpuThrows: Throwable? = null,
-        val usable: Boolean = true
+        val usable: Boolean = true, val beforeBand: (worker: Int, job: Job) -> Unit = { _, _ -> }
     ) : PixelKernels {
         override fun gpuUsable() = usable
 
@@ -83,6 +85,7 @@ class NativeResamplerTest {
         override fun band(job: Long, worker: Int, y0: Int, y1: Int, cores: Long): Boolean {
             val j = jobs[job.toInt() - 1]
             check(!j.ended && worker in 0 until j.workers)
+            beforeBand(worker, j)
             if (j.calls.getAndIncrement() == failAt) return false
             j.bands += Triple(worker, y0, y1)
             j.cores += cores
@@ -207,9 +210,16 @@ class NativeResamplerTest {
 
     @Test
     fun workReadAheadThatComesOnScreenGrowsItsWorkers() {
-        val k = use(FakeKernels())
-        NativeResampler.laterThreads = 1
         val polls = AtomicInteger()
+        // Once on screen, the calling thread waits for a worker started then to take a band: bands this
+        // small could all go to it before a busy pool runs one.
+        val othersBanded = AtomicBoolean()
+        val k = use(FakeKernels(beforeBand = { worker, _ ->
+            if (worker != 0) othersBanded.set(true)
+            val until = System.currentTimeMillis() + 5_000
+            while (worker == 0 && polls.get() > 4 && !othersBanded.get() && System.currentTimeMillis() < until) Thread.sleep(1)
+        }))
+        NativeResampler.laterThreads = 1
         // On screen after a few polls: the first bands ran on the calling thread alone.
         assertTrue(resample(noise(64, 64), 40, 400, Resampler.Window.of(64, 64), Scaling.DEFAULT, urgent = { polls.incrementAndGet() > 4 }).first)
         val job = k.jobs.single()

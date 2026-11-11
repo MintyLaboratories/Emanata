@@ -1227,7 +1227,10 @@ app/src/main/java/com/infinity/comicreader/
                              ModelProbe, TileEngine, Sessions, AiPages; models:
                              ModelCatalog, ModelStore + ModelDownloader,
                              ModelDownloads; TextDetector (covers' Smart
-                             crop anchor) + DetectorModel (its download)
+                             crop anchor; PP-OCR) + DetectorModel (its
+                             download), CoverTextDetectors (the detector
+                             pick) + MlKitTextDetector and GmsPlayServices
+                             (optional ML Kit), AiThresholds, GrayPages
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,

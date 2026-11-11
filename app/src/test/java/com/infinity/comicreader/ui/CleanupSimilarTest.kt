@@ -88,6 +88,20 @@ class CleanupSimilarTest {
         } while (((bar.isShown && stop.isShown) || rounds++ < 5) && rounds < 1000)
     }
 
+    /** Deletes the books ticked, confirmed, and runs the main looper until the list has dropped them. */
+    private fun deleteTicked(activity: CleanupActivity) {
+        val delete = activity.findViewById<MaterialButton>(R.id.cleanup_delete)
+        delete.performClick()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        // Deleted off the main thread: the list follows, then the button with nothing left to delete.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (delete.isEnabled && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        assertFalse(delete.isEnabled)
+    }
+
     private fun launch(): Pair<CleanupActivity, RecyclerView> {
         val intent = Intent(context, CleanupActivity::class.java)
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
@@ -149,9 +163,7 @@ class CleanupSimilarTest {
         val (activity, list) = launch()
         val columns = list.row(1).findViewById<LinearLayout>(R.id.columns)
         columns.getChildAt(1).findViewById<LinearLayout>(R.id.locations).getChildAt(0).performClick()
-        activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        settle(activity)
+        deleteTicked(activity)
         assertFalse(retold.exists())
         assertTrue(tale.exists())
         assertEquals(0, list.adapter!!.itemCount)
@@ -195,9 +207,7 @@ class CleanupSimilarTest {
         assertEquals(2, list.adapter!!.itemCount)
         val places = list.row(1).findViewById<LinearLayout>(R.id.locations)
         for (i in 0 until places.childCount) places.getChildAt(i).performClick()
-        activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        settle(activity)
+        deleteTicked(activity)
         assertFalse(copy.exists())
         activity.findViewById<MaterialButton>(R.id.similar_compare).performClick()
         settle(activity)

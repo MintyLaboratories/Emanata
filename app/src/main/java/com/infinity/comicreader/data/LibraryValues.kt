@@ -105,6 +105,16 @@ data class BookFacts(
 }
 
 /**
+ * Book [this] reading in the direction detected in it ([facts]) when [detect] is on and its
+ * folder has none set, as the library lists it; [this] otherwise. Every screen showing a
+ * book's cover lists it so, as the direction picks its cover's text detector ([Thumbs.detectorFor]).
+ */
+fun BookEntry.withDetectedDirection(facts: BookFacts?, detect: Boolean): BookEntry {
+    val detected = facts?.detected?.direction
+    return if (detected != null && detect && !isDir && !directionSet && detected != direction) copy(direction = detected) else this
+}
+
+/**
  * What the cover of a book, its page at book index [page], tells of its reading direction:
  * the front [half] its barcode and its tallest text agree on ([Wraparound.Fronts.agreed]);
  * null [half] when it tells nothing, as when it is no wraparound. Found under cover-focus

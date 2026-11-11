@@ -164,6 +164,21 @@ class LibraryValuesTest {
     }
 
     @Test
+    fun entriesTakeTheDetectedDirectionAsTheLibraryListsThem() {
+        val rtl = BookFacts(10, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER))
+        val book = entry("a.cbz").copy(direction = ReadingDirection.LTR)
+        assertEquals(ReadingDirection.RTL, book.withDetectedDirection(rtl, detect = true).direction)
+        // Off, not known yet, nothing detected, or set for the folder: as listed.
+        assertEquals(book, book.withDetectedDirection(rtl, detect = false))
+        assertEquals(book, book.withDetectedDirection(null, detect = true))
+        assertEquals(book, book.withDetectedDirection(BookFacts(10, 0), detect = true))
+        val set = book.copy(directionSet = true)
+        assertEquals(set, set.withDetectedDirection(rtl, detect = true))
+        val folder = entry("b", isDir = true).copy(direction = ReadingDirection.LTR)
+        assertEquals(folder, folder.withDetectedDirection(rtl, detect = true))
+    }
+
+    @Test
     fun snapshotDirections() {
         val snap = LibrarySnapshot(
             directions = mapOf("/b/manga" to ReadingDirection.RTL),

@@ -24,6 +24,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.infinity.comicreader.R
 import com.infinity.comicreader.compact.CompactWorkers
 import com.infinity.comicreader.data.BookCaches
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Crumbs
@@ -37,6 +38,7 @@ import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.data.withDetectedDirection
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.RemoteFile
@@ -343,6 +345,17 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
             .map { Row.Single(it.first, it.second) }
             .toList()
 
+    /**
+     * Book [file] as the library lists it: with what [snap] keeps of it, reading in the direction
+     * detected in it ([withDetectedDirection]), so its cover is the library's. Blocking.
+     */
+    private fun listed(snap: LibrarySnapshot, file: File): BookEntry {
+        val entry = snap.entry(file, prefs.showHidden)
+        if (!prefs.detectDirection) return entry
+        val facts = BookFactsCache(applicationContext).apply { load() }
+        return entry.withDetectedDirection(facts.get(entry.id), detect = true)
+    }
+
     /** Where [f] is, as the crumbs of its folder read. */
     private fun placeOf(f: File, roots: List<StorageRoot>): String =
         Crumbs.of(f.parent.orEmpty(), roots).joinToString(" / ") { it.label }.ifEmpty { f.parent.orEmpty() }
@@ -357,7 +370,7 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
         out.add(Row.Section(getString(R.string.dupes_identical)))
         for (g in groups) {
             val places = g.files.associateWith { placeOf(it, roots) }
-            out.add(Row.Group(g.size, g.files.toMutableList(), snap.entry(g.files.first(), prefs.showHidden), places))
+            out.add(Row.Group(g.size, g.files.toMutableList(), listed(snap, g.files.first()), places))
         }
         return out
     }
@@ -441,7 +454,7 @@ class CleanupActivity : AppCompatActivity(), LargeBookWarning.Host {
                 Row.Similar(
                     group.mapTo(ArrayList()) { b ->
                         SimilarBook(
-                            snap.entry(b.files.first(), prefs.showHidden), b.files.toMutableList(), b.files.first().length(), b.entry,
+                            listed(snap, b.files.first()), b.files.toMutableList(), b.files.first().length(), b.entry,
                             b.files.associateWith { placeOf(it, roots) }
                         )
                     }

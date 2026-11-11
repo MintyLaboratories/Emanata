@@ -108,6 +108,7 @@ import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.data.TabSort
 import com.infinity.comicreader.data.TabView
 import com.infinity.comicreader.data.ToolbarButton
+import com.infinity.comicreader.data.withDetectedDirection
 import com.infinity.comicreader.data.Years
 import com.infinity.comicreader.files.BookUris
 import com.infinity.comicreader.files.FileClipboard
@@ -1699,9 +1700,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         val facts = factsCache.get(id) ?: return entry
         var out = entry
         if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.shownPages(hidden[id] ?: 0))
-        val detected = facts.detected?.direction
-        if (detected != null && !entry.directionSet && prefs.detectDirection && detected != entry.direction) out = out.copy(direction = detected)
-        return out
+        return out.withDetectedDirection(facts, prefs.detectDirection)
     }
 
     /**

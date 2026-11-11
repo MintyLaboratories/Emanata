@@ -100,8 +100,9 @@ class CoverTextDetectors(
     private var servedWithout = false
 
     /**
-     * Times covers made without ML Kit's text may now find it: its module arrived after covers
-     * went without it, or the setting gave ML Kit a new try after it was given up.
+     * Times covers made without a detector's text may now find it: ML Kit's module or PP-OCR's
+     * model ([modelArrived]) arrived after covers went without it, or the setting gave ML Kit a
+     * new try after it was given up.
      */
     @Volatile
     var arrivals = 0
@@ -172,10 +173,10 @@ class CoverTextDetectors(
     private val gate = object : CoverTextDetector {
         override val id: String get() = mlKit!!.id
 
-        override fun inputSize(w: Int, h: Int): IntArray = (if (ready()) made() else null)?.inputSize(w, h) ?: SmartCrop.inputSize(w, h)
+        override fun inputSize(w: Int, h: Int): IntArray = (if (moduleReady()) made() else null)?.inputSize(w, h) ?: SmartCrop.inputSize(w, h)
 
         override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
-            if (!ready()) {
+            if (!moduleReady()) {
                 synchronized(lock) { servedWithout = true }
                 return null
             }
@@ -225,7 +226,7 @@ class CoverTextDetectors(
      * services ([PlayServices.moduleInstalled]), covers asking meanwhile wait for its answer
      * ([asked]); while the module downloads, it is asked about again every [RECHECK_MS].
      */
-    private fun ready(): Boolean {
+    private fun moduleReady(): Boolean {
         var mine = false
         val stop: (() -> Unit)?
         val task: FutureTask<Boolean>? = synchronized(lock) {
@@ -356,6 +357,12 @@ class CoverTextDetectors(
         module = Module.READY
         request++
         return cancel.also { cancel = null }
+    }
+
+    /** PP-OCR's model arrived ([DetectorModel]) after covers went without it: they find their text now. */
+    fun modelArrived() = synchronized(lock) {
+        arrivals++
+        changed.update { it + 1 }
     }
 
     /** Counts an arrival ([arrivals]). Under [lock]. */

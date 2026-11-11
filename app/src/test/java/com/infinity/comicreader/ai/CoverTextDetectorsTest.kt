@@ -417,6 +417,14 @@ class CoverTextDetectorsTest {
     }
 
     @Test
+    fun ppOcrsModelArrivingIsAnArrival() {
+        val d = detectors(FakePlay())
+        d.modelArrived()
+        assertEquals(1, d.arrivals)
+        assertEquals(1, d.changes.value)
+    }
+
+    @Test
     fun aModuleThereAtOnceIsNoArrival() {
         val d = detectors(FakePlay())
         assertEquals(line, d.session().lines(image))

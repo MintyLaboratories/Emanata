@@ -70,6 +70,6 @@ class CoverStyleTest {
     }
 
     private companion object {
-        const val D = TextDetector.ID
+        val D = TextDetector.ID
     }
 }

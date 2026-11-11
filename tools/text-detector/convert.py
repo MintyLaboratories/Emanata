@@ -7,7 +7,7 @@
 #     "pnnx==20261020",
 # ]
 # ///
-"""Converts PaddleOCR's PP-OCRv5 mobile text detector to the ncnn files the app ships.
+"""Converts PaddleOCR's PP-OCRv5 mobile text detector to ncnn files the app can run.
 
 Run from the repository root:
 
@@ -15,8 +15,9 @@ Run from the repository root:
 
 Downloads the official model (Apache-2.0) from Hugging Face at a pinned revision and checks
 its SHA-256, exports it to ONNX with paddle2onnx, converts that to ncnn with pnnx (fp16
-weights), and writes `app/src/main/assets/text-detector/ppocrv5-mobile-det.ncnn.{param,bin}`
-and the `NOTICE` (Apache-2.0 §4(b)) stating what changed.
+weights), and writes `build/text-detector/ppocrv5-mobile-det.ncnn.{param,bin}` and the
+`NOTICE` (Apache-2.0 §4(b)) stating what changed: a conversion of the app's own, to host in
+place of the third party's the app downloads (`ModelCatalog.TEXT_DETECTOR`).
 Weights are unchanged but for fp16 storage. One edit to pnnx's output: its squeeze-and-excite
 reshapes carry size expressions the app's ncnn release cannot evaluate when the model loads;
 they become plain reshapes to 1 x 1 x channels, which is what they compute. Input `in0` is
@@ -39,7 +40,7 @@ FILES = {
     'inference.pdiparams': 'afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b',
     'inference.yml': None,
 }
-OUT = pathlib.Path('app/src/main/assets/text-detector')
+OUT = pathlib.Path('build/text-detector')
 NAME = 'ppocrv5-mobile-det.ncnn'
 
 # pnnx's squeeze-and-excite reshape to [1, C, 1, 1], written as an expression on the batch size.

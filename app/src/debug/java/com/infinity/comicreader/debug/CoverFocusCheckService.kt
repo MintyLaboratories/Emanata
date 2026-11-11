@@ -18,6 +18,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.LibNcnn
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloader
 import com.infinity.comicreader.ai.ModelFiles
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.TextDetector
@@ -32,6 +34,7 @@ import com.infinity.comicreader.util.NaturalOrder
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import kotlin.concurrent.thread
 
 /**
@@ -64,12 +67,8 @@ import kotlin.concurrent.thread
  * with the app's library shown: with no window shown the system soon moves the process to fewer,
  * slower cores, which each line's `cpuset` tells.
  *
- * Both modes run the model the app runs ([TextDetector.copy]: the downloaded one when in
- * place, else the assets' copy), or the one `--es copy assets|downloaded` names, its id
- * ([TextDetector.Copy.id]) in a line's `model`. With
- * `--es mode parity` (no `dir`), [DetectorParity] instead downloads the model when it is not in
- * place and compares it with the assets' copy on synthetic covers, ending with "PARITY: OK",
- * "PARITY: FAIL" or "PARITY: INCONCLUSIVE".
+ * Both modes run the model the app runs ([TextDetector.downloaded]), downloading it first when
+ * it is not in place; a line's `model` holds its id ([TextDetector.ID]).
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -84,19 +83,15 @@ class CoverFocusCheckService : Service() {
         val shared = intent?.getStringExtra("lane") == "shared"
         val busy = intent?.getBooleanExtra("busy", false) ?: false
         val crops = intent?.getStringExtra("mode") == "crops"
-        val parity = intent?.getStringExtra("mode") == "parity"
-        val pin = intent?.getStringExtra("copy")
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
-                if (parity) {
-                    DetectorParity(this, ::log, say = { Log.i(TAG, it) }).run()
-                } else if (dir == null) {
+                if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else if (crops) {
-                    survey(File(dir), marked, pin)
+                    survey(File(dir), marked)
                 } else {
-                    run(File(dir), count, setups, reps, marked, shared, busy, pin)
+                    run(File(dir), count, setups, reps, marked, shared, busy)
                 }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", t.toString()))
@@ -109,18 +104,17 @@ class CoverFocusCheckService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean, shared: Boolean, busy: Boolean, pin: String?) {
+    private fun run(dir: File, count: Int, setups: List<String>, reps: Int, marked: Boolean, shared: Boolean, busy: Boolean) {
         val all = dir.walkTopDown().filter { it.isFile && Formats.isOpenable(it.name) && Formats.typeOf(it.name) != com.infinity.comicreader.data.EntryType.IMAGE }
             .sortedWith(compareBy(NaturalOrder) { it.absolutePath }).toList()
         val step = maxOf(1.0, all.size.toDouble() / count)
         val picked = (0 until minOf(count, all.size)).map { all[(it * step).toInt()] }
         log(JSONObject().put("books", all.size).put("picked", picked.size).put("setups", JSONArray(setups)).put("lane", if (shared) "shared" else "own").put("busy", busy))
-        val copy = model(pin) ?: return
-        val files = copy.files
+        val files = model() ?: return
         val detectors = setups.associateWith { s ->
             TextDetector(LibNcnn, { files }, gpu = s == "gpu", threads = s.removePrefix("cpu").toIntOrNull() ?: TextDetector.THREADS)
         }
-        val app = TextDetector(if (shared) LibNcnn else LibNcnn.cpuLane, { files }, filesId = copy.id)
+        val app = TextDetector(if (shared) LibNcnn else LibNcnn.cpuLane, { files })
         val markDir = File(getExternalFilesDir(null), "bench/focus").apply { if (marked) mkdirs() }
         val load = if (busy) Load(files).apply { start() } else null
         try {
@@ -131,9 +125,9 @@ class CoverFocusCheckService : Service() {
         (detectors.values + app).forEach { it.close() }
     }
 
-    private fun survey(dir: File, marked: Boolean, pin: String?) {
-        val copy = model(pin) ?: return
-        val app = TextDetector(LibNcnn.cpuLane, { copy.files }, filesId = copy.id)
+    private fun survey(dir: File, marked: Boolean) {
+        val files = model() ?: return
+        val app = TextDetector(LibNcnn.cpuLane, { files })
         try {
             val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
             CoverCropSurvey(this, app, cropsDir, ::log).run(dir)
@@ -142,15 +136,21 @@ class CoverFocusCheckService : Service() {
         }
     }
 
-    /** The copy of the model [pin] names ("assets" or "downloaded"), else the app's, its id in the log; null, logged as failed, when there is none. */
-    private fun model(pin: String?): TextDetector.Copy? {
-        val copy = when (pin) {
-            "assets" -> TextDetector.install(this)?.let { TextDetector.Copy(it, TextDetector.ID) }
-            "downloaded" -> TextDetector.downloaded(ModelStore.of(this))?.let { TextDetector.Copy(it, TextDetector.DOWNLOADED_ID) }
-            else -> TextDetector.copy(this)
+    /** The app's model, downloaded first when not in place, its id in the log; null, logged as failed, when there is none. */
+    private fun model(): ModelFiles? {
+        val store = ModelStore.of(this)
+        if (TextDetector.downloaded(store) == null) {
+            val t = SystemClock.elapsedRealtime()
+            try {
+                ModelDownloader(store).download(ModelCatalog.TEXT_DETECTOR)
+                log(JSONObject().put("downloaded", ModelCatalog.TEXT_DETECTOR.bytes).put("ms", SystemClock.elapsedRealtime() - t))
+            } catch (e: IOException) {
+                log(JSONObject().put("failed", "download: ${e.message}"))
+            }
         }
-        log(if (copy == null) JSONObject().put("failed", "no model") else JSONObject().put("model", copy.id))
-        return copy
+        val files = TextDetector.downloaded(store)
+        log(if (files == null) JSONObject().put("failed", "no model") else JSONObject().put("model", TextDetector.ID))
+        return files
     }
 
     /** Runs the detector on the GPU on the AI tiles' thread until [stop], which logs its runs. */

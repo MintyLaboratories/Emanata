@@ -148,8 +148,8 @@ object BookDirection {
     /**
      * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]
      * when looked at before under [detector]'s cover-focus version, else found now and handed
-     * to [keep], unless it could not tell this time or the detector switched to a copy of
-     * another id meanwhile, which leaves it to be looked at again. Blocking.
+     * to [keep], unless it could not tell this time or the detector's id changed
+     * meanwhile, which leaves it to be looked at again. Blocking.
      */
     fun coverFrontOnce(source: PageSource, known: CoverFront?, detector: CoverTextDetector, keep: (CoverFront) -> Unit): Wraparound.Half? {
         val id = detector.id

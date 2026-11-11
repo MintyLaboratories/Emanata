@@ -204,7 +204,7 @@ object Thumbs {
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
         val focus = CoverArt.focusOf(src, region, detector).let { f ->
-            // Found after the detector switched to a copy of another id: not under this version.
+            // Found after the detector's id changed: not under this version.
             if (f.keep && detector.id != id) CoverFocus(f.title, f.lines, f.rows, f.columns, keep = false) else f
         }
         if (!focus.keep) return focus

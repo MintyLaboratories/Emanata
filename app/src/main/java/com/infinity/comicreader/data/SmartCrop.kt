@@ -48,6 +48,9 @@ class CoverFocus(
         /** A focus with nothing to go by: Smart then crops as Top does. */
         val NONE = CoverFocus(null, emptyList(), FloatArray(0), FloatArray(0))
 
+        /** [NONE] while the detector waits for its model ([com.infinity.comicreader.ai.CoverTextDetector.ready]): not kept. */
+        val WAITING = CoverFocus(null, emptyList(), FloatArray(0), FloatArray(0), keep = false)
+
         private fun q(v: Double): String = "%.4f".format(java.util.Locale.ROOT, v)
         private fun box(b: Box): String = listOf(b.left, b.top, b.right, b.bottom).joinToString(",") { q(it) }
 

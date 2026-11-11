@@ -113,9 +113,11 @@ object CoverArt {
      * Where the Smart crop anchor looks in [region] of [src]: its text, as [detector] finds it on
      * the region stretched to its input ([CoverTextDetector.inputSize]; none without [detector]),
      * and its detail. When [detector] gives null or fails, detail alone, not to be kept
-     * ([CoverFocus.keep]).
+     * ([CoverFocus.keep]); while it is not [CoverTextDetector.ready], nothing to go by (Smart
+     * crops as Top does), not to be kept either.
      */
     fun focusOf(src: Bitmap, region: Rect, detector: CoverTextDetector?): CoverFocus {
+        if (detector != null && !detector.ready()) return CoverFocus.WAITING
         val (w, h) = (detector?.inputSize(region.width(), region.height()) ?: SmartCrop.inputSize(region.width(), region.height())).let { it[0] to it[1] }
         val plan = Target(w, h, Fit.STRETCH).plan(region.width().toDouble(), region.height().toDouble(), region.left.toDouble(), region.top.toDouble())
         val small = render(src, plan, false)

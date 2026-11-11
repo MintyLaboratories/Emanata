@@ -61,7 +61,7 @@ class App : Application() {
             // A rebuild the app stopped midway hands its book's data over now.
             runCatching { FileJobs(this, Library(this), prefs).recover() }
         }
-        // Off the main thread: the cover detector reads which of its copies is in place once, before list binds ask it.
+        // Off the main thread: making the cover detectors reads settings and storage, once, before list binds ask them.
         thread(name = "cover-detector", isDaemon = true) { runCatching { Thumbs.detector(this).id } }
         cleanCaches()
     }

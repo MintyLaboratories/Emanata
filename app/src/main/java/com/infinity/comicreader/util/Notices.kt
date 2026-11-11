@@ -187,12 +187,11 @@ object Notices {
         Notice("MBassador", MIT, "https://github.com/bennidi/mbassador", listOf("mbassador.txt"), listOf("net.engio:mbassador")),
         Notice(
             "PaddleOCR text detector", APACHE_2, "https://github.com/PaddlePaddle/PaddleOCR", APACHE,
-            note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, modified: converted to ncnn, " +
-                "weights stored in fp16, and its 8 squeeze-and-excite reshape layers rewritten as plain reshapes " +
-                "(see text-detector/NOTICE in the app's assets). Debug builds can download, unchanged, a third " +
-                "party's ncnn conversion of the same model (Apache-2.0) from a pinned Hugging Face repository " +
-                "(${ModelCatalog.DETECTOR_REPOSITORY}) to compare it with this one, and use it instead once they " +
-                "match. Finds where text is on covers for the Smart crop anchor, on this device only."
+            note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, not bundled: downloaded, " +
+                "unchanged, when the Smart crop anchor first needs it, as a third party's ncnn conversion with fp16 " +
+                "weights (from the PaddleOCR-ncnn-CPP release archive, MIT) from a pinned Hugging Face repository " +
+                "(Apache-2.0, ${ModelCatalog.DETECTOR_REPOSITORY}). Finds where text is on covers for the Smart crop " +
+                "anchor, on this device only."
         ),
         Notice(
             "ML Kit Text Recognition v2", PROPRIETARY_GOOGLE, ML_KIT_TERMS_URL,

@@ -152,8 +152,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Wraparound covers** (front and back side by side, about twice as wide as
   the book's own inner pages) show their front, one page wide so the spine
   stays out: the half without the barcode, else the half whose title is
-  clearly taller (by the text detector, found once per cover; its model
-  downloads the first time such a cover needs it). When neither tells, the
+  clearly taller; once a book's reading direction is known, its title also
+  confirms the barcode's front (by the text detector, found once per cover;
+  its model downloads the first time such a cover needs it). When neither
+  tells, the
   whole cover shows, fitted over a blurred copy of itself, and while the
   detector's model is missing it is made again once the model arrives.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.

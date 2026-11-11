@@ -550,21 +550,25 @@ class ThumbsTest {
         var on = false
         val ppocr = coverText(TextDetector.ID) { null }
         val selector = CoverTextDetectors({ on }, Play(), CoverTextDetectors.MlKit(CoverTextDetectors.ML_KIT_ID) { coverText(CoverTextDetectors.ML_KIT_ID) { null } }, { ppocr })
-        Thumbs.detector = { selector.session() }
-        Thumbs.rtlDetector = { selector.rightToLeft() }
-        val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        val ltr = Thumbs.styleKey(context, style, rightToLeft = false)
-        val rtl = Thumbs.styleKey(context, style, rightToLeft = true)
-        assertEquals(style.key(TextDetector.ID), ltr)
-        assertEquals(ltr, rtl)
-        on = true
-        selector.settingChanged()
-        assertEquals(style.key(CoverTextDetectors.ML_KIT_ID), Thumbs.styleKey(context, style, rightToLeft = false))
-        assertNotEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
-        assertEquals("right to left keeps PP-OCR's covers", rtl, Thumbs.styleKey(context, style, rightToLeft = true))
-        on = false
-        selector.settingChanged()
-        assertEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
+        // Thumbs' own wiring: its detectors come from the shared selector.
+        CoverTextDetectors.standIn(selector)
+        try {
+            val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+            val ltr = Thumbs.styleKey(context, style, rightToLeft = false)
+            val rtl = Thumbs.styleKey(context, style, rightToLeft = true)
+            assertEquals(style.key(TextDetector.ID), ltr)
+            assertEquals(ltr, rtl)
+            on = true
+            selector.settingChanged()
+            assertEquals(style.key(CoverTextDetectors.ML_KIT_ID), Thumbs.styleKey(context, style, rightToLeft = false))
+            assertNotEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
+            assertEquals("right to left keeps PP-OCR's covers", rtl, Thumbs.styleKey(context, style, rightToLeft = true))
+            on = false
+            selector.settingChanged()
+            assertEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
+        } finally {
+            CoverTextDetectors.standIn(null)
+        }
     }
 
     @Test

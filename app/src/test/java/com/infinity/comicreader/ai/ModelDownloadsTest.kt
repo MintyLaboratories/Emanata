@@ -11,6 +11,8 @@ import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -118,13 +120,14 @@ class ModelDownloadsTest {
         val m = model("dl-ok")
         val generation = ModelDownloads.state.value.generation
         gate = CountDownLatch(1)
-        ModelDownloads.start(store, m)
+        val job = ModelDownloads.start(store, m)!!
         assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Running)
-        // Asking again while it runs starts nothing new.
-        ModelDownloads.start(store, m)
+        // Asking again while it runs starts nothing new: it hands back the job on its way.
+        assertSame(job, ModelDownloads.start(store, m))
         gate.countDown()
         waitFor("install") { m.id !in it.states && it.generation > generation }
         assertTrue(store.installed(m))
+        assertNull("nothing runs for a model in place", ModelDownloads.start(store, m))
     }
 
     @Test

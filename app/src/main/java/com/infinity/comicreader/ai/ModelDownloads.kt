@@ -60,19 +60,20 @@ object ModelDownloads {
      * installed or already on its way. One nobody
      * asked for ([optional]: started or resumed by the app itself) is not started on a metered
      * connection when the user skips downloads there ([NetPolicy]): it shows as failed for that
-     * ([DownloadFailure.METERED]) instead.
+     * ([DownloadFailure.METERED]) instead. Returns the download's job, the one on its way
+     * included; null when none runs.
      */
-    fun start(store: ModelStore, model: FileSet, client: OkHttpClient = this.client(), optional: Boolean = false) {
-        if (store.installed(model)) return
+    fun start(store: ModelStore, model: FileSet, client: OkHttpClient = this.client(), optional: Boolean = false): Job? {
+        if (store.installed(model)) return null
         synchronized(jobs) {
-            if (jobs[model.id]?.isActive == true) return
+            jobs[model.id]?.takeIf { it.isActive }?.let { return it }
             if (optional && !NetPolicy.may(NetWork.DOWNLOAD)) {
                 set(model.id, DownloadState.Failed(DownloadFailure.METERED))
-                return
+                return null
             }
             set(model.id, DownloadState.Running(store.bytesHeld(model), model.bytes))
             // The job's own entry is checked under the lock, which this block holds until it is stored.
-            jobs[model.id] = scope.launch {
+            return scope.launch {
                 val job = coroutineContext[Job]
                 var last = 0L
                 try {
@@ -93,7 +94,7 @@ object ModelDownloads {
                     Log.w(TAG, "${model.id}: ${e.message}", e)
                     finish(model.id, job, DownloadState.Failed(DownloadFailure.NETWORK), changed = false)
                 }
-            }
+            }.also { jobs[model.id] = it }
         }
     }
 

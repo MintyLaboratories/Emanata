@@ -140,12 +140,17 @@ internal object LibPixels : PixelKernels {
     }
 
     /**
-     * Turns on or off a log line per GPU job under "ResampleGpu": milliseconds per step (lock,
-     * context, shader compile, allocation, upload, submit, wait, copy, free), each pass's GPU
-     * time where the driver has timer queries, the across pass' tap count, the cores the
-     * copies ran on, and the buffers made and bytes kept. A trim of the kept buffers logs a
-     * line whether tracing or not. Off by default; debug checks only. Does nothing where the
-     * native library is not loaded.
+     * Turns on or off a log line per GPU job under "ResampleGpu": chunk (output rows per
+     * chunk; 0 and "failed" when the job did not open), slots, chunks, and rows (source rows
+     * uploaded, summed over chunks); milliseconds per step, once per job for lock, begin
+     * (context), compile (shader), alloc and free, summed over chunks for upload, submit,
+     * wait, map (up/down) and copy, and total for the job. Wait is the fence waits and timer
+     * query collection; map is the waits inside mapping the source / output buffers, apart
+     * from wait, upload and copy. Then each pass's GPU time summed over chunks where the
+     * driver has timer queries, the across pass' tap count (across_taps), the cores the
+     * copies ran on, and the buffers made and bytes
+     * kept. A trim of the kept buffers logs a line whether tracing or not. Off by default;
+     * debug checks only. Does nothing where the native library is not loaded.
      */
     fun trace(on: Boolean) {
         if (loaded) nTrace(on)

@@ -50,7 +50,11 @@ class DetectorModel(
             settle()
             return true
         }
-        synchronized(this) { missed = true }
+        synchronized(this) {
+            // In place since installed() looked, settled before this: no arrival will be told.
+            if (present) return true
+            missed = true
+        }
         request(optional = true)
         return false
     }

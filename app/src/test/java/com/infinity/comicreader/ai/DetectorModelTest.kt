@@ -144,6 +144,17 @@ class DetectorModelTest {
     }
 
     @Test
+    fun aDownloadEndingWhileACoverLooksLeavesTheModelReady() {
+        model.fetch()
+        // The user's download ends after the cover found the model missing, before it noted so.
+        duringLook = { finish(true) }
+        installed = false
+        assertTrue(model.ready())
+        assertEquals("no cover went without it", 0, arrivals)
+        assertTrue(model.ready())
+    }
+
+    @Test
     fun aModelFetchedBeforeAnyCoverNeededItArrivesSilently() {
         model.fetch()
         finish(true)

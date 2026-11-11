@@ -935,14 +935,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   memory.
 - The GPU path (`src/main/cpp/resample_gpu.c`) runs on an offscreen context of
   its own, one job at a time. Output rows go in chunks of equal size, two in
-  flight on their own buffers with a fence each (`resample_chunks.c`): while the
-  GPU filters one, its calling thread copies the one before out and the next
-  in. The across pass runs one GPU thread per output column over 8 source rows,
-  its tap loop unrolled to the column's tap count (a program per count up to 32
-  and per anti-ringing, compiled on first use; wider filters share a looping
-  one). The calling thread is placed as calibration timed it best: pinned to the
-  large cores or left to the system; the context's first use, unpinned, starts
-  the driver's own threads before any pinned job. Buffers stay from job to job,
+  flight (one when a page fits in one chunk) on their own buffers with a fence
+  each (`resample_chunks.c`): while the GPU filters one, its calling thread
+  copies the one before out and the next in. The across pass runs one GPU
+  thread per output column over 8 source rows, its tap loop unrolled to the
+  most taps any column reads (a program per count up to 32 and per
+  anti-ringing setting, compiled on first use; wider axes share a looping
+  program per anti-ringing setting). The calling thread is placed as
+  calibration timed it best: pinned to the large cores or left to the system;
+  the context's first use runs a small GPU job unpinned, so driver threads
+  started lazily inherit no pinning. Buffers stay from job to job,
   grown as pages need, and are freed on a memory trim or when the UI hides, 60 s
   after the last GPU job, or when the engine leaves the GPU; compiled programs
   stay through the 60 s trim and go with the others. A trim arriving during a

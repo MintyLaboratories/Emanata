@@ -36,20 +36,42 @@ import java.io.File
  * shape the axis cropped, the share kept and where each anchor starts, as shares of that axis,
  * whether each cuts the tallest text line, and whether the default fit (Auto) crops at all.
  * With [cropsDir], that book's covers by Top and by Smart (filled) as PNGs [CROP_H] tall: in a
- * 2:3 box always, in the other boxes where Smart moves.
+ * 2:3 box always, in the other boxes where Smart moves. Each object also holds the detector's
+ * own time (`detMs`); with [withLines], the size it looked at (`in`) and each line it found
+ * (`raw`: left, top, right, bottom, glyph as shares of that size, whether the glyph is the
+ * line's thickness, score). Only the books whose indices are in [pick] when given.
  */
 internal class CoverCropSurvey(
     private val context: Context,
-    private val detector: CoverTextDetector,
+    inner: CoverTextDetector,
     private val cropsDir: File?,
-    private val log: (JSONObject) -> Unit
+    private val log: (JSONObject) -> Unit,
+    private val pick: Set<Int>? = null,
+    private val withLines: Boolean = false
 ) {
+    /** Keeps the last lines found, the size they were found on and the time it took. */
+    private class Recording(val inner: CoverTextDetector) : CoverTextDetector {
+        override val id: String get() = inner.id
+        override fun inputSize(w: Int, h: Int): IntArray = inner.inputSize(w, h)
+        var last: List<SmartCrop.TextBox>? = null
+        var lw = 0
+        var lh = 0
+        var ms = 0.0
+        override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
+            val t = SystemClock.elapsedRealtimeNanos()
+            return inner.lines(src).also { last = it; lw = src.width; lh = src.height; ms = (SystemClock.elapsedRealtimeNanos() - t) / 1e6 }
+        }
+    }
+
+    private val detector = Recording(inner)
+
     fun run(dir: File) {
         val books = books(dir)
         log(JSONObject().put("survey", books.size).put("detector", detector.id))
         // The first run loads the model: kept out of every cover's time.
         Bitmap.createBitmap(SmartCrop.STRIDE * 4, SmartCrop.STRIDE * 6, Bitmap.Config.ARGB_8888).let { runCatching { detector.lines(it) }; it.recycle() }
         for ((index, book) in books.withIndex()) {
+            if (pick != null && index !in pick) continue
             val o = JSONObject().put("book", index).put("kind", kind(book)).put("cpuset", cpuset())
             try {
                 cover(book, o)
@@ -111,9 +133,17 @@ internal class CoverCropSurvey(
                 Rect(0, 0, src.width, src.height)
             }
             o.put("rw", region.width()).put("rh", region.height())
+            detector.last = null
             val t = SystemClock.elapsedRealtimeNanos()
             val focus = CoverArt.focusOf(src, region, detector)
             o.put("focusMs", Stats.round1((SystemClock.elapsedRealtimeNanos() - t) / 1e6)).put("kept", focus.keep)
+            o.put("detMs", Stats.round1(detector.ms))
+            if (withLines) {
+                val lw = detector.lw.toDouble()
+                val lh = detector.lh.toDouble()
+                o.put("in", JSONArray(listOf(detector.lw, detector.lh)))
+                o.put("raw", detector.last?.let { ls -> JSONArray(ls.map { b -> JSONArray(listOf(r3(b.left / lw), r3(b.top / lh), r3(b.right / lw), r3(b.bottom / lh), r3(b.glyph / lh), if (b.thickness != null) 1 else 0, r3(b.score.toDouble()))) }) } ?: JSONObject.NULL)
+            }
             o.put("title", box(focus.title)).put("text", box(focus.text)).put("lines", focus.lines.size)
             for ((label, ratio) in SHAPES) {
                 val s = shape(focus, region, ratio)

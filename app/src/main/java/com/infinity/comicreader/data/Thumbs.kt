@@ -549,6 +549,12 @@ object Thumbs {
     /** Where covers are kept under [cacheDir]. */
     fun dirIn(cacheDir: File) = File(cacheDir, DISK_DIR)
 
+    /** Drops the covers held in memory and keeps those on disk, as a restart does. For tests. */
+    internal fun dropMemory() {
+        memory.evictAll()
+        provisional.clear()
+    }
+
     fun clear(context: Context) {
         memory.evictAll()
         provisional.clear()

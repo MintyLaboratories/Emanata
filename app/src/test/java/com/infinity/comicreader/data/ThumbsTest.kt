@@ -265,6 +265,31 @@ class ThumbsTest {
         assertEquals(files.size + 2, coverFiles().size)
     }
 
+    @Test
+    fun coversNoDetectorShapedComeFromDiskAfterAChangeOfDetector() {
+        val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val plain = cover(name = "plain.png")
+        val barcoded = wraparound(true, "barcoded.png")
+        textAt(0.85, 0.92, id = "a")
+        val first = Thumbs.load(context, plain, "UTF-8", 120, 60, top)!!
+        Thumbs.load(context, barcoded, "UTF-8", 130, 200, top)!!
+        Thumbs.load(context, plain, "UTF-8", 120, 60, smart)!!
+        val files = coverFiles()
+        // A restart with another detector: memory is empty, the disk keeps what was made.
+        Thumbs.dropMemory()
+        val b = textAt(0.02, 0.1, id = "b")
+        assertNull(Thumbs.inMemory(context, plain, 120, 60, top))
+        val again = Thumbs.cached(context, plain, 120, 60, top)
+        assertNotNull("a cover from the top comes from disk", again)
+        assertEquals(first.getPixel(60, 30), again!!.getPixel(60, 30))
+        // A Smart crop and a wraparound, whose text it looks for, are not served from the other's.
+        assertNull(Thumbs.cached(context, plain, 120, 60, smart))
+        assertNull(Thumbs.cached(context, barcoded, 130, 200, top))
+        assertEquals("nothing looked", 0, b[0])
+        assertEquals(files, coverFiles())
+    }
+
     /** Stands in a detector known as [id] seeing a title on halves whose middle is [color] only. */
     private fun titledHalf(color: Int, id: String) {
         standIn(id) { bitmap ->

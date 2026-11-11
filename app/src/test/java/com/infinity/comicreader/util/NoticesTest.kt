@@ -142,6 +142,19 @@ class NoticesTest {
     }
 
     @Test
+    fun mlKitsDisclosuresNameEveryUseOfCoverText() {
+        val use = "for the Smart crop and for a wraparound cover's front and reading direction"
+        assertTrue(Notices.all.single { it.name == "ML Kit Text Recognition v2" }.note!!.contains(use))
+        val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
+        assertTrue(flat.contains("a setting finds cover text $use with Google's ML Kit"))
+        assertTrue(flat.contains("ML Kit's text recognition instead, cover text $use alike"))
+        val strings = File("src/main/res/values/strings.xml").readLines().map { it.replace("\\'", "'") }
+        for (name in listOf("pref_cover_mlkit_desc", "cover_text_details_mlkit")) {
+            assertTrue(name, strings.single { it.contains("name=\"$name\"") }.contains(use))
+        }
+    }
+
+    @Test
     fun noticesAreComplete() {
         for (n in Notices.all) {
             assertTrue(n.name, n.name.isNotBlank() && n.license.isNotBlank())

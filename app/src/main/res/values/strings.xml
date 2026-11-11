@@ -163,7 +163,7 @@
     <string name="thumb_fit_auto">Auto</string>
     <string name="pref_crop_anchor">Crop anchor</string>
     <string name="pref_cover_mlkit">Use Google ML Kit for cover text</string>
-    <string name="pref_cover_mlkit_desc">Smart crop finds cover text with Google\'s ML Kit instead of the app\'s own detector. Google Play services downloads its model, and ML Kit, running in this app, sends usage data to Google (Firebase logging). Covers never leave the device. Books read right to left keep the app\'s detector.</string>
+    <string name="pref_cover_mlkit_desc">Finds cover text for the Smart crop and for a wraparound cover\'s front and reading direction with Google\'s ML Kit instead of the app\'s own detector. Google Play services downloads its model, and ML Kit, running in this app, sends usage data to Google (Firebase logging). Covers never leave the device. Books read right to left keep the app\'s detector.</string>
     <string name="pref_cover_spacing">Cover spacing</string>
     <string name="pref_toolbar_buttons">Toolbar buttons</string>
     <string name="toolbar_buttons_none">None</string>
@@ -1115,8 +1115,8 @@
     <string name="cover_text_section">Cover text</string>
     <string name="cover_text_ppocr">PP-OCRv5 mobile text detector</string>
     <string name="cover_text_mlkit">Google ML Kit Text Recognition v2</string>
-    <string name="cover_text_details_ppocr">Finds where text is on covers for the Smart crop · runs on this device · Apache-2.0</string>
-    <string name="cover_text_details_mlkit">Finds where text is on covers for the Smart crop · through Google Play services · ML Kit terms</string>
+    <string name="cover_text_details_ppocr">Finds where text is on covers for the Smart crop and for a wraparound cover\'s front and reading direction · runs on this device · Apache-2.0</string>
+    <string name="cover_text_details_mlkit">Finds where text is on covers for the Smart crop and for a wraparound cover\'s front and reading direction · through Google Play services · ML Kit terms</string>
     <string name="cover_text_in_use">In use</string>
     <string name="cover_text_ppocr_missing">Not downloaded yet (%1$s): it downloads the first time a cover needs it (Smart crop, or telling a wraparound cover\'s front or reading direction). Until then, Smart crop crops as Top does</string>
     <string name="cover_text_ppocr_downloading">Downloading, %1$d%%. Until it is done, Smart crop crops as Top does</string>

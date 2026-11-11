@@ -199,8 +199,9 @@ object Notices {
             listOf("ml-kit.txt", "ml-kit-open-source.txt", APACHE_TEXT),
             listOf("com.google.mlkit:*", "com.google.android.gms:*", "com.google.android.odml:*"),
             note = "Google's ML Kit and Play services client libraries, under the ML Kit Terms of Service. Optional, " +
-                "off by default: when turned on, it finds text on covers for the Smart crop, Google Play services " +
-                "downloads its model, and ML Kit sends usage metrics to Google. Images stay on this device."
+                "off by default: when turned on, it finds cover text for the Smart crop and for a wraparound cover's " +
+                "front and reading direction, Google Play services downloads its model, and ML Kit sends usage " +
+                "metrics to Google. Images stay on this device."
         ),
         Notice(
             "Firebase components and Google Data Transport", APACHE_2,

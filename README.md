@@ -18,9 +18,10 @@ features and customizability.
   the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a
   wraparound cover's front or a book's reading direction); and, with ML Kit
   on, for its usage metrics. The app sends nothing else on its own.
-- **Optional ML Kit (off by default):** a setting lets the Smart crop find
-  cover text with Google's ML Kit through Google Play services. When you turn
-  it on, Play services downloads ML Kit's model, and Google may collect usage
+- **Optional ML Kit (off by default):** a setting finds cover text for the
+  Smart crop and for a wraparound cover's front and reading direction with
+  Google's ML Kit through Google Play services. When you turn it on, Play
+  services downloads ML Kit's model, and Google may collect usage
   data under the [ML Kit terms](https://developers.google.com/ml-kit/terms):
   ML Kit, running inside the app, sends usage and performance metrics to
   Google's Firebase logging service and may fetch updates. Covers never leave
@@ -114,8 +115,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     the height of its line's box, which it grows around the text.
   - **Google ML Kit (optional, off by default):** **Use Google ML Kit for
     cover text** (Settings → Library, offered only where Google Play services
-    is there) finds the lines with ML Kit's text recognition instead, except
-    on books read right to left (its recognizer reads Latin script only). When
+    is there) finds the lines with ML Kit's text recognition instead, cover
+    text for the Smart crop and for a wraparound cover's front and reading
+    direction alike, except on books read right to left (its recognizer reads
+    Latin script only). When
     on, Play services downloads ML Kit's model, and ML Kit, running in the
     app, sends usage and performance data to Google (Firebase logging) under
     the [ML Kit terms](https://developers.google.com/ml-kit/terms); covers

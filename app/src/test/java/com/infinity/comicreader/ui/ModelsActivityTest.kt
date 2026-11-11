@@ -12,6 +12,7 @@ import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.UserModel
 import com.infinity.comicreader.ai.UserModels
@@ -42,6 +43,8 @@ class ModelsActivityTest {
 
     @Before
     fun setUp() {
+        // The app's start tidies the store on the imports' thread: done before this test writes it.
+        ModelImports.settle()
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         store = ModelStore.of(context)
         store.root.deleteRecursively()

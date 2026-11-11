@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -116,7 +117,9 @@ object ModelImports {
     private val _state = MutableStateFlow<ImportState>(ImportState.Idle)
     val state: StateFlow<ImportState> = _state
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    /** Where imports, saves, deletes and [tidyAtStart] run, one at a time. */
+    private val serial = Dispatchers.IO.limitedParallelism(1)
+    private val scope = CoroutineScope(SupervisorJob() + serial)
 
     @Volatile
     private var job: Job? = null
@@ -239,6 +242,14 @@ object ModelImports {
         recover(store)
         store.prune()
     }
+
+    /** [tidy], queued with the imports' work: it never deletes the files of an import under way. */
+    fun tidyAtStart(store: ModelStore) {
+        scope.launch { runCatching { tidy(store) } }
+    }
+
+    /** Waits for the work queued so far: [tidyAtStart], imports, saves and deletes. Blocking; for tests. */
+    internal fun settle() = runBlocking(serial) {}
 
     /** The name of a model whose check ended the app, once; null for none. Blocking. */
     @Synchronized

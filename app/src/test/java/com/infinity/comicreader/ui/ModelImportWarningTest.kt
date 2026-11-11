@@ -51,6 +51,8 @@ class ModelImportWarningTest {
 
     @Before
     fun setUp() {
+        // The app's start tidies the store on the imports' thread: done before this test writes it.
+        ModelImports.settle()
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         store.root.deleteRecursively()
         UserModels.load(store)

@@ -83,8 +83,8 @@ class App : Application() {
      * the cover, page-preview, page-size, seam, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
+        runCatching { ModelImports.tidyAtStart(ModelStore.of(this)) }
         thread(name = "cache-cleanup", isDaemon = true) {
-            runCatching { ModelImports.tidy(ModelStore.of(this@App)) }
             runCatching {
                 // Only files that are clearly stale: a document another app just handed us
                 // may be copied into the cache while this thread runs.

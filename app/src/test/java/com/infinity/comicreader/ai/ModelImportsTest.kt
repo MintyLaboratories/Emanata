@@ -35,6 +35,8 @@ class ModelImportsTest {
 
     @Before
     fun setUp() {
+        // The app's start tidies the store on the imports' thread: done before this test writes it.
+        ModelImports.settle()
         store.root.deleteRecursively()
         ModelImports.cancel()
         ModelImports.runtime = FakeRuntime()

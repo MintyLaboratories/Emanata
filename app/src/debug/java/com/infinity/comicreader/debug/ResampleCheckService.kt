@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
@@ -63,7 +64,8 @@ import kotlin.random.Random
  *   Kotlin path on an opaque page; the largest channel difference of each, and a CRC-32 of
  *   each engine's outputs (`digest`): equal digests across builds mean bit-identical output.
  *   Also the GPU band with a stop callback, and trimming ([checkGpuBand]); then a GPU job
- *   canceled before its second chunk ([canceledGpuCheck]).
+ *   canceled before its second chunk ([canceledGpuCheck]), and one a memory trim arrives
+ *   during ([trimAtCloseCheck]).
  * - time: a 2000x3000 and a 4000x6000 page shrunk to `size` (by default 1848x2772 on every
  *   device, so runs compare across devices; `screen`: the 2000x3000 page fit to this screen
  *   held upright, as calibration does)
@@ -255,6 +257,46 @@ class ResampleCheckService : Service() {
             page.recycle()
         }
         canceledGpuCheck()
+        trimAtCloseCheck()
+    }
+
+    /**
+     * A memory trim arriving while a GPU job holds the GPU, as when the UI hides mid-page
+     * ([NativeResampler.onTrimMemory] with [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN], asked
+     * as the job's first chunk starts): the job frees the buffers and programs as it closes
+     * ("trim at close" under "ResampleGpu"), and the next GPU job runs on the GPU with the
+     * same pixels.
+     */
+    private fun trimAtCloseCheck() {
+        val c = Case(3000, 4000, Resampler.Window.of(3000, 4000), 600, 800, Scaling.DEFAULT)
+        val src = noise(c.srcW, c.srcH, 3, true)
+        val first = Bitmap.createBitmap(c.dstW, c.dstH, Bitmap.Config.ARGB_8888)
+        val next = Bitmap.createBitmap(c.dstW, c.dstH, Bitmap.Config.ARGB_8888)
+        val result = JSONObject().put("check", "gpu trimmed while a job runs")
+        try {
+            var polls = 0
+            var asked = false
+            val trimming = {
+                if (++polls == 2) {
+                    asked = NativeResampler.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN)
+                    NativeResampler.awaitTrims()
+                }
+                false
+            }
+            val ran = NativeResampler.resample(src, first, c.window, false, c.scaling, trimming, PixelEngine.GPU, fallback = false)
+            val usable = NativeResampler.gpuUsable
+            val after = NativeResampler.resample(src, next, c.window, false, c.scaling, engine = PixelEngine.GPU, fallback = false)
+            val same = ran && after && digest(first) == digest(next)
+            result.put("ran", ran).put("trimAsked", asked).put("polls", polls).put("usable", usable).put("after", after).put("same", same)
+                .put("ok", asked && polls >= 2 && usable && same)
+        } catch (t: Throwable) {
+            result.put("failed", "${t.javaClass.simpleName}: ${t.message}").put("ok", false)
+        } finally {
+            src.recycle()
+            first.recycle()
+            next.recycle()
+        }
+        log(result)
     }
 
     /**

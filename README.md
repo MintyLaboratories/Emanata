@@ -1501,8 +1501,8 @@ estimated from the tiles run in 60 or 120 s):
 The app's own code is released under the [MIT License](LICENSE). Based on
 [ComicReader](https://github.com/infinity6901/ComicReader) by infinity6901 (MIT).
 
-Bundled third-party components keep their own licenses. The app shows each
-license and NOTICE text under Settings → About (files in
+Third-party components, bundled or downloaded, keep their own licenses. The
+app shows each license and NOTICE text under Settings → About (files in
 `app/src/main/assets/licenses/`).
 
 | Component | License |

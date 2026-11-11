@@ -18,6 +18,7 @@ class CalibrationTest {
         const val PINNED_V3 = "ba2b68cf"
         const val PINNED_V4 = "07355a12"
         const val PINNED_V5 = "56188912"
+        const val PINNED_V6 = "0a827e8a"
     }
 
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
@@ -172,47 +173,29 @@ class CalibrationTest {
     }
 
     @Test
-    fun aChosenSetupStaysNearTheEdgeOfFast() {
+    fun anEarlierPickGetsNoAllowanceOutsideTheTolerance() {
         // 4 large cores 24 % slower than 8 threads for two thirds of the CPU: just outside the tolerance.
         val t = listOf(Timing(pixels(2, true), 44.0, 79.0), Timing(pixels(4, true), 31.0, 105.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
-        val stay = Calibration.STAY_MARGIN
         assertEquals(pixels(8, false), Calibration.pick(t)!!.candidate)
         assertEquals(pixels(8, false), Calibration.pick(t, incumbent = pixels(4, true))!!.candidate)
-        assertEquals(pixels(4, true), Calibration.pick(t, incumbent = pixels(4, true), stay = stay)!!.candidate)
-        // Back within the tolerance, the cheaper one wins over 8 threads in effect, then stays.
-        val near = listOf(Timing(pixels(4, true), 29.0, 101.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
-        assertEquals(pixels(4, true), Calibration.pick(near, incumbent = pixels(8, false), stay = stay)!!.candidate)
-        // Up to 1.4x the fastest's time it stays; beyond, it gives way.
-        val edge = listOf(Timing(pixels(4, true), 34.5, 105.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
-        assertEquals(pixels(4, true), Calibration.pick(edge, incumbent = pixels(4, true), stay = stay)!!.candidate)
-        val far = listOf(Timing(pixels(4, true), 35.5, 105.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
-        assertEquals(pixels(8, false), Calibration.pick(far, incumbent = pixels(4, true), stay = stay)!!.candidate)
-        // A setup not in effect never gets the margin.
-        assertEquals(pixels(8, false), Calibration.pick(t, incumbent = pixels(2, true), stay = stay)!!.candidate)
-        // Only a calibration's own earlier choice keeps it; the defaults don't.
-        val before = Tuning(PixelEngine.NATIVE, 4, true, 4, true)
-        assertEquals(4, Calibration.tuning(t, before, chosen = true).pixelThreads)
-        assertEquals(8, Calibration.tuning(t, before).pixelThreads)
-        // JPEG XL decodes get no margin: 4 large cores 1.3x behind give way even when chosen.
+        // The tuning in effect, a calibration's earlier pick, gives way alike for resampling, the GPU's caller and JPEG XL.
+        val before = Tuning(PixelEngine.NATIVE, 4, true, 4, true, gpuPinned = true)
+        val g = listOf(Timing(gpu, 14.9, 10.0, 1.0), Timing(gpu.copy(pinned = false), 12.0, 15.0, 1.0))
         val j = listOf(Timing(jxl(4, true), 65.0, 220.0, 1.0), Timing(jxl(8, false), 50.0, 330.0, 1.0))
-        assertEquals(8, Calibration.tuning(t + j, before, chosen = true).jxlThreads)
+        val picked = Calibration.tuning(t + g + j, before)
+        assertEquals(8 to false, picked.pixelThreads to picked.pixelPinned)
+        assertEquals(PixelEngine.GPU to false, picked.engine to picked.gpuPinned)
+        assertEquals(8 to false, picked.jxlThreads to picked.jxlPinned)
+        // Back within the tolerance, the cheaper one wins over 8 threads in effect.
+        val near = listOf(Timing(pixels(4, true), 29.0, 101.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
+        assertEquals(pixels(4, true), Calibration.pick(near, incumbent = pixels(8, false))!!.candidate)
     }
 
     @Test
-    fun onlyAPickMadeOutOfBatterySaverIsChosen() {
+    fun aKeptTuningWithFieldsItNoLongerNeedsStillLoads() {
         val pick = Tuning(PixelEngine.NATIVE, 4, true, 4, true)
-        fun kept(saver: Boolean?, tuning: Tuning? = pick) = org.json.JSONObject().put("fingerprint", "1|a")
-            .apply { tuning?.let { put("tuning", it.toJson()) }; saver?.let { put("powerSave", it) } }
-        assertTrue(Calibration.chosen(kept(false), pick))
-        assertTrue(Calibration.chosen(kept(null), pick))
-        // A run measured under battery saver: the next run out of saver replaces it, margin or not.
-        assertFalse(Calibration.chosen(kept(true), pick))
-        // Before any calibration, or with another tuning in effect.
-        assertFalse(Calibration.chosen(null, pick))
-        assertFalse(Calibration.chosen(kept(false, tuning = null), pick))
-        assertFalse(Calibration.chosen(kept(false), pick.copy(pixelThreads = 8, pixelPinned = false)))
-        // Through an update (another fingerprint), the earlier pick keeps it.
-        assertTrue(Calibration.chosen(kept(false).put("fingerprint", "2|a"), pick))
+        val json = pick.toJson().put("chosen", true).put("stayMargin", 0.2)
+        assertEquals(pick, Tuning.of(json))
     }
 
     @Test
@@ -326,7 +309,7 @@ class CalibrationTest {
     @Test
     fun theMethodIsPinnedToItsVersion() {
         // Never edit a pinned hash: a change to the method bumps Calibration.VERSION and pins its hash beside the others.
-        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4, 5 to PINNED_V5)
+        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4, 5 to PINNED_V5, 6 to PINNED_V6)
         val hash = "%08x".format(Calibrator.method().hashCode())
         assertEquals("The calibration method changed: bump Calibration.VERSION and pin $hash for it", pinned[Calibration.VERSION], hash)
         assertEquals(pinned.size, pinned.values.toSet().size)

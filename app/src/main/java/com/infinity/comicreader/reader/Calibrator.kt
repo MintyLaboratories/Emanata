@@ -381,10 +381,9 @@ object Calibrator : CalibrationControl {
                 cores, Runtime.getRuntime().availableProcessors(), gpu = true, jxl = probe.hasJxl, jpeg = cores.big != 0L && probe.hasJpeg
             )
             val before = tuning ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors())
-            val wasChosen = Calibration.chosen(kept, before)
             val run = CalibrationRun(
                 probe, candidates, burst = s.burst, warm = s.warm, warmOnce = s.warmOnce,
-                winners = if (s.early) { t -> Calibration.tuning(t, before, chosen = wasChosen) } else null,
+                winners = if (s.early) { t -> Calibration.tuning(t, before) } else null,
                 progress = { p ->
                     progress = p
                     changed()
@@ -396,7 +395,7 @@ object Calibrator : CalibrationControl {
             val timings = run.run(dropped) ?: return run.why ?: "stopped"
             val tookMs = SystemClock.elapsedRealtime() - t0
             if (timings.none { it.candidate.kind == Candidate.Kind.PIXELS }) return "no resampling setup ran"
-            val chosen = Calibration.tuning(timings, before, chosen = wasChosen)
+            val chosen = Calibration.tuning(timings, before)
             chosen.apply()
             tuning = chosen
             val record = JSONObject().put("fingerprint", f).put("at", System.currentTimeMillis())

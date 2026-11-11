@@ -1,5 +1,9 @@
 package com.infinity.comicreader.ui
 
+import android.app.Activity
+import android.app.Dialog
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Looper
 import android.view.View
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -14,7 +18,8 @@ class ReaderSheet(private val viewer: ViewerActivity) {
     init {
         shadowOf(viewer).clickMenuItem(R.id.menu_tune)
         idle()
-        dialog = ShadowDialog.getLatestDialog() as BottomSheetDialog
+        // This reader's sheet: another reader may show a dialog meanwhile.
+        dialog = ShadowDialog.getShownDialogs().filterIsInstance<BottomSheetDialog>().last { it.shownBy(viewer) }
     }
 
     fun <T : View> view(id: Int): T = dialog.findViewById<T>(id)!!
@@ -27,4 +32,16 @@ class ReaderSheet(private val viewer: ViewerActivity) {
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+}
+
+/** The dialog [activity] showed last: readers of earlier tests, never destroyed, may show theirs meanwhile. */
+fun latestDialogOf(activity: Activity): Dialog = ShadowDialog.getShownDialogs().last { it.shownBy(activity) }
+
+/** True when this dialog opened over [activity]. */
+fun Dialog.shownBy(activity: Activity): Boolean = context.activity() === activity
+
+private tailrec fun Context.activity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.activity()
+    else -> null
 }

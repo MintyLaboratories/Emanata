@@ -26,7 +26,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 
 /** The reader sheet's AI pickers: each model with what it does, slow ones only with advanced settings shown. */
@@ -54,9 +53,13 @@ class ViewerActivityAiChoicesTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun open(): ViewerActivity {
+    /** One book for every reader a test opens: a like book elsewhere would have them ask whether it is a copy. */
+    private val book by lazy {
         val pages = (0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
-        val book = Fixtures.zip(File(tmp.newFolder(), "Sample v01.cbz"), *pages.toTypedArray())
+        Fixtures.zip(File(tmp.newFolder(), "Sample v01.cbz"), *pages.toTypedArray())
+    }
+
+    private fun open(): ViewerActivity {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
@@ -71,7 +74,7 @@ class ViewerActivityAiChoicesTest {
     /** The upscale picker's dialog, opened from the sheet, and its items' text. */
     private fun upscaleChoices(viewer: ViewerActivity): Pair<AlertDialog, List<String>> {
         ReaderSheet(viewer).tap(R.id.sheet_ai_upscale)
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val dialog = latestDialogOf(viewer) as AlertDialog
         val adapter = dialog.listView.adapter
         return dialog to (0 until adapter.count).map { adapter.getItem(it).toString() }
     }

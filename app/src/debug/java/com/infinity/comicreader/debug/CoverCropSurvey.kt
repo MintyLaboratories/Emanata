@@ -37,7 +37,7 @@ import java.io.File
  * whether each cuts the tallest text line, and whether the default fit (Auto) crops at all.
  * With [cropsDir], that book's covers by Top and by Smart (filled) as PNGs [CROP_H] tall: in a
  * 2:3 box always, in the other boxes where Smart moves. Each object also holds the detector's
- * own time (`detMs`); with [withLines], the size it looked at (`in`) and each line it found
+ * own time (`detMs`, null when it gave no answer); with [withLines], the size it looked at (`in`) and each line it found
  * (`raw`: left, top, right, bottom, glyph as shares of that size, whether the glyph is the
  * line's thickness, score). Only the books whose indices are in [pick] when given.
  */
@@ -49,14 +49,14 @@ internal class CoverCropSurvey(
     private val pick: Set<Int>? = null,
     private val withLines: Boolean = false
 ) {
-    /** Keeps the last lines found, the size they were found on and the time it took. */
+    /** Keeps the last lines found, the size they were found on and the time it took (NaN: none since the last reset). */
     private class Recording(val inner: CoverTextDetector) : CoverTextDetector {
         override val id: String get() = inner.id
         override fun inputSize(w: Int, h: Int): IntArray = inner.inputSize(w, h)
         var last: List<SmartCrop.TextBox>? = null
         var lw = 0
         var lh = 0
-        var ms = 0.0
+        var ms = Double.NaN
         override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
             val t = SystemClock.elapsedRealtimeNanos()
             return inner.lines(src).also { last = it; lw = src.width; lh = src.height; ms = (SystemClock.elapsedRealtimeNanos() - t) / 1e6 }
@@ -134,10 +134,11 @@ internal class CoverCropSurvey(
             }
             o.put("rw", region.width()).put("rh", region.height())
             detector.last = null
+            detector.ms = Double.NaN
             val t = SystemClock.elapsedRealtimeNanos()
             val focus = CoverArt.focusOf(src, region, detector)
             o.put("focusMs", Stats.round1((SystemClock.elapsedRealtimeNanos() - t) / 1e6)).put("kept", focus.keep)
-            o.put("detMs", Stats.round1(detector.ms))
+            o.put("detMs", if (detector.ms.isNaN()) JSONObject.NULL else Stats.round1(detector.ms))
             if (withLines) {
                 val lw = detector.lw.toDouble()
                 val lh = detector.lh.toDouble()

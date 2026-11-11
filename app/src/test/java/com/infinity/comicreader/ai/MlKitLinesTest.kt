@@ -58,6 +58,13 @@ class MlKitLinesTest {
     }
 
     @Test
+    fun theVersionNamesTheGrowth() {
+        // Covers found with other boxes keep their focus until VERSION changes: raise it with GROW, then this pair.
+        assertEquals(1.25 to 2, MlKitLines.GROW to MlKitLines.VERSION)
+        assertEquals("mlkit-latin-v2-lines2", MlKitTextDetector.ID)
+    }
+
+    @Test
     fun aRotatedLineKeepsItsLettersSizeNotItsBoxes() {
         val b = MlKitLines.box(line(200.0, 300.0, 200.0, 40.0, degrees = 30.0), 400, 600)!!
         // The box around it is far thicker than its letters.

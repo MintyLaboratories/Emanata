@@ -258,8 +258,8 @@ object Calibration {
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
      * fastest's own spread of it), the one using the least CPU time weighed by core capacity
-     * ([Timing.weightedMs]); [incumbent], the setup in effect, when fast too and the winner
-     * uses less of it by no more than the noise ([cpuNoise]). An incumbent outside the
+     * ([Timing.weightedMs]); [incumbent], the setup in effect, wins instead when it is fast
+     * too and uses no more than the noise ([cpuNoise]) more. An incumbent outside the
      * tolerance gets no allowance. A slow setup's own spread never counts, so its outliers
      * cannot make it fast.
      */

@@ -243,17 +243,16 @@ object Calibration {
 
     /**
      * Whether platform JPEG decodes stay pinned, from the [JPEG][Candidate.Kind.JPEG] [timings]:
-     * pinned where the system decodes on one thread; else [before] unless the other choice
-     * is faster by more than [JPEG_MARGIN] and its own spread (a slow choice's outliers never
-     * count, as in [pick]).
+     * unpinned only where the system decodes on several threads and that is faster by more
+     * than [JPEG_MARGIN] and its own spread (a slow choice's outliers never count, as in
+     * [pick]), whichever is in effect; [before] when either is untimed.
      */
     fun jpegPinned(timings: List<Timing>, before: Boolean): Boolean {
         val jpeg = timings.filter { it.candidate.kind == Candidate.Kind.JPEG }
         val pinned = jpeg.firstOrNull { it.candidate.pinned } ?: return before
         val any = jpeg.firstOrNull { !it.candidate.pinned } ?: return before
         if (any.cpuMs < any.wallMs * JPEG_THREADED) return true
-        fun beats(a: Timing, b: Timing) = a.wallMs < b.wallMs * (1 - JPEG_MARGIN) && b.wallMs - a.wallMs > a.wallSpreadMs
-        return if (before) !beats(any, pinned) else beats(pinned, any)
+        return !(any.wallMs < pinned.wallMs * (1 - JPEG_MARGIN) && pinned.wallMs - any.wallMs > any.wallSpreadMs)
     }
 
     /**

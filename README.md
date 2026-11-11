@@ -1028,7 +1028,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   where 8 JPEG XL threads used 19% less energy than the 2 large cores for 2.1x
   the CPU time; capacity alone would have picked the large cores). The
   GPU wins only when more than 20% faster than every CPU setup, since its own
-  power is not measured. Differences within the runs' spread count as none,
+  power is not measured. Platform JPEG decodes stay pinned unless, left to
+  the system, they run on several threads and over 5% faster. Differences
+  within the runs' spread count as none,
   so the setup in effect stays; beyond that each calibration picks on its own
   timings, with no allowance for an earlier pick, so a setup near the edge
   may change from one calibration to the next.

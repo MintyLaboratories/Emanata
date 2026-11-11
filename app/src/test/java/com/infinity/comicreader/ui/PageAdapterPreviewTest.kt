@@ -175,7 +175,9 @@ class PageAdapterPreviewTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val first = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(first, 0)
-        idleUntil { shown(first)?.width == 40 && 0 in source.quick }
+        // A decode done before its bind awaits it shows at once; the adapter counts the page shown
+        // only when it handles the decode's end, a later main-thread message ([PageAdapter.decoding] false).
+        idleUntil { shown(first)?.width == 40 && 0 in source.quick && !adapter.decoding }
         // Pages 1 and 2 decode at once, with both decoders: no quick preview races them.
         for (page in 1..2) {
             adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), page)

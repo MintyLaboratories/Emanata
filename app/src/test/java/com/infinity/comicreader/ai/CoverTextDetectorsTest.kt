@@ -406,6 +406,44 @@ class CoverTextDetectorsTest {
     }
 
     @Test
+    fun turningTheSettingOffDuringTheCheckRequestsNothing() {
+        val asking = CountDownLatch(1)
+        val answer = CountDownLatch(1)
+        val play = FakePlay(installed = {
+            asking.countDown()
+            answer.await(5, TimeUnit.SECONDS)
+            false
+        })
+        val d = detectors(play)
+        val detector = d.session()
+        val cover = thread { detector.lines(image) }
+        assertTrue(asking.await(5, TimeUnit.SECONDS))
+        on = false
+        d.settingChanged()
+        answer.countDown()
+        cover.join(5_000)
+        assertTrue("no download requested", play.requests.isEmpty())
+        on = true
+        d.settingChanged()
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+    }
+
+    @Test
+    fun turningTheSettingOffWhileTheModuleIsRequestedCancelsIt() {
+        // The setting reads off before its listener runs.
+        val play = FakePlay(installed = { false }, request = { on = false })
+        val d = detectors(play)
+        assertNull(d.session().lines(image))
+        assertEquals(1, play.canceled)
+        // Its late answer changes nothing.
+        play.requests.single()(true)
+        assertEquals(0, d.arrivals)
+        on = true
+        d.settingChanged()
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+    }
+
+    @Test
     fun aModuleFoundAfterACheckMissedCountsAsArrived() {
         var installed: Boolean? = null
         val d = detectors(FakePlay(installed = { installed }))

@@ -272,7 +272,7 @@ class CoverTextDetectors(
     /**
      * Settles what Play services told of the module ([PlayServices.moduleInstalled]): true when
      * ML Kit may run now. A module missing is requested when the network policy allows, else ML
-     * Kit is given up.
+     * Kit is given up; never once the setting is off, then or while it is being requested.
      */
     private fun asked(installed: Boolean?): Boolean {
         val interrupted = Thread.currentThread().isInterrupted
@@ -285,6 +285,8 @@ class CoverTextDetectors(
                 module == Module.READY -> return true
                 installed == true -> stop = arrived()
                 module == Module.DOWNLOADING -> return false
+                // Turned off during the check: nothing is requested.
+                !optedIn() -> return false
                 // An interrupted wait tells nothing of Play services: the next cover asks again.
                 installed == null && interrupted -> return false
                 installed == null -> {
@@ -318,11 +320,16 @@ class CoverTextDetectors(
         }
         synchronized(lock) {
             if (request == number && module == Module.DOWNLOADING) {
-                cancel = requested
-                return false
+                if (optedIn()) {
+                    cancel = requested
+                    return false
+                }
+                // Turned off while it was being requested.
+                module = Module.UNKNOWN
+                request++
             }
         }
-        // Settled, or given up, while it was being requested.
+        // Settled, given up or turned off while it was being requested.
         requested()
         return synchronized(lock) { gaveUp == null && module == Module.READY }
     }

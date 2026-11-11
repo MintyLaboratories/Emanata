@@ -173,11 +173,11 @@ internal class MlKitTextDetector(
         private const val TAG = "MlKitTextDetector"
 
         /**
-         * Its [CoverTextDetector.id]: ML Kit text recognition v2, Latin script. Play services
-         * updates the model on its own, unseen by the app, so focuses found by an earlier model
-         * keep this id: a known limit of the unbundled model.
+         * Its [CoverTextDetector.id]: ML Kit text recognition v2, Latin script, its lines as boxes
+         * by [MlKitLines.VERSION]. Play services updates the model on its own, unseen by the app,
+         * so focuses found by an earlier model keep this id: a known limit of the unbundled model.
          */
-        const val ID = "mlkit-latin-v2"
+        const val ID = "mlkit-latin-v2-lines${MlKitLines.VERSION}"
 
         /** The longest wait for ML Kit's answer on one cover; the first includes loading its model. */
         const val TIMEOUT_MS = 10_000L

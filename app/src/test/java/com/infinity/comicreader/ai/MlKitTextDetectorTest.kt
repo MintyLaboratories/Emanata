@@ -58,7 +58,7 @@ class MlKitTextDetectorTest {
 
     @Test
     fun itsIdIsMlKitsLatinV2() {
-        assertEquals("mlkit-latin-v2", MlKitTextDetector({ Finder { Tasks.forResult(emptyList()) } }).id)
+        assertEquals("mlkit-latin-v2-lines2", MlKitTextDetector({ Finder { Tasks.forResult(emptyList()) } }).id)
     }
 
     @Test
@@ -80,7 +80,7 @@ class MlKitTextDetectorTest {
         val finder = Finder { Tasks.forResult(listOf(upright(20.0, 30.0, 380.0, 110.0), upright(500.0, 0.0, 600.0, 40.0))) }
         val d = MlKitTextDetector({ finder })
         val lines = linesOff(d)!!
-        assertEquals(listOf(SmartCrop.TextBox(20.0, 30.0, 380.0, 110.0, 0.8f, 80.0)), lines)
+        assertEquals(listOf(SmartCrop.TextBox(10.0, 20.0, 390.0, 120.0, 0.8f, 80.0)), lines)
         // ML Kit reads a copy of its own.
         assertNotSame(image, finder.seen.single())
         assertEquals(400, finder.seen.single().width)

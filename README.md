@@ -929,10 +929,28 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   those cores; or, where it cannot load, `Resampler` in Kotlin, which also models
   the native code for JVM tests. OpenGL ES 3.1 compute shaders on the GPU
   take over where calibration finds them clearly faster (not on the reference
-  tablet, where they are slower than the CPU path). All three filter in fp32
-  and agree within one code. Only a source over
+  tablet, where they tie the chosen CPU setup; see Benchmarks). All three
+  filter in fp32 and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
+- The GPU path (`src/main/cpp/resample_gpu.c`) runs on an offscreen context of
+  its own, one job at a time. Output rows go in chunks of equal size, two in
+  flight on their own buffers with a fence each (`resample_chunks.c`): while the
+  GPU filters one, its calling thread copies the one before out and the next
+  in. The across pass runs one GPU thread per output column over 8 source rows,
+  its tap loop unrolled to the column's tap count (a program per count up to 32
+  and per anti-ringing, compiled on first use; wider filters share a looping
+  one). The calling thread is placed as calibration timed it best: pinned to the
+  large cores or left to the system; the context's first use, unpinned, starts
+  the driver's own threads before any pinned job. Buffers stay from job to job,
+  grown as pages need, and are freed on a memory trim or when the UI hides, 60 s
+  after the last GPU job, or when the engine leaves the GPU; compiled programs
+  stay through the 60 s trim and go with the others. A trim arriving during a
+  job is done as the job closes, and every trim runs off the main thread. The
+  path waits on the GPU in 100 ms slices, asking between them whether the page
+  is still wanted. A chunk not done within 10 s, or three failed jobs in a row,
+  turn the path off for the process: GPU jobs then go straight to the CPU path,
+  logged once, and `CalibrationActivity` (debug and bench builds) says so.
 - Per-device calibration (`Calibrator`, choices in `Calibration`): once per
   system build and calibration version (`Calibration.VERSION`, bumped when the
   setups or the method change; app updates alone don't recalibrate), when the
@@ -940,7 +958,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   rules in `CalibrationPrompts`), while the app is in front but not reading,
   cool and otherwise idle, it times
   the resampler on 1, 2, one-per-large-core and one-per-core workers and on the
-  GPU on a synthetic 2000x3000 page, native JPEG XL decodes on 2,
+  GPU, its calling thread pinned to the large cores (where there are any) and
+  not, on a synthetic 2000x3000 page, native JPEG XL decodes on 2,
   one-per-large-core and one-per-core threads and platform JPEG decodes pinned
   and not on a synthetic 4000x6000 one (4K class, as image decode timings
   use). It starts once the app is idle (waiting 3 s at most), then draws and
@@ -1232,6 +1251,36 @@ out; `ab` compares two builds installed in turn (A B B A); no session starts bel
 battery (`--min-battery 0` overrides). `tools/bench/plans` holds plans for the synthetic
 books, read fast and slowly. See its `--help`; its tests run with
 `py -m unittest discover tools/bench`.
+
+`ResampleCheckService` (debug and bench builds, shell only) checks the native and
+GPU resamplers against the Kotlin model and times setups on synthetic pages; with
+`--ez trace true` each GPU job logs its steps under `ResampleGpu`. See its KDoc.
+On a Snapdragon 8 Gen 1 (Adreno 730, Android 16, bench build in the foreground,
+plugged in, thermal status 0), the GPU path shrank synthetic pages to 1848x2772
+with Lanczos3 (wall / process CPU ms, medians of 4 to 7 runs of 15 pages, each
+run alternating with the native CPU path):
+
+| Page, anti-ringing | GPU before the rework | GPU now | Speedup |
+|---|---|---|---|
+| 2000x3000, 0 | 88.3 / 38 | 25.4 / 20 | 3.5x |
+| 2000x3000, 50 | 95.0 / 41 | 30.5 / 23 | 3.1x |
+| 4000x6000, 0 | 217.6 / 70 | 63.0 / 43 | 3.5x |
+| 4000x6000, 50 | 222.7 / 63 | 74.2 / 49 | 3.0x |
+
+Most of it came from two steps: the across pass on columns of 8 rows with
+unrolled taps (26 to 43% less wall time), then two chunks in flight with fences
+(47 to 56% less). One job per page with aligned chunks saved 1 to 8%; keeping
+buffers between jobs and pinning the calling thread changed nothing measurable.
+Output stayed bit-identical through the rework. Calibration on that tablet still
+picks the CPU path, 4 threads pinned to the large cores: its 2000x3000 page took
+the GPU 27.8 to 28.3 ms (15 to 16 ms of CPU), those 4 threads 28.8 to 29.3 ms
+(96 to 99 ms of CPU) and 8 unpinned threads 24.5 to 26.6 ms (151 to 160 ms of
+CPU), three calibrations. The GPU ties the chosen setup within the runs' spread
+and is not 20% faster than the fastest one. Whether its lower CPU time saves
+energy is not measured yet. While the calibration screen shows its page, moving
+or still, the GPU setups take about 27% longer and the CPU setups do not; as the
+reader also draws while it resamples, which of the two conditions calibration
+should match is open.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

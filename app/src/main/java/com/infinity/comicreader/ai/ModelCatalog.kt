@@ -222,21 +222,21 @@ object ModelCatalog {
     )
 
     /** The repository the covers' text detector comes from, and the revision it is fetched at. */
-    const val DETECTOR_REPOSITORY = "https://huggingface.co/assafvayner/translatte-ocr-ncnn"
-    const val DETECTOR_REVISION = "cbb0b8d2265d44c08e0387ae637d612695afb5d8"
-    private const val DETECTOR_BASE = "$DETECTOR_REPOSITORY/resolve/$DETECTOR_REVISION/det/"
+    const val DETECTOR_REPOSITORY = "https://huggingface.co/qefro/pp-OCRv5-6-ncnn"
+    const val DETECTOR_REVISION = "aa770c1e01b22010522bfaebe3f9bc4d239984fc"
+    private const val DETECTOR_BASE = "$DETECTOR_REPOSITORY/resolve/$DETECTOR_REVISION/"
 
     /**
      * The covers' text detector ([TextDetector]): PP-OCRv5 mobile det (Apache-2.0), an ncnn
-     * conversion of PaddlePaddle's ONNX release by the repository's author (Apache-2.0),
-     * fetched unchanged. The one in the app's assets has the same layers, biases and weights
-     * but for fp16 storage (here fp32, so twice the bytes), and computes its squeeze-and-excite
-     * steps as inner products (here 1 x 1 convolutions plus two reshapes).
+     * conversion with fp16 weights, as the repository (Apache-2.0) takes it from the
+     * PaddleOCR-ncnn-CPP release archive (MIT), fetched unchanged. It has the layers, biases and
+     * weights of the conversion by `tools/text-detector/convert.py`, but computes its
+     * squeeze-and-excite steps as 1 x 1 convolutions plus two reshapes (there, inner products).
      */
     val TEXT_DETECTOR = ToolModel(
         "ppocrv5-mobile-det", "PP-OCRv5 mobile text detector",
-        ModelFile("inference.ncnn.param", DETECTOR_BASE + "inference.ncnn.param", 24_256, "19359eea27e9f38b493a40ac11acbb95bbe6cbe174866e9e043cbe6a786f3ce6"),
-        ModelFile("inference.ncnn.bin", DETECTOR_BASE + "inference.ncnn.bin", 4_685_856, "7f4635ba0c8933707ad5cb3ceadaba8a7165fbb906fc1378ae8249de0b2132d8")
+        ModelFile("PP_OCRv5_mobile_det.param", DETECTOR_BASE + "PP_OCRv5_mobile_det.param", 23_816, "c08d6d1e9627ef6ca9d9acde8a51959fdc892e5f0419c662a63e4c22fbe47464"),
+        ModelFile("PP_OCRv5_mobile_det.bin", DETECTOR_BASE + "PP_OCRv5_mobile_det.bin", 2_357_216, "1fc0f1151e5fa63328316333581869b69de226270d3cd8fce89fb1c260b3e7b5")
     )
 
     /** The app's own models. */

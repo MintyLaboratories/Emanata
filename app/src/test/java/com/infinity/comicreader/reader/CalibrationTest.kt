@@ -178,6 +178,7 @@ class CalibrationTest {
 
     @Test
     fun anEarlierPickGetsNoAllowanceOutsideTheTolerance() {
+        // pick and tuning take no margin argument any more, so this pins the only path there is.
         // 4 large cores 24 % slower than 8 threads for two thirds of the CPU: just outside the tolerance.
         val t = listOf(Timing(pixels(2, true), 44.0, 79.0), Timing(pixels(4, true), 31.0, 105.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
         assertEquals(pixels(8, false), Calibration.pick(t)!!.candidate)
@@ -196,10 +197,15 @@ class CalibrationTest {
     }
 
     @Test
-    fun aKeptTuningWithFieldsItNoLongerNeedsStillLoads() {
+    fun aCalibrationKeptByTheLastVersionStillAppliesUntilTheNextRun() {
         val pick = Tuning(PixelEngine.NATIVE, 4, true, 4, true)
-        val json = pick.toJson().put("chosen", true).put("stayMargin", 0.2)
-        assertEquals(pick, Tuning.of(json))
+        val system = "build-1"
+        val record = org.json.JSONObject(
+            org.json.JSONObject().put("fingerprint", Calibration.fingerprint(Calibration.VERSION - 1, system))
+                .put("tuning", pick.toJson()).put("powerSave", false).toString()
+        )
+        assertEquals(pick, Tuning.of(record.optJSONObject("tuning")))
+        assertTrue(Calibration.due(record, Calibration.fingerprint(Calibration.VERSION, system)))
     }
 
     @Test

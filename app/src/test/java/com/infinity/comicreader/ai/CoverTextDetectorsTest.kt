@@ -330,6 +330,11 @@ class CoverTextDetectorsTest {
         play.requests.single()(false)
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.MODULE_FAILED), d.status())
         assertEquals(TextDetector.ID, d.session().id)
+        // Unlike a hold, no time lifts it.
+        clock += DetectorModel.HELD_MS
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.MODULE_FAILED), d.status())
+        assertEquals(TextDetector.ID, d.session().id)
+        assertEquals(1, play.requests.size)
     }
 
     @Test
@@ -400,10 +405,12 @@ class CoverTextDetectorsTest {
         assertNull(detector.lines(image))
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.FAILED), d.status())
         assertEquals(TextDetector.ID, d.session().id)
-        // A detector handed out before does not run ML Kit again.
+        // A detector handed out before does not run ML Kit again, however much later.
+        clock += DetectorModel.HELD_MS
         val runs = ml.runs
         assertNull(detector.lines(image))
         assertEquals(runs, ml.runs)
+        assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.FAILED), d.status())
     }
 
     @Test

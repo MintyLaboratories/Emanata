@@ -23,7 +23,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 
 /** Fullscreen stays fullscreen: the reader's sheets and dialogs keep the system bars hidden. */
@@ -66,7 +65,7 @@ class ViewerActivityFullscreenTest {
     private fun open(id: Int): Dialog {
         shadowOf(launched).clickMenuItem(id)
         idle()
-        return ShadowDialog.getLatestDialog()
+        return latestDialogOf(launched)
     }
 
     private lateinit var launched: ViewerActivity

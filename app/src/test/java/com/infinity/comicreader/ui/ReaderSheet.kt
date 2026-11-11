@@ -37,6 +37,9 @@ class ReaderSheet(private val viewer: ViewerActivity) {
 /** The dialog [activity] showed last: readers of earlier tests, never destroyed, may show theirs meanwhile. */
 fun latestDialogOf(activity: Activity): Dialog = ShadowDialog.getShownDialogs().last { it.shownBy(activity) }
 
+/** [latestDialogOf], or null while [activity] has shown none. */
+fun latestDialogOrNullOf(activity: Activity): Dialog? = ShadowDialog.getShownDialogs().lastOrNull { it.shownBy(activity) }
+
 /** True when this dialog opened over [activity]. */
 fun Dialog.shownBy(activity: Activity): Boolean = context.activity() === activity
 

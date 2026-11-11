@@ -27,7 +27,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -88,7 +87,7 @@ class ViewerActivityChaptersTest {
     private fun ViewerActivity.openDrawer(): Pair<SideSheetDialog, RecyclerView> {
         shadowOf(this).clickMenuItem(R.id.menu_book_chapters)
         idle()
-        val dialog = ShadowDialog.getLatestDialog() as SideSheetDialog
+        val dialog = latestDialogOf(this) as SideSheetDialog
         val list = dialog.findViewById<RecyclerView>(R.id.chapters_list)!!
         list.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.EXACTLY))
         list.layout(0, 0, 720, 2000)

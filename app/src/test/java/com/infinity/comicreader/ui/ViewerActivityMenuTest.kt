@@ -86,14 +86,14 @@ class ViewerActivityMenuTest {
 
     /** Opens Book info and returns its text once the book's details are read. */
     private fun ViewerActivity.bookInfo(): String {
-        val before = ShadowDialog.getLatestDialog()
+        val before = latestDialogOrNullOf(this)
         shadowOf(this).clickMenuItem(R.id.menu_book_info)
         val deadline = System.currentTimeMillis() + 5_000
-        while (ShadowDialog.getLatestDialog() === before && System.currentTimeMillis() < deadline) {
+        while (latestDialogOrNullOf(this) === before && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             idle()
         }
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val dialog = latestDialogOf(this) as AlertDialog
         return dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
     }
 
@@ -178,13 +178,13 @@ class ViewerActivityMenuTest {
     @Test
     fun aSecondTapWhileBookInfoReadsIsIgnored() {
         val viewer = launch(book())
-        val before = ShadowDialog.getShownDialogs().size
+        val before = ShadowDialog.getShownDialogs().count { it.shownBy(viewer) }
         // Two taps, then a third inside bookInfo(), all before the first read is done.
         shadowOf(viewer).clickMenuItem(R.id.menu_book_info)
         shadowOf(viewer).clickMenuItem(R.id.menu_book_info)
         viewer.bookInfo()
         idle()
-        assertEquals(before + 1, ShadowDialog.getShownDialogs().size)
+        assertEquals(before + 1, ShadowDialog.getShownDialogs().count { it.shownBy(viewer) })
     }
 
     /** The pager laid out at [width] × [height]. */
@@ -226,9 +226,10 @@ class ViewerActivityMenuTest {
 
     @Test
     fun aLongPressOnAPageOffersItsActions() {
-        val page = launch(book()).pager().shownImages().first()
+        val viewer = launch(book())
+        val page = viewer.pager().shownImages().first()
         press(page)
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val dialog = latestDialogOf(viewer) as AlertDialog
         assertEquals(context.getString(R.string.page_actions_title, 1), dialog.title())
         // The fixed row: Share, Save, Crop, Bookmark.
         assertEquals(4, dialog.findViewById<android.view.ViewGroup>(R.id.page_actions_top)!!.childCount)
@@ -241,22 +242,24 @@ class ViewerActivityMenuTest {
         Prefs(context).coverAlone = false
         // Left to right, then a right-to-left book (from its ComicInfo), whose first page is on the right.
         for ((comicInfo, leftPage) in listOf(null to 1, info to 2)) {
-            val (left, right) = launch(book(comicInfo)).pager(1600, 1000).shownImages()
+            val viewer = launch(book(comicInfo))
+            val (left, right) = viewer.pager(1600, 1000).shownImages()
             press(left)
-            assertEquals(context.getString(R.string.page_actions_title, leftPage), (ShadowDialog.getLatestDialog() as AlertDialog).title())
-            ShadowDialog.getLatestDialog().dismiss()
+            assertEquals(context.getString(R.string.page_actions_title, leftPage), (latestDialogOf(viewer) as AlertDialog).title())
+            latestDialogOf(viewer).dismiss()
             press(right)
-            assertEquals(context.getString(R.string.page_actions_title, 3 - leftPage), (ShadowDialog.getLatestDialog() as AlertDialog).title())
-            ShadowDialog.getLatestDialog().dismiss()
+            assertEquals(context.getString(R.string.page_actions_title, 3 - leftPage), (latestDialogOf(viewer) as AlertDialog).title())
+            latestDialogOf(viewer).dismiss()
         }
     }
 
     @Test
     fun aTwoFingerPressOffersNothing() {
-        val page = launch(book()).pager().shownImages().first()
-        val before = ShadowDialog.getLatestDialog()
+        val viewer = launch(book())
+        val page = viewer.pager().shownImages().first()
+        val before = latestDialogOrNullOf(viewer)
         press(page, pointers = 2)
-        assertSame(before, ShadowDialog.getLatestDialog())
+        assertSame(before, latestDialogOrNullOf(viewer))
     }
 
     @Test

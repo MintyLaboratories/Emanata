@@ -34,7 +34,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 
@@ -86,14 +85,14 @@ class ViewerActivityHiddenPagesTest {
 
     /** Opens Book info once the book's details are read. */
     private fun ViewerActivity.bookInfo(): AlertDialog {
-        val before = ShadowDialog.getLatestDialog()
+        val before = latestDialogOrNullOf(this)
         shadowOf(this).clickMenuItem(R.id.menu_book_info)
         val deadline = System.currentTimeMillis() + 5_000
-        while (ShadowDialog.getLatestDialog() === before && System.currentTimeMillis() < deadline) {
+        while (latestDialogOrNullOf(this) === before && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             idle()
         }
-        return ShadowDialog.getLatestDialog() as AlertDialog
+        return latestDialogOf(this) as AlertDialog
     }
 
     private fun AlertDialog.message() = findViewById<TextView>(android.R.id.message)!!.text.toString()
@@ -133,7 +132,7 @@ class ViewerActivityHiddenPagesTest {
         assertTrue(viewer.unhideItem().isEnabled)
         shadowOf(viewer).clickMenuItem(R.id.menu_unhide_pages)
         idle()
-        val unhide = ShadowDialog.getLatestDialog() as AlertDialog
+        val unhide = latestDialogOf(viewer) as AlertDialog
         val grid = unhide.findViewById<RecyclerView>(R.id.hidden_pages_grid)!!
         grid.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.AT_MOST))
         grid.layout(0, 0, 800, grid.measuredHeight)
@@ -172,7 +171,7 @@ class ViewerActivityHiddenPagesTest {
         assertEquals(1, viewer.pager().currentItem)
         shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
         idle()
-        val ask = ShadowDialog.getLatestDialog() as AlertDialog
+        val ask = latestDialogOf(viewer) as AlertDialog
         val list = ask.listView
         assertEquals(listOf("Page 2", "Page 3"), (0 until list.adapter.count).map { list.adapter.getItem(it).toString() })
         assertTrue(library.hiddenPages(bookId(book)).isEmpty())

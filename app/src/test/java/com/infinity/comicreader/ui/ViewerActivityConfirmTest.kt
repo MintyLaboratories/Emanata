@@ -31,7 +31,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -80,7 +79,7 @@ class ViewerActivityConfirmTest {
         return viewer
     }
 
-    private fun latestDialog() = ShadowDialog.getLatestDialog() as AlertDialog
+    private fun ViewerActivity.latestDialog() = latestDialogOf(this) as AlertDialog
 
     private fun AlertDialog.message() = findViewById<TextView>(android.R.id.message)!!.text.toString()
 
@@ -98,7 +97,7 @@ class ViewerActivityConfirmTest {
     /** Opens the reader settings sheet, taps its adjustments' Reset, and returns the sheet and the dialog showing afterward. */
     private fun ViewerActivity.tapResetAdjustments(): Pair<Dialog, Dialog> {
         val sheet = ReaderSheet(this).tap(R.id.adjust_reset)
-        return sheet.dialog to ShadowDialog.getLatestDialog()
+        return sheet.dialog to latestDialogOf(this)
     }
 
     @Test
@@ -130,13 +129,13 @@ class ViewerActivityConfirmTest {
         val viewer = launch()
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)
-        val canceled = latestDialog()
+        val canceled = viewer.latestDialog()
         assertEquals(context.getString(R.string.confirm_clear_book_bookmarks_msg, book.name), canceled.message())
         canceled.press(DialogInterface.BUTTON_NEGATIVE)
         assertEquals(2, library.bookmarksFor(bookId(book)).size)
 
         viewer.menu(R.id.menu_bookmark_list).press(DialogInterface.BUTTON_NEUTRAL)
-        latestDialog().press(DialogInterface.BUTTON_POSITIVE)
+        viewer.latestDialog().press(DialogInterface.BUTTON_POSITIVE)
         assertEquals(0, library.bookmarksFor(bookId(book)).size)
     }
 }

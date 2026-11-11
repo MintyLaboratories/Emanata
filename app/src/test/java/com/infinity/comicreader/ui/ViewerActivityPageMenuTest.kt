@@ -36,7 +36,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 
@@ -90,7 +89,7 @@ class ViewerActivityPageMenuTest {
     private fun ViewerActivity.menu(page: Int): AlertDialog {
         showPageActions(page)
         idle()
-        return ShadowDialog.getLatestDialog() as AlertDialog
+        return latestDialogOf(this) as AlertDialog
     }
 
     private fun AlertDialog.topLabels(): List<String> {
@@ -173,16 +172,16 @@ class ViewerActivityPageMenuTest {
     @Test
     fun pageInfoTellsNameSizeFormatAndBytes() {
         val viewer = launch(book())
-        val before = ShadowDialog.getLatestDialog()
+        val before = latestDialogOrNullOf(viewer)
         viewer.menu(2).row(PageAction.PAGE_INFO).performClick()
         val deadline = System.currentTimeMillis() + 5_000
-        fun message() = (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<TextView>(android.R.id.message)?.text?.toString().orEmpty()
-        while (ShadowDialog.getLatestDialog() === before || message().isEmpty()) {
+        fun message() = (latestDialogOf(viewer) as AlertDialog).findViewById<TextView>(android.R.id.message)?.text?.toString().orEmpty()
+        while (latestDialogOf(viewer) === before || message().isEmpty()) {
             if (System.currentTimeMillis() > deadline) break
             Thread.sleep(10)
             idle()
         }
-        val text = (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<TextView>(android.R.id.message)!!.text.toString()
+        val text = (latestDialogOf(viewer) as AlertDialog).findViewById<TextView>(android.R.id.message)!!.text.toString()
         assertTrue(text, text.contains("Page 03.png"))
         assertTrue(text, text.contains("26 × 40"))
         assertTrue(text, text.contains("PNG, lossless"))
@@ -198,11 +197,11 @@ class ViewerActivityPageMenuTest {
         val menu = viewer.menu(2)
         menu.row(PageAction.PAGE_INFO).performClick()
         val deadline = System.currentTimeMillis() + 5_000
-        while (ShadowDialog.getLatestDialog() === menu && System.currentTimeMillis() < deadline) {
+        while (latestDialogOf(viewer) === menu && System.currentTimeMillis() < deadline) {
             Thread.sleep(10)
             idle()
         }
-        assertTrue(ShadowDialog.getLatestDialog() !== menu)
+        assertTrue(latestDialogOf(viewer) !== menu)
         assertEquals(View.VISIBLE, progress.visibility)
         viewer.releaseProgress()
         assertEquals(View.GONE, progress.visibility)

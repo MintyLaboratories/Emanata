@@ -163,7 +163,7 @@
     <string name="thumb_fit_auto">Auto</string>
     <string name="pref_crop_anchor">Crop anchor</string>
     <string name="pref_cover_mlkit">Use Google ML Kit for cover text</string>
-    <string name="pref_cover_mlkit_desc">Smart crop finds cover text with Google\'s ML Kit instead of the app\'s own detector. Google Play services downloads its model, and ML Kit sends usage data to Google. Covers never leave the device. Books read right to left keep the app\'s detector.</string>
+    <string name="pref_cover_mlkit_desc">Smart crop finds cover text with Google\'s ML Kit instead of the app\'s own detector. Google Play services downloads its model, and ML Kit, running in this app, sends usage data to Google (Firebase logging). Covers never leave the device. Books read right to left keep the app\'s detector.</string>
     <string name="pref_cover_spacing">Cover spacing</string>
     <string name="pref_toolbar_buttons">Toolbar buttons</string>
     <string name="toolbar_buttons_none">None</string>

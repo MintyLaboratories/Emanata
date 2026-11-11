@@ -22,8 +22,9 @@ features and customizability.
   cover text with Google's ML Kit through Google Play services. When you turn
   it on, Play services downloads ML Kit's model, and Google may collect usage
   data under the [ML Kit terms](https://developers.google.com/ml-kit/terms):
-  ML Kit sends usage and performance metrics to Google and may fetch updates.
-  Covers never leave the device. While it is off, ML Kit never starts, but
+  ML Kit, running inside the app, sends usage and performance metrics to
+  Google's Firebase logging service and may fetch updates. Covers never leave
+  the device. While it is off, ML Kit never starts, but
   metrics queued while it was on may still be sent after you turn it off.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).

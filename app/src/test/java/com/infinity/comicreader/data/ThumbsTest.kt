@@ -22,6 +22,7 @@ import com.infinity.comicreader.reader.Wraparound
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -542,6 +543,28 @@ class ThumbsTest {
         assertFalse(BookDirection.markedRightToLeft(null, ReadingDirection.TTB, "rtl"))
         assertTrue(BookDirection.markedRightToLeft(null, null, "rtl"))
         assertFalse(BookDirection.markedRightToLeft(null, null, "ltr"))
+    }
+
+    @Test
+    fun turningMlKitOnChangesTheCoverKeysOfBooksReadLeftToRightOnly() {
+        var on = false
+        val ppocr = coverText(TextDetector.ID) { null }
+        val selector = CoverTextDetectors({ on }, Play(), CoverTextDetectors.MlKit(CoverTextDetectors.ML_KIT_ID) { coverText(CoverTextDetectors.ML_KIT_ID) { null } }, { ppocr })
+        Thumbs.detector = { selector.session() }
+        Thumbs.rtlDetector = { selector.rightToLeft() }
+        val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val ltr = Thumbs.styleKey(context, style, rightToLeft = false)
+        val rtl = Thumbs.styleKey(context, style, rightToLeft = true)
+        assertEquals(style.key(TextDetector.ID), ltr)
+        assertEquals(ltr, rtl)
+        on = true
+        selector.settingChanged()
+        assertEquals(style.key(CoverTextDetectors.ML_KIT_ID), Thumbs.styleKey(context, style, rightToLeft = false))
+        assertNotEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
+        assertEquals("right to left keeps PP-OCR's covers", rtl, Thumbs.styleKey(context, style, rightToLeft = true))
+        on = false
+        selector.settingChanged()
+        assertEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
     }
 
     @Test

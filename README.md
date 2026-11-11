@@ -112,7 +112,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   detail alone and are made again once it does. When the network settings
   hold that download back, it takes over 10 minutes, or ML Kit fails, PP-OCR
   finds the lines for the rest of the session or until the setting is turned
-  on again. Settings → AI processing → **Models** shows the detector in use.
+  on again. Settings → AI processing → **Models** shows the detector in use,
+  and whether its model is there or downloading (with a Download button while
+  it is not).
   Another detector finds every focus again.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
@@ -1142,7 +1144,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   pinned Hugging Face revision; `DetectorModel` starts its download when a
   cover first needs it, as optional work (`NetPolicy`), never twice at once, at
   most every 15 minutes, and not after 3 failed downloads until the app starts
-  again. Its folder does not count
+  again or Download in the Models screen asks for it. Its folder does not count
   toward the AI models' space. `tools/text-detector/convert.py` builds the
   app's own conversion of the official weights, for a host of its own.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <

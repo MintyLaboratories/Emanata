@@ -12,11 +12,17 @@ import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.ai.CoverTextDetectors.Status
 import com.infinity.comicreader.ai.CoverTextDetectors.Use
 import com.infinity.comicreader.ai.CoverTextDetectors.Why
+import com.infinity.comicreader.ai.DownloadFailure
+import com.infinity.comicreader.ai.DownloadState
+import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PlayServices
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.testing.coverText
+import com.infinity.comicreader.ui.ModelText.DetectorFiles
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -51,7 +57,21 @@ class ModelsCoverTextTest {
     }
 
     @After
-    fun tearDown() = CoverTextDetectors.standIn(null)
+    fun tearDown() {
+        CoverTextDetectors.standIn(null)
+        ModelStore.of(context).delete(ModelCatalog.TEXT_DETECTOR)
+    }
+
+    /** Puts PP-OCR's model in the app's store, verified. */
+    private fun placeDetector() {
+        val store = ModelStore.of(context)
+        val d = ModelCatalog.TEXT_DETECTOR
+        store.dir(d).mkdirs()
+        for (f in d.files) {
+            java.io.RandomAccessFile(store.target(d, f), "rw").use { it.setLength(f.bytes) }
+            store.stamped(d, f)
+        }
+    }
 
     private fun texts(view: View): List<String> = when (view) {
         is TextView -> if (view.isShown) listOf(view.text.toString()) else emptyList()
@@ -67,6 +87,7 @@ class ModelsCoverTextTest {
 
     @Test
     fun ppOcrIsListedInUseByDefault() {
+        placeDetector()
         val texts = shown()
         val at = texts.indexOf(context.getString(R.string.cover_text_section))
         assertTrue(texts.toString(), at >= 0)
@@ -74,6 +95,17 @@ class ModelsCoverTextTest {
             listOf(R.string.cover_text_ppocr, R.string.cover_text_details_ppocr, R.string.cover_text_in_use).map { context.getString(it) },
             texts.subList(at + 1, at + 4)
         )
+    }
+
+    @Test
+    fun ppOcrWithoutItsModelSaysCoversCropAsTopAndOffersItsDownload() {
+        val activity = Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        val card = activity.findViewById<View>(R.id.cover_text_card)
+        val texts = texts(card)
+        val missing = context.getString(R.string.cover_text_ppocr_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes))
+        assertTrue(texts.toString(), missing in texts)
+        assertTrue(texts.toString(), context.getString(R.string.ai_download) in texts)
     }
 
     @Test
@@ -95,5 +127,24 @@ class ModelsCoverTextTest {
         assertEquals(context.getString(R.string.cover_text_module_failed), row(Status(Use.PP_OCR, Why.MODULE_FAILED)).status)
         assertEquals(context.getString(R.string.cover_text_failed), row(Status(Use.PP_OCR, Why.FAILED)).status)
         assertEquals(context.getString(R.string.cover_text_ppocr), row(Status(Use.PP_OCR, Why.FAILED)).title)
+    }
+
+    @Test
+    fun ppOcrsModelHasItsWordsWhileItIsNotThere() {
+        fun row(f: DetectorFiles, s: Status = Status(Use.PP_OCR, Why.OFF)) = ModelText.coverText(context, s, f)
+        val missing = row(DetectorFiles(false))
+        assertEquals(context.getString(R.string.cover_text_ppocr_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes)), missing.status)
+        assertTrue(missing.download)
+        val running = row(DetectorFiles(false, DownloadState.Running(50, 200)))
+        assertEquals(context.getString(R.string.cover_text_ppocr_downloading, 25), running.status)
+        assertEquals(25, running.progress)
+        assertFalse(running.download)
+        val metered = row(DetectorFiles(false, DownloadState.Failed(DownloadFailure.METERED)))
+        assertEquals(context.getString(R.string.cover_text_ppocr_failed, ModelText.failure(context, DownloadFailure.METERED)), metered.status)
+        assertTrue(metered.download)
+        // In place, or ML Kit in use: the detector's own words.
+        assertEquals(context.getString(R.string.cover_text_in_use), row(DetectorFiles(true)).status)
+        assertEquals(context.getString(R.string.cover_text_in_use_mlkit), row(DetectorFiles(false), Status(Use.ML_KIT, null)).status)
+        assertFalse(row(DetectorFiles(true)).download)
     }
 }

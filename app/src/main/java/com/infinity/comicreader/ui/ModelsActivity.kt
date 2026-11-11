@@ -38,6 +38,7 @@ import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.CoverTextDetectors
+import com.infinity.comicreader.ai.DetectorModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
@@ -169,12 +170,31 @@ object ModelText {
     fun imported(context: Context, m: UserModel): String =
         context.getString(R.string.ai_model_info_imported, details(context, m), m.pageSeconds)
 
-    /** The model manager's row of the cover text detector: its name, what it is, and whether and why it is in use. */
-    data class CoverTextRow(val title: String, val details: String, val status: String)
+    /**
+     * The model manager's row of the cover text detector: its name, what it is, whether and why it
+     * is in use; its model's download [progress] (percent) while one runs, and whether it offers
+     * to [download] the model.
+     */
+    data class CoverTextRow(val title: String, val details: String, val status: String, val progress: Int? = null, val download: Boolean = false)
 
-    /** The row of the cover text detector in use as [s] tells. */
-    fun coverText(context: Context, s: CoverTextDetectors.Status): CoverTextRow {
+    /** PP-OCR's model: [installed], else its download's [state] (null: none asked for yet). */
+    data class DetectorFiles(val installed: Boolean, val state: DownloadState? = null)
+
+    /** The row of the cover text detector in use as [s] tells, PP-OCR's model as [files] tell. */
+    fun coverText(context: Context, s: CoverTextDetectors.Status, files: DetectorFiles = DetectorFiles(true)): CoverTextRow {
         val ml = s.use == CoverTextDetectors.Use.ML_KIT
+        val title = context.getString(if (ml) R.string.cover_text_mlkit else R.string.cover_text_ppocr)
+        val details = context.getString(if (ml) R.string.cover_text_details_mlkit else R.string.cover_text_details_ppocr)
+        if (!ml && !files.installed) {
+            return when (val d = files.state) {
+                is DownloadState.Running -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_downloading, d.percent), progress = d.percent)
+                is DownloadState.Failed -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_failed, failure(context, d.failure)), download = true)
+                null -> CoverTextRow(
+                    title, details,
+                    context.getString(R.string.cover_text_ppocr_missing, size(context, ModelCatalog.TEXT_DETECTOR.bytes)), download = true
+                )
+            }
+        }
         val status = when {
             s.downloading -> R.string.cover_text_downloading
             ml -> R.string.cover_text_in_use_mlkit
@@ -183,11 +203,7 @@ object ModelText {
             s.why == CoverTextDetectors.Why.FAILED -> R.string.cover_text_failed
             else -> R.string.cover_text_in_use
         }
-        return CoverTextRow(
-            context.getString(if (ml) R.string.cover_text_mlkit else R.string.cover_text_ppocr),
-            context.getString(if (ml) R.string.cover_text_details_mlkit else R.string.cover_text_details_ppocr),
-            context.getString(status)
-        )
+        return CoverTextRow(title, details, context.getString(status))
     }
 
     /** Why an import was refused, in a sentence; a page time rounded up, so one just past a limit never reads as at it. */
@@ -248,6 +264,9 @@ class ModelsActivity : AppCompatActivity() {
 
     /** The cover text detector's row ([showCoverText]). */
     private var coverTextRow: View? = null
+
+    /** PP-OCR's model as [show] last found it. */
+    private var detectorFiles = ModelText.DetectorFiles(installed = true)
 
     /** The imported models the rows were built for. */
     private var builtFor: List<UserModel>? = null
@@ -348,7 +367,11 @@ class ModelsActivity : AppCompatActivity() {
         card.id = R.id.cover_text_card
         val rowsBox = card.findViewById<LinearLayout>(R.id.card_rows)
         val row = layoutInflater.inflate(R.layout.item_model, rowsBox, false)
-        row.findViewById<MaterialButton>(R.id.action).isVisible = false
+        row.findViewById<MaterialButton>(R.id.action).apply {
+            isVisible = false
+            setText(R.string.ai_download)
+            setOnClickListener { DetectorModel.shared(this@ModelsActivity).fetch() }
+        }
         row.isClickable = false
         rowsBox.addView(row)
         list.addView(card)
@@ -356,16 +379,21 @@ class ModelsActivity : AppCompatActivity() {
         showCoverText()
     }
 
-    /** Shows which cover text detector is in use and why ([CoverTextDetectors.status]). */
+    /** Shows which cover text detector is in use and why ([CoverTextDetectors.status]), and where PP-OCR's model is ([detectorFiles]). */
     private fun showCoverText() {
         val row = coverTextRow ?: return
-        val shown = ModelText.coverText(this, CoverTextDetectors.shared(this).status())
+        val shown = ModelText.coverText(this, CoverTextDetectors.shared(this).status(), detectorFiles)
         row.findViewById<TextView>(R.id.title).text = shown.title
         row.findViewById<TextView>(R.id.subtitle).text = shown.details
         row.findViewById<TextView>(R.id.status).apply {
             text = shown.status
             isVisible = true
         }
+        row.findViewById<LinearProgressIndicator>(R.id.progress).apply {
+            isVisible = shown.progress != null
+            shown.progress?.let { setProgressCompat(it, true) }
+        }
+        row.findViewById<MaterialButton>(R.id.action).isVisible = shown.download
     }
 
     override fun onResume() {
@@ -379,6 +407,9 @@ class ModelsActivity : AppCompatActivity() {
         val models = Models.all()
         val installed = withContext(AppDispatchers.io) { models.filter { store.installed(it) }.map { it.id }.toSet() }
         val used = withContext(AppDispatchers.io) { store.bytesUsed() }
+        val detector = ModelCatalog.TEXT_DETECTOR
+        detectorFiles = ModelText.DetectorFiles(withContext(AppDispatchers.io) { store.installed(detector) }, d.states[detector.id])
+        showCoverText()
         findViewById<TextView>(R.id.models_used).text = getString(R.string.ai_models_used, ModelText.size(this, used))
         val simple = prefs.keepSimple
         for (m in models) {

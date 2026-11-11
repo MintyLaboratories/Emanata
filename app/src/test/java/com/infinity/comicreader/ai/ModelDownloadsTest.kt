@@ -159,6 +159,39 @@ class ModelDownloadsTest {
     }
 
     @Test
+    fun theDetectorsDownloadTellsAHoldApartAndEndsOnceInPlace() {
+        val m = model("dl-detector")
+        val ends = java.util.concurrent.LinkedBlockingQueue<Boolean>()
+        val client = ModelDownloads.client()
+        Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true, cellular = true) }
+        Metered.forget()
+        assertFalse("held back", DetectorModel.download(store, m, optional = true, done = { ends += it }, client = client))
+        assertEquals(0, requests.get())
+        assertTrue("no end told for a hold", ends.isEmpty())
+        Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
+        Metered.forget()
+        gate = CountDownLatch(1)
+        assertTrue(DetectorModel.download(store, m, optional = true, done = { ends += it }, client = client))
+        assertTrue("told only once it ends", ends.isEmpty())
+        gate.countDown()
+        assertEquals(true, ends.poll(10, TimeUnit.SECONDS))
+        assertTrue(store.installed(m))
+        // In place: told at once, nothing downloaded.
+        val before = requests.get()
+        assertTrue(DetectorModel.download(store, m, optional = true, done = { ends += it }, client = client))
+        assertEquals(true, ends.poll())
+        assertEquals(before, requests.get())
+    }
+
+    @Test
+    fun theDetectorsFailedDownloadEndsWithoutItsModel() {
+        val m = model("dl-detector-missing", missing = true)
+        val ends = java.util.concurrent.LinkedBlockingQueue<Boolean>()
+        assertTrue(DetectorModel.download(store, m, optional = false, done = { ends += it }, client = ModelDownloads.client()))
+        assertEquals(false, ends.poll(10, TimeUnit.SECONDS))
+    }
+
+    @Test
     fun anOptionalDownloadRunsUnmetered() {
         val m = model("dl-unmetered")
         ModelDownloads.start(store, m, optional = true)

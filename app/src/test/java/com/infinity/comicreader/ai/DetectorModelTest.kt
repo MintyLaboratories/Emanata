@@ -14,9 +14,28 @@ class DetectorModelTest {
     /** Downloads asked for: whether optional, and the call that ends each. */
     private val asked = ArrayList<Pair<Boolean, (Boolean) -> Unit>>()
 
+    /** True while the network policy holds optional downloads back; [holds] counts the requests it held. */
+    private var held = false
+    private var holds = 0
+
+    /** Runs once, inside the next look at whether the model is in place. */
+    private var duringLook: (() -> Unit)? = null
+
     private val model = DetectorModel(
-        installed = { installed },
-        start = { optional, done -> asked += optional to done },
+        installed = {
+            val now = installed
+            duringLook?.also { duringLook = null }?.invoke()
+            now
+        },
+        start = { optional, done ->
+            if (optional && held) {
+                holds++
+                false
+            } else {
+                asked += optional to done
+                true
+            }
+        },
         arrived = { arrivals++ },
         now = { clock }
     )
@@ -96,6 +115,32 @@ class DetectorModelTest {
         assertFalse(broken.ready())
         broken.fetch()
         assertEquals("not left running", 2, tries)
+    }
+
+    @Test
+    fun aDownloadHeldBackByTheNetworkPolicyIsNoFailureAndIsAskedAgainSoon() {
+        held = true
+        repeat(DetectorModel.TRIES + 2) {
+            assertFalse(model.ready())
+            assertFalse("not again at once", model.ready())
+            clock += DetectorModel.HELD_MS
+        }
+        assertEquals(DetectorModel.TRIES + 2, holds)
+        assertTrue(asked.isEmpty())
+        // On a link the policy allows, the next cover asks at once: no wait, no tries used up.
+        held = false
+        assertFalse(model.ready())
+        assertEquals(listOf(true), asked.map { it.first })
+        finish(true)
+        assertEquals(1, arrivals)
+    }
+
+    @Test
+    fun aHoldDoesNotStopTheUser() {
+        held = true
+        assertFalse(model.ready())
+        model.fetch()
+        assertEquals(listOf(false), asked.map { it.first })
     }
 
     @Test

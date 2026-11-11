@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.os.Handler
 import android.os.Looper
 import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,6 +15,7 @@ import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,6 +32,8 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
 
 /** Pages shown plain at once, then swapped in place for their AI version, the page read first, then the next. */
 @RunWith(RobolectricTestRunner::class)
@@ -53,10 +57,16 @@ class PageAdapterAiTest {
     }
 
     /** Makes every page [color] at the size asked, listing the pages asked for; [on] false makes it process none. */
-    private class Enhancer(private val color: Int) : PageEnhancer {
+    private class Enhancer(
+        private val color: Int,
         // On the main looper: the work runs as the tests idle it, with no thread of its own to wait for.
-        override val worker = Dispatchers.Main
+        override val worker: CoroutineDispatcher = Dispatchers.Main
+    ) : PageEnhancer {
         val asked: MutableList<Int> = Collections.synchronizedList(ArrayList())
+
+        /** Runs as each page is processed, before it is done. */
+        @Volatile
+        var onEnhance: (Int) -> Unit = {}
 
         @Volatile
         var on = true
@@ -77,10 +87,23 @@ class PageAdapterAiTest {
         override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
             asked += index
             if (!on) return AiOutcome.Skipped(Fallback.UNNEEDED)
+            onEnhance(index)
             return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) })
         }
 
         fun close() = Unit
+    }
+
+    /** Runs the first work inline, as a worker that ends a page before the main thread waits for it; later work on the main looper. */
+    private class InlineOnce : CoroutineDispatcher() {
+        private val inline = AtomicBoolean(true)
+        private val main = Handler(Looper.getMainLooper())
+
+        override fun isDispatchNeeded(context: CoroutineContext): Boolean = !inline.getAndSet(false)
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            main.post(block)
+        }
     }
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
@@ -117,7 +140,7 @@ class PageAdapterAiTest {
 
     private fun colorAt(rv: RecyclerView, position: Int): Int? = shownBitmap(rv, position)?.let { it.getPixel(it.width / 2, it.height / 2) }
 
-    private fun reader(preload: Int = 1, pages: Int = 4): Pair<PageAdapter, RecyclerView> {
+    private fun reader(preload: Int = 1, pages: Int = 4, enhancer: Enhancer = this.enhancer): Pair<PageAdapter, RecyclerView> {
         val adapter = PageAdapter(
             source = Source(pages, plain), mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
             preload = preload, enhancer = enhancer
@@ -285,6 +308,28 @@ class PageAdapterAiTest {
         aWhile()
         // Page 4 is kept on disk: read back first; 3 would be done after the reader left it.
         assertEquals(listOf(4, 5, 6), enhancer.asked.toList())
+        adapter.release()
+    }
+
+    @Test
+    fun thePagesAskedForAsAPageDoneAtOnceArrivesAreProcessed() {
+        val e = Enhancer(processed, InlineOnce())
+        val (adapter, rv) = reader(preload = 7, pages = 8, enhancer = e)
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        // Three turns 3 s apart with nothing to process set the pace.
+        e.on = false
+        for (item in 0..2) {
+            adapter.reading(item)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(3_000))
+        }
+        e.on = true
+        // Page 3 ends before the main thread waits for it; its time then puts the work two items on, at 5 and 6.
+        e.onEnhance = { e.ms = 5_000 }
+        adapter.reading(3)
+        idle { e.asked.size >= 3 }
+        aWhile()
+        assertEquals(listOf(3, 5, 6), e.asked.toList())
         adapter.release()
     }
 

@@ -192,6 +192,22 @@ class AiQueueTest {
     }
 
     @Test
+    fun pagesWantedWhileAPageDoneInlineIsDeliveredAreTheOnesWorkedOn() {
+        val w = Work()
+        lateinit var q: AiQueue<String>
+        // Its delivery wants other pages, as the reader's does once a page shows processed.
+        q = AiQueue(scope, Dispatchers.Unconfined, w::run, { k, _ ->
+            w.delivered += k
+            if (k == "a") q.want(listOf("c", "d"))
+        })
+        q.want(listOf("a", "b"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("a", "c", "d"), w.started.toList())
+        assertEquals(listOf("a", "c", "d"), w.delivered)
+        assertNull(q.current)
+    }
+
+    @Test
     fun pausingStopsThePageRunningAndStartsNoneUntilResumed() {
         val w = Work()
         w.held["a"] = CountDownLatch(1)

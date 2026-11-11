@@ -1525,8 +1525,9 @@ class PageAdapter(
                 pace.paceMs?.let { mainHandler.postDelayed(rethinkAi, (it - pace.dwellMs).coerceAtLeast(0) + RETHINK_MS) }
             }
         }
-        if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
+        // Before want: a page done at once is delivered within it, and the wantAi it calls keeps its own pages.
         aiPages.keys.retainAll(keys.toSet())
+        if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
     }
 
     /** The source of the item read. */

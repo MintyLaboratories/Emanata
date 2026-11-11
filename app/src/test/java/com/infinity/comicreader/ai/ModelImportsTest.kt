@@ -218,6 +218,28 @@ class ModelImportsTest {
     }
 
     @Test
+    fun theStartsTidyingWaitsForAnImportUnderWay() {
+        val checking = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        ModelImports.runtime = FakeRuntime(make = { onGpu, _ ->
+            FakeModel(onGpu = onGpu, onRun = {
+                checking.countDown()
+                release.await(10, TimeUnit.SECONDS)
+            })
+        })
+        ModelImports.start(context, pair())
+        assertTrue(checking.await(10, TimeUnit.SECONDS))
+        val files = store.userFiles(store.staging("x").parentFile!!.listFiles()!!.single())
+        ModelImports.tidyAtStart(store)
+        // Long enough for a tidy on a thread of its own to delete the staged files.
+        Thread.sleep(300)
+        assertTrue("the checked files stay", files.param.exists() && files.bin.exists())
+        release.countDown()
+        ModelImports.settle()
+        assertTrue(ModelImports.state.value is ImportState.Fit)
+    }
+
+    @Test
     fun anImportCanceledThenStartedAgainShowsOnlyTheNewOne() {
         val checking = CountDownLatch(1)
         val release = CountDownLatch(1)

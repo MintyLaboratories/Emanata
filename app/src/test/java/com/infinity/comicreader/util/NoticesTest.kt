@@ -122,7 +122,7 @@ class NoticesTest {
         val flat = readme.replace(Regex("\\s+"), " ")
         assertTrue(flat.contains("**Optional ML Kit (off by default):**"))
         assertTrue(flat.contains("Google may collect usage data under the [ML Kit terms](${Notices.ML_KIT_TERMS_URL})"))
-        assertTrue(flat.contains("(and, with ML Kit on, for its usage metrics); the app sends nothing else on its own."))
+        assertTrue(flat.contains("and, with ML Kit on, for its usage metrics. The app sends nothing else on its own."))
         assertTrue(flat.contains("metrics queued while it was on may still be sent after you turn it off"))
         assertTrue(flat.contains("Skip on metered connections does not hold them back"))
         assertTrue(flat.contains("ML Kit's usage metrics (recorded only while you have ML Kit on)"))
@@ -135,6 +135,10 @@ class NoticesTest {
         assertTrue(paddle.note!!.contains(repository))
         assertTrue(paddle.note!!.contains("third party"))
         assertTrue(File("../README.md").readText().lines().single { it.contains("PP-OCRv5 mobile text detector") }.contains("]($repository)"))
+        // Every cover that looks for text may download it, not only the Smart crop's.
+        assertTrue(paddle.note!!.contains("the first time a cover needs it (the Smart crop anchor, or telling a wraparound cover's front or reading direction)"))
+        val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
+        assertTrue(flat.contains("the first time a cover needs it, the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a wraparound cover's front or a book's reading direction)"))
     }
 
     @Test

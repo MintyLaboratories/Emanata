@@ -14,9 +14,10 @@ features and customizability.
 - **No required connection:** works offline. The network is used only for the
   network shares you add, while the app shows something on them: a folder, a
   book, a cover, a favorite, or a share's free space in the Locations sheet;
-  to download the AI models you choose and, the first time the Smart crop
-  anchor needs it, its 2.4 MB text detector (and, with ML Kit on, for its
-  usage metrics); the app sends nothing else on its own.
+  to download the AI models you choose and, the first time a cover needs it,
+  the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a
+  wraparound cover's front or a book's reading direction); and, with ML Kit
+  on, for its usage metrics. The app sends nothing else on its own.
 - **Optional ML Kit (off by default):** a setting lets the Smart crop find
   cover text with Google's ML Kit through Google Play services. When you turn
   it on, Play services downloads ML Kit's model, and Google may collect usage
@@ -96,10 +97,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   experimental) its tallest text: a text detector (PaddleOCR's mobile
   detector on ncnn; it finds where text is, not what it says) marks the lines
   of text. The detector is not in the app: its 2.4 MB model downloads the
-  first time the Smart crop needs it, as an automatic download Skip on metered
-  connections can hold back. Until it is there, covers crop as Top does and
-  are made again once it arrives. When the top (centered across) would cut the
-  tallest text's line, the crop moves just enough to keep every line of about
+  first time a cover needs it (the Smart crop, or a wraparound cover's front
+  or reading direction, below), as an automatic download that the **Skip on
+  metered connections** setting can hold back. Until it is there, covers crop
+  as Top does and are made again once it arrives. When the top (centered
+  across) would cut the tallest text's line, the crop moves just enough to keep every line of about
   its size, or at least that line. Only title-sized text counts:
   credits alone never move a crop. A cover without such text keeps its most
   detailed part when far more detailed than its top. Found once per cover and
@@ -121,8 +123,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Wraparound covers** (front and back side by side, about twice as wide as
   the book's own inner pages) show their front, one page wide so the spine
   stays out: the half without the barcode, else the half whose title is
-  clearly taller (by the text detector, found once per cover). When neither
-  tells, the whole cover shows, fitted over a blurred copy of itself.
+  clearly taller (by the text detector, found once per cover; its model
+  downloads the first time such a cover needs it). When neither tells, the
+  whole cover shows, fitted over a blurred copy of itself, and while the
+  detector's model is missing it is made again once the model arrives.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
   Search; the others step aside while searching. Settings → **Toolbar
@@ -1142,11 +1146,17 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   size and SHA-256 (and prints both for new files). The covers' text detector
   (`ModelCatalog.TEXT_DETECTOR`) is stored and downloaded the same way, from a
   pinned Hugging Face revision; `DetectorModel` starts its download when a
-  cover first needs it, as optional work (`NetPolicy`), never twice at once, at
-  most every 15 minutes, and not after 3 failed downloads until the app starts
-  again or Download in the Models screen asks for it. Its folder does not count
-  toward the AI models' space. `tools/text-detector/convert.py` builds the
-  app's own conversion of the official weights, for a host of its own.
+  cover first needs it (`CoverArt.focusOf`: a Smart crop, or the text of a
+  wraparound cover without a readable barcode, in the library and in the
+  reader's direction detection), as optional work (`NetPolicy`), never twice at
+  once, at most every 15 minutes, and not after 3 failed downloads until the
+  app starts again or Download in the Models screen asks for it; a request the
+  network settings hold back is no failed download and is asked again a minute
+  later. Covers made while it is missing are kept on disk under their own name
+  (`-waiting`), served only while it is still missing and deleted once it is
+  there. Its folder does not count toward the AI models' space.
+  `tools/text-detector/convert.py` builds the app's own conversion of the
+  official weights, for a host of its own.
 - Pages sort naturally per path component (`NaturalOrder`): `156` < `156b` <
   `157`, padding ignored, a folder before its longer-named siblings.
 - Page previews (`PreviewStore`) live in `cacheDir/page-previews` as JPEGs named
@@ -1413,8 +1423,8 @@ estimated from the tiles run in 60 or 120 s):
 - `READ_EXTERNAL_STORAGE` (Android 8–10) and `WRITE_EXTERNAL_STORAGE`
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
-  add, AI models you download, the cover text detector's model, and ML Kit's
-  usage metrics (recorded only
+  add, AI models you download, the cover text detector's model (the first time
+  a cover needs it), and ML Kit's usage metrics (recorded only
   while you have ML Kit on); the app sends nothing else on its own.
 - `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
   move or delete goes on with the app in the background or the screen off,
@@ -1484,7 +1494,7 @@ license and NOTICE text under Settings → About (files in
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
 | [OkHttp](https://github.com/square/okhttp), Okio | Apache-2.0 |
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
-| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged on first use, a third party's ncnn conversion (from the PaddleOCR-ncnn-CPP release archive, MIT) from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) | Apache-2.0 |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is byte-identical to the one in the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.1 release archive, MIT) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 | [ML Kit Text Recognition v2](https://developers.google.com/ml-kit/vision/text-recognition/v2) (`play-services-mlkit-text-recognition`, model delivered by Google Play services), with the Play services client libraries | Proprietary (Google Play services): [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms), Android SDK License; open-source parts under Apache-2.0, BSD-3-Clause and MIT |
 | Firebase components, Google Data Transport, javax.inject (used by ML Kit) | Apache-2.0 |

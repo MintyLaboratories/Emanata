@@ -26,6 +26,16 @@ class ConvertRatesTest {
     }
 
     @Test
+    fun resamplingTimingsLeaveTheSpeedAlone() {
+        val k = kept(Calibration.VERSION, 2 * WorkRates.REF_JPEG_MS, 2 * WorkRates.REF_JXL_CPU_MS)
+        val timings = k.getJSONArray("timings")
+        for (setup in listOf("pixels/gpu/any", "pixels/gpu/big", "pixels/8/any")) {
+            timings.put(JSONObject().put("setup", setup).put("wallMs", 1.0).put("cpuMs", 1.0))
+        }
+        assertEquals(2.0, ConvertRates.calibrationSpeed(k), 1e-9)
+    }
+
+    @Test
     fun oneOfAnotherVersionTimedOtherPagesAndCountsForNothing() {
         assertEquals(1.0, ConvertRates.calibrationSpeed(kept(Calibration.VERSION - 1, 27.0, 190.0)), 0.0)
         assertEquals(1.0, ConvertRates.calibrationSpeed(null), 0.0)

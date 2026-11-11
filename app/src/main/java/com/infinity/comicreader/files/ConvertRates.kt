@@ -68,7 +68,7 @@ object ConvertRates {
             val setup = t.optString("setup")
             when {
                 setup.startsWith("jpeg/") -> t.optDouble("wallMs").takeIf { it > 0 }?.let { jpeg = minOf(jpeg ?: it, it) }
-                setup.startsWith("jxl/") && !setup.endsWith("/gpu") -> t.optDouble("cpuMs").takeIf { it > 0 }?.let { jxl = minOf(jxl ?: it, it) }
+                setup.startsWith("jxl/") -> t.optDouble("cpuMs").takeIf { it > 0 }?.let { jxl = minOf(jxl ?: it, it) }
             }
         }
         return WorkRates.speedOf(jpeg, jxl)

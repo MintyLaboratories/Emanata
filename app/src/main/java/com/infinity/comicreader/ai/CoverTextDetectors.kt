@@ -115,7 +115,7 @@ class CoverTextDetectors(
 
     private val changed = MutableStateFlow(0)
 
-    /** Counts changes that make covers on screen out of date: [arrivals], and ML Kit given up. */
+    /** Counts changes that make covers on screen out of date: [arrivals], ML Kit given up, and a hold lifted. */
     val changes: StateFlow<Int> = changed.asStateFlow()
 
     @Volatile
@@ -411,12 +411,16 @@ class CoverTextDetectors(
 
     /**
      * Lifts a hold ([Why.HELD_BACK]) at least [DetectorModel.HELD_MS] old once the network policy
-     * allows the download, so the next cover asks again; gives a download not done within
-     * [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]) and returns what detaches it. Under [lock].
+     * allows the download, so the next cover asks again and covers on screen are made again under
+     * ML Kit ([changes]); gives a download not done within [DOWNLOAD_WAIT_MS] up
+     * ([Why.MODULE_FAILED]) and returns what detaches it. Under [lock].
      */
     private fun expire(): (() -> Unit)? {
         if (gaveUp == Why.HELD_BACK && now() - heldAt >= DetectorModel.HELD_MS) {
-            if (mayDownload()) gaveUp = null else heldAt = now()
+            if (mayDownload()) {
+                gaveUp = null
+                changed.update { it + 1 }
+            } else heldAt = now()
         }
         if (module != Module.DOWNLOADING || gaveUp != null || now() - requestedAt < DOWNLOAD_WAIT_MS) return null
         module = Module.UNKNOWN

@@ -496,7 +496,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 settings.list.collect { applySettings(it) }
             }
         }
-        // Covers on screen are made again when ML Kit's model arrives or PP-OCR takes over from it.
+        // Covers on screen are made again when ML Kit's model arrives, PP-OCR takes over from it, or its held-back download is allowed.
         lifecycleScope.launch {
             val detectors = CoverTextDetectors.shared(this@ListActivity)
             var seen = detectors.changes.value

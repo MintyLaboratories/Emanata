@@ -311,8 +311,10 @@ class CoverTextDetectorsTest {
         mayDownload = true
         clock += DetectorModel.HELD_MS - 1
         assertEquals("asked again a while after the last hold", TextDetector.ID, d.session().id)
+        assertEquals("no change before the hold is lifted", changes, d.changes.value)
         clock += 1
         assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+        assertEquals("covers on screen are made again under ML Kit", changes + 1, d.changes.value)
         assertNull(d.session().lines(image))
         assertEquals(1, play.requests.size)
         play.requests.single()(true)

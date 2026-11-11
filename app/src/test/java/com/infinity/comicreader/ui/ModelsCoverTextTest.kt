@@ -79,11 +79,20 @@ class ModelsCoverTextTest {
         else -> emptyList()
     }
 
-    private fun shown(): List<String> {
+    /** The Models screen, once its cover text row tells where PP-OCR's model is (looked at off the main thread). */
+    private fun opened(): ModelsActivity {
         val activity = Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
-        shadowOf(Looper.getMainLooper()).idle()
-        return texts(activity.findViewById(R.id.models_list))
+        val end = System.currentTimeMillis() + 10_000
+        while (true) {
+            shadowOf(Looper.getMainLooper()).idle()
+            val status = activity.findViewById<View>(R.id.cover_text_card)?.findViewById<TextView>(R.id.status)
+            if (status != null && status.text.isNotEmpty()) return activity
+            assertTrue("the cover text row tells nothing", System.currentTimeMillis() < end)
+            Thread.sleep(10)
+        }
     }
+
+    private fun shown(): List<String> = texts(opened().findViewById(R.id.models_list))
 
     @Test
     fun ppOcrIsListedInUseByDefault() {
@@ -99,9 +108,7 @@ class ModelsCoverTextTest {
 
     @Test
     fun ppOcrWithoutItsModelSaysCoversCropAsTopAndOffersItsDownload() {
-        val activity = Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
-        shadowOf(Looper.getMainLooper()).idle()
-        val card = activity.findViewById<View>(R.id.cover_text_card)
+        val card = opened().findViewById<View>(R.id.cover_text_card)
         val texts = texts(card)
         val missing = context.getString(R.string.cover_text_ppocr_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes))
         assertTrue(texts.toString(), missing in texts)
@@ -110,10 +117,20 @@ class ModelsCoverTextTest {
 
     @Test
     fun mlKitIsListedOnceTurnedOn() {
+        placeDetector()
         Prefs(context).coverMlKit = true
         val texts = shown()
         assertTrue(texts.toString(), context.getString(R.string.cover_text_mlkit) in texts)
         assertTrue(texts.toString(), context.getString(R.string.cover_text_in_use_mlkit) in texts)
+    }
+
+    @Test
+    fun mlKitInUseOffersPpOcrsDownloadForBooksReadRightToLeft() {
+        Prefs(context).coverMlKit = true
+        val texts = shown()
+        val line = context.getString(R.string.cover_text_ppocr_rtl_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes))
+        assertTrue(texts.toString(), context.getString(R.string.cover_text_in_use_mlkit) + "\n" + line in texts)
+        assertTrue(texts.toString(), context.getString(R.string.ai_download) in texts)
     }
 
     @Test
@@ -142,9 +159,30 @@ class ModelsCoverTextTest {
         val metered = row(DetectorFiles(false, DownloadState.Failed(DownloadFailure.METERED)))
         assertEquals(context.getString(R.string.cover_text_ppocr_failed, ModelText.failure(context, DownloadFailure.METERED)), metered.status)
         assertTrue(metered.download)
-        // In place, or ML Kit in use: the detector's own words.
+        // In place: the detector's own words.
         assertEquals(context.getString(R.string.cover_text_in_use), row(DetectorFiles(true)).status)
-        assertEquals(context.getString(R.string.cover_text_in_use_mlkit), row(DetectorFiles(false), Status(Use.ML_KIT, null)).status)
         assertFalse(row(DetectorFiles(true)).download)
+        assertEquals(context.getString(R.string.cover_text_in_use_mlkit), row(DetectorFiles(true), Status(Use.ML_KIT, null)).status)
+        // ML Kit in use: PP-OCR's model, for books read right to left, follows its words.
+        val ml = Status(Use.ML_KIT, null)
+        val mlMissing = row(DetectorFiles(false), ml)
+        val own = context.getString(R.string.cover_text_in_use_mlkit)
+        assertEquals(own + "\n" + context.getString(R.string.cover_text_ppocr_rtl_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes)), mlMissing.status)
+        assertTrue(mlMissing.download)
+        val mlRunning = row(DetectorFiles(false, DownloadState.Running(50, 200)), ml)
+        assertEquals(own + "\n" + context.getString(R.string.cover_text_ppocr_rtl_downloading, 25), mlRunning.status)
+        assertEquals(25, mlRunning.progress)
+        assertFalse(mlRunning.download)
+        val mlFailed = row(DetectorFiles(false, DownloadState.Failed(DownloadFailure.NETWORK)), ml)
+        assertEquals(own + "\n" + context.getString(R.string.cover_text_ppocr_rtl_failed, ModelText.failure(context, DownloadFailure.NETWORK)), mlFailed.status)
+        assertTrue(mlFailed.download)
+    }
+
+    @Test
+    fun beforeItsModelIsLookedAtTheRowOffersNothing() {
+        val row = ModelText.coverText(context, Status(Use.PP_OCR, Why.OFF), null)
+        assertEquals("", row.status)
+        assertFalse(row.download)
+        assertEquals(null, row.progress)
     }
 }

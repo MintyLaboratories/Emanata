@@ -180,11 +180,16 @@ object ModelText {
     /** PP-OCR's model: [installed], else its download's [state] (null: none asked for yet). */
     data class DetectorFiles(val installed: Boolean, val state: DownloadState? = null)
 
-    /** The row of the cover text detector in use as [s] tells, PP-OCR's model as [files] tell. */
-    fun coverText(context: Context, s: CoverTextDetectors.Status, files: DetectorFiles = DetectorFiles(true)): CoverTextRow {
+    /**
+     * The row of the cover text detector in use as [s] tells, PP-OCR's model as [files] tell (null:
+     * not known yet, so no status and no button). With ML Kit in use, PP-OCR's model missing is
+     * told after ML Kit's status: books read right to left use PP-OCR.
+     */
+    fun coverText(context: Context, s: CoverTextDetectors.Status, files: DetectorFiles? = DetectorFiles(true)): CoverTextRow {
         val ml = s.use == CoverTextDetectors.Use.ML_KIT
         val title = context.getString(if (ml) R.string.cover_text_mlkit else R.string.cover_text_ppocr)
         val details = context.getString(if (ml) R.string.cover_text_details_mlkit else R.string.cover_text_details_ppocr)
+        if (files == null) return CoverTextRow(title, details, "")
         if (!ml && !files.installed) {
             return when (val d = files.state) {
                 is DownloadState.Running -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_downloading, d.percent), progress = d.percent)
@@ -195,7 +200,20 @@ object ModelText {
                 )
             }
         }
-        val status = when {
+        val own = context.getString(coverTextStatus(s))
+        if (!ml || files.installed) return CoverTextRow(title, details, own)
+        val (line, row) = when (val d = files.state) {
+            is DownloadState.Running -> context.getString(R.string.cover_text_ppocr_rtl_downloading, d.percent) to CoverTextRow(title, details, "", progress = d.percent)
+            is DownloadState.Failed -> context.getString(R.string.cover_text_ppocr_rtl_failed, failure(context, d.failure)) to CoverTextRow(title, details, "", download = true)
+            null -> context.getString(R.string.cover_text_ppocr_rtl_missing, size(context, ModelCatalog.TEXT_DETECTOR.bytes)) to CoverTextRow(title, details, "", download = true)
+        }
+        return row.copy(status = own + "\n" + line)
+    }
+
+    /** The words of the detector in use as [s] tells. */
+    private fun coverTextStatus(s: CoverTextDetectors.Status): Int {
+        val ml = s.use == CoverTextDetectors.Use.ML_KIT
+        return when {
             s.downloading -> R.string.cover_text_downloading
             ml -> R.string.cover_text_in_use_mlkit
             s.why == CoverTextDetectors.Why.HELD_BACK -> R.string.cover_text_held_back
@@ -203,7 +221,6 @@ object ModelText {
             s.why == CoverTextDetectors.Why.FAILED -> R.string.cover_text_failed
             else -> R.string.cover_text_in_use
         }
-        return CoverTextRow(title, details, context.getString(status))
     }
 
     /** Why an import was refused, in a sentence; a page time rounded up, so one just past a limit never reads as at it. */
@@ -265,8 +282,8 @@ class ModelsActivity : AppCompatActivity() {
     /** The cover text detector's row ([showCoverText]). */
     private var coverTextRow: View? = null
 
-    /** PP-OCR's model as [show] last found it. */
-    private var detectorFiles = ModelText.DetectorFiles(installed = true)
+    /** PP-OCR's model as [show] last found it; null before. */
+    private var detectorFiles: ModelText.DetectorFiles? = null
 
     /** The imported models the rows were built for. */
     private var builtFor: List<UserModel>? = null
@@ -387,7 +404,7 @@ class ModelsActivity : AppCompatActivity() {
         row.findViewById<TextView>(R.id.subtitle).text = shown.details
         row.findViewById<TextView>(R.id.status).apply {
             text = shown.status
-            isVisible = true
+            isVisible = shown.status.isNotEmpty()
         }
         row.findViewById<LinearProgressIndicator>(R.id.progress).apply {
             isVisible = shown.progress != null

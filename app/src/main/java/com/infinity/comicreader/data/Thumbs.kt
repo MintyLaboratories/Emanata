@@ -7,6 +7,8 @@ import android.os.Build
 import android.util.LruCache
 import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.CoverTextDetectors
+import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.HiddenPages
@@ -92,7 +94,8 @@ object Thumbs {
      * The front half [src], the wraparound cover of [entry], shows ([Wraparound.Fronts.shown]):
      * by its barcode, found once per cover image ([imageKey]), else by its tallest text
      * ([CoverArt.textFront]) from each half's focus ([focusOf], with [find]). Null when neither
-     * tells; then [unsure] too when the detector did not run.
+     * tells; then [unsure] too when the detector did not run, told whether it only waited for its
+     * model ([CoverFocus.WAITING]).
      *
      * A book's full cover image ([find]), its page at book index [page], also settles what it tells
      * of reading direction ([settle]): the half its barcode and text agree on, none without a
@@ -108,7 +111,7 @@ object Thumbs {
         page: Int?,
         find: Boolean,
         detector: CoverTextDetector,
-        unsure: () -> Unit
+        unsure: (waiting: Boolean) -> Unit
     ): Wraparound.Half? {
         val k = imageKey(context, entry)
         val known = barcodes.get(k)
@@ -119,7 +122,9 @@ object Thumbs {
         val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page))?.version != version
         if (barcode == null) {
             if (open) settle(context, entry, CoverFront(page!!, null, version))
-            return CoverArt.textFront(src, innerRatio, focus, unsure)
+            var waiting = true
+            val seen = { s: Bitmap, region: Rect -> focus(s, region).also { if (!it.keep && it !== CoverFocus.WAITING) waiting = false } }
+            return CoverArt.textFront(src, innerRatio, seen) { unsure(waiting) }
         }
         if (open) {
             var read = true
@@ -319,14 +324,28 @@ object Thumbs {
             full.recycle()
             return null
         }
-        // A focus found without the detector holds for this cover in memory only.
+        // A focus found without the detector holds for this cover in memory only; one found while
+        // the detector waits for its model, on disk too, as a waiting cover ([waitingFile]).
         var lasting = true
+        var waiting = true
         val cover = try {
             CoverArt.cover(
                 full, width, height, style, made.innerRatio,
-                front = { src -> frontOf(context, entry, src, made.innerRatio, coverPage, made.full, detector) { lasting = false } },
+                front = { src ->
+                    frontOf(context, entry, src, made.innerRatio, coverPage, made.full, detector) { w ->
+                        lasting = false
+                        if (!w) waiting = false
+                    }
+                },
                 // A quick cover from a first layer uses a focus already found; its full cover finds one.
-                focus = { src, region -> focusOf(context, entry, src, region, made.full, detector).also { if (!it.keep) lasting = false } }
+                focus = { src, region ->
+                    focusOf(context, entry, src, region, made.full, detector).also {
+                        if (!it.keep) {
+                            lasting = false
+                            if (it !== CoverFocus.WAITING) waiting = false
+                        }
+                    }
+                }
             )
         } catch (t: Throwable) {
             return null
@@ -345,9 +364,11 @@ object Thumbs {
         }
         if (lasting) provisional.remove(k) else provisional[k] = arrivedBefore
         memory.put(k, bitmap)
-        if (lasting) runCatching {
-            disk.parentFile?.mkdirs()
-            disk.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
+        if (lasting || waiting) runCatching {
+            val file = if (lasting) disk else waitingFile(disk)
+            file.parentFile?.mkdirs()
+            file.outputStream().use { bitmap.compress(LOSSLESS, LOSSLESS_EFFORT, it) }
+            if (lasting) waitingFile(disk).delete()
         }
         return Cover(bitmap, full = true)
     }
@@ -377,15 +398,29 @@ object Thumbs {
 
     /**
      * The cover of [entry] as [load] makes it, when one was made before: from memory or
-     * disk, never generated. Blocking; null when there is none yet.
+     * disk, never generated. Blocking; null when there is none yet. A waiting cover
+     * ([waitingFile]) serves while its detector still waits for its model ([CoverTextDetector.ready],
+     * which asks for it), in memory as provisional; once the model is there it is deleted.
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
-        val k = coverKey(context, entry, width, height, style)
+        val detector = detectorFor(context, entry)
+        val k = coverKey(context, entry, width, height, style, detector)
         fromMemory(context, k)?.let { return it }
         val disk = diskFile(context, k)
-        if (!disk.isFile) return null
         // Stored at the box size: the decode is the file as it is.
-        return runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(k, it) }
+        if (disk.isFile) return runCatching { Decoders.decode(disk, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also { memory.put(k, it) }
+        val waiting = waitingFile(disk)
+        if (!waiting.isFile) return null
+        // Before the look: an arrival meanwhile makes it again.
+        val arrived = arrivals(context)
+        if (detector.ready()) {
+            waiting.delete()
+            return null
+        }
+        return runCatching { Decoders.decode(waiting, Target(width, height, Fit.STRETCH)) }.getOrNull()?.also {
+            provisional[k] = arrived
+            memory.put(k, it)
+        }
     }
 
     /** The book index of [entry]'s bookmarked page, which counts pages as shown ([Library.hiddenPages]). */
@@ -472,7 +507,11 @@ object Thumbs {
      * files first. Without this the cache only ever grows.
      */
     fun trim(context: Context, maxBytes: Long = MAX_DISK_BYTES) {
-        val files = File(context.cacheDir, DISK_DIR).listFiles() ?: return
+        var files = File(context.cacheDir, DISK_DIR).listFiles() ?: return
+        // Waiting covers ([waitingFile]) are out of date once the detector's model is in place.
+        if (files.any { isWaiting(it) } && runCatching { modelInPlace(context) }.getOrDefault(false)) {
+            files = files.filter { !(isWaiting(it) && it.delete()) }.toTypedArray()
+        }
         var total = files.sumOf { it.length() }
         if (total <= maxBytes) return
         for (f in files.sortedBy { it.lastModified() }) {
@@ -628,4 +667,18 @@ object Thumbs {
 
     private fun diskFile(context: Context, key: String): File =
         File(File(context.cacheDir, DISK_DIR), Hashes.sha256Hex(key) + if (LOSSLESS == Bitmap.CompressFormat.PNG) ".png" else ".webp")
+
+    private const val WAITING = "-waiting"
+
+    /**
+     * Where the cover kept in [disk] is kept while made as its detector waited for its model
+     * ([CoverFocus.WAITING]): cropped as Top does, made again once the model is there.
+     */
+    private fun waitingFile(disk: File): File = File(disk.parentFile, disk.nameWithoutExtension + WAITING + "." + disk.extension)
+
+    private fun isWaiting(f: File): Boolean = f.nameWithoutExtension.endsWith(WAITING)
+
+    /** True once the cover text detector's model is in place, so waiting covers are out of date ([trim]). Tests stand in their own. */
+    @Volatile
+    internal var modelInPlace: (Context) -> Boolean = { TextDetector.downloaded(ModelStore.of(it)) != null }
 }

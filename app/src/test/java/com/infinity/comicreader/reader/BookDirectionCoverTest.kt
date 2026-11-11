@@ -105,6 +105,32 @@ class BookDirectionCoverTest {
     }
 
     @Test
+    fun aDetectorWaitingForItsModelLeavesTheCoverToBeLookedAtAgain() {
+        val kept = ArrayList<CoverFront>()
+        var ready = false
+        var asked = 0
+        val title = titleOn(Color.RED)
+        val waiting = object : CoverTextDetector {
+            override val id = "fake"
+
+            override fun ready(): Boolean {
+                asked++
+                return ready
+            }
+
+            override fun lines(src: Bitmap): List<SmartCrop.TextBox>? = title.lines(src)
+        }
+        book().use { src ->
+            assertNull(BookDirection.coverFrontOnce(src, null, waiting) { kept += it })
+            assertTrue("the model is asked for", asked > 0)
+            assertTrue(kept.isEmpty())
+            ready = true
+            assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(src, null, waiting) { kept += it })
+        }
+        assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT, V)), kept)
+    }
+
+    @Test
     fun whatACoverToldIsKeptAndNotLookedAtAgain() {
         val kept = ArrayList<CoverFront>()
         val calls = IntArray(1)

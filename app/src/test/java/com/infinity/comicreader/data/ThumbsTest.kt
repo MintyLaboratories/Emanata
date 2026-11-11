@@ -137,13 +137,42 @@ class ThumbsTest {
     private val detector = Thumbs.detector
     private val rtlDetector = Thumbs.rtlDetector
     private val arrivals = Thumbs.arrivals
+    private val modelInPlace = Thumbs.modelInPlace
 
     @After
     fun dropDetector() {
         Thumbs.detector = detector
         Thumbs.rtlDetector = rtlDetector
         Thumbs.arrivals = arrivals
+        Thumbs.modelInPlace = modelInPlace
     }
+
+    /** A stand-in PP-OCR whose model is in place while [Waiting.ready]; counts its looks at that and its runs. */
+    private class Waiting(var ready: Boolean = false) {
+        var asked = 0
+        var runs = 0
+    }
+
+    /** Stands [w] in as the detector, seeing text across rows [top] to [bottom] (shares of the height) once its model is in place. */
+    private fun waitingDetector(w: Waiting, top: Double = 0.85, bottom: Double = 0.92) {
+        val stand = object : CoverTextDetector {
+            override val id = "waiting"
+
+            override fun ready(): Boolean {
+                w.asked++
+                return w.ready
+            }
+
+            override fun lines(src: Bitmap): List<SmartCrop.TextBox> {
+                check(w.ready) { "looked without its model" }
+                w.runs++
+                return SmartCrop.lines(textMap(src, top, bottom), src.width, src.height)
+            }
+        }
+        Thumbs.detector = { stand }
+    }
+
+    private fun coverFiles(): List<String> = File(context.cacheDir, "covers").listFiles().orEmpty().map { it.name }.sorted()
 
     @Test
     fun smartKeepsTheTallestTextFoundOncePerCover() {
@@ -365,6 +394,104 @@ class ThumbsTest {
         val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
         assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
         assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+    }
+
+    @Test
+    fun aCoverMadeWhileTheModelIsMissingIsKeptOnDiskUntilItArrives() {
+        var arrived = 0
+        Thumbs.arrivals = { arrived }
+        val w = Waiting()
+        waitingDetector(w)
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        // Cropped as Top does, and kept on disk as a waiting cover only.
+        assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 2))
+        assertEquals(0, w.runs)
+        val files = coverFiles()
+        assertEquals(1, files.size)
+        assertTrue(files.toString(), files[0].substringBeforeLast('.').endsWith("-waiting"))
+        // Out of memory (another arrival), it comes from disk while the model is still missing, which asks for it again.
+        arrived++
+        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        val asked = w.asked
+        assertEquals(Color.RED, Thumbs.cached(context, entry, 120, 60, smart)!!.getPixel(60, 2))
+        assertEquals(asked + 1, w.asked)
+        assertEquals(0, w.runs)
+        // The model arrives: the waiting cover goes, and the cover is made with its text and kept.
+        w.ready = true
+        arrived++
+        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+        assertTrue(coverFiles().isEmpty())
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(1, w.runs)
+        assertEquals(1, coverFiles().size)
+        assertFalse(coverFiles()[0].contains("-waiting"))
+        arrived++
+        assertNotNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+    }
+
+    @Test
+    fun aWaitingCoverFoundWithTheModelInPlaceIsMadeAgain() {
+        val w = Waiting()
+        waitingDetector(w)
+        val entry = cover()
+        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!
+        // A later session: memory empty, the model downloaded meanwhile without any cover going without it.
+        val waiting = File(context.cacheDir, "covers").listFiles()!!.single()
+        val kept = waiting.readBytes()
+        Thumbs.clear(context)
+        File(context.cacheDir, "covers").mkdirs()
+        waiting.writeBytes(kept)
+        w.ready = true
+        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+        assertFalse(waiting.exists())
+        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+    }
+
+    @Test
+    fun trimDeletesWaitingCoversOnceTheModelIsInPlace() {
+        waitingDetector(Waiting())
+        Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        textAt(0.85, 0.92)
+        Thumbs.load(context, cover(name = "other.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        assertEquals(2, coverFiles().size)
+        Thumbs.modelInPlace = { false }
+        Thumbs.trim(context)
+        assertEquals(2, coverFiles().size)
+        Thumbs.modelInPlace = { true }
+        Thumbs.trim(context)
+        assertEquals(1, coverFiles().size)
+        assertFalse(coverFiles()[0].contains("-waiting"))
+    }
+
+    @Test
+    fun onlyCoversThatLookForTextAskForTheModel() {
+        val w = Waiting()
+        waitingDetector(w)
+        // A cover cropped from the top looks for no text: no download.
+        Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL))!!
+        assertEquals(0, w.asked)
+        // A wraparound with a barcode under Top looks for text only to settle the reading direction.
+        val (coded, codedId) = wrapBook(true, "waiting-coded.cbz")
+        assertEquals(Color.RED, Thumbs.load(context, coded, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!.getPixel(65, 100))
+        assertTrue(w.asked > 0)
+        // That stays open while the model is missing; the barcode alone decides what shows, so that cover is kept.
+        assertNull(Thumbs.knownFront(coded.file, 0))
+        assertNull(BookFactsCache(context).get(codedId)?.cover)
+        // Kept: the plain cover's and this one.
+        assertEquals(2, coverFiles().count { !it.contains("-waiting") })
+        // A wraparound without a barcode under Top looks for its title to tell its front: it asks, shows whole, and waits.
+        val asked = w.asked
+        val (uncoded, _) = wrapBook(false, "waiting-uncoded.cbz")
+        Thumbs.load(context, uncoded, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        assertTrue(w.asked > asked)
+        assertEquals(1, coverFiles().count { it.contains("-waiting") })
+        // The Smart crop asks too.
+        val smart = w.asked
+        Thumbs.load(context, cover(name = "smart.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        assertTrue(w.asked > smart)
+        assertEquals(0, w.runs)
     }
 
     /** Play services there, with ML Kit's module installed. */

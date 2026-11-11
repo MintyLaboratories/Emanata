@@ -1258,24 +1258,21 @@ books, read fast and slowly. See its `--help`; its tests run with
 GPU resamplers against the Kotlin model and times setups on synthetic pages; with
 `--ez trace true` each GPU job logs its steps under `ResampleGpu`. See its KDoc.
 On a Snapdragon 8 Gen 1 (Adreno 730, Android 16, bench build in the foreground,
-plugged in, thermal status 0), the GPU path shrank synthetic pages to 1848x2772
-with Lanczos3 (wall / process CPU ms, medians of 4 to 7 runs of 15 pages, each
-run alternating with the native CPU path):
+plugged in, thermal status 0), shrinking synthetic pages to the service's default
+output size with Lanczos3 took (wall / process CPU ms, medians of 7 runs of 15
+pages, each run alternating the two setups):
 
-| Page, anti-ringing | GPU before the rework | GPU now | Speedup |
-|---|---|---|---|
-| 2000x3000, 0 | 88.3 / 38 | 25.4 / 20 | 3.5x |
-| 2000x3000, 50 | 95.0 / 41 | 30.5 / 23 | 3.1x |
-| 4000x6000, 0 | 217.6 / 70 | 63.0 / 43 | 3.5x |
-| 4000x6000, 50 | 222.7 / 63 | 74.2 / 49 | 3.0x |
+| Page, anti-ringing | GPU | Native CPU, 4 threads on the large cores |
+|---|---|---|
+| 2000x3000, 0 | 25.3 / 20 | 23.7 / 76 |
+| 2000x3000, 50 | 30.6 / 23 | 34.1 / 111 |
+| 4000x6000, 0 | 63.0 / 43 | 55.6 / 167 |
+| 4000x6000, 50 | 74.6 / 49 | 74.3 / 231 |
 
-Most of it came from two steps: the across pass on columns of 8 rows with
-unrolled taps (26 to 43% less wall time), then two chunks in flight with fences
-(47 to 56% less). One job per page with aligned chunks saved 1 to 8%; keeping
-buffers between jobs and pinning the calling thread changed nothing measurable.
-Output stayed bit-identical through the rework. Calibration on that tablet still
-picks the CPU path, 4 threads pinned to the large cores: its 2000x3000 page took
-the GPU 27.8 to 28.3 ms (15 to 16 ms of CPU), those 4 threads 28.8 to 29.3 ms
+That GPU path is about 3x faster than its previous design. Calibration on that
+tablet still picks the CPU path, 4 threads pinned to the large cores: its
+2000x3000 page took the GPU 27.8 to 28.3 ms (15 to 16 ms of CPU), those 4
+threads 28.8 to 29.3 ms
 (96 to 99 ms of CPU) and 8 unpinned threads 24.5 to 26.6 ms (151 to 160 ms of
 CPU), three calibrations. The GPU ties the chosen setup within the runs' spread
 and is not 20% faster than the fastest one. Whether its lower CPU time saves

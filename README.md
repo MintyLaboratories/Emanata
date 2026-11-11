@@ -155,9 +155,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   clearly taller; once a book's reading direction is known, its title also
   confirms the barcode's front (by the text detector, found once per cover;
   its model downloads the first time such a cover needs it). When neither
-  tells, the
-  whole cover shows, fitted over a blurred copy of itself, and while the
-  detector's model is missing it is made again once the model arrives.
+  tells, the whole cover shows, fitted over a blurred copy of itself, and
+  while the detector's model is missing it is made again once the model
+  arrives.
 - Tabs for **Browse**, **Favorites**, **History** and **Bookmarks**.
 - **Toolbar buttons:** Sort, Filter, Favorite (☆/★ for the folder browsed) and
   Search; the others step aside while searching. Settings → **Toolbar

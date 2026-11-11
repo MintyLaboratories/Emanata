@@ -286,7 +286,7 @@ class CoverTextDetectorsTest {
     }
 
     @Test
-    fun aDownloadTheNetworkPolicyHoldsBackLeavesPpOcrForTheSession() {
+    fun aDownloadTheNetworkPolicyHoldsBackLeavesPpOcrForAWhile() {
         mayDownload = false
         val play = play(installed = false)
         val d = detectors(play)
@@ -294,7 +294,30 @@ class CoverTextDetectorsTest {
         assertTrue(play.requests.isEmpty())
         assertEquals(CoverTextDetectors.Status(Use.PP_OCR, Why.HELD_BACK), d.status())
         mayDownload = true
+        clock += DetectorModel.HELD_MS - 1
         assertEquals(TextDetector.ID, d.session().id)
+    }
+
+    @Test
+    fun aHeldBackDownloadIsRequestedOnceThePolicyAllowsIt() {
+        mayDownload = false
+        val play = play(installed = false)
+        val d = detectors(play)
+        d.session().lines(image)
+        val changes = d.changes.value
+        clock += DetectorModel.HELD_MS
+        assertEquals("still held back", CoverTextDetectors.Status(Use.PP_OCR, Why.HELD_BACK), d.status())
+        assertEquals("no change while it stays held back", changes, d.changes.value)
+        mayDownload = true
+        clock += DetectorModel.HELD_MS - 1
+        assertEquals("asked again a while after the last hold", TextDetector.ID, d.session().id)
+        clock += 1
+        assertEquals(CoverTextDetectors.Status(Use.ML_KIT, null), d.status())
+        assertNull(d.session().lines(image))
+        assertEquals(1, play.requests.size)
+        play.requests.single()(true)
+        assertEquals(line, d.session().lines(image))
+        assertEquals(1, d.arrivals)
     }
 
     @Test

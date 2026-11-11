@@ -125,10 +125,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     app, sends usage and performance data to Google (Firebase logging) under
     the [ML Kit terms](https://developers.google.com/ml-kit/terms); covers
     never leave the device. Until the model arrives, covers crop by their
-    detail alone and are made again once it does. When the network settings
-    hold that download back, it takes over 10 minutes, or ML Kit fails,
-    PP-OCR finds the lines for the rest of the session or until the setting
-    is turned on again. ML Kit's line boxes fit their letters more tightly
+    detail alone and are made again once it does. While the network settings
+    hold that download back, PP-OCR finds the lines until they allow it
+    (asked again at most once a minute). When it takes over 10 minutes or ML
+    Kit fails, PP-OCR finds them for the rest of the session or until the
+    setting is turned on again. ML Kit's line boxes fit their letters more tightly
     than PP-OCR's, so they are grown by a quarter of their letters' height
     to keep as much room around a title. Its letter size is its letters' own
     height, not the grown box, so its 12% bar is higher than PP-OCR's: a line

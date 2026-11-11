@@ -26,15 +26,17 @@ import java.util.concurrent.FutureTask
  * marked right to left always use PP-OCR ([rightToLeft]): ML Kit's recognizer reads Latin script only.
  *
  * The pick holds for the session, so no cover mixes detectors: it changes when the setting does,
- * and once, for the rest of the session, when ML Kit fails. ML Kit's model is a module Play
- * services downloads: asked about once, by the first cover (covers asking meanwhile wait for
- * that answer), and requested as optional network work ([mayDownload], [NetWork.DOWNLOAD]).
+ * when a held-back download is allowed, and once, for the rest of the session, when ML Kit fails.
+ * ML Kit's model is a module Play services downloads: asked about once, by the first cover
+ * (covers asking meanwhile wait for that answer), and requested as optional network work
+ * ([mayDownload], [NetWork.DOWNLOAD]).
  * While it downloads, ML Kit does not run (a focus found meanwhile is not kept); the module is
  * asked about again every [RECHECK_MS], and a download not done within [DOWNLOAD_WAIT_MS] counts
- * as failed. A request the network policy holds back or Play services refuses, [CHECK_TRIES]
- * checks Play services does not answer, ML Kit not starting, or [FAILURES] failed runs in a row
- * leave PP-OCR for the rest of the session, or until the setting is turned on again
- * ([settingChanged]).
+ * as failed. A request the network policy holds back leaves PP-OCR until the policy allows it,
+ * asked again at most every [DetectorModel.HELD_MS]. A request Play services refuses,
+ * [CHECK_TRIES] checks Play services does not answer, ML Kit not starting, or [FAILURES] failed
+ * runs in a row leave PP-OCR for the rest of the session, or until the setting is turned on
+ * again ([settingChanged]).
  */
 class CoverTextDetectors(
     private val optedIn: () -> Boolean,
@@ -60,7 +62,7 @@ class CoverTextDetectors(
         /** Play services is not on the device, or ML Kit is not part of the app. */
         UNAVAILABLE,
 
-        /** The module download waits for a connection the network policy allows. */
+        /** The network policy holds the module download back; asked again after [DetectorModel.HELD_MS]. */
         HELD_BACK,
 
         /** Play services could not tell about, or download, the module. */
@@ -91,6 +93,9 @@ class CoverTextDetectors(
     /** When the module was last asked about, and when its download was requested ([now]). */
     private var askedAt = 0L
     private var requestedAt = 0L
+
+    /** When the network policy last held the module download back ([now]). */
+    private var heldAt = 0L
 
     /** What detaches the app from the download request under way, and its number, so an answer to an earlier one is ignored. */
     private var detach: (() -> Unit)? = null
@@ -297,6 +302,7 @@ class CoverTextDetectors(
                     return false
                 }
                 !mayDownload() -> {
+                    heldAt = now()
                     giveUp(Why.HELD_BACK)
                     return false
                 }
@@ -403,8 +409,15 @@ class CoverTextDetectors(
         changed.update { it + 1 }
     }
 
-    /** Gives a download not done within [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]); returns what detaches it. Under [lock]. */
+    /**
+     * Lifts a hold ([Why.HELD_BACK]) at least [DetectorModel.HELD_MS] old once the network policy
+     * allows the download, so the next cover asks again; gives a download not done within
+     * [DOWNLOAD_WAIT_MS] up ([Why.MODULE_FAILED]) and returns what detaches it. Under [lock].
+     */
     private fun expire(): (() -> Unit)? {
+        if (gaveUp == Why.HELD_BACK && now() - heldAt >= DetectorModel.HELD_MS) {
+            if (mayDownload()) gaveUp = null else heldAt = now()
+        }
         if (module != Module.DOWNLOADING || gaveUp != null || now() - requestedAt < DOWNLOAD_WAIT_MS) return null
         module = Module.UNKNOWN
         giveUp(Why.MODULE_FAILED)
@@ -412,7 +425,7 @@ class CoverTextDetectors(
         return detach.also { detach = null }
     }
 
-    /** Leaves ML Kit for [why] for the rest of the session, or until the setting is turned on again. Under [lock]. */
+    /** Leaves ML Kit for [why] for the rest of the session, or until the setting is turned on again or [expire] lifts a hold. Under [lock]. */
     private fun giveUp(why: Why) {
         if (gaveUp != null) return
         gaveUp = why

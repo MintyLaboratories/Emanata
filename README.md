@@ -1173,8 +1173,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (`ModelCatalog.TEXT_DETECTOR`) is stored and downloaded the same way, from a
   pinned Hugging Face revision; `DetectorModel` starts its download when a
   cover first needs it (`CoverArt.focusOf`: a Smart crop, or the text of a
-  wraparound cover without a readable barcode, in the library and in the
-  reader's direction detection), as optional work (`NetPolicy`), never twice at
+  wraparound cover, to pick its front in the library when it has no readable
+  barcode and to confirm its barcode's front when the book's direction is
+  settled, in the library and the reader), as optional work (`NetPolicy`), never twice at
   once, at most every 15 minutes, and not after 3 failed downloads until the
   app starts again or Download in the Models screen asks for it; a request the
   network settings hold back is no failed download and is asked again a minute

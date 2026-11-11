@@ -111,6 +111,19 @@ internal object ResampleRuns {
         }
     }
 
+    /** A trim of what the GPU path keeps: when it freed ("now", "at close" or "after failure") and how many across programs went. */
+    data class GpuTrim(val freed: String, val programs: Int)
+
+    private val TRIM_LINE = Regex("""\btrim (now|at close|after failure) freed=\S+ programs=(\d+)""")
+
+    /** The trims in [lines] of the GPU path's log ("ResampleGpu", as `resample_gpu.c` writes them), in order. */
+    fun gpuTrims(lines: List<String>): List<GpuTrim> =
+        lines.mapNotNull { TRIM_LINE.find(it) }.map { GpuTrim(it.groupValues[1], it.groupValues[2].toInt()) }
+
+    /** True when [trims] hold exactly one trim done as a job closed, its programs with it, and none done at once. */
+    fun trimmedAtClose(trims: List<GpuTrim>): Boolean =
+        trims.count { it.freed == "at close" && it.programs > 0 } == 1 && trims.none { it.freed == "now" }
+
     /** Battery current samples in mA, negative while the battery drains. */
     class Draw(val samples: List<Double>) {
         val mean: Double get() = if (samples.isEmpty()) Double.NaN else samples.average()

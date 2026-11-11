@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.debug.ResampleRuns.Cores
 import com.infinity.comicreader.debug.ResampleRuns.Draw
+import com.infinity.comicreader.debug.ResampleRuns.GpuTrim
 import com.infinity.comicreader.debug.ResampleRuns.Setup
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.PixelEngine
@@ -75,6 +76,34 @@ class ResampleRunsTest {
     @Test
     fun roundsAlternateTheOrder() {
         assertEquals(listOf(listOf(1, 2, 3), listOf(3, 2, 1), listOf(1, 2, 3)), ResampleRuns.interleaved(listOf(1, 2, 3), 3))
+    }
+
+    @Test
+    fun gpuTrimLinesReadAsWhenAndPrograms() {
+        val lines = listOf(
+            "--------- beginning of main",
+            "11-11 10:00:00.000  100  200 I ResampleGpu: trim at close freed=41.0MB programs=2 in 0.31 ms",
+            "trim now freed=0.0MB programs=0 in 0.02 ms",
+            "trim after failure freed=12.5MB programs=0 in 0.10 ms",
+            "job 600x800 rows=800 lock=0.01 compile=0.00",
+        )
+        assertEquals(
+            listOf(GpuTrim("at close", 2), GpuTrim("now", 0), GpuTrim("after failure", 0)),
+            ResampleRuns.gpuTrims(lines),
+        )
+        assertTrue(ResampleRuns.gpuTrims(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun aTrimAtCloseCountsOnlyAloneAndWithItsPrograms() {
+        assertTrue(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 3))))
+        // Freed at once: the job did not hold the lock, or the close path did not run.
+        assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("now", 3))))
+        assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 3), GpuTrim("now", 0))))
+        // Buffers alone: the programs the trim asked for stayed.
+        assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 0))))
+        assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 1), GpuTrim("at close", 1))))
+        assertFalse(ResampleRuns.trimmedAtClose(emptyList()))
     }
 
     @Test

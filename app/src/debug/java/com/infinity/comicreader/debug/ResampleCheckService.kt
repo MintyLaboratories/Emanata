@@ -34,8 +34,10 @@ import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.SyntheticPage
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.zip.CRC32
 import kotlin.concurrent.thread
@@ -265,7 +267,8 @@ class ResampleCheckService : Service() {
      * ([NativeResampler.onTrimMemory] with [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN], asked
      * as the job's first chunk starts): the job frees the buffers and programs as it closes
      * ("trim at close" under "ResampleGpu"), and the next GPU job runs on the GPU with the
-     * same pixels.
+     * same pixels. `atClose`: the app's own log since the first job began holds one trim at
+     * close that took programs and no trim done at once ([ResampleRuns.trimmedAtClose]).
      */
     private fun trimAtCloseCheck() {
         val c = Case(3000, 4000, Resampler.Window.of(3000, 4000), 600, 800, Scaling.DEFAULT)
@@ -283,12 +286,17 @@ class ResampleCheckService : Service() {
                 }
                 false
             }
+            val since = System.currentTimeMillis()
             val ran = NativeResampler.resample(src, first, c.window, false, c.scaling, trimming, PixelEngine.GPU, fallback = false)
             val usable = NativeResampler.gpuUsable
+            val trims = gpuTrimsSince(since)
+            val atClose = ResampleRuns.trimmedAtClose(trims)
             val after = NativeResampler.resample(src, next, c.window, false, c.scaling, engine = PixelEngine.GPU, fallback = false)
             val same = ran && after && digest(first) == digest(next)
-            result.put("ran", ran).put("trimAsked", asked).put("polls", polls).put("usable", usable).put("after", after).put("same", same)
-                .put("ok", asked && polls >= 2 && usable && same)
+            result.put("ran", ran).put("trimAsked", asked).put("polls", polls).put("usable", usable)
+                .put("trims", trims.joinToString { "${it.freed} programs=${it.programs}" }).put("atClose", atClose)
+                .put("after", after).put("same", same)
+                .put("ok", asked && polls >= 2 && usable && atClose && same)
         } catch (t: Throwable) {
             result.put("failed", "${t.javaClass.simpleName}: ${t.message}").put("ok", false)
         } finally {
@@ -297,6 +305,29 @@ class ResampleCheckService : Service() {
             next.recycle()
         }
         log(result)
+    }
+
+    /**
+     * The GPU path's trims this process logged since [sinceMs] (wall clock), read with
+     * `logcat`, which shows an app its own lines; read again for up to a second until one
+     * shows, as the log daemon may not have it yet. Empty when logcat cannot run.
+     */
+    private fun gpuTrimsSince(sinceMs: Long): List<ResampleRuns.GpuTrim> {
+        val since = String.format(Locale.US, "%d.%03d", sinceMs / 1000, sinceMs % 1000)
+        val command = listOf("logcat", "-d", "-v", "raw", "--pid=${Process.myPid()}", "-T", since, "-s", "ResampleGpu:I")
+        repeat(20) {
+            val trims = try {
+                val p = ProcessBuilder(command).redirectErrorStream(true).start()
+                val lines = p.inputStream.bufferedReader().use { it.readLines() }
+                p.waitFor()
+                ResampleRuns.gpuTrims(lines)
+            } catch (e: IOException) {
+                return emptyList()
+            }
+            if (trims.isNotEmpty()) return trims
+            SystemClock.sleep(50)
+        }
+        return emptyList()
     }
 
     /**

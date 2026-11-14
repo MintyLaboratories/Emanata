@@ -78,7 +78,9 @@ class ReaderAi internal constructor(
     /** Where shader chains keep their compiled passes; null: compiled at every open. */
     private val programs: File? = null,
     /** Where this device's tile sizes for catalog models are kept ([TileTuning]); null: [TileSizing.DEFAULT_MAX] at most. */
-    private val tiles: TileChoices? = null
+    private val tiles: TileChoices? = null,
+    /** Where the page times measured here are kept for the AI settings' load estimate ([AiLoad]); null: nowhere. */
+    private val times: PageTimes? = null
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -308,13 +310,15 @@ class ReaderAi internal constructor(
     /**
      * Takes [m]'s run on an input of [pixels] into its measured rate, a run stopped early by
      * its whole input's expected time ([RunStats.fullMs]): its first tile, which carries the
-     * GPU's warm-up, counted once, not as the pace of the rest.
+     * GPU's warm-up, counted once, not as the pace of the rest. Keeps the rate as [m]'s page
+     * time here ([times]).
      */
     internal fun learn(m: AiModel, pixels: Long, stats: RunStats) {
         val ms = stats.fullMs ?: return
         if (pixels <= 0) return
         val rate = ms / (pixels / 1e6)
-        rates.merge(m.id, rate) { old, now -> (old + now) / 2 }
+        val now = rates.merge(m.id, rate) { old, new -> (old + new) / 2 } ?: return
+        times?.keep(m, (now * REFERENCE_MP).toLong())
     }
 
     /**
@@ -505,7 +509,8 @@ class ReaderAi internal constructor(
                 memory = { ModelMemory.of(app) },
                 thresholds = { prefs.aiThresholds },
                 programs = programsIn(app),
-                tiles = TileChoices(TileChoices.dirIn(app))
+                tiles = TileChoices(TileChoices.dirIn(app)),
+                times = PageTimes.of(app)
             )
         }
     }

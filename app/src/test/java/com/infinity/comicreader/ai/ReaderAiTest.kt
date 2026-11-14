@@ -625,4 +625,22 @@ class ReaderAiTest {
         ai.learn(upscale, 1_500_000, RunStats(4, 70, longArrayOf(2_000, 300, 300, 300), 2_900))
         assertEquals((2_000 + 69 * 300) / 1.5, ai.rateOf(upscale), 1e-9)
     }
+
+    @Test
+    fun aLearnedRateIsKeptAsTheModelsPageTimeHere() {
+        val times = PageTimes(File(tmp.newFolder(), "times"))
+        val reader = ReaderAi(prefs, { own[it] }, models, store, runtime, { stop }, { downloads += it.id }, threads = 2, times = times)
+        try {
+            reader.learn(upscale, 1_500_000, RunStats(3, 3, longArrayOf(1_000, 1_000, 1_000), 3_000))
+            assertEquals(3_000L, times.pageMs(upscale))
+            // A 3 MP page at the same pace: the same time for a reference page.
+            reader.learn(upscale, 3_000_000, RunStats(3, 3, longArrayOf(2_000, 2_000, 2_000), 6_000))
+            assertEquals(3_000L, times.pageMs(upscale))
+            // Averaged with what came before, as the reader paces itself.
+            reader.learn(upscale, 1_500_000, RunStats(3, 3, longArrayOf(3_000, 3_000, 3_000), 9_000))
+            assertEquals(6_000L, times.pageMs(upscale))
+        } finally {
+            reader.close()
+        }
+    }
 }

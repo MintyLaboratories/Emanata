@@ -177,12 +177,13 @@ data class Target(
     /**
      * The decode of a page that shows as this target does, at full detail: its content
      * (auto-cropped likewise) at full size, or, when a `[width, height]` [size] page
-     * would take more than [maxBytes] of ARGB, reduced evenly to fit. Unknown sizes
+     * would take more than [maxBytes] of ARGB, reduced evenly to fit; never sharpened, as
+     * renders from it are ([Scaling.sharpen]). Unknown sizes
      * decode at full size. [maxBytes] bounds the bitmap kept: decoding it still reads
      * the source whole first (up to [capPixels]), beside its crop with auto-crop.
      */
     fun detail(size: IntArray?, maxBytes: Long): Target {
-        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half, box = box, scaling = scaling)
+        val full = Target(autoCrop = autoCrop, linear = linear, capPixels = capPixels, half = half, box = box, scaling = scaling.unsharpened)
         if (size == null || size[0] <= 0 || size[1] <= 0) return full
         val bytes = size[0].toLong() * size[1] * 4
         if (bytes <= maxBytes) return full

@@ -97,6 +97,11 @@ class ShaderCatalogTest {
     @Test
     fun everyChainTakesAPageWithinTheBudget() {
         for (m in ShaderCatalog.all) assertTrue("${m.id}: ${m.pageMs} ms", m.pageMs in 1..ModelCatalog.MAX_PAGE_MS)
+        for (f in ShaderCatalog.all.map { it.family }.distinct()) {
+            val times = ShaderCatalog.family(f).map { it.pageMs }
+            assertEquals("$f: heavier levels take longer", times.sorted(), times)
+        }
+        assertTrue(ShaderCatalog.all.none { it.slow })
     }
 
     @Test

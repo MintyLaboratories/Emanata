@@ -92,12 +92,13 @@ object ShaderCatalog {
     /** A family: its id (model ids are it and the level), name, and files at each level. */
     private class Family(val id: String, val name: String, val files: (Int) -> List<ModelFile>, val pageMs: LongArray)
 
+    /** Page times: a synthetic 1000 x 1500 page in 512-pixel tiles on the reference tablet's GPU (Adreno 730), thermal status 0, after one warm-up page. */
     private val FAMILIES = listOf(
-        Family("anime4k-a", "Anime4K A (sharp) 2×", { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(1, 1, 1, 1, 1)),
-        Family("anime4k-b", "Anime4K B (clean) 2×", { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(1, 1, 1, 1, 1)),
-        Family("anime4k-c", "Anime4K C (balanced) 2×", { l -> listOf(CLAMP, UPSCALE_DENOISE[l]) }, longArrayOf(1, 1, 1, 1, 1)),
-        Family("anime4k-upscale", "Anime4K Upscale 2×", { l -> listOf(UPSCALE[l]) }, longArrayOf(1, 1, 1, 1, 1)),
-        Family("anime4k-upscale-denoise", "Anime4K Upscale + Denoise 2×", { l -> listOf(UPSCALE_DENOISE[l]) }, longArrayOf(1, 1, 1, 1, 1)),
+        Family("anime4k-a", "Anime4K A (sharp) 2×", { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(180, 300, 470, 590, 840)),
+        Family("anime4k-b", "Anime4K B (clean) 2×", { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(250, 340, 490, 760, 830)),
+        Family("anime4k-c", "Anime4K C (balanced) 2×", { l -> listOf(CLAMP, UPSCALE_DENOISE[l]) }, longArrayOf(170, 210, 370, 530, 730)),
+        Family("anime4k-upscale", "Anime4K Upscale 2×", { l -> listOf(UPSCALE[l]) }, longArrayOf(140, 230, 330, 500, 730)),
+        Family("anime4k-upscale-denoise", "Anime4K Upscale + Denoise 2×", { l -> listOf(UPSCALE_DENOISE[l]) }, longArrayOf(150, 210, 270, 490, 730)),
     )
 
     /** Every chain, family by family, each from its lightest level to its heaviest. */

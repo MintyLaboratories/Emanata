@@ -1,6 +1,7 @@
 package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
@@ -34,9 +35,12 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         plan.doubleTap?.let { prefs.doubleTapZoom = it }
         plan.preload?.let { prefs.preload = it }
         plan.seams?.let { prefs.joinSpreads = it }
+        // Both default chains run the plan's models, so a book read as manga runs them too.
         plan.ai?.let { ids ->
             val models = ids.mapNotNull { ModelCatalog.byId(it) }
-            for (step in AiStep.entries) prefs.setAiModel(step, models.firstOrNull { it.step == step }?.id)
+            for (kind in ChainKind.entries) {
+                for (step in AiStep.entries) prefs.setAiModel(step, models.firstOrNull { it.step == step }?.id, kind)
+            }
             prefs.aiEnabled = models.isNotEmpty()
         }
     }
@@ -61,7 +65,11 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
             .put("preload", prefs.preload)
             .put("joinSpreads", prefs.joinSpreads)
             .put("ai", prefs.aiEnabled)
-            .put("aiModels", JSONObject().apply { for (step in AiStep.entries) put(step.key, prefs.aiModel(step) ?: Prefs.AI_NONE) })
+            .put("aiModels", JSONObject().apply {
+                for (kind in ChainKind.entries) {
+                    put(kind.key, JSONObject().apply { for (step in AiStep.entries) put(step.key, prefs.aiModel(step, kind) ?: Prefs.AI_NONE) })
+                }
+            })
 
         /** Puts back the settings [file] keeps, if any, and forgets them; true when it held some. */
         fun restoreLeft(prefs: Prefs, file: File): Boolean {
@@ -80,8 +88,11 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
                 if (kept.has("preload")) prefs.preload = kept.getInt("preload")
                 if (kept.has("joinSpreads")) prefs.joinSpreads = kept.getBoolean("joinSpreads")
                 if (kept.has("ai")) prefs.aiEnabled = kept.getBoolean("ai")
-                kept.optJSONObject("aiModels")?.let { m ->
-                    for (step in AiStep.entries) prefs.setAiModel(step, m.optString(step.key).takeIf { it.isNotEmpty() && it != Prefs.AI_NONE })
+                kept.optJSONObject("aiModels")?.let { all ->
+                    for (kind in ChainKind.entries) {
+                        val m = all.optJSONObject(kind.key) ?: continue
+                        for (step in AiStep.entries) prefs.setAiModel(step, m.optString(step.key).takeIf { it.isNotEmpty() && it != Prefs.AI_NONE }, kind)
+                    }
                 }
             }
             file.delete()

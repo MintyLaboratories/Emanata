@@ -3,6 +3,10 @@ package com.infinity.comicreader.debug
 import android.app.Application
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.TwoPage
@@ -90,5 +94,21 @@ class KeptPrefsTest {
         next.apply(twoPagesByKey)
         next.restore()
         assertEquals(before, KeptPrefs.snapshot(prefs).toString())
+    }
+
+    @Test
+    fun aBookReadAsMangaRunsThePlansModelsAndBothChainsArePutBack() {
+        mine()
+        val descreen = ModelCatalog.forStep(AiStep.DESCREEN)[0]
+        prefs.setAiModel(AiStep.DESCREEN, descreen.id, ChainKind.MANGA)
+        val before = KeptPrefs.snapshot(prefs).toString()
+        val upscale = ModelCatalog.forStep(AiStep.UPSCALE).last()
+        val plan = BenchPlan.of(Intent().putExtra("do", "read").putExtra("path", "/books/a.cbz").putExtra("ai", upscale.id))!!
+        val kept = KeptPrefs(prefs, file)
+        kept.apply(plan)
+        for (kind in ChainKind.entries) assertEquals(listOf(upscale.id), AiChain.forBook(prefs, null, kind).map { it.id })
+        kept.restore()
+        assertEquals(before, KeptPrefs.snapshot(prefs).toString())
+        assertEquals(descreen.id, prefs.aiModel(AiStep.DESCREEN, ChainKind.MANGA))
     }
 }

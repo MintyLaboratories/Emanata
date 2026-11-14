@@ -196,15 +196,16 @@ object Notices {
     )
 
     /**
-     * The AI models' sources ([ModelSource]), as notices: who made them, the license, and which
-     * catalog models come from each, downloaded unchanged on demand.
+     * The AI models' sources ([ModelSource]), as notices: who made them, the license, which
+     * catalog models come from each, downloaded unchanged on demand, and what a conversion made
+     * for the app is.
      */
     val models: List<Notice>
         get() = ModelSource.entries.filter { it.models.isNotEmpty() }.map { s ->
             Notice(
                 s.title, s.license, s.url, s.texts,
                 note = "By ${s.author}. Models: ${s.models.joinToString { it.name }}. Downloaded on demand, unchanged, " +
-                    "from ${ModelCatalog.REPOSITORY} and run on this device only."
+                    "from ${s.repository} and run on this device only." + (s.conversion?.let { " $it" } ?: "")
             )
         }
 

@@ -30,12 +30,16 @@ class ModelCatalogTest {
     fun filesComeFromThePinnedRepositoryWithChecksums() {
         assertTrue(ModelCatalog.BASE.startsWith("https://raw.githubusercontent.com/ollm/opencomic-ai-models/${ModelCatalog.COMMIT}/"))
         assertTrue(ModelCatalog.COMMIT.matches(Regex("[0-9a-f]{40}")))
+        assertEquals("${ModelCatalog.HOSTED_REPOSITORY}/resolve/${ModelCatalog.HOSTED_REVISION}/", ModelCatalog.HOSTED_BASE)
+        assertTrue(ModelCatalog.HOSTED_REPOSITORY.startsWith("https://huggingface.co/"))
+        assertTrue(ModelCatalog.HOSTED_REVISION.matches(Regex("[0-9a-f]{40}")))
         for (m in ModelCatalog.all) {
             assertTrue(m.param.name, m.param.name.endsWith(".param"))
             assertTrue(m.bin.name, m.bin.name.endsWith(".bin"))
             assertEquals(m.param.url.removeSuffix(".param"), m.bin.url.removeSuffix(".bin"))
+            val base = if (m.source.repository == ModelCatalog.HOSTED_REPOSITORY) ModelCatalog.HOSTED_BASE else ModelCatalog.BASE
             for (f in m.files) {
-                assertTrue(f.url, f.url.startsWith(ModelCatalog.BASE) && f.url.endsWith("/" + f.name))
+                assertTrue(f.url, f.url.startsWith(base) && f.url.endsWith("/" + f.name))
                 assertTrue(f.sha256, f.sha256.matches(Regex("[0-9a-f]{64}")))
                 assertTrue(f.name, f.bytes > 0)
             }
@@ -87,7 +91,7 @@ class ModelCatalogTest {
 
     @Test
     fun everySourceIsFreeToUseAndShipsItsLicense() {
-        val free = setOf("CC BY 4.0", "MIT License", "BSD 3-Clause License")
+        val free = setOf("CC BY 4.0", "MIT License", "BSD 3-Clause License", "LGPL 3.0 or later")
         for (s in ModelSource.entries) {
             assertTrue(s.license, s.license in free)
             assertTrue(s.url, s.url.startsWith("https://"))
@@ -95,6 +99,50 @@ class ModelCatalogTest {
             val text = s.texts.joinToString { File(assetDir, it).readText() }
             if (s.license == "CC BY 4.0") assertTrue(s.name, text.contains("Attribution 4.0 International"))
             else assertTrue("${s.name} lacks a copyright line", text.contains("Copyright"))
+            if (s.license == "LGPL 3.0 or later") {
+                // The LGPL is the GPL plus permissions: both texts ship.
+                assertTrue(s.name, text.contains("GNU LESSER GENERAL PUBLIC LICENSE") && text.contains("GNU GENERAL PUBLIC LICENSE\n"))
+            }
+        }
+    }
+
+    @Test
+    fun sourcesDownloadFromAPinnedRepository() {
+        for (s in ModelSource.entries) {
+            assertTrue(s.name, s.repository in setOf(ModelCatalog.REPOSITORY, ModelCatalog.HOSTED_REPOSITORY))
+            // Conversions made for the app come from the repository that also holds their sources.
+            assertEquals(s.name, s.repository == ModelCatalog.HOSTED_REPOSITORY, s.conversion != null)
+        }
+        assertEquals(listOf(ModelSource.CUNNY, ModelSource.ARTCNN), ModelSource.entries.filter { it.conversion != null })
+    }
+
+    @Test
+    fun theCuNNyNoticeNamesItsLicenseUpstreamAndSource() {
+        val text = File(assetDir, "cunny.txt").readText()
+        assertTrue(text.contains("Copyright (c) 2024 funnyplanter"))
+        assertTrue(text.contains(ModelSource.CUNNY.url))
+        assertTrue(text.contains("GNU Lesser General Public License") && text.contains("version 3 of the License, or (at your option) any later version"))
+        assertTrue(text.contains("${ModelCatalog.HOSTED_REPOSITORY} at revision ${ModelCatalog.HOSTED_REVISION}"))
+        assertTrue(text.contains("Corresponding Source") && text.contains("CuNNy-8x32-DS.glsl") && text.contains("cn-conversion-script/"))
+        assertTrue(ModelSource.CUNNY.conversion!!.contains("conversion scripts"))
+    }
+
+    @Test
+    fun theArtCnnNoticeNamesItsAuthorAsUpstreamDoes() {
+        val text = File(assetDir, "artcnn.txt").readText()
+        assertTrue(text.startsWith("MIT License") && text.contains("Copyright (c) 2024 João Chrisóstomo"))
+        assertTrue(ModelSource.ARTCNN.author.startsWith("João Chrisóstomo"))
+    }
+
+    @Test
+    fun theNewUpscalersAreTwoTimesAndFasterThanTheDefault() {
+        val default = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+        for (id in listOf("cunny-8x32-ds-rp", "artcnn-c4f32-ds")) {
+            val m = ModelCatalog.byId(id)!!
+            assertEquals(AiStep.UPSCALE, m.step)
+            assertEquals(2, m.scale)
+            assertTrue(id, m.pageMs < default.pageMs)
+            assertTrue(m.files.all { it.url.startsWith(ModelCatalog.HOSTED_BASE + id + "/") })
         }
     }
 
@@ -137,7 +185,7 @@ class ModelCatalogTest {
             listOf(
                 "waifu2x-upconv7-2x", "waifu2x-upconv7-2x-denoise0", "waifu2x-upconv7-2x-denoise1", "waifu2x-upconv7-2x-denoise2",
                 "waifu2x-upconv7-2x-denoise3", "opencomic-ai-upscale-2x-compact-v2", "opencomic-ai-upscale-3x-compact-v2",
-                "opencomic-ai-upscale-4x-compact-v2", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4",
+                "opencomic-ai-upscale-4x-compact-v2", "cunny-8x32-ds-rp", "artcnn-c4f32-ds", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4",
                 "4x-lsdir-compact-c3"
             ),
             ids
@@ -171,6 +219,8 @@ class ModelCatalogTest {
         assertEquals(ModelBlurb.DESCREEN_V2, blurbOf("opencomic-ai-descreen-hard-compact-v2"))
         assertEquals(ModelBlurb.DESCREEN_V3, blurbOf("opencomic-ai-descreen-hard-fast-v3-256"))
         assertEquals(ModelBlurb.ARTIFACT_REMOVAL, blurbOf("opencomic-ai-artifact-removal-compact-v2"))
+        assertEquals(ModelBlurb.CUNNY, blurbOf("cunny-8x32-ds-rp"))
+        assertEquals(ModelBlurb.ARTCNN, blurbOf("artcnn-c4f32-ds"))
         // No description was given for it: it shows as slow alone.
         assertNull(blurbOf("4x-lsdir-compact-c3"))
     }

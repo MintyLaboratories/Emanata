@@ -100,6 +100,8 @@ object ModelText {
         ModelBlurb.DESCREEN_V2 -> R.string.ai_blurb_descreen_v2
         ModelBlurb.DESCREEN_V3 -> R.string.ai_blurb_descreen_v3
         ModelBlurb.ARTIFACT_REMOVAL -> R.string.ai_blurb_artifact_removal
+        ModelBlurb.CUNNY -> R.string.ai_blurb_cunny
+        ModelBlurb.ARTCNN -> R.string.ai_blurb_artcnn
     }
 
     /** A picker's entry for [m]: its name and size, and below, smaller and quieter, its [blurb]. */
@@ -160,10 +162,12 @@ object ModelText {
         return (if (AiChain.slow(chain)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
     }
 
-    /** Who made [m], its license, where it is from and where it downloads from. */
-    fun attribution(context: Context, m: CatalogModel): String = context.getString(
-        R.string.ai_model_info, details(context, m), m.source.author, m.source.license, m.source.url, ModelCatalog.REPOSITORY
-    )
+    /** Who made [m], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */
+    fun attribution(context: Context, m: CatalogModel): String {
+        val s = m.source
+        val info = context.getString(R.string.ai_model_info, details(context, m), s.author, s.license, s.url, s.repository)
+        return s.conversion?.let { "$info\n\n$it" } ?: info
+    }
 
     /** What is known of imported model [m]: its details, that it is the user's, and its time here. */
     fun imported(context: Context, m: UserModel): String =

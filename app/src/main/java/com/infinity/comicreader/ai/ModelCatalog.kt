@@ -15,9 +15,18 @@ enum class AiStep(val key: String) {
 /**
  * Whose models these are and the terms they are used under, as shown in About: [title], by
  * [author], under [license], from [url]; [texts] are the license files under
- * `assets/licenses/`.
+ * `assets/licenses/`. Their files download from [repository]; [conversion], where set, says
+ * the files are a conversion made for the app and where its source is.
  */
-enum class ModelSource(val title: String, val author: String, val license: String, val url: String, val texts: List<String>) {
+enum class ModelSource(
+    val title: String,
+    val author: String,
+    val license: String,
+    val url: String,
+    val texts: List<String>,
+    val repository: String = ModelCatalog.REPOSITORY,
+    val conversion: String? = null
+) {
     OPENCOMIC(
         "OpenComic AI", "Oleguer Llopart Mora", "CC BY 4.0", "https://github.com/ollm/opencomic-ai-training",
         listOf("opencomic-ai-models.txt", "cc-by-4.0.txt")
@@ -33,6 +42,19 @@ enum class ModelSource(val title: String, val author: String, val license: Strin
     HELAMAN(
         "Helaman's models", "Philip Hofmann (Helaman)", "CC BY 4.0", "https://github.com/Phhofm/models",
         listOf("cc-by-4.0.txt")
+    ),
+    CUNNY(
+        "CuNNy", "funnyplanter", "LGPL 3.0 or later", "https://github.com/funnyplanter/CuNNy",
+        listOf("cunny.txt", "lgpl-3.0.txt", "gpl-3.0.txt"), ModelCatalog.HOSTED_REPOSITORY,
+        "An ncnn conversion of the mpv shader CuNNy-8x32-DS, made for this app: the same weights, with RGB in and out " +
+            "and edges repeated before every layer. Its source, the unmodified shader and the conversion scripts, is " +
+            "in the same repository at the same revision."
+    ),
+    ARTCNN(
+        "ArtCNN", "João Chrisóstomo (Artoriuz)", "MIT License", "https://github.com/Artoriuz/ArtCNN",
+        listOf("artcnn.txt"), ModelCatalog.HOSTED_REPOSITORY,
+        "An ncnn conversion of the ONNX release of ArtCNN C4F32 DS, made for this app: the same weights, with RGB in " +
+            "and out. The original and the conversion scripts are in the same repository at the same revision."
     );
 
     /** The catalog's models from this source. */
@@ -47,7 +69,9 @@ enum class ModelBlurb {
     REAL_ESRGAN_ANIME,
     DESCREEN_V2,
     DESCREEN_V3,
-    ARTIFACT_REMOVAL
+    ARTIFACT_REMOVAL,
+    CUNNY,
+    ARTCNN
 }
 
 /** One file of a model: stored as [name], downloaded from [url], [bytes] long with SHA-256 [sha256] (lowercase hex). */
@@ -102,7 +126,8 @@ data class ToolModel(override val id: String, val name: String, val param: Model
  * warm, up to about 1.5 times as long, within [PageLimits.DEFAULT_TIMEOUT_MS]; in the reader, at
  * background priority, a page may take [ReaderAi.WARM] times as long), under licenses
  * that let a free app download and run them (with attribution in About). All are fetched unchanged from
- * OpenComic AI's model repository at a fixed commit, so their checksums hold. Each step lists
+ * a pinned revision ([ModelSource.repository]): OpenComic AI's model repository, or, for
+ * conversions made for the app, [HOSTED_REPOSITORY]; so their checksums hold. Each step lists
  * its models as pickers show them: the default first, the faithful before the enhancing, the
  * slow ([CatalogModel.slow]) last.
  */
@@ -112,7 +137,14 @@ object ModelCatalog {
     const val COMMIT = "334cc9806f22110633989fe2e8f341872dfa5477"
     const val BASE = "https://raw.githubusercontent.com/ollm/opencomic-ai-models/$COMMIT/models/"
 
+    /** The repository of conversions made for the app, with their sources, and the revision they are fetched at. */
+    const val HOSTED_REPOSITORY = "https://huggingface.co/MadameMinty/Emanata"
+    const val HOSTED_REVISION = "fdc7f69cbfa9e9b134970ce675259d114e1cb31b"
+    const val HOSTED_BASE = "$HOSTED_REPOSITORY/resolve/$HOSTED_REVISION/"
+
     private fun file(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), BASE + path, bytes, sha256)
+
+    private fun hosted(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), HOSTED_BASE + path, bytes, sha256)
 
     val all: List<CatalogModel> = listOf(
         CatalogModel(
@@ -191,6 +223,20 @@ object ModelCatalog {
             file("upscale/models/opencomic-ai-upscale-4x-compact-v2.bin", 1247368, "43c7baba3229c34e101e95e4d46c577a90ab4aba00287291f1e16f63edc57f23"),
             pageMs = 8_500,
             blurb = ModelBlurb.OPENCOMIC_UPSCALE
+        ),
+        CatalogModel(
+            "cunny-8x32-ds-rp", "CuNNy 8x32 DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.param", 2710, "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e"),
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.bin", 301928, "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f"),
+            pageMs = 2_900,
+            blurb = ModelBlurb.CUNNY
+        ),
+        CatalogModel(
+            "artcnn-c4f32-ds", "ArtCNN C4F32 DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN,
+            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.param", 1449, "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f"),
+            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.bin", 190940, "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9"),
+            pageMs = 2_000,
+            blurb = ModelBlurb.ARTCNN
         ),
         CatalogModel(
             "realesr-animevideov3-x2", "Real-ESRGAN AnimeVideo v3 2×", AiStep.UPSCALE, 2, ModelSource.REAL_ESRGAN,

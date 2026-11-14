@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,7 +40,19 @@ class ModelTextTest {
             blurb("realesr-animevideov3-x2")
         )
         assertTrue(blurb("realesr-animevideov3-x4").endsWith("\nSlow (~14 s per page)"))
+        assertEquals("Fast and clean, for line art and flat color; less faithful to fine texture than waifu2x", blurb("cunny-8x32-ds-rp"))
+        assertEquals("Fast and sharp, for line art and flat color; less faithful to fine texture than waifu2x", blurb("artcnn-c4f32-ds"))
         assertEquals("Slow (~14 s per page)", blurb("4x-lsdir-compact-c3"))
+    }
+
+    @Test
+    fun anAttributionNamesWhereTheFilesComeFromAndWhatAConversionIs() {
+        val cunny = ModelText.attribution(context, ModelCatalog.byId("cunny-8x32-ds-rp")!!)
+        assertTrue(cunny, cunny.contains("By funnyplanter, under the LGPL 3.0 or later.") && cunny.contains("https://github.com/funnyplanter/CuNNy"))
+        assertTrue(cunny, cunny.contains("Downloaded unchanged from: ${ModelCatalog.HOSTED_REPOSITORY}"))
+        assertTrue(cunny, cunny.endsWith("\n\n" + ModelSource.CUNNY.conversion))
+        val waifu2x = ModelText.attribution(context, ModelCatalog.byId("waifu2x-upconv7-2x")!!)
+        assertTrue(waifu2x, waifu2x.endsWith("Downloaded unchanged from: ${ModelCatalog.REPOSITORY}"))
     }
 
     @Test

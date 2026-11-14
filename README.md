@@ -1118,10 +1118,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   space; they show even while AI is paused. When the thresholds move, the
   reader shows its pages again through the models their sizes call for.
 - AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
-  bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD or CC BY
-  licenses, all fetched unchanged from OpenComic AI's model repository at a
-  pinned commit. Each entry has its step (artifact removal, descreen,
-  upscale), scale, size, license, URL and SHA-256. `ModelStore` keeps each
+  bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD, CC BY or
+  LGPL licenses, all fetched unchanged at a pinned revision: from OpenComic
+  AI's model repository, or, for the ncnn conversions made for this app
+  (CuNNy, ArtCNN), from the
+  [Emanata model repository](https://huggingface.co/MadameMinty/Emanata),
+  which also holds their originals and the conversion scripts. Each entry has
+  its step (artifact removal, descreen, upscale), scale, size, license, URL and
+  SHA-256. `ModelStore` keeps each
   model in its own folder in `noBackupFilesDir/ai-models` (not backed up, not
   cleared with the cache); `ModelDownloader` fetches each file into a `.part`,
   resumes it with an HTTP Range after a break (starting over when a server
@@ -1360,6 +1364,12 @@ another, as the headroom rose from 0.79 to 0.93:
 | waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 3.4 s | 4.0 s | 324 MB |
 | waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 2.7 s | 3.1 s | 322 MB |
 
+CuNNy 8x32 DS 2x and ArtCNN C4F32 DS 2x are in the catalog at provisional times
+from an earlier timing on the same tablet (GPU fp16, 192 px tiles, 70 tiles: 2.9 s
+and 2.0 s; that run timed waifu2x UpConv7 2x at 3.9 s, so it ran slower than the
+table above). Their probes measured a context of 17 and 8 px. In 384 px tiles
+(CuNNy) and 512 px tiles (ArtCNN) the same pages took about 1.5 s.
+
 Warm, models took up to 1.5 times as long as cool (single pages of the
 download check reached 21.4 s), still within the page time; the AI gate stops
 runs once the forecast headroom reaches 0.9. Real-ESRGAN AnimeVideo v3 and
@@ -1399,6 +1409,8 @@ estimated from the tiles run in 60 or 120 s):
 | waifu2x UpConv7 2x (no denoise, denoise 0 to 3) | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | catalog |
 | waifu2x CUnet | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | refused: global pooling (tiles would show) |
 | LSDIR Compact C3 4x | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | catalog |
+| CuNNy-8x32-DS 2x (mpv shader, converted to ncnn for this app) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | catalog |
+| ArtCNN C4F32 DS 2x (ONNX, converted to ncnn for this app) | MIT | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | catalog |
 | HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo (4x) | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | not run: as large as x4plus Anime |
 | WTP ColorDS 4x | CC BY 4.0 | [OpenModelDB](https://openmodeldb.info/models/4x-WTP-ColorDS) | the system ended the app while it checked the model (past 1.8 GB resident) |
 | NMKD Jaywreck3 Lite and Soft Lite | WTFPL | [OpenModelDB](https://openmodeldb.info/models/1x-NMKD-Jaywreck3-Lite) | too slow: 61 and 77 s |
@@ -1494,7 +1506,10 @@ Dual-licensed components are used under Apache-2.0.
 
 AI models for pages are not bundled: the app downloads the ones you choose, unchanged,
 from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)
-and lists their authors and licenses under Settings → About.
+or, for the ncnn conversions made for this app, from the
+[Emanata model repository](https://huggingface.co/MadameMinty/Emanata) (which also
+holds their originals and the conversion scripts, the Corresponding Source for
+CuNNy), and lists their authors and licenses under Settings → About.
 
 | Models | Author | License |
 |---|---|---|
@@ -1502,6 +1517,8 @@ and lists their authors and licenses under Settings → About.
 | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Xintao Wang; ncnn conversion by Xintao Wang and nihui | BSD-3-Clause; ncnn conversion MIT |
 | [waifu2x](https://github.com/nagadomi/waifu2x) | nagadomi; ncnn conversion by nihui | MIT |
 | [Helaman's models](https://github.com/Phhofm/models) | Philip Hofmann (Helaman) | CC BY 4.0 |
+| [CuNNy](https://github.com/funnyplanter/CuNNy) | funnyplanter; ncnn conversion made for this app | LGPL-3.0-or-later |
+| [ArtCNN](https://github.com/Artoriuz/ArtCNN) | João Chrisóstomo (Artoriuz); ncnn conversion made for this app | MIT |
 
 **UnRAR:** junrar is derived from the UnRAR source code. All copyrights to RAR
 and UnRAR are owned by Alexander Roshal. The UnRAR code may not be used to

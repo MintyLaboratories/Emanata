@@ -5,6 +5,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.util.Notices
 import org.junit.Assert.assertEquals
@@ -47,5 +48,20 @@ class AboutModelsTest {
         val text = dialog.findViewById<TextView>(R.id.notice_text)!!.text.toString()
         assertTrue(text.contains("Attribution 4.0 International"))
         assertEquals(Notices.models.size, ModelSource.entries.size)
+    }
+
+    @Test
+    fun aConversionSaysWhereItAndItsSourceComeFrom() {
+        val activity = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
+        val list = activity.findViewById<LinearLayout>(R.id.about_models)
+        list.getChildAt(ModelSource.CUNNY.ordinal).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val note = dialog.findViewById<TextView>(R.id.notice_note)!!.text.toString()
+        assertTrue(note, note.contains("By funnyplanter.") && note.contains("from ${ModelCatalog.HOSTED_REPOSITORY} ") && note.contains(ModelSource.CUNNY.conversion!!))
+        val text = dialog.findViewById<TextView>(R.id.notice_text)!!.text.toString()
+        assertTrue(text.contains("Copyright (c) 2024 funnyplanter") && text.contains("GNU LESSER GENERAL PUBLIC LICENSE") && text.contains("GNU GENERAL PUBLIC LICENSE"))
+        val waifu2x = Notices.models.single { it.name == ModelSource.WAIFU2X.title }
+        assertTrue(waifu2x.note!!.endsWith("from ${ModelCatalog.REPOSITORY} and run on this device only."))
     }
 }

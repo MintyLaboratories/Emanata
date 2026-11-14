@@ -27,7 +27,7 @@ class ModelRatingsTest {
 
     @Test
     fun modelsNeverRatedHaveNoStars() {
-        for (id in listOf("cunny-8x32-ds-rp", "artcnn-c4f32-ds", "waifu2x-upconv7-2x-denoise1", "anime4k-a-vl", "anime4k-c-s")) {
+        for (id in listOf("cunny-8x32-ds-rp", "artcnn-c4f32-ds", "waifu2x-upconv7-2x-denoise1", "anime4k-a-vl", "anime4k-c-s", "opencomic-ai-upscale-3x-compact-v2", "realesr-animevideov3-x3")) {
             assertTrue(id, of(id).isEmpty())
         }
         for (step in listOf(AiStep.ARTIFACTS, AiStep.DESCREEN)) for (m in Models.forStep(step)) assertTrue(m.id, ModelRatings.of(m).isEmpty())

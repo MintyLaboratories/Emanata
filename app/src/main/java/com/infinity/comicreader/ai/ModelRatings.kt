@@ -40,14 +40,14 @@ object ModelRatings {
         RatingCategory.LINES to lines
     )
 
-    /** Ratings by model id. OpenComic and Real-ESRGAN were rated as models, at every scale; Anime4K at UL only. */
+    /** Ratings by model id. OpenComic and Real-ESRGAN were rated as models, compared at 2× and 4× (not 3×); Anime4K at UL only. */
     private val RATED: Map<String, Map<RatingCategory, Int>> = buildMap {
         put("waifu2x-upconv7-2x", stars(1, 10, 10, 4, 2))
         put("waifu2x-upconv7-2x-denoise0", stars(2, 10, 8, 4, 2))
         put("waifu2x-upconv7-2x-denoise3", stars(4, 10, 4, 6, 8))
-        for (x in 2..4) put("opencomic-ai-upscale-${x}x-compact-v2", stars(6, 10, 8, 8, 5))
+        for (x in listOf(2, 4)) put("opencomic-ai-upscale-${x}x-compact-v2", stars(6, 10, 8, 8, 5))
         put("4x-lsdir-compact-c3", stars(8, 8, 5, 4, 5))
-        for (x in 2..4) put("realesr-animevideov3-x$x", stars(10, 6, 2, 10, 10))
+        for (x in listOf(2, 4)) put("realesr-animevideov3-x$x", stars(10, 6, 2, 10, 10))
         put("anime4k-a-ul", stars(3, 10, 6, WORSE, 6))
         put("anime4k-b-ul", stars(3, 10, 6, 4, 7))
         put("anime4k-c-ul", stars(3, 10, 7, 3, 5))

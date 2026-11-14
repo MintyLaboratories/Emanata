@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -113,7 +114,7 @@ import kotlin.math.max
  *
  * or, for shader chains ([ShaderModel], downloaded first when missing): `--es do shaders --es ids <catalog id,id,…>
  *  [--es sizes 1000x1500,2000x3000] [--es tiles <sizes, else the one it chose>] [--ei reps 3] [--ef cool <headroom>]
- *  [--ez save false] [--ez off false]`
+ *  [--ez save false] [--ez off false] [--es input <png,png,…>]`
  *
  * - shaders: per chain, how it opens on the GPU within the device's model memory (or why not):
  *   open time (compile, measure, seam check), geometry and largest tile; per page size and
@@ -122,7 +123,10 @@ import kotlin.math.max
  *   256 or 192 px tiles (`seams`: 0 when tiles join exactly); a page canceled after three tiles (`stopMs`). With `save`, each page and output
  *   as PNG (`shader-page-WxH.png`, `shader-<id>-WxH.png`) for comparison with a PC reference.
  *   With `off`, the GPU path is then held off while the first chain opens again (`refusal`
- *   RUNTIME: its pages show without it), and back on after.
+ *   RUNTIME: its pages show without it), and back on after. With `input` (image files), each
+ *   chain runs on those images instead of synthetic pages, once each at its own tile, and
+ *   saves its output as `shader-<id>-<image name>.png`, for comparison with a PC reference
+ *   of the same shaders on the same image.
  *
  * or, for the shader runner against the CPU: `--es do shaderref [--es sizes 1000x1500,…] [--ez save false]`
  *
@@ -181,7 +185,8 @@ class AiCheckService : Service() {
                         s.trim().split('x').mapNotNull { it.toIntOrNull() }.also { require(it.size == 2) { "unreadable size $s" } }.let { it[0] to it[1] }
                     }
                     val asked = intent?.getStringExtra("tiles")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
-                    shaders(ids, pages, asked, reps, timeCool, intent?.getBooleanExtra("save", false) ?: false, intent?.getBooleanExtra("off", false) ?: false)
+                    val inputs = intent?.getStringExtra("input")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.map(::File).orEmpty()
+                    shaders(ids, pages, asked, reps, timeCool, intent?.getBooleanExtra("save", false) ?: false, intent?.getBooleanExtra("off", false) ?: false, inputs)
                     return@hold
                 }
                 if (what == "shaderref") {
@@ -518,7 +523,7 @@ class AiCheckService : Service() {
 
     // ------------------------------------------------------------------ shaders
 
-    private fun shaders(ids: List<String>, pages: List<Pair<Int, Int>>, tiles: List<Int>, reps: Int, cool: Float?, save: Boolean, off: Boolean) {
+    private fun shaders(ids: List<String>, pages: List<Pair<Int, Int>>, tiles: List<Int>, reps: Int, cool: Float?, save: Boolean, off: Boolean, inputs: List<File> = emptyList()) {
         val store = ModelStore.of(this)
         val available = GlesShaders.available
         log(
@@ -555,7 +560,8 @@ class AiCheckService : Service() {
                     JSONObject().put("shader", m.id).put("opened", true).put("openMs", openMs).put("scale", g.scale).put("context", g.context)
                         .put("margin", g.margin).put("tile", s.size).put("memoryMb", memory shr 20).put("graphicsMb", graphicsKb() / 1024)
                 )
-                for ((w, h) in pages) {
+                for (input in inputs) shaderInput(m.id, s, input)
+                for ((w, h) in pages.takeIf { inputs.isEmpty() }.orEmpty()) {
                     val page = SyntheticPage.draw(w, h)
                     if (save) {
                         val name = "shader-page-${w}x$h.png"
@@ -630,6 +636,29 @@ class AiCheckService : Service() {
             log(line.put("availableAfter", GlesShaders.available))
         }
         log(JSONObject().put("shaded", chains.size).put("state", state()))
+    }
+
+    /** [input] (an image file) through [s] at its own tile, the output saved as `shader-<id>-<image name>.png`. */
+    private fun shaderInput(id: String, s: Session, input: File) {
+        val line = JSONObject().put("shaderInput", id).put("input", input.name)
+        val page = runCatching { BitmapFactory.decodeFile(input.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }) }.getOrNull()
+        if (page == null) {
+            log(line.put("failed", "unreadable"))
+            return
+        }
+        val t0 = SystemClock.elapsedRealtime()
+        val run = TileEngine.run(s, page, UNLIMITED)
+        line.put("page", "${page.width}x${page.height}").put("tile", s.sizeFor(page.width, page.height)).put("ms", SystemClock.elapsedRealtime() - t0)
+        val result = run.bitmap
+        if (result == null) {
+            log(line.put("failed", run.fallback?.name ?: "no output"))
+        } else {
+            val name = "shader-$id-${input.nameWithoutExtension}.png"
+            save(result, name)
+            log(line.put("saved", name))
+            result.recycle()
+        }
+        page.recycle()
     }
 
     /**

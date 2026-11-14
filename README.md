@@ -1093,7 +1093,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (at most 1 code) at its largest tile (up to 512 by default, its textures
   within a quarter of the model memory, smaller when its tiles took over
   150 ms there); each page then takes the tile size up to that which leaves
-  the least work (a 1000×1500 page at 2× in 416 px tiles rather than 512).
+  the least work (Anime4K A UL takes a 1000×1500 page in twelve 410 px tiles
+  rather than twelve of 512, a third fewer pixels). Each pass samples a
+  1/1024 pixel past pixel centers, so the GPU's filter rounding gives the
+  same output at every tile size.
   Chains are refused when their files use what the runner lacks (compute
   passes, embedded textures, parameters, other stages) or do not compile.
   Compiled passes are kept as program binaries in the app's cache (the eight

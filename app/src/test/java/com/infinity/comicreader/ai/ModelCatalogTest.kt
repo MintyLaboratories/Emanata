@@ -108,8 +108,17 @@ class ModelCatalogTest {
 
     @Test
     fun sourcesDownloadFromAPinnedRepository() {
+        // Each repository's files come from one pinned revision of it.
+        val pinned = mapOf(
+            ModelCatalog.REPOSITORY to ModelCatalog.BASE,
+            ModelCatalog.HOSTED_REPOSITORY to ModelCatalog.HOSTED_BASE,
+            ShaderCatalog.REPOSITORY to ShaderCatalog.BASE
+        )
         for (s in ModelSource.entries) {
-            assertTrue(s.name, s.repository in setOf(ModelCatalog.REPOSITORY, ModelCatalog.HOSTED_REPOSITORY))
+            val base = pinned[s.repository]
+            assertNotNull(s.name, base)
+            assertTrue(s.name, s.models.isNotEmpty())
+            for (m in s.models) for (f in (m as FileSet).files) assertTrue(f.url, f.url.startsWith(base!!))
             // Conversions made for the app come from the repository that also holds their sources.
             assertEquals(s.name, s.repository == ModelCatalog.HOSTED_REPOSITORY, s.conversion != null)
         }

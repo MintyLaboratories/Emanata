@@ -201,4 +201,35 @@ class RcasTest {
         val plain = sharpened(region, rw, rh, 1f)
         assertTrue((0 until rw).any { plain[it] != whole[y0 * w + x0 + it] })
     }
+
+    /**
+     * The digest the host test of the native pass (`src/test/cpp/rcas_test.c`) also checks:
+     * the same image, made the same way, sharpened at the same strengths, hashed in memory
+     * order (R, G, B, A), so equal digests mean bit-identical results.
+     */
+    @Test
+    fun matchesTheNativeHostTestsDigest() {
+        val w = 61
+        val h = 37
+        var s = 12345
+        val src = IntArray(w * h) { i ->
+            s = s * 1664525 + 1013904223
+            val y = i / w
+            if (y % 9 == 4) return@IntArray 0xFF808080.toInt()
+            val a = if (s and 0x3F == 0) 0x80 else 0xFF
+            (a shl 24) or (((s ushr 8) and 0xFF) shl 16) or (((s ushr 16) and 0xFF) shl 8) or (s ushr 24)
+        }
+        var hash = 0x811C9DC5.toInt()
+        for (amount in listOf(0.35f, 1f)) {
+            for (p in sharpened(src, w, h, amount, bands = 3)) {
+                for (byte in intArrayOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF, p ushr 24)) hash = (hash xor byte) * 0x01000193
+            }
+        }
+        assertEquals(NATIVE_DIGEST, hash)
+    }
+
+    private companion object {
+        /** FNV-1a 32 of [matchesTheNativeHostTestsDigest]'s results; `rcas_test.c` holds the same. */
+        const val NATIVE_DIGEST = 0x883E28A7.toInt()
+    }
 }

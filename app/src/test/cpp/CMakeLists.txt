@@ -1,5 +1,6 @@
 # Host unit tests of native logic that needs no Android: the JPEG XL parallel runner
-# (jxl_runner.c) and the GPU resampler's chunk order (resample_chunks.c). Linux (or WSL)
+# (jxl_runner.c), the GPU resampler's chunk order (resample_chunks.c) and RCAS's plain C
+# path (rcas.c). Linux (or WSL)
 # with a C compiler:
 #
 #     cmake -S app/src/test/cpp -B build/native-test && cmake --build build/native-test && ctest --test-dir build/native-test
@@ -35,3 +36,8 @@ add_executable(resample_chunks_test resample_chunks_test.c "${MAIN}/resample_chu
 target_include_directories(resample_chunks_test PRIVATE "${MAIN}")
 target_compile_options(resample_chunks_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME resample_chunks COMMAND resample_chunks_test)
+
+add_executable(rcas_test rcas_test.c "${MAIN}/rcas.c")
+target_include_directories(rcas_test PRIVATE "${MAIN}")
+target_compile_options(rcas_test PRIVATE -Wall -Wextra -Werror -O2 -ffp-contract=off)
+add_test(NAME rcas COMMAND rcas_test)

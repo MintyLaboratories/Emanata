@@ -146,32 +146,100 @@ object BitmapUtils {
     /**
      * [src] resampled as [plan] and [scaling] say, into a new ARGB_8888 bitmap: by native code
      * ([NativeResampler]) where it can, else through [Resampler], reading and writing rows in
-     * place. Either way no second full-size copy of [src] is ever made. Stops early,
-     * throwing, once this thread's [Cancellation] mark is set. Timed ([Timing]).
+     * place. Either way no second full-size copy of [src] is ever made. With [Scaling.sharpen],
+     * the result is then sharpened in place ([sharpen]). Stops early, throwing, once this
+     * thread's [Cancellation] mark is set. Timed ([Timing]).
      */
     fun resample(src: Bitmap, plan: Plan, linear: Boolean, scaling: Scaling = Scaling.PLAIN): Bitmap {
-        val w = src.width
         val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
         val window = Resampler.Window(plan.x, plan.y, plan.spanW, plan.spanH)
         try {
-            Timing.span("resample ${w}x${src.height} to ${plan.width}x${plan.height} ${scaling.filter.key} ${scaling.upRing}/${scaling.downRing}") {
+            val sharpened = if (scaling.sharpen > 0) " sharpen ${scaling.sharpen}" else ""
+            Timing.span("resample ${src.width}x${src.height} to ${plan.width}x${plan.height} ${scaling.filter.key} ${scaling.upRing}/${scaling.downRing}$sharpened") {
                 val canceled = Cancellation.current()
-                if (!NativeResampler.resample(src, out, window, linear, scaling, canceled)) {
-                    Resampler.resample(
-                        w, src.height,
-                        { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
-                        window,
-                        plan.width, plan.height, linear,
-                        { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, plan.width, 0, y, plan.width, rows) } },
-                        scaling,
-                        canceled = canceled
-                    )
-                }
+                resampleInto(src, out, window, linear, scaling, canceled)
+                if (scaling.sharpen > 0) sharpen(src, out, window, linear, scaling, canceled)
             }
         } catch (t: Throwable) {
             out.recycle()
             throw t
         }
         return out
+    }
+
+    /** [window] of [src] resampled into all of [out] by [engine] where native code can, else through [Resampler]. */
+    private fun resampleInto(
+        src: Bitmap, out: Bitmap, window: Resampler.Window, linear: Boolean, scaling: Scaling, canceled: () -> Boolean,
+        engine: PixelEngine = NativeResampler.engine
+    ) {
+        if (NativeResampler.resample(src, out, window, linear, scaling, canceled, engine)) return
+        val w = src.width
+        Resampler.resample(
+            w, src.height,
+            { y, row -> src.getPixels(row, 0, w, 0, y, w, 1) },
+            window,
+            out.width, out.height, linear,
+            { y, rows, pixels -> synchronized(out) { out.setPixels(pixels, 0, out.width, 0, y, out.width, rows) } },
+            scaling,
+            canceled = canceled
+        )
+    }
+
+    /**
+     * Sharpens [out], [window] of [src] resampled as [scaling] says, by [Scaling.sharpen]
+     * ([Rcas]), in place. Where [window] lies inside [src], the one-pixel strip just past that
+     * edge is resampled too ([rimWindows]) and serves as the edge's neighbors, so a region
+     * rendered alone (a zoomed detail, a band) matches the whole page rendered at once; at
+     * the source's own edges, the edge pixels repeat.
+     */
+    private fun sharpen(src: Bitmap, out: Bitmap, window: Resampler.Window, linear: Boolean, scaling: Scaling, canceled: () -> Boolean) {
+        val amount = Rcas.amount(scaling.sharpen)
+        val strips = rimWindows(src.width, src.height, window, out.width, out.height).map { (win, size) ->
+            // Thin strips: the CPU's, which needs no GPU job for a row or a column.
+            val engine = if (NativeResampler.engine == PixelEngine.GPU) PixelEngine.NATIVE else NativeResampler.engine
+            Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888, src.hasAlpha()).also { strip ->
+                try {
+                    resampleInto(src, strip, win, linear, scaling, canceled, engine)
+                } catch (t: Throwable) {
+                    strip.recycle()
+                    throw t
+                }
+            }
+        }
+        try {
+            if (NativeResampler.sharpen(out, amount, strips, canceled)) return
+            val w = out.width
+            val rim = strips.map { b -> IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) } }
+            Rcas.sharpen(
+                w, out.height, amount,
+                { y, row -> synchronized(out) { out.getPixels(row, 0, w, 0, y, w, 1) } },
+                { y, row -> synchronized(out) { out.setPixels(row, 0, w, 0, y, w, 1) } },
+                rim, minOf(out.height, Runtime.getRuntime().availableProcessors() * 3), Runtime.getRuntime().availableProcessors(), canceled
+            )
+        } finally {
+            listOfNotNull(strips.top, strips.bottom, strips.left, strips.right).forEach { it.recycle() }
+        }
+    }
+
+    /**
+     * The windows of the one-pixel strips just past each edge of [window] of a [srcW] x [srcH]
+     * source shown at [dstW] x [dstH], each with its `[width, height]`: the row above and
+     * below, the column left and right, at the same scale; none where [window] reaches the
+     * source's edge.
+     */
+    internal fun rimWindows(srcW: Int, srcH: Int, window: Resampler.Window, dstW: Int, dstH: Int): Rcas.Rim<Pair<Resampler.Window, IntArray>> {
+        val pw = window.width / dstW
+        val ph = window.height / dstH
+        val eps = 1e-9
+        return Rcas.Rim(
+            top = if (window.y > eps) Resampler.Window(window.x, window.y - ph, window.width, ph) to intArrayOf(dstW, 1) else null,
+            bottom = if (window.y + window.height < srcH - eps) {
+                Resampler.Window(window.x, window.y + window.height, window.width, ph) to intArrayOf(dstW, 1)
+            } else null,
+            left = if (window.x > eps) Resampler.Window(window.x - pw, window.y, pw, window.height) to intArrayOf(1, dstH) else null,
+            right = if (window.x + window.width < srcW - eps) {
+                Resampler.Window(window.x + window.width, window.y, pw, window.height) to intArrayOf(1, dstH)
+            } else null
+        )
     }
 }

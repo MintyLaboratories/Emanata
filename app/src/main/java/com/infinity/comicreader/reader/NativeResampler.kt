@@ -69,6 +69,18 @@ internal interface PixelKernels {
     fun gpuUsable(): Boolean = true
 
     /**
+     * A job sharpening [dst] in place by [amount] ([Rcas]) in [bands] bands
+     * ([Rcas.bandStart]) on [workers] workers, [rim]'s one-pixel strips past its edges; 0 when
+     * not possible, as by default.
+     */
+    fun sharpenBegin(dst: Bitmap, rim: Rcas.Rim<Bitmap>, amount: Float, bands: Int, workers: Int): Long = 0L
+
+    /** Sharpens band [band] of [job] as [worker], on [cores] as [band] says; false on a bad request. */
+    fun sharpenBand(job: Long, worker: Int, band: Int, cores: Long): Boolean = false
+
+    fun sharpenEnd(job: Long) {}
+
+    /**
      * Asked before each chunk of a GPU band and every 100 ms while it waits for the GPU, on
      * its thread; true stops the band. Runs while
      * the band holds the GPU: it must only read a flag (an AtomicBoolean, a job's isActive),
@@ -102,6 +114,13 @@ internal object LibPixels : PixelKernels {
         nGpuBand(job, y0, y1, cores, stop)
 
     override fun end(job: Long) = nEnd(job)
+
+    override fun sharpenBegin(dst: Bitmap, rim: Rcas.Rim<Bitmap>, amount: Float, bands: Int, workers: Int): Long =
+        nSharpenBegin(dst, rim.top, rim.bottom, rim.left, rim.right, amount, bands, workers)
+
+    override fun sharpenBand(job: Long, worker: Int, band: Int, cores: Long): Boolean = nSharpenBand(job, worker, band, cores)
+
+    override fun sharpenEnd(job: Long) = nSharpenEnd(job)
 
     /** Never blocks on a job; does nothing where the native library is not loaded. */
     override fun trim(programs: Boolean) {
@@ -191,6 +210,17 @@ internal object LibPixels : PixelKernels {
 
     @JvmStatic
     private external fun nTrim(programs: Boolean)
+
+    @JvmStatic
+    private external fun nSharpenBegin(
+        dst: Bitmap, top: Bitmap?, bottom: Bitmap?, left: Bitmap?, right: Bitmap?, amount: Float, bands: Int, workers: Int
+    ): Long
+
+    @JvmStatic
+    private external fun nSharpenBand(job: Long, worker: Int, band: Int, cores: Long): Boolean
+
+    @JvmStatic
+    private external fun nSharpenEnd(job: Long)
 
     @JvmStatic
     private external fun nGpuUsable(): Boolean
@@ -384,6 +414,50 @@ object NativeResampler {
         }
         return run(k, src, dst, ax, ay, linear, gpu = false, canceled, urgent, workers, pin ?: pinned)
     }
+
+    /**
+     * Sharpens [dst] in place by [amount] ([Rcas]) with native code on the CPU, whatever
+     * [engine] resampled it, [rim]'s strips past its edges; false, with [dst] untouched, when
+     * [engine] is [PixelEngine.KOTLIN] or native code cannot, so the caller uses [Rcas].
+     * Bands, workers and their cores as a CPU resample's ([urgent], [workers], [pin]).
+     * Throws [CancellationException] once [canceled], asked before each band, returns true.
+     */
+    fun sharpen(
+        dst: Bitmap,
+        amount: Float,
+        rim: Rcas.Rim<Bitmap> = Rcas.Rim(),
+        canceled: () -> Boolean = { false },
+        engine: PixelEngine = this.engine,
+        urgent: () -> Boolean = Urgency.current(),
+        workers: Int = 0,
+        pin: Boolean? = null
+    ): Boolean {
+        if (engine == PixelEngine.KOTLIN || !fits(dst) || !listOfNotNull(rim.top, rim.bottom, rim.left, rim.right).all(::fits)) return false
+        val k = kernels ?: return false
+        val now = (if (workers > 0) workers else threads).coerceAtLeast(1)
+        val later = (if (workers > 0) workers else laterThreads).coerceAtLeast(1)
+        val most = maxOf(now, later)
+        val bands = minOf(dst.height, most * SHARPEN_BANDS_PER_WORKER)
+        val job = k.sharpenBegin(dst, rim, amount, bands, most)
+        if (job == 0L) return false
+        val c = cores!!
+        val pinning = pin ?: pinned
+        try {
+            Resampler.inBands(bands, most, canceled, { if (urgent()) now else later }) { worker, b0, b1 ->
+                for (b in b0 until b1) {
+                    // Only a bad request fails; the bands done stay sharpened, so none is redone.
+                    if (!k.sharpenBand(job, worker, b, place(c, pinning, urgent))) Log.w(TAG, "Sharpening band $b failed")
+                }
+                true
+            }
+        } finally {
+            k.sharpenEnd(job)
+        }
+        return true
+    }
+
+    /** Bands per sharpening worker, as a resample has: a few even out uneven progress. */
+    private const val SHARPEN_BANDS_PER_WORKER = 3
 
     /** True for ARGB_8888 pixels held premultiplied, as an opaque bitmap's are too (it reports them as not). */
     private fun fits(b: Bitmap) = b.config == Bitmap.Config.ARGB_8888 && (b.isPremultiplied || !b.hasAlpha())

@@ -3,7 +3,8 @@
 # header-only from its pinned release (book_id_jni.c); lossless compaction: libjxl
 # as jxl-coder ships it, opened at run time and compiled against the headers of
 # the same pinned release (jxl_jni.c); resampling of page bitmaps, on the CPU (NEON on
-# arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c); AI page processing: ncnn
+# arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c), then optionally sharpened by
+# RCAS (rcas*.c); AI page processing: ncnn
 # with Vulkan, built from its pinned release, in a library of its own loaded only when
 # used (ai_ncnn.cpp).
 cmake_minimum_required(VERSION 3.22)
@@ -62,7 +63,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libjxl)
 
-add_library(avifjni SHARED avif_jni.c book_id_jni.c core_ledger.c jxl_jni.c jxl_page.c jxl_runner.c resample.c resample_chunks.c resample_gpu.c resample_jni.c)
+add_library(avifjni SHARED avif_jni.c book_id_jni.c core_ledger.c jxl_jni.c jxl_page.c jxl_runner.c rcas.c rcas_jni.c resample.c resample_chunks.c resample_gpu.c resample_jni.c)
+# RCAS matches its Kotlin model bit for bit: no fused multiply-adds.
+set_source_files_properties(rcas.c PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 target_include_directories(avifjni PRIVATE "${xxhash_SOURCE_DIR}" "${CMAKE_CURRENT_LIST_DIR}/jxl_headers" "${libjxl_SOURCE_DIR}/lib/include")
 target_link_libraries(avifjni PRIVATE avif jnigraphics log dl EGL GLESv3 m)
 target_compile_options(avifjni PRIVATE -Wall -Wextra)

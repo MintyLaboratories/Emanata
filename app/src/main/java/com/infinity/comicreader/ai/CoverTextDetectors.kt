@@ -37,9 +37,10 @@ class CoverTextDetectors(private val ppocr: () -> CoverTextDetector) {
         @Volatile
         private var shared: CoverTextDetectors? = null
 
-        /** The app's: PP-OCR as [TextDetector.shared]. */
+        /** The app's: PP-OCR as [TextDetector.shared]; holds only the application context. */
         fun shared(context: Context): CoverTextDetectors = shared ?: synchronized(this) {
-            shared ?: CoverTextDetectors { TextDetector.shared(context.applicationContext) }.also { shared = it }
+            val app = context.applicationContext
+            shared ?: CoverTextDetectors { TextDetector.shared(app) }.also { shared = it }
         }
 
         /** Stands [detectors] in as the app's ([shared]); null makes it anew. */

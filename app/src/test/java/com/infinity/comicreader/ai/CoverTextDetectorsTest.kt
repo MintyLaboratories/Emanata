@@ -1,11 +1,14 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.SmartCrop
+import java.lang.reflect.Modifier
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,6 +41,20 @@ class CoverTextDetectorsTest {
         assertSame(d, CoverTextDetectors.shared(context))
         assertTrue(d.detector() is TextDetector)
         assertEquals(TextDetector.ID, d.detector().id)
+    }
+
+    @Test
+    fun theAppsDetectorsHoldOnlyTheApplicationContext() {
+        CoverTextDetectors.standIn(null)
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val caller = ContextWrapper(app)
+        val ppocr = CoverTextDetectors::class.java.getDeclaredField("ppocr")
+            .apply { isAccessible = true }.get(CoverTextDetectors.shared(caller))!!
+        val held = ppocr.javaClass.declaredFields
+            .filter { !Modifier.isStatic(it.modifiers) }
+            .map { it.isAccessible = true; it.get(ppocr) }
+        assertFalse(held.any { it === caller })
+        assertTrue(held.any { it === app })
     }
 
     @Test

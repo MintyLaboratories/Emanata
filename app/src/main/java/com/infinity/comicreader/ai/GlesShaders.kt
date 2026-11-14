@@ -72,14 +72,25 @@ internal object GlesShaders : ShaderRuntime {
         return digest.digest().take(16).joinToString("") { "%02x".format(it) } + CACHE_SUFFIX
     }
 
-    /** Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent. */
-    internal fun prune(used: File) {
-        if (used.isFile) used.setLastModified(System.currentTimeMillis())
-        val all = used.parentFile?.listFiles { f -> f.name.endsWith(CACHE_SUFFIX) }.orEmpty()
+    /**
+     * Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent,
+     * and the partial ones an end mid-write left ([PART_AGE_MS] old: none is being written).
+     */
+    internal fun prune(used: File, now: Long = System.currentTimeMillis()) {
+        if (used.isFile) used.setLastModified(now)
+        val files = used.parentFile?.listFiles().orEmpty()
+        val all = files.filter { it.name.endsWith(CACHE_SUFFIX) }
         for (f in all.sortedByDescending { it.lastModified() }.drop(CACHED)) f.delete()
+        for (f in files) if (f.name.endsWith(CACHE_SUFFIX + PART_SUFFIX) && now - f.lastModified() > PART_AGE_MS) f.delete()
     }
 
     private const val CACHE_SUFFIX = ".programs"
+
+    /** What `shader_gles.c` writes a cache to before renaming it into place. */
+    private const val PART_SUFFIX = ".part"
+
+    /** Age past which a partial cache is left over: writing one takes well under a second. */
+    const val PART_AGE_MS = 60_000L
 
     private class Opened(private var handle: Long, private val chain: ShaderChain) : TileModel {
         override val onGpu: Boolean = true

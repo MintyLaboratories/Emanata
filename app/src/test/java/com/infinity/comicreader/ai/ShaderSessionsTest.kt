@@ -97,12 +97,16 @@ class ShaderSessionsTest {
         val dir = File("build/tmp/shader-prune-test").apply { deleteRecursively(); mkdirs() }
         val files = (0 until GlesShaders.CACHED + 3).map { i -> File(dir, "$i.programs").apply { writeText("x"); setLastModified(1_000_000L * (i + 1)) } }
         val other = File(dir, "keep.txt").apply { writeText("x") }
-        GlesShaders.prune(files[0])
+        val now = System.currentTimeMillis()
+        val left = File(dir, "a.programs.part").apply { writeText("x"); setLastModified(now - GlesShaders.PART_AGE_MS - 1000) }
+        val writing = File(dir, "b.programs.part").apply { writeText("x"); setLastModified(now) }
+        GlesShaders.prune(files[0], now)
         assertTrue("just used", files[0].isFile)
         assertEquals(GlesShaders.CACHED, dir.listFiles { f -> f.name.endsWith(".programs") }!!.size)
         assertTrue(files.last().isFile)
         assertTrue(!files[1].isFile && !files[2].isFile)
         assertTrue(other.isFile)
+        assertTrue("an old partial cache goes, one being written stays", !left.isFile && writing.isFile)
         dir.deleteRecursively()
     }
 

@@ -236,7 +236,7 @@ class ReaderAi internal constructor(
             }
         }
         val opened = chain.map { m ->
-            session(m, canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
+            session(m, canceled, held) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
         // Nobody waits on it: decoded and resampled on the budget of pages read ahead.
         val input = Urgency.later { Cancellation.during(canceled) { source.loadPage(index, target.detail(size, MAX_INPUT_PIXELS * 4)) } }
@@ -328,9 +328,10 @@ class ReaderAi internal constructor(
      * [m] opened, once; null when it does not open ([refusal] says why). A model refused for
      * memory is not kept refused at first, as what is free changes: its pages are put off and
      * it is tried once more with them no sooner than [AiQueue.BACKOFF_MS] later ([MEMORY_TRIES]
-     * tries in a row in all), then left out until [closeModels] closes it.
+     * tries in a row in all), then left out until [closeModels] closes it. Timing its tile sizes
+     * waits while [held] ([Sessions.attempt]).
      */
-    private fun session(m: AiModel, canceled: () -> Boolean): Session? {
+    private fun session(m: AiModel, canceled: () -> Boolean, held: () -> Boolean): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
@@ -340,7 +341,7 @@ class ReaderAi internal constructor(
             is ShaderModel -> models.shaderFiles(m)?.let { files ->
                 ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), cache = programs, canceled = canceled)
             }
-            else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled, tuning = tuningOf(m), clock = clock) }
+            else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled, tuning = tuningOf(m), clock = clock, hold = held) }
         } ?: Opening.refused(ModelRefusal.NOT_LOADED)
         val s = o.session
         if (s != null) {

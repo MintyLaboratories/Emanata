@@ -257,8 +257,9 @@ internal object Sessions {
         memoryBytes: Long = Long.MAX_VALUE,
         canceled: () -> Boolean = { false },
         tuning: TileTuning? = null,
-        clock: () -> Long = SystemClock::elapsedRealtime
-    ): Session? = attempt(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock).session
+        clock: () -> Long = SystemClock::elapsedRealtime,
+        hold: () -> Boolean = { false }
+    ): Session? = attempt(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock, hold).session
 
     /**
      * [files] opened through [runtime]: on the GPU when [gpu] and one is usable, in fp16 when
@@ -271,7 +272,7 @@ internal object Sessions {
      * With [tuning], GPU tiles may be larger, up to its largest candidate: the size this device
      * chose for the model before, else the best of the candidates as [TileTiming] times them by
      * [clock] and ranks them (then [maxTile]'s sizes, as without), the choice kept for the next
-     * open once its check passes. A size past [maxTile] that fails to run is remembered as too
+     * open once its check passes; timing waits while [hold] (the reader moving). A size past [maxTile] that fails to run is remembered as too
      * large ([TileChoice.ceiling]), also when the app ends while it runs for the first time.
      */
     fun attempt(
@@ -284,14 +285,15 @@ internal object Sessions {
         memoryBytes: Long = Long.MAX_VALUE,
         canceled: () -> Boolean = { false },
         tuning: TileTuning? = null,
-        clock: () -> Long = SystemClock::elapsedRealtime
+        clock: () -> Long = SystemClock::elapsedRealtime,
+        hold: () -> Boolean = { false }
     ): Opening = TileEngine.exclusive(canceled) {
-        openAlone(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock)
+        openAlone(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock, hold)
     }
 
     private fun openAlone(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, gpu: Boolean, maxTile: Int, fp16: Boolean,
-        memoryBytes: Long, canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long
+        memoryBytes: Long, canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long, hold: () -> Boolean
     ): Opening {
         if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val name = files.param.name
@@ -335,7 +337,7 @@ internal object Sessions {
                 TilePlan.fits(it, geometry) && it.toLong() * it * TileSizing.bytesPerPixel(widest, geometry.scale, measured) <= work
             }
             if (info != null && reference != null) {
-                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, memoryBytes, weights, measured, canceled, tuning, clock)
+                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, memoryBytes, weights, measured, canceled, tuning, clock, hold)
                     ?.let { return Opening(it, null) }
                 Log.w(TAG, "$name: not usable on the GPU, running on the CPU")
             }
@@ -362,7 +364,7 @@ internal object Sessions {
     private fun onGpu(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, info: GpuInfo, geometry: Geometry, widest: Int,
         maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, memoryBytes: Long, cpuWeights: Long, measured: Long,
-        canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long
+        canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long, hold: () -> Boolean
     ): Session? {
         val name = files.param.name
         for (half in if (fp16) listOf(true, false) else listOf(false)) {
@@ -398,7 +400,7 @@ internal object Sessions {
                             (wide.filter { it <= chosen } + usual).distinct()
                         } else {
                             val t = timings ?: try {
-                                TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled) { size ->
+                                TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled, hold) { size ->
                                     if (size > maxTile) slot.trying(size)
                                 }
                             } catch (e: Throwable) {

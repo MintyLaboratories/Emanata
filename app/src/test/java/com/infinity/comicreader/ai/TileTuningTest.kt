@@ -137,6 +137,18 @@ class TileTuningTest {
     }
 
     @Test
+    fun aRunTheReaderTookTheGpuDuringIsTimedAgain() {
+        val now = longArrayOf(0)
+        // The first timed run is slowed by the reader turning a page, which holds the GPU from then on, once.
+        var calls = 0
+        var holds = 0
+        val m = Clocked(FakeModel(), now) { w -> if (++calls == 2) 500L.also { holds = 1 } else lightMs(w) }
+        val t = TileTiming.time(m, listOf(192, 256), Geometry(2, 0, 5), { now[0] }, { false }, hold = { (holds > 0).also { if (it) holds-- } })
+        assertEquals(listOf(192, 192, 192, 256, 256), m.widths.take(5))
+        assertEquals(listOf(42L, 42L, 42L), t.single { it.size == 192 }.ms)
+    }
+
+    @Test
     fun aSizeFarPastTheBoundIsNotTried() {
         val now = longArrayOf(0)
         // 192 at 100 ms: 384 would take about 400, past twice the bound.

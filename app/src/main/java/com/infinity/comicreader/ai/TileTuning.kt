@@ -125,6 +125,9 @@ internal object TileTiming {
     /** The most times a model's sizes are timed on a device. */
     const val MAX_TIMINGS = 3
 
+    /** Times a timed run is run again when the reader's hold began while it ran, before it counts anyway. */
+    const val HELD_RETRIES = 3
+
     /** Tiles of a page, past its first (the GPU's warm-up), whose pace [roomFor] reads at least. */
     const val PACED_TILES = 3
 
@@ -141,7 +144,9 @@ internal object TileTiming {
      * tiles are: smallest first, each run once untimed and once timed, stopping at a size that
      * fails, takes past [SPIKE] times [TILE_MS], or would take past [SKIP_PAST] times that at
      * the least time per pixel of the sizes below; then [RUNS] - 1 more rounds over those that
-     * may still pass [rank]'s bounds (one slow run is not the median), each size again run
+     * may still pass [rank]'s bounds (one slow run is not the median). Runs wait while [hold]
+     * (the reader turning a page or zooming), and a timed run during which it began is run
+     * again, up to [HELD_RETRIES] times. Each size again run
      * once untimed before it is timed (a page's tiles all have one shape), its buffers freed
      * before another size runs (as after a page). [trying] hears each
      * size before its first run. A size that fails is timed no more; failing in the first round,
@@ -149,7 +154,8 @@ internal object TileTiming {
      * Throws [CancellationException] once [canceled], checked before every run.
      */
     fun time(
-        model: TileModel, sizes: List<Int>, geometry: Geometry, clock: () -> Long, canceled: () -> Boolean, trying: (Int) -> Unit = {}
+        model: TileModel, sizes: List<Int>, geometry: Geometry, clock: () -> Long, canceled: () -> Boolean,
+        hold: () -> Boolean = { false }, trying: (Int) -> Unit = {}
     ): List<Timing> {
         val asc = sizes.distinct().filter { TilePlan.fits(it, geometry) }.sorted()
         if (asc.isEmpty()) return emptyList()
@@ -176,14 +182,25 @@ internal object TileTiming {
             peaks[size] = max(peaks[size] ?: 0L, model.takePeak())
             return if (ran) ms else null
         }
+
+        // Once untimed, then timed, while the reader leaves the GPU alone: a run the reader's hold began during is timed again.
+        fun sample(size: Int): Long? {
+            TileEngine.held(hold, canceled)
+            run(size) ?: return null
+            var again = 0
+            while (true) {
+                val ms = run(size) ?: return null
+                if (!hold() || again++ == HELD_RETRIES) return ms
+                TileEngine.held(hold, canceled)
+            }
+        }
         try {
             for (size in asc) {
                 // The least time per pixel so far, at this size: one slow sample of a size below does not end the climb.
                 val pace = runs.minOfOrNull { (s, ms) -> ms.min().toDouble() / s / s }
                 if (pace != null && pace * size * size > TILE_MS * SKIP_PAST) break
                 trying(size)
-                // Once untimed, then timed.
-                val ms = run(size)?.let { run(size) }
+                val ms = sample(size)
                 if (ms == null) {
                     failed += size
                     break
@@ -195,7 +212,7 @@ internal object TileTiming {
                 for ((size, ms) in runs) {
                     if (size in failed || !mayPass(ms)) continue
                     // Once untimed after the shape changed, as a page's tiles follow one of their own shape.
-                    val t = run(size)?.let { run(size) }
+                    val t = sample(size)
                     if (t == null) failed += size else ms += t
                 }
             }

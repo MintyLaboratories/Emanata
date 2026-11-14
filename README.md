@@ -1084,8 +1084,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (`HOOKED_tex`, `NAME_pos`, `NAME_pt`, `NAME_texOff`…). Each pass is a
   fragment shader drawing into an RGBA16F texture (RGBA32F where 16-bit
   float targets are not renderable; neither, and chains are refused),
-  sampled bilinearly with clamped edges; a texture is reused once no later
-  pass reads it. The OpenGL ES 3 context is the runner's own, at low
+  sampled bilinearly, every pass's samples clamped at the page's edge as mpv
+  clamps them at the image's, so a tile at a page edge computes what the
+  whole page would; a texture is reused once no later pass reads it. The OpenGL ES 3 context is the runner's own, at low
   priority where the driver allows; a tile's passes go to the GPU eight at a
   time. A chain is measured on the GPU: its passes compute every pixel alike
   wherever it sits in a tile, so its whole reach is found exactly (strips
@@ -1102,7 +1103,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Compiled passes are kept as program binaries in the app's cache (the eight
   chains used last, each keyed by its sources, the GPU driver and the
   runner's version), with what was measured, so a chain opened again loads
-  in milliseconds instead of compiling and measuring for up to seconds. A
+  in milliseconds instead of compiling and measuring for up to seconds (its
+  tiles timed again when the time kept had made them smaller). A
   GPU run past 10 s, or three failed runs in a row, turn the shader path off
   for the process: its pages then show without it. Shader files two chains
   share download once and are copied between them.

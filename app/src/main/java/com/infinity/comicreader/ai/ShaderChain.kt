@@ -218,7 +218,12 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
  * alias of it gets mpv's names: `NAME_raw`, `NAME_pos` (the output pixel's place, in
  * coordinates every texture shares: all cover the same image), `NAME_size`, `NAME_pt`,
  * `NAME_tex(pos)` (sampled bilinearly, edges clamped), `NAME_texOff(offset)` (offset in
- * NAME's pixels), `NAME_mul`, `NAME_rot` and `NAME_off`. `target_size` and `input_size` are
+ * NAME's pixels), `NAME_mul`, `NAME_rot` and `NAME_off`. The place is [BIAS] of a pixel past
+ * the pixel's center: a sample meant for a texel's center then lands just past it, where
+ * filtering gives that texel alone, rather than up to a rounding error before it, where the
+ * GPU's coarse filter weights mix in 1/256 of the texel before (as it does for sizes that are
+ * not powers of two); deep networks amplify that into differences of many codes between tile
+ * sizes. Samples between texels move by too little to change their weights. `target_size` and `input_size` are
  * the target's and the input's sizes, `random` and `frame` 0. The pass's code follows, then a
  * `main` writing `hook()` to the target, the channels past [ShaderProgram.components] as a
  * texture of that many channels reads them (0, alpha 1). The runner draws one triangle
@@ -231,7 +236,10 @@ object ShaderSource {
      * arithmetic between passes), so compiled programs ([GlesShaders.cacheName]) and stored
      * pages ([ShaderModel.fingerprint]) of an earlier runner are not used.
      */
-    const val RUNNER = 1
+    const val RUNNER = 2
+
+    /** How far past a pixel's center its place is taken, in pixels: 1/1024, past fp32 rounding, short of a filter weight's 1/256. */
+    const val BIAS = "0.0009765625"
 
     fun fragment(program: ShaderProgram): String = buildString {
         append("#version 300 es\n")
@@ -258,7 +266,7 @@ object ShaderSource {
         append("#line 1\n")
         append(program.pass.body)
         append("\nout vec4 emanata_color;\n")
-        append("void main() {\n  emanata_pos = gl_FragCoord.xy / emanata_out;\n")
+        append("void main() {\n  emanata_pos = (gl_FragCoord.xy + vec2(").append(BIAS).append(")) / emanata_out;\n")
         append(
             when (program.components) {
                 1 -> "  emanata_color = vec4(hook().r, 0.0, 0.0, 1.0);\n"

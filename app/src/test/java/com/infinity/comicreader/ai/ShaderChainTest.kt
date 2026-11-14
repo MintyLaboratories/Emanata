@@ -148,7 +148,7 @@ class ShaderChainTest {
         assertTrue(stats.contains("#define MAIN_size emanata_s0"))
         assertTrue(stats.contains("#define HOOKED_pos emanata_pos"))
         assertTrue(stats.contains("return vec4(MAIN_texOff(vec2(1, 0)).x"))
-        assertTrue(stats.contains("emanata_pos = gl_FragCoord.xy / emanata_out;"))
+        assertTrue("just past the pixel's center", stats.contains("emanata_pos = (gl_FragCoord.xy + vec2(0.0009765625)) / emanata_out;"))
         assertTrue("one channel kept", stats.trimEnd().endsWith("emanata_color = vec4(hook().r, 0.0, 0.0, 1.0);\n}"))
         val up = chain.programs[5].source
         assertTrue(up.contains("#define d_tex(pos) texture(emanata_t1, pos)"))

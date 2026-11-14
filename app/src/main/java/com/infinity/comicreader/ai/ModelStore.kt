@@ -37,6 +37,16 @@ class ModelStore(val root: File) {
     /** Marks [file], just verified, as in place. */
     internal fun stamped(set: FileSet, file: ModelFile) = stamp(set, file).writeText(file.sha256)
 
+    /**
+     * [file] as another set already holds it in place, verified against the same SHA-256 (shader
+     * chains share files); null when none does. Imported models are not searched.
+     */
+    internal fun heldElsewhere(set: FileSet, file: ModelFile): File? =
+        root.listFiles().orEmpty().asSequence()
+            .filter { it.isDirectory && it.name != set.id && it.name != USER && it.name != STAGING }
+            .map { File(it, file.name) }
+            .firstOrNull { it.length() == file.bytes && runCatching { File(it.parentFile, file.name + STAMP).readText() }.getOrNull() == file.sha256 }
+
     /** True once all of [set]'s files are in place ([has]). */
     fun installed(set: FileSet): Boolean = set.files.all { has(set, it) }
 
@@ -172,7 +182,8 @@ class DownloadException(val failure: DownloadFailure, message: String, cause: Th
  * Downloads file sets (catalog models and the app's own) into [store], one file after the other: each into its `.part`,
  * resumed where it stopped (HTTP Range; a server that sends the whole file again starts it
  * over), then checked against the catalog's size and SHA-256 and renamed into place. A part
- * that does not match is deleted; one cut short is kept.
+ * that does not match is deleted; one cut short is kept. A file another set already holds
+ * ([ModelStore.heldElsewhere]) is copied from it instead, and checked the same way.
  */
 class ModelDownloader(private val store: ModelStore, private val client: OkHttpClient = defaultClient) {
 
@@ -196,11 +207,29 @@ class ModelDownloader(private val store: ModelStore, private val client: OkHttpC
         for (file in set.files) {
             if (!store.has(set, file)) {
                 store.target(set, file).delete()
-                fetch(set, file, canceled) { held -> progress(before + held, set.bytes) }
+                if (!copy(set, file)) fetch(set, file, canceled) { held -> progress(before + held, set.bytes) }
             }
             before += file.bytes
             progress(before, set.bytes)
         }
+    }
+
+    /** Copies [file] from another set holding it into [set], verified; false when none does or the copy fails. */
+    private fun copy(set: FileSet, file: ModelFile): Boolean {
+        val from = store.heldElsewhere(set, file) ?: return false
+        val part = store.part(set, file)
+        val ok = try {
+            from.copyTo(part, overwrite = true)
+            sha256(part).equals(file.sha256, ignoreCase = true) && part.renameTo(store.target(set, file))
+        } catch (e: IOException) {
+            false
+        }
+        if (!ok) {
+            part.delete()
+            return false
+        }
+        store.stamped(set, file)
+        return true
     }
 
     private fun fetch(set: FileSet, file: ModelFile, canceled: () -> Boolean, progress: (Long) -> Unit) {

@@ -255,6 +255,27 @@ class ModelDownloaderTest {
     }
 
     @Test
+    fun aFileAnotherSetHoldsIsCopiedNotDownloaded() {
+        val shared = serve("/s/shared/common", Random(3).nextBytes(5_000))
+        val a = Set("set-a", listOf(shared, serve("/s/set-a/own", Random(4).nextBytes(300))))
+        val b = Set("set-b", listOf(shared, serve("/s/set-b/own", Random(5).nextBytes(400))))
+        ModelDownloader(store).download(a)
+        requests.clear()
+        ModelDownloader(store).download(b)
+        assertTrue(store.installed(b))
+        assertEquals(listOf("/s/set-b/own"), requests.map { it.path })
+        assertArrayEquals(files["/s/shared/common"], File(store.dir(b), shared.name).readBytes())
+        // A copy that does not verify is fetched instead.
+        val c = Set("set-c", listOf(shared))
+        for (s in listOf(a, b)) File(store.dir(s), shared.name).writeBytes(Random(6).nextBytes(5_000))
+        requests.clear()
+        ModelDownloader(store).download(c)
+        assertTrue(store.installed(c))
+        assertArrayEquals(files["/s/shared/common"], File(store.dir(c), shared.name).readBytes())
+        assertTrue(requests.isNotEmpty())
+    }
+
+    @Test
     fun pruneKeepsSetsInTheCatalogItIsGiven() {
         val m = model()
         val s = set("kept-set", 100, 200)

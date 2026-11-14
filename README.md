@@ -1065,7 +1065,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page tiled two ways must agree within 2 codes, and must match the CPU's fp32
   output apart from rounding noise. Seams from fp16 rounding widen the margin by
   8 pixels (at most 3 times, while fp16 stays the cheaper per pixel), then fp32
-  is tried; other failures try the next smaller size. A model no GPU setup
+  is tried; other failures try the next smaller size. Catalog models may take
+  larger GPU tiles (`TileTuning`): at a model's first open each device times
+  192, 256, 384 and 512 px tiles where they fit (smallest first, each once
+  untimed, then three rounds taken in turn, so speed drifting over minutes
+  hits every size alike) and takes the size whose tiles cost the least per
+  pixel kept, among those whose every tile ended within 150 ms (tiles are
+  where a run stops for a cancel or a page turn) and within the tile memory
+  budget; costs within 5% go to the smaller size. That size then passes the
+  same check and is kept per GPU, precision and model files. A size that
+  fails to run (an allocation past the GPU's memory), at the check or on a
+  page, or that the app ended on while trying it first, is remembered as too
+  large: the model opens again in smaller tiles. Imported models keep the
+  192 px cap. A model no GPU setup
   passes, or every model without a usable Vulkan device, runs on the CPU: one
   thread per large core, in fp32 (the CPU's fp16 kernels differ by tile shape
   enough to show as seams). Opening is cancelable between runs. Between tiles a
@@ -1436,8 +1448,8 @@ another, as the headroom rose from 0.79 to 0.93:
 
 ArtCNN C4F32 DS 2x and CuNNy 8x32 DS 2x have provisional times (GPU fp16,
 192 px tiles): ArtCNN 2.0 s (8 px margin, 54 tiles), CuNNy 2.9 s (17 px margin,
-70 tiles). In larger tiles than the app's 192 px cap, 512 px (ArtCNN) and
-384 px (CuNNy), the same pages took about 1.5 s.
+70 tiles). In 512 px (ArtCNN) and 384 px (CuNNy) tiles, which devices may now
+choose per model, the same pages took about 1.5 s.
 
 Warm, models took up to 1.5 times as long as cool (single pages of the
 download check reached 21.4 s), still within the page time; the AI gate stops

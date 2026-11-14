@@ -77,15 +77,17 @@ class PageScan(val opaque: Boolean, val gray: Boolean)
 /**
  * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size],
  * computing in fp16 when [fp16]; with [pick], each page's tile size is its choice for the
- * page's width and height, at most [size] ([sizeFor]). Closing it closes the model; a run in
- * progress then falls back.
+ * page's width and height, at most [size] ([sizeFor]); with [tooLarge], its size was chosen
+ * past the default by timing ([TileTuning]) and can be given up ([shrink]). Closing it closes
+ * the model; a run in progress then falls back.
  */
 internal class Session(
     val model: TileModel,
     val geometry: Geometry,
     val size: Int,
     val fp16: Boolean = false,
-    private val pick: ((Int, Int) -> Int)? = null
+    private val pick: ((Int, Int) -> Int)? = null,
+    private val tooLarge: (() -> Unit)? = null
 ) : AutoCloseable {
     init {
         require(TilePlan.fits(size, geometry)) { "Tile $size too small for margin ${geometry.margin}" }
@@ -93,6 +95,13 @@ internal class Session(
 
     /** The tile size for a [width] x [height] page: [pick]'s within [size] when it fits, else [size]. */
     fun sizeFor(width: Int, height: Int): Int = pick?.invoke(width, height)?.takeIf { it <= size && TilePlan.fits(it, geometry) } ?: size
+
+    /**
+     * After a run failed: remembers [size] as too large on this device when it was chosen past
+     * the default ([TileTuning]), so the model opens next in smaller tiles. False when there
+     * is nothing to give up.
+     */
+    fun shrink(): Boolean = tooLarge?.let { it(); true } ?: false
 
     override fun close() = model.close()
 }

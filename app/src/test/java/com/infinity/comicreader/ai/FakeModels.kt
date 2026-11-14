@@ -11,7 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * see black past the tile's edge, as zero padding does; others drop the [reach] pixels on each
  * side whose taps would leave the tile (their trim). Reads [src] past its edge as the native
  * code does: the nearest edge pixel. Like a GPU can, it may round by a pixel's place in its
- * tile ([phaseNoise], [edgeNoise]), go wrong on tiles wider than [breaksAbove], or compute
+ * tile ([phaseNoise], [edgeNoise]), go wrong on tiles wider than [breaksAbove], fail on those
+ * wider than [failsAbove], or compute
  * nonsense ([wrong]). Each run holds [bytesPerPixel] of working memory per input pixel
  * ([takePeak]), and its weights [weights] ([weightBytes]).
  */
@@ -33,6 +34,8 @@ internal class FakeModel(
     private val borderNoise: Int = 0,
     /** Inverts the output of tiles wider than this, as a feature map past a GPU buffer can. */
     private val breaksAbove: Int = Int.MAX_VALUE,
+    /** Fails runs on tiles wider than this, as an allocation past the GPU's memory can. */
+    private val failsAbove: Int = Int.MAX_VALUE,
     /** Writes mid-gray whatever the input. */
     private val wrong: Boolean = false,
     /** Adds this many codes to the red of every output pixel, as a GPU fault can color a gray page. */
@@ -62,7 +65,7 @@ internal class FakeModel(
             onRun(i)
             synchronized(inputs) { inputs += input }
             synchronized(this) { peak = maxOf(peak, input.width.toLong() * input.height * bytesPerPixel) }
-            if (i == failAt) return null
+            if (i == failAt || input.width > failsAbove) return null
             val n = input.width
             val m = input.height
             val outW = n * scale - 2 * trim

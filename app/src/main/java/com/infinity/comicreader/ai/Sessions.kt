@@ -133,9 +133,18 @@ object TileSizing {
     /**
      * The cap by default: on the reference tablet's GPU (Adreno 730), a 2x compact model ran a
      * 1000 x 1500 page fastest in 192-pixel tiles (5.4 s in fp16; 128: 11.8 s, 256: 5.8 s, 384: 6.0 s),
-     * with the least GPU memory of the fast sizes and 77 ms between chances to stop.
+     * with the least GPU memory of the fast sizes and 77 ms between chances to stop. Models
+     * with candidates past it ([TileTuning]) may take larger tiles on the GPU.
      */
     const val DEFAULT_MAX = 192
+
+    /**
+     * The sizes a catalog model's GPU tiles are chosen among by timing on the device
+     * ([TileTiming]), where they fit: on the reference tablet a 1000 x 1500 page took CuNNy
+     * 8x32 DS 2.9 s in 192 px tiles and 1.4 s in 384 px ones, ArtCNN C4F32 DS 2.0 s and 1.5 s
+     * in 512 px ones, while OpenComic AI's compact 2x upscaler was fastest in 192 px tiles.
+     */
+    val CANDIDATES = listOf(192, 256, 384, 512)
 
     /** Share of the GPU's memory budget one tile may take. */
     const val GPU_SHARE = 4
@@ -246,8 +255,10 @@ internal object Sessions {
         maxTile: Int = TileSizing.DEFAULT_MAX,
         fp16: Boolean = true,
         memoryBytes: Long = Long.MAX_VALUE,
-        canceled: () -> Boolean = { false }
-    ): Session? = attempt(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled).session
+        canceled: () -> Boolean = { false },
+        tuning: TileTuning? = null,
+        clock: () -> Long = SystemClock::elapsedRealtime
+    ): Session? = attempt(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock).session
 
     /**
      * [files] opened through [runtime]: on the GPU when [gpu] and one is usable, in fp16 when
@@ -256,6 +267,12 @@ internal object Sessions {
      * [memoryBytes]. Refused when the model loads or measures nowhere, mixes the whole tile
      * ([ModelParam.wholeTileLayers]), or no tile fits its memory. Throws
      * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
+     *
+     * With [tuning], GPU tiles may be larger, up to its largest candidate: the size this device
+     * chose for the model before, else the best of the candidates as [TileTiming] times them by
+     * [clock] and ranks them (then [maxTile]'s sizes, as without), the choice kept for the next
+     * open once its check passes. A size past [maxTile] that fails to run is remembered as too
+     * large ([TileChoice.ceiling]), also when the app ends while it runs for the first time.
      */
     fun attempt(
         runtime: InferenceRuntime,
@@ -265,14 +282,16 @@ internal object Sessions {
         maxTile: Int = TileSizing.DEFAULT_MAX,
         fp16: Boolean = true,
         memoryBytes: Long = Long.MAX_VALUE,
-        canceled: () -> Boolean = { false }
+        canceled: () -> Boolean = { false },
+        tuning: TileTuning? = null,
+        clock: () -> Long = SystemClock::elapsedRealtime
     ): Opening = TileEngine.exclusive(canceled) {
-        openAlone(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled)
+        openAlone(runtime, files, threads, gpu, maxTile, fp16, memoryBytes, canceled, tuning, clock)
     }
 
     private fun openAlone(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, gpu: Boolean, maxTile: Int, fp16: Boolean,
-        memoryBytes: Long, canceled: () -> Boolean
+        memoryBytes: Long, canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long
     ): Opening {
         if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val name = files.param.name
@@ -316,7 +335,7 @@ internal object Sessions {
                 TilePlan.fits(it, geometry) && it.toLong() * it * TileSizing.bytesPerPixel(widest, geometry.scale, measured) <= work
             }
             if (info != null && reference != null) {
-                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, memoryBytes, weights, measured, canceled)
+                onGpu(runtime, files, threads, info, geometry, widest, maxTile, fp16 && info.fp16, cpu, reference, memoryBytes, weights, measured, canceled, tuning, clock)
                     ?.let { return Opening(it, null) }
                 Log.w(TAG, "$name: not usable on the GPU, running on the CPU")
             }
@@ -337,12 +356,13 @@ internal object Sessions {
      * The model on the GPU at the first precision and size that passes [ModelProbe.verify]
      * within [memoryBytes], less the weights of both copies checked side by side (the CPU's
      * [cpuWeights] and the GPU's); null when none does. [measured]: the CPU's working bytes
-     * per input pixel in fp32, a floor for the estimate.
+     * per input pixel in fp32, a floor for the estimate. With [tuning], sizes past [maxTile] as
+     * [attempt] says.
      */
     private fun onGpu(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, info: GpuInfo, geometry: Geometry, widest: Int,
         maxTile: Int, fp16: Boolean, cpu: TileModel, cpuSize: Int, memoryBytes: Long, cpuWeights: Long, measured: Long,
-        canceled: () -> Boolean
+        canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long
     ): Session? {
         val name = files.param.name
         for (half in if (fp16) listOf(true, false) else listOf(false)) {
@@ -355,24 +375,63 @@ internal object Sessions {
                 Log.i(TAG, "$name: weights take ${weights shr 20} MB on the GPU in $precision, ${max(0L, work) shr 20} MB left to check it")
                 if (work <= 0) continue
                 val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
+                // This device's choice for the model on this GPU in this precision; none without candidates past the cap.
+                val candidates = tuning?.candidates.orEmpty()
+                val slot = tuning?.takeIf { candidates.any { it > maxTile } }?.let { TileSlot(it.choices, "${info.name}|$precision|${it.key}") }
+                // Tile times are the same at any margin: timed once, ranked again as the margin widens.
+                var timings: List<TileTiming.Timing>? = null
+                // The chosen size kept from an earlier open, when its check found it wrong now (not short of memory).
+                var choiceFailed = false
                 var g = geometry
                 var widenings = 0
                 while (true) {
                     val element = if (half) 2 else 4
-                    val sizes = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, element, measured * element / 4)
+                    val usual = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, element, measured * element / 4)
+                    val sizes = if (slot == null) usual else {
+                        val cap = max(maxTile, min(candidates.max(), slot.choice.ceiling))
+                        val wide = TileSizing.candidates(budget, widest, g, cap, info.maxBufferBytes, element, measured * element / 4)
+                        val chosen = slot.choice.size
+                        if (chosen > 0) {
+                            (wide.filter { it <= chosen } + usual).distinct()
+                        } else {
+                            val t = timings ?: TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled) { size ->
+                                if (size > maxTile) slot.trying(size)
+                            }.also { t ->
+                                timings = t
+                                Log.i(TAG, "$name: $precision tiles timed: ${t.joinToString()}")
+                                t.firstOrNull { it.failed && it.size > maxTile }?.let { slot.failed(it.size) } ?: slot.trying(0)
+                            }
+                            (TileTiming.rank(t, g, budget) + usual).distinct()
+                        }
+                    }
                     if (sizes.isEmpty()) Log.w(TAG, "$name: no $precision tile fits $g in ${budget shr 20} MB")
                     var noisy = false
                     for (size in sizes) {
+                        // A size past the cap not yet known to run on this device: marked while it first runs.
+                        val unproven = slot != null && size > maxTile && size > slot.choice.size && timings?.any { it.size == size && !it.failed } != true
+                        if (unproven) slot?.trying(size)
                         val t0 = SystemClock.elapsedRealtime()
-                        val check = ModelProbe.verify(model, cpu, g, size, cpuSize, canceled)
+                        val check = try {
+                            ModelProbe.verify(model, cpu, g, size, cpuSize, canceled)
+                        } catch (e: ModelProbe.Unfit) {
+                            if (slot == null || size <= maxTile || e.reason != ModelRefusal.DOES_NOT_RUN) throw e
+                            Log.w(TAG, "$name: $precision, $size px tiles fail to run: smaller from now on")
+                            slot.failed(size)
+                            continue
+                        } finally {
+                            if (unproven) slot?.trying(0)
+                        }
                         Log.i(TAG, "$name: $precision, $size px tiles, margin ${g.margin}: $check (${SystemClock.elapsedRealtime() - t0} ms)")
                         if (check.passes && check.peakBytes > budget) {
                             Log.w(TAG, "$name: $precision, $size px tiles held ${check.peakBytes shr 20} MB, over ${budget shr 20} MB")
                             continue
                         }
+                        if (!check.passes && slot != null && size == slot.choice.size) choiceFailed = true
                         if (check.passes) {
                             model.trim()
-                            return Session(model, g, size, half).also { kept = true }
+                            if (slot != null && (slot.choice.size == 0 || choiceFailed)) slot.save(slot.choice.copy(size = size, trying = 0))
+                            val tooLarge = if (slot != null && size > maxTile) { { slot.failed(size) } } else null
+                            return Session(model, g, size, half, tooLarge = tooLarge).also { kept = true }
                         }
                         // fp16 rounding past the margin shows at every size.
                         if (half && check.seams.noisy) {

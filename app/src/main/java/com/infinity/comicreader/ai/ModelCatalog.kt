@@ -65,7 +65,7 @@ enum class ModelSource(
     val models: List<AiModel> get() = ModelCatalog.all.filter { it.source == this } + ShaderCatalog.all.filter { it.source == this }
 }
 
-/** What a model does to a page, in a few words shown beside it where it is picked ([CatalogModel.blurb]). */
+/** What a model does to a page, in a few words shown beside it where it is picked ([CatalogModel.blurb], [ShaderModel.blurb]). */
 enum class ModelBlurb {
     WAIFU2X,
     WAIFU2X_DENOISE,
@@ -75,7 +75,12 @@ enum class ModelBlurb {
     DESCREEN_V3,
     ARTIFACT_REMOVAL,
     CUNNY,
-    ARTCNN
+    ARTCNN,
+    ANIME4K_A,
+    ANIME4K_B,
+    ANIME4K_C,
+    ANIME4K_UPSCALE,
+    ANIME4K_UPSCALE_DENOISE
 }
 
 /** One file of a model: stored as [name], downloaded from [url], [bytes] long with SHA-256 [sha256] (lowercase hex). */

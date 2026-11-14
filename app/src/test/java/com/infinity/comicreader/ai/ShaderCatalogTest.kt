@@ -23,6 +23,10 @@ class ShaderCatalogTest {
             assertEquals("the AiModel view", levels.map { it.level }, levels.map { (it as AiModel).level })
         }
         assertTrue("ncnn models come in one size", ModelCatalog.all.all { it.level == null })
+        assertEquals(
+            listOf(ModelBlurb.ANIME4K_A, ModelBlurb.ANIME4K_B, ModelBlurb.ANIME4K_C, ModelBlurb.ANIME4K_UPSCALE, ModelBlurb.ANIME4K_UPSCALE_DENOISE),
+            families.map { f -> ShaderCatalog.family(f).map { it.blurb }.distinct().single() }
+        )
     }
 
     @Test

@@ -83,12 +83,17 @@ object ModelText {
     }
 
     /**
-     * What [m] does ([CatalogModel.blurb]), marked when it is the default, then a line saying
-     * how slow it is when it is ([AiModel.slow]); empty for neither.
+     * What [m] does ([CatalogModel.blurb], [ShaderModel.blurb]), marked when it is the default,
+     * then a line saying how slow it is when it is ([AiModel.slow]); empty for neither.
      */
     fun blurb(context: Context, m: AiModel): String {
         val lines = ArrayList<String>(2)
-        (m as? CatalogModel)?.blurb?.let { b ->
+        val what = when (m) {
+            is CatalogModel -> m.blurb
+            is ShaderModel -> m.blurb
+            is UserModel -> null
+        }
+        what?.let { b ->
             val text = context.getString(blurbText(b))
             lines += if (m.id == ModelCatalog.DEFAULT_UPSCALE) context.getString(R.string.ai_model_default, text) else text
         }
@@ -106,6 +111,11 @@ object ModelText {
         ModelBlurb.ARTIFACT_REMOVAL -> R.string.ai_blurb_artifact_removal
         ModelBlurb.CUNNY -> R.string.ai_blurb_cunny
         ModelBlurb.ARTCNN -> R.string.ai_blurb_artcnn
+        ModelBlurb.ANIME4K_A -> R.string.ai_blurb_anime4k_a
+        ModelBlurb.ANIME4K_B -> R.string.ai_blurb_anime4k_b
+        ModelBlurb.ANIME4K_C -> R.string.ai_blurb_anime4k_c
+        ModelBlurb.ANIME4K_UPSCALE -> R.string.ai_blurb_anime4k_upscale
+        ModelBlurb.ANIME4K_UPSCALE_DENOISE -> R.string.ai_blurb_anime4k_upscale_denoise
     }
 
     /** A picker's entry for [m]: its name and size, and below, smaller and quieter, its [blurb]. */

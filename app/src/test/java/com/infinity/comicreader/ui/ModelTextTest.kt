@@ -9,6 +9,7 @@ import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.ShaderCatalog
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,13 @@ class ModelTextTest {
         assertTrue(cunny, cunny.endsWith("\n\n" + ModelSource.CUNNY.conversion))
         val waifu2x = ModelCatalog.byId("waifu2x-upconv7-2x")!!.let { ModelText.attribution(context, it, it.source) }
         assertTrue(waifu2x, waifu2x.endsWith("Downloaded unchanged from: ${ModelCatalog.REPOSITORY}"))
+    }
+
+    @Test
+    fun everyShaderLevelSaysWhatItsFamilyDoes() {
+        for (m in ShaderCatalog.all) assertTrue(m.id, ModelText.blurb(context, m).startsWith("Fast GPU "))
+        assertEquals("Fast GPU restore and upscale; up to sharp lines; sharpens compression artifacts too", ModelText.blurb(context, ShaderCatalog.byId("anime4k-a-s")!!))
+        assertEquals(ModelText.blurb(context, ShaderCatalog.byId("anime4k-c-ul")!!), ModelText.blurb(context, ShaderCatalog.byId("anime4k-c-m")!!))
     }
 
     @Test

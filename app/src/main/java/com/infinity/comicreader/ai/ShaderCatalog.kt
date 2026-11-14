@@ -78,8 +78,8 @@ object ShaderCatalog {
         file("Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_UL.glsl", 290_040, "38bd11e7e92ff1a615a274be912d6f2cfe67f5b43771f0383a91c6ab3d0f8cb6")
     )
 
-    /** A family: its id (model ids are it and the level), name, and files at each level. */
-    private class Family(val id: String, val name: String, val files: (Int) -> List<ModelFile>, val pageMs: LongArray)
+    /** A family: its id (model ids are it and the level), name, what it does, and files at each level. */
+    private class Family(val id: String, val name: String, val blurb: ModelBlurb, val files: (Int) -> List<ModelFile>, val pageMs: LongArray)
 
     /**
      * Page times: a synthetic 1000 x 1500 page in 512-pixel tiles on the reference tablet's GPU
@@ -88,11 +88,11 @@ object ShaderCatalog {
      * until a cool session measures them again.
      */
     private val FAMILIES = listOf(
-        Family("anime4k-a", "Anime4K A (sharp) 2×", { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(180, 300, 470, 590, 840)),
-        Family("anime4k-b", "Anime4K B (clean) 2×", { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(250, 340, 490, 760, 830)),
-        Family("anime4k-c", "Anime4K C (balanced) 2×", { l -> listOf(CLAMP, UPSCALE_DENOISE[l]) }, longArrayOf(170, 210, 370, 530, 730)),
-        Family("anime4k-upscale", "Anime4K Upscale 2×", { l -> listOf(UPSCALE[l]) }, longArrayOf(140, 230, 330, 500, 730)),
-        Family("anime4k-upscale-denoise", "Anime4K Upscale + Denoise 2×", { l -> listOf(UPSCALE_DENOISE[l]) }, longArrayOf(150, 210, 270, 490, 730)),
+        Family("anime4k-a", "Anime4K A (sharp) 2×", ModelBlurb.ANIME4K_A, { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(180, 300, 470, 590, 840)),
+        Family("anime4k-b", "Anime4K B (clean) 2×", ModelBlurb.ANIME4K_B, { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(250, 340, 490, 760, 830)),
+        Family("anime4k-c", "Anime4K C (balanced) 2×", ModelBlurb.ANIME4K_C, { l -> listOf(CLAMP, UPSCALE_DENOISE[l]) }, longArrayOf(170, 210, 370, 530, 730)),
+        Family("anime4k-upscale", "Anime4K Upscale 2×", ModelBlurb.ANIME4K_UPSCALE, { l -> listOf(UPSCALE[l]) }, longArrayOf(140, 230, 330, 500, 730)),
+        Family("anime4k-upscale-denoise", "Anime4K Upscale + Denoise 2×", ModelBlurb.ANIME4K_UPSCALE_DENOISE, { l -> listOf(UPSCALE_DENOISE[l]) }, longArrayOf(150, 210, 270, 490, 730)),
     )
 
     /** Every chain, family by family, each from its lightest level to its heaviest. */
@@ -100,7 +100,7 @@ object ShaderCatalog {
         LEVELS.indices.map { l ->
             ShaderModel(
                 "${f.id}-${LEVELS[l].lowercase()}", AiStep.UPSCALE, 2, ModelSource.ANIME4K, f.files(l),
-                ModelLevel(f.id, f.name, l, LEVELS), pageMs = f.pageMs[l]
+                ModelLevel(f.id, f.name, l, LEVELS), pageMs = f.pageMs[l], blurb = f.blurb
             )
         }
     }

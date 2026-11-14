@@ -371,17 +371,22 @@ internal object Sessions {
             val precision = if (half) "fp16" else "fp32"
             val model = runtime.open(files, true, threads, half) ?: return null
             var kept = false
+            // This device's choice for the model on this GPU in this precision; none without candidates past the cap.
+            val candidates = tuning?.candidates.orEmpty()
+            val slot = tuning?.takeIf { candidates.any { it > maxTile } }?.let { TileSlot(it.choices, "${info.name}|$precision|${it.key}") }
+            // Tile times are the same at any margin: timed once, ranked again as the margin widens.
+            var timings: List<TileTiming.Timing>? = null
+            // Sizes timed this open and none passed: kept, so later opens skip the timing.
+            fun nonePassed() {
+                if (timings == null || slot == null || slot.choice.size != 0) return
+                slot.save(slot.choice.copy(size = TileChoice.NONE, trying = 0, timings = slot.choice.timings + 1))
+            }
             try {
                 val weights = ModelMemory.weights(model.weightBytes(), files.bin.length(), gpu = true)
                 val work = memoryBytes - cpuWeights - weights
                 Log.i(TAG, "$name: weights take ${weights shr 20} MB on the GPU in $precision, ${max(0L, work) shr 20} MB left to check it")
                 if (work <= 0) continue
                 val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
-                // This device's choice for the model on this GPU in this precision; none without candidates past the cap.
-                val candidates = tuning?.candidates.orEmpty()
-                val slot = tuning?.takeIf { candidates.any { it > maxTile } }?.let { TileSlot(it.choices, "${info.name}|$precision|${it.key}") }
-                // Tile times are the same at any margin: timed once, ranked again as the margin widens.
-                var timings: List<TileTiming.Timing>? = null
                 // The chosen size kept from an earlier open, when its check found it wrong now (not short of memory).
                 var choiceFailed = false
                 var g = geometry
@@ -398,6 +403,9 @@ internal object Sessions {
                         val chosen = slot.choice.size
                         if (chosen > 0) {
                             (wide.filter { it <= chosen } + usual).distinct()
+                        } else if (chosen == TileChoice.NONE || timings == null && slot.choice.timings >= TileTiming.MAX_TIMINGS) {
+                            // None passed when timed, or timed as often as may be: the usual sizes, untimed.
+                            usual
                         } else {
                             val t = timings ?: try {
                                 TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled, hold) { size ->
@@ -440,7 +448,7 @@ internal object Sessions {
                         if (!check.passes && slot != null && size == slot.choice.size) choiceFailed = true
                         if (check.passes) {
                             model.trim()
-                            if (slot != null && (slot.choice.size == 0 || choiceFailed)) {
+                            if (slot != null && (slot.choice.size <= 0 || choiceFailed)) {
                                 slot.save(slot.choice.copy(size = size, trying = 0, timings = slot.choice.timings + if (timings != null) 1 else 0))
                             }
                             val tooLarge = if (slot != null && size > maxTile) { { slot.failed(size) } } else null
@@ -468,8 +476,10 @@ internal object Sessions {
                     g = wider
                     widenings++
                 }
+                nonePassed()
             } catch (e: ModelProbe.Unfit) {
                 Log.w(TAG, "$name: $precision fails: ${e.message}")
+                nonePassed()
             } finally {
                 if (!kept) model.close()
             }

@@ -20,7 +20,8 @@ internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, v
 
 /**
  * What this device learned of one model's tiles on its GPU in one precision: the [size] chosen
- * (0: none yet, so the next open times the candidates), the largest size that may run
+ * (0: none yet, so the next open times the candidates; [NONE]: timed, and no size passed its
+ * check, so opens check the usual sizes untimed), the largest size that may run
  * ([ceiling]: a larger one failed to run, or the app ended while running it), and the size
  * being tried ([trying], 0: none), written before a size not yet known to run is tried and
  * cleared after, so a size that ends the app (out of memory) is not tried again; [timings]:
@@ -32,6 +33,11 @@ internal data class TileChoice(val size: Int = 0, val ceiling: Int = Int.MAX_VAL
 
     /** After [failed] did not run: the ceiling below it, a choice at or past it dropped. */
     fun below(failed: Int): TileChoice = copy(size = if (size >= failed) 0 else size, ceiling = minOf(ceiling, failed - 1), trying = 0)
+
+    companion object {
+        /** [size] when the sizes were timed and none passed its check. */
+        const val NONE = -1
+    }
 }
 
 /**
@@ -43,7 +49,7 @@ internal class TileChoices(private val dir: File) {
     @Synchronized
     fun get(key: String): TileChoice = runCatching {
         val v = fileOf(key).readText().trim().split(' ').map { it.toInt() }
-        TileChoice(v[0], v[1], v[2], v[3]).takeIf { v.size == 4 && it.size >= 0 && it.ceiling > 0 && it.trying >= 0 && it.timings >= 0 }
+        TileChoice(v[0], v[1], v[2], v[3]).takeIf { v.size == 4 && it.size >= TileChoice.NONE && it.ceiling > 0 && it.trying >= 0 && it.timings >= 0 }
     }.getOrNull() ?: TileChoice()
 
     /** Keeps [choice] under [key]; a failed write is logged and forgotten. */

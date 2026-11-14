@@ -378,6 +378,35 @@ class TileTuningTest {
     }
 
     @Test
+    fun aPrecisionWhereNoSizePassesIsTimedOnce() {
+        val dir = tmp.newFolder()
+        // fp16 seams show at every size and margin: fp32 runs.
+        val noisy = { FakeRuntime(make = { onGpu, half -> if (onGpu) Clocked(FakeModel(edgeNoise = half), now, ::lightMs) else FakeModel(onGpu = false) }) }
+        val first = noisy()
+        val s = open(first, tuning(dir))
+        assertFalse(s.fp16)
+        assertEquals(384, s.size)
+        assertEquals(TileChoice(TileChoice.NONE, timings = 1), kept(dir))
+        assertTrue("fp16 timed", 512 in (first.opened[1] as Clocked).widths)
+        // Opened again: fp16 checked at the usual sizes, not timed; fp32 at its kept size.
+        val again = noisy()
+        assertEquals(384, open(again, tuning(dir)).size)
+        assertFalse(512 in (again.opened[1] as Clocked).widths)
+        assertEquals(TileChoice(TileChoice.NONE, timings = 1), kept(dir))
+    }
+
+    @Test
+    fun sizesTimedAsOftenAsMayBeAreNotTimedAgain() {
+        val dir = tmp.newFolder()
+        // Shrunk after its last timing: no choice, no timings left.
+        TileChoices(dir).put("Test GPU|fp16|model-a", TileChoice(0, 383, 0, TileTiming.MAX_TIMINGS))
+        val runtime = runtime()
+        assertEquals(TileSizing.DEFAULT_MAX, open(runtime, tuning(dir)).size)
+        assertTrue(gpuWidths(runtime).all { it == TileSizing.DEFAULT_MAX })
+        assertEquals(TileChoice(TileSizing.DEFAULT_MAX, 383, 0, TileTiming.MAX_TIMINGS), kept(dir))
+    }
+
+    @Test
     fun eachPrecisionKeepsItsOwnChoice() {
         val dir = tmp.newFolder()
         val runtime = FakeRuntime(

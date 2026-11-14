@@ -434,6 +434,31 @@ class ReaderAiTest {
     }
 
     @Test
+    fun aChainReadAsTheKindOrPicksChangeIsNotKept() {
+        val descreen = ModelCatalog.forStep(AiStep.DESCREEN).first()
+        prefs.setAiModel(AiStep.DESCREEN, descreen.id, ChainKind.MANGA)
+        val b = bookOf()
+        var during: (() -> Unit)? = null
+        val reader = ReaderAi(prefs, { val picks = own[it]; during?.invoke(); during = null; picks }, models, store, runtime, { stop }, { downloads += it.id }, threads = 2)
+        try {
+            // The kind changes on another thread while the chain is being read.
+            during = { reader.kind(b.bookKey, ChainKind.MANGA) }
+            assertEquals("read as it was", listOf(upscale), reader.chainFor(b.bookKey))
+            assertEquals(listOf(descreen, upscale), reader.chainFor(b.bookKey))
+            // So do the picks: a refresh while it is read.
+            reader.refresh()
+            during = {
+                own[book] = AiPicks.NONE
+                reader.refresh()
+            }
+            assertEquals(listOf(descreen, upscale), reader.chainFor(b.bookKey))
+            assertEquals(emptyList<AiModel>(), reader.chainFor(b.bookKey))
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
     fun aModelShortOfMemoryPutsPagesOffAndOpensOnceMemoryIsFree() {
         install(upscale)
         // 100 KB per input pixel: measuring needs more than 128 MB; a 64 tile fits a quarter of the GPU.

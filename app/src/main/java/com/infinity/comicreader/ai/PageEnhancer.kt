@@ -21,6 +21,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /** AI processing of the reader's pages, as [com.infinity.comicreader.ui.PageAdapter] asks for it through an [AiQueue]. */
 interface PageEnhancer {
@@ -93,8 +94,14 @@ class ReaderAi internal constructor(
     @Volatile
     private var used = false
 
-    /** Each book's chain by its key ("" for none), until [refresh]. */
-    private val chains = ConcurrentHashMap<String, List<AiModel>>()
+    /** A book's [chain], read in [generation] for its [kind] and [id]: stale once any of them moved. */
+    private class Cached(val generation: Int, val kind: ChainKind, val id: BookId?, val chain: List<AiModel>)
+
+    /** Each book's chain by its key ("" for none), until [refresh] or its kind or ID changes. */
+    private val chains = ConcurrentHashMap<String, Cached>()
+
+    /** Counts [refresh]es: a chain read before one is read again. */
+    private val generation = AtomicInteger()
 
     /** Each model's milliseconds per megapixel of input as measured here, by model id ([rateOf]). */
     private val rates = ConcurrentHashMap<String, Double>()
@@ -131,27 +138,38 @@ class ReaderAi internal constructor(
     private val kinds = ConcurrentHashMap<String, ChainKind>()
 
     /** Reads every book's chain again: after the global or a book's own picks changed. */
-    fun refresh() = chains.clear()
+    fun refresh() {
+        generation.incrementAndGet()
+        chains.clear()
+    }
 
     /** Says the book keyed [key] is [id], as the reader found it, so its own picks apply though its key holds no ID. */
     fun know(key: String?, id: BookId?) {
         if (key == null || id == null || BookIds.parseKey(key) != null) return
-        if (ids.put(key, id) != id) chains.remove(key)
+        ids[key] = id
     }
 
     /** Says the book keyed [key] runs [kind]'s default chain unless it has picks of its own ([ChainKind.resolve]). */
     fun kind(key: String?, kind: ChainKind) {
-        val k = key.orEmpty()
-        if (kinds.put(k, kind) != kind) chains.remove(k)
+        kinds[key.orEmpty()] = kind
     }
 
     /** The default chain the book keyed [key] runs without picks of its own, as last told ([kind]). */
     fun kindOf(key: String?): ChainKind = kinds[key.orEmpty()] ?: ChainKind.OTHER
 
-    /** The chain the pages of the book keyed [book] go through. */
-    fun chainFor(book: String?): List<AiModel> = chains.getOrPut(book.orEmpty()) {
-        val own = book?.let { BookIds.parseKey(it) ?: ids[it] }?.let(ownPicks)
-        AiChain.forBook(prefs, own, kindOf(book))
+    /**
+     * The chain the pages of the book keyed [book] go through. Kept with what it was read
+     * from, so one read on another thread as its kind, ID or the picks change is never kept.
+     */
+    fun chainFor(book: String?): List<AiModel> {
+        val k = book.orEmpty()
+        val now = generation.get()
+        val kind = kindOf(book)
+        val id = book?.let { BookIds.parseKey(it) ?: ids[it] }
+        chains[k]?.takeIf { it.generation == now && it.kind == kind && it.id == id }?.let { return it.chain }
+        val chain = AiChain.forBook(prefs, id?.let(ownPicks), kind)
+        chains[k] = Cached(now, kind, id, chain)
+        return chain
     }
 
     override fun enhances(source: PageSource): Boolean = !source.isVector && chainFor(source.bookKey).isNotEmpty()

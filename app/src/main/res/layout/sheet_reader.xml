@@ -306,7 +306,10 @@
             android:minHeight="48dp"
             android:text="@string/menu_night" />
 
-        <!-- AI processing: this book's own models, or the default ones -->
+        <!--
+          AI processing: this book's own models, or one of the two default chains, picked for
+          the book or its whole folder
+        -->
         <TextView
             style="@style/Widget.ComicReader.SheetSection"
             android:text="@string/sheet_ai" />
@@ -325,6 +328,39 @@
                 style="@style/Widget.ComicReader.SheetSegment"
                 android:text="@string/ai_scope_default" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <LinearLayout
+            android:id="@+id/sheet_ai_kind_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Widget.ComicReader.SheetLabel"
+                android:text="@string/ai_kind_label" />
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/sheet_ai_kind"
+                style="@style/Widget.ComicReader.SheetSegments">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_ai_manga"
+                    style="@style/Widget.ComicReader.SheetSegment"
+                    android:text="@string/ai_chain_manga" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_ai_other"
+                    style="@style/Widget.ComicReader.SheetSegment"
+                    android:text="@string/ai_chain_other" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sheet_ai_kind_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/ai_kind_folder" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/sheet_ai_hint"

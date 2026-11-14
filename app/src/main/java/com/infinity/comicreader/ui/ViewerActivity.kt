@@ -64,6 +64,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.FileSet
@@ -2494,6 +2495,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         // An open preview strip follows the new layout.
         if (seekPanel.visibility == View.VISIBLE) seekPreviews?.show(seekCells(src), item)
         onPageChanged()
+        // A new direction may make it read as manga, or no longer.
+        syncAiKind()
     }
 
     /**
@@ -3720,7 +3723,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 ),
                 { spreadRotation.user }
             ) { setOrientationLock(it) },
-            Segments(R.id.sheet_ai_scope, listOf(R.id.btn_ai_book to true, R.id.btn_ai_default to false), { aiOwn() != null }) { setAiOwn(it) }
+            Segments(R.id.sheet_ai_scope, listOf(R.id.btn_ai_book to true, R.id.btn_ai_default to false), { aiOwn() != null }) { setAiOwn(it) },
+            Segments(R.id.sheet_ai_kind, listOf(R.id.btn_ai_manga to ChainKind.MANGA, R.id.btn_ai_other to ChainKind.OTHER), { aiKind() }) { setAiKind(it) }
         )
     }
 
@@ -3756,6 +3760,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
         switch(R.id.sheet_keep_on) { setKeepOn(it) }
         switch(R.id.sheet_fullscreen) { setFullscreen(it) }
+        switch(R.id.sheet_ai_kind_folder) { setAiKindForFolder(it) }
         for ((step, id) in aiPickers) view.findViewById<MaterialButton>(id).setOnClickListener { showAiChoices(step) }
         view.findViewById<Slider>(R.id.sheet_spacing).addOnChangeListener { _, value, fromUser ->
             if (!fromUser) return@addOnChangeListener
@@ -3866,20 +3871,36 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
     }
 
-    /** This book's own AI picks; null when it follows the default. */
+    /** This book's own AI picks; null when it follows a default chain. */
     private fun aiOwn(): AiPicks? = bookId?.let { library.aiPicks(it) }
 
-    /** The picks the sheet shows: this book's own, else those chosen in Settings, which run while AI processing is on. */
-    private fun aiShown(): AiPicks = aiOwn() ?: AiPicks.of(prefs)
+    /** The folder whose books a default chain picked in the sheet applies to; none for another app's document. */
+    private fun aiKindFolder(): String? = favoriteFile()?.parent
+
+    /** The default chain the open book runs without picks of its own: its own kind, its folder's, else by its direction on screen. */
+    private fun aiKind(): ChainKind =
+        ChainKind.resolve(bookId?.let(library::chainKind), aiKindFolder()?.let(library::folderChainKind), readingDir == "rtl")
+
+    /** [aiKind] of the next chapter laid in behind this one, which reads in this one's direction. */
+    private fun stripAheadKind(): ChainKind =
+        ChainKind.resolve(stripAheadId?.let(library::chainKind), stripAheadFile?.parent?.let(library::folderChainKind), readingDir == "rtl")
+
+    /** True while a default chain picked in the sheet is kept for the book's folder: it has one, and the book has no kind of its own. */
+    private fun aiKindForFolder(): Boolean = aiKindFolder() != null && bookId?.let(library::chainKind) == null
+
+    /** The picks the sheet shows: this book's own, else its default chain's from Settings, which run while AI processing is on. */
+    private fun aiShown(): AiPicks = aiOwn() ?: AiPicks.of(prefs, aiKind())
 
     /**
      * Shows the AI picks this book runs, each model's download state, whose picks they are and
-     * whether they run slow. With Keep it simple on, the advanced steps show only when a model
-     * is picked there, as in Settings' summary.
+     * whether they run slow; following a default chain, which one and whether the book or its
+     * folder picked it. With Keep it simple on, the advanced steps show only when a model is
+     * picked there, as in Settings' summary.
      */
     private fun syncAi(view: View) {
         val own = aiOwn()
         val picks = aiShown()
+        val kind = aiKind()
         val states = ModelDownloads.state.value.states
         for ((step, id) in aiPickers) {
             val m = Models.byId(picks.id(step))?.takeIf { it.step == step }
@@ -3890,16 +3911,24 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
         view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
-        val hint = getString(
-            when {
-                own != null -> R.string.ai_scope_book_hint
-                prefs.aiEnabled -> R.string.ai_scope_default_hint
-                else -> R.string.ai_scope_default_off_hint
-            }
-        )
+        view.findViewById<View>(R.id.sheet_ai_kind_row).visibility = if (own == null) View.VISIBLE else View.GONE
+        setGroupEnabled(view.findViewById(R.id.sheet_ai_kind), book() != null || aiKindFolder() != null)
+        view.findViewById<MaterialSwitch>(R.id.sheet_ai_kind_folder).apply {
+            isChecked = aiKindForFolder()
+            isEnabled = book() != null && aiKindFolder() != null
+        }
+        val hint = when {
+            own != null -> getString(R.string.ai_scope_book_hint)
+            prefs.aiEnabled -> getString(R.string.ai_scope_default_hint, ModelText.kind(this, kind))
+            else -> getString(R.string.ai_scope_default_off_hint)
+        }
+        val auto = own == null && bookId?.let(library::chainKind) == null && aiKindFolder()?.let(library::folderChainKind) == null
         val running = own != null || prefs.aiEnabled
-        val notes = listOfNotNull(hint, getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(picks.models) }) +
-            if (running) refused(picks.models) else emptyList()
+        val notes = listOfNotNull(
+            hint,
+            getString(R.string.ai_kind_auto_hint).takeIf { auto },
+            getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(picks.models) }
+        ) + if (running) refused(picks.models) else emptyList()
         view.findViewById<TextView>(R.id.sheet_ai_hint).text = notes.joinToString("\n")
     }
 
@@ -3914,11 +3943,41 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** The label above each advanced step's picker. */
     private val aiLabels = mapOf(AiStep.ARTIFACTS to R.id.sheet_ai_artifacts_label, AiStep.DESCREEN to R.id.sheet_ai_descreen_label)
 
-    /** Gives this book its own AI picks, starting from the default ones, or hands it back to the default. */
+    /** Gives this book its own AI picks, starting from its default chain's, or hands it back to the default. */
     private fun setAiOwn(own: Boolean) {
         val book = book() ?: return
         if (own == (aiOwn() != null)) return
-        library.setAiPicks(book, if (own) AiChain.startingPicks(prefs) else null)
+        library.setAiPicks(book, if (own) AiChain.startingPicks(prefs, aiKind()) else null)
+        aiChanged()
+    }
+
+    /** Runs [kind]'s default chain: for the book's whole folder while [aiKindForFolder], else for this book. */
+    private fun setAiKind(kind: ChainKind) {
+        val folder = aiKindFolder()
+        val book = book()
+        when {
+            aiKindForFolder() && folder != null -> library.setFolderChainKind(folder, kind)
+            book != null -> library.setChainKind(book, kind)
+            else -> return
+        }
+        aiChanged()
+    }
+
+    /**
+     * Keeps the default chain the book runs now for its [whole] folder, the book's own kind
+     * dropped, or for this book alone; the chain shown stays.
+     */
+    private fun setAiKindForFolder(whole: Boolean) {
+        val book = book() ?: return
+        val folder = aiKindFolder() ?: return
+        if (whole == aiKindForFolder()) return
+        val now = aiKind()
+        if (whole) {
+            library.setChainKind(book, null)
+            library.setFolderChainKind(folder, now)
+        } else {
+            library.setChainKind(book, now)
+        }
         aiChanged()
     }
 
@@ -3943,10 +4002,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else as
-     * the default. Picking a model while AI processing is off turns it on with the models the
-     * sheet shows, the other steps' picks kept; leaving no model turns it off. A model not
-     * downloaded starts downloading.
+     * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else in
+     * the default chain it runs. Picking a model while AI processing is off turns it on with
+     * the models the sheet shows, the other steps' picks kept; leaving no model in either
+     * default chain turns it off. A model not downloaded starts downloading.
      */
     private fun pickAi(step: AiStep, id: String?) {
         val own = aiOwn()
@@ -3954,10 +4013,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (own != null && book != null) {
             library.setAiPicks(book, own.with(step, id))
         } else {
-            prefs.setAiModel(step, id)
+            prefs.setAiModel(step, id, aiKind())
             if (id != null) {
                 prefs.aiEnabled = true
-            } else if (prefs.aiEnabled && AiPicks.of(prefs).models.isEmpty()) {
+            } else if (prefs.aiEnabled && AiChain.noneChosen(prefs)) {
                 prefs.aiEnabled = false
             }
         }
@@ -3974,19 +4033,33 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         val books = listOfNotNull(source, stripAhead).map { it.bookKey }
         val before = books.map { readerAi.chainFor(it) }
         readerAi.refresh()
+        aiKinds()
         val moved = readerAi.thresholdsMoved()
         if (books.map { readerAi.chainFor(it) } != before || moved) adapter?.aiChanged()
         aiBooks()
         syncSheet()
     }
 
+    /** Tells the reader's AI the default chain each open book runs without picks of its own. */
+    private fun aiKinds() {
+        source?.let { readerAi.kind(it.bookKey, aiKind()) }
+        stripAhead?.let { readerAi.kind(it.bookKey, stripAheadKind()) }
+    }
+
+    /** Shows the open book through the other default chain when the one it runs changed with its direction. */
+    private fun syncAiKind() {
+        val src = source ?: return
+        if (readerAi.kindOf(src.bookKey) != aiKind()) aiChanged()
+    }
+
     /**
      * Tells the reader's AI the IDs found for the open books (their own picks apply even when
-     * their keys hold none), and closes the models none of them runs.
+     * their keys hold none) and the default chain each runs, and closes the models none of them runs.
      */
     private fun aiBooks() {
         readerAi.know(source?.bookKey, bookId)
         readerAi.know(stripAhead?.bookKey, stripAheadId)
+        aiKinds()
         val keep = listOfNotNull(source, stripAhead).flatMapTo(HashSet()) { s -> readerAi.chainFor(s.bookKey).map { it.id } }
         readerAi.closeModels(keep)
         followModels(keep.isNotEmpty())

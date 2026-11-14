@@ -48,7 +48,7 @@ interface PageEnhancer {
 
 /**
  * The reader's AI processing: each book's chain ([AiChain.forBook]: its own picks, else the
- * global ones), models opened once as [Session]s and kept until closed ([closeModels]), pages kept on disk
+ * default chain of its [ChainKind]), models opened once as [Session]s and kept until closed ([closeModels]), pages kept on disk
  * ([ProcessedStore]). A page is processed from its full-detail decode (at most
  * [MAX_INPUT_PIXELS]) and resampled to exactly the plain page's size, so it swaps in without
  * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
@@ -125,6 +125,9 @@ class ReaderAi internal constructor(
     /** The Book IDs of books whose key holds none ([BookIds.keyOf] made it from the path when the ID could not be read). */
     private val ids = ConcurrentHashMap<String, BookId>()
 
+    /** The default chain each book runs without picks of its own, by its key ("" for none) as [kind] told it; [ChainKind.OTHER] untold. */
+    private val kinds = ConcurrentHashMap<String, ChainKind>()
+
     /** Reads every book's chain again: after the global or a book's own picks changed. */
     fun refresh() = chains.clear()
 
@@ -134,10 +137,19 @@ class ReaderAi internal constructor(
         if (ids.put(key, id) != id) chains.remove(key)
     }
 
+    /** Says the book keyed [key] runs [kind]'s default chain unless it has picks of its own ([ChainKind.resolve]). */
+    fun kind(key: String?, kind: ChainKind) {
+        val k = key.orEmpty()
+        if (kinds.put(k, kind) != kind) chains.remove(k)
+    }
+
+    /** The default chain the book keyed [key] runs without picks of its own, as last told ([kind]). */
+    fun kindOf(key: String?): ChainKind = kinds[key.orEmpty()] ?: ChainKind.OTHER
+
     /** The chain the pages of the book keyed [book] go through. */
     fun chainFor(book: String?): List<AiModel> = chains.getOrPut(book.orEmpty()) {
         val own = book?.let { BookIds.parseKey(it) ?: ids[it] }?.let(ownPicks)
-        AiChain.forBook(prefs, own)
+        AiChain.forBook(prefs, own, kindOf(book))
     }
 
     override fun enhances(source: PageSource): Boolean = !source.isVector && chainFor(source.bookKey).isNotEmpty()

@@ -412,6 +412,28 @@ class ReaderAiTest {
     }
 
     @Test
+    fun aBookRunsTheDefaultChainOfTheKindItIsToldUnlessItHasItsOwn() {
+        val descreen = ModelCatalog.forStep(AiStep.DESCREEN).first()
+        prefs.setAiModel(AiStep.DESCREEN, descreen.id, ChainKind.MANGA)
+        val b = bookOf()
+        assertEquals("untold: everything else", ChainKind.OTHER, ai.kindOf(b.bookKey))
+        assertEquals(listOf(upscale), ai.chainFor(b.bookKey))
+        ai.kind(b.bookKey, ChainKind.MANGA)
+        assertEquals(ChainKind.MANGA, ai.kindOf(b.bookKey))
+        assertEquals(listOf(descreen, upscale), ai.chainFor(b.bookKey))
+        assertEquals("another book keeps its own", listOf(upscale), ai.chainFor(bookOf(id = BookId(0xbb)).bookKey))
+        own[book] = AiPicks.NONE.with(AiStep.UPSCALE, upscale.id)
+        ai.refresh()
+        assertEquals("its own picks win", listOf(upscale), ai.chainFor(b.bookKey))
+        own.remove(book)
+        ai.refresh()
+        ai.kind(b.bookKey, ChainKind.OTHER)
+        assertEquals(listOf(upscale), ai.chainFor(b.bookKey))
+        ai.kind(null, ChainKind.MANGA)
+        assertEquals("a book without a key", listOf(descreen, upscale), ai.chainFor(null))
+    }
+
+    @Test
     fun aModelShortOfMemoryPutsPagesOffAndOpensOnceMemoryIsFree() {
         install(upscale)
         // 100 KB per input pixel: measuring needs more than 128 MB; a 64 tile fits a quarter of the GPU.

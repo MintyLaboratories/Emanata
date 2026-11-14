@@ -225,18 +225,18 @@ object ModelCatalog {
             blurb = ModelBlurb.OPENCOMIC_UPSCALE
         ),
         CatalogModel(
-            "cunny-8x32-ds-rp", "CuNNy 8x32 DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
-            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.param", 2710, "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e"),
-            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.bin", 301928, "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f"),
-            pageMs = 2_900,
-            blurb = ModelBlurb.CUNNY
-        ),
-        CatalogModel(
             "artcnn-c4f32-ds", "ArtCNN C4F32 DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN,
             hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.param", 1449, "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f"),
             hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.bin", 190940, "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9"),
             pageMs = 2_000,
             blurb = ModelBlurb.ARTCNN
+        ),
+        CatalogModel(
+            "cunny-8x32-ds-rp", "CuNNy 8x32 DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.param", 2710, "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e"),
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.bin", 301928, "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f"),
+            pageMs = 2_900,
+            blurb = ModelBlurb.CUNNY
         ),
         CatalogModel(
             "realesr-animevideov3-x2", "Real-ESRGAN AnimeVideo v3 2×", AiStep.UPSCALE, 2, ModelSource.REAL_ESRGAN,

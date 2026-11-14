@@ -185,7 +185,7 @@ class ModelCatalogTest {
             listOf(
                 "waifu2x-upconv7-2x", "waifu2x-upconv7-2x-denoise0", "waifu2x-upconv7-2x-denoise1", "waifu2x-upconv7-2x-denoise2",
                 "waifu2x-upconv7-2x-denoise3", "opencomic-ai-upscale-2x-compact-v2", "opencomic-ai-upscale-3x-compact-v2",
-                "opencomic-ai-upscale-4x-compact-v2", "cunny-8x32-ds-rp", "artcnn-c4f32-ds", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4",
+                "opencomic-ai-upscale-4x-compact-v2", "artcnn-c4f32-ds", "cunny-8x32-ds-rp", "realesr-animevideov3-x2", "realesr-animevideov3-x3", "realesr-animevideov3-x4",
                 "4x-lsdir-compact-c3"
             ),
             ids

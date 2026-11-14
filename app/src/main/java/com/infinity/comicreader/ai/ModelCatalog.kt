@@ -100,7 +100,8 @@ interface FileSet {
  * A model the app offers to download: [name] for people, run at [step], [scale] times larger
  * out than in, from [source]. Its ncnn files are [param] and [bin]. [pageMs]: its time for a
  * synthetic 1000 x 1500 page on the reference tablet's GPU, at its own scale, started cool.
- * [blurb]: what it does, where known.
+ * [blurb]: what it does, where known. [tiles]: the GPU tile sizes each device chooses among
+ * for it by timing ([TileTuning]), where they fit; empty: [TileSizing.DEFAULT_MAX] at most.
  */
 data class CatalogModel(
     override val id: String,
@@ -111,7 +112,8 @@ data class CatalogModel(
     val param: ModelFile,
     val bin: ModelFile,
     override val pageMs: Long = 0,
-    val blurb: ModelBlurb? = null
+    val blurb: ModelBlurb? = null,
+    val tiles: List<Int> = TileSizing.CANDIDATES
 ) : AiModel, FileSet {
     override val files: List<ModelFile> get() = listOf(param, bin)
 

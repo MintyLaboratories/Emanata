@@ -76,7 +76,9 @@ class ReaderAi internal constructor(
     /** What runs shader chains ([ShaderModel]); [runtime] runs the rest. */
     private val shaders: ShaderRuntime = GlesShaders,
     /** Where shader chains keep their compiled passes; null: compiled at every open. */
-    private val programs: File? = null
+    private val programs: File? = null,
+    /** Where this device's tile sizes for catalog models are kept ([TileTuning]); null: [TileSizing.DEFAULT_MAX] at most. */
+    private val tiles: TileChoices? = null
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -257,6 +259,7 @@ class ReaderAi internal constructor(
                     Fallback.PAUSED -> AiOutcome.Later
                     else -> {
                         if (run.early) forgetSome(chain)
+                        if (run.fallback == Fallback.FAILED) steps.getOrNull(run.ran)?.let { shrink(chain[it.index], opened[it.index]) }
                         AiOutcome.Skipped(run.fallback ?: Fallback.FAILED)
                     }
                 }
@@ -299,6 +302,17 @@ class ReaderAi internal constructor(
     }
 
     /**
+     * After a run of [m] in [s] failed: when its tiles were larger than the default by this
+     * device's choice ([Session.shrink]), that size is remembered as too large and [m] closed,
+     * to open at its next page in smaller tiles.
+     */
+    private fun shrink(m: AiModel, s: Session) {
+        if (!s.shrink()) return
+        Log.w(TAG, "${m.id}: failed in ${s.size} px tiles; smaller from now on")
+        sessions.remove(m.id)?.close()
+    }
+
+    /**
      * Moves [chain]'s measured rates a step back toward their page times after a page skipped as
      * too slow, so a device that has cooled down tries the chain again after a few pages.
      */
@@ -322,7 +336,7 @@ class ReaderAi internal constructor(
             is ShaderModel -> models.shaderFiles(m)?.let { files ->
                 ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), cache = programs, canceled = canceled)
             }
-            else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled) }
+            else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled, tuning = tuningOf(m), clock = clock) }
         } ?: Opening.refused(ModelRefusal.NOT_LOADED)
         val s = o.session
         if (s != null) {
@@ -343,6 +357,13 @@ class ReaderAi internal constructor(
             sessions[m.id] = null
         }
         return null
+    }
+
+    /** [m]'s tile sizes to choose among on this device: a catalog model's ([CatalogModel.tiles]), kept by its files; null for others. */
+    private fun tuningOf(m: AiModel): TileTuning? {
+        val choices = tiles ?: return null
+        val sizes = (m as? CatalogModel)?.tiles?.takeIf { it.isNotEmpty() } ?: return null
+        return TileTuning(sizes, choices, m.fingerprint)
     }
 
     /** Why model [id] did not open when last tried; null when it opened or was not tried. Any thread. */
@@ -466,7 +487,8 @@ class ReaderAi internal constructor(
                 { m -> if (m is FileSet && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
                 memory = { ModelMemory.of(app) },
                 thresholds = { prefs.aiThresholds },
-                programs = programsIn(app)
+                programs = programsIn(app),
+                tiles = TileChoices(TileChoices.dirIn(app))
             )
         }
     }

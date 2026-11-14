@@ -440,6 +440,43 @@ class ReaderAiTest {
     private fun heavyRuntime() = FakeRuntime(make = { onGpu, _ -> FakeModel(onGpu = onGpu, bytesPerPixel = 100_000) })
 
     @Test
+    fun aPageFailingInTunedTilesReopensTheModelSmaller() {
+        install(upscale)
+        var failing = false
+        val widths = ArrayList<Int>()
+        // On the GPU, tile times like a light 2x model's: 384 px the cheapest per pixel; failing runs while asked to.
+        val tuned = FakeRuntime(make = { onGpu, _ ->
+            val inner = FakeModel(onGpu = onGpu)
+            if (!onGpu) inner else object : TileModel by inner {
+                override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+                    widths += input.width
+                    now += if (input.width <= 192) 42L else if (input.width <= 256) 60L else 97L
+                    return if (failing) null else inner.run(src, input, dst, crop, dx, dy)
+                }
+            }
+        })
+        val dir = tmp.newFolder()
+        val reader = ReaderAi(
+            prefs, { own[it] }, models, store, tuned, { stop }, { downloads += it.id }, threads = 2, clock = { now },
+            thresholds = { thresholds }, tiles = TileChoices(dir)
+        )
+        try {
+            val b = bookOf()
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
+            assertEquals("pages in 384 px tiles", 384, widths.last())
+            failing = true
+            assertEquals(Fallback.FAILED, (reader.enhance(b, 1, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            failing = false
+            widths.clear()
+            assertTrue(reader.enhance(b, 2, target, 40, 60) { false } is AiOutcome.Done)
+            assertEquals("opened again and timed below the size that failed", 256, widths.last())
+            assertTrue(widths.none { it >= 384 })
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
     fun aModelShortOfMemoryTimeAfterTimeIsLeftOut() {
         install(upscale)
         val heavy = heavyRuntime()

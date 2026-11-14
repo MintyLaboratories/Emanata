@@ -67,6 +67,13 @@ class TileTuningTest {
         assertTrue("none within the stop bound", TileTiming.rank(listOf(timing(192, 400)), g).isEmpty())
     }
 
+    @Test
+    fun catalogModelsOfferEveryCandidateSize() {
+        assertEquals(listOf(192, 256, 384, 512), TileSizing.CANDIDATES)
+        assertTrue(ModelCatalog.all.all { it.tiles == TileSizing.CANDIDATES })
+        assertTrue("past the default, so devices choose", TileSizing.CANDIDATES.any { it > TileSizing.DEFAULT_MAX })
+    }
+
     // ------------------------------------------------------------------ timing
 
     /** [inner], whose runs move [now] on by [ms] of their input's width. */

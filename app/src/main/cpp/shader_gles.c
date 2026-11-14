@@ -36,6 +36,9 @@
 #define WAIT_LIMIT_NS 10000000000ull
 #define WAIT_SLICE_NS 100000000ull
 #define FAILURES_OFF 3
+// Passes queued before they are sent to the GPU, so a long chain goes in parts the driver
+// can schedule between other work rather than as one batch.
+#define FLUSH_EVERY 8
 // Most textures one pass binds; the GLES 3.0 minimum of fragment texture units.
 #define MAX_BINDS 16
 
@@ -703,6 +706,7 @@ static int run(JNIEnv * env, chain * c, const jint * plan, int plan_len, jobject
         glUniform2f(p->input, (float)iw, (float)ih);
         draw_into(c, o->tex, o->w, o->h);
         at += 5 + p->binds;
+        if ((s + 1) % FLUSH_EVERY == 0) glFlush();
     }
     if (ensure(c, &c->bytes, res->w, res->h, GL_RGBA8, 4) != 0) return -3;
     glUseProgram(encode_program);

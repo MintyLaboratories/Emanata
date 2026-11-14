@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ai
 
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import java.io.File
@@ -44,6 +45,13 @@ internal object ShaderSessions {
     const val MAX_WIDENINGS = 3
 
     /**
+     * The longest a tile should take, in ms: the GPU's turn between the reader's frames and the
+     * wait before a page turn or a cancel takes effect. Tiles that took longer while the seams
+     * were checked make the session's largest tile smaller ([capped]).
+     */
+    const val TILE_MS = 150L
+
+    /**
      * The most two tilings of a page may differ by, in codes: with the whole reach in the margin
      * only the GPU's rounding of sampling positions, which differ by a pixel's place in its
      * tile, is left.
@@ -56,8 +64,9 @@ internal object ShaderSessions {
      * textures within a [TileSizing.GPU_SHARE] share of [memoryBytes]. Refused when the GPU
      * cannot run chains, the files do not parse or compile, the chain does not measure as a
      * [scale] times enlargement or reaches too far, or no tile fits. Compiled passes are kept
-     * in [cache] for the next open ([ShaderRuntime.open]). Throws
-     * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
+     * in [cache] for the next open ([ShaderRuntime.open]). Tiles are timed by [clock] (ms) while
+     * the seams are checked. Throws [java.util.concurrent.CancellationException] once
+     * [canceled], checked between runs.
      */
     fun attempt(
         runtime: ShaderRuntime,
@@ -66,11 +75,13 @@ internal object ShaderSessions {
         memoryBytes: Long = Long.MAX_VALUE,
         maxTile: Int = DEFAULT_MAX,
         cache: File? = null,
-        canceled: () -> Boolean = { false }
-    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, cache, canceled) }
+        canceled: () -> Boolean = { false },
+        clock: () -> Long = SystemClock::elapsedRealtime
+    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, cache, canceled, clock) }
 
     private fun openAlone(
-        runtime: ShaderRuntime, texts: () -> List<String>, scale: Int, memoryBytes: Long, maxTile: Int, cache: File?, canceled: () -> Boolean
+        runtime: ShaderRuntime, texts: () -> List<String>, scale: Int, memoryBytes: Long, maxTile: Int, cache: File?,
+        canceled: () -> Boolean, clock: () -> Long
     ): Opening {
         if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val chain = try {
@@ -106,13 +117,16 @@ internal object ShaderSessions {
                     Log.w(TAG, "no tile fits $g in ${budget shr 20} MB")
                     return Opening.refused(ModelRefusal.MEMORY, need, budget)
                 }
-                val check = ModelProbe.verify(model, model, g, size, size, canceled)
-                Log.i(TAG, "${chain.programs.size} passes, $size px tiles, $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
+                val timed = Timed(model, size, clock)
+                val check = ModelProbe.verify(timed, timed, g, size, size, canceled)
+                val tileMs = timed.median()
+                val most = capped(size, g, tileMs)
+                Log.i(TAG, "${chain.programs.size} passes, $size px tiles in $tileMs ms (at most $most), $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
                 if (check.seams.max <= SEAM_MAX) {
                     model.trim()
                     val geometry = g
-                    val pick = { w: Int, h: Int -> pageTile(w, h, geometry, size) }
-                    return Opening(Session(model, g, size, fp16 = runtime.floatBytes == 8, pick = pick), null).also { kept = true }
+                    val pick = { w: Int, h: Int -> pageTile(w, h, geometry, most) }
+                    return Opening(Session(model, g, most, fp16 = runtime.floatBytes == 8, pick = pick), null).also { kept = true }
                 }
                 g = g.copy(context = g.margin + TilePlan.ALIGN)
             }
@@ -120,6 +134,34 @@ internal object ShaderSessions {
         } finally {
             if (!kept) model.close()
         }
+    }
+
+    /**
+     * [size], or when its tiles took [tileMs] past [TILE_MS], the largest size whose tiles would
+     * take no longer at the same time per pixel, its core a multiple of [TilePlan.ALIGN] (no
+     * smaller than the smallest that fits [geometry]).
+     */
+    fun capped(size: Int, geometry: Geometry, tileMs: Long): Int {
+        if (tileMs <= TILE_MS) return size
+        val side = (size * Math.sqrt(TILE_MS.toDouble() / tileMs)).toInt()
+        val m = geometry.margin
+        val core = maxOf((side - 2 * m) / TilePlan.ALIGN * TilePlan.ALIGN, TilePlan.MIN_CORE)
+        return minOf(core + 2 * m, size)
+    }
+
+    /** [model], timing each run on a [size] x [size] input by [clock]. */
+    private class Timed(private val model: TileModel, private val size: Int, private val clock: () -> Long) : TileModel by model {
+        private val times = ArrayList<Long>()
+
+        override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+            val t0 = clock()
+            val out = model.run(src, input, dst, crop, dx, dy)
+            if (input.width == size && input.height == size) times += clock() - t0
+            return out
+        }
+
+        /** The median of the runs timed; 0 for none. */
+        fun median(): Long = times.sorted().let { if (it.isEmpty()) 0 else it[it.size / 2] }
     }
 
     /**

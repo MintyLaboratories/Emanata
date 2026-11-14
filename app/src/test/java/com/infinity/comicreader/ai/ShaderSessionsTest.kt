@@ -189,6 +189,21 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun slowTilesMakeTheLargestTileSmaller() {
+        var now = 0L
+        val runtime = FakeShaders(make = { FakeModel(scale = 2, onRun = { now += 400 }) })
+        val s = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, clock = { now }).session!!
+        val m = s.geometry.margin
+        assertEquals((s.size - 2 * m) % TilePlan.ALIGN, 0)
+        fun ms(size: Int) = 400.0 * size * size / (ShaderSessions.DEFAULT_MAX * ShaderSessions.DEFAULT_MAX)
+        assertTrue("${s.size}", s.size < ShaderSessions.DEFAULT_MAX && ms(s.size) <= ShaderSessions.TILE_MS)
+        assertTrue("the next size up would take longer", ms(s.size + TilePlan.ALIGN) > ShaderSessions.TILE_MS)
+        assertTrue(s.sizeFor(5000, 5000) <= s.size)
+        assertEquals("fast tiles keep their size", 512, ShaderSessions.capped(512, s.geometry, ShaderSessions.TILE_MS))
+        assertEquals("the smallest that fits at worst", TilePlan.MIN_CORE + 2 * m, ShaderSessions.capped(512, s.geometry, 1_000_000))
+    }
+
+    @Test
     fun tooLittleMemoryIsRefused() {
         val runtime = FakeShaders(make = { FakeModel(scale = 2) })
         val o = open(runtime, memory = 4L * 1024)

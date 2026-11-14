@@ -275,6 +275,34 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun tilesAreTimedOnlyOnceTheReaderLeavesTheGpu() {
+        val dir = File("build/tmp/shader-hold-test").apply { deleteRecursively(); mkdirs() }
+        var now = 0L
+        // The reader moving (page turns, zoom) slows the GPU's tiles 40 times; it moves until the opening has waited a few polls.
+        var moving = true
+        var polls = 0
+        val hold = { moving.also { if (it && ++polls >= 3) moving = false } }
+        val runtime = FakeShaders(make = { FakeModel(scale = 2, onRun = { now += if (moving) 400 else 10 }) })
+        fun open() = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir, clock = { now }, hold = hold).session!!
+        val s = open()
+        assertTrue("waited for the reader", polls >= 3)
+        assertEquals("timed alone: full size", ShaderSessions.DEFAULT_MAX, s.size)
+        s.close()
+        val fit = File(dir, runtime.key(runtime.chains.first()) + ShaderSessions.FIT_SUFFIX)
+        assertEquals(10L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        // A kept time past the limit is timed again, also waiting for the reader.
+        ShaderSessions.Fit.read(fit)!!.copy(tileMs = 400).write(fit)
+        moving = true
+        polls = 0
+        val again = open()
+        assertTrue(polls >= 3)
+        assertEquals(ShaderSessions.DEFAULT_MAX, again.size)
+        again.close()
+        assertEquals(10L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun tooLittleMemoryIsRefused() {
         val runtime = FakeShaders(make = { FakeModel(scale = 2) })
         val o = open(runtime, memory = 4L * 1024)

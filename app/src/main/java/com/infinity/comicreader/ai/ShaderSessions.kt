@@ -96,8 +96,9 @@ internal object ShaderSessions {
      * cannot run chains, the files do not parse or compile, the chain does not measure as a
      * [scale] times enlargement or reaches too far, or no tile fits. Compiled passes are kept
      * in [cache] for the next open ([ShaderRuntime.open]). Tiles are timed by [clock] (ms) while
-     * the seams are checked. Throws [java.util.concurrent.CancellationException] once
-     * [canceled], checked between runs.
+     * the seams are checked, each timed run waiting while [hold] (the reader moving, so turning
+     * pages or zooming on the GPU) and not counted when that began during it. Throws
+     * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
      */
     fun attempt(
         runtime: ShaderRuntime,
@@ -107,12 +108,13 @@ internal object ShaderSessions {
         maxTile: Int = DEFAULT_MAX,
         cache: File? = null,
         canceled: () -> Boolean = { false },
-        clock: () -> Long = SystemClock::elapsedRealtime
-    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, cache, canceled, clock) }
+        clock: () -> Long = SystemClock::elapsedRealtime,
+        hold: () -> Boolean = { false }
+    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, cache, canceled, clock, hold) }
 
     private fun openAlone(
         runtime: ShaderRuntime, texts: () -> List<String>, scale: Int, memoryBytes: Long, maxTile: Int, cache: File?,
-        canceled: () -> Boolean, clock: () -> Long
+        canceled: () -> Boolean, clock: () -> Long, hold: () -> Boolean
     ): Opening {
         if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val chain = try {
@@ -141,7 +143,7 @@ internal object ShaderSessions {
                 val g = Geometry(scale, 0, known.context)
                 if (sizes(chain, g, runtime.floatBytes, budget, runtime.maxSide, maxTile).firstOrNull() == known.size) {
                     val tileMs = if (known.tileMs <= TILE_MS) known.tileMs
-                    else retime(model, known.size, scale, clock, canceled)?.also { ms -> fitFile?.let { known.copy(tileMs = ms).write(it) } } ?: known.tileMs
+                    else retime(model, known.size, scale, clock, canceled, hold)?.also { ms -> fitFile?.let { known.copy(tileMs = ms).write(it) } } ?: known.tileMs
                     Log.i(TAG, "${chain.programs.size} passes, $g, ${known.size} px tiles in $tileMs ms as measured before (${SystemClock.elapsedRealtime() - t0} ms)")
                     return session(g, known.size, tileMs)
                 }
@@ -167,7 +169,7 @@ internal object ShaderSessions {
                     Log.w(TAG, "no tile fits $g in ${budget shr 20} MB")
                     return Opening.refused(ModelRefusal.MEMORY, need, budget)
                 }
-                val timed = Timed(model, size, clock)
+                val timed = Timed(model, size, clock, canceled, hold)
                 val check = ModelProbe.verify(timed, timed, g, size, size, canceled)
                 val tileMs = timed.median()
                 Log.i(TAG, "${chain.programs.size} passes, $size px tiles in $tileMs ms, $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
@@ -198,15 +200,15 @@ internal object ShaderSessions {
 
     /**
      * The median time of [RETIMES] runs of [model] (enlarging [scale] times) on a [size] x [size]
-     * tile of noise, read back whole as a page's tiles are; null when a run fails. Throws
-     * [CancellationException] once [canceled], checked before every run.
+     * tile of noise, read back whole as a page's tiles are, each waiting while [hold]; null when a
+     * run fails. Throws [CancellationException] once [canceled], checked before every run.
      */
-    private fun retime(model: TileModel, size: Int, scale: Int, clock: () -> Long, canceled: () -> Boolean): Long? {
+    private fun retime(model: TileModel, size: Int, scale: Int, clock: () -> Long, canceled: () -> Boolean, hold: () -> Boolean): Long? {
         val src = ModelProbe.content(size, size, ModelProbe.Pattern.NOISE)
         val out = size * scale
         val dst = Bitmap.createBitmap(out, out, Bitmap.Config.ARGB_8888)
         try {
-            val timed = Timed(model, size, clock)
+            val timed = Timed(model, size, clock, canceled, hold)
             repeat(RETIMES) {
                 if (canceled()) throw CancellationException("AI work canceled while timing")
                 timed.run(src, Box(0, 0, size, size), dst, Box(0, 0, out, out), 0, 0) ?: return null
@@ -218,14 +220,23 @@ internal object ShaderSessions {
         }
     }
 
-    /** [model], timing each run on a [size] x [size] input by [clock]. */
-    private class Timed(private val model: TileModel, private val size: Int, private val clock: () -> Long) : TileModel by model {
+    /**
+     * [model], timing each run on a [size] x [size] input by [clock], as the GPU does it alone:
+     * each waits while [hold] first ([TileEngine.held]), and one the hold began during is not
+     * counted. Throws [CancellationException] once [canceled] while waiting.
+     */
+    private class Timed(
+        private val model: TileModel, private val size: Int, private val clock: () -> Long,
+        private val canceled: () -> Boolean, private val hold: () -> Boolean
+    ) : TileModel by model {
         private val times = ArrayList<Long>()
 
         override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+            val timing = input.width == size && input.height == size
+            if (timing) TileEngine.held(hold, canceled)
             val t0 = clock()
             val out = model.run(src, input, dst, crop, dx, dy)
-            if (input.width == size && input.height == size) times += clock() - t0
+            if (timing && !hold()) times += clock() - t0
             return out
         }
 

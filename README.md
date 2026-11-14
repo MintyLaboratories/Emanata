@@ -932,10 +932,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page and zoom detail just resampled, in place: native code on the CPU
   (`src/main/cpp/rcas.c`, NEON on arm64, in bands on the resampler's workers)
   whichever engine resampled it, else `Rcas` in Kotlin, which it matches bit
-  for bit. A region rendered alone (a zoomed detail, a band of a tall page)
-  also resamples the one-pixel strips past its edges as their neighbors, so it
-  joins the rest without a seam. The GPU zoom shader sharpens its enlargement
-  the same way (five filtered samples from one window). Thumbnails, covers and
+  for bit. After the GPU engine too it runs on the CPU (there is no GPU pass
+  yet), at the CPU cost below; the cost is the same for every engine, so
+  calibration leaves it out. Renders at exactly 1:1 (whole-pixel crops) are
+  sharpened as well, so no zoom level shows a plain page. A region rendered
+  alone (a zoomed detail, a band of a tall page) also resamples the one-pixel
+  strips past its edges as their neighbors (its read holds their taps), so it
+  joins the rest without a seam. The GPU zoom shader enlarges a sharpened
+  bitmap as it is, never sharpening it twice; only a bitmap no pass sharpened
+  (a quick stand-in) it sharpens as it enlarges, the same way (five filtered
+  samples from one window). Thumbnails, covers and
   pages an AI model made are never sharpened, so the strength is not part of a
   processed page's key; it is part of every plain page's, so changing it
   renders pages again. On a Snapdragon 8 Gen 1 (bench build, thermal status 0)

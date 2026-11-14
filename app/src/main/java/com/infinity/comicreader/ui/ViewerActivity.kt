@@ -4046,6 +4046,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         syncSheet()
     }
 
+    /** The default chain the reader's AI runs for the open book, or with [ahead] the chapter laid in behind it; null without one. */
+    internal fun aiKindRun(ahead: Boolean = false): ChainKind? = (if (ahead) stripAhead else source)?.let { readerAi.kindOf(it.bookKey) }
+
     /** Tells the reader's AI the default chain each open book runs without picks of its own. */
     private fun aiKinds() {
         source?.let { readerAi.kind(it.bookKey, aiKind()) }

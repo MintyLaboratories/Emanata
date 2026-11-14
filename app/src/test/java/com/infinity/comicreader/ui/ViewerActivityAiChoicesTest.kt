@@ -198,6 +198,7 @@ class ViewerActivityAiChoicesTest {
         val viewer = open()
         val sheet = ReaderSheet(viewer)
         assertEquals(R.id.btn_ai_manga, kindShown(sheet))
+        assertEquals("the reader runs it too", ChainKind.MANGA, viewer.aiKindRun())
         pickOpenComic(viewer, sheet)
         assertEquals("opencomic-ai-upscale-2x-compact-v2", Prefs(context).aiModel(AiStep.UPSCALE, ChainKind.MANGA))
         assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
@@ -205,6 +206,7 @@ class ViewerActivityAiChoicesTest {
         sheet.tap(R.id.btn_ai_other)
         assertEquals(R.id.btn_ai_other, kindShown(sheet))
         assertEquals(ChainKind.OTHER, Library(context).folderChainKind(folder))
+        assertEquals(ChainKind.OTHER, viewer.aiKindRun())
     }
 
     @Test
@@ -212,8 +214,10 @@ class ViewerActivityAiChoicesTest {
         val viewer = open()
         val sheet = ReaderSheet(viewer)
         assertEquals(R.id.btn_ai_other, kindShown(sheet))
+        assertEquals(ChainKind.OTHER, viewer.aiKindRun())
         sheet.tap(R.id.btn_dir_rtl)
         assertEquals(R.id.btn_ai_manga, kindShown(sheet))
+        assertEquals("the reader runs it too", ChainKind.MANGA, viewer.aiKindRun())
     }
 
     @Test

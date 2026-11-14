@@ -9,6 +9,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
@@ -17,6 +18,7 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.TestImages
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -155,6 +157,17 @@ class ViewerActivityRollOnTest {
         shadowOf(viewer).clickMenuItem(R.id.menu_bookmark)
         assertTrue(library.bookmarksFor(a).isEmpty())
         assertEquals(listOf(second.absolutePath), library.bookmarksFor(b).map { it.path })
+    }
+
+    @Test
+    fun theNextChapterRunsItsOwnDefaultChain() {
+        library.setChainKind(ref(second), ChainKind.MANGA)
+        val viewer = launch(first)
+        await { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
+        assertEquals(ChainKind.OTHER, viewer.aiKindRun())
+        assertEquals(ChainKind.MANGA, viewer.aiKindRun(ahead = true))
+        viewer.scrollUntil { viewer.openPath() == second.absolutePath }
+        assertEquals(ChainKind.MANGA, viewer.aiKindRun())
     }
 
     /** Opens the first book from a share set to [speed] and waits a moment for its next chapter. */

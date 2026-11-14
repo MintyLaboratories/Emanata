@@ -111,4 +111,19 @@ class KeptPrefsTest {
         assertEquals(before, KeptPrefs.snapshot(prefs).toString())
         assertEquals(descreen.id, prefs.aiModel(AiStep.DESCREEN, ChainKind.MANGA))
     }
+
+    @Test
+    fun aPlanWithAShaderChainSetsItInBothChains() {
+        mine()
+        val before = KeptPrefs.snapshot(prefs).toString()
+        val plan = BenchPlan.of(Intent().putExtra("do", "read").putExtra("path", "/books/a.cbz").putExtra("ai", "opencomic-ai-artifact-removal-compact-v2,anime4k-c-s"))!!
+        val kept = KeptPrefs(prefs, file)
+        kept.apply(plan)
+        for (kind in ChainKind.entries) {
+            assertEquals(listOf("opencomic-ai-artifact-removal-compact-v2", "anime4k-c-s"), AiChain.forBook(prefs, null, kind).map { it.id })
+        }
+        assertTrue(prefs.aiEnabled)
+        kept.restore()
+        assertEquals(before, KeptPrefs.snapshot(prefs).toString())
+    }
 }

@@ -2,7 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.reader.CoreSet
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
@@ -122,10 +122,13 @@ internal data class BenchPlan(
             "any" to ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         )
 
-        /** `off`, or catalog ids by commas, as [ai]; null when an id is not in the catalog or two share a step. */
+        /**
+         * `off`, or model ids by commas (the catalog's, its shader chains', imported ones: [Models.byId]), as [ai];
+         * null when an id names no model or two share a step.
+         */
         fun aiOf(s: String): List<String>? {
             if (s == "off") return emptyList()
-            val models = s.split(',').map { it.trim() }.map { ModelCatalog.byId(it) ?: return null }
+            val models = s.split(',').map { it.trim() }.map { Models.byId(it) ?: return null }
             if (models.map { it.step }.toSet().size != models.size) return null
             return models.sortedBy { it.step.ordinal }.map { it.id }
         }

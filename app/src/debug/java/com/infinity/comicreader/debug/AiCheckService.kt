@@ -24,7 +24,9 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.Fallback
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.GlesShaders
 import com.infinity.comicreader.ai.GrayPages
 import com.infinity.comicreader.ai.ImportState
@@ -40,6 +42,7 @@ import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.ai.Session
 import com.infinity.comicreader.ai.Sessions
 import com.infinity.comicreader.ai.ShaderCatalog
+import com.infinity.comicreader.ai.ShaderModel
 import com.infinity.comicreader.ai.ShaderSessions
 import com.infinity.comicreader.ai.TileChoices
 import com.infinity.comicreader.ai.TileEngine
@@ -73,12 +76,12 @@ import kotlin.math.max
  * or, for every model in a folder: `--es do survey --es dir <folder, searched for .param files> [--es size 1000x1500]
  *  [--ei cap 120] [--ef cool 0.85] [--ez fp16 true] [--ei threads 4]`
  *
- * or, for catalog models: `--es do download --es ids <id,id,…> [--ei cut 0] [--ez keep false]`
+ * or, for catalog models and shader chains: `--es do download --es ids <id,id,…> [--ei cut 0] [--ez keep false]`
  *
  * or, to import a model as Models does: `--es do import --es model <.param> [--es bin <.bin, else beside it>]
  *  [--es name <name, to take it in>] [--es step artifacts|descreen|upscale]`
  *
- * or, to check gray pages stay gray: `--es do gray [--es ids <catalog id,id,…, else both descreen models>
+ * or, to check gray pages stay gray: `--es do gray [--es ids <catalog id,id,… (ncnn models only), else both descreen models>
  *  | --es model <.param>] [--es engines gpu,cpu] [--es size 1000x1500] [--ef cool <headroom>] [--ez fp16 true] [--ei threads 4]`
  *
  * - open: per engine, the time to open, measure and check the model, its geometry, tile size
@@ -96,9 +99,10 @@ import kotlin.math.max
  * - sustain (not part of all): pages of `size` back to back for `seconds`, through the gate
  *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
  *   headroom, until the time is up or the gate stops a page.
- * - download: per catalog model, deletes it from the app's store, downloads it (stopping once
- *   after `cut` bytes when given, then resuming), checks it is installed, opens it and runs one
- *   page of `size` within the default page time; deletes it again unless `keep`.
+ * - download: per catalog model or shader chain, deletes it from the app's store, downloads it
+ *   (stopping once after `cut` bytes when given, then resuming), checks it is installed, and for
+ *   an ncnn model opens it and runs one page of `size` within the default page time (a shader
+ *   chain is opened and timed by `shaders`); deletes it again unless `keep`.
  * - import: copies and checks the pair ([ModelImports]), with the time it took, the device's
  *   model memory and the peak resident memory; given a name, takes a fit model in at `step`
  *   (else the first its scale suits).
@@ -107,7 +111,7 @@ import kotlin.math.max
  *   tile size it chose, given at most `cap` seconds; a page that would take longer stops early
  *   on its pace ([TileEngine]) and reports its time estimated from the tiles run. Waits for
  *   the thermal headroom to fall below `cool` before each model, up to [COOL_MAX_S].
- * - gray: per model (installed from the catalog, or `model`) and engine, a black-and-white
+ * - gray: per ncnn model (installed from the catalog, or `model`; a shader chain is refused) and engine, a black-and-white
  *   screentone page of `size` ([GrayRuns.screentone]) through the model twice. `raw`: its
  *   output with the collapse off, as 8-bit channels (clamped, so overshoot tint is clipped):
  *   the color the model adds ([GrayRuns.spread]). `shown`: the page as the reader shows it at
@@ -425,7 +429,8 @@ class AiCheckService : Service() {
         val store = ModelStore.of(this)
         val page = SyntheticPage.draw(w, h)
         for (id in ids) {
-            val m = ModelCatalog.byId(id) ?: run { log(JSONObject().put("download", id).put("failed", "not in the catalog")); null } ?: continue
+            val m: FileSet = ModelCatalog.byId(id) ?: ShaderCatalog.byId(id)
+                ?: run { log(JSONObject().put("download", id).put("failed", "not in the catalog")); null } ?: continue
             store.delete(m)
             val downloader = ModelDownloader(store)
             val result = JSONObject().put("download", id).put("bytes", m.bytes)
@@ -443,8 +448,10 @@ class AiCheckService : Service() {
                 downloader.download(m)
                 result.put("ms", SystemClock.elapsedRealtime() - t1).put("installed", store.installed(m))
                     .put("sha256", m.files.all { ModelDownloader.sha256(java.io.File(store.dir(m), it.name)) == it.sha256 })
-                val session = Sessions.open(LibNcnn, store.files(m)!!, threads, gpu = true, fp16 = fp16)
-                if (session == null) {
+                val session = if (m is CatalogModel) Sessions.open(LibNcnn, store.files(m)!!, threads, gpu = true, fp16 = fp16) else null
+                if (m is ShaderModel) {
+                    result.put("opened", JSONObject.NULL).put("note", "a shader chain: time it with do shaders")
+                } else if (session == null) {
                     result.put("opened", false)
                 } else session.use { s ->
                     val run = TileEngine.run(s, page)
@@ -731,7 +738,9 @@ class AiCheckService : Service() {
         val models: List<Pair<String, ModelFiles?>> = if (param != null) {
             listOf(param.name to ModelFiles(param, File(param.path.removeSuffix(".param") + ".bin")).takeIf { param.isFile && it.bin.isFile })
         } else {
-            ids.map { id -> id to ModelCatalog.byId(id)?.let(store::files) }
+            val (chains, ncnn) = ids.partition { ShaderCatalog.byId(it) != null }
+            for (id in chains) log(JSONObject().put("grayModel", id).put("failed", "a shader chain: gray runs ncnn models only"))
+            ncnn.map { id -> id to ModelCatalog.byId(id)?.let(store::files) }
         }
         val page = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
             setPixels(GrayRuns.screentone(w, h), 0, w, 0, 0, w, h)

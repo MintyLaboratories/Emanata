@@ -2,7 +2,7 @@ package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
-import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.TwoPage
@@ -37,7 +37,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         plan.seams?.let { prefs.joinSpreads = it }
         // Both default chains run the plan's models, so a book read as manga runs them too.
         plan.ai?.let { ids ->
-            val models = ids.mapNotNull { ModelCatalog.byId(it) }
+            val models = ids.mapNotNull { Models.byId(it) }
             for (kind in ChainKind.entries) {
                 for (step in AiStep.entries) prefs.setAiModel(step, models.firstOrNull { it.step == step }?.id, kind)
             }

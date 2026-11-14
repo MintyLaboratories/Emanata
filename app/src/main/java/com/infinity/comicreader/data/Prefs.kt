@@ -208,13 +208,18 @@ class Prefs(context: Context) {
         get() = integer(KEY_RING_DOWN, Scaling.DEFAULT_DOWN_RING).coerceIn(0, 100)
         set(v) = put(KEY_RING_DOWN, v.coerceIn(0, 100))
 
+    /** Sharpening, in percent, of pages and zooms after scaling ([Rcas]); 0 is off. Never thumbnails or covers. */
+    var sharpen: Int
+        get() = integer(KEY_SHARPEN, 0).coerceIn(0, 100)
+        set(v) = put(KEY_SHARPEN, v.coerceIn(0, 100))
+
     /** How much taller than the portrait screen's shape a page must be to count as tall, in hundredths ([TallPages]). */
     var tallThreshold: Int
         get() = integer(KEY_TALL_THRESHOLD, TallPages.DEFAULT_THRESHOLD).coerceIn(TallPages.MIN_THRESHOLD, TallPages.MAX_THRESHOLD)
         set(v) = put(KEY_TALL_THRESHOLD, v.coerceIn(TallPages.MIN_THRESHOLD, TallPages.MAX_THRESHOLD))
 
-    val pageScaling: Scaling get() = Scaling(scalePages, ringUp, ringDown)
-    val zoomScaling: Scaling get() = Scaling(scaleZoom, ringUp, ringDown)
+    val pageScaling: Scaling get() = Scaling(scalePages, ringUp, ringDown, sharpen)
+    val zoomScaling: Scaling get() = Scaling(scaleZoom, ringUp, ringDown, sharpen)
     val thumbScaling: Scaling get() = Scaling(scaleThumbs, ringUp, ringDown)
 
     /** How many pages ahead to decode (0 = off). Stored as a string by the list preference. */
@@ -772,6 +777,7 @@ class Prefs(context: Context) {
         private const val KEY_SCALE_THUMBS = "pref_scale_thumbs"
         private const val KEY_RING_UP = "pref_ring_up"
         private const val KEY_RING_DOWN = "pref_ring_down"
+        private const val KEY_SHARPEN = "pref_sharpen"
         const val KEY_TALL_THRESHOLD = "pref_tall_threshold"
         private const val KEY_SPREADS = "pref_spreads"
         private const val KEY_COVER_ALONE = "pref_cover_alone"
@@ -798,7 +804,7 @@ class Prefs(context: Context) {
             KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR,
             KEY_PINCH_PEEK, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_FAB_TAP, KEY_RING_OPTIONS, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES,
-            KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,
+            KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_SHARPEN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,

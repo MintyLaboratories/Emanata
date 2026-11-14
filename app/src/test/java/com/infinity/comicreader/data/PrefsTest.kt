@@ -32,6 +32,20 @@ class PrefsTest {
     private fun stored() = PreferenceManager.getDefaultSharedPreferences(context).all
 
     @Test
+    fun sharpeningReachesPagesAndZoomsButNeverThumbnails() {
+        val prefs = Prefs(context)
+        assertEquals(0, prefs.sharpen)
+        assertEquals(0, prefs.pageScaling.sharpen)
+        prefs.sharpen = 140
+        assertEquals(100, prefs.sharpen)
+        prefs.sharpen = 35
+        assertEquals(35, prefs.pageScaling.sharpen)
+        assertEquals(35, prefs.zoomScaling.sharpen)
+        assertEquals(0, prefs.thumbScaling.sharpen)
+        assertEquals(35, stored()["pref_sharpen"])
+    }
+
+    @Test
     fun sortsAndFiltersPerTab() {
         val prefs = Prefs(context)
         assertEquals(TabSort.defaultFor(Prefs.TAB_HISTORY), prefs.sort(Prefs.TAB_HISTORY))

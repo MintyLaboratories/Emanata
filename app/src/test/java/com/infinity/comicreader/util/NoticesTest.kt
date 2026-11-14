@@ -110,22 +110,11 @@ class NoticesTest {
     }
 
     @Test
-    fun mlKitIsMarkedProprietaryWithItsTerms() {
-        val mlKit = Notices.forArtifact("com.google.android.gms:play-services-mlkit-text-recognition")!!
-        assertEquals(Notices.PROPRIETARY_GOOGLE, mlKit.license)
-        assertEquals(Notices.ML_KIT_TERMS_URL, mlKit.url)
-        assertTrue(File(assetDir, mlKit.texts[0]).readText().contains(Notices.ML_KIT_TERMS_URL))
-        assertTrue(mlKit.note!!.contains("off by default"))
-        val readme = File("../README.md").readText()
-        val row = readme.lines().single { it.startsWith("| [ML Kit Text Recognition v2](") }
-        assertTrue(row, row.contains("| ${Notices.PROPRIETARY_GOOGLE}: [ML Kit Terms of Service](${Notices.ML_KIT_TERMS_URL})"))
-        val flat = readme.replace(Regex("\\s+"), " ")
-        assertTrue(flat.contains("**Optional ML Kit (off by default):**"))
-        assertTrue(flat.contains("Google may collect usage data under the [ML Kit terms](${Notices.ML_KIT_TERMS_URL})"))
-        assertTrue(flat.contains("and, with ML Kit on, for its usage metrics. The app sends nothing else on its own."))
-        assertTrue(flat.contains("metrics queued while it was on may still be sent after you turn it off"))
-        assertTrue(flat.contains("Skip on metered connections does not hold them back"))
-        assertTrue(flat.contains("ML Kit's usage metrics (recorded only while you have ML Kit on)"))
+    fun noGooglePlayServicesOrMlKitShips() {
+        val google = listOf("com.google.android.gms:", "com.google.mlkit:", "com.google.firebase:", "com.google.android.datatransport:", "com.google.android.odml:")
+        val shipped = shippedArtifacts().filter { a -> google.any { a.startsWith(it) } }
+        assertTrue("shipped: $shipped", shipped.isEmpty())
+        assertFalse(File("../README.md").readText().contains("ML Kit"))
     }
 
     @Test
@@ -139,19 +128,6 @@ class NoticesTest {
         assertTrue(paddle.note!!.contains("the first time a cover needs it (the Smart crop anchor, or telling a wraparound cover's front or reading direction)"))
         val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
         assertTrue(flat.contains("the first time a cover needs it, the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a wraparound cover's front or a book's reading direction)"))
-    }
-
-    @Test
-    fun mlKitsDisclosuresNameEveryUseOfCoverText() {
-        val use = "for the Smart crop and for a wraparound cover's front and reading direction"
-        assertTrue(Notices.all.single { it.name == "ML Kit Text Recognition v2" }.note!!.contains(use))
-        val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
-        assertTrue(flat.contains("a setting finds cover text $use with Google's ML Kit"))
-        assertTrue(flat.contains("ML Kit's text recognition instead, cover text $use alike"))
-        val strings = File("src/main/res/values/strings.xml").readLines().map { it.replace("\\'", "'") }
-        for (name in listOf("pref_cover_mlkit_desc", "cover_text_details_mlkit")) {
-            assertTrue(name, strings.single { it.contains("name=\"$name\"") }.contains(use))
-        }
     }
 
     @Test

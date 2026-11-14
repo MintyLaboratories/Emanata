@@ -172,8 +172,6 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")             // barcodes on wraparound covers
     implementation("com.hierynomus:smbj:0.15.0")              // SMB 2/3 network shares
     implementation("com.squareup.okhttp3:okhttp:4.12.0")      // WebDAV network shares
-    // Smart crop text detector through Google Play services (opt-in); model delivered by Play services
-    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.2")
     // PDF uses the platform android.graphics.pdf.PdfRenderer (no dependency)
 
     testImplementation("junit:junit:4.13.2")

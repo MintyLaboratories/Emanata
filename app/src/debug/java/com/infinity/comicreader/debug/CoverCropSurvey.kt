@@ -38,8 +38,7 @@ import java.io.File
  * With [cropsDir], that book's covers by Top and by Smart (filled) as PNGs [CROP_H] tall: in a
  * 2:3 box always, in the other boxes where Smart moves. Each object also holds the detector's
  * own time (`detMs`, null when it gave no answer); with [withLines], the size it looked at (`in`) and each line it found
- * (`raw`: left, top, right, bottom, glyph as shares of that size, whether the glyph is the
- * line's thickness, score). Only the books whose indices are in [pick] when given.
+ * (`raw`: left, top, right, bottom, glyph as shares of that size, score). Only the books whose indices are in [pick] when given.
  */
 internal class CoverCropSurvey(
     private val context: Context,
@@ -52,7 +51,6 @@ internal class CoverCropSurvey(
     /** Keeps the last lines found, the size they were found on and the time it took (NaN: none since the last reset). */
     private class Recording(val inner: CoverTextDetector) : CoverTextDetector {
         override val id: String get() = inner.id
-        override fun inputSize(w: Int, h: Int): IntArray = inner.inputSize(w, h)
         var last: List<SmartCrop.TextBox>? = null
         var lw = 0
         var lh = 0
@@ -143,7 +141,7 @@ internal class CoverCropSurvey(
                 val lw = detector.lw.toDouble()
                 val lh = detector.lh.toDouble()
                 o.put("in", JSONArray(listOf(detector.lw, detector.lh)))
-                o.put("raw", detector.last?.let { ls -> JSONArray(ls.map { b -> JSONArray(listOf(r3(b.left / lw), r3(b.top / lh), r3(b.right / lw), r3(b.bottom / lh), r3(b.glyph / lh), if (b.thickness != null) 1 else 0, r3(b.score.toDouble()))) }) } ?: JSONObject.NULL)
+                o.put("raw", detector.last?.let { ls -> JSONArray(ls.map { b -> JSONArray(listOf(r3(b.left / lw), r3(b.top / lh), r3(b.right / lw), r3(b.bottom / lh), r3(b.glyph / lh), r3(b.score.toDouble()))) }) } ?: JSONObject.NULL)
             }
             o.put("title", box(focus.title)).put("text", box(focus.text)).put("lines", focus.lines.size)
             for ((label, ratio) in SHAPES) {

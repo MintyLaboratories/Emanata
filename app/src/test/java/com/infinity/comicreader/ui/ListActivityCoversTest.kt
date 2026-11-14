@@ -4,7 +4,6 @@ import com.infinity.comicreader.testing.bookId
 import com.infinity.comicreader.testing.coverText
 import android.Manifest
 import android.app.Application
-import android.graphics.Bitmap
 import android.os.Environment
 import android.os.Looper
 import android.view.View
@@ -14,7 +13,6 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.CoverTextDetectors
-import com.infinity.comicreader.ai.PlayServices
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.HistoryItem
@@ -22,7 +20,6 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -210,71 +207,23 @@ class ListActivityCoversTest {
         assertEquals(listOf("Issue 1.cbz", "Issue 2.cbz", "Issue 3.cbz"), titles())
     }
 
-    /** Play services there without ML Kit's module, its download requests kept to answer by hand; dropped ones counted. */
-    private class Downloading : PlayServices {
-        val requests = mutableListOf<(Boolean) -> Unit>()
-        var dropped = 0
-
-        override fun available() = true
-
-        override fun moduleInstalled(): Boolean = false
-
-        override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
-            requests += done
-            return { dropped++ }
-        }
-    }
-
-    /**
-     * The list with ML Kit turned on and its module downloading ([play]): a cover asked for its
-     * text, which requests the module. Returns how often the list's covers are made again.
-     */
-    private fun listWhileDownloading(play: Downloading): IntArray {
-        prefs.coverMlKit = true
-        val selector = CoverTextDetectors({ prefs.coverMlKit }, play, CoverTextDetectors.MlKit("mlkit") { coverText("mlkit") { null } }, { coverText("ppocr") { null } }, { true })
-        CoverTextDetectors.standIn(selector)
-        val recycler = rows().first().parent as RecyclerView
-        val redrawn = intArrayOf(0)
-        recycler.adapter!!.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
-            override fun onChanged() {
-                redrawn[0]++
-            }
-        })
-        val image = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888)
-        assertNull("no text while the module downloads", selector.session().lines(image))
-        assertEquals(1, play.requests.size)
-        idle()
-        return redrawn
-    }
-
     @Test
-    fun coversAreMadeAgainWhenMlKitsModuleArrives() {
-        val play = Downloading()
+    fun coversAreMadeAgainWhenTheDetectorsModelArrives() {
+        val detectors = CoverTextDetectors { coverText("ppocr") { null } }
+        CoverTextDetectors.standIn(detectors)
         try {
-            val redrawn = listWhileDownloading(play)
+            val recycler = rows().first().parent as RecyclerView
+            val redrawn = intArrayOf(0)
+            recycler.adapter!!.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+                override fun onChanged() {
+                    redrawn[0]++
+                }
+            })
+            idle()
             val before = redrawn[0]
-            play.requests.single()(true)
+            detectors.modelArrived()
             idle()
             assertEquals(before + 1, redrawn[0])
-        } finally {
-            CoverTextDetectors.standIn(null)
-        }
-    }
-
-    @Test
-    fun turningMlKitOffDuringItsDownloadDropsItAndItsLateArrival() {
-        val play = Downloading()
-        try {
-            val redrawn = listWhileDownloading(play)
-            prefs.coverMlKit = false
-            CoverTextDetectors.shared(ApplicationProvider.getApplicationContext()).settingChanged()
-            assertEquals(1, play.dropped)
-            idle()
-            val before = redrawn[0]
-            play.requests.single()(true)
-            idle()
-            assertEquals("its late answer makes nothing again", before, redrawn[0])
-            assertEquals(CoverTextDetectors.Use.PP_OCR, CoverTextDetectors.shared(ApplicationProvider.getApplicationContext()).status().use)
         } finally {
             CoverTextDetectors.standIn(null)
         }

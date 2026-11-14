@@ -6,7 +6,6 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.AiThresholds
-import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetSkip
@@ -317,16 +316,6 @@ class Prefs(context: Context) {
     var cropAnchor: CropAnchor
         get() = CropAnchor.of(sp.getString(KEY_CROP_ANCHOR, null))
         set(v) = put(KEY_CROP_ANCHOR, v.key)
-
-    /** True when covers find their text with Google's ML Kit where Play services is there ([CoverTextDetectors]); off by default. */
-    var coverMlKit: Boolean
-        get() = bool(KEY_COVER_MLKIT, false)
-        set(v) = put(KEY_COVER_MLKIT, v)
-
-    /** Debug builds only: plays a device without Google Play services ([CoverTextDetectors.shared]). Never backed up. */
-    var debugNoPlayServices: Boolean
-        get() = ui.getBoolean("debug_no_play_services", false)
-        set(v) = ui.edit().putBoolean("debug_no_play_services", v).apply()
 
     /** How covers are made from their images. */
     val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight, thumbScaling)
@@ -753,7 +742,6 @@ class Prefs(context: Context) {
         const val KEY_FAB_MANY = "pref_fab_many"
         private const val KEY_THUMB_FIT = "pref_thumb_fit"
         private const val KEY_CROP_ANCHOR = "pref_crop_anchor"
-        const val KEY_COVER_MLKIT = "pref_cover_mlkit"
         private const val KEY_PINCH_PEEK = "pref_pinch_peek"
         private const val KEY_TITLE_DISPLAY = "pref_title_display"
         private const val KEY_SHORTEN_PREFIXES = "pref_shorten_prefixes"
@@ -807,7 +795,7 @@ class Prefs(context: Context) {
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
             KEY_PAGE_MODE, KEY_FIT, KEY_FILTER, KEY_SPACING, KEY_AUTO_NEXT,
             KEY_RESUME_MODE, KEY_PREV_CHAPTER_BACKS, KEY_TWO_PAGE, KEY_NIGHT, KEY_TAP_ZONE_LAYOUT, KEY_VOLUME_KEYS,
-            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR, KEY_COVER_MLKIT,
+            KEY_BRIGHTNESS_GESTURE, KEY_DOUBLE_TAP, KEY_FLING, KEY_SHOW_HIDDEN, KEY_THUMBS, KEY_COVER_SHAPE, KEY_THUMB_FIT, KEY_CROP_ANCHOR,
             KEY_PINCH_PEEK, KEY_TITLE_DISPLAY, KEY_SHORTEN_PREFIXES, KEY_PATHVIEW, KEY_LIST_STATUSBAR,
             KEY_QUICK_FAB, KEY_FAB_TAP, KEY_RING_OPTIONS, KEY_AUTO_CROP, KEY_PRELOAD, KEY_AUTO_SPEED, KEY_PER_SERIES,
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,

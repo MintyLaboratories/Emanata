@@ -141,12 +141,6 @@
             android:name=".files.SharingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
-        <!-- ML Kit starts only when its detector runs (MlKitContext.initializeIfNeeded), not with the app. -->
-        <provider
-            android:name="com.google.mlkit.common.internal.MlKitInitProvider"
-            android:authorities="${applicationId}.mlkitinitprovider"
-            tools:node="remove" />
     </application>
 
 </manifest>

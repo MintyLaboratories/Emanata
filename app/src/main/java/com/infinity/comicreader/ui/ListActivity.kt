@@ -496,7 +496,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 settings.list.collect { applySettings(it) }
             }
         }
-        // Covers on screen are made again when ML Kit's model arrives, PP-OCR takes over from it, or its held-back download is allowed.
+        // Covers on screen are made again when the cover text detector's model arrives.
         lifecycleScope.launch {
             val detectors = CoverTextDetectors.shared(this@ListActivity)
             var seen = detectors.changes.value
@@ -641,7 +641,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         adapter.firstLayerOnly = s.thrift.firstLayerCovers
         if (s.showHidden != old.showHidden) invalidateOptionsMenu()
         if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
-            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor || s.coverMlKit != old.coverMlKit ||
+            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor ||
             s.thumbScaling.shrinkKey != old.thumbScaling.shrinkKey
         ) {
             adapter.notifyDataSetChanged()

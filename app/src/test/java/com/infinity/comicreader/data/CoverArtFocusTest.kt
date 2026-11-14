@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import com.infinity.comicreader.ai.CoverTextDetector
-import com.infinity.comicreader.reader.Box
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,11 +23,9 @@ class CoverArtFocusTest {
 
     private val cover = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
 
-    /** A detector of input [size] (PP-OCR's without) seeing one line across rows a tenth to a fifth down; notes each image's size in [seen]. */
-    private fun detector(seen: MutableList<List<Int>>, size: IntArray? = null) = object : CoverTextDetector {
+    /** A detector seeing one line across rows a tenth to a fifth down; notes each image's size in [seen]. */
+    private fun detector(seen: MutableList<List<Int>>) = object : CoverTextDetector {
         override val id = "test"
-
-        override fun inputSize(w: Int, h: Int): IntArray = size ?: super.inputSize(w, h)
 
         override fun lines(src: Bitmap): List<SmartCrop.TextBox> {
             seen += listOf(src.width, src.height)
@@ -37,11 +34,12 @@ class CoverArtFocusTest {
     }
 
     @Test
-    fun aDetectorSeesThePartAtItsOwnInputSize() {
+    fun aDetectorSeesThePartAtPpOcrsInputSize() {
         val seen = ArrayList<List<Int>>()
-        val focus = CoverArt.focusOf(cover, Rect(0, 0, 400, 600), detector(seen, intArrayOf(200, 300)))
-        assertEquals(listOf(listOf(200, 300)), seen)
-        assertEquals(Box(0.0, 0.1, 1.0, 0.2), focus.title)
+        val focus = CoverArt.focusOf(cover, Rect(0, 0, 400, 600), detector(seen))
+        assertEquals(listOf(SmartCrop.inputSize(400, 600).toList()), seen)
+        assertEquals(0.1, focus.title!!.top, 0.02)
+        assertEquals(0.2, focus.title!!.bottom, 0.02)
     }
 
     @Test
@@ -64,12 +62,5 @@ class CoverArtFocusTest {
         assertNull(focus.title)
         // Top's start: no text and no detail to move it.
         assertEquals(0.0, SmartCrop.offset(focus, 600.0, 400.0, vertical = true), 0.0)
-    }
-
-    @Test
-    fun byDefaultADetectorSeesPpOcrsInput() {
-        val seen = ArrayList<List<Int>>()
-        CoverArt.focusOf(cover, Rect(0, 0, 400, 600), detector(seen))
-        assertEquals(listOf(SmartCrop.inputSize(400, 600).toList()), seen)
     }
 }

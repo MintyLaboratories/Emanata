@@ -37,7 +37,6 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
-import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.ai.DetectorModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
@@ -180,46 +179,19 @@ object ModelText {
     /** PP-OCR's model: [installed], else its download's [state] (null: none asked for yet). */
     data class DetectorFiles(val installed: Boolean, val state: DownloadState? = null)
 
-    /**
-     * The row of the cover text detector in use as [s] tells, PP-OCR's model as [files] tell (null:
-     * not known yet, so no status and no button). With ML Kit in use, PP-OCR's model missing is
-     * told after ML Kit's status: books read right to left use PP-OCR.
-     */
-    fun coverText(context: Context, s: CoverTextDetectors.Status, files: DetectorFiles? = DetectorFiles(true)): CoverTextRow {
-        val ml = s.use == CoverTextDetectors.Use.ML_KIT
-        val title = context.getString(if (ml) R.string.cover_text_mlkit else R.string.cover_text_ppocr)
-        val details = context.getString(if (ml) R.string.cover_text_details_mlkit else R.string.cover_text_details_ppocr)
+    /** The row of the cover text detector, PP-OCR, its model as [files] tell (null: not known yet, so no status and no button). */
+    fun coverText(context: Context, files: DetectorFiles? = DetectorFiles(true)): CoverTextRow {
+        val title = context.getString(R.string.cover_text_ppocr)
+        val details = context.getString(R.string.cover_text_details_ppocr)
         if (files == null) return CoverTextRow(title, details, "")
-        if (!ml && !files.installed) {
-            return when (val d = files.state) {
-                is DownloadState.Running -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_downloading, d.percent), progress = d.percent)
-                is DownloadState.Failed -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_failed, failure(context, d.failure)), download = true)
-                null -> CoverTextRow(
-                    title, details,
-                    context.getString(R.string.cover_text_ppocr_missing, size(context, ModelCatalog.TEXT_DETECTOR.bytes)), download = true
-                )
-            }
-        }
-        val own = context.getString(coverTextStatus(s))
-        if (!ml || files.installed) return CoverTextRow(title, details, own)
-        val (line, row) = when (val d = files.state) {
-            is DownloadState.Running -> context.getString(R.string.cover_text_ppocr_rtl_downloading, d.percent) to CoverTextRow(title, details, "", progress = d.percent)
-            is DownloadState.Failed -> context.getString(R.string.cover_text_ppocr_rtl_failed, failure(context, d.failure)) to CoverTextRow(title, details, "", download = true)
-            null -> context.getString(R.string.cover_text_ppocr_rtl_missing, size(context, ModelCatalog.TEXT_DETECTOR.bytes)) to CoverTextRow(title, details, "", download = true)
-        }
-        return row.copy(status = own + "\n" + line)
-    }
-
-    /** The words of the detector in use as [s] tells. */
-    private fun coverTextStatus(s: CoverTextDetectors.Status): Int {
-        val ml = s.use == CoverTextDetectors.Use.ML_KIT
-        return when {
-            s.downloading -> R.string.cover_text_downloading
-            ml -> R.string.cover_text_in_use_mlkit
-            s.why == CoverTextDetectors.Why.HELD_BACK -> R.string.cover_text_held_back
-            s.why == CoverTextDetectors.Why.MODULE_FAILED -> R.string.cover_text_module_failed
-            s.why == CoverTextDetectors.Why.FAILED -> R.string.cover_text_failed
-            else -> R.string.cover_text_in_use
+        if (files.installed) return CoverTextRow(title, details, context.getString(R.string.cover_text_in_use))
+        return when (val d = files.state) {
+            is DownloadState.Running -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_downloading, d.percent), progress = d.percent)
+            is DownloadState.Failed -> CoverTextRow(title, details, context.getString(R.string.cover_text_ppocr_failed, failure(context, d.failure)), download = true)
+            null -> CoverTextRow(
+                title, details,
+                context.getString(R.string.cover_text_ppocr_missing, size(context, ModelCatalog.TEXT_DETECTOR.bytes)), download = true
+            )
         }
     }
 
@@ -396,10 +368,10 @@ class ModelsActivity : AppCompatActivity() {
         showCoverText()
     }
 
-    /** Shows which cover text detector is in use and why ([CoverTextDetectors.status]), and where PP-OCR's model is ([detectorFiles]). */
+    /** Shows where PP-OCR's model is ([detectorFiles]). */
     private fun showCoverText() {
         val row = coverTextRow ?: return
-        val shown = ModelText.coverText(this, CoverTextDetectors.shared(this).status(), detectorFiles)
+        val shown = ModelText.coverText(this, detectorFiles)
         row.findViewById<TextView>(R.id.title).text = shown.title
         row.findViewById<TextView>(R.id.subtitle).text = shown.details
         row.findViewById<TextView>(R.id.status).apply {

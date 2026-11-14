@@ -28,8 +28,6 @@ data class ListSettings(
     val toolbarButtons: ToolbarButtons,
     val thumbFit: ThumbFit,
     val cropAnchor: CropAnchor,
-    /** True when covers find their text with ML Kit ([Prefs.coverMlKit]). */
-    val coverMlKit: Boolean,
     /** Each tab's sort and filter, by tab name. */
     val sorts: Map<String, TabSort>,
     val filters: Map<String, LibraryFilter>,
@@ -58,7 +56,6 @@ data class ListSettings(
             toolbarButtons = p.toolbarButtons,
             thumbFit = p.thumbFit,
             cropAnchor = p.cropAnchor,
-            coverMlKit = p.coverMlKit,
             sorts = Prefs.TABS.associateWith { p.sort(it) },
             filters = Prefs.TABS.associateWith { p.filter(it) },
             pinchPeek = p.pinchPeek,

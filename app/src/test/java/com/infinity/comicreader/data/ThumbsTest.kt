@@ -10,8 +10,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.infinity.comicreader.ai.CoverTextDetector
-import com.infinity.comicreader.ai.CoverTextDetectors
-import com.infinity.comicreader.ai.PlayServices
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
@@ -22,7 +20,6 @@ import com.infinity.comicreader.reader.Wraparound
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -205,24 +202,17 @@ class ThumbsTest {
         assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
         assertEquals(1, second[0])
         assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("b"))).isFile)
-        // The first's stay for its turn again.
-        assertTrue(storeA.isFile)
     }
 
     @Test
-    fun focusesOfOtherRulesAndUnknownDetectorsAreDeleted() {
+    fun focusesOfOtherVersionsAreDeleted() {
         val old = File(context.cacheDir, Thumbs.focusFile("1-${TextDetector.ID}")).apply { writeText("") }
         val gone = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("gone"))).apply { writeText("") }
-        val app = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.ID))).apply { writeText("") }
-        val mlKit = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(CoverTextDetectors.ML_KIT_ID))).apply { writeText("") }
-        textAt(0.85, 0.92, id = "swept")
+        textAt(0.85, 0.92, id = TextDetector.ID)
         Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertFalse(old.exists())
         assertFalse(gone.exists())
-        // Both of the app's detectors keep theirs.
-        assertTrue(app.isFile)
-        assertTrue(mlKit.isFile)
-        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("swept"))).isFile)
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.ID))).isFile)
     }
 
     @Test
@@ -352,61 +342,6 @@ class ThumbsTest {
         assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
         Thumbs.load(context, entry, "UTF-8", 80, 40, smart)!!
         assertEquals(2, calls[0])
-    }
-
-    @Test
-    fun aFocusFoundAfterTheDetectorSwitchedCopiesIsNeitherKeptNorStored() {
-        var id = "a"
-        var switch = true
-        val calls = intArrayOf(0)
-        val switching = object : CoverTextDetector {
-            override val id: String get() = id
-
-            override fun lines(src: Bitmap): List<SmartCrop.TextBox> {
-                calls[0]++
-                if (switch) id = "b"
-                return emptyList()
-            }
-        }
-        Thumbs.detector = { switching }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
-        assertEquals(1, calls[0])
-        assertNull(File(context.cacheDir, "covers").listFiles()?.firstOrNull())
-        // Back under the first id, the focus is found again: none was kept under it.
-        id = "a"
-        switch = false
-        Thumbs.load(context, entry, "UTF-8", 100, 50, smart)
-        assertEquals(2, calls[0])
-        Thumbs.load(context, entry, "UTF-8", 80, 40, smart)
-        assertEquals(2, calls[0])
-    }
-
-    @Test
-    fun oneDetectorMakesACoverWhenThePickChangesMeanwhile() {
-        var a = 0
-        var b = 0
-        val first = coverText("a") { bitmap ->
-            a++
-            textMap(bitmap, 0.85, 0.92)
-        }
-        val second = coverText("b") { bitmap ->
-            b++
-            textMap(bitmap, 0.02, 0.1)
-        }
-        // The pick changes after the cover's key was made: the cached lookup and the key ask first.
-        var asked = 0
-        Thumbs.detector = { if (++asked <= 2) first else second }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, a)
-        assertEquals(0, b)
-        Thumbs.detector = { first }
-        assertNotNull(Thumbs.cached(context, entry, 120, 60, smart))
-        Thumbs.detector = { second }
-        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
     }
 
     @Test
@@ -545,35 +480,6 @@ class ThumbsTest {
         assertEquals(0, w.runs)
     }
 
-    /** Play services there, with ML Kit's module installed. */
-    private class Play : PlayServices {
-        override fun available() = true
-
-        override fun moduleInstalled(): Boolean? = true
-
-        override fun requestModule(done: (Boolean) -> Unit): () -> Unit {
-            done(true)
-            return {}
-        }
-    }
-
-    @Test
-    fun anMlKitThatDoesNotStartLeavesCoversToPpOcr() {
-        val pp = textAt(0.85, 0.92, id = TextDetector.ID)
-        val ppocr = Thumbs.detector(context)
-        val selector = CoverTextDetectors({ true }, Play(), CoverTextDetectors.MlKit("mlkit") { throw IllegalStateException("no context") }, { ppocr })
-        Thumbs.detector = { selector.session() }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        // Keys under ML Kit are made without starting it.
-        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
-        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
-        assertEquals(CoverTextDetectors.Why.FAILED, selector.status().why)
-        assertEquals(0, pp[0])
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, pp[0])
-    }
-
     @Test
     fun theReaderPicksTheDetectorOfABooksCoverAsTheLibraryDoes() {
         val usual = coverText("usual") { null }
@@ -593,32 +499,6 @@ class ThumbsTest {
         assertFalse(BookDirection.markedRightToLeft(null, ReadingDirection.TTB, "rtl"))
         assertTrue(BookDirection.markedRightToLeft(null, null, "rtl"))
         assertFalse(BookDirection.markedRightToLeft(null, null, "ltr"))
-    }
-
-    @Test
-    fun turningMlKitOnChangesTheCoverKeysOfBooksReadLeftToRightOnly() {
-        var on = false
-        val ppocr = coverText(TextDetector.ID) { null }
-        val selector = CoverTextDetectors({ on }, Play(), CoverTextDetectors.MlKit(CoverTextDetectors.ML_KIT_ID) { coverText(CoverTextDetectors.ML_KIT_ID) { null } }, { ppocr })
-        // Thumbs' own wiring: its detectors come from the shared selector.
-        CoverTextDetectors.standIn(selector)
-        try {
-            val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-            val ltr = Thumbs.styleKey(context, style, rightToLeft = false)
-            val rtl = Thumbs.styleKey(context, style, rightToLeft = true)
-            assertEquals(style.key(TextDetector.ID), ltr)
-            assertEquals(ltr, rtl)
-            on = true
-            selector.settingChanged()
-            assertEquals(style.key(CoverTextDetectors.ML_KIT_ID), Thumbs.styleKey(context, style, rightToLeft = false))
-            assertNotEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
-            assertEquals("right to left keeps PP-OCR's covers", rtl, Thumbs.styleKey(context, style, rightToLeft = true))
-            on = false
-            selector.settingChanged()
-            assertEquals(ltr, Thumbs.styleKey(context, style, rightToLeft = false))
-        } finally {
-            CoverTextDetectors.standIn(null)
-        }
     }
 
     @Test

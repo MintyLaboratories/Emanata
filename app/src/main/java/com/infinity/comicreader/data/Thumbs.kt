@@ -58,8 +58,8 @@ object Thumbs {
 
     /**
      * Covers in [memory] whose focus was found without the detector running ([CoverFocus.keep]),
-     * by key: the [arrivals] they were made at. One made before ML Kit's module arrived is made
-     * again ([fromMemory]).
+     * by key: the [arrivals] they were made at. One made before the detector's model arrived is
+     * made again ([fromMemory]).
      */
     private val provisional = ConcurrentHashMap<String, Int>()
 
@@ -148,38 +148,33 @@ object Thumbs {
     /** The focus store's file for cover-focus version [version]. */
     internal fun focusFile(version: String): String = "$FOCUS_PREFIX-$version.txt"
 
-    /** Focus stores opened, by file path: one per cover-focus version, so detectors taking turns each keep theirs. */
+    /** Focus stores opened, by file path: one per cover-focus version. */
     private val focusStores = ConcurrentHashMap<String, FocusStore>()
 
-    /**
-     * The focus store of cover-focus [version]. Opening one deletes the stores of versions no
-     * detector of the app finds under these rules ([CoverTextDetector.IDS]), unless open.
-     */
+    /** The focus store of cover-focus [version]. Opening one deletes the stores of other versions not open. */
     private fun focusStore(context: Context, version: String): FocusStore {
         val file = File(context.cacheDir, focusFile(version))
         focusStores[file.path]?.let { return it }
         synchronized(this) {
             focusStores[file.path]?.let { return it }
-            val kept = CoverTextDetector.IDS.map { focusFile(SmartCrop.version(it)) } + focusStores.keys.map { File(it).name } + file.name
+            val kept = focusStores.keys.map { File(it).name } + file.name
             context.cacheDir.listFiles { f -> f.name.startsWith(FOCUS_PREFIX) && kept.none { f.name.startsWith(it) } }?.forEach { it.delete() }
             return FocusStore(file).also { focusStores[file.path] = it }
         }
     }
 
     /**
-     * Finds text on covers for the Smart crop anchor, and on a book's cover for its direction:
-     * the session's pick ([CoverTextDetectors.session]). Tests stand in their own. Asked on every
-     * cover key, list binds on the main thread included: once made (off the main thread at the
-     * app's start, as making it reads storage) it answers at once, without I/O, and its
-     * [CoverTextDetector.id] changes only when the detector chosen does, as the keys of covers its
-     * text shaped ([coverKeys]) and its focus store follow it.
+     * Finds text on covers for the Smart crop anchor, and on a book's cover for its direction
+     * ([CoverTextDetectors.detector]). Tests stand in their own. Asked on every cover key, list
+     * binds on the main thread included: once made (off the main thread at the app's start, as
+     * making it reads storage) it answers at once, without I/O.
      */
     @Volatile
-    internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).session() }
+    internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).detector() }
 
-    /** Finds text on covers of books marked right to left: PP-OCR ([CoverTextDetectors.rightToLeft]). Tests stand in their own. */
+    /** Finds text on covers of books marked right to left. Tests stand in their own. */
     @Volatile
-    internal var rtlDetector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).rightToLeft() }
+    internal var rtlDetector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).detector() }
 
     /** The detector of [entry]'s cover: that of a book marked right to left ([BookEntry.direction]) or not ([detectorFor]). */
     private fun detectorFor(context: Context, entry: BookEntry): CoverTextDetector = detectorFor(context, entry.direction == ReadingDirection.RTL)
@@ -201,17 +196,13 @@ object Thumbs {
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean, detector: CoverTextDetector): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val id = detector.id
-        val version = SmartCrop.version(id)
+        val version = SmartCrop.version(detector.id)
         val k = "${imageKey(context, entry)}|$part|$version"
         focuses.get(k)?.let { return it }
         val store = focusStore(context, version)
         store.get(k)?.let { focuses.put(k, it); return it }
         if (!find) return CoverFocus.NONE
-        val focus = CoverArt.focusOf(src, region, detector).let { f ->
-            // Found after the detector's id changed: not under this version.
-            if (f.keep && detector.id != id) CoverFocus(f.title, f.lines, f.rows, f.columns, keep = false) else f
-        }
+        val focus = CoverArt.focusOf(src, region, detector)
         if (!focus.keep) return focus
         store.put(k, focus)
         focuses.put(k, focus)

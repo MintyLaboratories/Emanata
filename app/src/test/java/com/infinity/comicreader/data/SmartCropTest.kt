@@ -203,9 +203,9 @@ class SmartCropTest {
     @Test
     fun aFocusHoldsItsTitlesLetterSize() {
         val title = SmartCrop.TextBox(0.0, 0.0, 100.0, 30.0, 0.9f)
-        val turned = SmartCrop.TextBox(0.0, 60.0, 100.0, 140.0, 0.9f, thickness = 24.0)
-        assertEquals(0.3, SmartCrop.focus(listOf(title, turned), 100, 150, flat(), flat()).glyph, 1e-9)
-        assertEquals(0.24, SmartCrop.focus(listOf(turned), 100, 150, flat(), flat()).glyph, 1e-9)
+        val tall = SmartCrop.TextBox(0.0, 60.0, 24.0, 140.0, 0.9f)
+        assertEquals(0.3, SmartCrop.focus(listOf(title, tall), 100, 150, flat(), flat()).glyph, 1e-9)
+        assertEquals(0.24, SmartCrop.focus(listOf(tall), 100, 150, flat(), flat()).glyph, 1e-9)
         assertEquals(0.0, SmartCrop.focus(emptyList(), 100, 150, flat(), flat()).glyph, 0.0)
     }
 

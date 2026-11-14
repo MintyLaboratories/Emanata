@@ -125,8 +125,7 @@ object SmartCrop {
     /**
      * Text whose letter size ([TextBox.glyph]) is less than this share of the cover's shorter
      * side is not a title: creators' names, subtitles, prices. A score map's glyph is its line
-     * grown by [UNCLIP]; ML Kit's is its letter height, not grown
-     * ([com.infinity.comicreader.ai.MlKitLines.GROW]), so ML Kit's letters must be taller to count.
+     * grown by [UNCLIP].
      */
     const val MIN_GLYPH = 0.12
 
@@ -152,16 +151,12 @@ object SmartCrop {
      * A region of text in the pixels of what it was found on, [right] and [bottom] exclusive,
      * after growing it: a score map's ([boxes]), the image given a detector's ([CoverTextDetector.lines]).
      */
-    data class TextBox(
-        val left: Double, val top: Double, val right: Double, val bottom: Double, val score: Float,
-        /** The line's thickness across its text when the detector knows it (a rotated line's is less than its box's); null: [glyph] is the box's. */
-        val thickness: Double? = null
-    ) {
+    data class TextBox(val left: Double, val top: Double, val right: Double, val bottom: Double, val score: Float) {
         val width: Double get() = right - left
         val height: Double get() = bottom - top
 
-        /** The size of its letters: the line's [thickness], else the box's, whichever way it runs. */
-        val glyph: Double get() = thickness ?: min(width, height)
+        /** The size of its letters: the box's, whichever way it runs. */
+        val glyph: Double get() = min(width, height)
     }
 
     /** `[width, height]` of PP-OCR's input for a [w] x [h] cover: at most [INPUT_SIDE], multiples of [STRIDE]. */

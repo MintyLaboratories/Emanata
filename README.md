@@ -9,26 +9,14 @@ features and customizability.
   AVIF, TIFF and more.
 - **Rendering:** Lanczos3 scaling everywhere, including GPU Lanczos3 while
   zooming (Android 13+).
-- **Private:** no ads, no analytics, no tracking; clean-room Kotlin. The one
-  exception, ML Kit, is optional and off by default (below).
+- **Private:** no ads, no analytics, no tracking; clean-room Kotlin.
 - **No required connection:** works offline. The network is used only for the
   network shares you add, while the app shows something on them: a folder, a
   book, a cover, a favorite, or a share's free space in the Locations sheet;
   to download the AI models you choose and, the first time a cover needs it,
   the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a
-  wraparound cover's front or a book's reading direction); and, with ML Kit
-  on, for its usage metrics. The app sends nothing else on its own.
-- **Optional ML Kit (off by default):** a setting finds cover text for the
-  Smart crop and for a wraparound cover's front and reading direction with
-  Google's ML Kit through Google Play services. When you turn it on, Play
-  services downloads ML Kit's model, and Google may collect usage
-  data under the [ML Kit terms](https://developers.google.com/ml-kit/terms):
-  ML Kit, running inside the app, sends usage and performance metrics to
-  Google's Firebase logging service and may fetch updates. Covers never leave
-  the device. While it is off, ML Kit never starts, but
-  metrics queued while it was on may still be sent after you turn it off.
-  Turning it off during the model's download withdraws the app's request;
-  Play services decides whether to finish or drop it.
+  wraparound cover's front or a book's reading direction). The app sends
+  nothing else on its own.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -99,54 +87,21 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
   (default) or the center of a cover cropped for height, or (Smart,
   experimental) its tallest text (below).
-- **Smart crop:** a text detector marks the lines of text on a cover (where
-  text is, not what it says). When the top (centered across) would cut the
-  tallest text's line, the crop moves just enough to keep every line of about
-  its size, or at least that line. Only title-sized text counts (a letter size
-  of at least 12% of the cover's shorter side, as each detector below measures
-  it): credits alone never move a crop. A
-  cover without such text keeps its most detailed part when far more detailed
-  than its top. Found once per cover and kept; another detector finds every
-  focus again. Two detectors:
-  - **PP-OCR (default):** PaddleOCR's PP-OCRv5 mobile detector on ncnn, run
-    on the device. It is not in the app: its 2.4 MB model downloads the first
-    time a cover needs it (the Smart crop, or a wraparound cover's front or
-    reading direction, below), as an automatic download that the **Skip on
-    metered connections** setting can hold back. Until it is there, covers
-    crop as Top does and are made again once it arrives. Its letter size is
-    the height of its line's box, which it grows around the text.
-  - **Google ML Kit (optional, off by default):** **Use Google ML Kit for
-    cover text** (Settings → Library, offered only where Google Play services
-    is there) finds the lines with ML Kit's text recognition instead, cover
-    text for the Smart crop and for a wraparound cover's front and reading
-    direction alike, except on books read right to left (its recognizer reads
-    Latin script only). When
-    on, Play services downloads ML Kit's model, and ML Kit, running in the
-    app, sends usage and performance data to Google (Firebase logging) under
-    the [ML Kit terms](https://developers.google.com/ml-kit/terms); covers
-    never leave the device. Until the model arrives, covers crop by their
-    detail alone and are made again once it does. While the network settings
-    hold that download back, PP-OCR finds the lines until they allow it
-    (asked again at most once a minute). When it takes over 10 minutes or ML
-    Kit fails, PP-OCR finds them for the rest of the session or until the
-    setting is turned on again. ML Kit's line boxes fit their letters more tightly
-    than PP-OCR's, so they are grown by a quarter of their letters' height
-    to keep as much room around a title. Its letter size is its letters' own
-    height, not the grown box, so its 12% bar is higher than PP-OCR's: a line
-    needs letters about 1.4 times as tall (about 1.8 times on title lines).
-  - **Compared** on a set of real covers (Snapdragon 8 Gen 1 class tablet,
-    Android 16): ML Kit finds title-sized text on about half as many covers
-    as PP-OCR (49% against 94%), mostly because of that higher bar, so its
-    Smart crop moves less often and more covers keep their top. Scaling its
-    letter size up by 1.75 finds about as many titles (93%) but moves crops
-    up to 7 times as often as PP-OCR, so it stays unscaled until such moves
-    are judged by eye. Its detection takes about 10 ms longer per cover
-    (median 68 against 57 ms), the whole cover's focus about the same, within
-    run-to-run noise. PP-OCR stays the default: it finds more titles and
-    needs neither Play services nor ML Kit's usage logging.
-  - Settings → AI processing → **Models** shows the detector in use, and
-    whether its model is there or downloading (with a Download button while
-    it is not).
+- **Smart crop:** a text detector, PaddleOCR's PP-OCRv5 mobile detector on
+  ncnn, run on the device, marks the lines of text on a cover (where text is,
+  not what it says). When the top (centered across) would cut the tallest
+  text's line, the crop moves just enough to keep every line of about its
+  size, or at least that line. Only title-sized text counts (a letter size of
+  at least 12% of the cover's shorter side, the height of its line's box,
+  which it grows around the text): credits alone never move a crop. A cover
+  without such text keeps its most detailed part when far more detailed than
+  its top. Found once per cover and kept. The detector is not in the app: its
+  2.4 MB model downloads the first time a cover needs it (the Smart crop, or
+  a wraparound cover's front or reading direction, below), as an automatic
+  download that the **Skip on metered connections** setting can hold back.
+  Until it is there, covers crop as Top does and are made again once it
+  arrives. Settings → AI processing → **Models** shows whether its model is
+  there or downloading (with a Download button while it is not).
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as
@@ -613,9 +568,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   shares, similar-books hashing on shares, read-ahead on shares (pages
   beyond those shown, and the next chapter in a strip), automatic
   model or detector downloads, or any network use you didn't start (all of
-  them by default). ML Kit's usage metrics (with ML Kit on) are sent by
-  Google's library on its own schedule; Skip on metered connections does not
-  hold them back. Opening a book, a search, Download and Compare always
+  them by default). Opening a book, a search, Download and Compare always
   run; Find duplicate files counts reading share files as hashing, and its
   Compare reads them anyway. **Warn before opening a large book on a metered connection** (on, 100
   MB by default) asks before a larger book on a share opens: Open anyway or
@@ -1230,9 +1183,8 @@ app/src/main/java/com/infinity/comicreader/
                              ModelCatalog, ModelStore + ModelDownloader,
                              ModelDownloads; TextDetector (covers' Smart
                              crop anchor; PP-OCR) + DetectorModel (its
-                             download), CoverTextDetectors (the detector
-                             pick) + MlKitTextDetector and GmsPlayServices
-                             (optional ML Kit), AiThresholds, GrayPages
+                             download), CoverTextDetectors (its model's
+                             arrivals), AiThresholds, GrayPages
   reader/                    PageSource implementations + factory, Filters,
                              Decoders (image decoding), BitmapUtils
   ui/                        ListActivity, ViewerActivity, Settings*, AboutActivity,
@@ -1466,8 +1418,7 @@ estimated from the tiles run in 60 or 120 s):
   (Android 8–9): the same on older versions.
 - `INTERNET` and `ACCESS_NETWORK_STATE` (network): only for network shares you
   add, AI models you download, the cover text detector's model (the first time
-  a cover needs it), and ML Kit's usage metrics (recorded only
-  while you have ML Kit on); the app sends nothing else on its own.
+  a cover needs it); the app sends nothing else on its own.
 - `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `WAKE_LOCK`: a copy,
   move or delete goes on with the app in the background or the screen off,
   shown in a notification with its progress (and Cancel). The device is kept
@@ -1538,11 +1489,8 @@ app shows each license and NOTICE text under Settings → About (files in
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is byte-identical to the one in the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.1 release archive, MIT) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
-| [ML Kit Text Recognition v2](https://developers.google.com/ml-kit/vision/text-recognition/v2) (`play-services-mlkit-text-recognition`, model delivered by Google Play services), with the Play services client libraries | Proprietary (Google Play services): [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms), Android SDK License; open-source parts under Apache-2.0, BSD-3-Clause and MIT |
-| Firebase components, Google Data Transport, javax.inject (used by ML Kit) | Apache-2.0 |
 
-Dual-licensed components are used under Apache-2.0. ML Kit is the one
-proprietary component; it runs only while you have it on (off by default).
+Dual-licensed components are used under Apache-2.0.
 
 AI models for pages are not bundled: the app downloads the ones you choose, unchanged,
 from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)

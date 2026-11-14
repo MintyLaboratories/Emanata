@@ -17,9 +17,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
-import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.LibNcnn
-import com.infinity.comicreader.ai.MlKitTextDetector
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloader
 import com.infinity.comicreader.ai.ModelFiles
@@ -67,9 +65,8 @@ import kotlin.concurrent.thread
  * With `--es mode crops`, every book under `dir` instead goes through [CoverCropSurvey] with the
  * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`. Start it
  * with the app's library shown: with no window shown the system soon moves the process to fewer,
- * slower cores, which each line's `cpuset` tells. `--es detector mlkit` surveys with ML Kit
- * ([MlKitTextDetector], its module must be on the device) instead, `--es pick 0,5,9` only the
- * books with those indices, and `--ez lines true` logs each line found ([CoverCropSurvey]).
+ * slower cores, which each line's `cpuset` tells. `--es pick 0,5,9` surveys only the books with
+ * those indices, and `--ez lines true` logs each line found ([CoverCropSurvey]).
  *
  * Both modes run the model the app runs ([TextDetector.downloaded]), downloading it first when
  * it is not in place; a line's `model` holds its id ([TextDetector.ID]).
@@ -87,7 +84,6 @@ class CoverFocusCheckService : Service() {
         val shared = intent?.getStringExtra("lane") == "shared"
         val busy = intent?.getBooleanExtra("busy", false) ?: false
         val crops = intent?.getStringExtra("mode") == "crops"
-        val mlKit = intent?.getStringExtra("detector") == "mlkit"
         val pick = intent?.getStringExtra("pick")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
         val lines = intent?.getBooleanExtra("lines", false) ?: false
         thread(name = "cover-focus-check") {
@@ -96,7 +92,7 @@ class CoverFocusCheckService : Service() {
                 if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
                 } else if (crops) {
-                    survey(File(dir), marked, mlKit, pick, lines)
+                    survey(File(dir), marked, pick, lines)
                 } else {
                     run(File(dir), count, setups, reps, marked, shared, busy)
                 }
@@ -132,25 +128,14 @@ class CoverFocusCheckService : Service() {
         (detectors.values + app).forEach { it.close() }
     }
 
-    private fun survey(dir: File, marked: Boolean, mlKit: Boolean, pick: Set<Int>?, lines: Boolean) {
-        val app: CoverTextDetector
-        val close: () -> Unit
-        if (mlKit) {
-            val d = MlKitTextDetector.create(this)
-            log(JSONObject().put("model", d.id))
-            app = d
-            close = d::close
-        } else {
-            val files = model() ?: return
-            val d = TextDetector(LibNcnn.cpuLane, { files })
-            app = d
-            close = d::close
-        }
+    private fun survey(dir: File, marked: Boolean, pick: Set<Int>?, lines: Boolean) {
+        val files = model() ?: return
+        val app = TextDetector(LibNcnn.cpuLane, { files })
         try {
             val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
             CoverCropSurvey(this, app, cropsDir, ::log, pick, lines).run(dir)
         } finally {
-            close()
+            app.close()
         }
     }
 

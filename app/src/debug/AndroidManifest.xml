@@ -77,10 +77,5 @@
             android:exported="true"
             android:permission="android.permission.DUMP"
             android:theme="@android:style/Theme.NoDisplay" />
-        <!-- Sets debug-only flags, such as playing a device without Google Play services; only the shell may send to it. -->
-        <receiver
-            android:name="com.infinity.comicreader.debug.DebugFlagsReceiver"
-            android:exported="true"
-            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

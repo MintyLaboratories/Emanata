@@ -146,7 +146,6 @@ class TextDetectorTest {
     fun itsIdNamesTheDownloadsChecksums() {
         val d = ModelCatalog.TEXT_DETECTOR
         assertEquals("ppocrv5-${d.param.sha256.take(6)}${d.bin.sha256.take(6)}", TextDetector.ID)
-        assertEquals(setOf(TextDetector.ID, CoverTextDetectors.ML_KIT_ID), CoverTextDetector.IDS)
     }
 
     @Test

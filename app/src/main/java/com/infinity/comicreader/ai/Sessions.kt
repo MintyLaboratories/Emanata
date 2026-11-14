@@ -397,8 +397,14 @@ internal object Sessions {
                         if (chosen > 0) {
                             (wide.filter { it <= chosen } + usual).distinct()
                         } else {
-                            val t = timings ?: TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled) { size ->
-                                if (size > maxTile) slot.trying(size)
+                            val t = timings ?: try {
+                                TileTiming.time(model, wide.filter { it in candidates }, g, clock, canceled) { size ->
+                                    if (size > maxTile) slot.trying(size)
+                                }
+                            } catch (e: Throwable) {
+                                // Canceled or thrown: the app runs on, so the size being tried did not end it.
+                                slot.trying(0)
+                                throw e
                             }.also { t ->
                                 timings = t
                                 Log.i(TAG, "$name: $precision tiles timed: ${t.joinToString()}")

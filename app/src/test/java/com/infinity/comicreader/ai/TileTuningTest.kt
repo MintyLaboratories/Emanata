@@ -266,6 +266,21 @@ class TileTuningTest {
     }
 
     @Test
+    fun aCancelWhileTimingLowersNoCeiling() {
+        val dir = tmp.newFolder()
+        // Canceled in a later round, after every size was first tried.
+        var gpuRuns = 0
+        val canceling = runtime(gpuMs = { w -> gpuRuns++; lightMs(w) })
+        assertThrows(CancellationException::class.java) {
+            Sessions.open(canceling, fakeFiles(tmp.root), threads = 4, tuning = tuning(dir), clock = { now[0] }, canceled = { gpuRuns >= 12 })
+        }
+        assertEquals(TileChoice(), kept(dir))
+        val s = open(runtime(), tuning(dir))
+        assertEquals("the largest sizes still tried", 384, s.size)
+        assertEquals(Int.MAX_VALUE, kept(dir).ceiling)
+    }
+
+    @Test
     fun aSizeWhoseCheckFailsGivesWayToTheNext() {
         val dir = tmp.newFolder()
         // Wrong output on tiles wider than 256, as a feature map past a GPU buffer gives: seams and the CPU's check catch it.

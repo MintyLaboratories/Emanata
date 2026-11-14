@@ -61,6 +61,7 @@ import com.google.android.material.sidesheet.SideSheetDialog
 import com.google.android.material.slider.Slider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
@@ -72,6 +73,7 @@ import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookId
@@ -3851,6 +3853,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     private val aiModels by lazy { ModelStore.of(this) }
 
+    /** The page times measured here, for the chain's load estimate. */
+    private val aiTimes by lazy { PageTimes.of(this) }
+
     /** The model downloads last shown in the sheet. */
     private var shownDownloads: Downloads? = null
 
@@ -3910,6 +3915,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             button.visibility = if (shown) View.VISIBLE else View.GONE
             aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
+        view.findViewById<AiLoadBar>(R.id.ai_load_bar).pageMs = AiLoad.pageMs(picks.models, aiTimes::pageMs)
         view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
         view.findViewById<View>(R.id.sheet_ai_kind_row).visibility = if (own == null) View.VISIBLE else View.GONE
         setGroupEnabled(view.findViewById(R.id.sheet_ai_kind), book() != null || aiKindFolder() != null)

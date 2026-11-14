@@ -67,4 +67,6 @@
     <dimen name="ai_model_detail_start">68dp</dimen>
     <!-- Space above and below each of a model's ratings. -->
     <dimen name="ai_model_rating_padding">2dp</dimen>
+    <!-- The load estimate bar's thickness. -->
+    <dimen name="ai_load_bar_height">8dp</dimen>
 </resources>

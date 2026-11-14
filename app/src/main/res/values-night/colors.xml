@@ -56,6 +56,10 @@
     <color name="op_on_repack">#FFEDD5</color>
     <color name="op_repack_ring">#FDBA74</color>
 
+    <color name="ai_load_light">#4ADE80</color>
+    <color name="ai_load_moderate">#FACC15</color>
+    <color name="ai_load_heavy">#F87171</color>
+
 
 
 </resources>

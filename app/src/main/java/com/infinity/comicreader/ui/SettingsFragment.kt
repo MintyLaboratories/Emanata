@@ -19,7 +19,9 @@ import androidx.preference.SeekBarPreference
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiModel
+import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.Downloads
@@ -27,6 +29,7 @@ import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.Library
@@ -540,17 +543,22 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** A default chain's picker of one step, in Settings. */
     private data class AiPicker(val kind: ChainKind, val step: AiStep, val pref: ListPreference)
 
+    /** The key of [kind]'s header ([AiChainPreference]). */
+    private fun chainKey(kind: ChainKind) = "ai_chain_${kind.key}"
+
     /**
      * Fills each default chain's AI step choices (none, then the catalog's models with their
      * sizes and what they do, slow ones only while Keep it simple is off or when chosen, then
      * the imported ones, again as they come and go), starts downloading a catalog model as it
      * is chosen, as AI processing is turned on, or (when a download was cut short with the app)
-     * as Settings open, and shows the chains run (hidden advanced choices too), each choice's
-     * download state and the space models take, as they change.
+     * as Settings open, and shows the chains run (hidden advanced choices too), each chain's
+     * load estimate ([AiLoad]), each choice's download state and the space models take, as
+     * they change.
      */
     private fun setUpAi(prefs: Prefs) {
         val context = requireContext()
         val store = ModelStore.of(context)
+        val times = PageTimes.of(context)
         val pickers = ChainKind.entries.flatMap { kind ->
             AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step, kind))?.let { AiPicker(kind, step, it) } }
         }
@@ -602,7 +610,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             val installed = withContext(AppDispatchers.io) { Models.all().filter { store.installed(it) } }
             val used = withContext(AppDispatchers.io) { store.bytesUsed() }
+            // Each chain's load estimate, of the models it runs whether AI processing is on or not.
+            val loads = withContext(AppDispatchers.io) {
+                ChainKind.entries.associateWith { AiLoad.pageMs(AiPicks.of(prefs, it).models, times::pageMs) }
+            }
             if (!isAdded) return
+            for ((kind, ms) in loads) findPreference<AiChainPreference>(chainKey(kind))?.pageMs = ms
             // Keep it simple hides the size slider: sizes set away from the defaults show here instead.
             val sizes = if (prefs.keepSimple) AiSizeText.changed(context, prefs.aiThresholds) else null
             val chains = ChainKind.entries.associateWith { AiChain.chosen(prefs, it) }

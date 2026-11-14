@@ -33,6 +33,13 @@ class PageTimes(private val file: File) {
         write(all)
     }
 
+    /** Forgets every time learned. */
+    @Synchronized
+    internal fun clear() {
+        kept = HashMap()
+        file.delete()
+    }
+
     private fun all(): MutableMap<String, Kept> = kept ?: read().also { kept = it }
 
     private fun read(): MutableMap<String, Kept> {

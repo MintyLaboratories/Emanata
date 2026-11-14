@@ -16,6 +16,7 @@ import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.OfflineDownloads
+import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -213,6 +214,26 @@ class ViewerActivityAiChoicesTest {
         assertEquals(R.id.btn_ai_other, kindShown(sheet))
         sheet.tap(R.id.btn_dir_rtl)
         assertEquals(R.id.btn_ai_manga, kindShown(sheet))
+    }
+
+    @Test
+    fun theLoadBarFollowsTheChainShown() {
+        PageTimes.of(context).clear()
+        val viewer = open()
+        val sheet = ReaderSheet(viewer)
+        val bar = sheet.view<AiLoadBar>(R.id.ai_load_bar)
+        val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+        assertEquals(upscale.pageMs, bar.pageMs)
+        assertEquals(AiLoadBar.describe(context, upscale.pageMs), bar.contentDescription)
+        pickOpenComic(viewer, sheet)
+        assertEquals(ModelCatalog.byId("opencomic-ai-upscale-2x-compact-v2")!!.pageMs, bar.pageMs)
+        // Manga's chain, still the default one.
+        sheet.tap(R.id.btn_ai_manga)
+        assertEquals(upscale.pageMs, bar.pageMs)
+        // This book's own, with nothing picked.
+        Prefs(context).aiEnabled = false
+        sheet.tap(R.id.btn_ai_book)
+        assertEquals(0L, bar.pageMs)
     }
 
     @Test

@@ -396,6 +396,8 @@
             android:id="@+id/sheet_ai_upscale"
             style="@style/Widget.ComicReader.SheetPicker" />
 
+        <include layout="@layout/view_ai_load" />
+
         <!-- Behavior -->
         <TextView
             style="@style/Widget.ComicReader.SheetSection"

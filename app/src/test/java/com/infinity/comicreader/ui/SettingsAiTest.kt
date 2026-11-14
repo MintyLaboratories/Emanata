@@ -22,6 +22,7 @@ import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
+import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
 import org.junit.Assert.assertEquals
@@ -376,6 +377,43 @@ class SettingsAiTest {
         assertNull(back.aiModel(AiStep.DESCREEN, ChainKind.MANGA))
         assertEquals("opencomic-ai-upscale-2x-compact-v2", back.aiModel(AiStep.UPSCALE, ChainKind.MANGA))
         assertFalse(back.saverAi)
+    }
+
+    /** Waits for [pref]'s bar to show [expected]: it is set once the store is read off the main thread. */
+    private fun awaitLoad(pref: AiChainPreference, expected: Long) {
+        val end = System.currentTimeMillis() + 5_000
+        while (pref.pageMs != expected && System.currentTimeMillis() < end) {
+            idle()
+            Thread.sleep(10)
+        }
+        assertEquals(expected, pref.pageMs)
+    }
+
+    @Test
+    fun eachChainsLoadFollowsItsModelsAndTheTimesLearnedHere() {
+        val times = PageTimes.of(context)
+        times.clear()
+        try {
+            val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+            val fragment = settings()
+            val manga = fragment.findPreference<AiChainPreference>("ai_chain_manga")!!
+            val other = fragment.findPreference<AiChainPreference>("ai_chain_other")!!
+            awaitLoad(manga, upscale.pageMs)
+            awaitLoad(other, upscale.pageMs)
+            // A model picked for manga weighs on manga's bar alone.
+            val descreen = ModelCatalog.forStep(AiStep.DESCREEN).first()
+            val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.DESCREEN, ChainKind.MANGA))!!
+            if (pref.callChangeListener(descreen.id)) pref.value = descreen.id
+            awaitLoad(manga, descreen.pageMs + upscale.pageMs)
+            assertEquals(upscale.pageMs, other.pageMs)
+            // A time learned here replaces the catalog's.
+            times.keep(upscale, 1_234)
+            val again = settings()
+            awaitLoad(again.findPreference("ai_chain_other")!!, 1_234)
+            awaitLoad(again.findPreference("ai_chain_manga")!!, descreen.pageMs + 1_234)
+        } finally {
+            times.clear()
+        }
     }
 
     @Test

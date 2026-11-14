@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A default AI chain's header: its name, what it is for, and its load estimate bar. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="?android:attr/listPreferredItemPaddingStart"
+    android:paddingTop="@dimen/space_4"
+    android:paddingEnd="?android:attr/listPreferredItemPaddingEnd"
+    android:paddingBottom="@dimen/space_2">
+
+    <TextView
+        android:id="@android:id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+        android:textColor="?attr/colorPrimary" />
+
+    <TextView
+        android:id="@android:id/summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?android:attr/textColorSecondary" />
+
+    <include layout="@layout/view_ai_load" />
+</LinearLayout>

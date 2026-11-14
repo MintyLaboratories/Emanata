@@ -59,6 +59,11 @@
     <color name="op_on_repack">#7C2D12</color>
     <color name="op_repack_ring">#EA580C</color>
 
+    <!-- The AI load estimate bar: light, moderate, heavy. -->
+    <color name="ai_load_light">#16A34A</color>
+    <color name="ai_load_moderate">#CA8A04</color>
+    <color name="ai_load_heavy">#DC2626</color>
+
 
     <!-- ================= Semantic extras ================= -->
     <!-- Reader is always pure black for maximum contrast, in both themes. -->

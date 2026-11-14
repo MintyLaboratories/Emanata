@@ -166,25 +166,17 @@ object ModelCatalog {
     /** CuNNy DS's sizes, lightest first: upstream's two fast ones, then layers x channels. */
     val CUNNY_LEVELS = listOf("faster", "fast", "4x12", "4x16", "4x24", "4x32", "8x32")
 
-    /** ArtCNN C4F[n] DS 2×, at [level] of [ARTCNN_LEVELS], its ncnn files [param] and [bin] hosted under its id. */
-    private fun artcnn(level: String, param: Pair<Long, String>, bin: Pair<Long, String>, pageMs: Long): CatalogModel {
-        val id = "artcnn-${level.lowercase()}-ds"
-        return CatalogModel(
-            id, "ArtCNN $level DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN,
-            hosted("$id/$id.param", param.first, param.second), hosted("$id/$id.bin", bin.first, bin.second),
-            pageMs = pageMs, blurb = ModelBlurb.ARTCNN, level = ModelLevel("artcnn-ds", "ArtCNN 2×", ARTCNN_LEVELS.indexOf(level), ARTCNN_LEVELS)
-        )
-    }
+    /** ArtCNN [level] DS 2×, at [level] of [ARTCNN_LEVELS], its ncnn files [param] and [bin]. */
+    private fun artcnn(level: String, param: ModelFile, bin: ModelFile, pageMs: Long) = CatalogModel(
+        "artcnn-${level.lowercase()}-ds", "ArtCNN $level DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN, param, bin,
+        pageMs = pageMs, blurb = ModelBlurb.ARTCNN, level = ModelLevel("artcnn-ds", "ArtCNN 2×", ARTCNN_LEVELS.indexOf(level), ARTCNN_LEVELS)
+    )
 
-    /** CuNNy [level] DS 2× with edges repeated before every layer, at [level] of [CUNNY_LEVELS], hosted under its id. */
-    private fun cunny(level: String, param: Pair<Long, String>, bin: Pair<Long, String>, pageMs: Long): CatalogModel {
-        val id = "cunny-$level-ds-rp"
-        return CatalogModel(
-            id, "CuNNy $level DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
-            hosted("$id/$id.param", param.first, param.second), hosted("$id/$id.bin", bin.first, bin.second),
-            pageMs = pageMs, blurb = ModelBlurb.CUNNY, level = ModelLevel("cunny-ds", "CuNNy 2×", CUNNY_LEVELS.indexOf(level), CUNNY_LEVELS)
-        )
-    }
+    /** CuNNy [level] DS 2× with edges repeated before every layer, at [level] of [CUNNY_LEVELS], its ncnn files [param] and [bin]. */
+    private fun cunny(level: String, param: ModelFile, bin: ModelFile, pageMs: Long) = CatalogModel(
+        "cunny-$level-ds-rp", "CuNNy $level DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY, param, bin,
+        pageMs = pageMs, blurb = ModelBlurb.CUNNY, level = ModelLevel("cunny-ds", "CuNNy 2×", CUNNY_LEVELS.indexOf(level), CUNNY_LEVELS)
+    )
 
     val all: List<CatalogModel> = listOf(
         CatalogModel(
@@ -265,40 +257,58 @@ object ModelCatalog {
             blurb = ModelBlurb.OPENCOMIC_UPSCALE
         ),
         artcnn(
-            "C4F16", 1448L to "ee35e748bd44595bb2201516cf7cad7953bee9c8e18bfdcf8a0e6549071427aa",
-            49436L to "ec3189b6dbf50cb250f63c66decaf5d39cd6dbd8a2e4271ac3914a12483fb8ca", pageMs = 600
+            "C4F16",
+            hosted("artcnn-c4f16-ds/artcnn-c4f16-ds.param", 1448, "ee35e748bd44595bb2201516cf7cad7953bee9c8e18bfdcf8a0e6549071427aa"),
+            hosted("artcnn-c4f16-ds/artcnn-c4f16-ds.bin", 49436, "ec3189b6dbf50cb250f63c66decaf5d39cd6dbd8a2e4271ac3914a12483fb8ca"),
+            pageMs = 600
         ),
         artcnn(
-            "C4F32", 1449L to "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f",
-            190940L to "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9", pageMs = 1_530
+            "C4F32",
+            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.param", 1449, "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f"),
+            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.bin", 190940, "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9"),
+            pageMs = 1_530
         ),
         cunny(
-            "faster", 1458L to "86d83d5a7c98a867aa441dcddd3fb2994339b577485b9ff208d0420f80e02505",
-            6224L to "40b515fd9458ae45a7cf81720945404b5b011adb4959e3e6ad9f5701e87d5c08", pageMs = 250
+            "faster",
+            hosted("cunny-faster-ds-rp/cunny-faster-ds-rp.param", 1458, "86d83d5a7c98a867aa441dcddd3fb2994339b577485b9ff208d0420f80e02505"),
+            hosted("cunny-faster-ds-rp/cunny-faster-ds-rp.bin", 6224, "40b515fd9458ae45a7cf81720945404b5b011adb4959e3e6ad9f5701e87d5c08"),
+            pageMs = 250
         ),
         cunny(
-            "fast", 1462L to "4adeb2f53460759798b806bf7167b15a5bf683a7ae0e987c82d372ca7f21c0d5",
-            10432L to "98ca28c8b6ca64d9356785c1bf793a4a4a7ac1b009c363daa63d87521463c801", pageMs = 280
+            "fast",
+            hosted("cunny-fast-ds-rp/cunny-fast-ds-rp.param", 1462, "4adeb2f53460759798b806bf7167b15a5bf683a7ae0e987c82d372ca7f21c0d5"),
+            hosted("cunny-fast-ds-rp/cunny-fast-ds-rp.bin", 10432, "98ca28c8b6ca64d9356785c1bf793a4a4a7ac1b009c363daa63d87521463c801"),
+            pageMs = 280
         ),
         cunny(
-            "4x12", 1949L to "89bd52cd23a1a303023e6115c4d8b4b83f0661db89e2512695576593ee7e3614",
-            23224L to "1eadee888b5190bf548f02e0e7fa6cc80a2e0e4067fda2bbb83fa9c3163b7f79", pageMs = 330
+            "4x12",
+            hosted("cunny-4x12-ds-rp/cunny-4x12-ds-rp.param", 1949, "89bd52cd23a1a303023e6115c4d8b4b83f0661db89e2512695576593ee7e3614"),
+            hosted("cunny-4x12-ds-rp/cunny-4x12-ds-rp.bin", 23224, "1eadee888b5190bf548f02e0e7fa6cc80a2e0e4067fda2bbb83fa9c3163b7f79"),
+            pageMs = 330
         ),
         cunny(
-            "4x16", 1949L to "6d5cf8a3895387e365c29ab00a2072928e3a7a51b0002a4fc7629f192d604046",
-            40152L to "35a434299b24a58cc8c625aa2565e7f1ccc4463d37b67178ee71eba39e7ff393", pageMs = 400
+            "4x16",
+            hosted("cunny-4x16-ds-rp/cunny-4x16-ds-rp.param", 1949, "6d5cf8a3895387e365c29ab00a2072928e3a7a51b0002a4fc7629f192d604046"),
+            hosted("cunny-4x16-ds-rp/cunny-4x16-ds-rp.bin", 40152, "35a434299b24a58cc8c625aa2565e7f1ccc4463d37b67178ee71eba39e7ff393"),
+            pageMs = 400
         ),
         cunny(
-            "4x24", 1949L to "7eb6fb62bf5b1a9d083d13e1dfb1857522d2e368345fcd5f1a5a099a75e5133a",
-            87832L to "04e7cbcadc5fa10a2eb3b5cba8cc8f0431140807dd84e5cb1108c514224912d4", pageMs = 550
+            "4x24",
+            hosted("cunny-4x24-ds-rp/cunny-4x24-ds-rp.param", 1949, "7eb6fb62bf5b1a9d083d13e1dfb1857522d2e368345fcd5f1a5a099a75e5133a"),
+            hosted("cunny-4x24-ds-rp/cunny-4x24-ds-rp.bin", 87832, "04e7cbcadc5fa10a2eb3b5cba8cc8f0431140807dd84e5cb1108c514224912d4"),
+            pageMs = 550
         ),
         cunny(
-            "4x32", 1950L to "fe856a60fbc4a3d13b20ee945fae4a94d6421d14c60925a1c7b70c9178e8dd99",
-            153944L to "cdc10dd38b3cee8b0dbfc50ea3d34953a4c8538a996e6020fcb9915c788577d2", pageMs = 800
+            "4x32",
+            hosted("cunny-4x32-ds-rp/cunny-4x32-ds-rp.param", 1950, "fe856a60fbc4a3d13b20ee945fae4a94d6421d14c60925a1c7b70c9178e8dd99"),
+            hosted("cunny-4x32-ds-rp/cunny-4x32-ds-rp.bin", 153944, "cdc10dd38b3cee8b0dbfc50ea3d34953a4c8538a996e6020fcb9915c788577d2"),
+            pageMs = 800
         ),
         cunny(
-            "8x32", 2710L to "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e",
-            301928L to "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f", pageMs = 1_450
+            "8x32",
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.param", 2710, "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e"),
+            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.bin", 301928, "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f"),
+            pageMs = 1_450
         ),
         CatalogModel(
             "realesr-animevideov3-x2", "Real-ESRGAN AnimeVideo v3 2×", AiStep.UPSCALE, 2, ModelSource.REAL_ESRGAN,

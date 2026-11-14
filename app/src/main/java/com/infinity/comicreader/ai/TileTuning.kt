@@ -139,8 +139,9 @@ internal object TileTiming {
     /**
      * [model]'s tiles of each of [sizes] at [geometry], on noise, read back whole as a page's
      * tiles are: smallest first, each run once untimed and once timed, stopping at a size that
-     * fails, takes past [TILE_MS], or would take past [SKIP_PAST] times that at the pace of the
-     * size below; then [RUNS] - 1 more rounds over those within [TILE_MS], each size again run
+     * fails, takes past [SPIKE] times [TILE_MS], or would take past [SKIP_PAST] times that at
+     * the least time per pixel of the sizes below; then [RUNS] - 1 more rounds over those that
+     * may still pass [rank]'s bounds (one slow run is not the median), each size again run
      * once untimed before it is timed (a page's tiles all have one shape), its buffers freed
      * before another size runs (as after a page). [trying] hears each
      * size before its first run. A size that fails is timed no more; failing in the first round,
@@ -176,10 +177,10 @@ internal object TileTiming {
             return if (ran) ms else null
         }
         try {
-            var below: Pair<Int, Long>? = null
             for (size in asc) {
-                val b = below
-                if (b != null && b.second * (size.toDouble() / b.first) * (size.toDouble() / b.first) > TILE_MS * SKIP_PAST) break
+                // The least time per pixel so far, at this size: one slow sample of a size below does not end the climb.
+                val pace = runs.minOfOrNull { (s, ms) -> ms.min().toDouble() / s / s }
+                if (pace != null && pace * size * size > TILE_MS * SKIP_PAST) break
                 trying(size)
                 // Once untimed, then timed.
                 val ms = run(size)?.let { run(size) }
@@ -188,12 +189,11 @@ internal object TileTiming {
                     break
                 }
                 runs[size] = mutableListOf(ms)
-                below = size to ms
-                if (ms > TILE_MS) break
+                if (ms > TILE_MS * SPIKE) break
             }
             repeat(RUNS - 1) {
                 for ((size, ms) in runs) {
-                    if (size in failed || ms.max() > TILE_MS) continue
+                    if (size in failed || !mayPass(ms)) continue
                     // Once untimed after the shape changed, as a page's tiles follow one of their own shape.
                     val t = run(size)?.let { run(size) }
                     if (t == null) failed += size else ms += t
@@ -207,6 +207,9 @@ internal object TileTiming {
         val timed = runs.map { (size, ms) -> Timing(size, ms, size in failed, peaks[size] ?: 0L) }
         return timed + failed.filter { it !in runs }.map { Timing(it, emptyList(), true, peaks[it] ?: 0L) }
     }
+
+    /** True while a size with timed runs [ms] may still pass [rank]'s bounds after all [RUNS]: none past [SPIKE], few enough past [TILE_MS] for the median. */
+    private fun mayPass(ms: List<Long>): Boolean = ms.none { it > TILE_MS * SPIKE } && ms.count { it > TILE_MS } <= (RUNS - 1) / 2
 
     /**
      * The size of [timings] to blame for a failed run, as too large for this device: the

@@ -115,12 +115,24 @@ class TileTuningTest {
         val tried = ArrayList<Int>()
         val t = TileTiming.time(m, listOf(512, 192, 384, 256), Geometry(2, 0, 5), { now[0] }, { false }) { tried += it }
         assertEquals(listOf(192, 256, 384, 512), tried)
-        // Smallest first, each twice; 512 past the bound ends the climb and gets no more rounds; each round runs a size twice, timing the second.
+        // Smallest first, each twice, timing the second; 512 past the bound runs again until its median can no longer pass.
         val round = listOf(192, 192, 256, 256, 384, 384)
-        assertEquals(round + listOf(512, 512) + round + round, m.widths)
+        assertEquals(round + listOf(512, 512) + round + listOf(512, 512) + round, m.widths)
         assertEquals(listOf(42L, 42L, 42L), t.first { it.size == 192 }.ms)
-        assertEquals(listOf(185L), t.first { it.size == 512 }.ms)
+        assertEquals(listOf(185L, 185L), t.first { it.size == 512 }.ms)
         assertEquals("freed before each other size, and at the end", m.widths.zipWithNext().count { (a, b) -> a != b } + 1, m.inner.trims.get())
+        assertEquals(384, TileTiming.rank(t, Geometry(2, 0, 5)).first())
+    }
+
+    @Test
+    fun oneSlowRunDoesNotRuleASizeOut() {
+        val now = longArrayOf(0)
+        // The first timed 384 px tile takes 160 ms, the later ones their usual 97.
+        var runs384 = 0
+        val m = Clocked(FakeModel(), now) { w -> if (w == 384 && ++runs384 == 2) 160 else lightMs(w) }
+        val t = TileTiming.time(m, TileSizing.CANDIDATES, Geometry(2, 0, 5), { now[0] }, { false })
+        assertEquals(listOf(160L, 97L, 97L), t.single { it.size == 384 }.ms)
+        assertTrue("climbed past it", 512 in m.widths)
         assertEquals(384, TileTiming.rank(t, Geometry(2, 0, 5)).first())
     }
 

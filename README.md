@@ -836,8 +836,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   later default). Under each chain's name a load estimate bar sums its
   models' page times (this device's as the reader measured them, each page
   moving a model's time a quarter of the way; a model not run yet takes the
-  reference tablet's time scaled by how the measured ones compare with
-  theirs) on a scale to 30 s: green below 10 s, yellow to 20 s,
+  reference tablet's time scaled by how the measured ones of its engine,
+  ncnn or GPU shaders, compare with theirs, and an imported model its own
+  time, measured on this device) on a scale to 30 s: green below 10 s, yellow to 20 s,
   red past it, with no unit or numbers; TalkBack reads it as light, moderate
   or heavy. Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
@@ -845,7 +846,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   8x32) and ArtCNN DS in two (C4F16, C4F32). A step's picker shows each choice by a short name (without the
   step's own words, e.g. OpenComic 2×), its speed in stars (five up to 1 s
   a page, or up to the fastest model's time when that is longer; one for
-  slow models; linear in page time on the reference tablet in between) and
+  slow models; linear in page time on the reference tablet in between; none
+  for imported models, timed on this device) and
   an info button that shows, and on a second tap
   hides, its full name and size, its star ratings by eye (Crisp: makes
   blurry or artifacted art crisp; Color; Detail; Desharp; Lines; an empty

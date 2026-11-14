@@ -97,7 +97,7 @@ internal object ShaderSessions {
      * [scale] times enlargement or reaches too far, or no tile fits. Compiled passes are kept
      * in [cache] for the next open ([ShaderRuntime.open]). Tiles are timed by [clock] (ms) while
      * the seams are checked, each timed run waiting while [hold] (the reader moving, so turning
-     * pages or zooming on the GPU) and not counted when that began during it. Throws
+     * pages or zooming on the GPU) and run again when that began during it. Throws
      * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
      */
     fun attempt(
@@ -222,8 +222,9 @@ internal object ShaderSessions {
 
     /**
      * [model], timing each run on a [size] x [size] input by [clock], as the GPU does it alone:
-     * each waits while [hold] first ([TileEngine.held]), and one the hold began during is not
-     * counted. Throws [CancellationException] once [canceled] while waiting.
+     * each waits while [hold] first ([TileEngine.held]), and one the hold began during is run
+     * again, up to [TileTiming.HELD_RETRIES] times, then counted anyway. Throws
+     * [CancellationException] once [canceled] while waiting.
      */
     private class Timed(
         private val model: TileModel, private val size: Int, private val clock: () -> Long,
@@ -232,12 +233,18 @@ internal object ShaderSessions {
         private val times = ArrayList<Long>()
 
         override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
-            val timing = input.width == size && input.height == size
-            if (timing) TileEngine.held(hold, canceled)
-            val t0 = clock()
-            val out = model.run(src, input, dst, crop, dx, dy)
-            if (timing && !hold()) times += clock() - t0
-            return out
+            if (input.width != size || input.height != size) return model.run(src, input, dst, crop, dx, dy)
+            var again = 0
+            while (true) {
+                TileEngine.held(hold, canceled)
+                val t0 = clock()
+                val out = model.run(src, input, dst, crop, dx, dy) ?: return null
+                val ms = clock() - t0
+                if (!hold() || again++ == TileTiming.HELD_RETRIES) {
+                    times += ms
+                    return out
+                }
+            }
         }
 
         /** The median of the runs timed; 0 for none. */

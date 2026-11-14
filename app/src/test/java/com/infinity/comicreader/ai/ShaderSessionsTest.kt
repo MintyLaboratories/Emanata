@@ -303,6 +303,39 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun runsTheReaderKeepsInterruptingAreCountedAfterRetries() {
+        val dir = File("build/tmp/shader-held-retry-test").apply { deleteRecursively(); mkdirs() }
+        var now = 0L
+        // The reader begins moving during every run and has stopped by the next poll.
+        var moving = false
+        var contended = true
+        val hold = { moving.also { moving = false } }
+        val runtime = FakeShaders(make = {
+            FakeModel(scale = 2, onRun = {
+                if (contended) moving = true
+                now += if (contended) 400 else 10
+            })
+        })
+        fun open() = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir, clock = { now }, hold = hold).session!!
+        val s = open()
+        assertTrue("capped by the contended time: ${s.size}", s.size < ShaderSessions.DEFAULT_MAX)
+        s.close()
+        val fit = File(dir, runtime.key(runtime.chains.first()) + ShaderSessions.FIT_SUFFIX)
+        assertEquals("counted after retries, not dropped", 400L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        // Retiming retries alike, so the time stays past the limit and is timed again at the next open.
+        val held = open()
+        assertEquals("each of the runs tried again", ShaderSessions.RETIMES * (1 + TileTiming.HELD_RETRIES), (held.model as FakeModel).runs.get())
+        held.close()
+        assertEquals(400L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        contended = false
+        val alone = open()
+        assertEquals(ShaderSessions.DEFAULT_MAX, alone.size)
+        alone.close()
+        assertEquals(10L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun tooLittleMemoryIsRefused() {
         val runtime = FakeShaders(make = { FakeModel(scale = 2) })
         val o = open(runtime, memory = 4L * 1024)

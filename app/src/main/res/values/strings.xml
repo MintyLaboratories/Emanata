@@ -1129,8 +1129,8 @@
     <string name="ai_blurb_descreen_v2">For scanned print with visible dot patterns; softens clean art</string>
     <string name="ai_blurb_descreen_v3">For scanned print with visible dot patterns; softens clean art; slower, smoother tone</string>
     <string name="ai_blurb_artifact_removal">For blocky, heavily compressed pages; no visible effect on clean ones</string>
-    <string name="ai_blurb_cunny">Fast and clean, for line art and flat color; less faithful to fine texture than waifu2x</string>
-    <string name="ai_blurb_artcnn">Fast and sharp, for line art and flat color; less faithful to fine texture than waifu2x</string>
+    <string name="ai_blurb_cunny">Fast and cleaner than ArtCNN, for soft or lightly compressed pages; less faithful than waifu2x</string>
+    <string name="ai_blurb_artcnn">Fast and sharper than CuNNy, for soft or lightly compressed pages; less faithful than waifu2x</string>
     <string name="ai_model_default">%1$s (default)</string>
     <string name="ai_model_slow">Slow (~%1$d s per page)</string>
     <string name="ai_download">Download</string>

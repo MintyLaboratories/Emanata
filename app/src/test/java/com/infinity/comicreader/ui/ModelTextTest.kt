@@ -40,8 +40,8 @@ class ModelTextTest {
             blurb("realesr-animevideov3-x2")
         )
         assertTrue(blurb("realesr-animevideov3-x4").endsWith("\nSlow (~14 s per page)"))
-        assertEquals("Fast and clean, for line art and flat color; less faithful to fine texture than waifu2x", blurb("cunny-8x32-ds-rp"))
-        assertEquals("Fast and sharp, for line art and flat color; less faithful to fine texture than waifu2x", blurb("artcnn-c4f32-ds"))
+        assertEquals("Fast and cleaner than ArtCNN, for soft or lightly compressed pages; less faithful than waifu2x", blurb("cunny-8x32-ds-rp"))
+        assertEquals("Fast and sharper than CuNNy, for soft or lightly compressed pages; less faithful than waifu2x", blurb("artcnn-c4f32-ds"))
         assertEquals("Slow (~14 s per page)", blurb("4x-lsdir-compact-c3"))
     }
 

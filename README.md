@@ -1067,9 +1067,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   8 pixels (at most 3 times, while fp16 stays the cheaper per pixel), then fp32
   is tried; other failures try the next smaller size. Catalog models may take
   larger GPU tiles (`TileTuning`): at a model's first open each device times
-  192, 256, 384 and 512 px tiles where they fit (smallest first, each once
-  untimed, then three rounds taken in turn, so speed drifting over minutes
-  hits every size alike) and takes the size whose tiles cost the least per
+  192, 256, 384 and 512 px tiles where they fit (smallest first, in three
+  rounds taken in turn, so speed drifting over minutes hits every size alike;
+  each timed run follows an untimed one of its size, as a page's tiles follow
+  tiles of their shape) and takes the size whose tiles cost the least per
   pixel kept, among those whose every tile ended within 150 ms (tiles are
   where a run stops for a cancel or a page turn) and within the tile memory
   budget; costs within 5% go to the smaller size. That size then passes the

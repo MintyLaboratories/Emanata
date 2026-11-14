@@ -102,8 +102,9 @@ class TileTuningTest {
         val tried = ArrayList<Int>()
         val t = TileTiming.time(m, listOf(512, 192, 384, 256), Geometry(2, 0, 5), { now[0] }, { false }) { tried += it }
         assertEquals(listOf(192, 256, 384, 512), tried)
-        // Smallest first, each twice; 512 past the bound ends the climb and gets no more rounds.
-        assertEquals(listOf(192, 192, 256, 256, 384, 384, 512, 512, 192, 256, 384, 192, 256, 384), m.widths)
+        // Smallest first, each twice; 512 past the bound ends the climb and gets no more rounds; each round runs a size twice, timing the second.
+        val round = listOf(192, 192, 256, 256, 384, 384)
+        assertEquals(round + listOf(512, 512) + round + round, m.widths)
         assertEquals(listOf(42L, 42L, 42L), t.first { it.size == 192 }.ms)
         assertEquals(listOf(185L), t.first { it.size == 512 }.ms)
         assertEquals(1, m.inner.trims.get())

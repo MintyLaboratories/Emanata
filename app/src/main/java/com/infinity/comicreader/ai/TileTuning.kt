@@ -124,7 +124,8 @@ internal object TileTiming {
      * [model]'s tiles of each of [sizes] at [geometry], on noise, read back whole as a page's
      * tiles are: smallest first, each run once untimed and once timed, stopping at a size that
      * fails, takes past [TILE_MS], or would take past [SKIP_PAST] times that at the pace of the
-     * size below; then [RUNS] - 1 more rounds over those within [TILE_MS]. [trying] hears each
+     * size below; then [RUNS] - 1 more rounds over those within [TILE_MS], each size again run
+     * once untimed before it is timed (a page's tiles all have one shape). [trying] hears each
      * size before its first run. A size that fails ends the timing of it and every larger one.
      * Throws [CancellationException] once [canceled], checked before every run.
      */
@@ -169,7 +170,8 @@ internal object TileTiming {
             repeat(RUNS - 1) {
                 for ((size, ms) in runs) {
                     if (size >= failedAt || ms.max() > TILE_MS) continue
-                    val t = run(size)
+                    // Once untimed after the shape changed, as a page's tiles follow one of their own shape.
+                    val t = run(size)?.let { run(size) }
                     if (t == null) failedAt = size else ms += t
                 }
             }

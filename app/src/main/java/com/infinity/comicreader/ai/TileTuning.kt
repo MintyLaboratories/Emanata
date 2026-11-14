@@ -142,7 +142,8 @@ internal object TileTiming {
      * fails, takes past [TILE_MS], or would take past [SKIP_PAST] times that at the pace of the
      * size below; then [RUNS] - 1 more rounds over those within [TILE_MS], each size again run
      * once untimed before it is timed (a page's tiles all have one shape). [trying] hears each
-     * size before its first run. A size that fails ends the timing of it and every larger one.
+     * size before its first run. A size that fails is timed no more; failing in the first round,
+     * it ends the climb.
      * Throws [CancellationException] once [canceled], checked before every run.
      */
     fun time(
@@ -156,7 +157,7 @@ internal object TileTiming {
         val dst = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
         val runs = LinkedHashMap<Int, MutableList<Long>>()
         val peaks = HashMap<Int, Long>()
-        var failedAt = Int.MAX_VALUE
+        val failed = HashSet<Int>()
         fun run(size: Int): Long? {
             if (canceled()) throw CancellationException("AI work canceled while timing tiles")
             val out = TilePlan.outputSize(size, geometry)
@@ -176,7 +177,7 @@ internal object TileTiming {
                 // Once untimed, then timed.
                 val ms = run(size)?.let { run(size) }
                 if (ms == null) {
-                    failedAt = size
+                    failed += size
                     break
                 }
                 runs[size] = mutableListOf(ms)
@@ -185,10 +186,10 @@ internal object TileTiming {
             }
             repeat(RUNS - 1) {
                 for ((size, ms) in runs) {
-                    if (size >= failedAt || ms.max() > TILE_MS) continue
+                    if (size in failed || ms.max() > TILE_MS) continue
                     // Once untimed after the shape changed, as a page's tiles follow one of their own shape.
                     val t = run(size)?.let { run(size) }
-                    if (t == null) failedAt = size else ms += t
+                    if (t == null) failed += size else ms += t
                 }
             }
         } finally {
@@ -196,8 +197,18 @@ internal object TileTiming {
             src.recycle()
             model.trim()
         }
-        val timed = runs.map { (size, ms) -> Timing(size, ms, size >= failedAt, peaks[size] ?: 0L) }
-        return if (failedAt in asc && failedAt !in runs) timed + Timing(failedAt, emptyList(), true, peaks[failedAt] ?: 0L) else timed
+        val timed = runs.map { (size, ms) -> Timing(size, ms, size in failed, peaks[size] ?: 0L) }
+        return timed + failed.filter { it !in runs }.map { Timing(it, emptyList(), true, peaks[it] ?: 0L) }
+    }
+
+    /**
+     * The size of [timings] to blame for a failed run, as too large for this device: the
+     * smallest that failed past [maxTile]; none when a size up to [maxTile] failed too (the GPU
+     * failed, not the size).
+     */
+    fun blamed(timings: List<Timing>, maxTile: Int): Int? {
+        val failed = timings.filter { it.failed }.map { it.size }
+        return if (failed.any { it <= maxTile }) null else failed.minOrNull()
     }
 
     /**

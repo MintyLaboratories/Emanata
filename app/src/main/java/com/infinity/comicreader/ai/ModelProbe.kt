@@ -56,8 +56,11 @@ object ModelProbe {
 
     private const val SCALE_LIMIT = 8
 
-    /** Why a model could not be measured or checked: [reason]; for memory, the [bytes] a run would have needed. */
-    class Unfit(val reason: ModelRefusal, message: String, val bytes: Long = 0) : Exception(message)
+    /**
+     * Why a model could not be measured or checked: [reason]; for memory, the [bytes] a run
+     * would have needed; [reference]: the reference failed ([verify]), not the model checked.
+     */
+    class Unfit(val reason: ModelRefusal, message: String, val bytes: Long = 0, val reference: Boolean = false) : Exception(message)
 
     /** A model's [geometry], and the most working bytes per input pixel its largest run took ([bytesPerPixel]; 0 where not counted). */
     class Probed(val geometry: Geometry, val bytesPerPixel: Long)
@@ -166,7 +169,11 @@ object ModelProbe {
             val b = tiled(m, shifted, size, geometry)
             // The CPU runs the first tile alone: the reference is slow, and wrong output is wrong everywhere.
             val first = TilePlan.tiles(w, h, referenceSize, geometry).first()
-            val truth = run(r, src, first.input, first.crop)
+            val truth = try {
+                run(r, src, first.input, first.crop)
+            } catch (e: Unfit) {
+                throw Unfit(e.reason, "Reference: ${e.message}", e.bytes, reference = true)
+            }
             // The shifted page's pixels whose context lies inside it, from its margin on, and the same pixels of the page.
             val aw = w * s
             val bw = (w - shift) * s

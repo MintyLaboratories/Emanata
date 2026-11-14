@@ -146,6 +146,38 @@ class TileTuningTest {
     }
 
     @Test
+    fun aLaterFailureMarksOnlyItsOwnSize() {
+        val now = longArrayOf(0)
+        // The first run of the second round (192 px, untimed) fails.
+        val m = Clocked(FakeModel(failAt = 8), now, ::lightMs)
+        val t = TileTiming.time(m, TileSizing.CANDIDATES, Geometry(2, 0, 5), { now[0] }, { false })
+        assertEquals(listOf(192), t.filter { it.failed }.map { it.size })
+        assertTrue(t.single { it.size == 384 }.ms.size > 1)
+        assertNull("the GPU failed, not a size", TileTiming.blamed(t, TileSizing.DEFAULT_MAX))
+    }
+
+    @Test
+    fun failuresBlameTheSmallestFailedSizePastTheCap() {
+        val failed = { size: Int -> TileTiming.Timing(size, emptyList(), failed = true) }
+        assertEquals(384, TileTiming.blamed(listOf(timing(192, 40), timing(256, 60), failed(384)), 192))
+        assertEquals(256, TileTiming.blamed(listOf(timing(192, 40), failed(256), failed(384)), 192))
+        assertNull(TileTiming.blamed(listOf(failed(192), failed(384)), 192))
+        assertNull(TileTiming.blamed(listOf(timing(192, 40), timing(384, 90)), 192))
+    }
+
+    @Test
+    fun aFailedReferenceIsNotBlamedOnTheModelChecked() {
+        val e = assertThrows(ModelProbe.Unfit::class.java) {
+            ModelProbe.verify(FakeModel(), FakeModel(onGpu = false, failsAbove = 0), Geometry(2, 0, 5), 128, 64)
+        }
+        assertTrue(e.reference)
+        val own = assertThrows(ModelProbe.Unfit::class.java) {
+            ModelProbe.verify(FakeModel(failsAbove = 0), FakeModel(onGpu = false), Geometry(2, 0, 5), 128, 64)
+        }
+        assertFalse(own.reference)
+    }
+
+    @Test
     fun timingCanBeCanceled() {
         val now = longArrayOf(0)
         val m = Clocked(FakeModel(), now, ::lightMs)

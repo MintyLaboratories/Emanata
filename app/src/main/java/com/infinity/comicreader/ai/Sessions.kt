@@ -408,7 +408,7 @@ internal object Sessions {
                             }.also { t ->
                                 timings = t
                                 Log.i(TAG, "$name: $precision tiles timed: ${t.joinToString()}")
-                                t.firstOrNull { it.failed && it.size > maxTile }?.let { slot.failed(it.size) } ?: slot.trying(0)
+                                TileTiming.blamed(t, maxTile)?.let { slot.failed(it) } ?: slot.trying(0)
                             }
                             (TileTiming.rank(t, g, budget) + usual).distinct()
                         }
@@ -423,7 +423,7 @@ internal object Sessions {
                         val check = try {
                             ModelProbe.verify(model, cpu, g, size, cpuSize, canceled)
                         } catch (e: ModelProbe.Unfit) {
-                            if (slot == null || size <= maxTile || e.reason != ModelRefusal.DOES_NOT_RUN) throw e
+                            if (slot == null || size <= maxTile || e.reason != ModelRefusal.DOES_NOT_RUN || e.reference) throw e
                             Log.w(TAG, "$name: $precision, $size px tiles fail to run: smaller from now on")
                             slot.failed(size)
                             continue

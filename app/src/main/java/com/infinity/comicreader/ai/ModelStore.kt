@@ -43,6 +43,9 @@ class ModelStore(val root: File) {
     /** True once both of [model]'s files are in place ([has]). */
     fun installed(model: CatalogModel): Boolean = installed(model as FileSet)
 
+    /** True once all of [model]'s files are in place ([has]). */
+    fun installed(model: ShaderModel): Boolean = installed(model as FileSet)
+
     /** [model]'s ncnn files for [Sessions.open]; null until [installed], and for shader chains ([shaderFiles]). */
     fun files(model: AiModel): ModelFiles? = when (model) {
         is CatalogModel -> if (installed(model)) ModelFiles(target(model, model.param), target(model, model.bin)) else null

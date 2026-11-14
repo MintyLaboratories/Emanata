@@ -23,6 +23,8 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiConditions
 import com.infinity.comicreader.ai.AiPages
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.Fallback
+import com.infinity.comicreader.ai.GlesShaders
 import com.infinity.comicreader.ai.GrayPages
 import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.LibNcnn
@@ -35,6 +37,8 @@ import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PageLimits
 import com.infinity.comicreader.ai.Session
 import com.infinity.comicreader.ai.Sessions
+import com.infinity.comicreader.ai.ShaderCatalog
+import com.infinity.comicreader.ai.ShaderSessions
 import com.infinity.comicreader.ai.TileEngine
 import com.infinity.comicreader.ai.TilePlan
 import com.infinity.comicreader.reader.BitmapUtils
@@ -106,6 +110,19 @@ import kotlin.math.max
  *   [COOL_TIME_MAX_S]; `rawMs` is not a benchmark. Saves the page, and each raw output holding
  *   color, as PNG.
  *
+ * or, for shader chains ([ShaderModel], downloaded first when missing): `--es do shaders --es ids <catalog id,id,…>
+ *  [--es sizes 1000x1500,2000x3000] [--es tiles <sizes, else the one it chose>] [--ei reps 3] [--ef cool <headroom>]
+ *  [--ez save false] [--ez off false]`
+ *
+ * - shaders: per chain, how it opens on the GPU within the device's model memory (or why not):
+ *   open time (compile, measure, seam check), geometry and tile size; per page size and tile
+ *   size, `reps` synthetic pages after one warm-up, as `time` logs them; the page at the
+ *   chosen size against the same page in 256 or 192 px tiles (`seams`: 0 when tiles join
+ *   exactly); a page canceled after three tiles (`stopMs`). With `save`, each page and output
+ *   as PNG (`shader-page-WxH.png`, `shader-<id>-WxH.png`) for comparison with a PC reference.
+ *   With `off`, the GPU path is then turned off and the first chain opened again (`refusal`
+ *   RUNTIME: its pages show without it).
+ *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
  */
@@ -148,6 +165,15 @@ class AiCheckService : Service() {
                     require(size.size == 2) { "unreadable size" }
                     val ids = intent?.getStringExtra("ids")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: GrayRuns.DESCREEN_IDS
                     gray(ids, param, engines, size[0], size[1], fp16, threads, cool)
+                    return@hold
+                }
+                if (what == "shaders") {
+                    val ids = intent?.getStringExtra("ids").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    val pages = (intent?.getStringExtra("sizes") ?: "1000x1500").split(',').map { s ->
+                        s.trim().split('x').mapNotNull { it.toIntOrNull() }.also { require(it.size == 2) { "unreadable size $s" } }.let { it[0] to it[1] }
+                    }
+                    val asked = intent?.getStringExtra("tiles")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
+                    shaders(ids, pages, asked, reps, timeCool, intent?.getBooleanExtra("save", false) ?: false, intent?.getBooleanExtra("off", false) ?: false)
                     return@hold
                 }
                 if (what == "survey") {
@@ -473,6 +499,118 @@ class AiCheckService : Service() {
         }
         page.recycle()
         log(JSONObject().put("surveyed", params.size).put("state", state()))
+    }
+
+    // ------------------------------------------------------------------ shaders
+
+    private fun shaders(ids: List<String>, pages: List<Pair<Int, Int>>, tiles: List<Int>, reps: Int, cool: Float?, save: Boolean, off: Boolean) {
+        val store = ModelStore.of(this)
+        val available = GlesShaders.available
+        log(
+            JSONObject().put("shaders", ids.size).put("available", available).put("renderer", GlesShaders.renderer ?: JSONObject.NULL)
+                .put("floatBytes", GlesShaders.floatBytes).put("maxSide", GlesShaders.maxSide).put("state", state())
+        )
+        val chains = ids.mapNotNull { id ->
+            ShaderCatalog.byId(id) ?: run { log(JSONObject().put("shader", id).put("failed", "not in the catalog")); null }
+        }
+        for (m in chains) {
+            if (!store.installed(m)) {
+                val t0 = SystemClock.elapsedRealtime()
+                try {
+                    ModelDownloader(store).download(m)
+                    log(JSONObject().put("shader", m.id).put("downloaded", m.bytes).put("ms", SystemClock.elapsedRealtime() - t0))
+                } catch (e: Exception) {
+                    log(JSONObject().put("shader", m.id).put("failed", "download: ${e.javaClass.simpleName}: ${e.message}"))
+                    continue
+                }
+            }
+            val files = store.shaderFiles(m)!!
+            val memory = ModelMemory.of(this)
+            val t0 = SystemClock.elapsedRealtime()
+            val opening = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, m.scale, memory)
+            val openMs = SystemClock.elapsedRealtime() - t0
+            val s = opening.session
+            if (s == null) {
+                log(JSONObject().put("shader", m.id).put("opened", false).put("refusal", opening.refusal?.name ?: JSONObject.NULL).put("neededMb", opening.bytes shr 20).put("openMs", openMs))
+                continue
+            }
+            s.use {
+                val g = s.geometry
+                log(
+                    JSONObject().put("shader", m.id).put("opened", true).put("openMs", openMs).put("scale", g.scale).put("context", g.context)
+                        .put("margin", g.margin).put("tile", s.size).put("memoryMb", memory shr 20).put("graphicsMb", graphicsKb() / 1024)
+                )
+                for ((w, h) in pages) {
+                    val page = SyntheticPage.draw(w, h)
+                    if (save) {
+                        val name = "shader-page-${w}x$h.png"
+                        if (!File(out.parentFile, name).isFile) save(page, name)
+                    }
+                    for (size in tiles.ifEmpty { listOf(s.size) }.filter { TilePlan.fits(it, g) }) {
+                        val waitedS = cool?.let { coolDown(it, COOL_TIME_MAX_S) } ?: 0L
+                        val session = Session(s.model, g, size)
+                        val before = state()
+                        val w0 = SystemClock.elapsedRealtime()
+                        TileEngine.run(session, page, UNLIMITED).bitmap?.recycle()
+                        val warmMs = SystemClock.elapsedRealtime() - w0
+                        val times = ArrayList<Long>()
+                        val tileMs = ArrayList<Long>()
+                        var planned = 0
+                        var fallback: Fallback? = null
+                        for (r in 0 until reps) {
+                            val p0 = SystemClock.elapsedRealtime()
+                            val run = TileEngine.run(session, page, UNLIMITED)
+                            times += SystemClock.elapsedRealtime() - p0
+                            tileMs += run.stats.tileMs.toList()
+                            planned = run.stats.planned
+                            fallback = fallback ?: run.fallback
+                            run.bitmap?.recycle()
+                        }
+                        log(
+                            JSONObject().put("shaderTime", m.id).put("page", "${w}x$h").put("tile", size).put("tiles", planned).put("cooledS", waitedS)
+                                .put("warmUpMs", warmMs).put("pageMs", Stats.summary(times)).put("tileMs", Stats.summary(tileMs))
+                                .put("fallback", fallback?.name ?: JSONObject.NULL).put("graphicsMb", graphicsKb() / 1024).put("before", before).put("after", state())
+                        )
+                    }
+                    // Tiles of another size meet elsewhere: any difference is a seam.
+                    val main = TileEngine.run(s, page, UNLIMITED).bitmap
+                    val other = listOf(256, 192).firstOrNull { it != s.size && TilePlan.fits(it, g) }
+                    val small = other?.let { TileEngine.run(Session(s.model, g, it), page, UNLIMITED).bitmap }
+                    val line = JSONObject().put("shaderSeams", m.id).put("page", "${w}x$h").put("tile", s.size).put("against", other ?: JSONObject.NULL)
+                    if (main != null && small != null) {
+                        val d = diff(pixels(main), pixels(small))
+                        line.put("maxDiff", d.max).put("over2", d.over2)
+                    } else {
+                        line.put("failed", true)
+                    }
+                    log(line)
+                    if (save && main != null) save(main, "shader-${m.id}-${w}x$h.png")
+                    main?.recycle()
+                    small?.recycle()
+                    var done = 0
+                    var canceledAt = 0L
+                    try {
+                        TileEngine.run(s, page, UNLIMITED, canceled = {
+                            if (done >= 3 && canceledAt == 0L) canceledAt = SystemClock.elapsedRealtime()
+                            done >= 3
+                        }, onTile = { d, _, _ -> done = d })
+                        log(JSONObject().put("shaderCancel", m.id).put("page", "${w}x$h").put("failed", "ran to the end"))
+                    } catch (e: CancellationException) {
+                        log(JSONObject().put("shaderCancel", m.id).put("page", "${w}x$h").put("tilesRun", done).put("stopMs", SystemClock.elapsedRealtime() - canceledAt))
+                    }
+                    page.recycle()
+                }
+            }
+        }
+        val first = chains.firstOrNull { store.installed(it) }
+        if (off && first != null) {
+            GlesShaders.turnOff()
+            val files = store.shaderFiles(first)!!
+            val o = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, first.scale, ModelMemory.of(this))
+            o.session?.close()
+            log(JSONObject().put("shaderOff", first.id).put("available", GlesShaders.available).put("opened", o.session != null).put("refusal", o.refusal?.name ?: JSONObject.NULL))
+        }
+        log(JSONObject().put("shaded", chains.size).put("state", state()))
     }
 
     // ------------------------------------------------------------------ gray

@@ -3971,7 +3971,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Keeps the default chain the book runs now for its [whole] folder, the book's own kind
-     * dropped, or for this book alone; the chain shown stays.
+     * dropped, or for this book alone; the chain shown stays. A folder without a kind is left
+     * following its books' directions when the book's kind is what its direction gives.
      */
     private fun setAiKindForFolder(whole: Boolean) {
         val book = book() ?: return
@@ -3980,7 +3981,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         val now = aiKind()
         if (whole) {
             library.setChainKind(book, null)
-            library.setFolderChainKind(folder, now)
+            val byDirection = ChainKind.resolve(null, null, readingDir == "rtl")
+            if (library.folderChainKind(folder) != null || now != byDirection) library.setFolderChainKind(folder, now)
         } else {
             library.setChainKind(book, now)
         }

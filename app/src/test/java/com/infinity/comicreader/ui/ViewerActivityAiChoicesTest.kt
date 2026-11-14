@@ -192,6 +192,18 @@ class ViewerActivityAiChoicesTest {
     }
 
     @Test
+    fun turningTheFolderSwitchOffAndOnAgainChangesNothing() {
+        val viewer = open()
+        val sheet = ReaderSheet(viewer)
+        val library = Library(context)
+        sheet.tap(R.id.sheet_ai_kind_folder).tap(R.id.sheet_ai_kind_folder)
+        assertTrue(sheet.view<MaterialSwitch>(R.id.sheet_ai_kind_folder).isChecked)
+        assertNull(library.chainKind(BookIds.known(book)!!))
+        assertNull("its books still follow their directions", library.folderChainKind(folder))
+        assertEquals(R.id.btn_ai_other, kindShown(sheet))
+    }
+
+    @Test
     fun aBookReadRightToLeftRunsTheMangaChain() {
         prefs.readingDir = "rtl"
         prefs.detectDirection = false

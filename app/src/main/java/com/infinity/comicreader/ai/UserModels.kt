@@ -13,9 +13,12 @@ sealed interface AiModel {
     val scale: Int
 
     /**
-     * Its time for a synthetic 1000 x 1500 page at its own scale: started cool on the reference
-     * tablet's GPU for catalog models; for imported ones, measured once on this device as it
-     * was taken in, at the heat the device had then ([UserModel.pageHeadroom]), so rougher.
+     * Its time for a synthetic 1000 x 1500 page at its own scale: for catalog models
+     * ([CatalogModel.pageMs]), started cool on the reference tablet's GPU in the tiles it picks
+     * (some lighter sizes estimated until measured); for shader chains ([ShaderModel.pageMs]),
+     * warm upper bounds until measured cool; for imported ones, measured once on this device as
+     * it was taken in, at the heat the device had then ([UserModel.pageHeadroom]), so rougher.
+     * [PageTimes] scales each basis apart.
      */
     val pageMs: Long
 

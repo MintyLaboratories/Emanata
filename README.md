@@ -1476,10 +1476,14 @@ another, as the headroom rose from 0.79 to 0.93:
 | waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 3.4 s | 4.0 s | 324 MB |
 | waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 2.7 s | 3.1 s | 322 MB |
 
-ArtCNN C4F32 DS 2x and CuNNy 8x32 DS 2x have provisional times (GPU fp16,
-192 px tiles): ArtCNN 2.0 s (8 px margin, 54 tiles), CuNNy 2.9 s (17 px margin,
-70 tiles). In 512 px (ArtCNN) and 384 px (CuNNy) tiles, which devices may now
-choose per model, the same pages took about 1.5 s.
+ArtCNN C4F32 DS 2x and CuNNy 8x32 DS 2x (GPU fp16) took 2.0 s (8 px margin,
+54 tiles) and 2.9 s (17 px margin, 70 tiles) in 192 px tiles, and 1.53 s and
+1.45 s in the 512 px and 384 px tiles the tablet picks for them; their catalog
+times are the latter. Their lighter sizes are estimated until measured, from
+those tile times, a tile's fixed cost of about 25 ms and their work per pixel:
+CuNNy faster to 4x32 0.49 to 0.98 s, ArtCNN C4F16 0.73 s. Anime4K's times
+(`ShaderCatalog`) are warm upper bounds, from one run of all 25 chains back to
+back.
 
 Warm, models took up to 1.5 times as long as cool (single pages of the
 download check reached 21.4 s), still within the page time; the AI gate stops

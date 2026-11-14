@@ -266,12 +266,12 @@ object Decoders {
         val area = target.area(src.width, src.height, bounds)
         val plan = target.plan((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble(), area[0].toDouble(), area[1].toDouble())
             .let { if (standIn) it.notEnlarged() else it }
-        if (plan.isIdentity(src.width, src.height)) return src
+        if (plan.isIdentity(src.width, src.height) && target.scaling.sharpen == 0) return src
         // A stand-in for a page drawn in bands is only seen until they arrive: scaled the quick way.
         val quick = !standIn && target.bandsAt((area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble())
         try {
             return when {
-                plan.isCrop() -> Traces.section("crop") { Bitmap.createBitmap(src, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height) }
+                plan.isCrop() -> Traces.section("crop") { BitmapUtils.crop(src, plan, target.scaling) }
                 quick -> Traces.section("scale quick") { BitmapUtils.scaleQuick(src, plan) }
                 else -> BitmapUtils.resample(src, plan, target.linear && plan.shrinks(), target.scaling)
             }

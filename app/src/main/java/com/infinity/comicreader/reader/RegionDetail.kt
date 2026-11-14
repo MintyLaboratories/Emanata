@@ -177,11 +177,11 @@ class RegionDetail(private val reader: RegionReader, private val area: IntArray,
         val read = RegionRead.of(plan, reader.width, reader.height, scaling.filter.radius, scaling.sharpen > 0)
         val pixels = synchronized(reader) { reader.read(read.left, read.top, read.right, read.bottom, read.sample) }
         val local = read.local(plan, pixels.width, pixels.height)
-        if (local.isIdentity(pixels.width, pixels.height)) return pixels
+        if (local.isIdentity(pixels.width, pixels.height) && scaling.sharpen == 0) return pixels
         try {
             val inside = local.x >= 0 && local.y >= 0 && local.x + local.width <= pixels.width && local.y + local.height <= pixels.height
             return if (local.isCrop() && inside) {
-                Bitmap.createBitmap(pixels, local.x.toInt(), local.y.toInt(), local.width, local.height)
+                BitmapUtils.crop(pixels, local, scaling)
             } else {
                 BitmapUtils.resample(pixels, local, linear && local.shrinks(), scaling)
             }

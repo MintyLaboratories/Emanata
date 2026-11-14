@@ -44,7 +44,7 @@ class BitmapDetail(val bitmap: Bitmap) : PageDetail {
         val plan = region.plan(width, height, 0.0, 0.0, w.toDouble(), h.toDouble())
         val inside = plan.x >= 0 && plan.y >= 0 && plan.x + plan.width <= w && plan.y + plan.height <= h
         return if (plan.isCrop() && inside) {
-            Bitmap.createBitmap(bitmap, plan.x.toInt(), plan.y.toInt(), plan.width, plan.height)
+            BitmapUtils.crop(bitmap, plan, scaling)
         } else {
             BitmapUtils.resample(bitmap, plan, linear && plan.shrinks(), scaling)
         }

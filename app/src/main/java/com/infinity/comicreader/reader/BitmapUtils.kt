@@ -9,6 +9,8 @@ import android.graphics.Rect
 import com.infinity.comicreader.util.Timing
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.util.Collections
+import java.util.WeakHashMap
 import kotlin.math.abs
 
 /** Buffering of encoded entries and bitmap post-processing; decoding itself lives in [Decoders]. */
@@ -170,7 +172,46 @@ object BitmapUtils {
             out.recycle()
             throw t
         }
+        if (scaling.sharpen > 0) sharpenedBitmaps.add(out)
         return out
+    }
+
+    /**
+     * The [plan] of [src], a whole-pixel crop ([Plan.isCrop]), into a new bitmap: as
+     * [Bitmap.createBitmap] cuts it, or, with [Scaling.sharpen], copied and sharpened ([Rcas])
+     * against the source pixels just past its edges, as a resample at that scale would be.
+     */
+    fun crop(src: Bitmap, plan: Plan, scaling: Scaling = Scaling.PLAIN): Bitmap {
+        val x = plan.x.toInt()
+        val y = plan.y.toInt()
+        if (scaling.sharpen == 0) return Bitmap.createBitmap(src, x, y, plan.width, plan.height)
+        val out = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888, src.hasAlpha())
+        try {
+            Timing.span("crop ${src.width}x${src.height} to ${plan.width}x${plan.height} sharpen ${scaling.sharpen}") {
+                Canvas(out).drawBitmap(src, -x.toFloat(), -y.toFloat(), null)
+                val window = Resampler.Window(x.toDouble(), y.toDouble(), plan.width.toDouble(), plan.height.toDouble())
+                sharpen(src, out, window, Rcas.amount(scaling.sharpen), Cancellation.current()) { win, strip ->
+                    Canvas(strip).drawBitmap(src, -win.x.toFloat(), -win.y.toFloat(), null)
+                }
+            }
+        } catch (t: Throwable) {
+            out.recycle()
+            throw t
+        }
+        sharpenedBitmaps.add(out)
+        return out
+    }
+
+    /** Bitmaps [resample] and [crop] sharpened ([Scaling.sharpen]), by identity, held weakly. */
+    private val sharpenedBitmaps: MutableSet<Bitmap> = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
+
+    /** True when [bitmap] came from [resample] or [crop] with sharpening, or is a [copied] one: sharpening it again would overshoot. */
+    fun isSharpened(bitmap: Bitmap): Boolean = bitmap in sharpenedBitmaps
+
+    /** [copy], an exact copy of [original], counted as sharpened ([isSharpened]) when [original] is. */
+    fun copied(original: Bitmap, copy: Bitmap): Bitmap {
+        if (isSharpened(original)) sharpenedBitmaps.add(copy)
+        return copy
     }
 
     /** [window] of [src] resampled into all of [out] by [engine] where native code can, else through [Resampler]. */

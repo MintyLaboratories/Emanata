@@ -1367,7 +1367,8 @@ another, as the headroom rose from 0.79 to 0.93:
 CuNNy 8x32 DS 2x and ArtCNN C4F32 DS 2x are in the catalog at provisional times
 from an earlier timing on the same tablet (GPU fp16, 192 px tiles, 70 tiles: 2.9 s
 and 2.0 s; that run timed waifu2x UpConv7 2x at 3.9 s, so it ran slower than the
-table above). Their probes measured a context of 17 and 8 px. In 384 px tiles
+table above). On the GPU in fp16 they run with margins of 17 and 8 px (CuNNy's
+probe measures 9 on the CPU; the GPU check widens it). In 384 px tiles
 (CuNNy) and 512 px tiles (ArtCNN) the same pages took about 1.5 s.
 
 Warm, models took up to 1.5 times as long as cool (single pages of the

@@ -195,6 +195,42 @@ class SettingsAiTest {
     }
 
     @Test
+    fun aLevelStillSettlingIsStoredAsThePickerCloses() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        val dialog = openUpscalePicker(fragment)
+        val rows = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = pref.value, noneName = context.getString(R.string.ai_none))
+        val at = rows.indexOfFirst { it.models.firstOrNull()?.id == "anime4k-b-s" }
+        ModelPickerTest.press(ModelPickerTest.rows(dialog)[at], 2)
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals("anime4k-b-l", pref.value)
+        assertEquals("anime4k-b-l", Prefs(context).aiModel(AiStep.UPSCALE))
+    }
+
+    @Test
+    fun aRebuiltPickerKeepsItsOpenPanels() {
+        Prefs(context).aiEnabled = true
+        val controller = Robolectric.buildActivity(SettingsActivity::class.java).setup()
+        idle()
+        var fragment = controller.get().supportFragmentManager.findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
+        val dialog = openUpscalePicker(fragment)
+        val name = "Anime4K A (sharp) 2×"
+        ModelPickerTest.rows(dialog).first { ModelPickerTest.name(it) == name }.findViewById<android.view.View>(R.id.ai_model_info).performClick()
+        controller.recreate()
+        idle()
+        fragment = controller.get().supportFragmentManager.findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
+        val shown = fragment.parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) as AiChoiceDialog
+        val row = ModelPickerTest.rows(shown.dialog!!).first { ModelPickerTest.name(it) == name }
+        assertEquals(android.view.View.VISIBLE, row.findViewById<android.view.View>(R.id.ai_model_details).visibility)
+        val other = ModelPickerTest.rows(shown.dialog!!).first { ModelPickerTest.name(it) == "CuNNy 2×" }
+        assertEquals(android.view.View.GONE, other.findViewById<android.view.View>(R.id.ai_model_details).visibility)
+    }
+
+    @Test
     fun eachStepOffersNoneThenItsCatalogModels() {
         Prefs(context).keepSimple = false
         val fragment = settings()

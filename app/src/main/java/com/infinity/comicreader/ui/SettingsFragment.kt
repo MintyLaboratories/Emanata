@@ -527,12 +527,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** AI steps' pickers spaced for their multi-line choices ([AiChoiceDialog]); the rest as usual. */
     @Suppress("DEPRECATION") // setTargetFragment: how a preference dialog finds its preference.
     override fun onDisplayPreferenceDialog(preference: Preference) {
-        if (preference !is ListPreference || AiStep.entries.none { Prefs.aiKey(it) == preference.key }) {
+        val step = AiStep.entries.firstOrNull { Prefs.aiKey(it) == preference.key }
+        if (preference !is ListPreference || step == null) {
             super.onDisplayPreferenceDialog(preference)
             return
         }
         if (parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) != null) return
-        AiChoiceDialog.of(preference.key).also { it.setTargetFragment(this, 0) }.show(parentFragmentManager, AiChoiceDialog.TAG)
+        AiChoiceDialog.of(preference.key, step).also { it.setTargetFragment(this, 0) }.show(parentFragmentManager, AiChoiceDialog.TAG)
     }
 
     /**

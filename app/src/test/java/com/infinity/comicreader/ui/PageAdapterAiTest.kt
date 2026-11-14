@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -164,6 +165,18 @@ class PageAdapterAiTest {
         val after = shownBitmap(rv, 0)!!
         assertEquals(before.width, after.width)
         assertEquals(before.height, after.height)
+        adapter.release()
+    }
+
+    @Test
+    fun zoomsSharpenThePlainPageButNotTheProcessedOne() {
+        val (adapter, rv) = reader()
+        idle { colorAt(rv, 0) == plain }
+        val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
+        assertTrue(image.sharpensPage)
+        adapter.reading(0)
+        idle { colorAt(rv, 0) == processed }
+        assertFalse(image.sharpensPage)
         adapter.release()
     }
 

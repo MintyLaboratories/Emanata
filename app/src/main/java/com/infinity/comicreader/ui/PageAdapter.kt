@@ -1174,6 +1174,7 @@ class PageAdapter(
      */
     private fun showBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap) {
         val image = holder.images[slot]
+        image.sharpensPage = key !in processed
         val fit = fitOf(key.page)
         when {
             holder.shown[slot] != key.code -> applyBitmap(holder, slot, key, bitmap, exact = true)
@@ -1194,6 +1195,8 @@ class PageAdapter(
      */
     private fun applyBitmap(holder: PageHolder, slot: Int, key: PageKey, bitmap: Bitmap, exact: Boolean) {
         val image = holder.images[slot]
+        // A page a model made is never sharpened, zoomed in either.
+        image.sharpensPage = key !in processed
         image.setImageBitmap(bitmap)
         image.setFitMode(fitOf(key.page))
         image.detailSource = slotDetail(holder, key, bitmap)

@@ -565,6 +565,36 @@ class ZoomImageViewTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun zoomsSharpenAsTheSettingSaysExceptAPageAModelMade() {
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
+        try {
+            val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
+            v.zoomTo(2f, 150f, 200f)
+            draw(v)
+            assertFalse(v.shadedSharp)
+            v.zoomScaling = Scaling(sharpen = 60)
+            v.zoomTo(2.1f, 150f, 200f)
+            draw(v)
+            assertTrue(v.shadedSharp)
+            v.sharpensPage = false
+            draw(v)
+            assertFalse(v.shadedSharp)
+            // Its detail is a plain render: sharpened when enlarged.
+            val detail = RecordingDetail()
+            v.detailSource = detail
+            v.zoomTo(2.2f, 150f, 200f)
+            pass(160)
+            detail.deliver()
+            v.zoomTo(2.5f, 150f, 200f)
+            draw(v)
+            assertTrue(v.shadedSharp)
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aNewDetailTileReleasesTheOldOneFromEveryShader() {
         ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
         try {

@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
+import com.infinity.comicreader.reader.Rcas
 import com.infinity.comicreader.reader.Resampler
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
@@ -34,8 +35,9 @@ class PageShaderTest {
         kernel: PageShader.Kernel = PageShader.Kernel.FILTERED,
         colored: Boolean = false,
         filter: ScaleFilter = ScaleFilter.LANCZOS3,
-        antiRing: Boolean = false
-    ) = PageShader(kernel, colored, filter, antiRing, HOST_DIALECT)
+        antiRing: Boolean = false,
+        sharpen: Boolean = false
+    ) = PageShader(kernel, colored, filter, antiRing, sharpen, HOST_DIALECT)
 
     /** [src] ([w] x [h]) drawn through [shader] with [look], scaled by [scale] into an [outW] x [outH] bitmap. */
     private fun shaded(
@@ -47,7 +49,8 @@ class PageShaderTest {
         outW: Int,
         outH: Int,
         look: Look = Look.NONE,
-        ring: Float = 0f
+        ring: Float = 0f,
+        amount: Float = 0f
     ): IntArray {
         val bitmap = Bitmap.createBitmap(src, w, h, Bitmap.Config.ARGB_8888)
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
@@ -55,7 +58,7 @@ class PageShaderTest {
         // The software canvas refuses runtime shaders unless told otherwise.
         Canvas::class.java.getMethod("setHwFeaturesInSwModeEnabled", Boolean::class.javaPrimitiveType).invoke(canvas, true)
         canvas.scale(scale, scale)
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255, look, ring))
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shader.paint(bitmap, null, 255, look, ring, amount, 1f / scale, 1f / scale))
         return IntArray(outW * outH).also { out.getPixels(it, 0, outW, 0, 0, outW, outH) }
     }
 
@@ -97,6 +100,72 @@ class PageShaderTest {
                 }
             }
         }
+    }
+
+    /** Each pixel of [src] through [Rcas.pixel] with its neighbors in [src], edges repeating. */
+    private fun sharpenedCpu(src: IntArray, w: Int, h: Int, amount: Float): IntArray = IntArray(w * h) { i ->
+        val x = i % w
+        val y = i / w
+        val at = { xx: Int, yy: Int -> src[yy.coerceIn(0, h - 1) * w + xx.coerceIn(0, w - 1)] }
+        Rcas.pixel(at(x, y - 1), at(x - 1, y), at(x, y), at(x + 1, y), at(x, y + 1), amount)
+    }
+
+    /** The largest channel difference between [a] and [b] away from their outermost pixels, [outW] wide. */
+    private fun innerDiff(a: IntArray, b: IntArray, outW: Int): Int {
+        val outH = a.size / outW
+        var worst = 0
+        for (y in 1 until outH - 1) for (x in 1 until outW - 1) {
+            val i = y * outW + x
+            for (shift in 0..24 step 8) worst = max(worst, abs(((a[i] shr shift) and 0xFF) - ((b[i] shr shift) and 0xFF)))
+        }
+        return worst
+    }
+
+    @Test
+    fun sharpenedEnlargingMatchesTheCpuSharpeningItsResample() {
+        val w = 16
+        val h = 12
+        val src = noise(w, h, 3)
+        for (filter in ScaleFilter.entries) {
+            for (ring in listOf(0, 100)) {
+                val shader = shader(filter = filter, antiRing = ring > 0, sharpen = true)
+                for (scale in listOf(2.5f, 3f, 1.75f)) {
+                    val outW = (w * scale).toInt()
+                    val outH = (h * scale).toInt()
+                    for (amount in listOf(0.5f, 1f)) {
+                        val got = shaded(shader, src, w, h, scale, outW, outH, ring = ring / 100f, amount = amount)
+                        val cpu = expected(src, w, h, scale, outW, outH, Scaling(filter, ring, 0))
+                        val diff = innerDiff(sharpenedCpu(cpu, outW, outH, amount), got, outW)
+                        assertTrue("$filter at $ring %, scale $scale, amount $amount differs by $diff", diff <= 3)
+                        // Sharpening shows: the result is not the plain enlargement.
+                        assertTrue(innerDiff(cpu, got, outW) > 3)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun sharpeningAtZeroIsThePlainEnlargement() {
+        val w = 16
+        val h = 12
+        val src = noise(w, h, 4)
+        for (ring in listOf(0, 100)) {
+            val plain = shaded(shader(antiRing = ring > 0), src, w, h, 2.5f, 40, 30, ring = ring / 100f)
+            val zero = shaded(shader(antiRing = ring > 0, sharpen = true), src, w, h, 2.5f, 40, 30, ring = ring / 100f, amount = 0f)
+            assertTrue(maxDiff(plain, zero) <= 1)
+        }
+    }
+
+    @Test
+    fun withoutSharpeningTheShaderHasNoSharpeningCode() {
+        val plain = PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3)
+        assertTrue(!plain.contains("rcas") && !plain.contains("amount"))
+        // Lanczos3 sharpened reads an 8 x 8 window; only enlarging draws sharpen.
+        val sharp = PageShader.source(PageShader.Kernel.FILTERED, false, ScaleFilter.LANCZOS3, sharpen = true)
+        assertTrue(sharp.contains("rcas(") && sharp.contains("j < 8") && sharp.contains("i < 8"))
+        assertTrue(!PageShader.source(PageShader.Kernel.LINEAR, false, sharpen = true).contains("rcas"))
+        assertTrue(!PageShader.source(PageShader.Kernel.NEAREST, true, sharpen = true).contains("rcas"))
     }
 
     @Test

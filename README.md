@@ -927,6 +927,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   filter in fp32 and agree within one code. Only a source over
   50 MP is first reduced by the decoder's own power-of-two sampling, to bound
   memory.
+- **Sharpen after scaling** (advanced, 0-100 %, off by default): RCAS, the
+  sharpening pass of AMD FidelityFX Super Resolution 1 (MIT), runs over every
+  page and zoom detail just resampled, in place: native code on the CPU
+  (`src/main/cpp/rcas.c`, NEON on arm64, in bands on the resampler's workers)
+  whichever engine resampled it, else `Rcas` in Kotlin, which it matches bit
+  for bit. A region rendered alone (a zoomed detail, a band of a tall page)
+  also resamples the one-pixel strips past its edges as their neighbors, so it
+  joins the rest without a seam. The GPU zoom shader sharpens its enlargement
+  the same way (five filtered samples from one window). Thumbnails, covers and
+  pages an AI model made are never sharpened, so the strength is not part of a
+  processed page's key; it is part of every plain page's, so changing it
+  renders pages again.
 - The GPU path (`src/main/cpp/resample_gpu.c`) runs on an offscreen context of
   its own, one job at a time. Output rows go in chunks of equal size, two in
   flight (one when a page fits in one chunk) on their own buffers with a fence

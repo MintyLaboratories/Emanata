@@ -26,6 +26,7 @@ import android.widget.OverScroller
 import androidx.appcompat.widget.AppCompatImageView
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
+import com.infinity.comicreader.reader.Rcas
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
@@ -184,7 +185,7 @@ class ZoomImageView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** The filter and enlarging anti-ringing the GPU zooms with. */
+    /** The filter, enlarging anti-ringing and sharpening ([Scaling.sharpen]) the GPU zooms with. */
     var zoomScaling: Scaling = Scaling.DEFAULT
         set(value) {
             if (field == value) return
@@ -677,6 +678,23 @@ class ZoomImageView @JvmOverloads constructor(
     internal var shadedFilter: ScaleFilter? = null
         private set
 
+    /** Whether the shaders last enlarged with sharpening; for tests. */
+    internal var shadedSharp: Boolean = false
+        private set
+
+    private val stepValues = FloatArray(9)
+
+    /** [shader]'s paint for [bitmap] drawn under [m]: [zoomScaling]'s anti-ringing and sharpening, a screen pixel's step in [bitmap]'s pixels. */
+    private fun paintFor(shader: PageShader, bitmap: Bitmap, d: BitmapDrawable, colored: Boolean, m: Matrix): Paint {
+        m.getValues(stepValues)
+        val sx = abs(stepValues[Matrix.MSCALE_X]).takeIf { it > 0f } ?: 1f
+        val sy = abs(stepValues[Matrix.MSCALE_Y]).takeIf { it > 0f } ?: 1f
+        return shader.paint(
+            bitmap, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true),
+            Rcas.amount(zoomScaling.sharpen), 1f / sx, 1f / sy
+        )
+    }
+
     /**
      * Still again: drawn once more with [zoomScaling]'s own filter if the move drew with
      * another, unless a detail, about to be asked for ([settle]), will cover the page anyway.
@@ -808,6 +826,18 @@ class ZoomImageView @JvmOverloads constructor(
     internal val drawsOneToOne: Boolean
         get() = (drawable as? BitmapDrawable)?.isFilterBitmap == false
 
+    /**
+     * Whether the page bitmap is sharpened, as [zoomScaling] says, where the GPU enlarges it:
+     * false for a page an AI model made, which is never sharpened. Its detail and bands, plain
+     * renders, always are.
+     */
+    var sharpensPage: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     /** True when [look] runs on the GPU. */
     private val colored: Boolean
         get() = !look.plain && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !shaderFailed
@@ -839,11 +869,12 @@ class ZoomImageView @JvmOverloads constructor(
 
     /**
      * Shaders by [shaderSlot], each holding the bitmap it last drew: for the page and for its
-     * detail, with [zoomScaling]'s filter and with the one drawn while moving.
+     * detail, with [zoomScaling]'s filter and with the one drawn while moving, each with and
+     * without sharpening.
      */
-    private val pageShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
-    private val detailShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
-    private val bandShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 2)
+    private val pageShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 4)
+    private val detailShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 4)
+    private val bandShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 4)
     private var shaderFailed = false
 
     /** The bitmaps the shaders hold; for tests. */
@@ -853,16 +884,21 @@ class ZoomImageView @JvmOverloads constructor(
 
     /**
      * The shader in [shaders] for [kernel], with the color stage when [colored], through
-     * [zoomScaling]'s filter or, while [moving], [PageShader.moving]'s: made on first use,
-     * or null where it cannot run, after which the view draws plainly.
+     * [zoomScaling]'s filter or, while [moving], [PageShader.moving]'s, sharpening an
+     * enlargement when [sharpened] and [zoomScaling] sharpens: made on first use, or null
+     * where it cannot run, after which the view draws plainly.
      */
-    private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean): PageShader? {
+    private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean, sharpened: Boolean = true): PageShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
         val filter = if (moving && kernel == PageShader.Kernel.FILTERED) PageShader.moving(zoomScaling.filter) else zoomScaling.filter
-        if (kernel == PageShader.Kernel.FILTERED) shadedFilter = filter
-        val slot = shaderSlot(kernel, colored) + if (filter != zoomScaling.filter) SHADER_SLOTS else 0
+        val sharp = sharpened && kernel == PageShader.Kernel.FILTERED && zoomScaling.sharpen > 0
+        if (kernel == PageShader.Kernel.FILTERED) {
+            shadedFilter = filter
+            shadedSharp = sharp
+        }
+        val slot = shaderSlot(kernel, colored) + (if (filter != zoomScaling.filter) SHADER_SLOTS else 0) + if (sharp) SHADER_SLOTS * 2 else 0
         shaders[slot]?.let { return it }
-        return runCatching { PageShader(kernel, colored, filter, zoomScaling.upRing > 0, shaderDialect) }
+        return runCatching { PageShader(kernel, colored, filter, zoomScaling.upRing > 0, sharp, shaderDialect) }
             .onFailure {
                 Log.w(TAG, "Page shader unavailable, drawing plainly", it)
                 shaderFailed = true
@@ -928,7 +964,7 @@ class ZoomImageView @JvmOverloads constructor(
     private fun drawPage(canvas: Canvas, hole: RectF?) {
         val kernel = pageKernel
         val colored = this.colored
-        val shader = if (kernel == null) null else shader(pageShaders, kernel, colored)
+        val shader = if (kernel == null) null else shader(pageShaders, kernel, colored, sharpensPage)
         val saved = canvas.save()
         canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
         if (kernel == null || shader == null) {
@@ -938,7 +974,7 @@ class ZoomImageView @JvmOverloads constructor(
         } else {
             val d = drawable as BitmapDrawable
             val bitmap = d.bitmap
-            val paint = shader.paint(bitmap, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
+            val paint = paintFor(shader, bitmap, d, colored, drawMatrix)
             val w = (width - paddingLeft - paddingRight).toFloat()
             val h = (height - paddingTop - paddingBottom).toFloat()
             val bands = if (hole == null) listOf(RectF(0f, 0f, w, h)) else bandsAround(0f, 0f, w, h, hole)
@@ -982,7 +1018,7 @@ class ZoomImageView @JvmOverloads constructor(
             else -> null
         }
         if (shader != null) {
-            val paint = shader.paint(tile, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
+            val paint = paintFor(shader, tile, d, colored, detailDraw)
             canvas.drawRect(0f, 0f, tile.width.toFloat(), tile.height.toFloat(), paint)
         } else {
             val paint = if (oneToOne) plainPaint else filteredPaint
@@ -1198,7 +1234,7 @@ class ZoomImageView @JvmOverloads constructor(
                 else -> null
             }
             if (shader != null) {
-                val paint = shader.paint(band, if (colored) null else d.colorFilter, d.paint.alpha, look, zoomScaling.ring(enlarged = true))
+                val paint = paintFor(shader, band, d, colored, bandDraw)
                 canvas.drawRect(0f, 0f, band.width.toFloat(), band.height.toFloat(), paint)
             } else {
                 val paint = if (oneToOne) plainPaint else filteredPaint

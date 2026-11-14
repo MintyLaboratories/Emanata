@@ -299,9 +299,16 @@ static void free_slot(chain * c, slot * s, int bytes_per_pixel)
     s->h = 0;
 }
 
-// Frees every slot texture, the context current.
+// Frees every slot texture, the context current. The framebuffer lets go of the one it was
+// last drawn into first: GLES detaches a deleted texture only from a bound framebuffer, and
+// an attached one keeps its storage.
 static void free_slots(chain * c)
 {
+    if (c->fbo != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, c->fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
     for (int i = 0; i < c->slot_count; i++) free_slot(c, &c->slots[i], i == 0 ? 4 : float_bytes);
     free_slot(c, &c->bytes, 4);
     free(c->slots);
@@ -510,7 +517,9 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
     was_current w;
     save_current(&w);
     const int64_t t0 = now_ns();
-    int ok = c != NULL && c->passes != NULL && sh_begin(&w) == 0;
+    // GL calls only while our context is current: none at all when it could not be made so.
+    const int current = sh_begin(&w) == 0;
+    int ok = c != NULL && c->passes != NULL && current;
     if (ok) {
         c->count = n;
         glGenFramebuffers(1, &c->fbo);
@@ -538,9 +547,9 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
         locate(&c->passes[i]);
     }
     if (ok && glGetError() != GL_NO_ERROR) ok = 0;
-    glUseProgram(0);
+    if (current) glUseProgram(0);
     if (ok && !cached && path != NULL) save_cache(c, n, path);
-    if (!ok && c != NULL && sh_state == 1) {
+    if (!ok && c != NULL && c->passes != NULL && current) {
         close_chain(c);
         c = NULL;
     } else if (!ok) {
@@ -733,15 +742,18 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nRun(
     if (p == NULL) return -3;
     pthread_mutex_lock(&sh_lock);
     was_current w;
-    int r = sh_begin(&w) == 0 ? run(env, c, p, len, src, ix, iy, iw, ih, dst, cx, cy, cw, ch, dx, dy) : -6;
-    if (r != 0 && r != -6) {
-        // Whatever the GPU still holds of a failed run: none of it stays.
-        clear_errors();
-        free_slots(c);
+    const int current = sh_begin(&w) == 0;
+    const int r = current ? run(env, c, p, len, src, ix, iy, iw, ih, dst, cx, cy, cw, ch, dx, dy) : -6;
+    if (current) {
+        if (r != 0) {
+            // Whatever the GPU still holds of a failed run: none of it stays.
+            clear_errors();
+            free_slots(c);
+        }
+        // A plan that does not fit the chain, or bitmaps that will not do, are the caller's fault, not the GPU's.
+        count(r != 0 && r != -2 && r != -4, r == 1);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
-    // A plan that does not fit the chain, or bitmaps that will not do, are the caller's fault, not the GPU's.
-    if (r != -6) count(r != 0 && r != -2 && r != -4, r == 1);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     sh_end(&w);
     pthread_mutex_unlock(&sh_lock);
     (*env)->ReleaseIntArrayElements(env, plan, p, JNI_ABORT);

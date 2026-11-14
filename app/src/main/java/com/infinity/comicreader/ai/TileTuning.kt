@@ -145,7 +145,7 @@ internal object TileTiming {
     /** Costs within this share of the least count as equal: the smaller size wins, with the shorter stop and less memory. */
     const val TIE = 0.05
 
-    /** A size whose tile would take more than this many times [TILE_MS] at the pace of the size below is not tried. */
+    /** A size whose tile would take more than this many times [TILE_MS] at the least time per pixel of the sizes below is not tried. */
     const val SKIP_PAST = 2.0
 
     /** Times past [TILE_MS] the slowest timed tile of a size may take. */
@@ -176,14 +176,13 @@ internal object TileTiming {
      * tiles are: smallest first, each run once untimed and once timed, stopping at a size that
      * fails, takes past [SPIKE] times [TILE_MS], or would take past [SKIP_PAST] times that at
      * the least time per pixel of the sizes below; then [RUNS] - 1 more rounds over those that
-     * may still pass [rank]'s bounds (one slow run is not the median). Runs wait while [hold]
-     * (the reader turning a page or zooming), and a timed run during which it began is run
-     * again, up to [HELD_RETRIES] times. Each size again run
-     * once untimed before it is timed (a page's tiles all have one shape), its buffers freed
-     * before another size runs (as after a page). [trying] hears each
-     * size before its first run. A size that fails is timed no more; failing in the first round,
-     * it ends the climb.
-     * Throws [CancellationException] once [canceled], checked before every run.
+     * may still pass [rank]'s bounds (one slow run is not the median), each size again run once
+     * untimed before it is timed (a page's tiles all have one shape), its buffers freed before
+     * another size runs (as after a page). Runs wait while [hold] (the reader turning a page or
+     * zooming), and a timed run during which it began is run again, up to [HELD_RETRIES] times.
+     * [trying] hears each size before its first run. A size that fails is timed no more; failing
+     * in the first round, it ends the climb. Throws [CancellationException] once [canceled],
+     * checked before every run.
      */
     fun time(
         model: TileModel, sizes: List<Int>, geometry: Geometry, clock: () -> Long, canceled: () -> Boolean,

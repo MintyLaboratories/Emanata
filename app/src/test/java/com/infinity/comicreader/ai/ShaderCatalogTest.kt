@@ -22,7 +22,9 @@ class ShaderCatalogTest {
             assertTrue(f, levels.all { it.name == "${it.level.familyName}, ${it.level.name}" && it.level.names == ShaderCatalog.LEVELS })
             assertEquals("the AiModel view", levels.map { it.level }, levels.map { (it as AiModel).level })
         }
-        assertTrue("ncnn models come in one size", ModelCatalog.all.all { it.level == null })
+        // Of the ncnn models, only CuNNy's and ArtCNN's come in sizes, families apart from Anime4K's.
+        assertEquals(setOf("cunny-ds", "artcnn-ds"), ModelCatalog.all.mapNotNull { it.level?.family }.toSet())
+        assertTrue(families.none { f -> ModelCatalog.all.any { it.level?.family == f } })
         assertEquals(
             listOf(ModelBlurb.ANIME4K_A, ModelBlurb.ANIME4K_B, ModelBlurb.ANIME4K_C, ModelBlurb.ANIME4K_UPSCALE, ModelBlurb.ANIME4K_UPSCALE_DENOISE),
             families.map { f -> ShaderCatalog.family(f).map { it.blurb }.distinct().single() }

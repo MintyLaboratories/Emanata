@@ -1,9 +1,9 @@
-CuNNy-8x32-DS 2x upscaler as ncnn (cunny-8x32-ds-rp.param and cunny-8x32-ds-rp.bin)
+CuNNy DS 2x upscalers as ncnn, in the sizes faster, fast, 4x12, 4x16, 4x24, 4x32 and 8x32 (cunny-<size>-ds-rp.param and cunny-<size>-ds-rp.bin)
 
-Based on CuNNy 8x32 DS, Copyright (c) 2024 funnyplanter, https://github.com/funnyplanter/CuNNy
+Based on CuNNy DS, Copyright (c) 2024 funnyplanter, https://github.com/funnyplanter/CuNNy
 
-Modified on 2026-11-11: converted from mpv/ds/CuNNy-8x32-DS.glsl (commit e18bcf2cb4f6efb4f28be9ebb5c3fd03c1dfff0d) to ncnn. Same weights; added an RGB wrapper (BT.709 luma, bicubic chroma) and edge replication before every convolution.
+Modified on 2026-11-11 (8x32) and 2026-11-15 (the other sizes): converted from mpv/ds/CuNNy-<size>-DS.glsl (commit e18bcf2cb4f6efb4f28be9ebb5c3fd03c1dfff0d) to ncnn. Same weights; added an RGB wrapper (BT.709 luma, bicubic chroma) and edge replication before every convolution.
 
 These files are free software: you can redistribute them and/or modify them under the terms of the GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. They are distributed in the hope that they will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License and the GNU General Public License below.
 
-The app downloads them unchanged from https://huggingface.co/MadameMinty/Emanata at revision fdc7f69cbfa9e9b134970ce675259d114e1cb31b (folder cunny-8x32-ds-rp). Corresponding Source, in that repository at the same revision: cunny-8x32-ds-shader/CuNNy-8x32-DS.glsl (the unmodified shader) and cn-conversion-script/ (the conversion scripts and build instructions).
+The app downloads them unchanged from https://huggingface.co/MadameMinty/Emanata at revision fdc7f69cbfa9e9b134970ce675259d114e1cb31b (folders cunny-<size>-ds-rp). Corresponding Source, in that repository at the same revision: cunny-8x32-ds-shader/CuNNy-8x32-DS.glsl and cunny-ds-shaders/CuNNy-<size>-DS.glsl (the unmodified shaders) and cn-conversion-script/ (the conversion scripts and build instructions).

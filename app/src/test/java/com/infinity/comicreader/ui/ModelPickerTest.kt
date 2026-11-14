@@ -86,9 +86,17 @@ class ModelPickerTest {
     @Test
     fun aFamilyIsOneRowWithItsLevels() {
         val rows = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = null, noneName = "None")
-        // Every shader family on one row, each of its levels behind a slider; the waifu2x denoise strengths on one more.
+        // Every shader family on one row, each of its levels behind a slider; CuNNy's and ArtCNN's sizes, and the waifu2x denoise strengths, on three more.
         val families = rows.filter { it.family }
-        assertEquals(ShaderCatalog.all.map { it.level.family }.distinct().size + 1, families.size)
+        assertEquals(ShaderCatalog.all.map { it.level.family }.distinct().size + 3, families.size)
+        val cunny = rows.first { it.name == "CuNNy 2×" }
+        assertEquals(ModelCatalog.CUNNY_LEVELS, cunny.levelNames)
+        assertEquals("cunny-8x32-ds-rp", cunny.models[cunny.firstLevel].id)
+        assertTrue(cunny.sizes)
+        val artcnn = rows.first { it.name == "ArtCNN 2×" }
+        assertEquals(listOf("C4F16", "C4F32"), artcnn.levelNames)
+        assertEquals(listOf("artcnn-c4f16-ds", "artcnn-c4f32-ds"), artcnn.models.map { it.id })
+        assertEquals("CuNNy 2×, 4x16", PickerRows.shortName(ModelCatalog.byId("cunny-4x16-ds-rp")!!))
         val a = rows.first { it.models.firstOrNull()?.id == "anime4k-a-s" }
         assertEquals(listOf("S", "M", "L", "VL", "UL"), a.levelNames)
         assertTrue(a.sizes)

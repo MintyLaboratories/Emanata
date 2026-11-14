@@ -46,15 +46,15 @@ enum class ModelSource(
     CUNNY(
         "CuNNy", "funnyplanter", "LGPL 3.0 or later", "https://github.com/funnyplanter/CuNNy",
         listOf("cunny.txt", "lgpl-3.0.txt", "gpl-3.0.txt"), ModelCatalog.HOSTED_REPOSITORY,
-        "An ncnn conversion of the mpv shader CuNNy-8x32-DS, made for this app: the same weights, with RGB in and out " +
-            "and edges repeated before every layer. Its source, the unmodified shader and the conversion scripts, is " +
+        "ncnn conversions of the mpv shaders CuNNy-<size>-DS, made for this app: the same weights, with RGB in and out " +
+            "and edges repeated before every layer. Their source, the unmodified shaders and the conversion scripts, is " +
             "in the same repository at the same revision."
     ),
     ARTCNN(
         "ArtCNN", "João Chrisóstomo (Artoriuz)", "MIT License", "https://github.com/Artoriuz/ArtCNN",
         listOf("artcnn.txt"), ModelCatalog.HOSTED_REPOSITORY,
-        "An ncnn conversion of the ONNX release of ArtCNN C4F32 DS, made for this app: the same weights, with RGB in " +
-            "and out. The original and the conversion scripts are in the same repository at the same revision."
+        "ncnn conversions of the ONNX releases of ArtCNN C4F16 DS and C4F32 DS, made for this app: the same weights, " +
+            "with RGB in and out. The originals and the conversion scripts are in the same repository at the same revision."
     ),
     ANIME4K(
         "Anime4K", "bloc97", "MIT License", "https://github.com/bloc97/Anime4K",
@@ -102,6 +102,7 @@ interface FileSet {
  * synthetic 1000 x 1500 page on the reference tablet's GPU, at its own scale, started cool.
  * [blurb]: what it does, where known. [tiles]: the GPU tile sizes each device chooses among
  * for it by timing ([TileTuning]), where they fit; empty: [TileSizing.DEFAULT_MAX] at most.
+ * [level]: its size in a family of one network's sizes; null for a model in one size.
  */
 data class CatalogModel(
     override val id: String,
@@ -113,7 +114,8 @@ data class CatalogModel(
     val bin: ModelFile,
     override val pageMs: Long = 0,
     val blurb: ModelBlurb? = null,
-    val tiles: List<Int> = TileSizing.CANDIDATES
+    val tiles: List<Int> = TileSizing.CANDIDATES,
+    override val level: ModelLevel? = null
 ) : AiModel, FileSet {
     override val files: List<ModelFile> get() = listOf(param, bin)
 
@@ -157,6 +159,32 @@ object ModelCatalog {
     private fun file(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), BASE + path, bytes, sha256)
 
     private fun hosted(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), HOSTED_BASE + path, bytes, sha256)
+
+    /** ArtCNN DS's sizes, lightest first: 4 blocks of 16 or 32 filters. */
+    val ARTCNN_LEVELS = listOf("C4F16", "C4F32")
+
+    /** CuNNy DS's sizes, lightest first: upstream's two fast ones, then layers x channels. */
+    val CUNNY_LEVELS = listOf("faster", "fast", "4x12", "4x16", "4x24", "4x32", "8x32")
+
+    /** ArtCNN C4F[n] DS 2×, at [level] of [ARTCNN_LEVELS], its ncnn files [param] and [bin] hosted under its id. */
+    private fun artcnn(level: String, param: Pair<Long, String>, bin: Pair<Long, String>, pageMs: Long): CatalogModel {
+        val id = "artcnn-${level.lowercase()}-ds"
+        return CatalogModel(
+            id, "ArtCNN $level DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN,
+            hosted("$id/$id.param", param.first, param.second), hosted("$id/$id.bin", bin.first, bin.second),
+            pageMs = pageMs, blurb = ModelBlurb.ARTCNN, level = ModelLevel("artcnn-ds", "ArtCNN 2×", ARTCNN_LEVELS.indexOf(level), ARTCNN_LEVELS)
+        )
+    }
+
+    /** CuNNy [level] DS 2× with edges repeated before every layer, at [level] of [CUNNY_LEVELS], hosted under its id. */
+    private fun cunny(level: String, param: Pair<Long, String>, bin: Pair<Long, String>, pageMs: Long): CatalogModel {
+        val id = "cunny-$level-ds-rp"
+        return CatalogModel(
+            id, "CuNNy $level DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
+            hosted("$id/$id.param", param.first, param.second), hosted("$id/$id.bin", bin.first, bin.second),
+            pageMs = pageMs, blurb = ModelBlurb.CUNNY, level = ModelLevel("cunny-ds", "CuNNy 2×", CUNNY_LEVELS.indexOf(level), CUNNY_LEVELS)
+        )
+    }
 
     val all: List<CatalogModel> = listOf(
         CatalogModel(
@@ -236,19 +264,41 @@ object ModelCatalog {
             pageMs = 8_500,
             blurb = ModelBlurb.OPENCOMIC_UPSCALE
         ),
-        CatalogModel(
-            "artcnn-c4f32-ds", "ArtCNN C4F32 DS 2×", AiStep.UPSCALE, 2, ModelSource.ARTCNN,
-            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.param", 1449, "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f"),
-            hosted("artcnn-c4f32-ds/artcnn-c4f32-ds.bin", 190940, "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9"),
-            pageMs = 2_000,
-            blurb = ModelBlurb.ARTCNN
+        artcnn(
+            "C4F16", 1448L to "ee35e748bd44595bb2201516cf7cad7953bee9c8e18bfdcf8a0e6549071427aa",
+            49436L to "ec3189b6dbf50cb250f63c66decaf5d39cd6dbd8a2e4271ac3914a12483fb8ca", pageMs = 600
         ),
-        CatalogModel(
-            "cunny-8x32-ds-rp", "CuNNy 8x32 DS 2×", AiStep.UPSCALE, 2, ModelSource.CUNNY,
-            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.param", 2710, "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e"),
-            hosted("cunny-8x32-ds-rp/cunny-8x32-ds-rp.bin", 301928, "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f"),
-            pageMs = 2_900,
-            blurb = ModelBlurb.CUNNY
+        artcnn(
+            "C4F32", 1449L to "9370c1573e7dc880d168f63c1b890338afd1f6364bcdcfb14cf941649320328f",
+            190940L to "71dbfbd804f2d5f2703a961bcaf41fef311f6d79f619701058ffb8e6f81f9cc9", pageMs = 1_530
+        ),
+        cunny(
+            "faster", 1458L to "86d83d5a7c98a867aa441dcddd3fb2994339b577485b9ff208d0420f80e02505",
+            6224L to "40b515fd9458ae45a7cf81720945404b5b011adb4959e3e6ad9f5701e87d5c08", pageMs = 250
+        ),
+        cunny(
+            "fast", 1462L to "4adeb2f53460759798b806bf7167b15a5bf683a7ae0e987c82d372ca7f21c0d5",
+            10432L to "98ca28c8b6ca64d9356785c1bf793a4a4a7ac1b009c363daa63d87521463c801", pageMs = 280
+        ),
+        cunny(
+            "4x12", 1949L to "89bd52cd23a1a303023e6115c4d8b4b83f0661db89e2512695576593ee7e3614",
+            23224L to "1eadee888b5190bf548f02e0e7fa6cc80a2e0e4067fda2bbb83fa9c3163b7f79", pageMs = 330
+        ),
+        cunny(
+            "4x16", 1949L to "6d5cf8a3895387e365c29ab00a2072928e3a7a51b0002a4fc7629f192d604046",
+            40152L to "35a434299b24a58cc8c625aa2565e7f1ccc4463d37b67178ee71eba39e7ff393", pageMs = 400
+        ),
+        cunny(
+            "4x24", 1949L to "7eb6fb62bf5b1a9d083d13e1dfb1857522d2e368345fcd5f1a5a099a75e5133a",
+            87832L to "04e7cbcadc5fa10a2eb3b5cba8cc8f0431140807dd84e5cb1108c514224912d4", pageMs = 550
+        ),
+        cunny(
+            "4x32", 1950L to "fe856a60fbc4a3d13b20ee945fae4a94d6421d14c60925a1c7b70c9178e8dd99",
+            153944L to "cdc10dd38b3cee8b0dbfc50ea3d34953a4c8538a996e6020fcb9915c788577d2", pageMs = 800
+        ),
+        cunny(
+            "8x32", 2710L to "9c87e55c67fdcb88c9b1c0a5d5db2d5392c8a8b86569c885270dc77d471a9e2e",
+            301928L to "a28337ff2ea4b8a6bd3458251a62f2f94391d9ac64087dd16d57a022b85cae4f", pageMs = 1_450
         ),
         CatalogModel(
             "realesr-animevideov3-x2", "Real-ESRGAN AnimeVideo v3 2×", AiStep.UPSCALE, 2, ModelSource.REAL_ESRGAN,

@@ -59,6 +59,10 @@ class AboutModelsTest {
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         val note = dialog.findViewById<TextView>(R.id.notice_note)!!.text.toString()
         assertTrue(note, note.contains("By funnyplanter.") && note.contains("from ${ModelCatalog.HOSTED_REPOSITORY} ") && note.contains(ModelSource.CUNNY.conversion!!))
+        // A family with sizes is named once, with its sizes.
+        assertTrue(note, note.contains("Models: CuNNy 2× (faster/fast/4x12/4x16/4x24/4x32/8x32)."))
+        val artcnn = Notices.models.single { it.name == ModelSource.ARTCNN.title }
+        assertTrue(artcnn.note, artcnn.note!!.contains("Models: ArtCNN 2× (C4F16/C4F32)."))
         val text = dialog.findViewById<TextView>(R.id.notice_text)!!.text.toString()
         assertTrue(text.contains("Copyright (c) 2024 funnyplanter") && text.contains("GNU LESSER GENERAL PUBLIC LICENSE") && text.contains("GNU GENERAL PUBLIC LICENSE"))
         val waifu2x = Notices.models.single { it.name == ModelSource.WAIFU2X.title }

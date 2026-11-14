@@ -841,7 +841,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   red past it, with no unit or numbers; TalkBack reads it as light, moderate
   or heavy. Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
-  S to UL. A step's picker shows each choice by a short name (without the
+  S to UL, CuNNy DS in seven sizes (faster, fast, 4x12, 4x16, 4x24, 4x32,
+  8x32) and ArtCNN DS in two (C4F16, C4F32). A step's picker shows each choice by a short name (without the
   step's own words, e.g. OpenComic 2×), its speed in stars (five up to 1 s
   a page, or up to the fastest model's time when that is longer; one for
   slow models; linear in page time on the reference tablet in between) and
@@ -850,8 +851,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   blurry or artifacted art crisp; Color; Detail; Desharp; Lines; an empty
   star means it makes that worse; models not compared yet show none) and
   what it fits best, then its biggest downside. A family takes one row with
-  a level slider: Anime4K's sizes, whose ratings are their largest size's
-  ("up to"), and waifu2x's denoise strengths, each with its own. A tap on a
+  a level slider: the sizes of Anime4K's modes, CuNNy and ArtCNN, whose
+  ratings are their largest size's ("up to"), and waifu2x's denoise
+  strengths, each with its own. A tap on a
   row picks it and closes; letting go of a slider (or, moved by keyboard or
   screen reader, letting it rest half a second) picks that level and keeps
   the picker open. Models that take 10 s or more for a 1000×1500
@@ -1513,8 +1515,9 @@ estimated from the tiles run in 60 or 120 s):
 | waifu2x UpConv7 2x (no denoise, denoise 0 to 3) | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | catalog |
 | waifu2x CUnet | MIT | [waifu2x](https://github.com/nagadomi/waifu2x) | refused: global pooling (tiles would show) |
 | LSDIR Compact C3 4x | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | catalog |
-| CuNNy-8x32-DS 2x (mpv shader, converted to ncnn for this app) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | catalog |
-| ArtCNN C4F32 DS 2x (ONNX, converted to ncnn for this app) | MIT | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | catalog |
+| CuNNy DS 2x: faster, fast, 4x12, 4x16, 4x24, 4x32, 8x32 (mpv shaders, converted to ncnn for this app) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | catalog |
+| CuNNy DS 2x: 2x12, 3x12 (between fast and 4x12 in size) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | not converted: the seven sizes above step about twice in work each |
+| ArtCNN C4F16 DS and C4F32 DS 2x (ONNX, converted to ncnn for this app) | MIT | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | catalog |
 | HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo (4x) | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | not run: as large as x4plus Anime |
 | WTP ColorDS 4x | CC BY 4.0 | [OpenModelDB](https://openmodeldb.info/models/4x-WTP-ColorDS) | the system ended the app while it checked the model (past 1.8 GB resident) |
 | NMKD Jaywreck3 Lite and Soft Lite | WTFPL | [OpenModelDB](https://openmodeldb.info/models/1x-NMKD-Jaywreck3-Lite) | too slow: 61 and 77 s |

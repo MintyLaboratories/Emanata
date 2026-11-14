@@ -52,8 +52,6 @@ object PickerRows {
         put("waifu2x-upconv7-2x", "waifu2x 2×")
         for (n in 0..3) put("waifu2x-upconv7-2x-denoise$n", "waifu2x denoise $n 2×")
         for (x in 2..4) put("opencomic-ai-upscale-${x}x-compact-v2", "OpenComic $x×")
-        put("artcnn-c4f32-ds", "ArtCNN 2×")
-        put("cunny-8x32-ds-rp", "CuNNy 2×")
         for (x in 2..4) put("realesr-animevideov3-x$x", "Real-ESRGAN $x×")
         put("4x-lsdir-compact-c3", "LSDIR 4×")
     }

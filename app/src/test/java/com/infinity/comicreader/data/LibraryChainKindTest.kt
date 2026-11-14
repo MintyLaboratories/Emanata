@@ -76,6 +76,20 @@ class LibraryChainKindTest {
     }
 
     @Test
+    fun aPackedFoldersKindBecomesTheBooks() {
+        val folder = "/books/loose"
+        val images = listOf(BookRef(BookId(0x1), "$folder/p1.png"), BookRef(BookId(0x2), "$folder/p2.png"))
+        val packed = BookRef(BookId(0xc), "/books/loose.cbz")
+        library.setChainKind(packed, ChainKind.OTHER)
+        library.setFolderChainKind(folder, ChainKind.MANGA)
+        library.carryFolder(folder, images, packed, images.size)
+        assertEquals(ChainKind.MANGA, library.chainKind(packed.id))
+        library.setFolderChainKind(folder, null)
+        library.carryFolder(folder, images, packed, images.size)
+        assertNull("a folder without one leaves the book following its direction", library.chainKind(packed.id))
+    }
+
+    @Test
     fun kindsSurviveABackup() {
         library.setChainKind(a, ChainKind.MANGA)
         library.setFolderChainKind("/books/series", ChainKind.OTHER)

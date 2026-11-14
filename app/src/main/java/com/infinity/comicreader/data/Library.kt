@@ -960,8 +960,8 @@ class Library(context: Context) {
     /**
      * Hands what was kept for [folder], a folder of loose images, and for its images to [to],
      * the book they were packed into, of [pageCount] pages: page `p` was the image [pages]`[p]`
-     * (null where its ID is not known). The folder's favorite, layout and answer to reading
-     * tall pages as a strip become the book's, as does an image's favorite; the book is read
+     * (null where its ID is not known). The folder's favorite, layout, answer to reading tall
+     * pages as a strip and default AI chain become the book's, as does an image's favorite; the book is read
      * when every image was; its history resumes at the image read last; bookmarks and hidden
      * images move to their pages; its adjustments are the image's read last, else the first
      * page's with its own. Identical images are told apart by the name a row was kept under.
@@ -1065,6 +1065,10 @@ class Library(context: Context) {
             tall.remove(toHex)
             readObject(KEY_TALL_FOLDERS).let { if (it.has(folder)) tall.put(toHex, it.optBoolean(folder)) }
             e.putString(KEY_TALL, tall.toString())
+            val kinds = readObject(KEY_AI_KINDS)
+            kinds.remove(toHex)
+            readObject(KEY_AI_KIND_FOLDERS).optString(folder).takeIf { ChainKind.of(it) != null }?.let { kinds.put(toHex, it) }
+            e.putString(KEY_AI_KINDS, kinds.toString())
             val books = readObject(KEY_BOOKS)
             books.remove(toHex)
             putSeen(books, to.id, to.path)

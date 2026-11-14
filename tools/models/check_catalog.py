@@ -6,7 +6,8 @@ Run from the repository root with Python 3.10+ (standard library only):
     py tools/models/check_catalog.py --hash <file>...   # size and SHA-256 of files, for new entries
 
 Reads `ModelCatalog.kt` for the pinned base URLs and each `file("path", bytes, "sha256")` (from
-BASE) and `hosted("path", bytes, "sha256")` (from HOSTED_BASE). Files are kept under --cache
+BASE) and `hosted("path", bytes, "sha256")` (from HOSTED_BASE), and `ShaderCatalog.kt` for its
+pinned BASE and each `file(...)` there (the Anime4K shaders). Files are kept under --cache
 (default: a temporary folder, removed afterward) by their path, so a second run downloads
 nothing. Exits 1 when any file is missing or differs.
 """
@@ -20,6 +21,7 @@ import tempfile
 import urllib.request
 
 CATALOG = pathlib.Path('app/src/main/java/com/infinity/comicreader/ai/ModelCatalog.kt')
+SHADERS = pathlib.Path('app/src/main/java/com/infinity/comicreader/ai/ShaderCatalog.kt')
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -39,14 +41,22 @@ def entries(text: str) -> list[tuple[str, str, int, str]]:
     hosted = re.search(r'const val HOSTED_BASE = "([^"]+)"', text).group(1)
     hosted = hosted.replace('$HOSTED_REPOSITORY', repository).replace('$HOSTED_REVISION', revision)
     files = []
-    for kind, p, n, h in re.findall(r'\b(file|hosted)\("([^"]+)", (\d+), "([0-9a-f]{64})"\)', text):
+    for kind, p, n, h in re.findall(r'\b(file|hosted)\("([^"]+)", ([\d_]+), "([0-9a-f]{64})"\)', text):
         url = (base if kind == 'file' else hosted) + p
-        files.append((url, f'{kind}/{p}', int(n), h))
+        files.append((url, f'{kind}/{p}', int(n.replace('_', '')), h))
     return files
 
 
+def shader_entries(text: str) -> list[tuple[str, str, int, str]]:
+    """Every shader file of `ShaderCatalog.kt` as (URL, cache path, bytes, sha256): `file(...)` from its BASE."""
+    commit = re.search(r'const val COMMIT = "([0-9a-f]{40})"', text).group(1)
+    base = re.search(r'const val BASE = "([^"]+)"', text).group(1).replace('$COMMIT', commit)
+    return [(base + p, f'shader/{p}', int(n.replace('_', '')), h)
+            for p, n, h in re.findall(r'\bfile\("([^"]+)", ([\d_]+), "([0-9a-f]{64})"\)', text)]
+
+
 def check(cache: pathlib.Path) -> int:
-    files = entries(CATALOG.read_text(encoding='utf-8'))
+    files = entries(CATALOG.read_text(encoding='utf-8')) + shader_entries(SHADERS.read_text(encoding='utf-8'))
     bad = 0
     for url, path, size, digest in files:
         local = cache / path

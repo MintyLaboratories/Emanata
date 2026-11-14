@@ -139,12 +139,14 @@ data class RegionRead(val left: Int, val top: Int, val right: Int, val bottom: I
          * The read for [plan] of a [w] x [h] image through a filter of [radius]: unsampled,
          * unless the plan shrinks by 2 or more per sample on both axes (the result then still
          * has twice the output's pixels each way), or more than [MAX_READ_PIXELS] would be read.
+         * With [sharpened], one output pixel more each way, for the strips past the plan's
+         * edges that sharpening resamples ([BitmapUtils.rimWindows]).
          */
-        fun of(plan: Plan, w: Int, h: Int, radius: Int): RegionRead {
+        fun of(plan: Plan, w: Int, h: Int, radius: Int, sharpened: Boolean = false): RegionRead {
             val fx = plan.spanW / plan.width
             val fy = plan.spanH / plan.height
-            val mx = ceil(radius * max(1.0, fx)).toInt() + 1
-            val my = ceil(radius * max(1.0, fy)).toInt() + 1
+            val mx = ceil(radius * max(1.0, fx)).toInt() + 1 + if (sharpened) ceil(fx).toInt() else 0
+            val my = ceil(radius * max(1.0, fy)).toInt() + 1 + if (sharpened) ceil(fy).toInt() else 0
             val l = floor(plan.x - mx).toInt().coerceIn(0, w - 1)
             val t = floor(plan.y - my).toInt().coerceIn(0, h - 1)
             val r = ceil(plan.x + plan.spanW + mx).toInt().coerceIn(l + 1, w)
@@ -172,7 +174,7 @@ class RegionDetail(private val reader: RegionReader, private val area: IntArray,
         val plan = region.plan(
             width, height, area[0].toDouble(), area[1].toDouble(), (area[2] - area[0]).toDouble(), (area[3] - area[1]).toDouble()
         )
-        val read = RegionRead.of(plan, reader.width, reader.height, scaling.filter.radius)
+        val read = RegionRead.of(plan, reader.width, reader.height, scaling.filter.radius, scaling.sharpen > 0)
         val pixels = synchronized(reader) { reader.read(read.left, read.top, read.right, read.bottom, read.sample) }
         val local = read.local(plan, pixels.width, pixels.height)
         if (local.isIdentity(pixels.width, pixels.height)) return pixels

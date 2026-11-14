@@ -45,9 +45,14 @@ internal object GlesShaders : ShaderRuntime {
     /** The GPU's name, once [available] was asked; null where unusable. */
     val renderer: String? get() = info?.getOrNull(0)
 
-    /** Turns the runner off for the process, as repeated failures do (debug checks of the fallback). */
-    fun turnOff() {
-        if (LibPixels.loaded) nTurnOff()
+    /** [block] run with the runner held off, as repeated failures turn it off, then back on (debug checks of the fallback). */
+    fun <T> whileOff(block: () -> T): T {
+        if (LibPixels.loaded) nHoldOff(true)
+        try {
+            return block()
+        } finally {
+            if (LibPixels.loaded) nHoldOff(false)
+        }
     }
 
     /** Program caches kept in a cache folder, the most recently used first: about 1 to 4 MB each. */
@@ -141,7 +146,7 @@ internal object GlesShaders : ShaderRuntime {
     private external fun nUsable(): Boolean
 
     @JvmStatic
-    private external fun nTurnOff()
+    private external fun nHoldOff(off: Boolean)
 
     @JvmStatic
     private external fun nOpen(sources: Array<String>, binds: IntArray, cache: String?): Long

@@ -121,8 +121,8 @@ import kotlin.math.max
  *   chosen size against the same page in 256 or 192 px tiles (`seams`: 0 when tiles join
  *   exactly); a page canceled after three tiles (`stopMs`). With `save`, each page and output
  *   as PNG (`shader-page-WxH.png`, `shader-<id>-WxH.png`) for comparison with a PC reference.
- *   With `off`, the GPU path is then turned off and the first chain opened again (`refusal`
- *   RUNTIME: its pages show without it).
+ *   With `off`, the GPU path is then held off while the first chain opens again (`refusal`
+ *   RUNTIME: its pages show without it), and back on after.
  *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
@@ -605,11 +605,13 @@ class AiCheckService : Service() {
         }
         val first = chains.firstOrNull { store.installed(it) }
         if (off && first != null) {
-            GlesShaders.turnOff()
             val files = store.shaderFiles(first)!!
-            val o = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, first.scale, ModelMemory.of(this))
-            o.session?.close()
-            log(JSONObject().put("shaderOff", first.id).put("available", GlesShaders.available).put("opened", o.session != null).put("refusal", o.refusal?.name ?: JSONObject.NULL))
+            val line = GlesShaders.whileOff {
+                val o = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, first.scale, ModelMemory.of(this))
+                o.session?.close()
+                JSONObject().put("shaderOff", first.id).put("available", GlesShaders.available).put("opened", o.session != null).put("refusal", o.refusal?.name ?: JSONObject.NULL)
+            }
+            log(line.put("availableAfter", GlesShaders.available))
         }
         log(JSONObject().put("shaded", chains.size).put("state", state()))
     }

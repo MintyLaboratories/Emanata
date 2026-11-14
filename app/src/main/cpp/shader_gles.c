@@ -47,6 +47,8 @@
 static pthread_mutex_t sh_lock = PTHREAD_MUTEX_INITIALIZER;
 // 0 untried, 1 ready, -1 unusable; written under sh_lock, read anywhere.
 static atomic_int sh_state = 0;
+// Set while a check of the fallback holds the runner off (nHoldOff): it then acts as unusable.
+static atomic_int held_off = 0;
 static int failed_in_row;
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLContext context = EGL_NO_CONTEXT;
@@ -380,17 +382,15 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nUsable(JNI
 {
     (void)env;
     (void)clazz;
-    return sh_state >= 0;
+    return sh_state >= 0 && !held_off;
 }
 
-// Turns the runner off for the process, as failures would.
-EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nTurnOff(JNIEnv * env, jclass clazz)
+// Holds the runner off, as failures would turn it off, until called again with off false.
+EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nHoldOff(JNIEnv * env, jclass clazz, jboolean off)
 {
     (void)env;
     (void)clazz;
-    pthread_mutex_lock(&sh_lock);
-    if (sh_state == 1) sh_state = -1;
-    pthread_mutex_unlock(&sh_lock);
+    held_off = off ? 1 : 0;
 }
 
 static void close_chain(chain * c)
@@ -523,7 +523,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
     save_current(&w);
     const int64_t t0 = now_ns();
     // GL calls only while our context is current: none at all when it could not be made so.
-    const int current = sh_begin(&w) == 0;
+    const int current = sh_begin(&w) == 0 && !held_off;
     int ok = c != NULL && c->passes != NULL && current;
     if (ok) {
         c->count = n;
@@ -747,7 +747,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nRun(
     if (p == NULL) return -3;
     pthread_mutex_lock(&sh_lock);
     was_current w;
-    const int current = sh_begin(&w) == 0;
+    const int current = sh_begin(&w) == 0 && !held_off;
     const int r = current ? run(env, c, p, len, src, ix, iy, iw, ih, dst, cx, cy, cw, ch, dx, dy) : -6;
     if (current) {
         if (r != 0) {

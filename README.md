@@ -1142,7 +1142,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   changed past a point, compared bit for bit). It is then checked for seams
   (at most 1 code) at its largest tile (up to 512 by default, its textures
   within a quarter of the model memory, smaller when its tiles took over
-  150 ms there); each page then takes the tile size up to that which leaves
+  150 ms there, timed only while the reader leaves the GPU alone, as ncnn
+  tile sizes are); each page then takes the tile size up to that which leaves
   the least work (Anime4K A UL takes a 1000×1500 page in twelve 410 px tiles
   rather than twelve of 512, a third fewer pixels). Each pass samples a
   1/1024 pixel past pixel centers, so the GPU's filter rounding gives the
@@ -1224,23 +1225,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page), trimmed least recently read first to 1 GB and a tenth of the free
   space; they show even while AI is paused. When the thresholds move, the
   reader shows its pages again through the models their sizes call for.
-- AI models (`ModelCatalog`) are ncnn files the app downloads on demand, never
-  bundled: OpenComic AI's (CC BY 4.0) and others under MIT, BSD, CC BY or
-  LGPL licenses, all fetched unchanged at a pinned revision: from OpenComic
-  AI's model repository, or, for the ncnn conversions made for this app
-  (CuNNy, ArtCNN), from the
+- AI models are downloaded on demand, never bundled, all fetched unchanged
+  at a pinned revision. `ModelCatalog` lists ncnn files: OpenComic AI's
+  (CC BY 4.0) and others under MIT, BSD, CC BY or LGPL licenses, from
+  OpenComic AI's model repository, or, for the ncnn conversions made for this
+  app (CuNNy, ArtCNN), from the
   [Emanata model repository](https://huggingface.co/MadameMinty/Emanata),
-  which also holds their originals and the conversion scripts. Each entry has
-  its step (artifact removal, descreen, upscale), scale, size, license, URL and
-  SHA-256. `ModelStore` keeps each
+  which also holds their originals and the conversion scripts.
+  `ShaderCatalog` lists Anime4K's GLSL shaders (MIT), fetched from
+  [bloc97/Anime4K](https://github.com/bloc97/Anime4K) at the v4.0.1 commit
+  and run as chains on the GPU. Each entry has its step (artifact removal,
+  descreen, upscale), scale, size, license, URL and SHA-256. `ModelStore` keeps each
   model in its own folder in `noBackupFilesDir/ai-models` (not backed up, not
   cleared with the cache); `ModelDownloader` fetches each file into a `.part`,
   resumes it with an HTTP Range after a break (starting over when a server
   sends the whole file), checks size and SHA-256, and renames it into place; a
   part that does not match is deleted. `ModelDownloads` runs downloads one at
   a time in the app's process, so they go on when Settings is left.
-  `tools/models/check_catalog.py` downloads every catalog file and checks its
-  size and SHA-256 (and prints both for new files). The covers' text detector
+  `tools/models/check_catalog.py` downloads every file of both catalogs and
+  checks its size and SHA-256 (and prints both for new files). The covers' text detector
   (`ModelCatalog.TEXT_DETECTOR`) is stored and downloaded the same way, from a
   pinned Hugging Face revision; `DetectorModel` starts its download when a
   cover first needs it (`CoverArt.focusOf`: a Smart crop, or the text of a
@@ -1518,6 +1521,7 @@ estimated from the tiles run in 60 or 120 s):
 | CuNNy DS 2x: faster, fast, 4x12, 4x16, 4x24, 4x32, 8x32 (mpv shaders, converted to ncnn for this app) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | catalog |
 | CuNNy DS 2x: 2x12, 3x12 (between fast and 4x12 in size) | LGPL-3.0-or-later | [CuNNy](https://github.com/funnyplanter/CuNNy) | not converted: the seven sizes above step about twice in work each |
 | ArtCNN C4F16 DS and C4F32 DS 2x (ONNX, converted to ncnn for this app) | MIT | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | catalog |
+| Anime4K v4.0.1 2x (GLSL shaders run on the GPU): modes A, B and C, Upscale, Upscale + Denoise, each in sizes S to UL | MIT | [Anime4K](https://github.com/bloc97/Anime4K) | catalog (`ShaderCatalog`) |
 | HFA2k, LSDIR Plus C, Nomos 8k SC, Nomos Web Photo (4x) | CC BY 4.0 | [Helaman's models](https://github.com/Phhofm/models) | not run: as large as x4plus Anime |
 | WTP ColorDS 4x | CC BY 4.0 | [OpenModelDB](https://openmodeldb.info/models/4x-WTP-ColorDS) | the system ended the app while it checked the model (past 1.8 GB resident) |
 | NMKD Jaywreck3 Lite and Soft Lite | WTFPL | [OpenModelDB](https://openmodeldb.info/models/1x-NMKD-Jaywreck3-Lite) | too slow: 61 and 77 s |

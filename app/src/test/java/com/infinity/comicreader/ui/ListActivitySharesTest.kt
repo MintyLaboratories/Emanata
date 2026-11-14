@@ -245,6 +245,9 @@ class ListActivitySharesTest {
         sheetList().findViewById<View>(R.id.location_add).performClick()
         idle()
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        // A share not added yet has no speed measured to show.
+        assertEquals(View.GONE, dialog.findViewById<TextView>(R.id.share_speed_measured)!!.visibility)
+        assertEquals(activity.getString(R.string.share_speed_hint_auto), dialog.findViewById<TextView>(R.id.share_speed_hint)!!.text.toString())
         dialog.findViewById<TextView>(R.id.share_name)!!.text = "Share B"
         dialog.findViewById<TextView>(R.id.share_path)!!.text = "nas.local"
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
@@ -490,11 +493,18 @@ class ListActivitySharesTest {
             (ShadowDialog.getLatestDialog() as AlertDialog).listView.performItemClick(null, 0, 0)
             idle()
             val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-            val shown = dialog.findViewById<TextView>(R.id.share_speed_measured)!!.text.toString()
+            val measured = dialog.findViewById<TextView>(R.id.share_speed_measured)!!
+            val shown = measured.text.toString()
+            assertEquals(View.VISIBLE, measured.visibility)
             assertEquals(ShareDialog.measuredText(activity, estimate), shown)
             assertEquals(activity.getString(R.string.share_speed_measured_slow, activity.getString(R.string.share_speed_rate, "1.5 MB")), shown)
             assertEquals(R.id.share_speed_auto, dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.checkedButtonId)
+            val hint = dialog.findViewById<TextView>(R.id.share_speed_hint)!!
+            assertEquals(activity.getString(R.string.share_speed_hint_auto), hint.text.toString())
+            dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.check(R.id.share_speed_slow)
+            assertEquals(activity.getString(R.string.share_speed_hint_slow), hint.text.toString())
             dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.check(R.id.share_speed_fast)
+            assertEquals(activity.getString(R.string.share_speed_hint_fast), hint.text.toString())
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
             idle()
             assertEquals(ShareSpeed.FAST, ShareStore(context, box).all().single().speed)

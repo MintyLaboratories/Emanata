@@ -39,8 +39,9 @@ import kotlinx.coroutines.withContext
  * The form that adds a network share, or edits one: SMB or WebDAV, name, path
  * (`host/share/folder`, or an `https://` address for WebDAV, plain `http://` to a
  * private address with a warning), user and password (an edit can clear a stored one),
- * whether covers of its books are made, and its speed (Auto, measured from its reads and shown
- * as measured; Fast; Slow); everything else defaulted. Saving checks
+ * whether covers of its books are made, and its speed (Auto, measured from its reads; Fast;
+ * Slow), with what the chosen one does and, editing, what the share measured; everything
+ * else defaulted. Saving checks
  * the path, stores the share (its password sealed) off the main thread and tells the [LocationSheet.Host];
  * a bad path, or a password the keystore could not seal, keeps the form open, saying
  * what is wrong. It comes back after a rotation with what was typed.
@@ -67,8 +68,16 @@ class ShareDialog : DialogFragment() {
             form.findViewById<CompoundButton>(R.id.share_thumbnails).isChecked = previous.thumbnails
             form.findViewById<MaterialButtonToggleGroup>(R.id.share_speed).check(speedButton(previous.speed))
         }
-        form.findViewById<TextView>(R.id.share_speed_measured).text =
-            measuredText(context, previous?.let { ShareSpeeds.estimate(it.id) })
+        // Only a share already added has had reads to measure.
+        if (previous != null) {
+            form.findViewById<TextView>(R.id.share_speed_measured).apply {
+                text = measuredText(context, ShareSpeeds.estimate(previous.id))
+                visibility = View.VISIBLE
+            }
+        }
+        val speeds = form.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)
+        speeds.addOnButtonCheckedListener { _, _, _ -> showSpeedHint() }
+        showSpeedHint()
         field(R.id.share_path).doAfterTextChanged { showPathHint() }
         if (previous != null) showPassword(previous)
         val dialog = AlertDialog.Builder(context)
@@ -156,6 +165,12 @@ class ShareDialog : DialogFragment() {
         )
     }
 
+    /** What the chosen speed does. */
+    private fun showSpeedHint() {
+        val speed = speedOf(form.findViewById<MaterialButtonToggleGroup>(R.id.share_speed).checkedButtonId)
+        form.findViewById<TextView>(R.id.share_speed_hint).setText(speedHint(speed))
+    }
+
     private fun text(id: Int): String = field(id).text?.toString().orEmpty()
 
     /** Stores the share the form describes and closes the form; shows why instead when it cannot. */
@@ -223,6 +238,13 @@ class ShareDialog : DialogFragment() {
             R.id.share_speed_fast -> ShareSpeed.FAST
             R.id.share_speed_slow -> ShareSpeed.SLOW
             else -> ShareSpeed.AUTO
+        }
+
+        /** The text saying what [speed] does. */
+        fun speedHint(speed: ShareSpeed): Int = when (speed) {
+            ShareSpeed.AUTO -> R.string.share_speed_hint_auto
+            ShareSpeed.FAST -> R.string.share_speed_hint_fast
+            ShareSpeed.SLOW -> R.string.share_speed_hint_slow
         }
 
         /** What [estimate] says of a share: throughput and first-byte wait, and whether Auto counts it slow. */

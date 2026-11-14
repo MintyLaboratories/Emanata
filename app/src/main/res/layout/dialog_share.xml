@@ -163,14 +163,15 @@
             android:layout_height="wrap_content"
             android:text="@string/share_speed_unmeasured"
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/share_speed_hint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingBottom="@dimen/space_2"
-            android:text="@string/share_speed_hint"
+            android:text="@string/share_speed_hint_auto"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>

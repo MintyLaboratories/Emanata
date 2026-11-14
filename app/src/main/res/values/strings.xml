@@ -84,7 +84,9 @@
     <string name="share_speed_measured_fast">Measured %1$s: fast</string>
     <string name="share_speed_measured_slow">Measured %1$s: slow</string>
     <string name="share_speed_unmeasured">Not measured yet: reading books from it measures it</string>
-    <string name="share_speed_hint">Auto counts a share slow below 2 MB/s or over 1 s to the first byte. Slow shares skip what Settings › Network › On slow shares, skip says.</string>
+    <string name="share_speed_hint_auto">Auto counts a share slow below 2 MB/s or over 1 s to the first byte.</string>
+    <string name="share_speed_hint_fast">Fast shares skip nothing for speed, whatever they measure.</string>
+    <string name="share_speed_hint_slow">Slow shares skip what Settings › Network › On slow shares, skip says.</string>
     <string name="share_http_warning">Plain http: the password and comics cross the network unencrypted</string>
     <string name="share_save_failed">The password could not be stored securely; try again</string>
     <string name="share_problem_empty">Enter the share\'s path, such as nas.local/share/folder</string>

@@ -834,9 +834,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   chosen follows a later default). Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
   S to UL. A step's picker shows each choice by a short name (without the
-  step's own words, e.g. OpenComic 2×), its speed in stars (five for the
-  fastest model, half a star at 20 s a page, on a log scale of page times on
-  the reference tablet) and an info button that shows, and on a second tap
+  step's own words, e.g. OpenComic 2×), its speed in stars (five up to 1 s
+  a page, or up to the fastest model's time when that is longer; one for
+  slow models; linear in page time on the reference tablet in between) and
+  an info button that shows, and on a second tap
   hides, its full name and size, its star ratings by eye (Crisp: makes
   blurry or artifacted art crisp; Color; Detail; Desharp; Lines; an empty
   star means it makes that worse; models not compared yet show none) and

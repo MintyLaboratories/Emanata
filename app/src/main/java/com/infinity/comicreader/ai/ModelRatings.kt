@@ -1,6 +1,5 @@
 package com.infinity.comicreader.ai
 
-import kotlin.math.ln
 import kotlin.math.roundToInt
 
 /** A quality upscalers were rated on by eye ([ModelRatings.of]). */
@@ -62,17 +61,24 @@ object ModelRatings {
     /** The shortest page time of the catalog's models and shader chains; 0 when none is known. */
     fun fastestMs(): Long = (ModelCatalog.all + ShaderCatalog.all).map { it.pageMs }.filter { it > 0 }.minOrNull() ?: 0
 
+    /** The page time goal: at or under it, a model is as fast as can be told apart. */
+    const val SPEED_GOAL_MS = 1_000L
+
+    /** One star: the speed of slow models ([ModelCatalog.SLOW_PAGE_MS] and beyond). */
+    const val SLOW_SPEED = 2
+
     /**
      * Speed in half stars for page time [pageMs], relative to the fastest model's [fastestMs]:
-     * [MAX] for the fastest, one half star at [ModelCatalog.MAX_PAGE_MS] (the catalog's longest)
-     * and beyond, in between on a log scale, so each half star stands for the same factor of
-     * time; null when either time is unknown.
+     * [MAX] up to the fastest's time or [SPEED_GOAL_MS], whichever is longer; [SLOW_SPEED] from
+     * [ModelCatalog.SLOW_PAGE_MS]; linear in time in between, so a half star stands for the
+     * same seconds of waiting. Null when either time is unknown.
      */
     fun speed(pageMs: Long, fastestMs: Long = fastestMs()): Int? {
         if (pageMs <= 0 || fastestMs <= 0) return null
-        val top = fastestMs.toDouble()
-        val bottom = maxOf(ModelCatalog.MAX_PAGE_MS.toDouble(), top * 2)
-        val t = pageMs.toDouble().coerceIn(top, bottom)
-        return (MAX - (MAX - 1) * ln(t / top) / ln(bottom / top)).roundToInt().coerceIn(1, MAX)
+        val top = maxOf(fastestMs, SPEED_GOAL_MS)
+        val bottom = ModelCatalog.SLOW_PAGE_MS
+        if (pageMs <= top) return MAX
+        if (pageMs >= bottom) return SLOW_SPEED
+        return (MAX - (MAX - SLOW_SPEED) * (pageMs - top).toDouble() / (bottom - top)).roundToInt().coerceIn(SLOW_SPEED, MAX)
     }
 }

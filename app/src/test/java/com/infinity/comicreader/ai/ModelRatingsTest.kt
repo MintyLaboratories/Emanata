@@ -36,21 +36,34 @@ class ModelRatingsTest {
     }
 
     @Test
-    fun speedIsFiveStarsForTheFastestAndHalfAStarAtTheCatalogsLongest() {
+    fun speedIsFiveStarsForTheFastestAndOneForSlowModels() {
         val fastest = ModelRatings.fastestMs()
         assertEquals((ModelCatalog.all + ShaderCatalog.all).minOf { it.pageMs }, fastest)
         assertEquals(10, ModelRatings.speed(fastest))
-        assertEquals(1, ModelRatings.speed(ModelCatalog.MAX_PAGE_MS))
-        assertEquals(1, ModelRatings.speed(ModelCatalog.MAX_PAGE_MS * 3))
+        assertEquals(2, ModelRatings.speed(ModelCatalog.SLOW_PAGE_MS))
+        assertEquals(2, ModelRatings.speed(ModelCatalog.MAX_PAGE_MS * 3))
         assertNull(ModelRatings.speed(0))
         assertNull(ModelRatings.speed(1000, fastestMs = 0))
         // Slower never rates faster.
         val times = (ModelCatalog.all + ShaderCatalog.all).map { it.pageMs }.sorted()
         val stars = times.map { ModelRatings.speed(it, fastest)!! }
         assertEquals(stars.sortedDescending(), stars)
-        // A log scale: 100 ms to 20 s is a factor of 200, nine half stars; 100 to 1414 ms, half of it.
-        assertEquals(10, ModelRatings.speed(100, fastestMs = 100))
-        assertEquals(6, ModelRatings.speed(1_414, fastestMs = 100))
-        assertEquals(1, ModelRatings.speed(20_000, fastestMs = 100))
+        // Linear from the goal (or the fastest, when slower) to the slow mark.
+        assertEquals(10, ModelRatings.speed(1_000, fastestMs = 100))
+        assertEquals(6, ModelRatings.speed(5_500, fastestMs = 100))
+        assertEquals(10, ModelRatings.speed(2_000, fastestMs = 2_000))
+        assertEquals(6, ModelRatings.speed(6_000, fastestMs = 2_000))
+    }
+
+    @Test
+    fun speedMatchesTheUsersByEyeColumn() {
+        // The user's Speed column, set with Anime4K in the table: Anime4K 5, waifu2x 4, OpenComic 3, LSDIR and Real-ESRGAN 1.
+        val column = mapOf(
+            "anime4k-a-ul" to 10, "anime4k-b-ul" to 10, "anime4k-c-ul" to 10, "anime4k-upscale-ul" to 10, "anime4k-upscale-denoise-ul" to 10,
+            "waifu2x-upconv7-2x" to 8, "waifu2x-upconv7-2x-denoise0" to 8, "waifu2x-upconv7-2x-denoise3" to 8,
+            "opencomic-ai-upscale-2x-compact-v2" to 6,
+            "4x-lsdir-compact-c3" to 2, "realesr-animevideov3-x2" to 2, "realesr-animevideov3-x4" to 2
+        )
+        for ((id, halves) in column) assertEquals(id, halves, ModelRatings.speed(Models.byId(id)!!.pageMs))
     }
 }

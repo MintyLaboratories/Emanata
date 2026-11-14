@@ -878,6 +878,9 @@ class ZoomImageView @JvmOverloads constructor(
     private val bandShaders = arrayOfNulls<PageShader>(SHADER_SLOTS * 4)
     private var shaderFailed = false
 
+    /** True once a sharpening shader failed to build: enlargements then draw without sharpening. */
+    private var sharpFailed = false
+
     /** The bitmaps the shaders hold; for tests. */
     internal val shadersHold: List<Bitmap> get() = (pageShaders + detailShaders + bandShaders).mapNotNull { it?.held }
 
@@ -888,12 +891,13 @@ class ZoomImageView @JvmOverloads constructor(
      * [zoomScaling]'s filter or, while [moving], [PageShader.moving]'s, sharpening an
      * enlargement of [bitmap] when [zoomScaling] sharpens, [sharpens] allows and [bitmap] is
      * not sharpened already ([BitmapUtils.isSharpened]): made on first use, or null where it
-     * cannot run, after which the view draws plainly.
+     * cannot run, after which the view draws plainly. A sharpening shader that cannot run
+     * gives way to the plain one.
      */
     private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean, bitmap: Bitmap, sharpens: Boolean = true): PageShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
         val filter = if (moving && kernel == PageShader.Kernel.FILTERED) PageShader.moving(zoomScaling.filter) else zoomScaling.filter
-        val sharp = sharpens && kernel == PageShader.Kernel.FILTERED && zoomScaling.sharpen > 0 && !BitmapUtils.isSharpened(bitmap)
+        val sharp = sharpens && !sharpFailed && kernel == PageShader.Kernel.FILTERED && zoomScaling.sharpen > 0 && !BitmapUtils.isSharpened(bitmap)
         if (kernel == PageShader.Kernel.FILTERED) {
             shadedFilter = filter
             shadedSharp = sharp
@@ -902,12 +906,18 @@ class ZoomImageView @JvmOverloads constructor(
         shaders[slot]?.let { return it }
         return runCatching { PageShader(kernel, colored, filter, zoomScaling.upRing > 0, sharp, shaderDialect) }
             .onFailure {
-                Log.w(TAG, "Page shader unavailable, drawing plainly", it)
-                shaderFailed = true
+                if (sharp) {
+                    Log.w(TAG, "Sharpening shader unavailable, enlarging without it", it)
+                    sharpFailed = true
+                } else {
+                    Log.w(TAG, "Page shader unavailable, drawing plainly", it)
+                    shaderFailed = true
+                }
                 invalidate()
             }
             .getOrNull()
             ?.also { shaders[slot] = it }
+            ?: if (sharp && !shaderFailed) shader(shaders, kernel, colored, bitmap, sharpens) else null
     }
 
     private fun clearShaders(shaders: Array<PageShader?>) = shaders.forEach { it?.clear() }

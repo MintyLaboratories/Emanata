@@ -638,6 +638,27 @@ class ZoomImageViewTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aSharpeningShaderThatCannotBuildGivesWayToThePlainOne() {
+        ZoomImageView.shaderDialect = { if ("rcas(" in it) "not a shader" else PageShaderTest.HOST_DIALECT(it) }
+        try {
+            val v = view(300, 400, 300, 360, ZoomImageView.FitMode.SCREEN)
+            v.zoomScaling = Scaling(sharpen = 60)
+            v.zoomTo(2f, 150f, 200f)
+            draw(v)
+            draw(v)
+            assertFalse(v.shadedSharp)
+            assertEquals(ScaleFilter.DEFAULT, v.shadedFilter)
+            assertTrue("the plain shader enlarges", v.shadersHold.isNotEmpty())
+            v.look = Look.of(Filters.INVERT, Adjustments.NEUTRAL)
+            draw(v)
+            assertTrue("and colors", v.shadersHold.isNotEmpty())
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aNewDetailTileReleasesTheOldOneFromEveryShader() {
         ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
         try {
